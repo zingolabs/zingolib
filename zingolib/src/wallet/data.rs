@@ -963,7 +963,7 @@ impl TransactionMetadata {
     pub fn is_confirmed(&self) -> bool {
         match self.confirmation_status {
             ConfirmationStatus::InMempool => false,
-            ConfirmationStatus::Confirmed(_) => true,
+            ConfirmationStatus::ConfirmedOnChain(_) => true,
         }
     }
     pub fn net_spent(&self) -> u64 {
@@ -1046,7 +1046,7 @@ impl TransactionMetadata {
         let confirmation_status = if unconfirmed {
             ConfirmationStatus::InMempool
         } else {
-            ConfirmationStatus::Confirmed(block)
+            ConfirmationStatus::ConfirmedOnChain(block)
         };
 
         let datetime = if version >= 4 {

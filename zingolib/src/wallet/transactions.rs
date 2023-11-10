@@ -411,8 +411,7 @@ impl TransactionMetadataSet {
         &mut self,
         txid: TxId,
         spent_nullifier: &PoolNullifier,
-        spent_txid: &TxId,
-        spent_at_height: BlockHeight,
+        spend_status: SpendConfirmationStatus,
         output_index: u32,
     ) -> Result<u64, String> {
         match spent_nullifier {
@@ -508,8 +507,7 @@ impl TransactionMetadataSet {
     pub async fn add_new_spent(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        confirmation_status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: PoolNullifier,
         value: u64,
@@ -550,8 +548,7 @@ impl TransactionMetadataSet {
     async fn add_new_spent_internal<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        confirmation_status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         value: u64,
@@ -563,10 +560,8 @@ impl TransactionMetadataSet {
     {
         // Record this Tx as having spent some funds
         let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
+            self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp as u64);
 
-        // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
-        transaction_metadata.block_height = height;
         if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
         )
@@ -731,16 +726,16 @@ impl TransactionMetadataSet {
     pub(crate) fn add_pending_note<D>(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
         timestamp: u64,
         note: D::Note,
-        to: D::Recipient,
+        recipient: D::Recipient,
         output_index: usize,
     ) where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
+        let confirmation_status = ConfirmationStatus::InMempool;
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp);
 
@@ -750,12 +745,11 @@ impl TransactionMetadataSet {
         {
             None => {
                 let nd = D::WalletNote::from_parts(
-                    to.diversifier(),
+                    recipient.diversifier(),
                     note,
                     None,
                     None,
-                    None,
-                    None,
+                    SpendConfirmationStatus::NoKnownSpends,
                     None,
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
@@ -776,7 +770,7 @@ impl TransactionMetadataSet {
         confirmation_status: ConfirmationStatus,
         timestamp: u64,
         note: <D::WalletNote as ShieldedNoteInterface>::Note,
-        to: D::Recipient,
+        recipient: D::Recipient,
         have_spending_key: bool,
         nullifier: Option<<D::WalletNote as ShieldedNoteInterface>::Nullifier>,
         output_index: u32,
@@ -790,11 +784,11 @@ impl TransactionMetadataSet {
 
         /// TODO review this
         let nd = D::WalletNote::from_parts(
-            D::Recipient::diversifier(&to),
+            D::Recipient::diversifier(&recipient),
             note.clone(),
             Some(position),
             nullifier,
-            SpendConfirmationStatus::NoKnownSpends,
+            confirmation_status,
             None,
             // if this is change, we'll mark it later in check_notes_mark_change
             false,

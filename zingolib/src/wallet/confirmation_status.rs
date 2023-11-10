@@ -11,19 +11,25 @@ pub enum ConfirmationStatus {
     InMempool,
     // confirmed on blockchain implies a height. this data piece will eventually be a block height
     #[serde(with = "SerdeBlockHeight")]
-    Confirmed(BlockHeight),
+    ConfirmedOnChain(BlockHeight),
 }
 
 impl ConfirmationStatus {
+    pub fn is_in_mempool(&self) -> bool {
+        match self {
+            Self::InMempool => true,
+            _ => false,
+        }
+    }
     pub fn is_confirmed(&self) -> bool {
         match self {
-            Self::Confirmed(_) => true,
+            Self::ConfirmedOnChain(_) => true,
             _ => false,
         }
     }
     pub fn could_be_spent_at_anchor_height(&self, chain_height: &BlockHeight) -> bool {
         match self {
-            Self::Confirmed(block_height) => block_height <= chain_height,
+            Self::ConfirmedOnChain(block_height) => block_height <= chain_height,
             _ => false,
         }
     }
@@ -32,7 +38,7 @@ impl ConfirmationStatus {
         match self {
             Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, false),
             Self::InMempool => (BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL, false),
-            Self::Confirmed(block) => (u32::from(*block), true),
+            Self::ConfirmedOnChain(block) => (u32::from(*block), true),
         }
     }
     // note, by making unconfirmed the true case, this does a potentially confusing boolean flip
@@ -40,7 +46,7 @@ impl ConfirmationStatus {
         match self {
             Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, true),
             Self::InMempool => (BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL, true),
-            Self::Confirmed(block) => (u32::from(*block), false),
+            Self::ConfirmedOnChain(block) => (u32::from(*block), false),
         }
     }
 }

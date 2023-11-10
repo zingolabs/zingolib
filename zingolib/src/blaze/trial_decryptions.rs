@@ -6,6 +6,7 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
     wallet::{
+        confirmation_status::{self, ConfirmationStatus},
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
         traits::{
@@ -271,14 +272,14 @@ impl TrialDecryptions {
     }
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn trial_decrypt_domain_specific_outputs<D>(
-        transaction_metadata: &mut bool,
+        got_transaction_metadata: &mut bool,
         compact_transaction: &CompactTx,
         transaction_num: usize,
         compact_block: &CompactBlock,
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
         config: &zingoconfig::ZingoConfig,
-        wc: &Arc<WalletCapability>,
+        wallet_capability: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
@@ -304,19 +305,21 @@ impl TrialDecryptions {
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            let (output_num, witnessed) =
-                if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
-                    *transaction_metadata = true; // i.e. we got metadata
+            let (output_index, witnessed) =
+                if let (output_index, Some(((note, recipient), _ivk_num))) = maybe_decrypted_output
+                {
+                    *got_transaction_metadata = true; // i.e. we got metadata
 
-                    let wc = wc.clone();
+                    let wallet_capability = wallet_capability.clone();
                     let bsync_data = bsync_data.clone();
                     let transaction_metadata_set = transaction_metadata_set.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let timestamp = compact_block.time as u64;
                     let config = config.clone();
+                    // let height = height.clone();
 
                     workers.push(tokio::spawn(async move {
-                        let Ok(fvk) = D::wc_to_fvk(&wc) else {
+                        let Ok(fvk) = D::wc_to_fvk(&wallet_capability) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };
@@ -334,7 +337,7 @@ impl TrialDecryptions {
                                 uri,
                                 height,
                                 transaction_num,
-                                i,
+                                output_index,
                                 config.chain.activation_height(D::NU).unwrap().into(),
                             )
                             .await?;
@@ -347,31 +350,35 @@ impl TrialDecryptions {
 
                         transaction_metadata_set.write().await.add_new_note::<D>(
                             transaction_id,
-                            height,
-                            false,
+                            ConfirmationStatus::ConfirmedOnChain(height),
                             timestamp,
                             note,
-                            to,
+                            recipient,
                             have_spending_key,
                             Some(spend_nullifier),
-                            i as u32,
+                            output_index as u32,
                             witness.witnessed_position(),
                         );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
 
                         detected_transaction_id_sender
-                            .send((transaction_id, spend_nullifier.into(), height, i as u32))
+                            .send((
+                                transaction_id,
+                                spend_nullifier.into(),
+                                height,
+                                output_index as u32,
+                            ))
                             .unwrap();
 
                         Ok::<_, String>(())
                     }));
-                    (i, true)
+                    (output_index, true)
                 } else {
                     (maybe_decrypted_output.0, false)
                 };
             if witnessed {
-                notes_to_mark_position[output_num].3 = Retention::Marked
+                notes_to_mark_position[output_index].3 = Retention::Marked
             }
         }
     }

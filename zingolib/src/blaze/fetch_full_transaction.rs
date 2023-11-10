@@ -6,7 +6,7 @@ use crate::wallet::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
         ShieldedNoteInterface as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
     },
-    transactions::TransactionMetadataSet,
+    transactions::TransactionMetadataSet, confirmation_status::{self, ConfirmationStatus},
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
@@ -388,8 +388,7 @@ impl TransactionContext {
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
-        transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed"
-        pending: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
+        confirmation_status: ConfirmationStatus
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -423,8 +422,8 @@ impl TransactionContext {
                         .await
                         .add_new_spent(
                             transaction.txid(),
-                            transaction_block_height,
-                            true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
+                            // transaction_block_height,
+                            // true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
                             block_time,
                             (*nf).into(),
                             *value,
@@ -463,21 +462,20 @@ impl TransactionContext {
                 .into_iter()
                 .enumerate();
         for (output_index, decrypt_attempt) in decrypt_attempts {
-            let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
+            let ((note, recipient, memo_bytes), _ivk_num) = match decrypt_attempt {
                 Some(plaintext) => plaintext,
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-            if pending {
+            if confirmation_status.is_in_mempool() {
                 self.transaction_metadata_set
                     .write()
                     .await
                     .add_pending_note::<D>(
                         transaction.txid(),
-                        transaction_block_height,
                         block_time as u64,
                         note.clone(),
-                        to,
+                        recipient,
                         output_index,
                     );
             }
