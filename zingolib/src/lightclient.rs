@@ -144,6 +144,11 @@ pub struct AccountBackupInfo {
     pub account_index: u32,
 }
 
+#[derive(Default)]
+struct ZingoSaveBuffer {
+    pub buffer: Arc<RwLock<Vec<u8>>>,
+}
+
 /// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
 ///  1. initialization of stored state
 ///      * from seed
@@ -162,6 +167,8 @@ pub struct LightClient {
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
+
+    save_buffer: ZingoSaveBuffer,
 }
 
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
@@ -177,6 +184,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
+            save_buffer: ZingoSaveBuffer::default(),
         }
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
@@ -220,7 +228,7 @@ impl LightClient {
 
         lightclient.set_wallet_initial_state(birthday).await;
         lightclient
-            .do_save()
+            .save_internal_rust()
             .await
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
@@ -249,7 +257,7 @@ impl LightClient {
             debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             // Save
-            l.do_save()
+            l.save_internal_rust()
                 .await
                 .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
 
@@ -272,10 +280,75 @@ impl LightClient {
 
         Self::create_with_new_wallet(config, latest_block)
     }
+
+    //        SAVE METHODS
+
+    async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
+        self.save_internal_buffer().await?;
+        self.rust_write_save_buffer_to_file().await
+    }
+
+    async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
+        let mut buffer: Vec<u8> = vec![];
+        self.wallet
+            .write(&mut buffer)
+            .await
+            .map_err(ZingoLibError::InternalWriteBufferError)?;
+        *self.save_buffer.buffer.write().await = buffer;
+        Ok(())
+    }
+
+    async fn rust_write_save_buffer_to_file(&self) -> Result<bool, ZingoLibError> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        // on mobile platforms, saving from this buffer will be handled by the native layer
+        {
+            // on ios and android just return ok
+            return Ok(false);
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            let read_buffer = self.save_buffer.buffer.read().await;
+            if !read_buffer.is_empty() {
+                LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
+                    .map_err(ZingoLibError::WriteFileError)?;
+                Ok(true)
+            } else {
+                Err(ZingoLibError::EmptySaveBuffer)
+            }
+        }
+    }
+
+    fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
+        let mut file = File::create(path)?;
+        file.write_all(buffer)?;
+        Ok(())
+    }
+
+    async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+        let read_buffer = self.save_buffer.buffer.read().await;
+        if !read_buffer.is_empty() {
+            Ok(read_buffer.clone())
+        } else {
+            Err(ZingoLibError::EmptySaveBuffer)
+        }
+    }
+
+    /// This function is the sole correct way to ask LightClient to save.
+    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
+        Runtime::new()
+            .unwrap()
+            .block_on(async move { self.export_save_buffer_async().await })
+            .map_err(String::from)
+    }
+
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
     /// zingo-mobile.
-    pub fn read_wallet_from_buffer<R: Read>(config: &ZingoConfig, reader: R) -> io::Result<Self> {
+    pub fn read_wallet_from_buffer_runtime<R: Read>(
+        config: &ZingoConfig,
+        reader: R,
+    ) -> io::Result<Self> {
         Runtime::new()
             .unwrap()
             .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
@@ -310,7 +383,34 @@ impl LightClient {
                 ),
             ));
         };
-        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
+        LightClient::read_wallet_from_buffer_runtime(
+            config,
+            BufReader::new(File::open(wallet_path)?),
+        )
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    pub async fn do_delete(&self) -> Result<(), String> {
+        // Check if the file exists before attempting to delete
+        if self.config.wallet_path_exists() {
+            match remove_file(self.config.get_wallet_path()) {
+                Ok(_) => {
+                    log::debug!("File deleted successfully!");
+                    Ok(())
+                }
+                Err(e) => {
+                    let err = format!("ERR: {}", e);
+                    error!("{}", err);
+                    log::debug!("DELETE FAIL ON FILE!");
+                    Err(e.to_string())
+                }
+            }
+        } else {
+            let err = "Error: File does not exist, nothing to delete.".to_string();
+            error!("{}", err);
+            log::debug!("File does not exist, nothing to delete.");
+            Err(err)
+        }
     }
 
     async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
@@ -507,7 +607,7 @@ impl LightClient {
             .wallet_capability()
             .new_address(desired_receivers)?;
 
-        self.do_save().await?;
+        self.save_internal_rust().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -520,100 +620,12 @@ impl LightClient {
         let response = self.do_sync(true).await;
 
         if response.is_ok() {
-            self.do_save().await?;
+            self.save_internal_rust().await?;
         }
 
         debug!("Rescan finished");
 
         response
-    }
-    pub async fn do_delete(&self) -> Result<(), String> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // on mobile platforms, disable the delete, as it will be handled by the native layer
-        {
-            log::debug!("do_delete entered");
-            // on iOS and Android, just return ok
-            Ok(())
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            log::debug!("do_delete entered");
-            log::debug!("target_os is not ios or android");
-
-            // Check if the file exists before attempting to delete
-            if self.config.wallet_path_exists() {
-                match remove_file(self.config.get_wallet_path()) {
-                    Ok(_) => {
-                        log::debug!("File deleted successfully!");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        let err = format!("ERR: {}", e);
-                        error!("{}", err);
-                        log::debug!("DELETE FAIL ON FILE!");
-                        Err(e.to_string())
-                    }
-                }
-            } else {
-                let err = "Error: File does not exist, nothing to delete.".to_string();
-                error!("{}", err);
-                log::debug!("File does not exist, nothing to delete.");
-                Err(err)
-            }
-        }
-    }
-    pub async fn do_save(&self) -> Result<(), String> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // on mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
-        {
-            log::debug!("do_save entered");
-
-            // on ios and android just return ok
-            Ok(())
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            log::debug!("do_save entered");
-            log::debug!("target_os is not ios or android");
-            // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-            //let _lock = self.sync_lock.lock().await;
-
-            let mut wallet_bytes = vec![];
-            match self.wallet.write(&mut wallet_bytes).await {
-                Ok(_) => {
-                    let mut file = File::create(self.config.get_wallet_path()).unwrap();
-                    file.write_all(&wallet_bytes)
-                        .map_err(|e| format!("{}", e))?;
-                    log::debug!("In the guts of a successful save!");
-                    Ok(())
-                }
-                Err(e) => {
-                    let err = format!("ERR: {}", e);
-                    error!("{}", err);
-                    log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
-                    Err(e.to_string())
-                }
-            }
-        }
-    }
-    pub async fn do_save_to_buffer(&self) -> Result<Vec<u8>, String> {
-        let mut buffer: Vec<u8> = vec![];
-        match self.wallet.write(&mut buffer).await {
-            Ok(_) => Ok(buffer),
-            Err(e) => {
-                let err = format!("ERR: {}", e);
-                error!("{}", err);
-                Err(e.to_string())
-            }
-        }
-    }
-
-    pub fn do_save_to_buffer_sync(&self) -> Result<Vec<u8>, String> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.do_save_to_buffer().await })
     }
 
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
@@ -1499,7 +1511,7 @@ impl LightClient {
         debug!("About to run save after syncing {}th batch!", batch_num);
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        self.do_save().await.unwrap();
+        self.save_internal_rust().await.unwrap();
 
         Ok(SyncResult {
             success: true,
