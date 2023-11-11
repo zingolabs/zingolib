@@ -325,6 +325,7 @@ impl LightClient {
     }
 
     pub async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+        self.save_internal_rust().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
