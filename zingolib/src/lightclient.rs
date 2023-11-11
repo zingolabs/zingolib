@@ -283,8 +283,13 @@ impl LightClient {
     //        SAVE METHODS
 
     async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
-        self.save_internal_buffer().await?;
-        self.rust_write_save_buffer_to_file().await
+        match self.save_internal_buffer().await {
+            Ok(()) => self.rust_write_save_buffer_to_file().await,
+            Err(err) => {
+                error!("{}", err);
+                Err(err)
+            }
+        }
     }
 
     async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
