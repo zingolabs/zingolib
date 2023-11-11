@@ -153,7 +153,7 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient = match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..]) {
+    let lightclient = match LightClient::read_wallet_from_buffer_runtime(&config, &decoded_bytes[..]) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
