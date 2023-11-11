@@ -3472,7 +3472,7 @@ mod slow {
             )])
             .await
             .unwrap();
-        let recipient_saved = recipient.do_save_to_buffer().await.unwrap();
+        let recipient_saved = recipient.export_save_buffer_async().await.unwrap();
         let recipient_loaded = std::sync::Arc::new(
             LightClient::read_wallet_from_buffer_async(recipient.config(), &recipient_saved[..])
                 .await

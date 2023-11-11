@@ -283,8 +283,13 @@ impl LightClient {
     //        SAVE METHODS
 
     async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
-        self.save_internal_buffer().await?;
-        self.rust_write_save_buffer_to_file().await
+        match self.save_internal_buffer().await {
+            Ok(()) => self.rust_write_save_buffer_to_file().await,
+            Err(err) => {
+                error!("{}", err);
+                Err(err)
+            }
+        }
     }
 
     async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
@@ -324,7 +329,8 @@ impl LightClient {
         Ok(())
     }
 
-    async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+    pub async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+        self.save_internal_rust().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
@@ -338,7 +344,7 @@ impl LightClient {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.export_save_buffer_async().await })
-            .map_err(String::from)
+            .map_err(|err| dbg!(String::from(err)))
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
