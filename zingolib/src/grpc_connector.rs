@@ -49,7 +49,7 @@ impl GrpcConnector {
             http_connector.enforce_http(false);
             if uri.scheme_str() == Some("https") {
                 let mut roots = RootCertStore::empty();
-                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
                     |anchor_ref| {
                         tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                             anchor_ref.subject,

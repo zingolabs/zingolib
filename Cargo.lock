@@ -3716,6 +3716,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "webpki-roots"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14247bb57be4f377dfb94c72830b8ce8fc6beac03cf4bf7b9732eadd414123fc"
+
+[[package]]
 name = "which"
 version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4161,7 +4167,7 @@ dependencies = [
  "tower-http 0.2.5",
  "tracing",
  "tracing-subscriber",
- "webpki-roots 0.21.1",
+ "webpki-roots 0.25.2",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
