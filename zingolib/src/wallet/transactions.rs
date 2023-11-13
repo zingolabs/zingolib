@@ -19,6 +19,8 @@ use zcash_primitives::{
 
 use zingoconfig::{ChainType, MAX_REORG};
 
+use crate::error::{ZingoLibError, ZingoLibResult};
+
 use super::{
     data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
     keys::unified::WalletCapability,
@@ -548,9 +550,7 @@ impl TransactionMetadataSet {
 
     // Will mark a note as having been spent at the supplied height and spent_txid.
     // Takes the nullifier of the spent note, the note's index in its containing transaction,
-    // as well as the txid of its containing transaction. TODO: Only one of
-    // `nullifier` and `(output_index, txid)` is needed, although we use the nullifier to
-    // determine the domain.
+    // as well as the txid of its containing transaction. tODO: make generic
     pub fn process_spent_note(
         &mut self,
         txid: TxId,
@@ -558,46 +558,39 @@ impl TransactionMetadataSet {
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
         output_index: u32,
-    ) -> Result<u64, String> {
-        match spent_nullifier {
-            PoolNullifier::Sapling(sapling_nullifier) => {
-                if let Some(sapling_note_data) = self
-                    .current
-                    .get_mut(&txid)
-                    .expect("TXid should be a key in current.")
-                    .sapling_notes
-                    .iter_mut()
-                    .find(|n| n.output_index == output_index)
-                {
-                    sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                    sapling_note_data.unconfirmed_spent = None;
-                    Ok(sapling_note_data.note.value().inner())
-                } else {
-                    Err(format!(
-                        "no such sapling nullifier '{:?}' found in transaction",
-                        *sapling_nullifier
-                    ))
+    ) -> ZingoLibResult<u64> {
+        match self.current.get_mut(&txid) {
+            None => ZingoLibError::NoSuchTxId(txid).print_and_pass_error(),
+            Some(transaction_metadata) => match spent_nullifier {
+                PoolNullifier::Sapling(_sapling_nullifier) => {
+                    if let Some(sapling_note_data) = transaction_metadata
+                        .sapling_notes
+                        .iter_mut()
+                        .find(|n| n.output_index == output_index)
+                    {
+                        sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                        sapling_note_data.unconfirmed_spent = None;
+                        Ok(sapling_note_data.note.value().inner())
+                    } else {
+                        ZingoLibError::NoSuchSaplingOutputInTxId(txid, output_index)
+                            .print_and_pass_error()
+                    }
                 }
-            }
-            PoolNullifier::Orchard(orchard_nullifier) => {
-                if let Some(orchard_note_data) = self
-                    .current
-                    .get_mut(&txid)
-                    .unwrap()
-                    .orchard_notes
-                    .iter_mut()
-                    .find(|n| n.nullifier == Some(*orchard_nullifier))
-                {
-                    orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                    orchard_note_data.unconfirmed_spent = None;
-                    Ok(orchard_note_data.note.value().inner())
-                } else {
-                    Err(format!(
-                        "no such orchard nullifier '{:?}' found in transaction",
-                        *orchard_nullifier
-                    ))
+                PoolNullifier::Orchard(_orchard_nullifier) => {
+                    if let Some(orchard_note_data) = transaction_metadata
+                        .orchard_notes
+                        .iter_mut()
+                        .find(|n| n.output_index == output_index)
+                    {
+                        orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                        orchard_note_data.unconfirmed_spent = None;
+                        Ok(orchard_note_data.note.value().inner())
+                    } else {
+                        ZingoLibError::NoSuchOrchardOutputInTxId(txid, output_index)
+                            .print_and_pass_error()
+                    }
                 }
-            }
+            },
         }
     }
 

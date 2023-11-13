@@ -12,7 +12,8 @@ pub enum ZingoLibError {
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
     NoSuchTxId(TxId),
-    NoSuchOutputInTxId(TxId, u64),
+    NoSuchSaplingOutputInTxId(TxId, u32),
+    NoSuchOrchardOutputInTxId(TxId, u32),
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -60,9 +61,15 @@ impl std::fmt::Display for ZingoLibError {
                 "Cant find TxId {}!",
                 txid,
             ),
-            NoSuchOutputInTxId(txid, output_index) => write!(
+            NoSuchSaplingOutputInTxId(txid, output_index) => write!(
                 f,
-                "Cant find note with output_index {} in TxId {}",
+                "Cant find note with sapling output_index {} in TxId {}",
+                output_index,
+                txid,
+            ),
+            NoSuchOrchardOutputInTxId(txid, output_index) => write!(
+                f,
+                "Cant find note with orchard output_index {} in TxId {}",
                 output_index,
                 txid,
             ),
