@@ -406,7 +406,7 @@ impl TransactionMetadataSet {
     // as well as the txid of its containing transaction. TODO: Only one of
     // `nullifier` and `(output_index, txid)` is needed, although we use the nullifier to
     // determine the domain.
-    pub fn mark_note_as_spent(
+    pub fn process_spent_note(
         &mut self,
         txid: TxId,
         spent_nullifier: &PoolNullifier,
