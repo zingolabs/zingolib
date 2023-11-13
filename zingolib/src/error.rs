@@ -11,6 +11,15 @@ pub enum ZingoLibError {
     CantReadWallet(std::io::Error),
 }
 
+type ZingoLibResult<T> = Result<T, ZingoLibError>;
+
+impl ZingoLibError {
+    pub fn print_and_pass_error<T>(self) -> ZingoLibResult<T> {
+        log::error!("{}", self);
+        Err(self)
+    }
+}
+
 impl std::fmt::Display for ZingoLibError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ZingoLibError::*;

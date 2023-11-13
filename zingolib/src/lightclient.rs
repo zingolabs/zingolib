@@ -335,7 +335,7 @@ impl LightClient {
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
         } else {
-            Err(ZingoLibError::EmptySaveBuffer)
+            ZingoLibError::EmptySaveBuffer.print_and_pass_error()
         }
     }
 
