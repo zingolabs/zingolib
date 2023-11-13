@@ -1752,6 +1752,46 @@ impl LightWallet {
 
         Ok(())
     }
+    pub async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
+        let last_synced_height = self.last_synced_height().await;
+        let mut txmds_writelock = self
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        if let Some(ref mut trees) = txmds_writelock.witness_trees {
+            trees
+                .witness_tree_sapling
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees
+                .witness_tree_orchard
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
+        }
+    }
+
+    pub async fn has_any_empty_commitment_trees(&self) -> bool {
+        self.transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .is_some_and(|trees| {
+                trees
+                    .witness_tree_orchard
+                    .max_leaf_position(0)
+                    .unwrap()
+                    .is_none()
+                    || trees
+                        .witness_tree_sapling
+                        .max_leaf_position(0)
+                        .unwrap()
+                        .is_none()
+            })
+    }
 }
 
 //This function will likely be used again if/when we re-implement key import
