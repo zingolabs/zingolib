@@ -24,16 +24,10 @@ pub enum ConfirmationStatus {
 
 impl ConfirmationStatus {
     pub fn is_in_mempool(&self) -> bool {
-        match self {
-            Self::InMempool(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::InMempool(_))
     }
     pub fn is_confirmed(&self) -> bool {
-        match self {
-            Self::ConfirmedOnChain(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::ConfirmedOnChain(_))
     }
     pub fn is_confirmed_after_or_at(&self, height: &BlockHeight) -> bool {
         match self {
@@ -120,46 +114,30 @@ impl SpendConfirmationStatus {
         }
     }
     pub fn is_unspent(&self) -> bool {
-        match self {
-            Self::NoKnownSpends => true,
-            _ => false,
-        }
+        matches!(self, Self::NoKnownSpends)
     }
     pub fn is_pending_spend(&self) -> bool {
-        match self {
-            Self::PendingSpend(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::PendingSpend(_))
     }
     pub fn is_pending_spend_or_confirmed_spent(&self) -> bool {
-        match self {
-            Self::PendingSpend(_) => true,
-            Self::ConfirmedSpent(_, _) => true,
-            _ => false,
-        }
+        matches!(self, Self::PendingSpend(_) | Self::ConfirmedSpent(_, _))
     }
     pub fn is_confirmed_spent(&self) -> bool {
-        match self {
-            Self::ConfirmedSpent(_, _) => true,
-            _ => false,
-        }
+        matches!(self, Self::ConfirmedSpent(_, _))
     }
     pub fn is_not_confirmed_spent(&self) -> bool {
-        match self {
-            Self::ConfirmedSpent(_, _) => false,
-            _ => true,
-        }
+        !matches!(self, Self::ConfirmedSpent(_, _))
     }
     pub fn erase_spent_in_txids(&mut self, txids: &[TxId]) {
         match self {
             Self::NoKnownSpends => (),
             Self::PendingSpend(txid) => {
-                if txids.contains(&txid) {
+                if txids.contains(txid) {
                     *self = Self::NoKnownSpends;
                 }
             }
             Self::ConfirmedSpent(txid, _) => {
-                if txids.contains(&txid) {
+                if txids.contains(txid) {
                     *self = Self::NoKnownSpends;
                 }
             }
