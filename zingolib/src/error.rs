@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt;
 
+use zcash_primitives::transaction::TxId;
+
 #[derive(Debug)]
 pub enum ZingoLibError {
     NoWalletLocation,
@@ -9,6 +11,8 @@ pub enum ZingoLibError {
     WriteFileError(std::io::Error),
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
+    NoSuchTxId(TxId),
+    NoSuchOutputInTxId(TxId, u64),
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -50,6 +54,17 @@ impl std::fmt::Display for ZingoLibError {
                 f,
                 "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
                 err,
+            ),
+            NoSuchTxId(txid) => write!(
+                f,
+                "Cant find TxId {}!",
+                txid,
+            ),
+            NoSuchOutputInTxId(txid, output_index) => write!(
+                f,
+                "Cant find note with output_index {} in TxId {}",
+                output_index,
+                txid,
             ),
         }
     }
