@@ -44,14 +44,14 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32, bool)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32)>();
+            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32, bool)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.transaction_metadata_set.clone();
@@ -77,6 +77,7 @@ impl UpdateNotes {
                         nf,
                         BlockHeight::from(earliest_block as u32),
                         output_index,
+                        false,
                     ))
                     .map_err(|e| format!("Error sending note for updating: {}", e))?;
             }
@@ -95,6 +96,7 @@ impl UpdateNotes {
                 maybe_spend_nullifier,
                 at_height,
                 output_index,
+                need_to_fetch,
             )) = receiver.recv().await
             {
                 let bsync_data = bsync_data.clone();
@@ -162,7 +164,7 @@ impl UpdateNotes {
                         }
                     }
                     // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
-                    if download_memos != MemoDownloadOption::NoMemos {
+                    if need_to_fetch && download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
                             .unwrap();
