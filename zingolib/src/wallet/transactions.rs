@@ -570,8 +570,6 @@ impl TransactionMetadataSet {
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
 
-        // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
-        transaction_metadata.block_height = height;
         if !<D::WalletNote as NoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
         )
