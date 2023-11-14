@@ -75,7 +75,11 @@ pub struct ZingoConfig {
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+    pub fn create_unconnected(
+        chain: ChainType,
+        dir: Option<PathBuf>,
+        batch_size: u64,
+    ) -> ZingoConfig {
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
@@ -84,7 +88,7 @@ impl ZingoConfig {
             wallet_dir: dir,
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            batch_size: DEFAULT_BATCH_SIZE,
+            batch_size,
         }
     }
 
