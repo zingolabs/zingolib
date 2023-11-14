@@ -4,7 +4,8 @@ use std::io::{self, Read, Write};
 use super::{
     data::{
         OrchardNote, PoolNullifier, SaplingNote, SpendableOrchardNote, SpendableSaplingNote,
-        TransactionMetadata, WitnessCache, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        TransactionMetadata, TransparentNote, WitnessCache, WitnessTrees, COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
@@ -388,9 +389,15 @@ impl Nullifier for orchard::note::Nullifier {
     }
 }
 
-///   All zingolib::wallet::traits::Notes are NoteInterface
+pub trait NoteInterface {}
+
+impl NoteInterface for TransparentNote {}
+impl NoteInterface for SaplingNote {}
+impl NoteInterface for OrchardNote {}
+
+///   All zingolib::wallet::traits::Notes are ShieldedNoteInterface
 ///   NoteInterface provides...
-pub trait ShieldedNoteInterface: Sized {
+pub trait ShieldedNoteInterface: NoteInterface + Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
     type Note: PartialEq
