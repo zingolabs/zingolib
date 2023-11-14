@@ -69,6 +69,8 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
+    /// The batch size, for sync by batch
+    pub batch_size: u64,
 }
 
 impl ZingoConfig {
@@ -82,6 +84,7 @@ impl ZingoConfig {
             wallet_dir: dir,
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            batch_size: DEFAULT_BATCH_SIZE,
         }
     }
 
