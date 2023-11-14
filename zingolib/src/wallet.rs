@@ -52,7 +52,7 @@ use zingo_memo::create_wallet_internal_memo_version_0;
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
-use self::traits::{DomainWalletExt, NoteInterface, SpendableNote};
+use self::traits::{DomainWalletExt, ShieldedNoteInterface, SpendableNote};
 use self::{
     data::{BlockData, TransparentNote, WalletZecPriceInfo},
     message::Message,
@@ -254,14 +254,16 @@ impl LightWallet {
     fn get_legacy_frontier<D: DomainWalletExt>(
         trees: &crate::compact_formats::TreeState,
     ) -> Option<
-        incrementalmerkletree::frontier::NonEmptyFrontier<<D::WalletNote as NoteInterface>::Node>,
+        incrementalmerkletree::frontier::NonEmptyFrontier<
+            <D::WalletNote as ShieldedNoteInterface>::Node,
+        >,
     >
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
         zcash_primitives::merkle_tree::read_commitment_tree::<
-            <D::WalletNote as NoteInterface>::Node,
+            <D::WalletNote as ShieldedNoteInterface>::Node,
             &[u8],
             COMMITMENT_TREE_LEVELS,
         >(&hex::decode(D::get_tree(trees)).unwrap()[..])
@@ -1589,7 +1591,7 @@ impl LightWallet {
                     filtered_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
-                                <D::WalletNote as traits::NoteInterface>::value(notedata)
+                                <D::WalletNote as traits::ShieldedNoteInterface>::value(notedata)
                             } else {
                                 0
                             }
