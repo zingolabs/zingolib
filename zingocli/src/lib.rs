@@ -190,11 +190,13 @@ fn start_interactive(
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 info!("CTRL-C");
+                println!("{}", send_command("save".to_string(), vec![]));
                 break;
             }
             Err(rustyline::error::ReadlineError::Eof) => {
                 println!("CTRL-D");
                 info!("CTRL-D");
+                println!("{}", send_command("save".to_string(), vec![]));
                 break;
             }
             Err(err) => {
@@ -501,6 +503,9 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
         }
 
         // Save before exit
+        command_transmitter
+            .send(("save".to_string(), vec![]))
+            .unwrap();
         resp_receiver.recv().unwrap();
     }
 }

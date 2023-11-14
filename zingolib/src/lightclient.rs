@@ -227,7 +227,7 @@ impl LightClient {
 
         lightclient.set_wallet_initial_state(birthday).await;
         lightclient
-            .save_internal_rust()
+            .save()
             .await
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
@@ -256,7 +256,7 @@ impl LightClient {
             debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             // Save
-            l.save_internal_rust()
+            l.save()
                 .await
                 .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
 
@@ -282,7 +282,7 @@ impl LightClient {
 
     //        SAVE METHODS
 
-    async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
+    pub async fn save(&self) -> Result<bool, ZingoLibError> {
         match self.save_internal_buffer().await {
             Ok(()) => self.rust_write_save_buffer_to_file().await,
             Err(err) => {
@@ -330,7 +330,7 @@ impl LightClient {
     }
 
     pub async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
-        self.save_internal_rust().await?;
+        self.save().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
@@ -589,7 +589,7 @@ impl LightClient {
             .wallet_capability()
             .new_address(desired_receivers)?;
 
-        self.save_internal_rust().await?;
+        self.save().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -602,7 +602,7 @@ impl LightClient {
         let response = self.do_sync(true).await;
 
         if response.is_ok() {
-            self.save_internal_rust().await?;
+            self.save().await?;
         }
 
         debug!("Rescan finished");
@@ -1474,7 +1474,7 @@ impl LightClient {
         debug!("About to run save after syncing {}th batch!", batch_num);
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        self.save_internal_rust().await.unwrap();
+        self.save().await.unwrap();
 
         Ok(SyncResult {
             success: true,
