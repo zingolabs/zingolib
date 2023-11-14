@@ -14,6 +14,7 @@ pub enum ZingoLibError {
     NoSuchTxId(TxId),
     NoSuchSaplingOutputInTxId(TxId, u32),
     NoSuchOrchardOutputInTxId(TxId, u32),
+    CouldNotDecodeMemo(std::io::Error),
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -72,6 +73,11 @@ impl std::fmt::Display for ZingoLibError {
                 "Cant find note with orchard output_index {} in TxId {}",
                 output_index,
                 txid,
+            ),
+            CouldNotDecodeMemo(err) => write!(
+                f,
+                "Could not decode memo. Zingo plans to support foreign memo formats soon. {}",
+                err,
             ),
         }
     }
