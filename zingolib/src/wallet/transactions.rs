@@ -485,23 +485,19 @@ impl TransactionMetadataSet {
         unconfirmed: bool,
         datetime: u64,
     ) -> &'_ mut TransactionMetadata {
-        if !self.current.contains_key(txid) {
-            self.current.insert(
-                *txid,
-                TransactionMetadata::new(height, datetime, txid, unconfirmed),
-            );
-            self.some_txid_from_highest_wallet_block = Some(*txid);
-        }
-        let transaction_metadata = self.current.get_mut(txid).expect("Txid should be present");
-
-        // Make sure the unconfirmed status matches
-        if transaction_metadata.unconfirmed != unconfirmed {
-            transaction_metadata.unconfirmed = unconfirmed;
-            transaction_metadata.block_height = height;
-            transaction_metadata.datetime = datetime;
-        }
-
-        transaction_metadata
+        self.current
+            .entry(*txid)
+            // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
+            .and_modify(|transaction_metadata| {
+                transaction_metadata.unconfirmed = unconfirmed;
+                transaction_metadata.block_height = height;
+                transaction_metadata.datetime = datetime;
+            })
+            // if this transaction is new to our data, insert it
+            .or_insert_with(|| {
+                self.some_txid_from_highest_wallet_block = Some(*txid); // TOdO IS this the highest wallet block?
+                TransactionMetadata::new(height, datetime, txid, unconfirmed)
+            })
     }
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
