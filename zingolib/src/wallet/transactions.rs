@@ -709,13 +709,12 @@ impl TransactionMetadataSet {
         );
 
         // Add this UTXO if it doesn't already exist
-        if let Some(utxo) = transaction_metadata
+        if let Some(_) = transaction_metadata
             .transparent_notes
             .iter_mut()
             .find(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
         {
             // If it already exists, it is likely an mempool tx, so update the height
-            utxo.height = height as i32
         } else {
             transaction_metadata
                 .transparent_notes
@@ -725,7 +724,6 @@ impl TransactionMetadataSet {
                     output_index: output_num as u64,
                     script: vout.script_pubkey.0.clone(),
                     value: u64::try_from(vout.value).expect("Valid value for u64."),
-                    height: height as i32,
                     spent_at_height: None,
                     spent: None,
                     unconfirmed_spent: None,
