@@ -3,8 +3,8 @@ use crate::wallet::{
     data::OutgoingTxData,
     keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, NoteInterface as _, Recipient as _,
-        ShieldedOutputExt as _, Spend as _, ToBytes as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
+        ShieldedNoteInterface as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
     },
     transactions::TransactionMetadataSet,
 };
@@ -493,9 +493,9 @@ impl TransactionContext {
 
                     Err(e) => log::error!(
                         "Could not decode wallet internal memo: {e}.\n\
-                    Have you recently used a more up-to-date version of\
-                    this software?\nIf not, this may mean you are being sent\
-                    malicious data.\nSome information may not display correctly"
+                    Have you recently used a more up-to-date version of \
+                    this software?\nIf not, this may mean you are being sent \
+                    malicious data.\nSome information may not display correctly."
                     ),
                 }
             }

@@ -8,7 +8,9 @@ use crate::{
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
-        traits::{CompactOutput as _, DomainWalletExt, FromCommitment, NoteInterface, Recipient},
+        traits::{
+            CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
+        },
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
@@ -59,7 +61,13 @@ impl TrialDecryptions {
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        detected_transaction_id_sender: UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        detected_transaction_id_sender: UnboundedSender<(
+            TxId,
+            PoolNullifier,
+            BlockHeight,
+            u32,
+            bool,
+        )>,
         transaction_size_filter: Option<u32>,
         full_transaction_fetcher: UnboundedSender<(
             TxId,
@@ -147,7 +155,13 @@ impl TrialDecryptions {
         orchard_ivk: Option<OrchardIvk>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         transaction_size_filter: Option<u32>,
-        detected_transaction_id_sender: UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        detected_transaction_id_sender: UnboundedSender<(
+            TxId,
+            PoolNullifier,
+            BlockHeight,
+            u32,
+            bool,
+        )>,
         full_transaction_fetcher: UnboundedSender<(
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
@@ -279,12 +293,18 @@ impl TrialDecryptions {
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
-        detected_transaction_id_sender: &UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        detected_transaction_id_sender: &UnboundedSender<(
+            TxId,
+            PoolNullifier,
+            BlockHeight,
+            u32,
+            bool,
+        )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
         notes_to_mark_position: &mut [(
             u32,
             TxId,
-            <D::WalletNote as NoteInterface>::Node,
+            <D::WalletNote as ShieldedNoteInterface>::Node,
             Retention<BlockHeight>,
         )],
     ) where
@@ -292,7 +312,7 @@ impl TrialDecryptions {
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        <<D as DomainWalletExt>::WalletNote as NoteInterface>::Node: PartialEq,
+        <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Node: PartialEq,
     {
         let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
@@ -359,7 +379,13 @@ impl TrialDecryptions {
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
 
                         detected_transaction_id_sender
-                            .send((transaction_id, spend_nullifier.into(), height, i as u32))
+                            .send((
+                                transaction_id,
+                                spend_nullifier.into(),
+                                height,
+                                i as u32,
+                                true,
+                            ))
                             .unwrap();
 
                         Ok::<_, String>(())
@@ -381,7 +407,7 @@ fn zip_outputs_with_retention_txids_indexes<D: DomainWalletExt>(
 ) -> Vec<(
     u32,
     TxId,
-    <D::WalletNote as NoteInterface>::Node,
+    <D::WalletNote as ShieldedNoteInterface>::Node,
     Retention<BlockHeight>,
 )>
 where
@@ -397,7 +423,8 @@ where
         (
             i as u32,
             TxId::from_bytes(<[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap()),
-            <D::WalletNote as NoteInterface>::Node::from_commitment(output.cmstar()).unwrap(),
+            <D::WalletNote as ShieldedNoteInterface>::Node::from_commitment(output.cmstar())
+                .unwrap(),
             Retention::Ephemeral,
         )
     })
@@ -410,7 +437,7 @@ fn update_witnesses<D>(
         Vec<(
             u32,
             TxId,
-            <D::WalletNote as NoteInterface>::Node,
+            <D::WalletNote as ShieldedNoteInterface>::Node,
             Retention<BlockHeight>,
         )>,
         BlockHeight,
