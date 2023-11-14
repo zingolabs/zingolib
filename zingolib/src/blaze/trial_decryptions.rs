@@ -59,7 +59,13 @@ impl TrialDecryptions {
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        detected_transaction_id_sender: UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        detected_transaction_id_sender: UnboundedSender<(
+            TxId,
+            PoolNullifier,
+            BlockHeight,
+            u32,
+            bool,
+        )>,
         transaction_size_filter: Option<u32>,
         full_transaction_fetcher: UnboundedSender<(
             TxId,
@@ -147,7 +153,13 @@ impl TrialDecryptions {
         orchard_ivk: Option<OrchardIvk>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         transaction_size_filter: Option<u32>,
-        detected_transaction_id_sender: UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        detected_transaction_id_sender: UnboundedSender<(
+            TxId,
+            PoolNullifier,
+            BlockHeight,
+            u32,
+            bool,
+        )>,
         full_transaction_fetcher: UnboundedSender<(
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
@@ -279,7 +291,13 @@ impl TrialDecryptions {
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
-        detected_transaction_id_sender: &UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        detected_transaction_id_sender: &UnboundedSender<(
+            TxId,
+            PoolNullifier,
+            BlockHeight,
+            u32,
+            bool,
+        )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
         notes_to_mark_position: &mut [(
             u32,
@@ -359,7 +377,13 @@ impl TrialDecryptions {
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
 
                         detected_transaction_id_sender
-                            .send((transaction_id, spend_nullifier.into(), height, i as u32))
+                            .send((
+                                transaction_id,
+                                spend_nullifier.into(),
+                                height,
+                                i as u32,
+                                true,
+                            ))
                             .unwrap();
 
                         Ok::<_, String>(())
