@@ -131,14 +131,14 @@ impl UpdateNotes {
                         let value = wallet_transactions
                             .write()
                             .await
-                            .mark_note_as_spent(
+                            .process_spent_note(
                                 transaction_id_spent_from,
                                 &maybe_spend_nullifier,
                                 &transaction_id_spent_in,
                                 spent_at_height,
                                 output_index,
                             )
-                            .expect("To mark note as spent");
+                            .unwrap_or(0);
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions
