@@ -17,6 +17,7 @@ use zcash_primitives::{
     transaction::{components::TxOut, TxId},
 };
 
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, MAX_REORG};
 
 use crate::error::{ZingoLibError, ZingoLibResult};
@@ -436,6 +437,8 @@ impl TransactionMetadataSet {
             .entry(*txid)
             // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
             .and_modify(|transaction_metadata| {
+                transaction_metadata.status =
+                    ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
                 transaction_metadata.unconfirmed = unconfirmed;
                 transaction_metadata.block_height = height;
                 transaction_metadata.datetime = datetime;
