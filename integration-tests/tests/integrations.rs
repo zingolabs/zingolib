@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#![cfg(feature = "local_env")]
 pub mod darkside;
 
 use crate::zingo_testutils::check_transaction_equality;
@@ -126,6 +125,7 @@ fn check_view_capability_bounds(
         assert_eq!(notes["utxos"].members().count(), 1);
     }
 }
+
 mod fast {
     use super::*;
     #[tokio::test]
