@@ -888,6 +888,9 @@ pub mod summaries {
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionMetadata {
+    /// see ConfirmationStatus. this field progresses through the lifetime of a transaction.
+    pub status: ConfirmationStatus,
+
     // Block in which this tx was included OR submitted to mempool. Todo: this is incoherent
     pub block_height: BlockHeight,
 
@@ -994,7 +997,9 @@ impl TransactionMetadata {
         transaction_id: &TxId,
         unconfirmed: bool,
     ) -> Self {
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         TransactionMetadata {
+            status,
             block_height: height,
             unconfirmed,
             datetime,
@@ -1124,7 +1129,9 @@ impl TransactionMetadata {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
         Ok(Self {
+            status,
             block_height: block,
             unconfirmed,
             datetime,

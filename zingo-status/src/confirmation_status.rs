@@ -1,4 +1,4 @@
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::consensus::BlockHeight;
 
 /// A 32 wide bitmask with 0 in the last 5 places
 pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = <u32>::max_value() - (16 + 8 + 4 + 2 + 1);
