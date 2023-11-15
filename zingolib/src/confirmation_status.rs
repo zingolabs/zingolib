@@ -1,10 +1,14 @@
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = <u32>::max_value() - 32 - 1;
-pub const BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL: u32 = <u32>::max_value() - 32 - 2;
+/// A 32 wide bitmask with 0 in the last 5 places
+pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = <u32>::max_value() - (16 + 8 + 4 + 2 + 1);
+/// A 32 wide bitmask with 1 in the least significant place, and 0 inn each of the next 4
+pub const BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL: u32 = <u32>::max_value() - (16 + 8 + 4 + 2);
 
-pub const BLOCKHEIGHT_PLACEHOLDER_NOKNOWNSPENDS: u32 = <u32>::max_value() - 48 - 1;
-pub const BLOCKHEIGHT_PLACEHOLDER_PENDINGSPEND: u32 = <u32>::max_value() - 48 - 2;
+/// A 32 wide bitmask with 0 at 2^5, 2^3, 2^2, 2^1, and 2^0
+pub const BLOCKHEIGHT_PLACEHOLDER_NOKNOWNSPENDS: u32 = <u32>::max_value() - (32 + 8 + 4 + 2 + 1);
+/// A 32 wide bitmask with 0 at 2^5, 2^3, 2^2, and 2^1
+pub const BLOCKHEIGHT_PLACEHOLDER_PENDINGSPEND: u32 = <u32>::max_value() - (32 + 8 + 4 + 2);
 
 fn u32_height_or_placeholder(option_blockheight: Option<BlockHeight>) -> u32 {
     match option_blockheight {
@@ -16,9 +20,9 @@ fn u32_height_or_placeholder(option_blockheight: Option<BlockHeight>) -> u32 {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
     Local,
-    // we may know when it entered the mempool.
+    /// we may know when it entered the mempool.
     InMempool(Option<BlockHeight>),
-    // confirmed on blockchain implies a height. this data piece will eventually be a block height
+    /// confirmed on blockchain implies a height. this data piece will eventually be a block height
     ConfirmedOnChain(BlockHeight),
 }
 
