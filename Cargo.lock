@@ -4068,7 +4068,6 @@ dependencies = [
  "hyper-rustls",
  "json",
  "log",
- "portpicker",
  "prost 0.10.4",
  "rustls-pemfile",
  "rustyline",
