@@ -13,15 +13,15 @@ futures = "0.3.15"
 rustls-pemfile = "1.0.0"
 http-body = "0.4.4"
 hyper = { version = "0.14", features = ["full"] }
-hyper-rustls = { version = "0.23", features = ["http2"] }
+hyper-rustls = { version = "0.24.2", features = ["http2"] }
 prost = "0.10.0"
 tokio =  { version = "1.24.2", features = ["full"] }
 tokio-stream = "0.1.6"
-tokio-rustls = "0.23.3"
-tonic = {version = "0.7.0", features = ["tls", "tls-roots", "tls-webpki-roots"]}
+tokio-rustls = "0.24.1"
+tonic = {version = "0.10.2", features = ["tls", "tls-roots", "tls-webpki-roots"]}
 tower = { version = "0.4" }
 tower-http = { version = "0.2", features = ["add-extension"] }
-webpki-roots = "0.21.0"
+webpki-roots = "0.25.2"
 zingolib = { path = "../zingolib/" }
 zingoconfig = { path = "../zingoconfig/" }
 zingo-testutils = { path = "../zingo-testutils" }
