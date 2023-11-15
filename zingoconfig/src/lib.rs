@@ -28,7 +28,7 @@ pub const MAX_REORG: usize = 100;
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const REORG_BUFFER_OFFSET: u32 = 0;
-pub const BATCH_SIZE: u64 = 100;
+pub const DEFAULT_BATCH_SIZE: u64 = 100;
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
@@ -69,11 +69,17 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
+    /// The batch size, for sync by batch
+    pub batch_size: u64,
 }
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+    pub fn create_unconnected(
+        chain: ChainType,
+        dir: Option<PathBuf>,
+        batch_size: u64,
+    ) -> ZingoConfig {
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
@@ -82,6 +88,7 @@ impl ZingoConfig {
             wallet_dir: dir,
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            batch_size,
         }
     }
 

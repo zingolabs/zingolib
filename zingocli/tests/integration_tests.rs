@@ -319,6 +319,7 @@ mod fast {
         let zingo_config = ZingoConfig::create_unconnected(
             zingoconfig::ChainType::Regtest(regtest_network),
             Some(wallet_location.clone()),
+            1,
         );
         wallet_location.push("zingo-wallet.dat");
         let read_buffer = File::open(wallet_location.clone()).unwrap();
@@ -497,7 +498,7 @@ mod fast {
         // with 3 addresses containig all receivers.
         let data = include_bytes!("zingo-wallet-v26.dat");
 
-        let config = zingoconfig::ZingoConfig::create_unconnected(ChainType::Testnet, None);
+        let config = zingoconfig::ZingoConfig::create_unconnected(ChainType::Testnet, None, 1);
         let wallet = LightWallet::read_internal(&data[..], &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
