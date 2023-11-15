@@ -12,7 +12,7 @@ pub const BLOCKHEIGHT_PLACEHOLDER_PENDINGSPEND: u32 = <u32>::max_value() - (32 +
 
 fn u32_height_or_placeholder(option_blockheight: Option<BlockHeight>) -> u32 {
     match option_blockheight {
-        Some(block_height) => u32::from(block_height),
+        Some(blockheight) => u32::from(blockheight),
         None => BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL,
     }
 }
@@ -28,13 +28,13 @@ pub enum ConfirmationStatus {
 
 impl ConfirmationStatus {
     pub fn from_blockheight_and_unconfirmed_bool(
-        block_height: BlockHeight,
+        blockheight: BlockHeight,
         unconfirmed: bool,
     ) -> Self {
         if unconfirmed {
             Self::Local
         } else {
-            Self::ConfirmedOnChain(block_height)
+            Self::ConfirmedOnChain(blockheight)
         }
     }
     pub fn is_in_mempool(&self) -> bool {
@@ -45,13 +45,13 @@ impl ConfirmationStatus {
     }
     pub fn is_confirmed_after_or_at(&self, height: &BlockHeight) -> bool {
         match self {
-            Self::ConfirmedOnChain(block_height) => block_height >= height,
+            Self::ConfirmedOnChain(blockheight) => blockheight >= height,
             _ => false,
         }
     }
     pub fn is_confirmed_before_or_at(&self, height: &BlockHeight) -> bool {
         match self {
-            Self::ConfirmedOnChain(block_height) => block_height <= height,
+            Self::ConfirmedOnChain(blockheight) => blockheight <= height,
             _ => false,
         }
     }
@@ -60,7 +60,7 @@ impl ConfirmationStatus {
             Self::Local => true,
             Self::InMempool(option_blockheight) => match option_blockheight {
                 None => true,
-                Some(block_height) => block_height < cutoff,
+                Some(blockheight) => blockheight < cutoff,
             },
             Self::ConfirmedOnChain(_) => false,
         }
@@ -69,26 +69,58 @@ impl ConfirmationStatus {
     pub fn get_height(&self) -> BlockHeight {
         match self {
             Self::Local => BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL),
-            Self::InMempool(opt_block) => {
-                opt_block.unwrap_or(BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL))
+            Self::InMempool(option_blockheight) => {
+                option_blockheight.unwrap_or(BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL))
             }
-            Self::ConfirmedOnChain(block) => *block,
+            Self::ConfirmedOnChain(blockheight) => *blockheight,
         }
     }
     // this function and the placeholder is not a preferred pattern. please use match whenever possible.
     pub fn get_height_u32_and_is_confirmed(&self) -> (u32, bool) {
         match self {
             Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, false),
-            Self::InMempool(opt_block) => (u32_height_or_placeholder(*opt_block), false),
-            Self::ConfirmedOnChain(block) => (u32::from(*block), true),
+            Self::InMempool(option_blockheight) => {
+                (u32_height_or_placeholder(*option_blockheight), false)
+            }
+            Self::ConfirmedOnChain(blockheight) => (u32::from(*blockheight), true),
         }
     }
     // note, by making unconfirmed the true case, this does a potentially confusing boolean flip
     pub fn get_height_u32_and_is_unconfirmed(&self) -> (u32, bool) {
         match self {
             Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, true),
-            Self::InMempool(opt_block) => (u32_height_or_placeholder(*opt_block), true),
-            Self::ConfirmedOnChain(block) => (u32::from(*block), false),
+            Self::InMempool(option_blockheight) => {
+                (u32_height_or_placeholder(*option_blockheight), true)
+            }
+            Self::ConfirmedOnChain(blockheight) => (u32::from(*blockheight), false),
         }
+    }
+}
+
+impl std::fmt::Display for ConfirmationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ConfirmationStatus::*;
+        match self {
+            Local => write!(f, "Transaction not published."),
+            InMempool(option_blockheight) => match option_blockheight {
+                None => write!(f, "Transaction sent to mempool at unknown height.",),
+                Some(blockheight) => {
+                    write!(f, "Transaction sent to mempool at height {}.", blockheight)
+                }
+            },
+            ConfirmedOnChain(blockheight) => {
+                write!(
+                    f,
+                    "Transaction confirmed on chain at height {}.",
+                    blockheight
+                )
+            }
+        }
+    }
+}
+
+impl From<ConfirmationStatus> for String {
+    fn from(value: ConfirmationStatus) -> Self {
+        format!("{value}")
     }
 }
