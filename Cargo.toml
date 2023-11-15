@@ -23,6 +23,7 @@ portpicker = "0.1"
 incrementalmerkletree = { version = "0.5" }
 shardtree = "0.1"
 build_utils = { path = "./build_utils" }
+json = "0.12.4"
 
 [profile.release]
 debug = false
