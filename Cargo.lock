@@ -4070,6 +4070,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-status"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
@@ -4169,6 +4177,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_proofs",
  "zingo-memo",
+ "zingo-status",
  "zingo-testutils",
  "zingoconfig",
 ]
