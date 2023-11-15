@@ -194,7 +194,7 @@ impl TransactionMetadataSet {
                 .collect::<Vec<(&TxId, &TransactionMetadata)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover
             // it on reload
-            transaction_metadatas.retain(|metadata| !metadata.1.unconfirmed);
+            transaction_metadatas.retain(|metadata| metadata.1.status.is_confirmed());
             transaction_metadatas.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
             Vector::write(&mut writer, &transaction_metadatas, |w, (k, v)| {
@@ -300,7 +300,7 @@ impl TransactionMetadataSet {
 
         self.current
             .iter()
-            .filter(|(_, transaction_metadata)| !transaction_metadata.unconfirmed) // Update only confirmed notes
+            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed()) // Update only confirmed notes
             .flat_map(|(txid, transaction_metadata)| {
                 // Fetch notes that are before the before_block.
                 transaction_metadata
