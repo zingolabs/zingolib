@@ -27,6 +27,16 @@ pub enum ConfirmationStatus {
 }
 
 impl ConfirmationStatus {
+    pub fn from_blockheight_and_unconfirmed_bool(
+        block_height: BlockHeight,
+        unconfirmed: bool,
+    ) -> Self {
+        if unconfirmed {
+            Self::Local
+        } else {
+            Self::ConfirmedOnChain(block_height)
+        }
+    }
     pub fn is_in_mempool(&self) -> bool {
         matches!(self, Self::InMempool(_))
     }
@@ -55,8 +65,18 @@ impl ConfirmationStatus {
             Self::ConfirmedOnChain(_) => false,
         }
     }
+    // temporary. fixing this should fix the confirmation bug. please use match whenever possible.
+    pub fn get_height(&self) -> BlockHeight {
+        match self {
+            Self::Local => BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL),
+            Self::InMempool(opt_block) => {
+                opt_block.unwrap_or(BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL))
+            }
+            Self::ConfirmedOnChain(block) => *block,
+        }
+    }
     // this function and the placeholder is not a preferred pattern. please use match whenever possible.
-    pub fn get_height_and_is_confirmed(&self) -> (u32, bool) {
+    pub fn get_height_u32_and_is_confirmed(&self) -> (u32, bool) {
         match self {
             Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, false),
             Self::InMempool(opt_block) => (u32_height_or_placeholder(*opt_block), false),
@@ -64,7 +84,7 @@ impl ConfirmationStatus {
         }
     }
     // note, by making unconfirmed the true case, this does a potentially confusing boolean flip
-    pub fn get_height_and_is_unconfirmed(&self) -> (u32, bool) {
+    pub fn get_height_u32_and_is_unconfirmed(&self) -> (u32, bool) {
         match self {
             Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, true),
             Self::InMempool(opt_block) => (u32_height_or_placeholder(*opt_block), true),
