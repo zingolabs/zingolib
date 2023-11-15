@@ -6,7 +6,7 @@ use crate::{
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
-    error::ZingoLibError,
+    error::{ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -292,7 +292,7 @@ impl LightClient {
         }
     }
 
-    async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
+    async fn save_internal_buffer(&self) -> ZingoLibResult<()> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet
             .write(&mut buffer)
@@ -302,7 +302,7 @@ impl LightClient {
         Ok(())
     }
 
-    async fn rust_write_save_buffer_to_file(&self) -> Result<bool, ZingoLibError> {
+    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<bool> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // on mobile platforms, saving from this buffer will be handled by the native layer
         {
@@ -318,7 +318,7 @@ impl LightClient {
                     .map_err(ZingoLibError::WriteFileError)?;
                 Ok(true)
             } else {
-                Err(ZingoLibError::EmptySaveBuffer)
+                ZingoLibError::EmptySaveBuffer.print_and_pass_error()
             }
         }
     }
@@ -329,13 +329,13 @@ impl LightClient {
         Ok(())
     }
 
-    pub async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+    pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
         self.save_internal_rust().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
         } else {
-            Err(ZingoLibError::EmptySaveBuffer)
+            ZingoLibError::EmptySaveBuffer.print_and_pass_error()
         }
     }
 
@@ -344,7 +344,7 @@ impl LightClient {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.export_save_buffer_async().await })
-            .map_err(|err| dbg!(String::from(err)))
+            .map_err(String::from)
     }
 
     /// This constructor depends on a wallet that's read from a buffer.

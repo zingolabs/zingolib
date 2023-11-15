@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt;
 
+use zcash_primitives::transaction::TxId;
+
 #[derive(Debug)]
 pub enum ZingoLibError {
     NoWalletLocation,
@@ -9,6 +11,19 @@ pub enum ZingoLibError {
     WriteFileError(std::io::Error),
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
+    NoSuchTxId(TxId),
+    NoSuchSaplingOutputInTxId(TxId, u32),
+    NoSuchOrchardOutputInTxId(TxId, u32),
+    CouldNotDecodeMemo(std::io::Error),
+}
+
+pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
+
+impl ZingoLibError {
+    pub fn print_and_pass_error<T>(self) -> ZingoLibResult<T> {
+        log::error!("{}", self);
+        Err(self)
+    }
 }
 
 impl std::fmt::Display for ZingoLibError {
@@ -40,6 +55,28 @@ impl std::fmt::Display for ZingoLibError {
             CantReadWallet(err) => write!(
                 f,
                 "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
+                err,
+            ),
+            NoSuchTxId(txid) => write!(
+                f,
+                "Cant find TxId {}!",
+                txid,
+            ),
+            NoSuchSaplingOutputInTxId(txid, output_index) => write!(
+                f,
+                "Cant find note with sapling output_index {} in TxId {}",
+                output_index,
+                txid,
+            ),
+            NoSuchOrchardOutputInTxId(txid, output_index) => write!(
+                f,
+                "Cant find note with orchard output_index {} in TxId {}",
+                output_index,
+                txid,
+            ),
+            CouldNotDecodeMemo(err) => write!(
+                f,
+                "Could not decode memo. Zingo plans to support foreign memo formats soon. {}",
                 err,
             ),
         }
