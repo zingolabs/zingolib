@@ -27,6 +27,7 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{components::OutPoint, TxId},
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::keys::unified::WalletCapability;
