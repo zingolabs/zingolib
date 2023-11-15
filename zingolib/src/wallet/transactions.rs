@@ -708,10 +708,10 @@ impl TransactionMetadataSet {
         );
 
         // Add this UTXO if it doesn't already exist
-        if let Some(_) = transaction_metadata
+        if transaction_metadata
             .transparent_notes
             .iter_mut()
-            .find(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
+            .any(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
         {
             // If it already exists, it is likely an mempool tx, so update the height
         } else {
