@@ -6,6 +6,7 @@ mod test_framework;
 pub mod blaze;
 pub mod commands;
 pub mod compact_formats;
+pub mod confirmation_status;
 pub mod error;
 pub mod grpc_connector;
 pub mod lightclient;

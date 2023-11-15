@@ -60,7 +60,6 @@ use self::{
 };
 use zingoconfig::{ChainType, ZingoConfig};
 
-pub mod confirmation_status;
 pub mod data;
 pub mod keys;
 pub(crate) mod message;
