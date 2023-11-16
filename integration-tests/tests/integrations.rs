@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#![cfg(feature = "local_env")]
 pub mod darkside;
 
 use crate::zingo_testutils::check_transaction_equality;
@@ -8,7 +7,7 @@ use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
-use std::{fs::File, path::Path, str::FromStr};
+use std::{fs::File, path::Path, str::FromStr, time::Duration};
 use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
@@ -126,6 +125,7 @@ fn check_view_capability_bounds(
         assert_eq!(notes["utxos"].members().count(), 1);
     }
 }
+
 mod fast {
     use super::*;
     #[tokio::test]
@@ -197,7 +197,7 @@ mod fast {
         let wallet_dir = wallet_path.parent().unwrap();
         let (wallet, config) =
             zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-        let client = LightClient::create_from_extant_wallet(wallet, config);
+        let client = LightClient::create_from_wallet(wallet, config);
         let transactions = client.do_list_transactions().await[0].clone();
         //env_logger::init();
         let expected_consumer_ui_note = r#"{
@@ -307,7 +307,6 @@ mod fast {
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
             1
         );
-        faucet.do_save().await.unwrap();
         // Create a new client using the faucet's wallet
 
         // Create zingo config
@@ -328,8 +327,7 @@ mod fast {
                 .unwrap();
 
         // Create client based on config and wallet of faucet
-        let faucet_copy =
-            LightClient::create_from_extant_wallet(faucet_wallet, zingo_config.clone());
+        let faucet_copy = LightClient::create_from_wallet(faucet_wallet, zingo_config.clone());
         assert_eq!(
             &faucet_copy.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
@@ -2844,7 +2842,7 @@ mod slow {
         println!("setting uri");
         *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
         println!("creating lightclient");
-        let recipient = LightClient::create_from_extant_wallet(wallet, conf);
+        let recipient = LightClient::create_from_wallet(wallet, conf);
         println!(
             "pre-sync transactions: {}",
             recipient.do_list_transactions().await.pretty(2)
@@ -3571,19 +3569,8 @@ mod slow {
             recipient_balance.unverified_orchard_balance.unwrap(),
             65_000
         );
-        let wallet_loc = &regtest_manager
-            .zingo_datadir
-            .parent()
-            .unwrap()
-            .join("zingo_client_2");
-        recipient.do_save().await.unwrap();
 
-        let (wallet, config) = zingo_testutils::load_wallet(
-            wallet_loc.to_path_buf(),
-            ChainType::Regtest(regtest_network),
-        )
-        .await;
-        let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
+        let loaded_client = recipient.new_client_from_save_buffer().await.unwrap();
         let loaded_balance = loaded_client.do_balance().await;
         assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
         check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
@@ -3736,5 +3723,33 @@ mod slow {
         assert_eq!(notes_before, notes_after);
         assert_eq!(list_before, list_after);
         assert_eq!(witness_before.unwrap(), witness_after.unwrap());
+    }
+    #[tokio::test]
+    async fn mempool_spends_correctly_marked_unconfirmed_spent() {
+        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
+            scenarios::faucet_funded_recipient_default(1_000_000).await;
+        recipient
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                100_000,
+                None,
+            )])
+            .await
+            .unwrap();
+        let recipient_saved = recipient.export_save_buffer_async().await.unwrap();
+        let recipient_loaded = std::sync::Arc::new(
+            LightClient::read_wallet_from_buffer_async(recipient.config(), &recipient_saved[..])
+                .await
+                .unwrap(),
+        );
+        LightClient::start_mempool_monitor(recipient_loaded.clone());
+        // This seems to be long enough for the mempool monitor to kick in.
+        // One second is insufficient. Even if this fails, this can only ever be
+        // a false negative, giving us a balance of 100_000. Still, could be improved.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert_eq!(
+            recipient_loaded.do_balance().await.orchard_balance,
+            Some(890_000)
+        );
     }
 }

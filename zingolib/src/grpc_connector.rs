@@ -387,6 +387,7 @@ impl GrpcConnector {
 
         let request = Request::new(Empty {});
 
+        dbg!("Getting mempool stream");
         let mut response = client
             .get_mempool_stream(request)
             .await

@@ -1,12 +1,15 @@
 use super::syncdata::BlazeSyncData;
-use crate::wallet::{
-    data::OutgoingTxData,
-    keys::{address_from_pubkeyhash, unified::WalletCapability},
-    traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, ReceivedNoteAndMetadata as _,
-        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
+use crate::{
+    error::{ZingoLibError, ZingoLibResult},
+    wallet::{
+        data::OutgoingTxData,
+        keys::{address_from_pubkeyhash, unified::WalletCapability},
+        traits::{
+            self as zingo_traits, Bundle as _, DomainWalletExt, NoteInterface as _, Recipient as _,
+            ShieldedOutputExt as _, Spend as _, ToBytes as _,
+        },
+        transactions::TransactionMetadataSet,
     },
-    transactions::TransactionMetadataSet,
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
@@ -287,7 +290,7 @@ impl TransactionContext {
                     if let Some(wtx) = current.get(&prev_transaction_id) {
                         // One of the tx outputs is a match
                         if let Some(spent_utxo) = wtx
-                            .received_utxos
+                            .transparent_notes
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {
@@ -309,17 +312,16 @@ impl TransactionContext {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            if !unconfirmed {
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .mark_txid_utxo_spent(
-                        prev_transaction_id,
-                        prev_n,
-                        transaction_id,
-                        height.into(),
-                    );
-            }
+            self.transaction_metadata_set
+                .write()
+                .await
+                .mark_txid_utxo_spent(
+                    prev_transaction_id,
+                    prev_n,
+                    transaction_id,
+                    height.into(),
+                    unconfirmed,
+                );
         }
 
         // If this transaction spent value, add the spent amount to the TxID
@@ -491,13 +493,10 @@ impl TransactionContext {
                     Ok(parsed_zingo_memo) => {
                         arbitrary_memos_with_txids.push((parsed_zingo_memo, transaction.txid()));
                     }
-
-                    Err(e) => log::error!(
-                        "Could not decode wallet internal memo: {e}.\n\
-                    Have you recently used a more up-to-date version of\
-                    this software?\nIf not, this may mean you are being sent\
-                    malicious data.\nSome information may not display correctly"
-                    ),
+                    Err(e) => {
+                        let _memo_error: ZingoLibResult<()> =
+                            ZingoLibError::CouldNotDecodeMemo(e).print_and_pass_error();
+                    }
                 }
             }
             self.transaction_metadata_set

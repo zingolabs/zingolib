@@ -10,10 +10,7 @@ use crate::darkside::{
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
-use zingolib::{
-    get_base_address,
-    lightclient::{LightClient, PoolBalances},
-};
+use zingolib::{get_base_address, lightclient::PoolBalances};
 
 use std::sync::Arc;
 
@@ -403,12 +400,7 @@ async fn sent_transaction_reorged_into_mempool() {
         "Sender post-reorg: {}",
         light_client.do_list_transactions().await.pretty(2)
     );
-    let loaded_client = LightClient::read_wallet_from_buffer_async(
-        &client_manager.make_unique_data_dir_and_load_config(regtest_network),
-        light_client.do_save_to_buffer().await.unwrap().as_slice(),
-    )
-    .await
-    .unwrap();
+    let loaded_client = light_client.new_client_from_save_buffer().await.unwrap();
     loaded_client.do_sync(false).await.unwrap();
     println!(
         "Sender post-load: {}",

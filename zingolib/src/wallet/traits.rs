@@ -3,9 +3,8 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
-        SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
-        WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        OrchardNote, PoolNullifier, SaplingNote, SpendableOrchardNote, SpendableSaplingNote,
+        TransactionMetadata, WitnessCache, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
@@ -389,10 +388,9 @@ impl Nullifier for orchard::note::Nullifier {
     }
 }
 
-/// "Received" because this data is eventually chain-retrievable
-/// "Note" because this contains the Note itself
-/// "AndMetaData" everything that the client will eventually know about the note
-pub trait ReceivedNoteAndMetadata: Sized {
+///   All zingolib::wallet::traits::Notes are NoteInterface
+///   NoteInterface provides...
+pub trait NoteInterface: Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
     type Note: PartialEq
@@ -450,7 +448,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn witnessed_position_mut(&mut self) -> &mut Option<Position>;
 }
 
-impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
+impl NoteInterface for SaplingNote {
     type Diversifier = zcash_primitives::sapling::Diversifier;
     type Note = zcash_primitives::sapling::Note;
     type Node = zcash_primitives::sapling::Node;
@@ -573,7 +571,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     }
 }
 
-impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
+impl NoteInterface for OrchardNote {
     type Diversifier = orchard::keys::Diversifier;
     type Note = orchard::note::Note;
     type Node = MerkleHashOrchard;
@@ -707,7 +705,7 @@ where
 
     type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
-    type WalletNote: ReceivedNoteAndMetadata<
+    type WalletNote: NoteInterface<
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt>::Bundle as Bundle<Self>>::Spend as Spend>::Nullifier,
@@ -725,7 +723,7 @@ where
     }
     fn transaction_metadata_set_to_shardtree(
         txmds: &TransactionMetadataSet,
-    ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>> {
+    ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as NoteInterface>::Node>> {
         txmds
             .witness_trees
             .as_ref()
@@ -733,8 +731,7 @@ where
     }
     fn transaction_metadata_set_to_shardtree_mut(
         txmds: &mut TransactionMetadataSet,
-    ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>
-    {
+    ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as NoteInterface>::Node>> {
         txmds
             .witness_trees
             .as_mut()
@@ -742,15 +739,15 @@ where
     }
     fn get_shardtree(
         trees: &WitnessTrees,
-    ) -> &MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>;
+    ) -> &MemoryStoreShardTree<<Self::WalletNote as NoteInterface>::Node>;
     fn get_shardtree_mut(
         trees: &mut WitnessTrees,
-    ) -> &mut MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>;
+    ) -> &mut MemoryStoreShardTree<<Self::WalletNote as NoteInterface>::Node>;
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
         position: u64,
-    ) -> <Self::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
+    ) -> <Self::WalletNote as NoteInterface>::Nullifier;
     fn get_tree(tree_state: &TreeState) -> &String;
     fn to_notes_vec(_: &TransactionMetadata) -> &Vec<Self::WalletNote>;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
@@ -773,7 +770,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
     type CompactOutput = CompactSaplingOutput;
 
-    type WalletNote = ReceivedSaplingNoteAndMetadata;
+    type WalletNote = SaplingNote;
 
     type SpendableNoteAT = SpendableSaplingNote;
 
@@ -782,7 +779,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn get_shardtree(
         trees: &WitnessTrees,
     ) -> &ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        MemoryShardStore<<Self::WalletNote as NoteInterface>::Node, BlockHeight>,
         COMMITMENT_TREE_LEVELS,
         MAX_SHARD_LEVEL,
     > {
@@ -791,7 +788,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn get_shardtree_mut(
         trees: &mut WitnessTrees,
     ) -> &mut ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        MemoryShardStore<<Self::WalletNote as NoteInterface>::Node, BlockHeight>,
         COMMITMENT_TREE_LEVELS,
         MAX_SHARD_LEVEL,
     > {
@@ -801,7 +798,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
         note: &Self::Note,
         fvk: &Self::Fvk,
         position: u64,
-    ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
+    ) -> <<Self as DomainWalletExt>::WalletNote as NoteInterface>::Nullifier {
         note.nf(&fvk.fvk().vk.nk, position)
     }
 
@@ -849,7 +846,7 @@ impl DomainWalletExt for OrchardDomain {
 
     type CompactOutput = CompactOrchardAction;
 
-    type WalletNote = ReceivedOrchardNoteAndMetadata;
+    type WalletNote = OrchardNote;
 
     type SpendableNoteAT = SpendableOrchardNote;
 
@@ -858,7 +855,7 @@ impl DomainWalletExt for OrchardDomain {
     fn get_shardtree(
         trees: &WitnessTrees,
     ) -> &ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        MemoryShardStore<<Self::WalletNote as NoteInterface>::Node, BlockHeight>,
         COMMITMENT_TREE_LEVELS,
         MAX_SHARD_LEVEL,
     > {
@@ -867,7 +864,7 @@ impl DomainWalletExt for OrchardDomain {
     fn get_shardtree_mut(
         trees: &mut WitnessTrees,
     ) -> &mut ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        MemoryShardStore<<Self::WalletNote as NoteInterface>::Node, BlockHeight>,
         COMMITMENT_TREE_LEVELS,
         MAX_SHARD_LEVEL,
     > {
@@ -877,7 +874,7 @@ impl DomainWalletExt for OrchardDomain {
         note: &Self::Note,
         fvk: &Self::Fvk,
         _position: u64,
-    ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
+    ) -> <<Self as DomainWalletExt>::WalletNote as NoteInterface>::Nullifier {
         note.nullifier(fvk)
     }
 
@@ -917,34 +914,34 @@ impl DomainWalletExt for OrchardDomain {
 }
 
 pub trait Diversifiable {
-    type Note: ReceivedNoteAndMetadata;
+    type Note: NoteInterface;
     type Address: Recipient;
     fn diversified_address(
         &self,
-        div: <Self::Note as ReceivedNoteAndMetadata>::Diversifier,
+        div: <Self::Note as NoteInterface>::Diversifier,
     ) -> Option<Self::Address>;
 }
 
 impl Diversifiable for zip32::sapling::DiversifiableFullViewingKey {
-    type Note = ReceivedSaplingNoteAndMetadata;
+    type Note = SaplingNote;
 
     type Address = zcash_primitives::sapling::PaymentAddress;
 
     fn diversified_address(
         &self,
-        div: <<zip32::sapling::DiversifiableFullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
+        div: <<zip32::sapling::DiversifiableFullViewingKey as Diversifiable>::Note as NoteInterface>::Diversifier,
     ) -> Option<Self::Address> {
         self.fvk().vk.to_payment_address(div)
     }
 }
 
 impl Diversifiable for orchard::keys::FullViewingKey {
-    type Note = ReceivedOrchardNoteAndMetadata;
+    type Note = OrchardNote;
     type Address = orchard::Address;
 
     fn diversified_address(
         &self,
-        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
+        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as NoteInterface>::Diversifier,
     ) -> Option<Self::Address> {
         Some(self.address(div, orchard::keys::Scope::External))
     }
@@ -999,15 +996,15 @@ where
     /// default impl of `from`. This function's only caller should be `Self::from`
     fn from_parts_unchecked(
         transaction_id: TxId,
-        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
-        diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
+        nullifier: <D::WalletNote as NoteInterface>::Nullifier,
+        diversifier: <D::WalletNote as NoteInterface>::Diversifier,
         note: D::Note,
         witnessed_position: Position,
         sk: Option<&D::SpendingKey>,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
-    fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
-    fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
+    fn nullifier(&self) -> <D::WalletNote as NoteInterface>::Nullifier;
+    fn diversifier(&self) -> <D::WalletNote as NoteInterface>::Diversifier;
     fn note(&self) -> &D::Note;
     fn witnessed_position(&self) -> &Position;
     fn spend_key(&self) -> Option<&D::SpendingKey>;
@@ -1275,7 +1272,7 @@ impl<T>
         >,
     )> for T
 where
-    T: ReceivedNoteAndMetadata,
+    T: NoteInterface,
 {
     const VERSION: u8 = 4;
 
@@ -1294,7 +1291,7 @@ where
         let external_version = Self::get_version(&mut reader)?;
 
         if external_version < 2 {
-            let mut x = <T as ReceivedNoteAndMetadata>::get_deprecated_serialized_view_key_buffer();
+            let mut x = <T as NoteInterface>::get_deprecated_serialized_view_key_buffer();
             reader.read_exact(&mut x).expect("To not used this data.");
         }
 

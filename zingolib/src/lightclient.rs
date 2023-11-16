@@ -6,7 +6,7 @@ use crate::{
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
-    error::ZingoLibError,
+    error::{ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -16,7 +16,7 @@ use crate::{
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
         now,
-        traits::ReceivedNoteAndMetadata,
+        traits::NoteInterface,
         LightWallet, Pool, SendProgress, WalletBase,
     },
 };
@@ -143,6 +143,11 @@ pub struct AccountBackupInfo {
     pub account_index: u32,
 }
 
+#[derive(Default)]
+struct ZingoSaveBuffer {
+    pub buffer: Arc<RwLock<Vec<u8>>>,
+}
+
 /// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
 ///  1. initialization of stored state
 ///      * from seed
@@ -161,12 +166,16 @@ pub struct LightClient {
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
+
+    save_buffer: ZingoSaveBuffer,
 }
 
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
 ///  overly broad and vague definition!
 impl LightClient {
-    pub fn create_from_extant_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
+    /// this is the standard initializer for a LightClient.
+    // toDo rework ZingoConfig.
+    pub fn create_from_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
             config: config.clone(),
@@ -174,6 +183,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
+            save_buffer: ZingoSaveBuffer::default(),
         }
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
@@ -210,18 +220,14 @@ impl LightClient {
                 ));
             }
         }
-        let lightclient = LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
+        let lightclient = LightClient::create_from_wallet(
+            LightWallet::new(config.clone(), wallet_base, birthday)?,
+            config.clone(),
+        );
 
         lightclient.set_wallet_initial_state(birthday).await;
         lightclient
-            .do_save()
+            .save_internal_rust()
             .await
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
@@ -234,14 +240,11 @@ impl LightClient {
         wallet_base: WalletBase,
         height: u64,
     ) -> io::Result<Self> {
-        Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, height)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            sync_lock: Mutex::new(()),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        })
+        let lightclient = LightClient::create_from_wallet(
+            LightWallet::new(config.clone(), wallet_base, height)?,
+            config.clone(),
+        );
+        Ok(lightclient)
     }
 
     fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
@@ -253,7 +256,7 @@ impl LightClient {
             debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             // Save
-            l.do_save()
+            l.save_internal_rust()
                 .await
                 .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
 
@@ -276,10 +279,81 @@ impl LightClient {
 
         Self::create_with_new_wallet(config, latest_block)
     }
+
+    //        SAVE METHODS
+
+    async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
+        match self.save_internal_buffer().await {
+            Ok(()) => self.rust_write_save_buffer_to_file().await,
+            Err(err) => {
+                error!("{}", err);
+                Err(err)
+            }
+        }
+    }
+
+    async fn save_internal_buffer(&self) -> ZingoLibResult<()> {
+        let mut buffer: Vec<u8> = vec![];
+        self.wallet
+            .write(&mut buffer)
+            .await
+            .map_err(ZingoLibError::InternalWriteBufferError)?;
+        *self.save_buffer.buffer.write().await = buffer;
+        Ok(())
+    }
+
+    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<bool> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        // on mobile platforms, saving from this buffer will be handled by the native layer
+        {
+            // on ios and android just return ok
+            return Ok(false);
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            let read_buffer = self.save_buffer.buffer.read().await;
+            if !read_buffer.is_empty() {
+                LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
+                    .map_err(ZingoLibError::WriteFileError)?;
+                Ok(true)
+            } else {
+                ZingoLibError::EmptySaveBuffer.print_and_pass_error()
+            }
+        }
+    }
+
+    fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
+        let mut file = File::create(path)?;
+        file.write_all(buffer)?;
+        Ok(())
+    }
+
+    pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
+        self.save_internal_rust().await?;
+        let read_buffer = self.save_buffer.buffer.read().await;
+        if !read_buffer.is_empty() {
+            Ok(read_buffer.clone())
+        } else {
+            ZingoLibError::EmptySaveBuffer.print_and_pass_error()
+        }
+    }
+
+    /// This function is the sole correct way to ask LightClient to save.
+    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
+        Runtime::new()
+            .unwrap()
+            .block_on(async move { self.export_save_buffer_async().await })
+            .map_err(String::from)
+    }
+
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
     /// zingo-mobile.
-    pub fn read_wallet_from_buffer<R: Read>(config: &ZingoConfig, reader: R) -> io::Result<Self> {
+    pub fn read_wallet_from_buffer_runtime<R: Read>(
+        config: &ZingoConfig,
+        reader: R,
+    ) -> io::Result<Self> {
         Runtime::new()
             .unwrap()
             .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
@@ -291,14 +365,7 @@ impl LightClient {
     ) -> io::Result<Self> {
         let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
-        let lc = LightClient {
-            wallet,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
+        let lc = LightClient::create_from_wallet(wallet, config.clone());
 
         debug!(
             "Read wallet with birthday {}",
@@ -321,27 +388,32 @@ impl LightClient {
                 ),
             ));
         };
-        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
+        LightClient::read_wallet_from_buffer_runtime(
+            config,
+            BufReader::new(File::open(wallet_path)?),
+        )
     }
 
-    async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
-        let last_synced_height = self.wallet.last_synced_height().await;
-        let mut txmds_writelock = self
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
-        if let Some(ref mut trees) = txmds_writelock.witness_trees {
-            trees
-                .witness_tree_sapling
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees
-                .witness_tree_orchard
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
+    pub async fn do_delete(&self) -> Result<(), String> {
+        // Check if the file exists before attempting to delete
+        if self.config.wallet_path_exists() {
+            match remove_file(self.config.get_wallet_path()) {
+                Ok(_) => {
+                    log::debug!("File deleted successfully!");
+                    Ok(())
+                }
+                Err(e) => {
+                    let err = format!("ERR: {}", e);
+                    error!("{}", err);
+                    log::debug!("DELETE FAIL ON FILE!");
+                    Err(e.to_string())
+                }
+            }
+        } else {
+            let err = "Error: File does not exist, nothing to delete.".to_string();
+            error!("{}", err);
+            log::debug!("File does not exist, nothing to delete.");
+            Err(err)
         }
     }
 
@@ -517,7 +589,7 @@ impl LightClient {
             .wallet_capability()
             .new_address(desired_receivers)?;
 
-        self.do_save().await?;
+        self.save_internal_rust().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -530,100 +602,12 @@ impl LightClient {
         let response = self.do_sync(true).await;
 
         if response.is_ok() {
-            self.do_save().await?;
+            self.save_internal_rust().await?;
         }
 
         debug!("Rescan finished");
 
         response
-    }
-    pub async fn do_delete(&self) -> Result<(), String> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // on mobile platforms, disable the delete, as it will be handled by the native layer
-        {
-            log::debug!("do_delete entered");
-            // on iOS and Android, just return ok
-            Ok(())
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            log::debug!("do_delete entered");
-            log::debug!("target_os is not ios or android");
-
-            // Check if the file exists before attempting to delete
-            if self.config.wallet_path_exists() {
-                match remove_file(self.config.get_wallet_path()) {
-                    Ok(_) => {
-                        log::debug!("File deleted successfully!");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        let err = format!("ERR: {}", e);
-                        error!("{}", err);
-                        log::debug!("DELETE FAIL ON FILE!");
-                        Err(e.to_string())
-                    }
-                }
-            } else {
-                let err = "Error: File does not exist, nothing to delete.".to_string();
-                error!("{}", err);
-                log::debug!("File does not exist, nothing to delete.");
-                Err(err)
-            }
-        }
-    }
-    pub async fn do_save(&self) -> Result<(), String> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // on mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
-        {
-            log::debug!("do_save entered");
-
-            // on ios and android just return ok
-            Ok(())
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            log::debug!("do_save entered");
-            log::debug!("target_os is not ios or android");
-            // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-            //let _lock = self.sync_lock.lock().await;
-
-            let mut wallet_bytes = vec![];
-            match self.wallet.write(&mut wallet_bytes).await {
-                Ok(_) => {
-                    let mut file = File::create(self.config.get_wallet_path()).unwrap();
-                    file.write_all(&wallet_bytes)
-                        .map_err(|e| format!("{}", e))?;
-                    log::debug!("In the guts of a successful save!");
-                    Ok(())
-                }
-                Err(e) => {
-                    let err = format!("ERR: {}", e);
-                    error!("{}", err);
-                    log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
-                    Err(e.to_string())
-                }
-            }
-        }
-    }
-    pub async fn do_save_to_buffer(&self) -> Result<Vec<u8>, String> {
-        let mut buffer: Vec<u8> = vec![];
-        match self.wallet.write(&mut buffer).await {
-            Ok(_) => Ok(buffer),
-            Err(e) => {
-                let err = format!("ERR: {}", e);
-                error!("{}", err);
-                Err(e.to_string())
-            }
-        }
-    }
-
-    pub fn do_save_to_buffer_sync(&self) -> Result<Vec<u8>, String> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.do_save_to_buffer().await })
     }
 
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
@@ -1202,8 +1186,7 @@ impl LightClient {
                         .await;
 
                         if r.is_err() {
-                            warn!("Mempool monitor returned {:?}, will restart listening", r);
-                            sleep(Duration::from_secs(10)).await;
+                            sleep(Duration::from_secs(3)).await;
                         } else {
                             let _ = lci.do_sync(false).await;
                         }
@@ -1217,27 +1200,6 @@ impl LightClient {
         *lc.mempool_monitor.write().unwrap() = Some(h);
     }
 
-    async fn wallet_has_any_empty_commitment_trees(&self) -> bool {
-        self.wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .witness_trees
-            .as_ref()
-            .is_some_and(|trees| {
-                trees
-                    .witness_tree_orchard
-                    .max_leaf_position(0)
-                    .unwrap()
-                    .is_none()
-                    || trees
-                        .witness_tree_sapling
-                        .max_leaf_position(0)
-                        .unwrap()
-                        .is_none()
-            })
-    }
     /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
@@ -1253,10 +1215,12 @@ impl LightClient {
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
         // our witness trees are aligned with our blockchain data
-        self.ensure_witness_tree_not_above_wallet_blocks().await;
+        self.wallet
+            .ensure_witness_tree_not_above_wallet_blocks()
+            .await;
 
         // This is a fresh wallet. We need to get the initial trees
-        if self.wallet_has_any_empty_commitment_trees().await
+        if self.wallet.has_any_empty_commitment_trees().await
             && last_synced_height >= self.config.sapling_activation_height()
         {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
@@ -1566,7 +1530,7 @@ impl LightClient {
         debug!("About to run save after syncing {}th batch!", batch_num);
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        self.do_save().await.unwrap();
+        self.save_internal_rust().await.unwrap();
 
         Ok(SyncResult {
             success: true,
@@ -1627,7 +1591,7 @@ impl LightClient {
             }
             // No funds spent, this is a normal receipt
             (false, true) => {
-                for received_transparent in transaction_md.received_utxos.iter() {
+                for received_transparent in transaction_md.transparent_notes.iter() {
                     summaries.push(ValueTransfer {
                         block_height,
                         datetime,
@@ -1797,106 +1761,7 @@ impl LightClient {
             Err(ZingoLibError::NoWalletLocation)
         }
     }
-}
 
-use serde_json::Value;
-
-enum PriceFetchError {
-    ReqwestError(String),
-    NotJson,
-    NoElements,
-    PriceReprError(PriceReprError),
-    NanValue,
-}
-
-impl std::fmt::Display for PriceFetchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceFetchError::*;
-        f.write_str(&match self {
-            ReqwestError(e) => format!("ReqwestError: {}", e),
-            NotJson => "NotJson".to_string(),
-            NoElements => "NoElements".to_string(),
-            PriceReprError(e) => format!("PriceReprError: {}", e),
-            NanValue => "NanValue".to_string(),
-        })
-    }
-}
-
-enum PriceReprError {
-    NoValue,
-    NoAsStrValue,
-    NotParseable,
-}
-
-impl std::fmt::Display for PriceReprError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceReprError::*;
-        fmt.write_str(match self {
-            NoValue => "NoValue",
-            NoAsStrValue => "NoAsStrValue",
-            NotParseable => "NotParseable",
-        })
-    }
-}
-fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
-    if let Some(value) = from_gemini.get("price") {
-        if let Some(stringable) = value.as_str() {
-            if let Ok(parsed) = stringable.parse::<f64>() {
-                Ok(parsed)
-            } else {
-                Err(PriceReprError::NotParseable)
-            }
-        } else {
-            Err(PriceReprError::NoAsStrValue)
-        }
-    } else {
-        Err(PriceReprError::NoValue)
-    }
-}
-
-async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
-    let httpget =
-        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
-            Ok(httpresponse) => httpresponse,
-            Err(e) => {
-                return Err(PriceFetchError::ReqwestError(e.to_string()));
-            }
-        };
-    let serialized = match httpget.json::<Value>().await {
-        Ok(asjson) => asjson,
-        Err(_) => {
-            return Err(PriceFetchError::NotJson);
-        }
-    };
-    let elements = match serialized.as_array() {
-        Some(elements) => elements,
-        None => {
-            return Err(PriceFetchError::NoElements);
-        }
-    };
-    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
-        Ok(trades) => trades,
-        Err(e) => {
-            return Err(PriceFetchError::PriceReprError(e));
-        }
-    };
-    if trades.iter().any(|x| x.is_nan()) {
-        return Err(PriceFetchError::NanValue);
-    }
-    // NOTE:  This code will panic if a value is received that:
-    // 1. was parsed from a string to an f64
-    // 2. is not a NaN
-    // 3. cannot be compared to an f64
-    // TODO:  Show that this is impossible, or write code to handle
-    // that case.
-    trades.sort_by(|a, b| {
-        a.partial_cmp(b)
-            .expect("a and b are non-nan f64, I think that makes them comparable")
-    });
-    Ok(trades[5])
-}
-
-impl LightClient {
     fn unspent_pending_spent(
         &self,
         note: JsonValue,
@@ -2009,7 +1874,7 @@ impl LightClient {
 
         self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
-                    wtx.received_utxos.iter().filter_map(move |utxo|
+                    wtx.transparent_notes.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
@@ -2093,5 +1958,105 @@ impl LightClient {
         res
     }
 }
+
+use serde_json::Value;
+
+enum PriceFetchError {
+    ReqwestError(String),
+    NotJson,
+    NoElements,
+    PriceReprError(PriceReprError),
+    NanValue,
+}
+
+impl std::fmt::Display for PriceFetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PriceFetchError::*;
+        f.write_str(&match self {
+            ReqwestError(e) => format!("ReqwestError: {}", e),
+            NotJson => "NotJson".to_string(),
+            NoElements => "NoElements".to_string(),
+            PriceReprError(e) => format!("PriceReprError: {}", e),
+            NanValue => "NanValue".to_string(),
+        })
+    }
+}
+
+enum PriceReprError {
+    NoValue,
+    NoAsStrValue,
+    NotParseable,
+}
+
+impl std::fmt::Display for PriceReprError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PriceReprError::*;
+        fmt.write_str(match self {
+            NoValue => "NoValue",
+            NoAsStrValue => "NoAsStrValue",
+            NotParseable => "NotParseable",
+        })
+    }
+}
+fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
+    if let Some(value) = from_gemini.get("price") {
+        if let Some(stringable) = value.as_str() {
+            if let Ok(parsed) = stringable.parse::<f64>() {
+                Ok(parsed)
+            } else {
+                Err(PriceReprError::NotParseable)
+            }
+        } else {
+            Err(PriceReprError::NoAsStrValue)
+        }
+    } else {
+        Err(PriceReprError::NoValue)
+    }
+}
+
+async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
+    let httpget =
+        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
+            Ok(httpresponse) => httpresponse,
+            Err(e) => {
+                return Err(PriceFetchError::ReqwestError(e.to_string()));
+            }
+        };
+    let serialized = match httpget.json::<Value>().await {
+        Ok(asjson) => asjson,
+        Err(_) => {
+            return Err(PriceFetchError::NotJson);
+        }
+    };
+    let elements = match serialized.as_array() {
+        Some(elements) => elements,
+        None => {
+            return Err(PriceFetchError::NoElements);
+        }
+    };
+    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
+        Ok(trades) => trades,
+        Err(e) => {
+            return Err(PriceFetchError::PriceReprError(e));
+        }
+    };
+    if trades.iter().any(|x| x.is_nan()) {
+        return Err(PriceFetchError::NanValue);
+    }
+    // NOTE:  This code will panic if a value is received that:
+    // 1. was parsed from a string to an f64
+    // 2. is not a NaN
+    // 3. cannot be compared to an f64
+    // TODO:  Show that this is impossible, or write code to handle
+    // that case.
+    trades.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("a and b are non-nan f64, I think that makes them comparable")
+    });
+    Ok(trades[5])
+}
+
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
+#[cfg(feature = "test-features")]
+mod test_features;

@@ -115,7 +115,7 @@ impl LightClient {
             .flat_map(|(txid, wallet_transaction)| {
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
-                let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<u64>();
+                let total_transparent_received = wallet_transaction.transparent_notes.iter().map(|u| u.value).sum::<u64>();
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
@@ -131,7 +131,7 @@ impl LightClient {
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
                 let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
-                let address = wallet_transaction.received_utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
+                let address = wallet_transaction.transparent_notes.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
                 if net_transparent_value > 0 {
                     if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
                         // If this transaction is outgoing:

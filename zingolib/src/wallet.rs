@@ -52,9 +52,9 @@ use zingo_memo::create_wallet_internal_memo_version_0;
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
-use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
+use self::traits::{DomainWalletExt, NoteInterface, SpendableNote};
 use self::{
-    data::{BlockData, ReceivedTransparentOutput, WalletZecPriceInfo},
+    data::{BlockData, TransparentNote, WalletZecPriceInfo},
     message::Message,
     transactions::TransactionMetadataSet,
 };
@@ -254,16 +254,14 @@ impl LightWallet {
     fn get_legacy_frontier<D: DomainWalletExt>(
         trees: &crate::compact_formats::TreeState,
     ) -> Option<
-        incrementalmerkletree::frontier::NonEmptyFrontier<
-            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
-        >,
+        incrementalmerkletree::frontier::NonEmptyFrontier<<D::WalletNote as NoteInterface>::Node>,
     >
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
         zcash_primitives::merkle_tree::read_commitment_tree::<
-            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+            <D::WalletNote as NoteInterface>::Node,
             &[u8],
             COMMITMENT_TREE_LEVELS,
         >(&hex::decode(D::get_tree(trees)).unwrap()[..])
@@ -385,7 +383,7 @@ impl LightWallet {
             .current
             .values_mut()
             .for_each(|wtx| {
-                wtx.received_utxos
+                wtx.transparent_notes
                     .iter_mut()
                     .filter(|utxo| utxo.spent.is_some() && utxo.spent_at_height.is_none())
                     .for_each(|utxo| {
@@ -528,12 +526,12 @@ impl LightWallet {
             .values()
             .flat_map(|transaction| {
                 transaction
-                    .received_utxos
+                    .transparent_notes
                     .iter()
                     .filter(|utxo| utxo.spent.is_none())
             })
             .cloned()
-            .collect::<Vec<ReceivedTransparentOutput>>()
+            .collect::<Vec<TransparentNote>>()
     }
 
     pub async fn last_synced_hash(&self) -> String {
@@ -875,7 +873,7 @@ impl LightWallet {
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
-            Vec<ReceivedTransparentOutput>,
+            Vec<TransparentNote>,
             u64,
         ),
         u64,
@@ -1008,11 +1006,7 @@ impl LightWallet {
                 &policy,
                 sapling_prover,
             )
-            .await
-        {
-            Ok(success_tuple) => success_tuple,
-            Err(s) => return Err(s),
-        };
+            .await?;
 
         let (orchard_notes, sapling_notes, utxos, _total_value_covered_by_selected) = match self
             .select_notes_and_utxos(
@@ -1030,14 +1024,7 @@ impl LightWallet {
         info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
         match self
-            .send_to_addresses_inner(
-                transaction,
-                &orchard_notes,
-                &sapling_notes,
-                &utxos[..],
-                submission_height,
-                broadcast_fn,
-            )
+            .send_to_addresses_inner(transaction, submission_height, broadcast_fn)
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1072,7 +1059,7 @@ impl LightWallet {
         witness_trees: &WitnessTrees,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
-        utxos: &[ReceivedTransparentOutput],
+        utxos: &[TransparentNote],
     ) -> Result<TxBuilder<'_>, String> {
         // Add all tinputs
         // Create a map from address -> sk for all taddrs, so we can spend from the
@@ -1723,7 +1710,7 @@ impl LightWallet {
                     filtered_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
-                                <D::WalletNote as traits::ReceivedNoteAndMetadata>::value(notedata)
+                                <D::WalletNote as traits::NoteInterface>::value(notedata)
                             } else {
                                 0
                             }
@@ -1925,6 +1912,46 @@ impl LightWallet {
         }
 
         Ok(())
+    }
+    pub async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
+        let last_synced_height = self.last_synced_height().await;
+        let mut txmds_writelock = self
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        if let Some(ref mut trees) = txmds_writelock.witness_trees {
+            trees
+                .witness_tree_sapling
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees
+                .witness_tree_orchard
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
+        }
+    }
+
+    pub async fn has_any_empty_commitment_trees(&self) -> bool {
+        self.transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .is_some_and(|trees| {
+                trees
+                    .witness_tree_orchard
+                    .max_leaf_position(0)
+                    .unwrap()
+                    .is_none()
+                    || trees
+                        .witness_tree_sapling
+                        .max_leaf_position(0)
+                        .unwrap()
+                        .is_none()
+            })
     }
 }
 
