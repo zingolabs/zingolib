@@ -449,7 +449,8 @@ pub struct SaplingNote {
     pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<zcash_primitives::sapling::Nullifier>,
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
+
+    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is incoherent
 
     // If this note was spent in a send, but has not yet been confirmed.
     // Contains the transaction id and height at which it was broadcast
@@ -457,7 +458,7 @@ pub struct SaplingNote {
     pub memo: Option<Memo>,
     pub is_change: bool,
 
-    // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
+    // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date) Todo should this data point really be here?
     pub have_spending_key: bool,
 }
 
@@ -474,7 +475,8 @@ pub struct OrchardNote {
     pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<orchard::note::Nullifier>,
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
+
+    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is incoherent
 
     // If this note was spent in a send, but has not yet been confirmed.
     // Contains the transaction id and height at which it was broadcast
@@ -552,7 +554,7 @@ pub struct TransparentNote {
     pub height: i32,
 
     pub spent_at_height: Option<i32>,
-    pub spent: Option<TxId>, // If this utxo was confirmed spent
+    pub spent: Option<TxId>, // If this utxo was confirmed spent Todo: incoherent with unconfirmed_spent
 
     // If this utxo was spent in a send, but has not yet been confirmed.
     // Contains the txid and height at which the Tx was broadcast
@@ -885,10 +887,10 @@ pub mod summaries {
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionMetadata {
-    // Block in which this tx was included
+    // Block in which this tx was included OR submitted to mempool. Todo: this is incoherent
     pub block_height: BlockHeight,
 
-    // Is this Tx unconfirmed (i.e., not yet mined)
+    // Is this Tx unconfirmed (i.e., not yet mined). Todo: this needs to be a coherent enum
     pub unconfirmed: bool,
 
     // Timestamp of Tx. Added in v4
