@@ -536,38 +536,23 @@ impl LightClient {
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
 
-            let tx_fee_result = transaction_md.get_transaction_fee();
-            match tx_fee_result {
-                Ok(tx_fee) => {
-                    if transaction_md.is_outgoing_transaction() {
-                        let (block_height, datetime, price, unconfirmed) = (
-                            transaction_md.block_height,
-                            transaction_md.datetime,
-                            transaction_md.price,
-                            transaction_md.unconfirmed,
-                        );
-                        summaries.push(ValueTransfer {
-                            block_height,
-                            datetime,
-                            kind: ValueTransferKind::Fee { amount: tx_fee },
-                            memos: vec![],
-                            price,
-                            txid: *txid,
-                            unconfirmed,
-                        });
-                    }
-                }
-                Err(e) => {
-                    println!(
-                    "{:?} for txid {} at height {}: spent {}, outgoing {}, returned change {} \n {:?}",
-                    e,
-                    txid,
-                    transaction_md.block_height,
-                    transaction_md.total_value_spent(),
-                    transaction_md.value_outgoing(),
-                    transaction_md.total_change_returned(),
-                    transaction_md,
+            if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
+                if transaction_md.is_outgoing_transaction() {
+                    let (block_height, datetime, price, unconfirmed) = (
+                        transaction_md.block_height,
+                        transaction_md.datetime,
+                        transaction_md.price,
+                        transaction_md.unconfirmed,
                     );
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Fee { amount: tx_fee },
+                        memos: vec![],
+                        price,
+                        txid: *txid,
+                        unconfirmed,
+                    });
                 }
             };
         }
