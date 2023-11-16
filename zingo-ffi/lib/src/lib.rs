@@ -153,7 +153,7 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient = match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..]) {
+    let lightclient = match LightClient::read_wallet_from_buffer_runtime(&config, &decoded_bytes[..]) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
@@ -175,7 +175,7 @@ pub fn save_to_b64() -> String {
         lightclient = lc.borrow().as_ref().unwrap().clone();
     };
 
-    match lightclient.do_save_to_buffer_sync() {
+    match lightclient.export_save_buffer_runtime() {
         Ok(buf) => encode(&buf),
         Err(e) => {
             format!("Error: {}", e)
