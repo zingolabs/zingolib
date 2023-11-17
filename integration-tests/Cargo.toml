@@ -9,17 +9,17 @@ edition = "2021"
 zingolib = { path = "../zingolib", features = ["test"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingoconfig = { path = "../zingoconfig" }
-tokio = { version = "1.25.0", features = ["full"] }
-json = "0.12.4"
-log = "0.4.17"
 
-[dev-dependencies]
 zcash_primitives = { workspace = true }
-hex = "0.3"
-itertools = "0.10.5"
-bip0039 = "0.10.1"
 orchard = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
+
+tokio = { version = "1.25.0", features = ["full"] }
+json = "0.12.4"
+log = "0.4.17"
+hex = "0.3"
+itertools = "0.10.5"
+bip0039 = "0.10.1"
 serde_json = "1.0.107"
