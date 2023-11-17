@@ -107,9 +107,9 @@ pub fn launch_lightwalletd(
 
     File::create(&lightwalletd_log).expect("file::create Result error");
     let mut lightwalletd_stdout_logfile =
-        File::create(&lightwalletd_stdout_log).expect("file::create Result error");
+        File::create(lightwalletd_stdout_log).expect("file::create Result error");
     let mut lightwalletd_stderr_logfile =
-        File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+        File::create(lightwalletd_stderr_log).expect("file::create Result error");
 
     let mut args = vec![
         "--no-tls-very-insecure".to_string(),
