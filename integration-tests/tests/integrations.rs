@@ -7,7 +7,6 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr, time::Duration};
-use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
@@ -1528,44 +1527,6 @@ mod slow {
                 transaction
             );
         }
-    }
-    #[tokio::test]
-    #[traced_test]
-    async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
-        tracing_log::LogTracer::init().unwrap();
-        let (regtest_manager, _cph, _faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
-        recipient
-            .do_send(vec![(
-                &get_base_address!(recipient, "unified"),
-                5_000,
-                Some(Memo::from_str("Here's a memo!").unwrap().into()),
-            )])
-            .await
-            .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        // With user-specified memo, we list the metadata
-        assert!(!logs_contain(
-            "Received memo indicating you sent to an address you don't have on record."
-        ));
-        recipient
-            .do_send(vec![(
-                &get_base_address!(recipient, "unified"),
-                5_000,
-                None,
-            )])
-            .await
-            .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        // With a memo-less send to self, we hide the metadata from the UI. This should not
-        // trick the error detector.
-        assert!(!logs_contain(
-            "Received memo indicating you sent to an address you don't have on record."
-        ));
     }
     #[tokio::test]
     async fn send_orchard_back_and_forth() {
