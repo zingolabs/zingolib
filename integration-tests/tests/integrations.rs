@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-pub mod darkside;
 
 use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
