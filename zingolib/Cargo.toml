@@ -15,11 +15,11 @@ default = ["embed_params"]
 embed_params = []
 
 [dependencies]
-http-body = "0.4.4"
-hyper = { version = "0.14", features = ["full"] }
-tonic = {version = "0.7.0", features = ["tls", "tls-roots", "tls-webpki-roots"]}
-tower = { version = "0.4" }
-prost = "0.10.0"
+http-body = { workspace = true }
+hyper = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
+prost = { workspace = true }
 log = "0.4.14"
 http = "0.2.4"
 log4rs = "1.1.1"
