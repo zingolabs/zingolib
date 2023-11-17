@@ -1418,8 +1418,6 @@ dependencies = [
  "env_logger",
  "futures-util",
  "hex 0.3.2",
- "http",
- "http-body",
  "itertools 0.10.5",
  "json",
  "log",

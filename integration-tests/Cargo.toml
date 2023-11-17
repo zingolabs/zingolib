@@ -12,8 +12,6 @@ zingoconfig = { path = "../zingoconfig" }
 tokio = { version = "1.25.0", features = ["full"] }
 json = "0.12.4"
 log = "0.4.17"
-http = { workspace = true, optional = true}
-http-body = { workspace = true, optional = true }
 
 [dev-dependencies]
 zcash_primitives = { workspace = true }
