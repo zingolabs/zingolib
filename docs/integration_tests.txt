@@ -1,14 +1,13 @@
-1 follow the instructions in ./TEST-REGTEST.md in order to set up the local regtest server, with the caveat that
-the root directory is integration-tests/regtest NOT zingocli/regtest, so in particular the binaries will reside in:
+1. follow the instructions in ./TEST-REGTEST.md in order to set up the local regtest server, with the caveat that
+the root directory is integration-tests/regtest NOT zingocli/regtest, so in particular the binaries will look like this:
 
 
-tree integration-tests/regtest/bin/
 integration-tests/regtest/bin/
 ├── lightwalletd
 ├── zcash-cli
 └── zcashd
 
-2 install cargo nextest
+2. install cargo nextest
 
 cargo nextest list
 
