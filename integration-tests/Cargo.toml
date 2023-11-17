@@ -15,8 +15,6 @@ log = "0.4.17"
 
 [dev-dependencies]
 zcash_primitives = { workspace = true }
-tempdir = { workspace = true }
-portpicker = { workspace = true }
 env_logger = "0.10.0"
 zingolib = { path = "../zingolib/" }
 bech32 = "0.9.0"
