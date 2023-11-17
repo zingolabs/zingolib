@@ -1414,7 +1414,6 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "bip0039",
- "futures-util",
  "hex 0.3.2",
  "itertools 0.10.5",
  "json",
