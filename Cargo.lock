@@ -1425,7 +1425,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-log 0.1.4",
- "tracing-subscriber",
  "tracing-test",
  "zcash_address",
  "zcash_client_backend",
