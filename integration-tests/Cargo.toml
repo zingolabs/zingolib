@@ -12,6 +12,11 @@ zingoconfig = { path = "../zingoconfig" }
 tokio = { version = "1.25.0", features = ["full"] }
 json = "0.12.4"
 log = "0.4.17"
+http = { workspace = true, optional = true}
+hyper = { workspace = true, optional = true}
+tonic = { workspace = true, optional = true}
+prost = { workspace = true, optional = true}
+tower = { workspace = true, optional = true}
 
 [dev-dependencies]
 zcash_primitives = { workspace = true }
@@ -34,3 +39,9 @@ zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
 serde_json = "1.0.107"
+
+[features]
+darkside_tests = ["dep:http", "dep:hyper", "dep:tonic", "dep:prost", "dep:tower"]
+
+[build-dependencies]
+tonic-build = { workspace = true }
