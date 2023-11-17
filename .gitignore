@@ -4,6 +4,7 @@ zingocli/regtest/data/zingo/
 zingocli/regtest/logs/
 zingocli/regtest/zingo-wallet.dat
 zingocli/regtest/bin
+integration-tests/regtest/bin
 target
 zingolib/target
 zingocli/target
