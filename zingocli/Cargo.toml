@@ -8,7 +8,7 @@ rustyline = "11.0.0"
 clap = "3.2.20"
 log = "0.4.17"
 shellwords = "1.1.0"
-http = "0.2.4"
+http = { workspace = true }
 futures = "0.3.15"
 rustls-pemfile = "1.0.0"
 http-body = "0.4.4"
