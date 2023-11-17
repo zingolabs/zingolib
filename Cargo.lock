@@ -1413,7 +1413,6 @@ dependencies = [
 name = "integration-tests"
 version = "0.1.0"
 dependencies = [
- "bech32",
  "bip0039",
  "futures-util",
  "hex 0.3.2",
