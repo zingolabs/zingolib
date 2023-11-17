@@ -1420,7 +1420,6 @@ dependencies = [
  "json",
  "log",
  "orchard",
- "rand 0.8.5",
  "serde_json",
  "shardtree",
  "tokio",
