@@ -20,6 +20,7 @@ tower = { workspace = true, optional = true}
 http-body = { workspace = true, optional = true }
 
 [features]
+default = [ "darkside_tests" ]
 darkside_tests = ["dep:http", "dep:hyper", "dep:tonic", "dep:prost", "dep:tower", "dep:http-body"]
 
 [dev-dependencies]
