@@ -42,6 +42,7 @@ macro_rules! check_client_balances {
         let tx_summary_balance = $client
             .do_list_txsummaries()
             .await
+            .unwrap()
             .iter()
             .map(|transfer| transfer.balance_delta())
             .sum::<i64>();
@@ -51,7 +52,7 @@ macro_rules! check_client_balances {
                 + balance.transparent_balance.unwrap_or(0)) as i64,
             tx_summary_balance,
             "tx_summaries follow: {}\ndo_list_transactions follow: {}",
-            ::json::JsonValue::from($client.do_list_txsummaries().await).pretty(4),
+            ::json::JsonValue::from($client.do_list_txsummaries().await.unwrap()).pretty(4),
             $client.do_list_transactions().await.pretty(4)
         );
         assert_eq!(

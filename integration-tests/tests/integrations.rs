@@ -740,7 +740,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
+            JsonValue::from(recipient.do_list_txsummaries().await.unwrap()).pretty(4)
         );
     }
     #[tokio::test]
@@ -1684,7 +1684,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.do_list_txsummaries().await).pretty(4)
+            JsonValue::from(faucet.do_list_txsummaries().await.unwrap()).pretty(4)
         );
         println!(
             "{}",
@@ -2435,10 +2435,10 @@ mod slow {
             .await
             .unwrap();
         let pre_rescan_transactions = recipient.do_list_transactions().await;
-        let pre_rescan_summaries = recipient.do_list_txsummaries().await;
+        let pre_rescan_summaries = recipient.do_list_txsummaries().await.unwrap();
         recipient.do_rescan().await.unwrap();
         let post_rescan_transactions = recipient.do_list_transactions().await;
-        let post_rescan_summaries = recipient.do_list_txsummaries().await;
+        let post_rescan_summaries = recipient.do_list_txsummaries().await.unwrap();
         assert_eq!(pre_rescan_transactions, post_rescan_transactions);
         assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         let mut outgoing_metadata = pre_rescan_transactions
@@ -3193,6 +3193,7 @@ mod slow {
         let mut total_value_to_addrs_iter = pool_migration_client
             .do_total_value_to_address()
             .await
+            .unwrap()
             .0
             .into_iter();
         assert_eq!(
@@ -3337,7 +3338,8 @@ mod slow {
             to select that one, and this will fail",
             );
         assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
+                .pretty(4),
             "2".to_string()
         );
         faucet
@@ -3349,7 +3351,8 @@ mod slow {
             .await
             .unwrap();
         assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
+                .pretty(4),
             "6".to_string()
         );
     }

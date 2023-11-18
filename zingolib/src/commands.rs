@@ -1,3 +1,4 @@
+use crate::error::ZingoLibError;
 use crate::wallet::keys::is_shielded_address;
 use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet::utils};
@@ -1039,7 +1040,14 @@ impl Command for ValueTxSummariesCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_list_txsummaries().await).pretty(2)
+            match lightclient.do_list_txsummaries().await {
+                Ok(txsummaries) => json::JsonValue::from(txsummaries).pretty(2),
+                Err(ZingoLibError::MetadataUnderflow) => String::from(
+                    "Error: Provided birthday is too high.\n\
+                    Please restore your wallet from a lower birthday",
+                ),
+                Err(other) => format!("Error: {other}"),
+            }
         })
     }
 }
@@ -1063,7 +1071,14 @@ impl Command for MemoBytesToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_memobytes_to_address().await).pretty(2)
+            match lightclient.do_total_memobytes_to_address().await {
+                Ok(txsummaries) => json::JsonValue::from(txsummaries).pretty(2),
+                Err(ZingoLibError::MetadataUnderflow) => String::from(
+                    "Error: Provided birthday is too high.\n\
+                    Please restore your wallet from a lower birthday",
+                ),
+                Err(other) => format!("Error: {other}"),
+            }
         })
     }
 }
@@ -1087,7 +1102,14 @@ impl Command for ValueToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
+            match lightclient.do_total_value_to_address().await {
+                Ok(txsummaries) => json::JsonValue::from(txsummaries).pretty(2),
+                Err(ZingoLibError::MetadataUnderflow) => String::from(
+                    "Error: Provided birthday is too high.\n\
+                    Please restore your wallet from a lower birthday",
+                ),
+                Err(other) => format!("Error: {other}"),
+            }
         })
     }
 }
@@ -1111,7 +1133,14 @@ impl Command for SendsToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_spends_to_address().await).pretty(2)
+            match lightclient.do_total_spends_to_address().await {
+                Ok(txsummaries) => json::JsonValue::from(txsummaries).pretty(2),
+                Err(ZingoLibError::MetadataUnderflow) => String::from(
+                    "Error: Provided birthday is too high.\n\
+                    Please restore your wallet from a lower birthday",
+                ),
+                Err(other) => format!("Error: {other}"),
+            }
         })
     }
 }

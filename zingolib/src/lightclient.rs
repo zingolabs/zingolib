@@ -522,7 +522,7 @@ impl LightClient {
         }
     }
 
-    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
+    pub async fn do_list_txsummaries(&self) -> Result<Vec<ValueTransfer>, ZingoLibError> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
         for (txid, transaction_md) in self
@@ -568,11 +568,12 @@ impl LightClient {
                     transaction_md.total_change_returned(),
                     transaction_md,
                     );
+                    return Err(e);
                 }
             };
         }
         summaries.sort_by_key(|summary| summary.block_height);
-        summaries
+        Ok(summaries)
     }
 
     /// Create a new address, deriving it from the seed.
@@ -832,8 +833,10 @@ impl LightClient {
             .clone()
     }
 
-    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let summaries = self.do_list_txsummaries().await;
+    pub async fn do_total_memobytes_to_address(
+        &self,
+    ) -> ZingoLibResult<finsight::TotalMemoBytesToAddress> {
+        let summaries = self.do_list_txsummaries().await?;
         let mut memobytes_by_address = HashMap::new();
         for summary in summaries {
             use ValueTransferKind::*;
@@ -849,27 +852,29 @@ impl LightClient {
                 SendToSelf { .. } | Received { .. } | Fee { .. } => (),
             }
         }
-        finsight::TotalMemoBytesToAddress(memobytes_by_address)
+        Ok(finsight::TotalMemoBytesToAddress(memobytes_by_address))
     }
 
-    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+    pub async fn do_total_spends_to_address(
+        &self,
+    ) -> ZingoLibResult<finsight::TotalSendsToAddress> {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await?;
         let mut by_address_number_sends = HashMap::new();
         for key in values_sent_to_addresses.0.keys() {
             let number_sends = values_sent_to_addresses.0[key].len() as u64;
             by_address_number_sends.insert(key.clone(), number_sends);
         }
-        finsight::TotalSendsToAddress(by_address_number_sends)
+        Ok(finsight::TotalSendsToAddress(by_address_number_sends))
     }
 
-    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+    pub async fn do_total_value_to_address(&self) -> ZingoLibResult<finsight::TotalValueToAddress> {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await?;
         let mut by_address_total = HashMap::new();
         for key in values_sent_to_addresses.0.keys() {
             let sum = values_sent_to_addresses.0[key].iter().sum();
             by_address_total.insert(key.clone(), sum);
         }
-        finsight::TotalValueToAddress(by_address_total)
+        Ok(finsight::TotalValueToAddress(by_address_total))
     }
 
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
@@ -1634,8 +1639,8 @@ impl LightClient {
             }
         }
     }
-    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let summaries = self.do_list_txsummaries().await;
+    async fn value_transfer_by_to_address(&self) -> ZingoLibResult<finsight::ValuesSentToAddress> {
+        let summaries = self.do_list_txsummaries().await?;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
             use ValueTransferKind::*;
@@ -1669,7 +1674,7 @@ impl LightClient {
                 SendToSelf { .. } | Received { .. } => (),
             }
         }
-        finsight::ValuesSentToAddress(amount_by_address)
+        Ok(finsight::ValuesSentToAddress(amount_by_address))
     }
 
     fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
