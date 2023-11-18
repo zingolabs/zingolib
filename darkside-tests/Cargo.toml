@@ -19,16 +19,10 @@ prost = { workspace = true, optional = true}
 tower = { workspace = true, optional = true}
 http-body = { workspace = true, optional = true }
 
-[features]
-default = [ "darkside_tests" ]
-darkside_tests = ["dep:http", "dep:hyper", "dep:tonic", "dep:prost", "dep:tower", "dep:http-body"]
-
-[dev-dependencies]
 zcash_primitives = { workspace = true }
 tempdir = { workspace = true }
 portpicker = { workspace = true }
 env_logger = "0.10.0"
-zingolib = { path = "../zingolib/" }
 bech32 = "0.9.0"
 rand = "0.8.5"
 hex = "0.3"
