@@ -1,23 +1,14 @@
-use super::darkside_types::{
-    darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
-    DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
+use darkside_tests::{
+    constants::DARKSIDE_SEED,
+    utils::{
+        prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector,
+        DarksideHandler,
+    },
 };
-use crate::darkside::{
-    constants::{self, BRANCH_ID, DARKSIDE_SEED},
-    utils::{update_tree_states_for_transaction, DarksideHandler},
-};
-
 use tokio::time::sleep;
-use zingo_testutils::scenarios::setup::ClientBuilder;
+use zingo_testutils::{data::seeds, scenarios::setup::ClientBuilder};
 use zingoconfig::RegtestNetwork;
 use zingolib::{get_base_address, lightclient::PoolBalances};
-
-use std::sync::Arc;
-
-use http_body::combinators::UnsyncBoxBody;
-use hyper::{client::HttpConnector, Uri};
-use tonic::Status;
-use tower::{util::BoxCloneService, ServiceExt};
 
 #[tokio::test]
 async fn simple_sync() {
@@ -130,7 +121,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .await;
     let recipient = client_manager
         .build_client(
-            crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
             regtest_network,

@@ -44,7 +44,7 @@ type UnderlyingService = BoxCloneService<
 macro_rules! define_darkside_connector_methods(
     ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
         #[allow(unused)]
-        pub(crate) async fn $name(&$self, $($param: $param_type),*) -> ::std::result::Result<$return, String> {
+        pub async fn $name(&$self, $($param: $param_type),*) -> ::std::result::Result<$return, String> {
             let request = ::tonic::Request::new($param_packing);
 
             let mut client = $self.get_client().await.map_err(|e| format!("{e}"))?;
@@ -58,7 +58,7 @@ macro_rules! define_darkside_connector_methods(
 );
 
 #[derive(Clone)]
-pub struct DarksideConnector(http::Uri);
+pub struct DarksideConnector(pub http::Uri);
 
 impl DarksideConnector {
     pub fn new(uri: http::Uri) -> Self {
@@ -148,7 +148,7 @@ impl DarksideConnector {
     );
 }
 
-async fn prepare_darksidewalletd(
+pub async fn prepare_darksidewalletd(
     uri: http::Uri,
     include_startup_funds: bool,
 ) -> Result<(), String> {
@@ -269,7 +269,7 @@ impl Drop for DarksideHandler {
     }
 }
 
-pub(crate) async fn update_tree_states_for_transaction(
+pub async fn update_tree_states_for_transaction(
     server_id: &Uri,
     raw_tx: RawTransaction,
     height: u64,
