@@ -233,6 +233,11 @@ pub struct DarksideHandler {
     pub darkside_dir: PathBuf,
 }
 
+impl Default for DarksideHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl DarksideHandler {
     pub fn new() -> Self {
         let (grpc_port, darkside_dir) = generate_darksidewalletd();
@@ -257,9 +262,10 @@ impl DarksideHandler {
 
 impl Drop for DarksideHandler {
     fn drop(&mut self) {
-        if let Err(_) = Command::new("kill")
+        if Command::new("kill")
             .arg(self.lightwalletd_handle.id().to_string())
             .output()
+            .is_err()
         {
             // if regular kill doesn't work, kill it harder
             let _ = self.lightwalletd_handle.kill();
