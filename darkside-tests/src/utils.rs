@@ -243,7 +243,7 @@ impl DarksideHandler {
             darkside_dir.join("logs"),
             darkside_dir.join("conf"),
             darkside_dir.join("data"),
-            get_cargo_manifest_dir().join("bin"),
+            get_cargo_manifest_dir().join("lightwalletd_bin"),
             check_interval,
             grpc_bind_addr,
         );
