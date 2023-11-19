@@ -12,12 +12,12 @@ zingoconfig = { path = "../zingoconfig" }
 tokio = { version = "1.25.0", features = ["full"] }
 json = "0.12.4"
 log = "0.4.17"
-http = { workspace = true, optional = true}
-hyper = { workspace = true, optional = true}
-tonic = { workspace = true, optional = true}
-prost = { workspace = true, optional = true}
-tower = { workspace = true, optional = true}
-http-body = { workspace = true, optional = true }
+http = { workspace = true }
+hyper = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+tower = { workspace = true }
+http-body = { workspace = true }
 
 zcash_primitives = { workspace = true }
 tempdir = { workspace = true }
