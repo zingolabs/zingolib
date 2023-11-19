@@ -18,7 +18,7 @@ use zcash_primitives::sapling::{note_encryption::SaplingDomain, Node};
 use zingo_testutils::{
     self,
     incrementalmerkletree::frontier::CommitmentTree,
-    regtest::{get_regtest_dir, launch_lightwalletd},
+    regtest::{get_cargo_manifest_dir, launch_lightwalletd},
 };
 use zingolib::wallet::traits::DomainWalletExt;
 
@@ -237,15 +237,13 @@ impl DarksideHandler {
     pub fn new() -> Self {
         let (grpc_port, darkside_dir) = generate_darksidewalletd();
         let grpc_bind_addr = Some(format!("127.0.0.1:{grpc_port}"));
-        let darkside_dir_string = darkside_dir.to_string_lossy().to_string();
-        println!("Darksidewalletd running at {darkside_dir_string}");
 
         let check_interval = Duration::from_millis(300);
         let lightwalletd_handle = launch_lightwalletd(
             darkside_dir.join("logs"),
             darkside_dir.join("conf"),
             darkside_dir.join("data"),
-            get_regtest_dir().join("bin"),
+            get_cargo_manifest_dir().join("bin"),
             check_interval,
             grpc_bind_addr,
         );
