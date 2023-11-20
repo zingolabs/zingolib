@@ -141,20 +141,16 @@ impl UpdateNotes {
                             .unwrap_or(0);
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
-                        wallet_transactions
-                            .write()
-                            .await
-                            .add_new_spent(
-                                transaction_id_spent_in,
-                                spent_at_height,
-                                false,
-                                ts,
-                                maybe_spend_nullifier,
-                                value,
-                                transaction_id_spent_from,
-                                output_index,
-                            )
-                            .await;
+                        wallet_transactions.write().await.add_new_spent(
+                            transaction_id_spent_in,
+                            spent_at_height,
+                            false,
+                            ts,
+                            maybe_spend_nullifier,
+                            value,
+                            transaction_id_spent_from,
+                            output_index,
+                        );
 
                         // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {

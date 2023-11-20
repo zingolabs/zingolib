@@ -453,7 +453,7 @@ impl TransactionMetadataSet {
 
     // Records a TxId as having spent some nullifiers from the wallet.
     #[allow(clippy::too_many_arguments)]
-    pub async fn add_new_spent(
+    pub fn add_new_spent(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -465,8 +465,8 @@ impl TransactionMetadataSet {
         output_index: u32,
     ) {
         match spent_nullifier {
-            PoolNullifier::Orchard(spent_nullifier) => {
-                self.add_new_spent_internal::<OrchardDomain>(
+            PoolNullifier::Orchard(spent_nullifier) => self
+                .add_new_spent_internal::<OrchardDomain>(
                     txid,
                     height,
                     unconfirmed,
@@ -475,11 +475,9 @@ impl TransactionMetadataSet {
                     value,
                     source_txid,
                     output_index,
-                )
-                .await
-            }
-            PoolNullifier::Sapling(spent_nullifier) => {
-                self.add_new_spent_internal::<SaplingDomain<ChainType>>(
+                ),
+            PoolNullifier::Sapling(spent_nullifier) => self
+                .add_new_spent_internal::<SaplingDomain<ChainType>>(
                     txid,
                     height,
                     unconfirmed,
@@ -488,14 +486,12 @@ impl TransactionMetadataSet {
                     value,
                     source_txid,
                     output_index,
-                )
-                .await
-            }
+                ),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn add_new_spent_internal<D: DomainWalletExt>(
+    fn add_new_spent_internal<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
