@@ -22,3 +22,4 @@ zingocli/tests/data/basic_zcashd.conf
 cobertura.xml
 zingocli/tests/times/*
 wallets/*
+darkside-tests/lightwalletd_bin/

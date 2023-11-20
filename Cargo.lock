@@ -624,6 +624,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkside-tests"
+version = "0.1.0"
+dependencies = [
+ "bech32",
+ "bip0039",
+ "env_logger",
+ "futures-util",
+ "hex 0.3.2",
+ "http",
+ "http-body",
+ "hyper",
+ "itertools 0.10.5",
+ "json",
+ "log",
+ "orchard",
+ "portpicker",
+ "prost 0.10.4",
+ "rand 0.8.5",
+ "serde_json",
+ "shardtree",
+ "tempdir",
+ "tokio",
+ "tonic",
+ "tonic-build 0.7.2",
+ "tower",
+ "tracing",
+ "tracing-log 0.1.4",
+ "tracing-subscriber",
+ "tracing-test",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_primitives",
+ "zingo-testutils",
+ "zingoconfig",
+ "zingolib",
+]
+
+[[package]]
 name = "deranged"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1373,34 +1411,17 @@ dependencies = [
 
 [[package]]
 name = "integration-tests"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
- "bech32",
  "bip0039",
- "env_logger",
- "futures-util",
  "hex 0.3.2",
- "http",
- "http-body",
- "hyper",
  "itertools 0.10.5",
  "json",
  "log",
  "orchard",
- "portpicker",
- "prost 0.10.4",
- "rand 0.8.5",
  "serde_json",
  "shardtree",
- "tempdir",
  "tokio",
- "tonic",
- "tonic-build 0.7.2",
- "tower",
- "tracing",
- "tracing-log 0.1.4",
- "tracing-subscriber",
- "tracing-test",
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
