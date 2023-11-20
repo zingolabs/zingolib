@@ -19,6 +19,7 @@ use zingo_testutils::{
     self,
     incrementalmerkletree::frontier::CommitmentTree,
     regtest::{get_cargo_manifest_dir, launch_lightwalletd},
+    scenarios::setup::TestEnvironmentGenerator,
 };
 use zingolib::wallet::traits::DomainWalletExt;
 
@@ -217,10 +218,8 @@ pub async fn prepare_darksidewalletd(
 
     Ok(())
 }
-pub fn generate_darksidewalletd() -> (String, PathBuf) {
-    let darkside_grpc_port = portpicker::pick_unused_port()
-        .expect("Port unpickable!")
-        .to_string();
+pub fn generate_darksidewalletd(set_port: Option<portpicker::Port>) -> (String, PathBuf) {
+    let darkside_grpc_port = TestEnvironmentGenerator::pick_unused_port_to_string(set_port);
     let darkside_dir = tempdir::TempDir::new("zingo_darkside_test")
         .unwrap()
         .into_path();
@@ -235,12 +234,12 @@ pub struct DarksideHandler {
 
 impl Default for DarksideHandler {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 impl DarksideHandler {
-    pub fn new() -> Self {
-        let (grpc_port, darkside_dir) = generate_darksidewalletd();
+    pub fn new(set_port: Option<portpicker::Port>) -> Self {
+        let (grpc_port, darkside_dir) = generate_darksidewalletd(set_port);
         let grpc_bind_addr = Some(format!("127.0.0.1:{grpc_port}"));
 
         let check_interval = Duration::from_millis(300);
