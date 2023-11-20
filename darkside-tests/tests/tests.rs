@@ -12,7 +12,7 @@ use zingolib::{get_base_address, lightclient::PoolBalances};
 
 #[tokio::test]
 async fn simple_sync() {
-    let darkside_handler = DarksideHandler::new(None);
+    let darkside_handler = DarksideHandler::default();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -51,7 +51,7 @@ async fn simple_sync() {
 
 #[tokio::test]
 async fn reorg_away_receipt() {
-    let darkside_handler = DarksideHandler::new(None);
+    let darkside_handler = DarksideHandler::default();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -103,7 +103,7 @@ async fn reorg_away_receipt() {
 
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
-    let darkside_handler = DarksideHandler::new();
+    let darkside_handler = DarksideHandler::default();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
