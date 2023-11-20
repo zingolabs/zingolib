@@ -1,3 +1,4 @@
+pub mod advanced_reorg_tests_constants;
 pub mod constants;
 pub mod utils;
 pub mod darkside_types {
