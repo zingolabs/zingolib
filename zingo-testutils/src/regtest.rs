@@ -107,9 +107,9 @@ pub fn launch_lightwalletd(
 
     File::create(&lightwalletd_log).expect("file::create Result error");
     let mut lightwalletd_stdout_logfile =
-        File::create(&lightwalletd_stdout_log).expect("file::create Result error");
+        File::create(lightwalletd_stdout_log).expect("file::create Result error");
     let mut lightwalletd_stderr_logfile =
-        File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+        File::create(lightwalletd_stderr_log).expect("file::create Result error");
 
     let mut args = vec![
         "--no-tls-very-insecure".to_string(),
@@ -138,7 +138,7 @@ pub fn launch_lightwalletd(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
+        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/integration-tests/regtest/bin/ directory, see docs/integration-tests.txt");
 
     if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
         std::thread::spawn(move || {

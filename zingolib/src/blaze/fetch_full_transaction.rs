@@ -1,12 +1,15 @@
 use super::syncdata::BlazeSyncData;
-use crate::wallet::{
-    data::OutgoingTxData,
-    keys::{address_from_pubkeyhash, unified::WalletCapability},
-    traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, NoteInterface as _, Recipient as _,
-        ShieldedOutputExt as _, Spend as _, ToBytes as _,
+use crate::{
+    error::{ZingoLibError, ZingoLibResult},
+    wallet::{
+        data::OutgoingTxData,
+        keys::{address_from_pubkeyhash, unified::WalletCapability},
+        traits::{
+            self as zingo_traits, Bundle as _, DomainWalletExt, NoteInterface as _, Recipient as _,
+            ShieldedOutputExt as _, Spend as _, ToBytes as _,
+        },
+        transactions::TransactionMetadataSet,
     },
-    transactions::TransactionMetadataSet,
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
@@ -418,20 +421,16 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .add_new_spent(
-                            transaction.txid(),
-                            transaction_block_height,
-                            true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
-                            block_time,
-                            (*nf).into(),
-                            *value,
-                            *transaction_id,
-                            *output_index,
-                        )
-                        .await;
+                    self.transaction_metadata_set.write().await.add_new_spent(
+                        transaction.txid(),
+                        transaction_block_height,
+                        true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
+                        block_time,
+                        (*nf).into(),
+                        *value,
+                        *transaction_id,
+                        *output_index,
+                    );
                 }
             }
         }
@@ -490,13 +489,10 @@ impl TransactionContext {
                     Ok(parsed_zingo_memo) => {
                         arbitrary_memos_with_txids.push((parsed_zingo_memo, transaction.txid()));
                     }
-
-                    Err(e) => log::error!(
-                        "Could not decode wallet internal memo: {e}.\n\
-                    Have you recently used a more up-to-date version of\
-                    this software?\nIf not, this may mean you are being sent\
-                    malicious data.\nSome information may not display correctly"
-                    ),
+                    Err(e) => {
+                        let _memo_error: ZingoLibResult<()> =
+                            ZingoLibError::CouldNotDecodeMemo(e).print_and_pass_error();
+                    }
                 }
             }
             self.transaction_metadata_set

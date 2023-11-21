@@ -44,14 +44,14 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
+        UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32, bool)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32)>();
+            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32, bool)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.transaction_metadata_set.clone();
@@ -77,6 +77,7 @@ impl UpdateNotes {
                         nf,
                         BlockHeight::from(earliest_block as u32),
                         output_index,
+                        false,
                     ))
                     .map_err(|e| format!("Error sending note for updating: {}", e))?;
             }
@@ -95,6 +96,7 @@ impl UpdateNotes {
                 maybe_spend_nullifier,
                 at_height,
                 output_index,
+                need_to_fetch,
             )) = receiver.recv().await
             {
                 let bsync_data = bsync_data.clone();
@@ -129,30 +131,26 @@ impl UpdateNotes {
                         let value = wallet_transactions
                             .write()
                             .await
-                            .mark_note_as_spent(
+                            .process_spent_note(
                                 transaction_id_spent_from,
                                 &maybe_spend_nullifier,
                                 &transaction_id_spent_in,
                                 spent_at_height,
                                 output_index,
                             )
-                            .expect("To mark note as spent");
+                            .unwrap_or(0);
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
-                        wallet_transactions
-                            .write()
-                            .await
-                            .add_new_spent(
-                                transaction_id_spent_in,
-                                spent_at_height,
-                                false,
-                                ts,
-                                maybe_spend_nullifier,
-                                value,
-                                transaction_id_spent_from,
-                                output_index,
-                            )
-                            .await;
+                        wallet_transactions.write().await.add_new_spent(
+                            transaction_id_spent_in,
+                            spent_at_height,
+                            false,
+                            ts,
+                            maybe_spend_nullifier,
+                            value,
+                            transaction_id_spent_from,
+                            output_index,
+                        );
 
                         // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {
@@ -162,7 +160,7 @@ impl UpdateNotes {
                         }
                     }
                     // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
-                    if download_memos != MemoDownloadOption::NoMemos {
+                    if need_to_fetch && download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
                             .unwrap();

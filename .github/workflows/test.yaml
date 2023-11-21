@@ -55,8 +55,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./zingocli/regtest/bin/
+      - name: Symlink lightwalletd and zcash binaries for darkside-tests
+        run: ln -s /usr/bin/lightwalletd ./darkside-tests/lightwalletd_bin/
+
+      - name: Symlink lightwalletd and zcash binaries for integration-tests
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./integration-tests/regtest/bin/
 
       - name: Symlink zcash parameters
         run: ln -s /root/.zcash-params /github/home

@@ -6,7 +6,7 @@ use crate::{
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
-    error::ZingoLibError,
+    error::{ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -283,11 +283,16 @@ impl LightClient {
     //        SAVE METHODS
 
     async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
-        self.save_internal_buffer().await?;
-        self.rust_write_save_buffer_to_file().await
+        match self.save_internal_buffer().await {
+            Ok(()) => self.rust_write_save_buffer_to_file().await,
+            Err(err) => {
+                error!("{}", err);
+                Err(err)
+            }
+        }
     }
 
-    async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
+    async fn save_internal_buffer(&self) -> ZingoLibResult<()> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet
             .write(&mut buffer)
@@ -297,7 +302,7 @@ impl LightClient {
         Ok(())
     }
 
-    async fn rust_write_save_buffer_to_file(&self) -> Result<bool, ZingoLibError> {
+    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<bool> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // on mobile platforms, saving from this buffer will be handled by the native layer
         {
@@ -313,7 +318,7 @@ impl LightClient {
                     .map_err(ZingoLibError::WriteFileError)?;
                 Ok(true)
             } else {
-                Err(ZingoLibError::EmptySaveBuffer)
+                ZingoLibError::EmptySaveBuffer.print_and_pass_error()
             }
         }
     }
@@ -324,12 +329,13 @@ impl LightClient {
         Ok(())
     }
 
-    async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+    pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
+        self.save_internal_rust().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
         } else {
-            Err(ZingoLibError::EmptySaveBuffer)
+            ZingoLibError::EmptySaveBuffer.print_and_pass_error()
         }
     }
 
@@ -408,27 +414,6 @@ impl LightClient {
             error!("{}", err);
             log::debug!("File does not exist, nothing to delete.");
             Err(err)
-        }
-    }
-
-    async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
-        let last_synced_height = self.wallet.last_synced_height().await;
-        let mut txmds_writelock = self
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
-        if let Some(ref mut trees) = txmds_writelock.witness_trees {
-            trees
-                .witness_tree_sapling
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees
-                .witness_tree_orchard
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
         }
     }
 
@@ -1159,27 +1144,6 @@ impl LightClient {
         *lc.mempool_monitor.write().unwrap() = Some(h);
     }
 
-    async fn wallet_has_any_empty_commitment_trees(&self) -> bool {
-        self.wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .witness_trees
-            .as_ref()
-            .is_some_and(|trees| {
-                trees
-                    .witness_tree_orchard
-                    .max_leaf_position(0)
-                    .unwrap()
-                    .is_none()
-                    || trees
-                        .witness_tree_sapling
-                        .max_leaf_position(0)
-                        .unwrap()
-                        .is_none()
-            })
-    }
     /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
@@ -1195,10 +1159,12 @@ impl LightClient {
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
         // our witness trees are aligned with our blockchain data
-        self.ensure_witness_tree_not_above_wallet_blocks().await;
+        self.wallet
+            .ensure_witness_tree_not_above_wallet_blocks()
+            .await;
 
         // This is a fresh wallet. We need to get the initial trees
-        if self.wallet_has_any_empty_commitment_trees().await
+        if self.wallet.has_any_empty_commitment_trees().await
             && last_synced_height >= self.config.sapling_activation_height()
         {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
@@ -1745,106 +1711,7 @@ impl LightClient {
             Err(ZingoLibError::NoWalletLocation)
         }
     }
-}
 
-use serde_json::Value;
-
-enum PriceFetchError {
-    ReqwestError(String),
-    NotJson,
-    NoElements,
-    PriceReprError(PriceReprError),
-    NanValue,
-}
-
-impl std::fmt::Display for PriceFetchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceFetchError::*;
-        f.write_str(&match self {
-            ReqwestError(e) => format!("ReqwestError: {}", e),
-            NotJson => "NotJson".to_string(),
-            NoElements => "NoElements".to_string(),
-            PriceReprError(e) => format!("PriceReprError: {}", e),
-            NanValue => "NanValue".to_string(),
-        })
-    }
-}
-
-enum PriceReprError {
-    NoValue,
-    NoAsStrValue,
-    NotParseable,
-}
-
-impl std::fmt::Display for PriceReprError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceReprError::*;
-        fmt.write_str(match self {
-            NoValue => "NoValue",
-            NoAsStrValue => "NoAsStrValue",
-            NotParseable => "NotParseable",
-        })
-    }
-}
-fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
-    if let Some(value) = from_gemini.get("price") {
-        if let Some(stringable) = value.as_str() {
-            if let Ok(parsed) = stringable.parse::<f64>() {
-                Ok(parsed)
-            } else {
-                Err(PriceReprError::NotParseable)
-            }
-        } else {
-            Err(PriceReprError::NoAsStrValue)
-        }
-    } else {
-        Err(PriceReprError::NoValue)
-    }
-}
-
-async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
-    let httpget =
-        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
-            Ok(httpresponse) => httpresponse,
-            Err(e) => {
-                return Err(PriceFetchError::ReqwestError(e.to_string()));
-            }
-        };
-    let serialized = match httpget.json::<Value>().await {
-        Ok(asjson) => asjson,
-        Err(_) => {
-            return Err(PriceFetchError::NotJson);
-        }
-    };
-    let elements = match serialized.as_array() {
-        Some(elements) => elements,
-        None => {
-            return Err(PriceFetchError::NoElements);
-        }
-    };
-    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
-        Ok(trades) => trades,
-        Err(e) => {
-            return Err(PriceFetchError::PriceReprError(e));
-        }
-    };
-    if trades.iter().any(|x| x.is_nan()) {
-        return Err(PriceFetchError::NanValue);
-    }
-    // NOTE:  This code will panic if a value is received that:
-    // 1. was parsed from a string to an f64
-    // 2. is not a NaN
-    // 3. cannot be compared to an f64
-    // TODO:  Show that this is impossible, or write code to handle
-    // that case.
-    trades.sort_by(|a, b| {
-        a.partial_cmp(b)
-            .expect("a and b are non-nan f64, I think that makes them comparable")
-    });
-    Ok(trades[5])
-}
-
-impl LightClient {
     fn unspent_pending_spent(
         &self,
         note: JsonValue,
@@ -2041,6 +1908,104 @@ impl LightClient {
         res
     }
 }
+
+use serde_json::Value;
+
+enum PriceFetchError {
+    ReqwestError(String),
+    NotJson,
+    NoElements,
+    PriceReprError(PriceReprError),
+    NanValue,
+}
+
+impl std::fmt::Display for PriceFetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PriceFetchError::*;
+        f.write_str(&match self {
+            ReqwestError(e) => format!("ReqwestError: {}", e),
+            NotJson => "NotJson".to_string(),
+            NoElements => "NoElements".to_string(),
+            PriceReprError(e) => format!("PriceReprError: {}", e),
+            NanValue => "NanValue".to_string(),
+        })
+    }
+}
+
+enum PriceReprError {
+    NoValue,
+    NoAsStrValue,
+    NotParseable,
+}
+
+impl std::fmt::Display for PriceReprError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PriceReprError::*;
+        fmt.write_str(match self {
+            NoValue => "NoValue",
+            NoAsStrValue => "NoAsStrValue",
+            NotParseable => "NotParseable",
+        })
+    }
+}
+fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
+    if let Some(value) = from_gemini.get("price") {
+        if let Some(stringable) = value.as_str() {
+            if let Ok(parsed) = stringable.parse::<f64>() {
+                Ok(parsed)
+            } else {
+                Err(PriceReprError::NotParseable)
+            }
+        } else {
+            Err(PriceReprError::NoAsStrValue)
+        }
+    } else {
+        Err(PriceReprError::NoValue)
+    }
+}
+
+async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
+    let httpget =
+        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
+            Ok(httpresponse) => httpresponse,
+            Err(e) => {
+                return Err(PriceFetchError::ReqwestError(e.to_string()));
+            }
+        };
+    let serialized = match httpget.json::<Value>().await {
+        Ok(asjson) => asjson,
+        Err(_) => {
+            return Err(PriceFetchError::NotJson);
+        }
+    };
+    let elements = match serialized.as_array() {
+        Some(elements) => elements,
+        None => {
+            return Err(PriceFetchError::NoElements);
+        }
+    };
+    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
+        Ok(trades) => trades,
+        Err(e) => {
+            return Err(PriceFetchError::PriceReprError(e));
+        }
+    };
+    if trades.iter().any(|x| x.is_nan()) {
+        return Err(PriceFetchError::NanValue);
+    }
+    // NOTE:  This code will panic if a value is received that:
+    // 1. was parsed from a string to an f64
+    // 2. is not a NaN
+    // 3. cannot be compared to an f64
+    // TODO:  Show that this is impossible, or write code to handle
+    // that case.
+    trades.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("a and b are non-nan f64, I think that makes them comparable")
+    });
+    Ok(trades[5])
+}
+
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
 #[cfg(feature = "test-features")]

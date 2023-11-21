@@ -19,6 +19,8 @@ use zcash_primitives::{
 
 use zingoconfig::{ChainType, MAX_REORG};
 
+use crate::error::{ZingoLibError, ZingoLibResult};
+
 use super::{
     data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
     keys::unified::WalletCapability,
@@ -401,61 +403,6 @@ impl TransactionMetadataSet {
         self.remove_txids(txids_to_remove);
     }
 
-    // Will mark a note as having been spent at the supplied height and spent_txid.
-    // Takes the nullifier of the spent note, the note's index in its containing transaction,
-    // as well as the txid of its containing transaction. TODO: Only one of
-    // `nullifier` and `(output_index, txid)` is needed, although we use the nullifier to
-    // determine the domain.
-    pub fn mark_note_as_spent(
-        &mut self,
-        txid: TxId,
-        spent_nullifier: &PoolNullifier,
-        spent_txid: &TxId,
-        spent_at_height: BlockHeight,
-        output_index: u32,
-    ) -> Result<u64, String> {
-        match spent_nullifier {
-            PoolNullifier::Sapling(sapling_nullifier) => {
-                if let Some(sapling_note_data) = self
-                    .current
-                    .get_mut(&txid)
-                    .expect("TXid should be a key in current.")
-                    .sapling_notes
-                    .iter_mut()
-                    .find(|n| n.output_index == output_index)
-                {
-                    sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                    sapling_note_data.unconfirmed_spent = None;
-                    Ok(sapling_note_data.note.value().inner())
-                } else {
-                    Err(format!(
-                        "no such sapling nullifier '{:?}' found in transaction",
-                        *sapling_nullifier
-                    ))
-                }
-            }
-            PoolNullifier::Orchard(orchard_nullifier) => {
-                if let Some(orchard_note_data) = self
-                    .current
-                    .get_mut(&txid)
-                    .unwrap()
-                    .orchard_notes
-                    .iter_mut()
-                    .find(|n| n.nullifier == Some(*orchard_nullifier))
-                {
-                    orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                    orchard_note_data.unconfirmed_spent = None;
-                    Ok(orchard_note_data.note.value().inner())
-                } else {
-                    Err(format!(
-                        "no such orchard nullifier '{:?}' found in transaction",
-                        *orchard_nullifier
-                    ))
-                }
-            }
-        }
-    }
-
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
     // transction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
     //
@@ -478,30 +425,26 @@ impl TransactionMetadataSet {
         });
     }
 
-    fn get_or_create_transaction_metadata(
+    fn create_modify_get_transaction_metadata(
         &mut self,
         txid: &TxId,
         height: BlockHeight,
         unconfirmed: bool,
         datetime: u64,
     ) -> &'_ mut TransactionMetadata {
-        if !self.current.contains_key(txid) {
-            self.current.insert(
-                *txid,
-                TransactionMetadata::new(height, datetime, txid, unconfirmed),
-            );
-            self.some_txid_from_highest_wallet_block = Some(*txid);
-        }
-        let transaction_metadata = self.current.get_mut(txid).expect("Txid should be present");
-
-        // Make sure the unconfirmed status matches
-        if transaction_metadata.unconfirmed != unconfirmed {
-            transaction_metadata.unconfirmed = unconfirmed;
-            transaction_metadata.block_height = height;
-            transaction_metadata.datetime = datetime;
-        }
-
-        transaction_metadata
+        self.current
+            .entry(*txid)
+            // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
+            .and_modify(|transaction_metadata| {
+                transaction_metadata.unconfirmed = unconfirmed;
+                transaction_metadata.block_height = height;
+                transaction_metadata.datetime = datetime;
+            })
+            // if this transaction is new to our data, insert it
+            .or_insert_with(|| {
+                self.some_txid_from_highest_wallet_block = Some(*txid); // TOdO IS this the highest wallet block?
+                TransactionMetadata::new(height, datetime, txid, unconfirmed)
+            })
     }
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
@@ -510,7 +453,7 @@ impl TransactionMetadataSet {
 
     // Records a TxId as having spent some nullifiers from the wallet.
     #[allow(clippy::too_many_arguments)]
-    pub async fn add_new_spent(
+    pub fn add_new_spent(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -522,8 +465,8 @@ impl TransactionMetadataSet {
         output_index: u32,
     ) {
         match spent_nullifier {
-            PoolNullifier::Orchard(spent_nullifier) => {
-                self.add_new_spent_internal::<OrchardDomain>(
+            PoolNullifier::Orchard(spent_nullifier) => self
+                .add_new_spent_internal::<OrchardDomain>(
                     txid,
                     height,
                     unconfirmed,
@@ -532,11 +475,9 @@ impl TransactionMetadataSet {
                     value,
                     source_txid,
                     output_index,
-                )
-                .await
-            }
-            PoolNullifier::Sapling(spent_nullifier) => {
-                self.add_new_spent_internal::<SaplingDomain<ChainType>>(
+                ),
+            PoolNullifier::Sapling(spent_nullifier) => self
+                .add_new_spent_internal::<SaplingDomain<ChainType>>(
                     txid,
                     height,
                     unconfirmed,
@@ -545,14 +486,12 @@ impl TransactionMetadataSet {
                     value,
                     source_txid,
                     output_index,
-                )
-                .await
-            }
+                ),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn add_new_spent_internal<D: DomainWalletExt>(
+    fn add_new_spent_internal<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -567,11 +506,13 @@ impl TransactionMetadataSet {
         <D as Domain>::Recipient: traits::Recipient,
     {
         // Record this Tx as having spent some funds
-        let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
+        let transaction_metadata = self.create_modify_get_transaction_metadata(
+            &txid,
+            height,
+            unconfirmed,
+            timestamp as u64,
+        );
 
-        // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
-        transaction_metadata.block_height = height;
         if !<D::WalletNote as NoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
         )
@@ -601,6 +542,52 @@ impl TransactionMetadataSet {
         }
     }
 
+    // Will mark a note as having been spent at the supplied height and spent_txid.
+    // Takes the nullifier of the spent note, the note's index in its containing transaction,
+    // as well as the txid of its containing transaction. tODO: make generic
+    pub fn process_spent_note(
+        &mut self,
+        txid: TxId,
+        spent_nullifier: &PoolNullifier,
+        spent_txid: &TxId,
+        spent_at_height: BlockHeight,
+        output_index: u32,
+    ) -> ZingoLibResult<u64> {
+        match self.current.get_mut(&txid) {
+            None => ZingoLibError::NoSuchTxId(txid).print_and_pass_error(),
+            Some(transaction_metadata) => match spent_nullifier {
+                PoolNullifier::Sapling(_sapling_nullifier) => {
+                    if let Some(sapling_note_data) = transaction_metadata
+                        .sapling_notes
+                        .iter_mut()
+                        .find(|n| n.output_index == output_index)
+                    {
+                        sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                        sapling_note_data.unconfirmed_spent = None;
+                        Ok(sapling_note_data.note.value().inner())
+                    } else {
+                        ZingoLibError::NoSuchSaplingOutputInTxId(txid, output_index)
+                            .print_and_pass_error()
+                    }
+                }
+                PoolNullifier::Orchard(_orchard_nullifier) => {
+                    if let Some(orchard_note_data) = transaction_metadata
+                        .orchard_notes
+                        .iter_mut()
+                        .find(|n| n.output_index == output_index)
+                    {
+                        orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                        orchard_note_data.unconfirmed_spent = None;
+                        Ok(orchard_note_data.note.value().inner())
+                    } else {
+                        ZingoLibError::NoSuchOrchardOutputInTxId(txid, output_index)
+                            .print_and_pass_error()
+                    }
+                }
+            },
+        }
+    }
+
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
@@ -610,7 +597,8 @@ impl TransactionMetadataSet {
         total_transparent_value_spent: u64,
     ) {
         let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
+            self.create_modify_get_transaction_metadata(&txid, height, unconfirmed, timestamp);
+        // Todo yeesh
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -701,7 +689,7 @@ impl TransactionMetadataSet {
         output_num: u32,
     ) {
         // Read or create the current TxId
-        let transaction_metadata = self.get_or_create_transaction_metadata(
+        let transaction_metadata = self.create_modify_get_transaction_metadata(
             &txid,
             BlockHeight::from(height),
             unconfirmed,
@@ -747,9 +735,7 @@ impl TransactionMetadataSet {
         D::Recipient: Recipient,
     {
         let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, true, timestamp);
-        // Update the block height, in case this was a mempool or unconfirmed tx.
-        transaction_metadata.block_height = height;
+            self.create_modify_get_transaction_metadata(&txid, height, true, timestamp);
 
         match D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
@@ -794,9 +780,7 @@ impl TransactionMetadataSet {
         D::Recipient: Recipient,
     {
         let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
-        // Update the block height, in case this was a mempool or unconfirmed tx.
-        transaction_metadata.block_height = height;
+            self.create_modify_get_transaction_metadata(&txid, height, unconfirmed, timestamp);
 
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),

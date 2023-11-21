@@ -492,7 +492,7 @@ impl BlockManagementData {
         }
     }
     /// This function handles Orchard and Sapling domains.
-    /// This function takes data from the Untrusted Malicious Proxy, and uses it to construct a witness locally.  I am
+    /// This function takes data from the light server and uses it to construct a witness locally.  should?
     /// currently of the opinion that this function should be factored into separate concerns.
     pub(crate) async fn get_note_witness<D>(
         &self,
