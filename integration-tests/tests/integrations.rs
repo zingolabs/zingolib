@@ -2132,10 +2132,7 @@ mod slow {
                         balance.spendable_sapling_balance.unwrap()
                             + balance.spendable_orchard_balance.unwrap()
                     } - u64::from(MINIMUM_FEE),
-                    match memo {
-                        Some(memo) => Some(Memo::from_str(memo).unwrap().into()),
-                        None => None,
-                    },
+                    memo.map(|memo| Memo::from_str(memo).unwrap().into()),
                 )])
                 .await
                 .unwrap();

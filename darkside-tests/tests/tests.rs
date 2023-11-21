@@ -30,7 +30,7 @@ async fn simple_sync() {
 
     println!("{}", result);
 
-    assert_eq!(result.success, true);
+    assert!(result.success);
     assert_eq!(result.latest_block, 3);
     assert_eq!(result.total_blocks_synced, 3);
     assert_eq!(

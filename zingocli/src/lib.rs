@@ -143,7 +143,7 @@ fn start_interactive(
     let mut chain_name = "".to_string();
 
     loop {
-        if &chain_name == "" {
+        if chain_name.is_empty() {
             let info = send_command("info".to_string(), vec![]);
             chain_name = json::parse(&info)
                 .map(|mut json_info| json_info.remove("chain_name"))
