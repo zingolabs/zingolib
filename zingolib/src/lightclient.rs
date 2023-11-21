@@ -1232,6 +1232,19 @@ impl LightClient {
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;
+            if res.is_err() {
+                // If something went wrong during a batch, reset the wallet state to
+                // how it was before the latest batch
+                BlockManagementData::invalidate_block(
+                    self.wallet.last_synced_height().await,
+                    self.wallet.blocks.clone(),
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .clone(),
+                )
+                .await;
+            }
             res.as_ref()?;
             if *self.interrupt_sync.read().await {
                 log::debug!("LightClient interrupt_sync is true");
