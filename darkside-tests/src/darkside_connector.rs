@@ -1,4 +1,4 @@
-pub(crate) use super::darkside_types::{
+use darkside_tests::darkside_types::{
     darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
     DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
 };

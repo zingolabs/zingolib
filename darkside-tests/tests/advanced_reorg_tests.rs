@@ -1,15 +1,14 @@
-use super::darkside_types::{Empty, TreeState};
-use crate::darkside::utils::read_lines;
-use crate::darkside::{
+use darkside_tests::darkside_types::{Empty, TreeState};
+use darkside_tests::utils::read_lines;
+use darkside_tests::{
     advanced_reorg_tests_constants::{self, ADVANCED_REORG_TESTS_USER_WALLET},
     constants::BRANCH_ID,
-    darkside_connector::DarksideConnector,
-    utils::{read_block_dataset, DarksideHandler},
+    utils::{read_block_dataset, DarksideConnector, DarksideHandler},
 };
-use crate::scenarios::setup::ClientBuilder;
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_testutils::regtest::get_cargo_manifest_dir;
+use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 
