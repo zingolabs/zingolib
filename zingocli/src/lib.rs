@@ -141,10 +141,11 @@ fn start_interactive(
     };
 
     let info = send_command("info".to_string(), vec![]);
-    let chain_name = json::parse(&info).unwrap()["chain_name"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let chain_name = json::parse(&info)
+        .map(|mut json_info| json_info.remove("chain_name"))
+        .ok()
+        .and_then(|name| name.as_str().map(ToString::to_string))
+        .unwrap_or("".to_string());
 
     loop {
         // Read the height first
