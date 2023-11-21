@@ -163,7 +163,7 @@ impl UpdateNotes {
                                 .unwrap();
                         }
                     }
-                    // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
+                    // Send it off to get the full transaction if this is a newly-detected transaction
                     if need_to_fetch && download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
