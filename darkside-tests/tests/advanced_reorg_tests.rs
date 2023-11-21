@@ -1,21 +1,21 @@
-use super::darkside_types::{Empty, TreeState};
-use crate::darkside::utils::read_lines;
-use crate::darkside::{
-    advanced_reorg_tests_constants::{self, ADVANCED_REORG_TESTS_USER_WALLET},
-    constants::BRANCH_ID,
-    darkside_connector::DarksideConnector,
-    utils::{read_block_dataset, DarksideHandler},
+use darkside_tests::{
+    constants::{
+        ADVANCED_REORG_TESTS_USER_WALLET, BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER,
+        REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE, TREE_STATE_FOLDER_PATH,
+    },
+    darkside_types::{Empty, TreeState},
+    utils::{read_block_dataset, read_lines, DarksideConnector, DarksideHandler},
 };
-use crate::scenarios::setup::ClientBuilder;
+
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingo_testutils::regtest::get_cargo_manifest_dir;
+use zingo_testutils::{regtest::get_cargo_manifest_dir, scenarios::setup::ClientBuilder};
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
-    let darkside_handler = DarksideHandler::new();
+    let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -112,7 +112,7 @@ async fn prepare_before_tx_height_change_reorg(uri: http::Uri) -> Result<(), Str
     let dataset_path = format!(
         "{}/{}",
         get_cargo_manifest_dir().to_string_lossy(),
-        advanced_reorg_tests_constants::REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
+        REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
     );
 
     println!("dataset path: {}", dataset_path);
@@ -125,7 +125,7 @@ async fn prepare_before_tx_height_change_reorg(uri: http::Uri) -> Result<(), Str
         let tree_state_path = format!(
             "{}/{}/{}.json",
             get_cargo_manifest_dir().to_string_lossy(),
-            advanced_reorg_tests_constants::TREE_STATE_FOLDER_PATH,
+            TREE_STATE_FOLDER_PATH,
             i
         );
         let tree_state = TreeState::from_file(tree_state_path).unwrap();
@@ -150,7 +150,7 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
     let dataset_path = format!(
         "{}/{}",
         get_cargo_manifest_dir().to_string_lossy(),
-        advanced_reorg_tests_constants::REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER
+        REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER
     );
     connector
         .stage_blocks_stream(
@@ -173,7 +173,7 @@ async fn test_read_block_dataset() {
     let dataset_path = format!(
         "{}/{}",
         get_cargo_manifest_dir().to_string_lossy(),
-        advanced_reorg_tests_constants::REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
+        REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
     );
     let blocks = read_block_dataset(dataset_path);
     assert_eq!(blocks.len(), 21)
@@ -184,7 +184,7 @@ async fn test_read_tree_state_from_file() {
     let tree_state_path = format!(
         "{}/{}/{}.json",
         get_cargo_manifest_dir().to_string_lossy(),
-        advanced_reorg_tests_constants::TREE_STATE_FOLDER_PATH,
+        TREE_STATE_FOLDER_PATH,
         203
     );
 

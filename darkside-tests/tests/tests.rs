@@ -1,8 +1,7 @@
-use super::darkside_types::{Empty, RawTransaction, TreeState};
-use crate::darkside::{
-    constants::{self, BRANCH_ID, DARKSIDE_SEED},
-    darkside_connector::DarksideConnector,
-    utils::{update_tree_states_for_transaction, DarksideHandler},
+use darkside_tests::{
+    constants::{self, BRANCH_ID, DARKSIDE_SEED, GENESIS_BLOCK},
+    darkside_types::{Empty, RawTransaction, TreeState},
+    utils::{update_tree_states_for_transaction, DarksideConnector, DarksideHandler},
 };
 
 use tokio::time::sleep;
@@ -28,9 +27,7 @@ async fn prepare_darksidewalletd(
         .unwrap();
 
     connector
-        .stage_blocks_stream(vec![String::from(
-            crate::darkside::constants::GENESIS_BLOCK,
-        )])
+        .stage_blocks_stream(vec![String::from(GENESIS_BLOCK)])
         .await?;
 
     connector.stage_blocks_create(2, 2, 0).await.unwrap();
@@ -84,7 +81,7 @@ async fn prepare_darksidewalletd(
 
 #[tokio::test]
 async fn simple_sync() {
-    let darkside_handler = DarksideHandler::new();
+    let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -123,7 +120,7 @@ async fn simple_sync() {
 
 #[tokio::test]
 async fn reorg_away_receipt() {
-    let darkside_handler = DarksideHandler::new();
+    let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -175,7 +172,7 @@ async fn reorg_away_receipt() {
 
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
-    let darkside_handler = DarksideHandler::new();
+    let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -193,7 +190,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .await;
     let recipient = client_manager
         .build_client(
-            crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            zingo_testutils::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
             regtest_network,
