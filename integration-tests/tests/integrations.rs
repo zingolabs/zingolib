@@ -6,15 +6,7 @@ use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
-<<<<<<< HEAD:zingocli/tests/integration_tests.rs
-use std::{fs::File, path::Path, str::FromStr};
-use tracing_test::traced_test;
-||||||| dfb77458:zingocli/tests/integration_tests.rs
 use std::{fs::File, path::Path, str::FromStr, time::Duration};
-use tracing_test::traced_test;
-=======
-use std::{fs::File, path::Path, str::FromStr, time::Duration};
->>>>>>> labs/dev:integration-tests/tests/integrations.rs
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
@@ -3350,67 +3342,6 @@ mod slow {
         assert_eq!(list_before, list_after);
         assert_eq!(witness_before.unwrap(), witness_after.unwrap());
     }
-<<<<<<< HEAD:zingocli/tests/integration_tests.rs
-    //FIXME: Test is broken because there's no replacement for `do_save_to_buffer`
-    //
-    // #[tokio::test]
-    // async fn mempool_spends_correctly_marked_unconfirmed_spent() {
-    //     let (_regtest_manager, _cph, _faucet, recipient, _txid) =
-    //         scenarios::faucet_funded_recipient_default(1_000_000).await;
-    //     recipient
-    //         .do_send(vec![(
-    //             &get_base_address!(recipient, "sapling"),
-    //             100_000,
-    //             None,
-    //         )])
-    //         .await
-    //         .unwrap();
-    //     let recipient_saved = recipient.do_save_to_buffer().await.unwrap();
-    //     let recipient_loaded = std::sync::Arc::new(
-    //         LightClient::read_wallet_from_buffer_async(recipient.config(), &recipient_saved[..])
-    //             .await
-    //             .unwrap(),
-    //     );
-    //     LightClient::start_mempool_monitor(recipient_loaded.clone());
-    //     // This seems to be long enough for the mempool monitor to kick in.
-    //     // One second is insufficient. Even if this fails, this can only ever be
-    //     // a false negative, giving us a balance of 100_000. Still, could be improved.
-    //     tokio::time::sleep(Duration::from_secs(5)).await;
-    //     assert_eq!(
-    //         recipient_loaded.do_balance().await.orchard_balance,
-    //         Some(890_000)
-    //     );
-    // }
-||||||| dfb77458:zingocli/tests/integration_tests.rs
-    #[tokio::test]
-    async fn mempool_spends_correctly_marked_unconfirmed_spent() {
-        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(1_000_000).await;
-        recipient
-            .do_send(vec![(
-                &get_base_address!(recipient, "sapling"),
-                100_000,
-                None,
-            )])
-            .await
-            .unwrap();
-        let recipient_saved = recipient.do_save_to_buffer().await.unwrap();
-        let recipient_loaded = std::sync::Arc::new(
-            LightClient::read_wallet_from_buffer_async(recipient.config(), &recipient_saved[..])
-                .await
-                .unwrap(),
-        );
-        LightClient::start_mempool_monitor(recipient_loaded.clone());
-        // This seems to be long enough for the mempool monitor to kick in.
-        // One second is insufficient. Even if this fails, this can only ever be
-        // a false negative, giving us a balance of 100_000. Still, could be improved.
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        assert_eq!(
-            recipient_loaded.do_balance().await.orchard_balance,
-            Some(890_000)
-        );
-    }
-=======
     #[tokio::test]
     async fn mempool_spends_correctly_marked_unconfirmed_spent() {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
@@ -3439,5 +3370,4 @@ mod slow {
             Some(890_000)
         );
     }
->>>>>>> labs/dev:integration-tests/tests/integrations.rs
 }
