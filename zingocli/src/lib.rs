@@ -141,13 +141,21 @@ fn start_interactive(
     };
 
     let info = send_command("info".to_string(), vec![]);
-    let chain_name = json::parse(&info)
+    let mut chain_name = json::parse(&info)
         .map(|mut json_info| json_info.remove("chain_name"))
         .ok()
         .and_then(|name| name.as_str().map(ToString::to_string))
         .unwrap_or("".to_string());
 
     loop {
+        if &chain_name == "" {
+            let info = send_command("info".to_string(), vec![]);
+            chain_name = json::parse(&info)
+                .map(|mut json_info| json_info.remove("chain_name"))
+                .ok()
+                .and_then(|name| name.as_str().map(ToString::to_string))
+                .unwrap_or("".to_string());
+        }
         // Read the height first
         let height = json::parse(&send_command(
             "height".to_string(),
