@@ -967,7 +967,16 @@ impl TransactionMetadata {
         if self.total_value_spent() >= outputted {
             Ok(self.total_value_spent() - outputted)
         } else {
-            Err(ZingoLibError::MetadataUnderflow)
+            ZingoLibError::MetadataUnderflow(format!(
+                "for txid {} at height {}: spent {}, outgoing {}, returned change {} \n {:?}",
+                self.txid,
+                self.block_height,
+                self.total_value_spent(),
+                self.value_outgoing(),
+                self.total_change_returned(),
+                self,
+            ))
+            .print_and_pass_error()
         }
     }
 

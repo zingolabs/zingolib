@@ -6,7 +6,7 @@ use zcash_primitives::transaction::TxId;
 #[derive(Debug)]
 pub enum ZingoLibError {
     NoWalletLocation,
-    MetadataUnderflow,
+    MetadataUnderflow(String),
     InternalWriteBufferError(std::io::Error),
     WriteFileError(std::io::Error),
     EmptySaveBuffer,
@@ -34,9 +34,10 @@ impl std::fmt::Display for ZingoLibError {
                 f,
                 "No wallet location! (compiled for native rust, wallet location expected)"
             ),
-            MetadataUnderflow => write!(
+            MetadataUnderflow(explanation) => write!(
                 f,
-                "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday."
+                "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
+                explanation,
             ),
             InternalWriteBufferError(err) => write!(
                 f,
