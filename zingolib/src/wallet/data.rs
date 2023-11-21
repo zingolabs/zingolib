@@ -551,7 +551,6 @@ pub struct TransparentNote {
     pub output_index: u64,
     pub script: Vec<u8>,
     pub value: u64,
-    pub height: i32,
 
     pub spent_at_height: Option<i32>,
     pub spent: Option<TxId>, // If this utxo was confirmed spent Todo: incoherent with unconfirmed_spent
@@ -585,7 +584,7 @@ impl TransparentNote {
 
         let output_index = reader.read_u64::<LittleEndian>()?;
         let value = reader.read_u64::<LittleEndian>()?;
-        let height = reader.read_i32::<LittleEndian>()?;
+        let _height = reader.read_i32::<LittleEndian>()?;
 
         let script = Vector::read(&mut reader, |r| {
             let mut byte = [0; 1];
@@ -623,7 +622,6 @@ impl TransparentNote {
             output_index,
             script,
             value,
-            height,
             spent_at_height,
             spent,
             unconfirmed_spent: None,
@@ -640,7 +638,7 @@ impl TransparentNote {
 
         writer.write_u64::<LittleEndian>(self.output_index)?;
         writer.write_u64::<LittleEndian>(self.value)?;
-        writer.write_i32::<LittleEndian>(self.height)?;
+        writer.write_i32::<LittleEndian>(0)?;
 
         Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
 
