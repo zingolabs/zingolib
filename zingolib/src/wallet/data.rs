@@ -1197,7 +1197,7 @@ impl TransactionMetadata {
         let block: u32 = self.block_height.into();
         writer.write_i32::<LittleEndian>(block as i32)?;
 
-        writer.write_u8(if self.unconfirmed { 1 } else { 0 })?;
+        writer.write_u8(if !self.status.is_confirmed() { 1 } else { 0 })?;
 
         writer.write_u64::<LittleEndian>(self.datetime)?;
 
