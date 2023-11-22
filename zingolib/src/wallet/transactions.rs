@@ -300,7 +300,7 @@ impl TransactionMetadataSet {
 
         self.current
             .iter()
-            .filter(|(_, transaction_metadata)| !transaction_metadata.unconfirmed) // Update only confirmed notes
+            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed()) // Update only confirmed notes
             .flat_map(|(txid, transaction_metadata)| {
                 // Fetch notes that are before the before_block.
                 transaction_metadata
