@@ -27,6 +27,7 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{components::OutPoint, TxId},
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::keys::unified::WalletCapability;
@@ -885,6 +886,9 @@ pub mod summaries {
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionMetadata {
+    // the relationship of the note to the blockchain. can be either Local, Pending, or Confirmed.
+    pub status: ConfirmationStatus,
+
     // Block in which this tx was included OR submitted to mempool. Todo: this is incoherent
     pub block_height: BlockHeight,
 
@@ -1000,7 +1004,9 @@ impl TransactionMetadata {
         transaction_id: &TxId,
         unconfirmed: bool,
     ) -> Self {
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         TransactionMetadata {
+            status,
             block_height: height,
             unconfirmed,
             datetime,
@@ -1130,7 +1136,9 @@ impl TransactionMetadata {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
         Ok(Self {
+            status,
             block_height: block,
             unconfirmed,
             datetime,
