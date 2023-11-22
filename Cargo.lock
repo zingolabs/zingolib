@@ -656,6 +656,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
+ "zingo-cli",
  "zingo-testutils",
  "zingoconfig",
  "zingolib",

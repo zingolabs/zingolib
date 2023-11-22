@@ -1,5 +1,8 @@
 use std::{
-    path::PathBuf,
+    fs,
+    fs::File,
+    io::{self, BufRead},
+    path::{Path, PathBuf},
     process::{Child, Command},
     sync::Arc,
     time::Duration,
@@ -66,7 +69,7 @@ impl DarksideConnector {
         Self(uri)
     }
 
-    pub(crate) fn get_client(
+    pub fn get_client(
         &self,
     ) -> impl std::future::Future<
         Output = Result<DarksideStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
@@ -332,4 +335,52 @@ pub async fn update_tree_states_for_transaction(
         .await
         .unwrap();
     new_tree_state
+}
+
+// The output is wrapped in a Result to allow matching on errors
+// Returns an Iterator to the Reader of the lines of the file.
+// source: https://doc.rust-lang.org/rust-by-example/std_misc/file/read_lines.html
+pub fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
+pub fn read_block_dataset<P>(filename: P) -> Vec<String>
+where
+    P: AsRef<Path>,
+{
+    read_lines(filename)
+        .unwrap()
+        .map(|line| line.unwrap())
+        .collect()
+}
+
+impl TreeState {
+    pub fn from_file<P>(filename: P) -> Result<TreeState, Box<dyn std::error::Error>>
+    where
+        P: AsRef<Path>,
+    {
+        let state_string = fs::read_to_string(filename)?;
+        let json_state: serde_json::Value = serde_json::from_str(&state_string)?;
+
+        let network = json_state["network"].as_str().unwrap();
+        let height = json_state["height"].as_u64().unwrap();
+        let hash = json_state["hash"].as_str().unwrap();
+        let time = json_state["time"].as_i64().unwrap();
+        let time_32: u32 = u32::try_from(time)?;
+        let sapling_tree = json_state["saplingTree"].as_str().unwrap();
+        let orchard_tree = json_state["orchardTree"].as_str().unwrap();
+
+        Ok(TreeState {
+            network: network.to_string(),
+            height,
+            hash: hash.to_string(),
+            time: time_32,
+            sapling_tree: sapling_tree.to_string(),
+            orchard_tree: orchard_tree.to_string(),
+        })
+    }
 }
