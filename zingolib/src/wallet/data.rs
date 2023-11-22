@@ -996,12 +996,11 @@ impl TransactionMetadata {
         self.total_value_spent() - self.total_change_returned()
     }
     pub fn new(
+        status: ConfirmationStatus,
         height: BlockHeight,
         datetime: u64,
         transaction_id: &TxId,
-        unconfirmed: bool,
     ) -> Self {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         TransactionMetadata {
             status,
             block_height: height,
