@@ -892,9 +892,6 @@ pub struct TransactionMetadata {
     // Block in which this tx was included OR submitted to mempool. Todo: this is incoherent
     pub block_height: BlockHeight,
 
-    // Is this Tx unconfirmed (i.e., not yet mined). Todo: this needs to be a coherent enum
-    pub unconfirmed: bool,
-
     // Timestamp of Tx. Added in v4
     pub datetime: u64,
 
@@ -1008,7 +1005,6 @@ impl TransactionMetadata {
         TransactionMetadata {
             status,
             block_height: height,
-            unconfirmed,
             datetime,
             txid: *transaction_id,
             spent_sapling_nullifiers: vec![],
@@ -1140,7 +1136,6 @@ impl TransactionMetadata {
         Ok(Self {
             status,
             block_height: block,
-            unconfirmed,
             datetime,
             txid: transaction_id,
             sapling_notes,

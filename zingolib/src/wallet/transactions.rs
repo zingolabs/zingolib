@@ -441,7 +441,6 @@ impl TransactionMetadataSet {
                 let status =
                     ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
                 transaction_metadata.status = status;
-                transaction_metadata.unconfirmed = unconfirmed;
                 transaction_metadata.block_height = height;
                 transaction_metadata.datetime = datetime;
             })
