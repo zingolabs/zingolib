@@ -62,10 +62,6 @@ macro_rules! define_darkside_connector_methods(
 pub struct DarksideConnector(pub http::Uri);
 
 impl DarksideConnector {
-    pub fn new(uri: http::Uri) -> Self {
-        Self(uri)
-    }
-
     pub(crate) fn get_client(
         &self,
     ) -> impl std::future::Future<
@@ -150,34 +146,40 @@ impl DarksideConnector {
 }
 
 pub async fn prepare_darksidewalletd(
-    uri: http::Uri,
     include_startup_funds: bool,
-) -> Result<(), String> {
-    dbg!(&uri);
-    let connector = DarksideConnector(uri.clone());
+) -> Result<DarksideHandler, String> {
+    let handler = DarksideHandler::default();
+    let mut client = handler.darkside_connector.get_client().await.unwrap();
 
-    let mut client = connector.get_client().await.unwrap();
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
     client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
-    connector
+    handler
+        .darkside_connector
         .reset(1, String::from(BRANCH_ID), String::from("regtest"))
         .await
         .unwrap();
 
-    connector
+    handler
+        .darkside_connector
         .stage_blocks_stream(vec![String::from(crate::constants::GENESIS_BLOCK)])
         .await?;
 
-    connector.stage_blocks_create(2, 2, 0).await.unwrap();
+    handler
+        .darkside_connector
+        .stage_blocks_create(2, 2, 0)
+        .await
+        .unwrap();
 
-    connector
+    handler
+        .darkside_connector
         .add_tree_state(constants::first_tree_state())
         .await
         .unwrap();
     if include_startup_funds {
-        connector
+        handler
+            .darkside_connector
             .stage_transactions_stream(vec![(
                 hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
                 2,
@@ -185,7 +187,7 @@ pub async fn prepare_darksidewalletd(
             .await
             .unwrap();
         let tree_height_2 = update_tree_states_for_transaction(
-            &uri,
+            &handler.darkside_uri,
             RawTransaction {
                 data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
                 height: 2,
@@ -193,7 +195,8 @@ pub async fn prepare_darksidewalletd(
             2,
         )
         .await;
-        connector
+        handler
+            .darkside_connector
             .add_tree_state(TreeState {
                 height: 3,
                 ..tree_height_2
@@ -202,7 +205,8 @@ pub async fn prepare_darksidewalletd(
             .unwrap();
     } else {
         for height in [2, 3] {
-            connector
+            handler
+                .darkside_connector
                 .add_tree_state(TreeState {
                     height,
                     ..constants::first_tree_state()
@@ -214,22 +218,16 @@ pub async fn prepare_darksidewalletd(
 
     sleep(std::time::Duration::new(2, 0)).await;
 
-    connector.apply_staged(3).await?;
+    handler.darkside_connector.apply_staged(3).await?;
 
-    Ok(())
-}
-pub fn generate_darksidewalletd(set_port: Option<portpicker::Port>) -> (String, PathBuf) {
-    let darkside_grpc_port = TestEnvironmentGenerator::pick_unused_port_to_string(set_port);
-    let darkside_dir = tempdir::TempDir::new("zingo_darkside_test")
-        .unwrap()
-        .into_path();
-    (darkside_grpc_port, darkside_dir)
+    Ok(handler)
 }
 
 pub struct DarksideHandler {
     pub lightwalletd_handle: Child,
-    pub grpc_port: String,
+    pub darkside_uri: Uri,
     pub darkside_dir: PathBuf,
+    pub darkside_connector: DarksideConnector,
 }
 
 impl Default for DarksideHandler {
@@ -239,8 +237,16 @@ impl Default for DarksideHandler {
 }
 impl DarksideHandler {
     pub fn new(set_port: Option<portpicker::Port>) -> Self {
-        let (grpc_port, darkside_dir) = generate_darksidewalletd(set_port);
+        let grpc_port = TestEnvironmentGenerator::pick_unused_port_to_string(set_port);
         let grpc_bind_addr = Some(format!("127.0.0.1:{grpc_port}"));
+        let darkside_uri = zingoconfig::construct_lightwalletd_uri(Some(format!(
+            "http://127.0.0.1:{}",
+            grpc_port
+        )));
+        let darkside_connector = DarksideConnector(darkside_uri.clone());
+        let darkside_dir = tempdir::TempDir::new("zingo_darkside_test")
+            .unwrap()
+            .into_path();
 
         let check_interval = Duration::from_millis(300);
         let lightwalletd_handle = launch_lightwalletd(
@@ -253,8 +259,9 @@ impl DarksideHandler {
         );
         Self {
             lightwalletd_handle,
-            grpc_port,
+            darkside_uri,
             darkside_dir,
+            darkside_connector,
         }
     }
 }
@@ -327,7 +334,7 @@ pub async fn update_tree_states_for_transaction(
         hash: "".to_string(),
         time: 0,
     };
-    DarksideConnector::new(server_id.clone())
+    DarksideConnector(server_id.clone())
         .add_tree_state(new_tree_state.clone())
         .await
         .unwrap();
