@@ -392,7 +392,8 @@ impl TransactionMetadataSet {
             .current
             .iter()
             .filter(|(_, transaction_metadata)| {
-                transaction_metadata.unconfirmed && transaction_metadata.block_height < cutoff
+                !transaction_metadata.status.is_confirmed()
+                    && transaction_metadata.block_height < cutoff
             })
             .map(|(_, transaction_metadata)| transaction_metadata.txid)
             .collect::<Vec<_>>();
