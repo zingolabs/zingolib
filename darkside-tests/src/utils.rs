@@ -146,12 +146,11 @@ impl DarksideConnector {
 }
 
 pub async fn prepare_darksidewalletd(
+    handler: &DarksideHandler,
     include_startup_funds: bool,
-) -> Result<DarksideHandler, String> {
-    let handler = DarksideHandler::default();
-    let mut client = handler.darkside_connector.get_client().await.unwrap();
-
+) -> Result<(), String> {
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    let mut client = handler.darkside_connector.get_client().await.unwrap();
     client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
@@ -220,7 +219,7 @@ pub async fn prepare_darksidewalletd(
 
     handler.darkside_connector.apply_staged(3).await?;
 
-    Ok(handler)
+    Ok(())
 }
 
 pub struct DarksideHandler {
