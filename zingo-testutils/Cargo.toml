@@ -9,6 +9,7 @@ edition = "2021"
 zingoconfig = { path = "../zingoconfig" }
 zingolib = { path = "../zingolib" }
 zcash_primitives = { workspace = true }
+zcash_proofs = { workspace = true }
 zcash_address = { workspace = true }
 orchard = { workspace = true }
 portpicker = { workspace = true}
