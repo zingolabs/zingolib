@@ -536,38 +536,23 @@ impl LightClient {
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
 
-            let tx_fee_result = transaction_md.get_transaction_fee();
-            match tx_fee_result {
-                Ok(tx_fee) => {
-                    if transaction_md.is_outgoing_transaction() {
-                        let (block_height, datetime, price, unconfirmed) = (
-                            transaction_md.block_height,
-                            transaction_md.datetime,
-                            transaction_md.price,
-                            transaction_md.unconfirmed,
-                        );
-                        summaries.push(ValueTransfer {
-                            block_height,
-                            datetime,
-                            kind: ValueTransferKind::Fee { amount: tx_fee },
-                            memos: vec![],
-                            price,
-                            txid: *txid,
-                            unconfirmed,
-                        });
-                    }
-                }
-                Err(e) => {
-                    println!(
-                    "{:?} for txid {} at height {}: spent {}, outgoing {}, returned change {} \n {:?}",
-                    e,
-                    txid,
-                    transaction_md.block_height,
-                    transaction_md.total_value_spent(),
-                    transaction_md.value_outgoing(),
-                    transaction_md.total_change_returned(),
-                    transaction_md,
+            if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
+                if transaction_md.is_outgoing_transaction() {
+                    let (block_height, datetime, price, unconfirmed) = (
+                        transaction_md.block_height,
+                        transaction_md.datetime,
+                        transaction_md.price,
+                        transaction_md.unconfirmed,
                     );
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Fee { amount: tx_fee },
+                        memos: vec![],
+                        price,
+                        txid: *txid,
+                        unconfirmed,
+                    });
                 }
             };
         }
@@ -1450,6 +1435,12 @@ impl LightClient {
         let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
         debug!("tree verification {}", verified);
         debug!("highest tree exists: {}", highest_tree.is_some());
+
+        // the following check does not make sense in the context of
+        // darkside_tests feature and should be disabled since
+        // darksidewalletd will manipulate the chain and ultimately
+        // break the static checkpoints.
+        #[cfg(not(feature = "darkside_tests"))]
         if !verified {
             return Err("Tree Verification Failed".to_string());
         }
@@ -2016,4 +2007,4 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
 #[cfg(feature = "test-features")]
-mod test_features;
+pub mod test_features;

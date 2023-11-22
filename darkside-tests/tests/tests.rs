@@ -1,9 +1,14 @@
 use darkside_tests::{
-    constants::DARKSIDE_SEED,
-    utils::{prepare_darksidewalletd, update_tree_states_for_transaction, DarksideHandler},
+    constants::{self, BRANCH_ID, DARKSIDE_SEED, GENESIS_BLOCK},
+    darkside_types::{Empty, RawTransaction, TreeState},
+    utils::{
+        prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector,
+        DarksideHandler,
+    },
 };
+
 use tokio::time::sleep;
-use zingo_testutils::{data::seeds, scenarios::setup::ClientBuilder};
+use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::{get_base_address, lightclient::PoolBalances};
 
@@ -98,7 +103,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .await;
     let recipient = client_manager
         .build_client(
-            seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            zingo_testutils::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
             regtest_network,
