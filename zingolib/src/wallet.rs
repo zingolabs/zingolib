@@ -1368,7 +1368,9 @@ impl LightWallet {
         Ok((tx_builder, total_shielded_receivers))
     }
 
-    async fn create_publication_ready_transaction<P: TxProver>(
+    /// This fn is pub in order to provide a convenient interface to
+    /// transaction construction.
+    pub async fn create_publication_ready_transaction<P: TxProver>(
         &self,
         submission_height: BlockHeight,
         start_time: u64,

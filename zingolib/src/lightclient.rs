@@ -612,7 +612,7 @@ impl LightClient {
             .block_on(async move { self.do_seed_phrase().await })
     }
 
-    fn map_tos_to_receivers(
+    pub fn map_tos_to_receivers(
         &self,
         tos: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<
@@ -917,7 +917,7 @@ impl LightClient {
         *self.interrupt_sync.write().await = set_interrupt;
     }
     #[cfg(feature = "embed_params")]
-    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+    pub fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
         // Read Sapling Params
         use crate::SaplingParams;
         let mut sapling_output = vec![];
