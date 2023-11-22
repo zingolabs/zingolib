@@ -194,7 +194,7 @@ impl TransactionMetadataSet {
                 .collect::<Vec<(&TxId, &TransactionMetadata)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover
             // it on reload
-            transaction_metadatas.retain(|metadata| !metadata.1.unconfirmed);
+            transaction_metadatas.retain(|metadata| metadata.1.status.is_confirmed());
             transaction_metadatas.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
             Vector::write(&mut writer, &transaction_metadatas, |w, (k, v)| {
