@@ -1,6 +1,7 @@
 pub mod data;
 pub use incrementalmerkletree;
 use zcash_address::unified::{Fvk, Ufvk};
+pub use zcash_proofs::prover::LocalTxProver;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 pub mod regtest;

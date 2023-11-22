@@ -124,6 +124,39 @@ fn check_view_capability_bounds(
     }
 }
 
+#[tokio::test]
+async fn produce_hex_encoded_send_to_self() {
+    let (regtest_manager, _cph, faucet, recipient) =
+        zingo_testutils::scenarios::faucet_recipient_default().await;
+    let faucet_address = get_base_address!(faucet, "unified");
+
+    // Create parameters for create_publication_ready_transaction
+    let submission_height = zcash_primitives::consensus::BlockHeight::from_u32(1_u32);
+    let start_time = 0u64;
+    let receivers = faucet
+        .map_tos_to_receivers(vec![(&faucet_address, 100_000, None)])
+        .expect("To create receivers.");
+    let policy = vec![
+        zingolib::wallet::Pool::Orchard,
+        zingolib::wallet::Pool::Sapling,
+    ];
+    let (sapling_output, sapling_spend) = faucet.read_sapling_params().expect("Sapling params");
+    let sapling_prover =
+        zingo_testutils::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+    // This policy doesn't allow
+    let transaction = faucet
+        .wallet
+        .create_publication_ready_transaction(
+            submission_height,
+            start_time,
+            receivers,
+            policy,
+            sapling_prover,
+        )
+        .await
+        .expect("To get a transaction");
+    dbg!(format!("{:?}", *transaction));
+}
 mod fast {
     use super::*;
     #[tokio::test]

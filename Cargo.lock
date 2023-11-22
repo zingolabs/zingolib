@@ -4134,6 +4134,7 @@ dependencies = [
  "tracing",
  "zcash_address",
  "zcash_primitives",
+ "zcash_proofs",
  "zingoconfig",
  "zingolib",
 ]
