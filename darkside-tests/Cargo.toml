@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 zingo-cli = { path = "../zingocli" }
-zingolib = { path = "../zingolib", features = ["test"] }
+zingolib = { path = "../zingolib", features = ["test", "darkside_tests"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingoconfig = { path = "../zingoconfig" }
 tokio = { version = "1.25.0", features = ["full"] }
