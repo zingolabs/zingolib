@@ -395,20 +395,20 @@ pub async fn prepare_darksidewalletd(
 
     Ok(())
 }
-pub async fn stage_and_apply_blocks(handler: &DarksideHandler, n: u64) -> Result<(), String> {
+pub async fn stage_and_apply_blocks(handler: &DarksideHandler, n: i32) -> Result<(), String> {
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
     let mut client = handler.darkside_connector.get_client().await.unwrap();
     client.clear_address_utxo(Empty {}).await.unwrap();
 
     handler
         .darkside_connector
-        .stage_blocks_create(100, 100, 0)
+        .stage_blocks_create(n, n, 0)
         .await
         .unwrap();
 
     sleep(std::time::Duration::new(2, 0)).await;
 
-    handler.darkside_connector.apply_staged(100).await?;
+    handler.darkside_connector.apply_staged(n).await?;
 
     Ok(())
 }
