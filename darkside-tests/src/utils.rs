@@ -67,7 +67,8 @@ macro_rules! define_darkside_connector_methods(
 #[derive(Clone)]
 pub struct DarksideConnector(pub http::Uri);
 impl DarksideConnector {
-    pub(crate) fn get_client(
+    // pub(crate) fn get_client(
+    pub fn get_client(
         &self,
     ) -> impl std::future::Future<
         Output = Result<DarksideStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
@@ -324,8 +325,8 @@ pub async fn prepare_darksidewalletd(
     include_startup_funds: bool,
 ) -> Result<(), String> {
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    let mut client = handler.darkside_connector.get_client().await.unwrap();
-    client.clear_address_utxo(Empty {}).await.unwrap();
+    // let mut client = handler.darkside_connector.get_client().await.unwrap();
+    // client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
     handler
@@ -397,8 +398,8 @@ pub async fn prepare_darksidewalletd(
 }
 pub async fn stage_and_apply_blocks(handler: &DarksideHandler, n: i32) -> Result<(), String> {
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    let mut client = handler.darkside_connector.get_client().await.unwrap();
-    client.clear_address_utxo(Empty {}).await.unwrap();
+    // let mut client = handler.darkside_connector.get_client().await.unwrap();
+    // client.clear_address_utxo(Empty {}).await.unwrap();
 
     handler
         .darkside_connector
