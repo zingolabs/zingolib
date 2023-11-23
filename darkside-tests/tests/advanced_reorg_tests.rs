@@ -504,7 +504,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 /// 14. sync to latest height
 /// 15. verify that there's no pending transaction and that the tx is displayed on the sentTransactions collection
 async fn reorg_changes_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new();
+    let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -696,7 +696,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
     let dataset_path = format!(
         "{}/{}",
         get_cargo_manifest_dir().to_string_lossy(),
-        advanced_reorg_tests_constants::REORG_EXPIRES_INCOMING_TX_HEIGHT_BEFORE
+        REORG_EXPIRES_INCOMING_TX_HEIGHT_BEFORE
     );
 
     println!("dataset path: {}", dataset_path);
@@ -709,7 +709,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
         let tree_state_path = format!(
             "{}/{}/{}.json",
             get_cargo_manifest_dir().to_string_lossy(),
-            advanced_reorg_tests_constants::TREE_STATE_FOLDER_PATH,
+            TREE_STATE_FOLDER_PATH,
             i
         );
         let tree_state = TreeState::from_file(tree_state_path).unwrap();
