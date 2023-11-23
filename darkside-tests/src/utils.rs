@@ -406,6 +406,17 @@ pub async fn stage_and_apply_blocks(handler: &DarksideHandler, n: i32) -> Result
         .await
         .unwrap();
 
+    for height in 4..n as u64 {
+        handler
+            .darkside_connector
+            .add_tree_state(TreeState {
+                height,
+                ..constants::first_tree_state()
+            })
+            .await
+            .unwrap();
+    }
+
     sleep(std::time::Duration::new(2, 0)).await;
 
     handler.darkside_connector.apply_staged(n).await?;
