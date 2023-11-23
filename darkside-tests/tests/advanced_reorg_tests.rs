@@ -741,7 +741,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 /// 8. sync to latest height
 /// 9. verify that there's an expired transaction as a pending transaction
 async fn reorg_expires_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new();
+    let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
