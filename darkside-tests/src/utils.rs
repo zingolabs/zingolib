@@ -27,7 +27,10 @@ use zingo_testutils::{
 use zingolib::wallet::traits::DomainWalletExt;
 
 use crate::{
-    constants::BRANCH_ID,
+    constants::{
+        BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER, REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE,
+        TREE_STATE_FOLDER_PATH,
+    },
     darkside_types::{
         darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
         DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty,
@@ -63,7 +66,6 @@ macro_rules! define_darkside_connector_methods(
 
 #[derive(Clone)]
 pub struct DarksideConnector(pub http::Uri);
-
 impl DarksideConnector {
     pub(crate) fn get_client(
         &self,
@@ -148,90 +150,12 @@ impl DarksideConnector {
     );
 }
 
-pub async fn prepare_darksidewalletd(
-    handler: &DarksideHandler,
-    include_startup_funds: bool,
-) -> Result<(), String> {
-    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    let mut client = handler.darkside_connector.get_client().await.unwrap();
-    client.clear_address_utxo(Empty {}).await.unwrap();
-
-    // reset with parameters
-    handler
-        .darkside_connector
-        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
-        .await
-        .unwrap();
-
-    handler
-        .darkside_connector
-        .stage_blocks_stream(vec![String::from(crate::constants::GENESIS_BLOCK)])
-        .await?;
-
-    handler
-        .darkside_connector
-        .stage_blocks_create(2, 2, 0)
-        .await
-        .unwrap();
-
-    handler
-        .darkside_connector
-        .add_tree_state(constants::first_tree_state())
-        .await
-        .unwrap();
-    if include_startup_funds {
-        handler
-            .darkside_connector
-            .stage_transactions_stream(vec![(
-                hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
-                2,
-            )])
-            .await
-            .unwrap();
-        let tree_height_2 = update_tree_states_for_transaction(
-            &handler.darkside_uri,
-            RawTransaction {
-                data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
-                height: 2,
-            },
-            2,
-        )
-        .await;
-        handler
-            .darkside_connector
-            .add_tree_state(TreeState {
-                height: 3,
-                ..tree_height_2
-            })
-            .await
-            .unwrap();
-    } else {
-        for height in [2, 3] {
-            handler
-                .darkside_connector
-                .add_tree_state(TreeState {
-                    height,
-                    ..constants::first_tree_state()
-                })
-                .await
-                .unwrap();
-        }
-    }
-
-    sleep(std::time::Duration::new(2, 0)).await;
-
-    handler.darkside_connector.apply_staged(3).await?;
-
-    Ok(())
-}
-
 pub struct DarksideHandler {
     pub lightwalletd_handle: Child,
     pub darkside_uri: Uri,
     pub darkside_dir: PathBuf,
     pub darkside_connector: DarksideConnector,
 }
-
 impl Default for DarksideHandler {
     fn default() -> Self {
         Self::new(None)
@@ -282,13 +206,16 @@ impl Drop for DarksideHandler {
 }
 
 pub async fn update_tree_states_for_transaction(
-    server_id: &Uri,
+    handler: &DarksideHandler,
     raw_tx: RawTransaction,
     height: u64,
 ) -> TreeState {
-    let trees = zingolib::grpc_connector::GrpcConnector::get_trees(server_id.clone(), height - 1)
-        .await
-        .unwrap();
+    let trees = zingolib::grpc_connector::GrpcConnector::get_trees(
+        handler.darkside_uri.clone(),
+        height - 1,
+    )
+    .await
+    .unwrap();
     let mut sapling_tree: zcash_primitives::sapling::CommitmentTree = read_commitment_tree(
         hex::decode(SaplingDomain::get_tree(&trees))
             .unwrap()
@@ -336,7 +263,8 @@ pub async fn update_tree_states_for_transaction(
         hash: "".to_string(),
         time: 0,
     };
-    DarksideConnector(server_id.clone())
+    handler
+        .darkside_connector
         .add_tree_state(new_tree_state.clone())
         .await
         .unwrap();
@@ -389,4 +317,155 @@ impl TreeState {
             orchard_tree: orchard_tree.to_string(),
         })
     }
+}
+
+pub async fn prepare_darksidewalletd(
+    handler: &DarksideHandler,
+    include_startup_funds: bool,
+) -> Result<(), String> {
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    let mut client = handler.darkside_connector.get_client().await.unwrap();
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    // reset with parameters
+    handler
+        .darkside_connector
+        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
+    handler
+        .darkside_connector
+        .stage_blocks_stream(vec![String::from(crate::constants::GENESIS_BLOCK)])
+        .await?;
+
+    handler
+        .darkside_connector
+        .stage_blocks_create(2, 2, 0)
+        .await
+        .unwrap();
+
+    handler
+        .darkside_connector
+        .add_tree_state(constants::first_tree_state())
+        .await
+        .unwrap();
+    if include_startup_funds {
+        handler
+            .darkside_connector
+            .stage_transactions_stream(vec![(
+                hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                2,
+            )])
+            .await
+            .unwrap();
+        let tree_height_2 = update_tree_states_for_transaction(
+            handler,
+            RawTransaction {
+                data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                height: 2,
+            },
+            2,
+        )
+        .await;
+        handler
+            .darkside_connector
+            .add_tree_state(TreeState {
+                height: 3,
+                ..tree_height_2
+            })
+            .await
+            .unwrap();
+    } else {
+        for height in [2, 3] {
+            handler
+                .darkside_connector
+                .add_tree_state(TreeState {
+                    height,
+                    ..constants::first_tree_state()
+                })
+                .await
+                .unwrap();
+        }
+    }
+
+    sleep(std::time::Duration::new(2, 0)).await;
+
+    handler.darkside_connector.apply_staged(3).await?;
+
+    Ok(())
+}
+pub async fn prepare_before_tx_height_change_reorg(
+    handler: &DarksideHandler,
+) -> Result<(), String> {
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    let mut client = handler.darkside_connector.get_client().await.unwrap();
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    // reset with parameters
+    handler
+        .darkside_connector
+        .reset(202, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
+    let dataset_path = format!(
+        "{}/{}",
+        get_cargo_manifest_dir().to_string_lossy(),
+        REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
+    );
+
+    println!("dataset path: {}", dataset_path);
+
+    handler
+        .darkside_connector
+        .stage_blocks_stream(read_block_dataset(dataset_path))
+        .await?;
+
+    for i in 201..207 {
+        let tree_state_path = format!(
+            "{}/{}/{}.json",
+            get_cargo_manifest_dir().to_string_lossy(),
+            TREE_STATE_FOLDER_PATH,
+            i
+        );
+        let tree_state = TreeState::from_file(tree_state_path).unwrap();
+        handler
+            .darkside_connector
+            .add_tree_state(tree_state)
+            .await
+            .unwrap();
+    }
+
+    handler.darkside_connector.apply_staged(204).await?;
+
+    sleep(std::time::Duration::new(1, 0)).await;
+
+    Ok(())
+}
+pub async fn prepare_after_tx_height_change_reorg(handler: &DarksideHandler) -> Result<(), String> {
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    let mut client = handler.darkside_connector.get_client().await.unwrap();
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    let dataset_path = format!(
+        "{}/{}",
+        get_cargo_manifest_dir().to_string_lossy(),
+        REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER
+    );
+    handler
+        .darkside_connector
+        .stage_blocks_stream(
+            read_lines(dataset_path)
+                .unwrap()
+                .map(|line| line.unwrap())
+                .collect(),
+        )
+        .await?;
+
+    handler.darkside_connector.apply_staged(206).await?;
+
+    sleep(std::time::Duration::new(1, 0)).await;
+
+    Ok(())
 }

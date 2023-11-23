@@ -1,12 +1,7 @@
 use darkside_tests::{
-    constants::{self, BRANCH_ID, DARKSIDE_SEED, GENESIS_BLOCK},
-    darkside_types::{Empty, RawTransaction, TreeState},
-    utils::{
-        prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector,
-        DarksideHandler,
-    },
+    constants::DARKSIDE_SEED,
+    utils::{prepare_darksidewalletd, update_tree_states_for_transaction, DarksideHandler},
 };
-
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
@@ -155,7 +150,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .stage_blocks_create(4, 1, 0)
         .await
         .unwrap();
-    update_tree_states_for_transaction(&handler.darkside_uri, raw_tx.clone(), 4).await;
+    update_tree_states_for_transaction(&handler, raw_tx.clone(), 4).await;
     handler.darkside_connector.apply_staged(4).await.unwrap();
     sleep(std::time::Duration::from_secs(1)).await;
 

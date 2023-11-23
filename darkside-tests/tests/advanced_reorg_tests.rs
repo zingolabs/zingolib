@@ -1,13 +1,14 @@
 use darkside_tests::{
     constants::{
-        ADVANCED_REORG_TESTS_USER_WALLET, BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER,
-        REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE, TREE_STATE_FOLDER_PATH,
+        ADVANCED_REORG_TESTS_USER_WALLET, REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE,
+        TREE_STATE_FOLDER_PATH,
     },
-    darkside_types::{Empty, TreeState},
-    utils::{read_block_dataset, read_lines, DarksideConnector, DarksideHandler},
+    darkside_types::TreeState,
+    utils::{
+        prepare_after_tx_height_change_reorg, prepare_before_tx_height_change_reorg,
+        read_block_dataset, DarksideHandler,
+    },
 };
-
-use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_testutils::{regtest::get_cargo_manifest_dir, scenarios::setup::ClientBuilder};
 use zingoconfig::RegtestNetwork;
@@ -15,25 +16,21 @@ use zingolib::lightclient::PoolBalances;
 
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let handler = DarksideHandler::default();
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
-
-    prepare_before_tx_height_change_reorg(server_id.clone())
+    prepare_before_tx_height_change_reorg(&handler)
         .await
         .unwrap();
 
-    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-        .build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        )
-        .await;
+    let light_client =
+        ClientBuilder::new(handler.darkside_uri.clone(), handler.darkside_dir.clone())
+            .build_client(
+                ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                202,
+                true,
+                RegtestNetwork::all_upgrades_active(),
+            )
+            .await;
 
     light_client.do_sync(true).await.unwrap();
     assert_eq!(
@@ -59,7 +56,7 @@ async fn reorg_changes_incoming_tx_height() {
         BlockHeight::from_u32(203)
     );
 
-    prepare_after_tx_height_change_reorg(server_id.clone())
+    prepare_after_tx_height_change_reorg(&handler)
         .await
         .unwrap();
 
@@ -93,79 +90,6 @@ async fn reorg_changes_incoming_tx_height() {
         after_reorg_transactions[0].block_height,
         BlockHeight::from_u32(206)
     );
-}
-
-async fn prepare_before_tx_height_change_reorg(uri: http::Uri) -> Result<(), String> {
-    dbg!(&uri);
-    let connector = DarksideConnector(uri.clone());
-
-    let mut client = connector.get_client().await.unwrap();
-    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    client.clear_address_utxo(Empty {}).await.unwrap();
-
-    // reset with parameters
-    connector
-        .reset(202, String::from(BRANCH_ID), String::from("regtest"))
-        .await
-        .unwrap();
-
-    let dataset_path = format!(
-        "{}/{}",
-        get_cargo_manifest_dir().to_string_lossy(),
-        REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
-    );
-
-    println!("dataset path: {}", dataset_path);
-
-    connector
-        .stage_blocks_stream(read_block_dataset(dataset_path))
-        .await?;
-
-    for i in 201..207 {
-        let tree_state_path = format!(
-            "{}/{}/{}.json",
-            get_cargo_manifest_dir().to_string_lossy(),
-            TREE_STATE_FOLDER_PATH,
-            i
-        );
-        let tree_state = TreeState::from_file(tree_state_path).unwrap();
-        connector.add_tree_state(tree_state).await.unwrap();
-    }
-
-    connector.apply_staged(204).await?;
-
-    sleep(std::time::Duration::new(1, 0)).await;
-
-    Ok(())
-}
-
-async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), String> {
-    dbg!(&uri);
-    let connector = DarksideConnector(uri.clone());
-
-    let mut client = connector.get_client().await.unwrap();
-    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    client.clear_address_utxo(Empty {}).await.unwrap();
-
-    let dataset_path = format!(
-        "{}/{}",
-        get_cargo_manifest_dir().to_string_lossy(),
-        REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER
-    );
-    connector
-        .stage_blocks_stream(
-            read_lines(dataset_path)
-                .unwrap()
-                .map(|line| line.unwrap())
-                .collect(),
-        )
-        .await?;
-
-    connector.apply_staged(206).await?;
-
-    sleep(std::time::Duration::new(1, 0)).await;
-
-    Ok(())
 }
 
 #[tokio::test]
