@@ -125,7 +125,7 @@ fn check_view_capability_bounds(
 }
 
 #[tokio::test]
-async fn produce_hex_encoded_send_to_self() {
+async fn generate_hex_encoded_send_to_self() {
     let (regtest_manager, _cph, faucet, recipient) =
         zingo_testutils::scenarios::faucet_recipient_default().await;
     let faucet_address = get_base_address!(faucet, "unified");
