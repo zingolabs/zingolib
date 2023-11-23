@@ -193,9 +193,9 @@ pub struct UserBalances {
     /// and can change the amount of fees required to spend them (e.g. 3 UTXOs shielded together become only 1 note).
     pub minimum_fees: u64,
 
-    /// The sum of non-change notes with a non-zero confirmation count that is less than the minimum required for spending,
-    /// and all UTXOs (considering that UTXOs must be shielded before spending).
-    /// `fairy_dust` is excluded from this value.
+    /// The sum of non-change notes with a non-zero confirmation count that is less than the minimum required for spending.
+    /// `dust` is excluded from this value.
+    /// All UTXOs are considered immature if the policy applies that requires all funds to be shielded before spending.
     ///
     /// As funds mature, this may not be the exact amount added to `spendable`, since the process of maturing
     /// may require shielding, which has a cost.
@@ -528,7 +528,13 @@ impl LightClient {
         }
     }
 
-    pub async fn get_user_balances(&self) -> Result<UserBalances, ZingoLibError> {
+    /// Returns the wallet balance, broken out into several figures that are expected to be meaningful to the user.
+    /// # Parameters
+    /// * `auto_shielding` - if true, UTXOs will be considered immature rather than spendable.
+    pub async fn get_user_balances(
+        &self,
+        auto_shielding: bool,
+    ) -> Result<UserBalances, ZingoLibError> {
         let mut balances = UserBalances {
             spendable: 0,
             immature_change: 0,
@@ -542,8 +548,7 @@ impl LightClient {
         // anchor height is the highest block height that contains income that are considered spendable.
         let anchor_height = self.wallet.get_anchor_height().await;
 
-        self
-            .wallet
+        self.wallet
             .transactions()
             .read()
             .await
@@ -559,6 +564,7 @@ impl LightClient {
                 let mut dust_value = 0;
                 let mut utxo_value = 0;
                 let mut inbound_note_count_nodust = 0;
+                let mut inbound_utxo_count_nodust = 0;
                 let mut change_note_count = 0;
 
                 tx.orchard_notes
@@ -605,7 +611,7 @@ impl LightClient {
                         if incoming {
                             if n.value > MARGINAL_FEE {
                                 utxo_value += n.value;
-                                inbound_note_count_nodust += 1;
+                                inbound_utxo_count_nodust += 1;
                             } else {
                                 dust_value += n.value;
                             }
@@ -618,20 +624,36 @@ impl LightClient {
                     balances.minimum_fees += inbound_note_count_nodust * MARGINAL_FEE;
                 }
 
+                // If auto-shielding, UTXOs are considered immature and do not fall into any of the buckets that
+                // the fee balance covers.
+                if !auto_shielding {
+                    balances.minimum_fees += inbound_utxo_count_nodust * MARGINAL_FEE;
+                }
+
+                if auto_shielding {
+                    if tx.unconfirmed {
+                        balances.incoming += utxo_value;
+                    } else {
+                        balances.immature_income += utxo_value;
+                    }
+                } else {
+                    // UTXOs are spendable even without confirmations.
+                    balances.spendable += utxo_value;
+                }
+
                 if mature {
                     // Spendable
                     balances.spendable += useful_value + change;
                     balances.dust += dust_value;
-                    balances.immature_income += utxo_value; // UTXOs are always immature, since they should be shielded before spending.
                 } else if !tx.unconfirmed {
                     // Confirmed, but not yet spendable
-                    balances.immature_income += useful_value + utxo_value;
+                    balances.immature_income += useful_value;
                     balances.immature_change += change;
                     balances.dust += dust_value;
                 } else {
                     // Unconfirmed
                     balances.immature_change += change;
-                    balances.incoming += useful_value + utxo_value;
+                    balances.incoming += useful_value;
                     balances.incoming_dust += dust_value;
                 }
             });
