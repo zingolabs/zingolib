@@ -406,7 +406,7 @@ pub async fn stage_and_apply_blocks(handler: &DarksideHandler, n: i32) -> Result
         .await
         .unwrap();
 
-    for height in 4..n as u64 {
+    for height in 4..=n as u64 {
         handler
             .darkside_connector
             .add_tree_state(TreeState {
