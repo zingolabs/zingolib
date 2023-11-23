@@ -324,8 +324,8 @@ pub async fn prepare_darksidewalletd(
     include_startup_funds: bool,
 ) -> Result<(), String> {
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    // let mut client = handler.darkside_connector.get_client().await.unwrap();
-    // client.clear_address_utxo(Empty {}).await.unwrap();
+    let mut client = handler.darkside_connector.get_client().await.unwrap();
+    client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
     handler
