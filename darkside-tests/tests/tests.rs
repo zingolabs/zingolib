@@ -1,11 +1,11 @@
 use darkside_tests::{
-    constants::{self, BRANCH_ID, DARKSIDE_SEED, GENESIS_BLOCK},
+    constants::{self, BRANCH_ID, GENESIS_BLOCK},
     darkside_types::{Empty, RawTransaction, TreeState},
     utils::{update_tree_states_for_transaction, DarksideConnector, DarksideHandler},
 };
 
 use tokio::time::sleep;
-use zingo_testutils::scenarios::setup::ClientBuilder;
+use zingo_testutils::{data::seeds::DARKSIDE_SEED, scenarios::setup::ClientBuilder};
 use zingoconfig::RegtestNetwork;
 use zingolib::{get_base_address, lightclient::PoolBalances};
 
