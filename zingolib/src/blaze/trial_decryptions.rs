@@ -71,7 +71,7 @@ impl TrialDecryptions {
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
         )>,
-        kill_switch: Arc<Option<tokio::task::AbortHandle>>,
+        kill_switch: Arc<Option<crate::lightclient::KillSwitch>>,
     ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
         //debug!("Starting trial decrptions processor");
 
@@ -141,7 +141,7 @@ impl TrialDecryptions {
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
         )>,
-        kill_switch: Arc<Option<tokio::task::AbortHandle>>,
+        kill_switch: Arc<Option<crate::lightclient::KillSwitch>>,
     ) -> Result<(), String> {
         let mut workers = FuturesUnordered::new();
 
@@ -151,8 +151,8 @@ impl TrialDecryptions {
 
         for compact_block in compact_blocks {
             let height = BlockHeight::from_u32(compact_block.height as u32);
-            if u32::from(height) == 12 {
-                if let Some(kill_switch) = kill_switch.as_ref() {
+            if let Some((kill_switch, kill_height)) = kill_switch.as_ref() {
+                if *kill_height == height {
                     kill_switch.abort()
                 }
             }

@@ -55,6 +55,8 @@ static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
 const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
 
+pub(crate) type KillSwitch = (tokio::task::AbortHandle, BlockHeight);
+
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
     pub success: bool,
@@ -967,7 +969,7 @@ impl LightClient {
     pub async fn do_sync_with_kill_switch(
         &self,
         print_updates: bool,
-        kill_switch: Option<tokio::task::AbortHandle>,
+        kill_switch: Option<KillSwitch>,
     ) -> Result<SyncResult, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
@@ -1342,10 +1344,7 @@ impl LightClient {
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
-    async fn start_sync(
-        &self,
-        kill_switch: Option<tokio::task::AbortHandle>,
-    ) -> Result<SyncResult, String> {
+    async fn start_sync(&self, kill_switch: Option<KillSwitch>) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         // TODO:  We run on resource constrained systems, where a single thread of
@@ -1466,7 +1465,7 @@ impl LightClient {
         &self,
         start_block: u64,
         batch_num: usize,
-        kill_switch: Arc<Option<tokio::task::AbortHandle>>,
+        kill_switch: Arc<Option<KillSwitch>>,
     ) -> Result<SyncResult, String> {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;

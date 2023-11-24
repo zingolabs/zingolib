@@ -3374,9 +3374,9 @@ mod slow {
         let (regtest_manager, _cph, _faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(1_000_000).await;
         let lc_arc = std::sync::Arc::new(recipient);
-        let _res = do_sync_killable(lc_arc.clone()).await.unwrap().unwrap();
+        let _res = do_sync_killable(lc_arc.clone(), 12).await.unwrap().unwrap();
 
         zingo_testutils::increase_server_height(&regtest_manager, 20).await;
-        let _res = do_sync_killable(lc_arc.clone()).await.unwrap().unwrap();
+        let _res = do_sync_killable(lc_arc.clone(), 12).await.unwrap().unwrap();
     }
 }
