@@ -384,3 +384,55 @@ impl TreeState {
         })
     }
 }
+
+pub async fn init_darksidewalletd() -> Result<(DarksideHandler, DarksideConnector), String> {
+    let handler = DarksideHandler::default();
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        handler.grpc_port
+    )));
+    let connector = DarksideConnector(server_id);
+    let mut client = connector.get_client().await.unwrap();
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    // reset with parameters
+    connector
+        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
+    // stage genesis block
+    connector
+        .stage_blocks_stream(vec![String::from(crate::constants::GENESIS_BLOCK)])
+        .await?;
+
+    connector
+        .add_tree_state(constants::first_tree_state())
+        .await
+        .unwrap();
+
+    Ok((handler, connector))
+}
+pub async fn stage_transaction(connector: &DarksideConnector, height: u64, hex_transaction: &str) {
+    connector
+        .stage_transactions_stream(vec![(hex::decode(hex_transaction).unwrap(), height)])
+        .await
+        .unwrap();
+    let tree_state = update_tree_states_for_transaction(
+        &connector.0,
+        RawTransaction {
+            data: hex::decode(hex_transaction).unwrap(),
+            height,
+        },
+        height,
+    )
+    .await;
+    connector
+        .add_tree_state(TreeState {
+            height,
+            ..tree_state
+        })
+        .await
+        .unwrap();
+}
