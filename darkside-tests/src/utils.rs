@@ -65,10 +65,6 @@ macro_rules! define_darkside_connector_methods(
 pub struct DarksideConnector(pub http::Uri);
 
 impl DarksideConnector {
-    pub fn new(uri: http::Uri) -> Self {
-        Self(uri)
-    }
-
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
@@ -330,7 +326,7 @@ pub async fn update_tree_states_for_transaction(
         hash: "".to_string(),
         time: 0,
     };
-    DarksideConnector::new(server_id.clone())
+    DarksideConnector(server_id.clone())
         .add_tree_state(new_tree_state.clone())
         .await
         .unwrap();
