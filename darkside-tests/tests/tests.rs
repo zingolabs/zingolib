@@ -54,9 +54,11 @@ async fn simple_sync() {
 async fn interrupt_sync() {
     let (handler, connector) = init_darksidewalletd().await.unwrap();
 
-    // generate blockchain
+    // stage blockchain
     connector.stage_blocks_create(2, 1, 0).await.unwrap();
     stage_transaction(&connector, 2, constants::O_TO_O_SEND_TO_SELF).await;
+
+    // apply blockchain
     connector.apply_staged(2).await.unwrap();
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -86,78 +88,6 @@ async fn interrupt_sync() {
         }
     );
 }
-
-// #[tokio::test]
-// async fn interrupt_sync() {
-//     let darkside_handler = DarksideHandler::new(None);
-
-//     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
-//         "http://127.0.0.1:{}",
-//         darkside_handler.grpc_port
-//     )));
-//     prepare_darksidewalletd(server_id.clone(), false)
-//         .await
-//         .unwrap();
-
-//     let connector = DarksideConnector(server_id.clone());
-
-//     connector.stage_blocks_create(4, 1, 0).await.unwrap();
-
-//     connector
-//         .stage_transactions_stream(vec![(
-//             hex::decode(constants::O_TO_O_SEND_TO_SELF).unwrap(),
-//             4,
-//         )])
-//         .await
-//         .unwrap();
-//     let tree_height_4 = update_tree_states_for_transaction(
-//         &server_id.clone(),
-//         RawTransaction {
-//             data: hex::decode(constants::O_TO_O_SEND_TO_SELF).unwrap(),
-//             height: 4,
-//         },
-//         4,
-//     )
-//     .await;
-//     connector
-//         .add_tree_state(TreeState {
-//             height: 4,
-//             ..tree_height_4
-//         })
-//         .await
-//         .unwrap();
-
-//     sleep(std::time::Duration::new(2, 0)).await;
-
-//     connector.apply_staged(4).await.unwrap();
-
-//     let regtest_network = RegtestNetwork::all_upgrades_active();
-//     let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-//         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-//         .await;
-
-//     let result = light_client.do_sync(true).await.unwrap();
-
-//     println!("{}", result);
-
-//     assert!(result.success);
-//     assert_eq!(result.latest_block, 4);
-//     assert_eq!(result.total_blocks_synced, 4);
-//     assert_eq!(
-//         light_client.do_balance().await,
-//         PoolBalances {
-//             sapling_balance: Some(0),
-//             verified_sapling_balance: Some(0),
-//             spendable_sapling_balance: Some(0),
-//             unverified_sapling_balance: Some(0),
-//             orchard_balance: Some(100000000),
-//             verified_orchard_balance: Some(100000000),
-//             spendable_orchard_balance: Some(100000000),
-//             unverified_orchard_balance: Some(0),
-//             transparent_balance: Some(0)
-//         }
-//     );
-// }
 
 #[tokio::test]
 async fn reorg_away_receipt() {

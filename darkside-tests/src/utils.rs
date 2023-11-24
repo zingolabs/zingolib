@@ -406,7 +406,6 @@ pub async fn init_darksidewalletd() -> Result<(DarksideHandler, DarksideConnecto
     connector
         .stage_blocks_stream(vec![String::from(crate::constants::GENESIS_BLOCK)])
         .await?;
-
     connector
         .add_tree_state(constants::first_tree_state())
         .await
