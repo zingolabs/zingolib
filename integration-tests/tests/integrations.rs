@@ -126,25 +126,48 @@ fn check_view_capability_bounds(
 
 #[tokio::test]
 async fn generate_hex_encoded_send_to_self() {
-    let (regtest_manager, _cph, faucet, recipient) =
-        zingo_testutils::scenarios::faucet_recipient_default().await;
-    let faucet_address = get_base_address!(faucet, "unified");
+    let (regtest_manager, _cph, mut client_builder, regtest_network) =
+        scenarios::custom_clients_default().await;
+    let faucet = client_builder.build_faucet(true, regtest_network).await;
 
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    let darkside_seed_client = client_builder
+        .build_client(
+            data::seeds::DARKSIDE_SEED.to_string(),
+            0,
+            true,
+            regtest_network,
+        )
+        .await;
+
+    let dssc_address = get_base_address!(darkside_seed_client, "unified");
+
+    faucet
+        .do_send(vec![(&dssc_address, 100_000, None)])
+        .await
+        .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &darkside_seed_client, 1)
+        .await
+        .unwrap();
     // Create parameters for create_publication_ready_transaction
-    let submission_height = zcash_primitives::consensus::BlockHeight::from_u32(1_u32);
+    let submission_height = zcash_primitives::consensus::BlockHeight::from_u32(2_u32);
     let start_time = 0u64;
-    let receivers = faucet
-        .map_tos_to_receivers(vec![(&faucet_address, 100_000, None)])
+    let receivers = darkside_seed_client
+        .map_tos_to_receivers(vec![(&dssc_address, 80_000, None)])
         .expect("To create receivers.");
     let policy = vec![
         zingolib::wallet::Pool::Orchard,
         zingolib::wallet::Pool::Sapling,
     ];
-    let (sapling_output, sapling_spend) = faucet.read_sapling_params().expect("Sapling params");
+    let (sapling_output, sapling_spend) = darkside_seed_client
+        .read_sapling_params()
+        .expect("Sapling params");
     let sapling_prover =
         zingo_testutils::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
     // This policy doesn't allow
-    let transaction = faucet
+    let transaction = darkside_seed_client
         .wallet
         .create_publication_ready_transaction(
             submission_height,
@@ -155,7 +178,13 @@ async fn generate_hex_encoded_send_to_self() {
         )
         .await
         .expect("To get a transaction");
-    dbg!(format!("{:?}", *transaction));
+    let mut buffer = vec![];
+    let mut cursor = std::io::Cursor::new(&mut buffer);
+    transaction
+        .write(&mut cursor)
+        .expect("To write to a buffer");
+    let hex_transaction = hex::encode(buffer);
+    dbg!(format!("{:?}", hex_transaction));
 }
 mod fast {
     use super::*;
