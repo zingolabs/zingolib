@@ -16,9 +16,9 @@ async fn prepare_darksidewalletd(
     dbg!(&uri);
     let connector = DarksideConnector(uri.clone());
 
-    let mut client = connector.get_client().await.unwrap();
+    let mut darkside_client = connector.get_client().await.unwrap();
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    client.clear_address_utxo(Empty {}).await.unwrap();
+    darkside_client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
     connector
