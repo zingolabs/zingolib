@@ -182,8 +182,7 @@ pub async fn prepare_darksidewalletd(
     if include_startup_funds {
         connector
             .stage_transactions_stream(vec![(
-                hex::decode(constants::FAUC_O_TO_DARKSIDE_RECIP_SAPL).unwrap(),
-                // hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
                 2,
             )])
             .await
@@ -191,8 +190,7 @@ pub async fn prepare_darksidewalletd(
         let tree_height_2 = update_tree_states_for_transaction(
             &uri,
             RawTransaction {
-                data: hex::decode(constants::FAUC_O_TO_DARKSIDE_RECIP_SAPL).unwrap(),
-                // data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
                 height: 2,
             },
             2,
