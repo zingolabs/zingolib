@@ -423,6 +423,11 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+
+[[package]]
+name = "build_utils"
+version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingolib?branch=dev#dbfdce694455b57cde7494fb383cb2b20531917c"
 
 [[package]]
@@ -651,7 +656,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
 dependencies = [
  "bech32",
  "bip0039",
@@ -682,9 +687,9 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
- "zingo-testutils",
- "zingoconfig",
- "zingolib",
+ "zingo-testutils 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
+ "zingoconfig 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
+ "zingolib 0.2.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
 ]
 
 [[package]]
@@ -2539,8 +2544,8 @@ dependencies = [
  "regchest_utils",
  "rustlib",
  "tokio",
- "zingo-testutils",
- "zingoconfig",
+ "zingo-testutils 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
  "zingomobile_utils",
 ]
 
@@ -2622,8 +2627,8 @@ dependencies = [
  "http",
  "lazy_static",
  "tokio",
- "zingoconfig",
- "zingolib",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingolib 0.2.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
 ]
 
 [[package]]
@@ -4049,6 +4054,18 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+dependencies = [
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_note_encryption",
+ "zcash_primitives",
+]
+
+[[package]]
+name = "zingo-memo"
+version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingolib?branch=dev#dbfdce694455b57cde7494fb383cb2b20531917c"
 dependencies = [
  "zcash_address",
@@ -4056,6 +4073,28 @@ dependencies = [
  "zcash_encoding",
  "zcash_note_encryption",
  "zcash_primitives",
+]
+
+[[package]]
+name = "zingo-testutils"
+version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+dependencies = [
+ "http",
+ "incrementalmerkletree",
+ "json",
+ "log",
+ "orchard",
+ "portpicker",
+ "serde",
+ "serde_json",
+ "tempdir",
+ "tokio",
+ "tracing",
+ "zcash_address",
+ "zcash_primitives",
+ "zingoconfig 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
+ "zingolib 0.2.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
 ]
 
 [[package]]
@@ -4076,8 +4115,21 @@ dependencies = [
  "tracing",
  "zcash_address",
  "zcash_primitives",
- "zingoconfig",
- "zingolib",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingolib 0.2.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+]
+
+[[package]]
+name = "zingoconfig"
+version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+dependencies = [
+ "dirs",
+ "http",
+ "log",
+ "log4rs",
+ "zcash_address",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -4096,7 +4148,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
 dependencies = [
  "append-only-vec",
  "base58",
@@ -4104,7 +4156,7 @@ dependencies = [
  "bech32",
  "bip0039",
  "bls12_381",
- "build_utils",
+ "build_utils 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
  "byteorder",
  "bytes 0.4.12",
  "derive_more",
@@ -4157,8 +4209,76 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingo-memo",
- "zingoconfig",
+ "zingo-memo 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
+ "zingoconfig 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test)",
+]
+
+[[package]]
+name = "zingolib"
+version = "0.2.0"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#dbfdce694455b57cde7494fb383cb2b20531917c"
+dependencies = [
+ "append-only-vec",
+ "base58",
+ "base64 0.13.1",
+ "bech32",
+ "bip0039",
+ "bls12_381",
+ "build_utils 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "byteorder",
+ "bytes 0.4.12",
+ "derive_more",
+ "either",
+ "ff 0.13.0",
+ "futures",
+ "group 0.13.0",
+ "hex 0.3.2",
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-rustls",
+ "incrementalmerkletree",
+ "indoc",
+ "json",
+ "jubjub",
+ "lazy_static",
+ "log",
+ "log4rs",
+ "nonempty",
+ "orchard",
+ "pairing 0.22.0",
+ "prost 0.10.4",
+ "rand 0.8.5",
+ "reqwest",
+ "ring 0.17.5",
+ "ripemd160",
+ "rust-embed",
+ "rustls-pemfile",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "shardtree",
+ "sodiumoxide",
+ "subtle",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tonic",
+ "tonic-build 0.7.2",
+ "tower",
+ "tower-http 0.2.5",
+ "tracing",
+ "tracing-subscriber",
+ "webpki-roots 0.21.1",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_proofs",
+ "zingo-memo 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
 ]
 
 [[package]]
