@@ -1,7 +1,10 @@
 use darkside_tests::{
     constants::{self, BRANCH_ID, GENESIS_BLOCK},
     darkside_types::{Empty, RawTransaction, TreeState},
-    utils::{prepare_darksidewalletd, DarksideConnector, DarksideHandler},
+    utils::{
+        prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector,
+        DarksideHandler,
+    },
 };
 
 use tokio::time::sleep;
