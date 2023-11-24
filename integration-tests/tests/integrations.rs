@@ -625,6 +625,8 @@ mod fast {
     }
 }
 mod slow {
+    use zingo_testutils::do_sync_killable;
+
     use super::*;
 
     #[tokio::test]
@@ -3366,5 +3368,15 @@ mod slow {
             recipient_loaded.do_balance().await.orchard_balance,
             Some(890_000)
         );
+    }
+    #[tokio::test]
+    async fn test_sync_interrupt() {
+        let (regtest_manager, _cph, _faucet, recipient, _txid) =
+            scenarios::faucet_funded_recipient_default(1_000_000).await;
+        let lc_arc = std::sync::Arc::new(recipient);
+        let _res = do_sync_killable(lc_arc.clone()).await.unwrap().unwrap();
+
+        zingo_testutils::increase_server_height(&regtest_manager, 20).await;
+        let _res = do_sync_killable(lc_arc.clone()).await.unwrap().unwrap();
     }
 }

@@ -71,6 +71,7 @@ impl TrialDecryptions {
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
         )>,
+        kill_switch: Arc<Option<tokio::task::AbortHandle>>,
     ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
         //debug!("Starting trial decrptions processor");
 
@@ -103,6 +104,7 @@ impl TrialDecryptions {
                 transaction_size_filter,
                 detected_transaction_id_sender,
                 full_transaction_fetcher,
+                kill_switch,
             )));
 
             while let Some(r) = workers.next().await {
@@ -139,6 +141,7 @@ impl TrialDecryptions {
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
         )>,
+        kill_switch: Arc<Option<tokio::task::AbortHandle>>,
     ) -> Result<(), String> {
         let mut workers = FuturesUnordered::new();
 
@@ -148,6 +151,11 @@ impl TrialDecryptions {
 
         for compact_block in compact_blocks {
             let height = BlockHeight::from_u32(compact_block.height as u32);
+            if u32::from(height) == 12 {
+                if let Some(kill_switch) = kill_switch.as_ref() {
+                    kill_switch.abort()
+                }
+            }
             let mut sapling_notes_to_mark_position_in_block = Vec::new();
             let mut orchard_notes_to_mark_position_in_block = Vec::new();
 
