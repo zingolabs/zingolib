@@ -1,6 +1,6 @@
 
-## WARNING! ZingoProxy
-* Using this software (a lightwalletd proxy client) does not offer the full privacy or security of running a full-node zcashd node locally.
+## WARNING! Zingo Note Taker
+* Using this software (a zcash note taker) does not offer the full privacy or security of running a full-node zcash node locally.
 * This software does not provide privacy guarantees against network monitoring of the type or pattern of traffic it generates. That is to say, in some cases, the specifics of use may be able to remain private, but the use of this tool may be apparent to network observers.
 
 ## Running Darksidewalletd tests.
@@ -21,7 +21,9 @@ lightwalletd supported for these tests need to have the TreeState API. This mean
 
 ## running the tests (currently experimental)
 
-cargo test --package zingo-cli --test integration_tests --features darkside_tests -- darkside
+By default the darkside tests are run as part of the integration tests `cargo nextest run`, for more explicit invocations:
+
+cargo nextest run --package integration-tests --features darkside_tests -- darkside
 
 # or to run a specific test
-cargo test --package zingo-cli --test integration_tests --features darkside_tests -- TESTNAME --nocapture
+cargo nextest run --package integration-tests --features darkside_tests -- $TESTNAME --nocapture

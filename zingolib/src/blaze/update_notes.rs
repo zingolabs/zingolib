@@ -128,9 +128,10 @@ impl UpdateNotes {
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent
-                        let value = wallet_transactions
-                            .write()
-                            .await
+                        let mut wallet_transactions_write_unlocked =
+                            wallet_transactions.write().await;
+
+                        let value = wallet_transactions_write_unlocked
                             .process_spent_note(
                                 transaction_id_spent_from,
                                 &maybe_spend_nullifier,
@@ -141,20 +142,18 @@ impl UpdateNotes {
                             .unwrap_or(0);
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
-                        wallet_transactions
-                            .write()
-                            .await
-                            .add_new_spent(
-                                transaction_id_spent_in,
-                                spent_at_height,
-                                false,
-                                ts,
-                                maybe_spend_nullifier,
-                                value,
-                                transaction_id_spent_from,
-                                output_index,
-                            )
-                            .await;
+                        wallet_transactions_write_unlocked.add_new_spent(
+                            transaction_id_spent_in,
+                            spent_at_height,
+                            false,
+                            ts,
+                            maybe_spend_nullifier,
+                            value,
+                            transaction_id_spent_from,
+                            output_index,
+                        );
+
+                        drop(wallet_transactions_write_unlocked);
 
                         // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {
@@ -163,7 +162,7 @@ impl UpdateNotes {
                                 .unwrap();
                         }
                     }
-                    // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
+                    // Send it off to get the full transaction if this is a newly-detected transaction
                     if need_to_fetch && download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
