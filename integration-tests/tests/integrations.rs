@@ -1078,21 +1078,13 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
 
         assert_eq!(
             recipient.do_shield(&[Pool::Sapling]).await,
-            Err(
-                "Not enough transparent/sapling balance to shield. Have 100 zats, \
-        need more than 10000 zats to cover tx fee"
-                    .to_string()
-            )
+            Err("There are no shieldable notes, worth shielding.  The total which is eligible for shielding is: 0 the total zip317 fee to shield these notes is: 10000".to_string())
         );
 
-        let sapling_enough_for_fee = 10_100;
+        let sapling_enough_for_fee = 22_000;
         faucet.do_sync(false).await.unwrap();
         let _sent_transaction_id = faucet
             .do_send(vec![(
