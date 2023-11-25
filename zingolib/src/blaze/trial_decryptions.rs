@@ -90,31 +90,6 @@ impl TrialDecryptions {
 
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
-
-                if cbs.len() >= 125 {
-                    // We seem to have enough to delegate to a new thread.
-                    // Why 1000?
-                    let wc = wc.clone();
-                    let sapling_ivk = sapling_ivk.clone();
-                    let orchard_ivk = orchard_ivk.clone();
-                    let transaction_metadata_set = transaction_metadata_set.clone();
-                    let bsync_data = bsync_data.clone();
-                    let detected_transaction_id_sender = detected_transaction_id_sender.clone();
-                    let config = config.clone();
-
-                    workers.push(tokio::spawn(Self::trial_decrypt_batch(
-                        config,
-                        cbs.split_off(0), // This allocates all received cbs to the spawn.
-                        wc,
-                        bsync_data,
-                        sapling_ivk,
-                        orchard_ivk,
-                        transaction_metadata_set,
-                        transaction_size_filter,
-                        detected_transaction_id_sender,
-                        full_transaction_fetcher.clone(),
-                    )));
-                }
             }
             // Finish off the remaining < 125 cbs
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
