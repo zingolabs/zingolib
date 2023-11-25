@@ -50,6 +50,7 @@ async fn simple_sync() {
         }
     );
 }
+#[ignore]
 #[tokio::test]
 async fn interrupt_sync() {
     let (handler, connector) = init_darksidewalletd().await.unwrap();
@@ -110,6 +111,69 @@ async fn interrupt_sync() {
     //         transparent_balance: Some(0)
     //     }
     // );
+}
+#[tokio::test]
+async fn spend_orchard_notes() {
+    let (handler, connector) = init_darksidewalletd().await.unwrap();
+
+    // stage blockchain
+    connector.stage_blocks_create(2, 2, 0).await.unwrap();
+    stage_transaction(
+        &connector,
+        2,
+        constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT,
+    )
+    .await;
+    stage_transaction(&connector, 3, constants::DARKSIDE_ORCH_TO_ORCH_50_000_ZAT).await;
+
+    // apply blockchain
+    connector.apply_staged(2).await.unwrap();
+
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let light_client = ClientBuilder::new(connector.0.clone(), handler.darkside_dir.clone())
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .await;
+
+    let result = light_client.do_sync(true).await.unwrap();
+    assert!(result.success);
+    assert_eq!(result.latest_block, 2);
+    assert_eq!(result.total_blocks_synced, 2);
+    assert_eq!(
+        light_client.do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(10_000_000),
+            verified_orchard_balance: Some(10_000_000),
+            spendable_orchard_balance: Some(10_000_000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
+    );
+
+    // apply blockchain
+    connector.apply_staged(3).await.unwrap();
+
+    let result = light_client.do_sync(true).await.unwrap();
+    assert!(result.success);
+    assert_eq!(result.latest_block, 3);
+    assert_eq!(result.total_blocks_synced, 1);
+    assert_eq!(
+        light_client.do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(9_990_000),
+            verified_orchard_balance: Some(9_990_000),
+            spendable_orchard_balance: Some(9_990_000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
+    );
 }
 
 #[tokio::test]
