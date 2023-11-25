@@ -607,7 +607,7 @@ impl LightClient {
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
-                            if n.value > u64::from(MARGINAL_FEE).into() {
+                            if n.value > u64::from(MARGINAL_FEE) {
                                 utxo_value += n.value;
                                 inbound_utxo_count_nodust += 1;
                             } else {
@@ -926,12 +926,12 @@ impl LightClient {
         let sapling_fee = if shield_sap_notes == 0 {
             0
         } else if shield_sap_notes == 1 || shield_sap_notes == 2 {
-            u64::from(u64::from(MARGINAL_FEE)) * 2
+            u64::from(MARGINAL_FEE) * 2
         } else {
-            shield_sap_notes * u64::from(u64::from(MARGINAL_FEE))
+            shield_sap_notes * u64::from(MARGINAL_FEE)
         };
-        let transparent_fee = shield_utxos * u64::from(u64::from(MARGINAL_FEE));
-        sapling_fee + transparent_fee + (u64::from(u64::from(MARGINAL_FEE)) * 2)
+        let transparent_fee = shield_utxos * u64::from(MARGINAL_FEE);
+        sapling_fee + transparent_fee + (u64::from(MARGINAL_FEE) * 2)
         // NOTE we're adding the orchard fee here
     }
     pub async fn transaction_from_shield(
@@ -974,7 +974,9 @@ impl LightClient {
             shieldable_sapling_notes.len() as u64,
         );
 
-        let total_shieldable = shieldable_utxos.iter().fold(0, |accum, utxo| accum + utxo)
+        let total_shieldable = shieldable_utxos
+            .iter()
+            .fold(0, |accum, utxo| accum + utxo.value)
             + shieldable_sapling_notes
                 .iter()
                 .fold(0, |accum, note| accum + note.note.value().inner());

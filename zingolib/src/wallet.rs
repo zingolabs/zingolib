@@ -1593,7 +1593,7 @@ impl LightWallet {
                     .current
                     .get_mut(&selected_utxo.txid)
                     .unwrap()
-                    .received_utxos
+                    .transparent_notes
                     .iter_mut()
                     .find(|u| {
                         selected_utxo.txid == u.txid && selected_utxo.output_index == u.output_index
@@ -1735,7 +1735,7 @@ impl LightWallet {
             .await
             .current
             .values()
-            .flat_map(|transaction| transaction.received_utxos.iter())
+            .flat_map(|transaction| transaction.transparent_notes.iter())
             .cloned()
             .collect::<Vec<TransparentNote>>()
     }
@@ -1744,11 +1744,11 @@ impl LightWallet {
         self.get_all_utxos()
             .await
             .iter()
-            .cloned()
-            .filter(|utxo| {
+            .filter(|&utxo| {
                 utxo.unconfirmed_spent
                     .is_some_and(|id_height| id_height.0 == txid)
             })
+            .cloned()
             .collect()
     }
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
