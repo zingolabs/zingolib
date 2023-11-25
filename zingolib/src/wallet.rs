@@ -998,7 +998,7 @@ impl LightWallet {
         }
         // Create the transaction
         let start_time = now();
-        let (transaction, total_cost) = match self
+        let (transaction, total_cost) = self
             .create_publication_ready_transaction(
                 submission_height,
                 start_time,

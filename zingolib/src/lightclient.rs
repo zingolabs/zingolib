@@ -53,8 +53,6 @@ use zingoconfig::{ZingoConfig, MAX_REORG};
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
-const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
-
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
     pub success: bool,
@@ -609,7 +607,7 @@ impl LightClient {
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
-                            if n.value > MARGINAL_FEE {
+                            if n.value > MARGINAL_FEE.into() {
                                 utxo_value += n.value;
                                 inbound_utxo_count_nodust += 1;
                             } else {
@@ -619,15 +617,15 @@ impl LightClient {
                     });
 
                 // The fee field only tracks mature income and change.
-                balances.minimum_fees += change_note_count * MARGINAL_FEE;
+                balances.minimum_fees += change_note_count * MARGINAL_FEE.into();
                 if mature {
-                    balances.minimum_fees += inbound_note_count_nodust * MARGINAL_FEE;
+                    balances.minimum_fees += inbound_note_count_nodust * MARGINAL_FEE.into();
                 }
 
                 // If auto-shielding, UTXOs are considered immature and do not fall into any of the buckets that
                 // the fee balance covers.
                 if !auto_shielding {
-                    balances.minimum_fees += inbound_utxo_count_nodust * MARGINAL_FEE;
+                    balances.minimum_fees += inbound_utxo_count_nodust * MARGINAL_FEE.into();
                 }
 
                 if auto_shielding {
@@ -661,7 +659,7 @@ impl LightClient {
         // Add the minimum fee for the receiving note,
         // but only if there exists notes to spend in the buckets that are covered by the minimum_fee.
         if balances.minimum_fees > 0 {
-            balances.minimum_fees += MARGINAL_FEE; // The receiving note.
+            balances.minimum_fees += MARGINAL_FEE.into(); // The receiving note.
         }
 
         Ok(balances)
