@@ -1675,7 +1675,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         let recipient_unified_address = get_base_address!(recipient, "unified");
-        let sent_value = 50_000;
+        let sent_value = 100_000;
         faucet
             .do_send(vec![(recipient_unified_address.as_str(), sent_value, None)])
             .await
@@ -1685,11 +1685,15 @@ mod slow {
             .unwrap();
         let recipient_taddr = get_base_address!(recipient, "transparent");
         let recipient_zaddr = get_base_address!(recipient, "sapling");
-        let sent_to_taddr_value = 5_000;
-        let sent_to_zaddr_value = 11_000;
-        let sent_to_self_orchard_value = 1_000;
+        let recipient_self_send_to_taddr_value = 5_000;
+        let recipient_self_send_to_zaddr_value = 11_000;
+        let recipient_self_send_to_self_orchard_value = 1_000;
         recipient
-            .do_send(vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)])
+            .do_send(vec![(
+                recipient_taddr.as_str(),
+                recipient_self_send_to_taddr_value,
+                None,
+            )])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
@@ -1697,15 +1701,19 @@ mod slow {
             .unwrap();
         recipient
             .do_send(vec![
-                (recipient_taddr.as_str(), sent_to_taddr_value, None),
+                (
+                    recipient_taddr.as_str(),
+                    recipient_self_send_to_taddr_value,
+                    None,
+                ),
                 (
                     recipient_zaddr.as_str(),
-                    sent_to_zaddr_value,
+                    recipient_self_send_to_zaddr_value,
                     Some(Memo::from_str("foo").unwrap().into()),
                 ),
                 (
                     recipient_unified_address.as_str(),
-                    sent_to_self_orchard_value,
+                    recipient_self_send_to_self_orchard_value,
                     Some(Memo::from_str("bar").unwrap().into()),
                 ),
             ])
@@ -1714,15 +1722,19 @@ mod slow {
         faucet.do_sync(false).await.unwrap();
         faucet
             .do_send(vec![
-                (recipient_taddr.as_str(), sent_to_taddr_value, None),
+                (
+                    recipient_taddr.as_str(),
+                    recipient_self_send_to_taddr_value,
+                    None,
+                ),
                 (
                     recipient_zaddr.as_str(),
-                    sent_to_zaddr_value,
+                    recipient_self_send_to_zaddr_value,
                     Some(Memo::from_str("foo2").unwrap().into()),
                 ),
                 (
                     recipient_unified_address.as_str(),
-                    sent_to_self_orchard_value,
+                    recipient_self_send_to_self_orchard_value,
                     Some(Memo::from_str("bar2").unwrap().into()),
                 ),
             ])
