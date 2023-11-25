@@ -2125,7 +2125,7 @@ mod slow {
                         let balance = faucet.do_balance().await;
                         balance.spendable_sapling_balance.unwrap()
                             + balance.spendable_orchard_balance.unwrap()
-                    } - u64::from(MINIMUM_FEE),
+                    } - (u64::from(MINIMUM_FEE) * 3),
                     memo.map(|memo| Memo::from_str(memo).unwrap().into()),
                 )])
                 .await
