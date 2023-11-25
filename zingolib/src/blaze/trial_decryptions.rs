@@ -151,11 +151,6 @@ impl TrialDecryptions {
 
         for compact_block in compact_blocks {
             let height = BlockHeight::from_u32(compact_block.height as u32);
-            if let Some((kill_switch, kill_height)) = kill_switch.as_ref() {
-                if *kill_height == height {
-                    kill_switch.abort()
-                }
-            }
             let mut sapling_notes_to_mark_position_in_block = Vec::new();
             let mut orchard_notes_to_mark_position_in_block = Vec::new();
 
@@ -198,6 +193,7 @@ impl TrialDecryptions {
                         &detected_transaction_id_sender,
                         &workers,
                         &mut sapling_notes_to_mark_position_in_tx,
+                        kill_switch.clone(),
                     )
                 };
 
@@ -218,6 +214,7 @@ impl TrialDecryptions {
                         &detected_transaction_id_sender,
                         &workers,
                         &mut orchard_notes_to_mark_position_in_tx,
+                        kill_switch.clone(),
                     )
                 };
                 orchard_notes_to_mark_position_in_block
@@ -288,6 +285,7 @@ impl TrialDecryptions {
             <D::WalletNote as NoteInterface>::Node,
             Retention<BlockHeight>,
         )],
+        kill_switch: Arc<Option<crate::lightclient::KillSwitch>>,
     ) where
         D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
@@ -313,6 +311,7 @@ impl TrialDecryptions {
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let timestamp = compact_block.time as u64;
                     let config = config.clone();
+                    let kill_switch = kill_switch.clone();
 
                     workers.push(tokio::spawn(async move {
                         let Ok(fvk) = D::wc_to_fvk(&wc) else {
@@ -358,6 +357,11 @@ impl TrialDecryptions {
                         );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
+                        if let Some((kill_switch, kill_height)) = kill_switch.as_ref() {
+                            if *kill_height == height {
+                                kill_switch.abort()
+                            }
+                        }
 
                         detected_transaction_id_sender
                             .send((
