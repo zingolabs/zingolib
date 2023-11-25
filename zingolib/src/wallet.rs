@@ -517,7 +517,7 @@ impl LightWallet {
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_unspent_transparent_notes(&self) -> Vec<ReceivedTransparentOutput> {
+    pub async fn get_unspent_transparent_notes(&self) -> Vec<TransparentNote> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -1024,7 +1024,14 @@ impl LightWallet {
         info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
         match self
-            .send_to_addresses_inner(transaction, submission_height, broadcast_fn)
+            .send_to_addresses_inner(
+                transaction,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+                submission_height,
+                broadcast_fn,
+            )
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1526,7 +1533,7 @@ impl LightWallet {
         transaction: Transaction,
         selected_orchard_notes: &[SpendableOrchardNote],
         selected_sapling_notes: &[SpendableSaplingNote],
-        selected_utxos: &[ReceivedTransparentOutput],
+        selected_utxos: &[TransparentNote],
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1721,7 +1728,7 @@ impl LightWallet {
         )
     }
 
-    async fn get_all_utxos(&self) -> Vec<ReceivedTransparentOutput> {
+    async fn get_all_utxos(&self) -> Vec<TransparentNote> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -1730,13 +1737,10 @@ impl LightWallet {
             .values()
             .flat_map(|transaction| transaction.received_utxos.iter())
             .cloned()
-            .collect::<Vec<ReceivedTransparentOutput>>()
+            .collect::<Vec<TransparentNote>>()
     }
     // The txid is the id of the transaction where the utxos were (unconfirmed) spent.
-    pub async fn get_utxos_spent_in_tx(
-        &self,
-        txid: transaction::TxId,
-    ) -> Vec<ReceivedTransparentOutput> {
+    pub async fn get_utxos_spent_in_tx(&self, txid: transaction::TxId) -> Vec<TransparentNote> {
         self.get_all_utxos()
             .await
             .iter()
@@ -1771,7 +1775,7 @@ impl LightWallet {
             .filter(|note| note.note.value().inner() > u64::from(MARGINAL_FEE))
             .collect::<Vec<_>>()
     }
-    pub async fn get_shieldable_transparent_notes(&self) -> Vec<ReceivedTransparentOutput> {
+    pub async fn get_shieldable_transparent_notes(&self) -> Vec<TransparentNote> {
         self.get_unspent_transparent_notes()
             .await
             .into_iter()

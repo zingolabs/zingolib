@@ -574,7 +574,7 @@ impl LightClient {
                             change += value;
                             change_note_count += 1;
                         } else if incoming {
-                            if value > MARGINAL_FEE {
+                            if value > u64::from(MARGINAL_FEE) {
                                 useful_value += value;
                                 inbound_note_count_nodust += 1;
                             } else {
@@ -592,7 +592,7 @@ impl LightClient {
                             change += value;
                             change_note_count += 1;
                         } else if incoming {
-                            if value > MARGINAL_FEE {
+                            if value > u64::from(MARGINAL_FEE) {
                                 useful_value += value;
                                 inbound_note_count_nodust += 1;
                             } else {
@@ -607,7 +607,7 @@ impl LightClient {
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
-                            if n.value > MARGINAL_FEE.into() {
+                            if n.value > u64::from(MARGINAL_FEE).into() {
                                 utxo_value += n.value;
                                 inbound_utxo_count_nodust += 1;
                             } else {
@@ -617,15 +617,15 @@ impl LightClient {
                     });
 
                 // The fee field only tracks mature income and change.
-                balances.minimum_fees += change_note_count * MARGINAL_FEE.into();
+                balances.minimum_fees += change_note_count * u64::from(MARGINAL_FEE);
                 if mature {
-                    balances.minimum_fees += inbound_note_count_nodust * MARGINAL_FEE.into();
+                    balances.minimum_fees += inbound_note_count_nodust * u64::from(MARGINAL_FEE);
                 }
 
                 // If auto-shielding, UTXOs are considered immature and do not fall into any of the buckets that
                 // the fee balance covers.
                 if !auto_shielding {
-                    balances.minimum_fees += inbound_utxo_count_nodust * MARGINAL_FEE.into();
+                    balances.minimum_fees += inbound_utxo_count_nodust * u64::from(MARGINAL_FEE);
                 }
 
                 if auto_shielding {
@@ -659,7 +659,7 @@ impl LightClient {
         // Add the minimum fee for the receiving note,
         // but only if there exists notes to spend in the buckets that are covered by the minimum_fee.
         if balances.minimum_fees > 0 {
-            balances.minimum_fees += MARGINAL_FEE.into(); // The receiving note.
+            balances.minimum_fees += u64::from(MARGINAL_FEE); // The receiving note.
         }
 
         Ok(balances)
@@ -926,12 +926,13 @@ impl LightClient {
         let sapling_fee = if shield_sap_notes == 0 {
             0
         } else if shield_sap_notes == 1 || shield_sap_notes == 2 {
-            u64::from(MARGINAL_FEE) * 2
+            u64::from(u64::from(MARGINAL_FEE)) * 2
         } else {
-            shield_sap_notes * u64::from(MARGINAL_FEE)
+            shield_sap_notes * u64::from(u64::from(MARGINAL_FEE))
         };
-        let transparent_fee = shield_utxos * u64::from(MARGINAL_FEE);
-        sapling_fee + transparent_fee + (u64::from(MARGINAL_FEE) * 2) // NOTE we're adding the orchard fee here
+        let transparent_fee = shield_utxos * u64::from(u64::from(MARGINAL_FEE));
+        sapling_fee + transparent_fee + (u64::from(u64::from(MARGINAL_FEE)) * 2)
+        // NOTE we're adding the orchard fee here
     }
     pub async fn transaction_from_shield(
         &self,
@@ -973,14 +974,12 @@ impl LightClient {
             shieldable_sapling_notes.len() as u64,
         );
 
-        let total_shieldable = shieldable_utxos
-            .iter()
-            .fold(0, |accum, utxo| accum + utxo.value)
+        let total_shieldable = shieldable_utxos.iter().fold(0, |accum, utxo| accum + utxo)
             + shieldable_sapling_notes
                 .iter()
                 .fold(0, |accum, note| accum + note.note.value().inner());
-        // Note it's possible to have a higher value than MARGINAL_FEE
-        // and still have no notes that are worth shielding (have more than MARGINAL_FEE value)
+        // Note it's possible to have a higher value than u64::from(MARGINAL_FEE)
+        // and still have no notes that are worth shielding (have more than u64::from(MARGINAL_FEE) value)
         // but any such 'dusty' notes will already have been filtered, by get_shieldable*
         if total_shieldable <= calculated_zip317_fee {
             return Err(format!("There are no shieldable notes, worth shielding.  The total which is eligible for shielding is: {} the total zip317 fee to shield these notes is: {}", total_shieldable, calculated_zip317_fee));

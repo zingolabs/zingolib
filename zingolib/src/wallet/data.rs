@@ -438,7 +438,7 @@ impl<Node: Hashable> WitnessCache<Node> {
     // }
 }
 #[derive(Clone)]
-pub struct ReceivedSaplingNoteAndMetadata {
+pub struct SaplingNote {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
@@ -464,7 +464,7 @@ pub struct ReceivedSaplingNoteAndMetadata {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReceivedOrchardNoteAndMetadata {
+pub struct OrchardNote {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
