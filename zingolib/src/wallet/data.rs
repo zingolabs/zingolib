@@ -963,7 +963,7 @@ impl TransactionMetadata {
         }
     }
 
-    pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
+    pub fn get_unmasked_transaction_fee(&self) -> Result<u64, ZingoLibError> {
         let outputted = dbg!(self.value_outgoing()) + dbg!(self.total_change_returned());
         if self.total_value_spent() >= outputted {
             Ok(dbg!(self.total_value_spent()) - dbg!(outputted))

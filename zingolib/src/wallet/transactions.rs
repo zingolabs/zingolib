@@ -46,7 +46,7 @@ impl TransactionMetadataSet {
             .current
             .get(txid)
             .expect("To have the requested txid")
-            .get_transaction_fee()
+            .get_unmasked_transaction_fee()
         {
             Ok(tx_fee) => tx_fee,
             Err(e) => panic!("{:?} for txid {}", e, txid,),

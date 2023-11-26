@@ -2941,7 +2941,7 @@ mod slow {
         };
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
-    impl Default for PrePadExpectedActions {
+    impl Default for PreMaskExpectedActions {
         fn default() -> Self {
             Self {
                 orchard_txins: 0,
@@ -2953,9 +2953,8 @@ mod slow {
             }
         }
     }
-    /// Note these expectations are **NOT** accounting for the padding behavior specified in:
-    /// <https://zips.z.cash/zip-0317#requirements>
-    struct PrePadExpectedActions {
+    /// Note these expectations are **NOT** accounting for the padding (aka masking) behavior specified in: <https://zips.z.cash/zip-0317#requirements>
+    struct PreMaskExpectedActions {
         orchard_txins: u64,
         orchard_txouts: u64,
         sapling_txins: u64,
@@ -2968,10 +2967,10 @@ mod slow {
     /// actions that the librustzcash builder is expected to add, instead
     /// those pads are implicit from outside the fn, and explicit as the '2' values
     /// seen as arguments to `max`
-    async fn get_padded_317_fee_from_actions(
+    async fn get_317_fee_from_masked_actions(
         client: &LightClient,
         tx: &TransactionMetadata,
-        expected_actions: PrePadExpectedActions,
+        expected_actions: PreMaskExpectedActions,
     ) -> NonNegativeAmount {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
@@ -3085,10 +3084,10 @@ mod slow {
             .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
             .await
             .unwrap();
-        let zip317_fee = get_padded_317_fee_from_actions(
+        let zip317_fee = get_317_fee_from_masked_actions(
             &orchard_faucet,
             &orch_fauc_to_pmc_taddr_tx,
-            PrePadExpectedActions {
+            PreMaskExpectedActions {
                 orchard_txins: 1,
                 transparent_txouts: 1,
                 ..Default::default()
@@ -3107,10 +3106,10 @@ mod slow {
             .await
             .unwrap();
         dbg!(&recipient.wallet.get_unspent_transparent_notes().await);
-        let zip317_fee = get_padded_317_fee_from_actions(
+        let zip317_fee = get_317_fee_from_masked_actions(
             &recipient,
             &shield_tx,
-            PrePadExpectedActions {
+            PreMaskExpectedActions {
                 orchard_txouts: 2,
                 transparent_txins: 1,
                 ..Default::default()
@@ -3132,7 +3131,7 @@ mod slow {
         let recipient_taddr = get_base_address!(recipient, "transparent");
         let recipient_sapling_addr = get_base_address!(recipient, "sapling");
         let recipient_unified_addr = get_base_address!(recipient, "unified");
-        // Ensure that the client has confirmed spendable funds
+        // Ensure that the faucet has confirmed spendable funds
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &orchard_faucet, 3)
             .await
             .unwrap();
@@ -3151,10 +3150,10 @@ mod slow {
             .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
             .await
             .unwrap();
-        let test_one_fee = get_padded_317_fee_from_actions(
+        let test_one_fee = get_317_fee_from_masked_actions(
             &orchard_faucet,
             &test_one_tx,
-            PrePadExpectedActions {
+            PreMaskExpectedActions {
                 orchard_txins: 1,
                 transparent_txouts: 1,
                 ..Default::default()
@@ -3166,7 +3165,7 @@ mod slow {
         //  3 * MARGINAL_FEE:
         assert!(
             Into::<u64>::into(test_one_fee) == 15_000u64
-                && test_one_tx.get_transaction_fee().unwrap() == 15_000u64
+                && test_one_tx.get_unmasked_transaction_fee().unwrap() == 15_000u64
         );
         bump_and_check_recipient!(o: 0 s: 0 t: 50_000);
 
@@ -3177,22 +3176,29 @@ mod slow {
             .transaction_from_send(vec![(&recipient_sapling_addr, 50_000, None)])
             .await
             .unwrap();
-        let test_two_fee = get_padded_317_fee_from_actions(
+        let test_two_fee = get_317_fee_from_masked_actions(
             &orchard_faucet,
             &test_two_tx,
-            PrePadExpectedActions {
+            PreMaskExpectedActions {
                 orchard_txins: 1,
-                sapling_txouts: 1, // Note a "pad" will be added by the librustzcash zip317 builder
+                sapling_txouts: 1, // Note a "change mask" will be added by the librustzcash zip317 builder
                 ..Default::default()
             },
         )
         .await;
         assert_eq!(Into::<u64>::into(test_two_fee), 20_000u64);
-        assert_eq!(test_two_tx.get_transaction_fee().unwrap(), 20_000u64); // 2 for orchard change, 2 for sapling pool
+        dbg!(&test_two_tx.orchard_notes.len());
+        dbg!(&test_two_tx.sapling_notes.len());
+        dbg!(&test_two_tx.transparent_notes.len());
+        assert_eq!(
+            test_two_tx.get_unmasked_transaction_fee().unwrap(),
+            15_000u64
+        ); // 1 orchard spend, 1 orchard change, 1 receipt
         bump_and_check_recipient!(o: 0 s: 50_000 t: 50_000);
 
         // Test Three: test of an orchard-only client to itself
         //  TODO:  Make it clearer in the error message that the problem is that the user can't send directly from the transparent pool.
+        panic!();
         dbg!("Test Three");
         assert!(recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 70_000, None)])
@@ -3207,10 +3213,10 @@ mod slow {
             .await
             .unwrap();
         //dbg!(&shield_tx);
-        let test_four_fee = get_padded_317_fee_from_actions(
+        let test_four_fee = get_317_fee_from_masked_actions(
             &recipient,
             &shield_tx,
-            PrePadExpectedActions {
+            PreMaskExpectedActions {
                 orchard_txouts: 2,
                 sapling_txins: 1,
                 transparent_txins: 1,
@@ -3231,10 +3237,10 @@ mod slow {
             ])
             .await
             .unwrap();
-        let test_five_fee = get_padded_317_fee_from_actions(
+        let test_five_fee = get_317_fee_from_masked_actions(
             &recipient,
             &test_five_tx,
-            PrePadExpectedActions {
+            PreMaskExpectedActions {
                 orchard_txouts: 1, // Change value 0
                 orchard_txins: 1,
                 sapling_txouts: 1,
@@ -3245,7 +3251,7 @@ mod slow {
         .await;
         assert_eq!(Into::<u64>::into(test_five_fee), 25_000u64); // 2 for orchard change + in, 2 for sapling pool, and 1 transparent
         dbg!(&recipient.do_balance().await);
-        dbg!(&test_five_tx.get_transaction_fee());
+        dbg!(&test_five_tx.get_unmasked_transaction_fee());
         bump_and_check_recipient!(o: 5_000 s: 25_000 t: 25_000);
         dbg!(&recipient.do_balance().await);
         panic!();
