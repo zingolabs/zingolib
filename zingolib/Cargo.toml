@@ -13,6 +13,7 @@ lightclient-deprecated = []
 test-features = []
 default = ["embed_params"]
 embed_params = []
+darkside_tests = []
 
 [dependencies]
 http-body = { workspace = true }

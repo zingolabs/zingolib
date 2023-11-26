@@ -138,7 +138,7 @@ pub fn launch_lightwalletd(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/integration-tests/regtest/bin/ directory, see docs/integration-tests.txt");
+        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/integration-tests/regtest/bin/ directory, and in $G/darkside-tests/lightwalletd-bin. see docs/integration-tests.txt");
 
     if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
         std::thread::spawn(move || {

@@ -53,6 +53,8 @@ use zingoconfig::{ZingoConfig, MAX_REORG};
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
+const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
+
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
     pub success: bool,
@@ -146,6 +148,69 @@ pub struct AccountBackupInfo {
 #[derive(Default)]
 struct ZingoSaveBuffer {
     pub buffer: Arc<RwLock<Vec<u8>>>,
+}
+
+/// Balances that may be presented to a user in a wallet app.
+/// The goal is to present a user-friendly and useful view of what the user has or can soon expect
+/// *without* requiring the user to understand the details of the Zcash protocol.
+///
+/// Showing all these balances all the time may overwhelm the user with information.
+/// A simpler view may present an overall balance as:
+///
+/// Name | Value
+/// --- | ---
+/// "Balance" | `spendable` - `minimum_fees` + `immature_change` + `immature_income`
+/// "Incoming" | `incoming`
+///
+/// If dust is sent to the wallet, the simpler view's Incoming balance would include it,
+/// only for it to evaporate when confirmed.
+/// But incoming can always evaporate (e.g. a transaction expires before confirmation),
+/// and the alternatives being to either hide that a transmission was made at all, or to include
+/// the dust in other balances could be more misleading.
+///
+/// An app *could* choose to prominently warn the user if a significant proportion of the incoming balance is dust,
+/// although this event seems very unlikely since it will cost the sender *more* than the amount the recipient is expecting
+/// to 'fool' them into thinking they are receiving value.
+/// The more likely scenario is that the sender is trying to send a small amount of value as a new user and doesn't realize
+/// the value is too small to be useful.
+/// A good Zcash wallet should prevent sending dust in the first place.
+pub struct UserBalances {
+    /// Available for immediate spending.
+    /// Expected fees are *not* deducted from this value, but the app may do so by subtracting `minimum_fees`.
+    /// `dust` is excluded from this value.
+    ///
+    /// For enhanced privacy, the minimum number of required confirmations to spend a note is usually greater than one.
+    pub spendable: u64,
+
+    /// The sum of the change notes that have insufficient confirmations to be spent.
+    pub immature_change: u64,
+
+    /// The minimum fees that can be expected to spend all `spendable + immature_change` funds in the wallet.
+    /// This fee assumes all funds will be sent to a single note.
+    ///
+    /// Balances described by other fields in this struct are not included because they are not confirmed,
+    /// they may amount to dust, or because as `immature_income` funds they may require shielding which has a cost
+    /// and can change the amount of fees required to spend them (e.g. 3 UTXOs shielded together become only 1 note).
+    pub minimum_fees: u64,
+
+    /// The sum of non-change notes with a non-zero confirmation count that is less than the minimum required for spending.
+    /// `dust` is excluded from this value.
+    /// All UTXOs are considered immature if the policy applies that requires all funds to be shielded before spending.
+    ///
+    /// As funds mature, this may not be the exact amount added to `spendable`, since the process of maturing
+    /// may require shielding, which has a cost.
+    pub immature_income: u64,
+
+    /// The sum of all *confirmed* UTXOs and notes that are worth less than the fee to spend them,
+    /// making them essentially inaccessible.
+    pub dust: u64,
+
+    /// The sum of all *unconfirmed* UTXOs and notes that are not change.
+    /// This value includes any applicable `incoming_dust`.
+    pub incoming: u64,
+
+    /// The sum of all *unconfirmed* UTXOs and notes that are not change and are each counted as dust.
+    pub incoming_dust: u64,
 }
 
 /// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
@@ -461,6 +526,145 @@ impl LightClient {
             unverified_orchard_balance: self.wallet.unverified_orchard_balance(None).await,
             transparent_balance: self.wallet.tbalance(None).await,
         }
+    }
+
+    /// Returns the wallet balance, broken out into several figures that are expected to be meaningful to the user.
+    /// # Parameters
+    /// * `auto_shielding` - if true, UTXOs will be considered immature rather than spendable.
+    pub async fn get_user_balances(
+        &self,
+        auto_shielding: bool,
+    ) -> Result<UserBalances, ZingoLibError> {
+        let mut balances = UserBalances {
+            spendable: 0,
+            immature_change: 0,
+            minimum_fees: 0,
+            immature_income: 0,
+            dust: 0,
+            incoming: 0,
+            incoming_dust: 0,
+        };
+
+        // anchor height is the highest block height that contains income that are considered spendable.
+        let anchor_height = self.wallet.get_anchor_height().await;
+
+        self.wallet
+            .transactions()
+            .read()
+            .await
+            .current
+            .iter()
+            .for_each(|(_, tx)| {
+                let mature =
+                    !tx.unconfirmed && tx.block_height <= BlockHeight::from_u32(anchor_height);
+                let incoming = tx.is_incoming_transaction();
+
+                let mut change = 0;
+                let mut useful_value = 0;
+                let mut dust_value = 0;
+                let mut utxo_value = 0;
+                let mut inbound_note_count_nodust = 0;
+                let mut inbound_utxo_count_nodust = 0;
+                let mut change_note_count = 0;
+
+                tx.orchard_notes
+                    .iter()
+                    .filter(|n| n.spent().is_none() && n.unconfirmed_spent.is_none())
+                    .for_each(|n| {
+                        let value = n.note.value().inner();
+                        if !incoming && n.is_change {
+                            change += value;
+                            change_note_count += 1;
+                        } else if incoming {
+                            if value > MARGINAL_FEE {
+                                useful_value += value;
+                                inbound_note_count_nodust += 1;
+                            } else {
+                                dust_value += value;
+                            }
+                        }
+                    });
+
+                tx.sapling_notes
+                    .iter()
+                    .filter(|n| n.spent().is_none() && n.unconfirmed_spent.is_none())
+                    .for_each(|n| {
+                        let value = n.note.value().inner();
+                        if !incoming && n.is_change {
+                            change += value;
+                            change_note_count += 1;
+                        } else if incoming {
+                            if value > MARGINAL_FEE {
+                                useful_value += value;
+                                inbound_note_count_nodust += 1;
+                            } else {
+                                dust_value += value;
+                            }
+                        }
+                    });
+
+                tx.transparent_notes
+                    .iter()
+                    .filter(|n| n.spent.is_none() && n.unconfirmed_spent.is_none())
+                    .for_each(|n| {
+                        // UTXOs are never 'change', as change would have been shielded.
+                        if incoming {
+                            if n.value > MARGINAL_FEE {
+                                utxo_value += n.value;
+                                inbound_utxo_count_nodust += 1;
+                            } else {
+                                dust_value += n.value;
+                            }
+                        }
+                    });
+
+                // The fee field only tracks mature income and change.
+                balances.minimum_fees += change_note_count * MARGINAL_FEE;
+                if mature {
+                    balances.minimum_fees += inbound_note_count_nodust * MARGINAL_FEE;
+                }
+
+                // If auto-shielding, UTXOs are considered immature and do not fall into any of the buckets that
+                // the fee balance covers.
+                if !auto_shielding {
+                    balances.minimum_fees += inbound_utxo_count_nodust * MARGINAL_FEE;
+                }
+
+                if auto_shielding {
+                    if tx.unconfirmed {
+                        balances.incoming += utxo_value;
+                    } else {
+                        balances.immature_income += utxo_value;
+                    }
+                } else {
+                    // UTXOs are spendable even without confirmations.
+                    balances.spendable += utxo_value;
+                }
+
+                if mature {
+                    // Spendable
+                    balances.spendable += useful_value + change;
+                    balances.dust += dust_value;
+                } else if !tx.unconfirmed {
+                    // Confirmed, but not yet spendable
+                    balances.immature_income += useful_value;
+                    balances.immature_change += change;
+                    balances.dust += dust_value;
+                } else {
+                    // Unconfirmed
+                    balances.immature_change += change;
+                    balances.incoming += useful_value;
+                    balances.incoming_dust += dust_value;
+                }
+            });
+
+        // Add the minimum fee for the receiving note,
+        // but only if there exists notes to spend in the buckets that are covered by the minimum_fee.
+        if balances.minimum_fees > 0 {
+            balances.minimum_fees += MARGINAL_FEE; // The receiving note.
+        }
+
+        Ok(balances)
     }
 
     pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
@@ -1217,6 +1421,19 @@ impl LightClient {
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;
+            if res.is_err() {
+                // If something went wrong during a batch, reset the wallet state to
+                // how it was before the latest batch
+                BlockManagementData::invalidate_block(
+                    self.wallet.last_synced_height().await,
+                    self.wallet.blocks.clone(),
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .clone(),
+                )
+                .await;
+            }
             res.as_ref()?;
             if *self.interrupt_sync.read().await {
                 log::debug!("LightClient interrupt_sync is true");
@@ -1422,6 +1639,12 @@ impl LightClient {
         let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
         debug!("tree verification {}", verified);
         debug!("highest tree exists: {}", highest_tree.is_some());
+
+        // the following check does not make sense in the context of
+        // darkside_tests feature and should be disabled since
+        // darksidewalletd will manipulate the chain and ultimately
+        // break the static checkpoints.
+        #[cfg(not(feature = "darkside_tests"))]
         if !verified {
             return Err("Tree Verification Failed".to_string());
         }
@@ -1988,4 +2211,4 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
 #[cfg(feature = "test-features")]
-mod test_features;
+pub mod test_features;
