@@ -555,8 +555,8 @@ impl LightClient {
             .current
             .iter()
             .for_each(|(_, tx)| {
-                let mature =
-                    !tx.unconfirmed && tx.block_height <= BlockHeight::from_u32(anchor_height);
+                let mature = tx.status.is_confirmed()
+                    && tx.block_height <= BlockHeight::from_u32(anchor_height);
                 let incoming = tx.is_incoming_transaction();
 
                 let mut change = 0;
@@ -631,7 +631,7 @@ impl LightClient {
                 }
 
                 if auto_shielding {
-                    if tx.unconfirmed {
+                    if !tx.status.is_confirmed() {
                         balances.incoming += utxo_value;
                     } else {
                         balances.immature_income += utxo_value;
@@ -645,7 +645,7 @@ impl LightClient {
                     // Spendable
                     balances.spendable += useful_value + change;
                     balances.dust += dust_value;
-                } else if !tx.unconfirmed {
+                } else if tx.status.is_confirmed() {
                     // Confirmed, but not yet spendable
                     balances.immature_income += useful_value;
                     balances.immature_change += change;
