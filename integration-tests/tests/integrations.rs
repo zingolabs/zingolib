@@ -3373,37 +3373,60 @@ mod slow {
     async fn test_sync_interrupt() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        faucet
-            .do_send(vec![(
-                &get_base_address!(recipient, "sapling"),
-                1_000_000,
-                None,
-            )])
-            .await
-            .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
-            .await
-            .unwrap();
-        recipient
-            .do_send(vec![(
-                &get_base_address!(recipient, "sapling"),
-                100_000,
-                None,
-            )])
-            .await
-            .unwrap();
         let height = recipient
             .do_wallet_last_scanned_height()
             .await
             .as_u32()
             .unwrap();
-        zingo_testutils::increase_server_height(&regtest_manager, 4).await;
+        for i in 1..9 {
+            zingo_testutils::increase_server_height(&regtest_manager, 1).await;
+            let _ = faucet.do_sync(false).await;
+            faucet
+                .do_send(vec![(
+                    &get_base_address!(recipient, "sapling"),
+                    100 + i,
+                    None,
+                )])
+                .await
+                .unwrap();
+            println!(
+                "sent value {} at faucet height {}",
+                100 + i,
+                faucet
+                    .do_wallet_last_scanned_height()
+                    .await
+                    .as_u32()
+                    .unwrap()
+            );
+        }
 
-        let lc_arc = std::sync::Arc::new(recipient);
-        let _res = do_sync_killable(lc_arc.clone(), height + 1)
+        let reci_arc = std::sync::Arc::new(recipient);
+        println!("start_height: {}", height);
+        println!("summaries_now: {:#?}", reci_arc.do_list_txsummaries().await);
+        let _res = do_sync_killable(reci_arc.clone(), height + 2)
             .await
             .unwrap_err();
-        lc_arc.do_sync(true).await.unwrap();
-        println!("{:#?}", lc_arc.do_balance().await);
+        println!("summaries_t+2: {:#?}", reci_arc.do_list_txsummaries().await);
+        reci_arc.do_sync(false).await.unwrap();
+        println!(
+            "summaries_fully_synced: {:#?}",
+            reci_arc.do_list_txsummaries().await
+        );
+        println!(
+            "finish_height reci_arc: {}",
+            reci_arc
+                .do_wallet_last_scanned_height()
+                .await
+                .as_u32()
+                .unwrap()
+        );
+        println!(
+            "finish_height faucet: {}",
+            faucet
+                .do_wallet_last_scanned_height()
+                .await
+                .as_u32()
+                .unwrap()
+        );
     }
 }
