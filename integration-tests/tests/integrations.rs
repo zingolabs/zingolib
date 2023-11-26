@@ -3187,9 +3187,6 @@ mod slow {
         )
         .await;
         assert_eq!(Into::<u64>::into(test_two_fee), 20_000u64);
-        dbg!(&test_two_tx.orchard_notes.len());
-        dbg!(&test_two_tx.sapling_notes.len());
-        dbg!(&test_two_tx.transparent_notes.len());
         assert_eq!(
             test_two_tx.get_unmasked_transaction_fee().unwrap(),
             15_000u64
