@@ -1403,7 +1403,10 @@ impl LightClient {
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let batch = cmp::min(latest_blockid.height, prev + zingoconfig::BATCH_SIZE);
+            let batch = cmp::min(
+                latest_blockid.height,
+                prev + zingoconfig::BATCH_SIZE_72EC100D3,
+            );
             prev = batch;
             latest_block_batches.push(batch);
         }
