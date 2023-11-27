@@ -3381,12 +3381,12 @@ mod slow {
             .await
             .unwrap();
         for i in 1..4 {
-            zingo_testutils::increase_server_height(&regtest_manager, 1).await;
+            zingo_testutils::increase_server_height(&regtest_manager, 60).await;
             let _ = recipient.do_sync(false).await;
             recipient
                 .do_send(vec![(
                     &get_base_address!(recipient, "unified"),
-                    200 + i,
+                    60 * i,
                     None,
                 )])
                 .await
