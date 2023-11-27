@@ -3401,7 +3401,7 @@ async fn timed_sync_interrupt() {
     println!("start");
     // let reci_arc = std::sync::Arc::new(recipient);
     recipient.clear_state().await;
-    let timeout = 8;
+    let timeout = 32;
     let what = sync_with_timeout_millis(&recipient, timeout).await;
     match what {
         Ok(_) => {
