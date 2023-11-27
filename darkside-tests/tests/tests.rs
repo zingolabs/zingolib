@@ -12,7 +12,7 @@ use zingo_testutils::{
     data::seeds::{DARKSIDE_SEED, HOSPITAL_MUSEUM_SEED},
     scenarios::setup::ClientBuilder,
 };
-use zingoconfig::{RegtestNetwork, BATCH_SIZE_72EC100D3};
+use zingoconfig::{RegtestNetwork, BATCH_SIZE};
 use zingolib::{get_base_address, lightclient::PoolBalances};
 
 #[tokio::test]
@@ -58,7 +58,7 @@ async fn simple_sync() {
 async fn interrupt_sync_chainbuild() {
     // initialise darksidewalletd and stage first part of blockchain
     let (handler, connector) = init_darksidewalletd().await.unwrap();
-    const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE_72EC100D3 as i32;
+    const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE as i32;
     connector
         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
         .await

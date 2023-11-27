@@ -28,7 +28,7 @@ pub const MAX_REORG: usize = 100;
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const REORG_BUFFER_OFFSET: u32 = 0;
-pub const BATCH_SIZE_72EC100D3: u64 = 100;
+pub const BATCH_SIZE: u64 = 100;
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
