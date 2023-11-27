@@ -442,7 +442,7 @@ pub async fn update_tree_state_and_apply_staged(connector: &DarksideConnector, h
         })
         .await
         .unwrap();
-    connector.apply_staged(49).await.unwrap();
+    connector.apply_staged(height as i32).await.unwrap();
 }
 pub async fn send_and_stage_transaction(
     connector: &DarksideConnector,
@@ -458,7 +458,6 @@ pub async fn send_and_stage_transaction(
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
     connector.clear_incoming_transactions().await.unwrap();
     let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
-    dbg!(format!("{:?}", &raw_tx));
     // There should only be one transaction incoming
     assert!(streamed_raw_txns.message().await.unwrap().is_none());
     connector

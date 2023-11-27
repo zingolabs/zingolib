@@ -94,10 +94,8 @@ async fn interrupt_sync_chainbuild() {
     )
     .await;
 
-    // apply blockchain
-    connector.apply_staged(50).await.unwrap();
-    // // apply second part of blockchain
-    // update_tree_state_and_apply_staged(&connector, 119).await;
+    // apply second part of blockchain
+    update_tree_state_and_apply_staged(&connector, 119).await;
 
     // send second funds to recipient
     darkside_faucet.do_sync(false).await.unwrap();
@@ -106,7 +104,21 @@ async fn interrupt_sync_chainbuild() {
         &darkside_faucet,
         &get_base_address!(recipient, "unified"),
         200_000,
-        51,
+        120,
+    )
+    .await;
+
+    // apply third part of blockchain
+    update_tree_state_and_apply_staged(&connector, 179).await;
+
+    // recipient send to self orchard
+    recipient.do_sync(false).await.unwrap();
+    send_and_stage_transaction(
+        &connector,
+        &recipient,
+        &get_base_address!(recipient, "unified"),
+        250_000,
+        180,
     )
     .await;
 
@@ -114,8 +126,11 @@ async fn interrupt_sync_chainbuild() {
     connector.apply_staged(200).await.unwrap();
 
     recipient.do_sync(true).await.unwrap();
+    println!("do list transactions:");
     println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!("do balance:");
     dbg!(recipient.do_balance().await);
+    println!("do list_notes:");
     println!(
         "{}",
         json::stringify_pretty(recipient.do_list_notes(true).await, 4)
