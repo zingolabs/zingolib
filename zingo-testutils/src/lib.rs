@@ -250,10 +250,7 @@ pub mod scenarios {
         use crate::BASE_HEIGHT;
 
         use super::super::regtest::get_regtest_dir;
-        use super::{
-            data, funded_orchard_sapling_transparent_shielded_mobileclient, ChildProcessHandler,
-            RegtestManager,
-        };
+        use super::{data, ChildProcessHandler, RegtestManager};
         use std::io;
         use std::path::PathBuf;
         use tokio::time::sleep;
@@ -264,7 +261,7 @@ pub mod scenarios {
             pub regtest_manager: RegtestManager,
             pub client_builder: ClientBuilder,
             pub child_process_handler: Option<ChildProcessHandler>,
-            proxy_server_handle: tokio::task::JoinHandle<Result<(), io::Error>>,
+            pub proxy_server_handle: tokio::task::JoinHandle<Result<(), io::Error>>,
         }
         impl ScenarioBuilder {
             async fn build_scenario(
@@ -576,7 +573,9 @@ pub mod scenarios {
                     Ok((client, _)) => {
                         let lwd_port = lwd_port.clone();
                         tokio::spawn(async move {
-                            handle_client_conn(client, lwd_port).await;
+                            if let Err(e) = handle_client_conn(client, lwd_port).await {
+                                eprintln!("Proxy forwarding error: {e}")
+                            }
                         });
                     }
                     Err(e) => {
