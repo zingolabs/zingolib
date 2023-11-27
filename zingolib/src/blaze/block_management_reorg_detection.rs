@@ -51,7 +51,7 @@ pub struct BlockManagementData {
     pub unverified_treestates: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
-    batch_size: u32,
+    batch_size: u64,
 
     // Highest verified trees
     // The incorrect type name "TreeState" is encoded in protobuf
@@ -63,21 +63,20 @@ pub struct BlockManagementData {
     pub sync_status: Arc<RwLock<BatchSyncStatus>>,
 }
 
-pub const BATCHSIZE: u32 = 25;
 impl BlockManagementData {
     pub fn new(sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
-            batch_size: BATCHSIZE,
+            batch_size: zingoconfig::BATCH_SIZE,
             highest_verified_trees: None,
             sync_status,
         }
     }
 
     #[cfg(test)]
-    pub fn new_with_batchsize(batch_size: u32) -> Self {
+    pub fn new_with_batchsize(batch_size: u64) -> Self {
         let mut s = Self::new(Arc::new(RwLock::new(BatchSyncStatus::default())));
         s.batch_size = batch_size;
 
@@ -579,7 +578,7 @@ struct BlockManagementThreadData {
     /// Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<BatchSyncStatus>>,
     receiver: UnboundedReceiver<CompactBlock>,
-    batch_size: u32,
+    batch_size: u64,
     end_block: u64,
 }
 
@@ -597,8 +596,7 @@ impl BlockManagementThreadData {
         let mut last_block_expecting = self.end_block;
 
         while let Some(compact_block) = self.receiver.recv().await {
-            if compact_block.height % self.batch_size as u64 == 0 && !unprocessed_blocks.is_empty()
-            {
+            if compact_block.height % self.batch_size == 0 && !unprocessed_blocks.is_empty() {
                 // Add these blocks to the list
                 self.sync_status.write().await.blocks_done += unprocessed_blocks.len() as u64;
                 self.blocks_in_current_batch
