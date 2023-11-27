@@ -3367,72 +3367,77 @@ mod slow {
             Some(890_000)
         );
     }
-    #[tokio::test]
-    async fn test_sync_interrupt() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
+}
+
+// pub mod experiments {
+// use super::*;
+#[tokio::test]
+async fn timed_sync_interrupt() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+    for i in 1..4 {
         let _ = faucet.do_sync(false).await;
         faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "sapling"),
-                100_000,
+                10_100,
                 None,
             )])
             .await
             .unwrap();
-        for i in 1..4 {
-            zingo_testutils::increase_server_height(&regtest_manager, 60).await;
-            let _ = recipient.do_sync(false).await;
-            recipient
-                .do_send(vec![(
-                    &get_base_address!(recipient, "unified"),
-                    60 * i,
-                    None,
-                )])
-                .await
-                .unwrap();
-        }
-
-        println!("start");
-        // let reci_arc = std::sync::Arc::new(recipient);
-        recipient.clear_state().await;
-        let timeout = 32;
-        let what = sync_with_timeout_millis(&recipient, timeout).await;
-        match what {
-            Ok(_) => {
-                println!("synced in less than {} millis ", timeout);
-            }
-            Err(_) => {
-                println!("interrupted after {} millis ", timeout);
-            }
-        }
-
-        println!(
-            "summaries_interrupted: {:#?}",
-            recipient.do_list_txsummaries().await,
-        );
-        println!("balance_interrupted: {:#?}", recipient.do_balance().await);
-        let _synciiyur = recipient.do_sync(false).await;
-        println!(
-            "summaries_synced: {:#?}",
-            recipient.do_list_txsummaries().await
-        );
-        println!("balance_synced: {:#?}", recipient.do_balance().await);
-        println!(
-            "finish_height recipient: {}",
-            recipient
-                .do_wallet_last_scanned_height()
-                .await
-                .as_u32()
-                .unwrap()
-        );
-        println!(
-            "finish_height faucet: {}",
-            faucet
-                .do_wallet_last_scanned_height()
-                .await
-                .as_u32()
-                .unwrap()
-        );
+        let chainwait: u32 = 6;
+        let amount: u64 = u64::from(chainwait * i);
+        zingo_testutils::increase_server_height(&regtest_manager, chainwait).await;
+        let _ = recipient.do_sync(false).await;
+        recipient
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                amount,
+                None,
+            )])
+            .await
+            .unwrap();
     }
+
+    println!("start");
+    // let reci_arc = std::sync::Arc::new(recipient);
+    recipient.clear_state().await;
+    let timeout = 8;
+    let what = sync_with_timeout_millis(&recipient, timeout).await;
+    match what {
+        Ok(_) => {
+            println!("synced in less than {} millis ", timeout);
+        }
+        Err(_) => {
+            println!("interrupted after {} millis ", timeout);
+        }
+    }
+
+    println!(
+        "summaries_interrupted: {:#?}",
+        recipient.do_list_txsummaries().await,
+    );
+    println!("balance_interrupted: {:#?}", recipient.do_balance().await);
+    let _synciiyur = recipient.do_sync(false).await;
+    println!(
+        "summaries_synced: {:#?}",
+        recipient.do_list_txsummaries().await
+    );
+    println!("balance_synced: {:#?}", recipient.do_balance().await);
+    println!(
+        "finish_height recipient: {}",
+        recipient
+            .do_wallet_last_scanned_height()
+            .await
+            .as_u32()
+            .unwrap()
+    );
+    println!(
+        "finish_height faucet: {}",
+        faucet
+            .do_wallet_last_scanned_height()
+            .await
+            .as_u32()
+            .unwrap()
+    );
 }
+// }
