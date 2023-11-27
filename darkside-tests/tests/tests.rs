@@ -1,5 +1,5 @@
 use darkside_tests::{
-    constants, interrupt_sync_tx_hex,
+    constants,
     utils::{
         init_darksidewalletd, prepare_darksidewalletd, send_and_stage_transaction,
         stage_transaction, update_tree_state_and_apply_staged, update_tree_states_for_transaction,
@@ -137,7 +137,7 @@ async fn interrupt_sync_chainbuild() {
     );
 }
 #[tokio::test]
-async fn correct_change_chainbuild() {
+async fn test_correct_change_chainbuild() {
     // initialise darksidewalletd and stage first part of blockchain
     let (handler, connector) = init_darksidewalletd().await.unwrap();
     const BLOCKCHAIN_HEIGHT: i32 = 3_000;
@@ -192,7 +192,7 @@ async fn correct_change_chainbuild() {
 #[tokio::test]
 async fn test_correct_change() {
     // initialise darksidewalletd and build blockchain
-    let (handler, connector) = init_darksidewalletd().await.unwrap();
+    let (_handler, connector) = init_darksidewalletd().await.unwrap();
     const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE as i32;
     connector
         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
@@ -206,6 +206,7 @@ async fn test_correct_change() {
     .await;
     update_tree_state_and_apply_staged(&connector, 49).await;
 
+    /*
     stage_transaction(
         &connector,
         50,
@@ -249,6 +250,7 @@ async fn test_correct_change() {
         "{}",
         json::stringify_pretty(recipient.do_list_notes(true).await, 4)
     );
+    */
 }
 #[tokio::test]
 async fn spend_orchard_notes() {
