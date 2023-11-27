@@ -430,6 +430,7 @@ impl RegtestManager {
         } else {
             log::debug!("Keeping old regtest data")
         }
+
         let lightwalletd_child = launch_lightwalletd(
             self.lightwalletd_logs_dir.clone(),
             self.confs_dir.clone(),

@@ -250,7 +250,11 @@ pub mod scenarios {
         use crate::BASE_HEIGHT;
 
         use super::super::regtest::get_regtest_dir;
-        use super::{data, ChildProcessHandler, RegtestManager};
+        use super::{
+            data, funded_orchard_sapling_transparent_shielded_mobileclient, ChildProcessHandler,
+            RegtestManager,
+        };
+        use std::io;
         use std::path::PathBuf;
         use tokio::time::sleep;
         use zingolib::wallet::Pool;
@@ -260,9 +264,10 @@ pub mod scenarios {
             pub regtest_manager: RegtestManager,
             pub client_builder: ClientBuilder,
             pub child_process_handler: Option<ChildProcessHandler>,
+            proxy_server_handle: tokio::task::JoinHandle<Result<(), io::Error>>,
         }
         impl ScenarioBuilder {
-            fn build_scenario(
+            async fn build_scenario(
                 custom_client_config: Option<PathBuf>,
                 set_lightwalletd_port: Option<portpicker::Port>,
             ) -> Self {
@@ -273,19 +278,33 @@ pub mod scenarios {
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
                 let test_env = TestEnvironmentGenerator::new(set_lightwalletd_port);
+                let (proxy_ready_transmitter, proxy_ready_reciever) =
+                    tokio::sync::oneshot::channel();
+                let proxy_server_handle = tokio::task::spawn(proxy_server(
+                    test_env.proxy_port.clone(),
+                    test_env.lightwalletd_rpcservice_port.clone(),
+                    proxy_ready_transmitter,
+                ));
+                proxy_ready_reciever.await.unwrap();
                 let regtest_manager = test_env.regtest_manager.clone();
                 let data_dir = if let Some(data_dir) = custom_client_config {
                     data_dir
                 } else {
                     regtest_manager.zingo_datadir.clone()
                 };
-                let client_builder = ClientBuilder::new(test_env.get_lightwalletd_uri(), data_dir);
+                let client_builder = ClientBuilder::new(
+                    zingoconfig::construct_lightwalletd_uri(Some(port_to_addr(
+                        test_env.proxy_port.clone(),
+                    ))),
+                    data_dir,
+                );
                 let child_process_handler = None;
                 Self {
                     test_env,
                     regtest_manager,
                     client_builder,
                     child_process_handler,
+                    proxy_server_handle,
                 }
             }
             fn configure_scenario(
@@ -331,7 +350,7 @@ pub mod scenarios {
             pub async fn new_load_1153_saplingcb_regtest_chain(
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) -> Self {
-                let mut sb = ScenarioBuilder::build_scenario(None, None);
+                let mut sb = ScenarioBuilder::build_scenario(None, None).await;
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
                 if !source.exists() {
                     panic!("Data cache is missing!");
@@ -358,9 +377,9 @@ pub mod scenarios {
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) -> Self {
                 let mut sb = if let Some(conf) = zingo_wallet_dir {
-                    ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port)
+                    ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port).await
                 } else {
-                    ScenarioBuilder::build_scenario(None, set_lightwalletd_port)
+                    ScenarioBuilder::build_scenario(None, set_lightwalletd_port).await
                 };
                 sb.configure_scenario(mine_to_pool, regtest_network);
                 sb.launch_scenario(true).await;
@@ -445,9 +464,13 @@ pub mod scenarios {
                 .unwrap()
             }
         }
+        fn port_to_addr<D: std::fmt::Display>(port: D) -> String {
+            format!("http://127.0.0.1:{port}")
+        }
         pub struct TestEnvironmentGenerator {
             zcashd_rpcservice_port: String,
             lightwalletd_rpcservice_port: String,
+            proxy_port: String,
             regtest_manager: RegtestManager,
             lightwalletd_uri: http::Uri,
         }
@@ -462,13 +485,15 @@ pub mod scenarios {
                         .unwrap()
                         .into_path(),
                 );
-                let server_uri = zingoconfig::construct_lightwalletd_uri(Some(format!(
-                    "http://127.0.0.1:{lightwalletd_rpcservice_port}"
+                let server_uri = zingoconfig::construct_lightwalletd_uri(Some(port_to_addr(
+                    &lightwalletd_rpcservice_port,
                 )));
+                let proxy_port = TestEnvironmentGenerator::pick_unused_port_to_string(None);
                 Self {
                     zcashd_rpcservice_port,
                     lightwalletd_rpcservice_port,
                     regtest_manager,
+                    proxy_port,
                     lightwalletd_uri: server_uri,
                 }
             }
@@ -529,6 +554,56 @@ pub mod scenarios {
                         .to_string()
                 }
             }
+        }
+
+        use tokio::{
+            net::{TcpListener, TcpStream},
+            try_join,
+        };
+
+        async fn proxy_server(
+            proxy_port: String,
+            lwd_port: String,
+            ready_transmitter: tokio::sync::oneshot::Sender<()>,
+        ) -> io::Result<()> {
+            let proxy_server = TcpListener::bind(format!("127.0.0.1:{}", proxy_port))
+                .await
+                .unwrap();
+
+            ready_transmitter.send(()).unwrap();
+            loop {
+                match proxy_server.accept().await {
+                    Ok((client, _)) => {
+                        let lwd_port = lwd_port.clone();
+                        tokio::spawn(async move {
+                            handle_client_conn(client, lwd_port).await;
+                        });
+                    }
+                    Err(e) => {
+                        println!("Proxy failed to connect: {e}");
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        async fn handle_client_conn(
+            mut client_conn: TcpStream,
+            lwd_port: String,
+        ) -> io::Result<()> {
+            let mut main_server_conn =
+                TcpStream::connect(format!("127.0.0.1:{}", &lwd_port)).await?;
+            let (mut client_recv, mut client_send) = client_conn.split();
+            let (mut server_recv, mut server_send) = main_server_conn.split();
+
+            let handle_one = async { tokio::io::copy(&mut server_recv, &mut client_send).await };
+
+            let handle_two = async { tokio::io::copy(&mut client_recv, &mut server_send).await };
+
+            try_join!(handle_one, handle_two)?;
+
+            Ok(())
         }
     }
 
