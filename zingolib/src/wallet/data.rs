@@ -1188,7 +1188,7 @@ impl TransactionMetadata {
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        let block: u32 = self.block_height.into();
+        let block: u32 = self.status.get_height().into();
         writer.write_i32::<LittleEndian>(block as i32)?;
 
         writer.write_u8(if !self.status.is_confirmed() { 1 } else { 0 })?;
