@@ -25,7 +25,11 @@ impl ConfirmationStatus {
         unconfirmed: bool,
     ) -> Self {
         if unconfirmed {
-            Self::Broadcast(Some(blockheight))
+            if u32::from(blockheight) == 0 {
+                Self::Local
+            } else {
+                Self::Broadcast(Some(blockheight))
+            }
         } else {
             Self::Confirmed(blockheight)
         }
