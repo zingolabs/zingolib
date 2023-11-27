@@ -63,14 +63,13 @@ pub struct BlockManagementData {
     pub sync_status: Arc<RwLock<BatchSyncStatus>>,
 }
 
-pub const BATCHSIZE: u32 = 25;
 impl BlockManagementData {
     pub fn new(sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
-            batch_size: BATCHSIZE,
+            batch_size: zingoconfig::BATCH_SIZE as u32,
             highest_verified_trees: None,
             sync_status,
         }
