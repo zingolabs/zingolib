@@ -1,4 +1,5 @@
 pub mod data;
+pub mod interrupts;
 pub use incrementalmerkletree;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::keys::unified::WalletCapability;

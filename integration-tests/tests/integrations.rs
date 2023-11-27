@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
@@ -16,12 +15,13 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client,
+    self, build_fvk_client, check_transaction_equality,
     data::{
         self, block_rewards,
         seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
     },
     increase_height_and_wait_for_client,
+    interrupts::sync_with_timeout_millis,
     regtest::get_cargo_manifest_dir,
     scenarios, BASE_HEIGHT,
 };
@@ -3365,6 +3365,74 @@ mod slow {
         assert_eq!(
             recipient_loaded.do_balance().await.orchard_balance,
             Some(890_000)
+        );
+    }
+    #[tokio::test]
+    async fn test_sync_interrupt() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        let _ = faucet.do_sync(false).await;
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                100_000,
+                None,
+            )])
+            .await
+            .unwrap();
+        for i in 1..4 {
+            zingo_testutils::increase_server_height(&regtest_manager, 1).await;
+            let _ = recipient.do_sync(false).await;
+            recipient
+                .do_send(vec![(
+                    &get_base_address!(recipient, "unified"),
+                    200 + i,
+                    None,
+                )])
+                .await
+                .unwrap();
+        }
+
+        println!("start");
+        // let reci_arc = std::sync::Arc::new(recipient);
+        recipient.clear_state().await;
+        let timeout = 32;
+        let what = sync_with_timeout_millis(&recipient, timeout).await;
+        match what {
+            Ok(_) => {
+                println!("synced in less than {} millis ", timeout);
+            }
+            Err(_) => {
+                println!("interrupted after {} millis ", timeout);
+            }
+        }
+
+        println!(
+            "summaries_interrupted: {:#?}",
+            recipient.do_list_txsummaries().await,
+        );
+        println!("balance_interrupted: {:#?}", recipient.do_balance().await);
+        let _synciiyur = recipient.do_sync(false).await;
+        println!(
+            "summaries_synced: {:#?}",
+            recipient.do_list_txsummaries().await
+        );
+        println!("balance_synced: {:#?}", recipient.do_balance().await);
+        println!(
+            "finish_height recipient: {}",
+            recipient
+                .do_wallet_last_scanned_height()
+                .await
+                .as_u32()
+                .unwrap()
+        );
+        println!(
+            "finish_height faucet: {}",
+            faucet
+                .do_wallet_last_scanned_height()
+                .await
+                .as_u32()
+                .unwrap()
         );
     }
 }
