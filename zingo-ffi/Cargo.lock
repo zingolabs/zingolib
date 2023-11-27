@@ -423,7 +423,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
 
 [[package]]
 name = "build_utils"
@@ -656,7 +656,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
 dependencies = [
  "bech32",
  "bip0039",
@@ -798,9 +798,9 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
+checksum = "95b3f3e67048839cb0d0781f445682a35113da7121f7c949db0e2be96a4fbece"
 dependencies = [
  "humantime",
  "is-terminal",
@@ -2538,6 +2538,7 @@ dependencies = [
  "android_logger",
  "darkside-tests",
  "env_logger",
+ "hex 0.3.2",
  "jni",
  "json",
  "log",
@@ -2815,9 +2816,9 @@ dependencies = [
 
 [[package]]
 name = "serde_repr"
-version = "0.1.16"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8725e1dfadb3a50f7e5ce0b1a540466f6ed3fe7a0fca2ac2b8b831d31316bd00"
+checksum = "3081f5ffbb02284dda55132aa26daecedd7372a42417bbbab6f14ab7d6bb9145"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3074,9 +3075,9 @@ dependencies = [
 
 [[package]]
 name = "termcolor"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6093bad37da69aab9d123a8091e4be0aa4a03e4d601ec641c327398315f62b64"
+checksum = "ff1bc3d3f05aff0403e8ac0d92ced918ec05b666a43f83297ccef5bea8a3d449"
 dependencies = [
  "winapi-util",
 ]
@@ -4054,7 +4055,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4078,7 +4079,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
 dependencies = [
  "http",
  "incrementalmerkletree",
@@ -4122,7 +4123,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
 dependencies = [
  "dirs",
  "http",
@@ -4148,7 +4149,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#dbfdce694455b57cde7494fb383cb2b20531917c"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
 dependencies = [
  "append-only-vec",
  "base58",
