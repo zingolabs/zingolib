@@ -144,6 +144,9 @@ impl DarksideConnector {
         },
         get_incoming_transactions(&self) -> ::tonic::Streaming<RawTransaction> {
             Empty {}
+        },
+        clear_incoming_transactions(&self) -> Empty {
+            Empty {}
         }
     );
 }
@@ -453,7 +456,9 @@ pub async fn send_and_stage_transaction(
         .await
         .unwrap();
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
+    connector.clear_incoming_transactions().await.unwrap();
     let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+    dbg!(format!("{:?}", &raw_tx));
     // There should only be one transaction incoming
     assert!(streamed_raw_txns.message().await.unwrap().is_none());
     connector
