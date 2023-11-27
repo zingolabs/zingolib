@@ -137,7 +137,7 @@ async fn interrupt_sync_chainbuild() {
     );
 }
 #[tokio::test]
-async fn interrupt_sync_e2e_chainbuild() {
+async fn correct_change_chainbuild() {
     // initialise darksidewalletd and stage first part of blockchain
     let (handler, connector) = init_darksidewalletd().await.unwrap();
     const BLOCKCHAIN_HEIGHT: i32 = 3_000;
@@ -190,7 +190,7 @@ async fn interrupt_sync_e2e_chainbuild() {
     );
 }
 #[tokio::test]
-async fn interrupt_sync_test() {
+async fn test_correct_change() {
     // initialise darksidewalletd and build blockchain
     let (handler, connector) = init_darksidewalletd().await.unwrap();
     const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE as i32;
