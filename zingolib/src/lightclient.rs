@@ -744,7 +744,7 @@ impl LightClient {
             if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
                 if transaction_md.is_outgoing_transaction() {
                     let (block_height, datetime, price, unconfirmed) = (
-                        transaction_md.block_height,
+                        transaction_md.status.get_height(),
                         transaction_md.datetime,
                         transaction_md.price,
                         !transaction_md.status.is_confirmed(),
@@ -1698,7 +1698,7 @@ impl LightClient {
         transaction_md: &TransactionMetadata,
     ) {
         let (block_height, datetime, price, unconfirmed) = (
-            transaction_md.block_height,
+            transaction_md.status.get_height(),
             transaction_md.datetime,
             transaction_md.price,
             !transaction_md.status.is_confirmed(),
