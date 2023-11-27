@@ -3368,25 +3368,27 @@ mod slow {
         );
     }
     #[tokio::test]
-    async fn test_sync_interrupt() {
+    async fn timed_sync_interrupt() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        let _ = faucet.do_sync(false).await;
-        faucet
-            .do_send(vec![(
-                &get_base_address!(recipient, "sapling"),
-                100_000,
-                None,
-            )])
-            .await
-            .unwrap();
         for i in 1..4 {
-            zingo_testutils::increase_server_height(&regtest_manager, 60).await;
+            let _ = faucet.do_sync(false).await;
+            faucet
+                .do_send(vec![(
+                    &get_base_address!(recipient, "sapling"),
+                    10_100,
+                    None,
+                )])
+                .await
+                .unwrap();
+            let chainwait: u32 = 6;
+            let amount: u64 = u64::from(chainwait * i);
+            zingo_testutils::increase_server_height(&regtest_manager, chainwait).await;
             let _ = recipient.do_sync(false).await;
             recipient
                 .do_send(vec![(
                     &get_base_address!(recipient, "unified"),
-                    60 * i,
+                    amount,
                     None,
                 )])
                 .await
