@@ -137,7 +137,7 @@ async fn interrupt_sync_chainbuild() {
     );
 }
 #[tokio::test]
-async fn correct_change_chainbuild() {
+async fn correct_change() {
     // initialise darksidewalletd and stage first part of blockchain
     let (handler, connector) = init_darksidewalletd().await.unwrap();
     const BLOCKCHAIN_HEIGHT: i32 = 3_000;
