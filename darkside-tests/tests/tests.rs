@@ -140,8 +140,7 @@ async fn interrupt_sync_chainbuild() {
 async fn interrupt_sync_e2e_chainbuild() {
     // initialise darksidewalletd and stage first part of blockchain
     let (handler, connector) = init_darksidewalletd().await.unwrap();
-    const BLOCKCHAIN_HEIGHT: i32 = 3_000;
-    // const BLOCKCHAIN_HEIGHT: i32 = 150_000;
+    const BLOCKCHAIN_HEIGHT: i32 = 150_000;
     connector
         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
         .await
@@ -160,8 +159,7 @@ async fn interrupt_sync_e2e_chainbuild() {
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;
 
-    // apply next 1000 blocks and stage a send to self in a loop
-    // for _ in 1..150 {
+    // stage a send to self every thousand blocks
     for thousands_blocks_count in 1..(BLOCKCHAIN_HEIGHT / 1000) as u64 {
         update_tree_state_and_apply_staged(&connector, thousands_blocks_count * 1000 - 1).await;
         darkside_client.do_sync(false).await.unwrap();
@@ -175,7 +173,7 @@ async fn interrupt_sync_e2e_chainbuild() {
         .await;
     }
 
-    // apply blockchain
+    // apply last part of the blockchain
     connector.apply_staged(BLOCKCHAIN_HEIGHT).await.unwrap();
 
     darkside_client.do_sync(true).await.unwrap();
