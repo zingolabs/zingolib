@@ -15,10 +15,10 @@ impl SpendStatus {
         confirmation_status: ConfirmationStatus,
     ) -> Self {
         match confirmation_status {
-            ConfirmationStatus::Local | ConfirmationStatus::InMempool(_) => {
+            ConfirmationStatus::Local | ConfirmationStatus::Broadcast(_) => {
                 Self::PendingSpend(spending_txid)
             }
-            ConfirmationStatus::ConfirmedOnChain(confirmation_height) => {
+            ConfirmationStatus::Confirmed(confirmation_height) => {
                 Self::ConfirmedSpent(spending_txid, confirmation_height)
             }
         }

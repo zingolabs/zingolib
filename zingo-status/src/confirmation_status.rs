@@ -14,9 +14,9 @@ pub const BLOCKHEIGHT_PLACEHOLDER_PENDINGSPEND: u32 = <u32>::max_value() - (32 +
 pub enum ConfirmationStatus {
     Local,
     /// we may know when it entered the mempool.
-    InMempool(Option<BlockHeight>),
+    Broadcast(Option<BlockHeight>),
     /// confirmed on blockchain implies a height. this data piece will eventually be a block height
-    ConfirmedOnChain(BlockHeight),
+    Confirmed(BlockHeight),
 }
 
 impl ConfirmationStatus {
@@ -25,42 +25,42 @@ impl ConfirmationStatus {
         unconfirmed: bool,
     ) -> Self {
         if unconfirmed {
-            Self::Local
+            Self::Broadcast(Some(blockheight))
         } else {
-            Self::ConfirmedOnChain(blockheight)
+            Self::Confirmed(blockheight)
         }
     }
     pub fn is_in_mempool(&self) -> bool {
-        matches!(self, Self::InMempool(_))
+        matches!(self, Self::Broadcast(_))
     }
     pub fn is_confirmed(&self) -> bool {
-        matches!(self, Self::ConfirmedOnChain(_))
+        matches!(self, Self::Confirmed(_))
     }
     pub fn is_confirmed_after_or_at(&self, height: &BlockHeight) -> bool {
         match self {
-            Self::ConfirmedOnChain(blockheight) => blockheight >= height,
+            Self::Confirmed(blockheight) => blockheight >= height,
             _ => false,
         }
     }
     pub fn is_confirmed_before_or_at(&self, height: &BlockHeight) -> bool {
         match self {
-            Self::ConfirmedOnChain(blockheight) => blockheight <= height,
+            Self::Confirmed(blockheight) => blockheight <= height,
             _ => false,
         }
     }
     pub fn is_expired(&self, cutoff: &BlockHeight) -> bool {
         match self {
             Self::Local => true,
-            Self::InMempool(option_blockheight) => match option_blockheight {
+            Self::Broadcast(option_blockheight) => match option_blockheight {
                 None => true,
                 Some(blockheight) => blockheight < cutoff,
             },
-            Self::ConfirmedOnChain(_) => false,
+            Self::Confirmed(_) => false,
         }
     }
     pub fn get_confirmed_height(&self) -> Option<BlockHeight> {
         match self {
-            Self::ConfirmedOnChain(blockheight) => Some(*blockheight),
+            Self::Confirmed(blockheight) => Some(*blockheight),
             _ => None,
         }
     }
@@ -69,10 +69,10 @@ impl ConfirmationStatus {
     pub fn get_height(&self) -> BlockHeight {
         match self {
             Self::Local => BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL),
-            Self::InMempool(option_blockheight) => {
+            Self::Broadcast(option_blockheight) => {
                 option_blockheight.unwrap_or(BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL))
             }
-            Self::ConfirmedOnChain(blockheight) => *blockheight,
+            Self::Confirmed(blockheight) => *blockheight,
         }
     }
 }
@@ -82,13 +82,13 @@ impl std::fmt::Display for ConfirmationStatus {
         use ConfirmationStatus::*;
         match self {
             Local => write!(f, "Transaction not published."),
-            InMempool(option_blockheight) => match option_blockheight {
+            Broadcast(option_blockheight) => match option_blockheight {
                 None => write!(f, "Transaction sent to mempool at unknown height.",),
                 Some(blockheight) => {
                     write!(f, "Transaction sent to mempool at height {}.", blockheight)
                 }
             },
-            ConfirmedOnChain(blockheight) => {
+            Confirmed(blockheight) => {
                 write!(
                     f,
                     "Transaction confirmed on chain at height {}.",

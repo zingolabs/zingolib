@@ -731,7 +731,7 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let status = ConfirmationStatus::InMempool(Some(height));
+        let status = ConfirmationStatus::Broadcast(Some(height));
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, height, timestamp);
 
