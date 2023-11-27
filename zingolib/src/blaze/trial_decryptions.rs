@@ -311,7 +311,6 @@ impl TrialDecryptions {
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let timestamp = compact_block.time as u64;
                     let config = config.clone();
-                    let kill_switch = kill_switch.clone();
 
                     workers.push(tokio::spawn(async move {
                         let Ok(fvk) = D::wc_to_fvk(&wc) else {
