@@ -192,7 +192,7 @@ impl WitnessTrees {
         if let Some(front) = non_empty_frontier {
             D::get_shardtree_mut(self)
                 .insert_frontier_nodes(front, Retention::Ephemeral)
-                .expect(&format!("to insert non-empty {} frontier", D::NAME))
+                .unwrap_or_else(|e| panic!("to insert non-empty {} frontier: {e}", D::NAME))
         }
     }
 
