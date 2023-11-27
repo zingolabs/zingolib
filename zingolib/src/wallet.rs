@@ -1677,7 +1677,9 @@ impl LightWallet {
         #[allow(clippy::type_complexity)]
         let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] = &[
             Box::new(|_, transaction| {
-                transaction.block_height <= BlockHeight::from_u32(anchor_height)
+                transaction
+                    .status
+                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
             }),
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
         ];
