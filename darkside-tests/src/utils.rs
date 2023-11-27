@@ -24,7 +24,7 @@ use zingo_testutils::{
     regtest::{get_cargo_manifest_dir, launch_lightwalletd},
     scenarios::setup::TestEnvironmentGenerator,
 };
-use zingolib::wallet::traits::DomainWalletExt;
+use zingolib::{lightclient::LightClient, wallet::traits::DomainWalletExt};
 
 use crate::{
     constants::BRANCH_ID,
@@ -430,4 +430,35 @@ pub async fn stage_transaction(connector: &DarksideConnector, height: u64, hex_t
         })
         .await
         .unwrap();
+}
+pub async fn update_tree_state_and_apply_staged(connector: &DarksideConnector, height: u64) {
+    connector
+        .add_tree_state(TreeState {
+            height,
+            ..constants::first_tree_state()
+        })
+        .await
+        .unwrap();
+    connector.apply_staged(49).await.unwrap();
+}
+pub async fn send_and_stage_transaction(
+    connector: &DarksideConnector,
+    sender: &LightClient,
+    receiver_address: &str,
+    value: u64,
+    height: u64,
+) {
+    sender
+        .do_send(vec![(receiver_address, value, None)])
+        .await
+        .unwrap();
+    let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
+    let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+    // There should only be one transaction incoming
+    assert!(streamed_raw_txns.message().await.unwrap().is_none());
+    connector
+        .stage_transactions_stream(vec![(raw_tx.data.clone(), height)])
+        .await
+        .unwrap();
+    update_tree_states_for_transaction(&connector.0, raw_tx.clone(), height).await;
 }
