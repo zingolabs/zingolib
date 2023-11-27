@@ -71,6 +71,7 @@ impl TrialDecryptions {
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
         )>,
+        kill_switch: Arc<Option<crate::lightclient::KillSwitch>>,
     ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
         //debug!("Starting trial decrptions processor");
 
@@ -103,6 +104,7 @@ impl TrialDecryptions {
                 transaction_size_filter,
                 detected_transaction_id_sender,
                 full_transaction_fetcher,
+                kill_switch,
             )));
 
             while let Some(r) = workers.next().await {
@@ -139,6 +141,7 @@ impl TrialDecryptions {
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
         )>,
+        kill_switch: Arc<Option<crate::lightclient::KillSwitch>>,
     ) -> Result<(), String> {
         let mut workers = FuturesUnordered::new();
 
@@ -190,6 +193,7 @@ impl TrialDecryptions {
                         &detected_transaction_id_sender,
                         &workers,
                         &mut sapling_notes_to_mark_position_in_tx,
+                        kill_switch.clone(),
                     )
                 };
 
@@ -210,6 +214,7 @@ impl TrialDecryptions {
                         &detected_transaction_id_sender,
                         &workers,
                         &mut orchard_notes_to_mark_position_in_tx,
+                        kill_switch.clone(),
                     )
                 };
                 orchard_notes_to_mark_position_in_block
@@ -280,6 +285,7 @@ impl TrialDecryptions {
             <D::WalletNote as NoteInterface>::Node,
             Retention<BlockHeight>,
         )],
+        kill_switch: Arc<Option<crate::lightclient::KillSwitch>>,
     ) where
         D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
@@ -367,6 +373,11 @@ impl TrialDecryptions {
                 } else {
                     (maybe_decrypted_output.0, false)
                 };
+            if let Some((kill_switch, kill_height)) = kill_switch.as_ref() {
+                if *kill_height == height {
+                    kill_switch.abort()
+                }
+            }
             if witnessed {
                 notes_to_mark_position[output_num].3 = Retention::Marked
             }

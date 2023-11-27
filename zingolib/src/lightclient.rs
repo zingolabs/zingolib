@@ -55,6 +55,8 @@ static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
 const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
 
+pub(crate) type KillSwitch = (tokio::task::AbortHandle, BlockHeight);
+
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
     pub success: bool,
@@ -961,6 +963,14 @@ impl LightClient {
     }
 
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
+        self.do_sync_with_kill_switch(print_updates, None).await
+    }
+
+    pub async fn do_sync_with_kill_switch(
+        &self,
+        print_updates: bool,
+        kill_switch: Option<KillSwitch>,
+    ) -> Result<SyncResult, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
             .bsync_data
@@ -973,7 +983,7 @@ impl LightClient {
             .sync_id;
 
         // Start the sync
-        let r_fut = self.start_sync();
+        let r_fut = self.start_sync(kill_switch);
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
@@ -1334,7 +1344,7 @@ impl LightClient {
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
-    async fn start_sync(&self) -> Result<SyncResult, String> {
+    async fn start_sync(&self, kill_switch: Option<KillSwitch>) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         // TODO:  We run on resource constrained systems, where a single thread of
@@ -1419,8 +1429,11 @@ impl LightClient {
             .start_new(latest_block_batches.len());
 
         let mut res = Err("No batches were run!".to_string());
+        let kill_switch_arc = Arc::new(kill_switch);
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
-            res = self.sync_nth_batch(batch_latest_block, batch_num).await;
+            res = self
+                .sync_nth_batch(batch_latest_block, batch_num, kill_switch_arc.clone())
+                .await;
             if res.is_err() {
                 // If something went wrong during a batch, reset the wallet state to
                 // how it was before the latest batch
@@ -1452,6 +1465,7 @@ impl LightClient {
         &self,
         start_block: u64,
         batch_num: usize,
+        kill_switch: Arc<Option<KillSwitch>>,
     ) -> Result<SyncResult, String> {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
@@ -1560,6 +1574,7 @@ impl LightClient {
                     .await
                     .transaction_size_filter,
                 full_transaction_fetcher_transmitter,
+                kill_switch,
             )
             .await;
 

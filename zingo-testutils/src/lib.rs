@@ -1,12 +1,14 @@
 pub mod data;
 pub use incrementalmerkletree;
 use zcash_address::unified::{Fvk, Ufvk};
+use zcash_primitives::consensus::BlockHeight;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 pub mod regtest;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
+use std::sync::Arc;
 use std::time::Duration;
 
 use json::JsonValue;
@@ -1070,4 +1072,20 @@ pub mod scenarios {
             )
         }
     }
+}
+
+pub async fn do_sync_killable(
+    lc: Arc<LightClient>,
+    kill_height: impl Into<BlockHeight>,
+) -> Result<Result<zingolib::lightclient::SyncResult, String>, tokio::task::JoinError> {
+    let (transmitter, receiver) = tokio::sync::oneshot::channel();
+    let join_handle = tokio::task::spawn((|| async move {
+        let kill_switch = receiver.await.unwrap();
+        lc.do_sync_with_kill_switch(false, Some(kill_switch)).await
+    })());
+    let abort_handle = join_handle.abort_handle();
+    transmitter
+        .send((abort_handle, kill_height.into()))
+        .unwrap();
+    join_handle.await
 }
