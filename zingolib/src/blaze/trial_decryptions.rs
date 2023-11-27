@@ -357,11 +357,6 @@ impl TrialDecryptions {
                         );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
-                        if let Some((kill_switch, kill_height)) = kill_switch.as_ref() {
-                            if *kill_height == height {
-                                kill_switch.abort()
-                            }
-                        }
 
                         detected_transaction_id_sender
                             .send((
@@ -379,6 +374,11 @@ impl TrialDecryptions {
                 } else {
                     (maybe_decrypted_output.0, false)
                 };
+            if let Some((kill_switch, kill_height)) = kill_switch.as_ref() {
+                if *kill_height == height {
+                    kill_switch.abort()
+                }
+            }
             if witnessed {
                 notes_to_mark_position[output_num].3 = Retention::Marked
             }
