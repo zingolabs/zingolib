@@ -555,8 +555,9 @@ impl LightClient {
             .current
             .iter()
             .for_each(|(_, tx)| {
-                let mature = tx.status.is_confirmed()
-                    && tx.block_height <= BlockHeight::from_u32(anchor_height);
+                let mature = tx
+                    .status
+                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height));
                 let incoming = tx.is_incoming_transaction();
 
                 let mut change = 0;
