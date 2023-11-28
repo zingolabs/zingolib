@@ -384,8 +384,10 @@ impl TreeState {
     }
 }
 
-pub async fn init_darksidewalletd() -> Result<(DarksideHandler, DarksideConnector), String> {
-    let handler = DarksideHandler::default();
+pub async fn init_darksidewalletd(
+    set_port: Option<portpicker::Port>,
+) -> Result<(DarksideHandler, DarksideConnector), String> {
+    let handler = DarksideHandler::new(set_port);
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         handler.grpc_port

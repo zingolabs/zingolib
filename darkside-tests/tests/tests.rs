@@ -202,7 +202,7 @@ async fn simple_sync() {
 #[tokio::test]
 async fn interrupt_sync_e2e_chainbuild() {
     // initialise darksidewalletd and stage first part of blockchain
-    let (handler, connector) = init_darksidewalletd().await.unwrap();
+    let (handler, connector) = init_darksidewalletd(None).await.unwrap();
     const BLOCKCHAIN_HEIGHT: i32 = 150_000;
     connector
         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
@@ -253,7 +253,7 @@ async fn interrupt_sync_e2e_chainbuild() {
 #[tokio::test]
 async fn interrupt_sync_e2e_test() {
     // initialise darksidewalletd and stage first part of blockchain
-    let (handler, connector) = init_darksidewalletd().await.unwrap();
+    let (handler, connector) = init_darksidewalletd(None).await.unwrap();
     const BLOCKCHAIN_HEIGHT: i32 = 150_000;
     connector
         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
@@ -307,7 +307,7 @@ async fn interrupt_sync_e2e_test() {
 }
 #[tokio::test]
 async fn spend_orchard_notes() {
-    let (handler, connector) = init_darksidewalletd().await.unwrap();
+    let (handler, connector) = init_darksidewalletd(None).await.unwrap();
 
     // stage blockchain
     connector.stage_blocks_create(2, 2, 0).await.unwrap();
