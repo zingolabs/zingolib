@@ -1,6 +1,5 @@
 use darkside_tests::{
     constants::{self, INTERRUPT_SYNC_TX_SET},
-    interrupt_sync_tx_hex,
     utils::{
         init_darksidewalletd, prepare_darksidewalletd, read_block_dataset,
         send_and_stage_transaction, stage_transaction, update_tree_state_and_apply_staged,
@@ -10,11 +9,9 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zingo_testutils::{
-    data::seeds::{DARKSIDE_SEED, HOSPITAL_MUSEUM_SEED},
-    regtest::get_cargo_manifest_dir,
-    scenarios::setup::ClientBuilder,
+    data::seeds::DARKSIDE_SEED, regtest::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
 };
-use zingoconfig::{RegtestNetwork, BATCH_SIZE};
+use zingoconfig::RegtestNetwork;
 use zingolib::{get_base_address, lightclient::PoolBalances};
 
 #[tokio::test]
