@@ -62,7 +62,7 @@ pub struct ZingoConfigBuilder {
     pub chain: ChainType,
     pub reorg_buffer_offset: Option<u32>,
     pub monitor_mempool: Option<bool>,
-    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
+    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows. For mac it is in: ~/Library/Application Support/Zcash
     pub wallet_dir: Option<PathBuf>,
     /// The filename of the wallet. This will be created in the `wallet_dir`.
     pub wallet_name: Option<PathBuf>,
