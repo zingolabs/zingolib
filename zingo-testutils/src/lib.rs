@@ -275,14 +275,14 @@ pub mod scenarios {
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
                 let test_env = TestEnvironmentGenerator::new(set_lightwalletd_port);
-                let (proxy_ready_transmitter, proxy_ready_reciever) =
+                let (proxy_ready_transmitter, proxy_ready_receiver) =
                     tokio::sync::oneshot::channel();
                 let proxy_server_handle = tokio::task::spawn(proxy_server(
                     test_env.proxy_port.clone(),
                     test_env.lightwalletd_rpcservice_port.clone(),
                     proxy_ready_transmitter,
                 ));
-                proxy_ready_reciever.await.unwrap();
+                proxy_ready_receiver.await.unwrap();
                 let regtest_manager = test_env.regtest_manager.clone();
                 let data_dir = if let Some(data_dir) = custom_client_config {
                     data_dir
@@ -591,7 +591,7 @@ pub mod scenarios {
             mut client_conn: TcpStream,
             lwd_port: String,
         ) -> io::Result<()> {
-            async fn forward_and_collect_tcp_stream(
+            async fn teecp_stream(
                 name: &str,
                 mut sender: impl tokio::io::AsyncReadExt + Unpin,
                 mut first_receiver: impl tokio::io::AsyncWriteExt + Unpin,
@@ -623,7 +623,7 @@ pub mod scenarios {
             let (lwd_sender, lwd_receiver) = lwd_conn.split();
 
             let mut client_sent_bytes = Vec::new();
-            let handle_one = forward_and_collect_tcp_stream(
+            let handle_one = teecp_stream(
                 "client",
                 client_sender,
                 lwd_receiver,
@@ -631,7 +631,7 @@ pub mod scenarios {
             );
 
             let mut lwd_sent_bytes = Vec::new();
-            let handle_two = forward_and_collect_tcp_stream(
+            let handle_two = teecp_stream(
                 "lightwalletd",
                 lwd_sender,
                 client_receiver,
