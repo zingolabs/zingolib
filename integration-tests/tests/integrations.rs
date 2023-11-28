@@ -124,8 +124,61 @@ fn check_view_capability_bounds(
     }
 }
 
+pub fn txid_from_hex(hex: &str) -> Result<TxId, hex::FromHexError> {
+    let mut bytes = hex::decode(hex)?;
+    bytes.reverse();
+    Ok(TxId::from_bytes(
+        <[u8; 32]>::try_from(bytes.as_slice()).expect("slice with incorrect length"),
+    ))
+}
+
 mod fast {
     use super::*;
+    #[tokio::test]
+    async fn transparent_plus_sapling_inputs_and_transparent_and_sapling_outputs_are_balanced() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        faucet
+            .do_send(vec![
+                (&get_base_address!(recipient, "transparent"), 185_164, None),
+                (&get_base_address!(recipient, "sapling"), 100_000, None),
+            ])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        let txid = recipient
+            .do_send_permissive_policy(vec![
+                (&get_base_address!(faucet, "transparent"), 260_164, None),
+                (
+                    &get_base_address!(recipient, "sapling"),
+                    185_164 + 100_000 - 260_164 - u64::from(MINIMUM_FEE),
+                    None,
+                ),
+            ])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        recipient.do_sync(true).await.unwrap();
+        let balance = recipient.do_balance().await;
+        assert_eq!(
+            balance.sapling_balance.unwrap(),
+            (185_164 + 100_000 - 260_164 - u64::from(MINIMUM_FEE))
+        );
+        let i = recipient.wallet.transactions();
+        let j = i.read().await;
+        let last_tx = &j.current[&txid_from_hex(&txid).unwrap()];
+        dbg!(last_tx);
+        assert_eq!(last_tx.total_transparent_value_spent, 185_164);
+        assert_eq!(last_tx.total_sapling_value_spent, 100_000);
+        assert_eq!(last_tx.total_orchard_value_spent, 0);
+
+        assert_eq!(balance.transparent_balance.unwrap(), 0);
+        assert_eq!(balance.orchard_balance.unwrap(), 0);
+    }
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
