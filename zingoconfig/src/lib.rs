@@ -73,9 +73,19 @@ pub struct ZingoConfig {
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+    pub fn new(
+        chain: ChainType,
+        dir: Option<PathBuf>,
+        lightwalletd_uri: Option<http::Uri>,
+    ) -> ZingoConfig {
+        let raw_uri = if let Some(uri) = lightwalletd_uri {
+            uri
+        } else {
+            http::Uri::default()
+        };
+        let lightwalletd_uri = Arc::new(RwLock::new(raw_uri));
         ZingoConfig {
-            lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
+            lightwalletd_uri,
             chain,
             monitor_mempool: false,
             reorg_buffer_offset: REORG_BUFFER_OFFSET,
