@@ -72,7 +72,20 @@ pub struct ZingoConfig {
 }
 
 impl ZingoConfig {
+    #[deprecated]
     // Create an unconnected (to any server) config to test for local wallet etc...
+    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+        ZingoConfig {
+            lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
+            chain,
+            monitor_mempool: false,
+            reorg_buffer_offset: REORG_BUFFER_OFFSET,
+            wallet_dir: dir,
+            wallet_name: DEFAULT_WALLET_NAME.into(),
+            logfile_name: DEFAULT_LOGFILE_NAME.into(),
+        }
+    }
+
     pub fn new(
         chain: ChainType,
         dir: Option<PathBuf>,
@@ -94,7 +107,6 @@ impl ZingoConfig {
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
         }
     }
-
     //Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
         self.chain
