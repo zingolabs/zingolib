@@ -591,17 +591,60 @@ pub mod scenarios {
             mut client_conn: TcpStream,
             lwd_port: String,
         ) -> io::Result<()> {
-            let mut main_server_conn =
-                TcpStream::connect(format!("127.0.0.1:{}", &lwd_port)).await?;
-            let (mut client_recv, mut client_send) = client_conn.split();
-            let (mut server_recv, mut server_send) = main_server_conn.split();
+            async fn forward_and_collect_tcp_stream(
+                name: &str,
+                mut sender: impl tokio::io::AsyncReadExt + Unpin,
+                mut first_receiver: impl tokio::io::AsyncWriteExt + Unpin,
+                mut second_receiver: impl tokio::io::AsyncWriteExt + Unpin,
+            ) -> io::Result<()> {
+                let mut buffer = [0u8; 4096];
+                let mut total_bytes_read = 0;
 
-            let handle_one = async { tokio::io::copy(&mut server_recv, &mut client_send).await };
+                while let bytes_read @ 1.. = sender.read(&mut buffer).await? {
+                    total_bytes_read += bytes_read;
+                    let (res_1, res_2) = tokio::join!(
+                        first_receiver.write(&buffer[..bytes_read]),
+                        second_receiver.write(&buffer[..bytes_read]),
+                    );
+                    res_1.unwrap();
+                    res_2.unwrap();
+                    if name == "lightwalletd" {
+                        println!(
+                            "{name} has sent {bytes_read} bytes since last query for a total of {total_bytes_read} bytes"
+                        );
+                    }
+                }
+                println!("{name} has sent a total of {total_bytes_read} bytes");
 
-            let handle_two = async { tokio::io::copy(&mut client_recv, &mut server_send).await };
+                Ok(())
+            }
+            let mut lwd_conn = TcpStream::connect(format!("127.0.0.1:{}", &lwd_port)).await?;
+            let (client_sender, client_receiver) = client_conn.split();
+            let (lwd_sender, lwd_receiver) = lwd_conn.split();
+
+            let mut client_sent_bytes = Vec::new();
+            let handle_one = forward_and_collect_tcp_stream(
+                "client",
+                client_sender,
+                lwd_receiver,
+                &mut client_sent_bytes,
+            );
+
+            let mut lwd_sent_bytes = Vec::new();
+            let handle_two = forward_and_collect_tcp_stream(
+                "lightwalletd",
+                lwd_sender,
+                client_receiver,
+                &mut lwd_sent_bytes,
+            );
 
             try_join!(handle_one, handle_two)?;
 
+            println!(
+                "Client sent {} bytes, lwd sent {} bytes",
+                client_sent_bytes.len(),
+                lwd_sent_bytes.len()
+            );
             Ok(())
         }
     }
