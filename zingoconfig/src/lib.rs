@@ -56,6 +56,19 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     .unwrap()
 }
 
+#[derive(Clone, Debug)]
+pub struct ZingoConfigBuilder {
+    pub lightwalletd_uri: Option<http::Uri>,
+    pub chain: ChainType,
+    pub reorg_buffer_offset: Option<u32>,
+    pub monitor_mempool: Option<bool>,
+    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows. For mac it is in: ~/Library/Application Support/Zcash
+    pub wallet_dir: Option<PathBuf>,
+    /// The filename of the wallet. This will be created in the `wallet_dir`.
+    pub wallet_name: Option<PathBuf>,
+    /// The filename of the logfile. This will be created in the `wallet_dir`.
+    pub logfile_name: Option<PathBuf>,
+}
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
@@ -70,21 +83,63 @@ pub struct ZingoConfig {
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
 }
-
-impl ZingoConfig {
-    // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+impl ZingoConfigBuilder {
+    pub fn set_wallet_dir(mut self, dir: PathBuf) -> Self {
+        self.wallet_dir = Some(dir);
+        self
+    }
+    pub fn set_lightwalletd(mut self, lightwalletd_uri: http::Uri) -> Self {
+        self.lightwalletd_uri = Some(lightwalletd_uri);
+        self
+    }
+    pub fn create(&self) -> ZingoConfig {
+        let lightwalletd_uri = if let Some(uri) = self.lightwalletd_uri.clone() {
+            uri
+        } else {
+            http::Uri::default()
+        };
         ZingoConfig {
-            lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
-            chain,
+            lightwalletd_uri: Arc::new(RwLock::new(lightwalletd_uri)),
+            chain: self.chain,
             monitor_mempool: false,
             reorg_buffer_offset: REORG_BUFFER_OFFSET,
-            wallet_dir: dir,
+            wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
         }
     }
+}
+impl Default for ZingoConfigBuilder {
+    fn default() -> Self {
+        ZingoConfigBuilder {
+            lightwalletd_uri: None,
+            monitor_mempool: None,
+            reorg_buffer_offset: None,
+            wallet_dir: None,
+            wallet_name: None,
+            logfile_name: None,
+            chain: ChainType::Mainnet,
+        }
+    }
+}
 
+impl ZingoConfig {
+    #[deprecated]
+    // Create an unconnected (to any server) config to test for local wallet etc...
+    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+        if let Some(dir) = dir {
+            ZingoConfig::build(chain).set_wallet_dir(dir).create()
+        } else {
+            ZingoConfig::build(chain).create()
+        }
+    }
+
+    pub fn build(chain: ChainType) -> ZingoConfigBuilder {
+        ZingoConfigBuilder {
+            chain,
+            ..ZingoConfigBuilder::default()
+        }
+    }
     //Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
         self.chain
