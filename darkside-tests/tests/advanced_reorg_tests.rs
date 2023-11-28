@@ -120,7 +120,9 @@ async fn prepare_before_tx_height_change_reorg(uri: http::Uri) -> Result<(), Str
 
     println!("dataset path: {}", dataset_path);
 
-    read_block_dataset(dataset_path);
+    connector
+        .stage_blocks_stream(read_block_dataset(dataset_path))
+        .await?;
 
     for i in 201..207 {
         let tree_state_path = format!(
