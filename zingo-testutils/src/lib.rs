@@ -253,6 +253,7 @@ pub mod scenarios {
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::io;
         use std::path::PathBuf;
+        use std::time::{Duration, Instant};
         use tokio::time::sleep;
         use zingolib::wallet::Pool;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
@@ -568,12 +569,12 @@ pub mod scenarios {
                 .unwrap();
 
             ready_transmitter.send(()).unwrap();
-            loop {
+            for i in 0.. {
                 match proxy_server.accept().await {
                     Ok((client, _)) => {
                         let lwd_port = lwd_port.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = handle_client_conn(client, lwd_port).await {
+                            if let Err(e) = handle_client_conn(client, lwd_port, i).await {
                                 eprintln!("Proxy forwarding error: {e}")
                             }
                         });
@@ -590,17 +591,31 @@ pub mod scenarios {
         async fn handle_client_conn(
             mut client_conn: TcpStream,
             lwd_port: String,
+            i: usize,
         ) -> io::Result<()> {
             async fn teecp_stream(
                 name: &str,
                 mut sender: impl tokio::io::AsyncReadExt + Unpin,
                 mut first_receiver: impl tokio::io::AsyncWriteExt + Unpin,
                 mut second_receiver: impl tokio::io::AsyncWriteExt + Unpin,
+                i: usize,
+                timeout: Duration,
             ) -> io::Result<()> {
                 let mut buffer = [0u8; 4096];
                 let mut total_bytes_read = 0;
+                let mut bytes_read_as_of_prev_time = 0;
+                let mut prev_time = Instant::now();
 
                 while let bytes_read @ 1.. = sender.read(&mut buffer).await? {
+                    let current_time = Instant::now();
+                    if prev_time.duration_since(current_time) > timeout {
+                        if bytes_read_as_of_prev_time == total_bytes_read {
+                            break;
+                        } else {
+                            bytes_read_as_of_prev_time = total_bytes_read;
+                            prev_time = current_time;
+                        }
+                    }
                     total_bytes_read += bytes_read;
                     let (res_1, res_2) = tokio::join!(
                         first_receiver.write(&buffer[..bytes_read]),
@@ -610,17 +625,18 @@ pub mod scenarios {
                     res_2.unwrap();
                     if name == "lightwalletd" {
                         println!(
-                            "{name} has sent {bytes_read} bytes since last query for a total of {total_bytes_read} bytes"
+                            "{name}_{i} has sent {bytes_read} bytes since last query for a total of {total_bytes_read} bytes"
                         );
                     }
                 }
-                println!("{name} has sent a total of {total_bytes_read} bytes");
+                println!("{name}_{i} has sent a total of {total_bytes_read} bytes");
 
                 Ok(())
             }
             let mut lwd_conn = TcpStream::connect(format!("127.0.0.1:{}", &lwd_port)).await?;
             let (client_sender, client_receiver) = client_conn.split();
             let (lwd_sender, lwd_receiver) = lwd_conn.split();
+            let timeout = Duration::from_secs(3);
 
             let mut client_sent_bytes = Vec::new();
             let handle_one = teecp_stream(
@@ -628,6 +644,8 @@ pub mod scenarios {
                 client_sender,
                 lwd_receiver,
                 &mut client_sent_bytes,
+                i,
+                timeout,
             );
 
             let mut lwd_sent_bytes = Vec::new();
@@ -636,6 +654,8 @@ pub mod scenarios {
                 lwd_sender,
                 client_receiver,
                 &mut lwd_sent_bytes,
+                i,
+                timeout,
             );
 
             try_join!(handle_one, handle_two)?;
