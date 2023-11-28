@@ -1,15 +1,17 @@
 use darkside_tests::{
-    constants, interrupt_sync_tx_hex,
+    constants::{self, INTERRUPT_SYNC_TX_SET},
+    interrupt_sync_tx_hex,
     utils::{
-        init_darksidewalletd, prepare_darksidewalletd, send_and_stage_transaction,
-        stage_transaction, update_tree_state_and_apply_staged, update_tree_states_for_transaction,
-        DarksideConnector, DarksideHandler,
+        init_darksidewalletd, prepare_darksidewalletd, read_block_dataset,
+        send_and_stage_transaction, stage_transaction, update_tree_state_and_apply_staged,
+        update_tree_states_for_transaction, DarksideConnector, DarksideHandler,
     },
 };
 
 use tokio::time::sleep;
 use zingo_testutils::{
     data::seeds::{DARKSIDE_SEED, HOSPITAL_MUSEUM_SEED},
+    regtest::get_cargo_manifest_dir,
     scenarios::setup::ClientBuilder,
 };
 use zingoconfig::{RegtestNetwork, BATCH_SIZE};
@@ -54,88 +56,149 @@ async fn simple_sync() {
     );
 }
 
-#[tokio::test]
-async fn interrupt_sync_chainbuild() {
-    // initialise darksidewalletd and stage first part of blockchain
-    let (handler, connector) = init_darksidewalletd().await.unwrap();
-    const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE as i32;
-    connector
-        .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
-        .await
-        .unwrap();
-    stage_transaction(
-        &connector,
-        2,
-        constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT,
-    )
-    .await;
+// #[tokio::test]
+// async fn interrupt_sync_chainbuild() {
+//     // initialise darksidewalletd and stage first part of blockchain
+//     let (handler, connector) = init_darksidewalletd().await.unwrap();
+//     const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE as i32;
+//     connector
+//         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
+//         .await
+//         .unwrap();
+//     stage_transaction(
+//         &connector,
+//         2,
+//         constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT,
+//     )
+//     .await;
 
-    // build clients
-    let mut client_builder = ClientBuilder::new(connector.0.clone(), handler.darkside_dir.clone());
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-    let darkside_faucet = client_builder
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-        .await;
-    let recipient = client_builder
-        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network)
-        .await;
+//     // build clients
+//     let mut client_builder = ClientBuilder::new(connector.0.clone(), handler.darkside_dir.clone());
+//     let regtest_network = RegtestNetwork::all_upgrades_active();
+//     let darkside_faucet = client_builder
+//         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+//         .await;
+//     let recipient = client_builder
+//         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network)
+//         .await;
 
-    // apply first part of blockchain
-    update_tree_state_and_apply_staged(&connector, 49).await;
+//     // apply first part of blockchain
+//     update_tree_state_and_apply_staged(&connector, 49).await;
 
-    // send first funds to recipient
-    darkside_faucet.do_sync(false).await.unwrap();
-    send_and_stage_transaction(
-        &connector,
-        &darkside_faucet,
-        &get_base_address!(recipient, "unified"),
-        100_000,
-        50,
-    )
-    .await;
+//     // send first funds to recipient
+//     darkside_faucet.do_sync(false).await.unwrap();
+//     send_and_stage_transaction(
+//         &connector,
+//         &darkside_faucet,
+//         &get_base_address!(recipient, "unified"),
+//         100_000,
+//         50,
+//     )
+//     .await;
 
-    // apply second part of blockchain
-    update_tree_state_and_apply_staged(&connector, 119).await;
+//     // apply second part of blockchain
+//     update_tree_state_and_apply_staged(&connector, 119).await;
 
-    // send second funds to recipient
-    darkside_faucet.do_sync(false).await.unwrap();
-    send_and_stage_transaction(
-        &connector,
-        &darkside_faucet,
-        &get_base_address!(recipient, "unified"),
-        200_000,
-        120,
-    )
-    .await;
+//     // send second funds to recipient
+//     darkside_faucet.do_sync(false).await.unwrap();
+//     send_and_stage_transaction(
+//         &connector,
+//         &darkside_faucet,
+//         &get_base_address!(recipient, "unified"),
+//         200_000,
+//         120,
+//     )
+//     .await;
 
-    // apply third part of blockchain
-    update_tree_state_and_apply_staged(&connector, 179).await;
+//     // apply third part of blockchain
+//     update_tree_state_and_apply_staged(&connector, 179).await;
 
-    // recipient send to self orchard
-    recipient.do_sync(false).await.unwrap();
-    send_and_stage_transaction(
-        &connector,
-        &recipient,
-        &get_base_address!(recipient, "unified"),
-        250_000,
-        180,
-    )
-    .await;
+//     // recipient send to self orchard
+//     recipient.do_sync(false).await.unwrap();
+//     send_and_stage_transaction(
+//         &connector,
+//         &recipient,
+//         &get_base_address!(recipient, "unified"),
+//         250_000,
+//         180,
+//     )
+//     .await;
 
-    // apply blockchain
-    connector.apply_staged(200).await.unwrap();
+//     // apply blockchain
+//     connector.apply_staged(200).await.unwrap();
 
-    recipient.do_sync(true).await.unwrap();
-    println!("do list transactions:");
-    println!("{}", recipient.do_list_transactions().await.pretty(2));
-    println!("do balance:");
-    dbg!(recipient.do_balance().await);
-    println!("do list_notes:");
-    println!(
-        "{}",
-        json::stringify_pretty(recipient.do_list_notes(true).await, 4)
-    );
-}
+//     recipient.do_sync(true).await.unwrap();
+//     println!("do list transactions:");
+//     println!("{}", recipient.do_list_transactions().await.pretty(2));
+//     println!("do balance:");
+//     dbg!(recipient.do_balance().await);
+//     println!("do list_notes:");
+//     println!(
+//         "{}",
+//         json::stringify_pretty(recipient.do_list_notes(true).await, 4)
+//     );
+// }
+// #[tokio::test]
+// async fn interrupt_sync_test() {
+//     // initialise darksidewalletd and build blockchain
+//     let (handler, connector) = init_darksidewalletd().await.unwrap();
+//     const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE as i32;
+//     connector
+//         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
+//         .await
+//         .unwrap();
+//     stage_transaction(
+//         &connector,
+//         2,
+//         constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT,
+//     )
+//     .await;
+//     update_tree_state_and_apply_staged(&connector, 49).await;
+
+//     stage_transaction(
+//         &connector,
+//         50,
+//         interrupt_sync_tx_hex::DARKSIDE_TO_HOSPITAL_100_000_ZATS,
+//     )
+//     .await;
+//     update_tree_state_and_apply_staged(&connector, 119).await;
+
+//     stage_transaction(
+//         &connector,
+//         120,
+//         interrupt_sync_tx_hex::DARKSIDE_TO_HOSPITAL_200_000_ZATS,
+//     )
+//     .await;
+//     update_tree_state_and_apply_staged(&connector, 179).await;
+
+//     stage_transaction(
+//         &connector,
+//         180,
+//         interrupt_sync_tx_hex::HOSPITAL_ORCH_TO_ORCH_250_000_ZATS,
+//     )
+//     .await;
+//     connector.apply_staged(200).await.unwrap();
+
+//     // build client
+//     let mut client_builder = ClientBuilder::new(connector.0.clone(), handler.darkside_dir.clone());
+//     let regtest_network = RegtestNetwork::all_upgrades_active();
+//     let recipient = client_builder
+//         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network)
+//         .await;
+
+//     // sync recipient
+//     recipient.do_sync(false).await.unwrap();
+
+//     println!("do list transactions:");
+//     println!("{}", recipient.do_list_transactions().await.pretty(2));
+//     println!("do balance:");
+//     dbg!(recipient.do_balance().await);
+//     println!("do list_notes:");
+//     println!(
+//         "{}",
+//         json::stringify_pretty(recipient.do_list_notes(true).await, 4)
+//     );
+// }
 #[tokio::test]
 async fn interrupt_sync_e2e_chainbuild() {
     // initialise darksidewalletd and stage first part of blockchain
@@ -188,10 +251,10 @@ async fn interrupt_sync_e2e_chainbuild() {
     );
 }
 #[tokio::test]
-async fn interrupt_sync_test() {
-    // initialise darksidewalletd and build blockchain
+async fn interrupt_sync_e2e_test() {
+    // initialise darksidewalletd and stage first part of blockchain
     let (handler, connector) = init_darksidewalletd().await.unwrap();
-    const BLOCKCHAIN_HEIGHT: i32 = 2 * BATCH_SIZE as i32;
+    const BLOCKCHAIN_HEIGHT: i32 = 150_000;
     connector
         .stage_blocks_create(2, BLOCKCHAIN_HEIGHT - 1, 0)
         .await
@@ -202,50 +265,44 @@ async fn interrupt_sync_test() {
         constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT,
     )
     .await;
-    update_tree_state_and_apply_staged(&connector, 49).await;
 
-    stage_transaction(
-        &connector,
-        50,
-        interrupt_sync_tx_hex::DARKSIDE_TO_HOSPITAL_100_000_ZATS,
-    )
-    .await;
-    update_tree_state_and_apply_staged(&connector, 119).await;
-
-    stage_transaction(
-        &connector,
-        120,
-        interrupt_sync_tx_hex::DARKSIDE_TO_HOSPITAL_200_000_ZATS,
-    )
-    .await;
-    update_tree_state_and_apply_staged(&connector, 179).await;
-
-    stage_transaction(
-        &connector,
-        180,
-        interrupt_sync_tx_hex::HOSPITAL_ORCH_TO_ORCH_250_000_ZATS,
-    )
-    .await;
-    connector.apply_staged(200).await.unwrap();
-
-    // build client
+    // build clients
     let mut client_builder = ClientBuilder::new(connector.0.clone(), handler.darkside_dir.clone());
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let recipient = client_builder
-        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network)
+    let darkside_client = client_builder
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;
 
-    // sync recipient
-    recipient.do_sync(false).await.unwrap();
+    let tx_set_path = format!(
+        "{}/{}",
+        get_cargo_manifest_dir().to_string_lossy(),
+        INTERRUPT_SYNC_TX_SET
+    );
+    let tx_set = read_block_dataset(tx_set_path);
 
+    // stage a send to self every thousand blocks
+    for thousands_blocks_count in 1..(BLOCKCHAIN_HEIGHT / 1000) as u64 {
+        update_tree_state_and_apply_staged(&connector, thousands_blocks_count * 1000 - 1).await;
+        stage_transaction(
+            &connector,
+            thousands_blocks_count * 1000,
+            &tx_set[(thousands_blocks_count - 1) as usize],
+        )
+        .await;
+    }
+
+    // apply last part of the blockchain
+    connector.apply_staged(BLOCKCHAIN_HEIGHT).await.unwrap();
+
+    darkside_client.do_sync(true).await.unwrap();
     println!("do list transactions:");
-    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!("{}", darkside_client.do_list_transactions().await.pretty(2));
     println!("do balance:");
-    dbg!(recipient.do_balance().await);
+    dbg!(darkside_client.do_balance().await);
     println!("do list_notes:");
     println!(
         "{}",
-        json::stringify_pretty(recipient.do_list_notes(true).await, 4)
+        json::stringify_pretty(darkside_client.do_list_notes(true).await, 4)
     );
 }
 #[tokio::test]

@@ -1000,7 +1000,7 @@ impl LightWallet {
             )
             .await?;
 
-        let file_path = "transaction_hex.rs";
+        let file_path = "transaction_hex.txt";
         use std::fs::OpenOptions;
         let mut buffer = vec![];
         let mut cursor = std::io::Cursor::new(&mut buffer);
@@ -1013,7 +1013,7 @@ impl LightWallet {
             .append(true)
             .open(file_path)
             .unwrap();
-        file.write_all(format!("pub const TRANSACTION: &str = {}", hex_transaction).as_bytes())
+        file.write_all(format!("{}\n", hex_transaction).as_bytes())
             .unwrap();
 
         // Call the internal function
