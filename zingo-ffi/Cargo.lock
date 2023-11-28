@@ -423,7 +423,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#61c4a9ea29de39224cd5252754771433912009b2"
 
 [[package]]
 name = "build_utils"
@@ -656,7 +656,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#61c4a9ea29de39224cd5252754771433912009b2"
 dependencies = [
  "bech32",
  "bip0039",
@@ -4055,7 +4055,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#61c4a9ea29de39224cd5252754771433912009b2"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4079,7 +4079,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#61c4a9ea29de39224cd5252754771433912009b2"
 dependencies = [
  "http",
  "incrementalmerkletree",
@@ -4123,7 +4123,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#61c4a9ea29de39224cd5252754771433912009b2"
 dependencies = [
  "dirs",
  "http",
@@ -4149,7 +4149,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#ec8f1d24096d6cb349a9ab25e3aa5212d2be5cfe"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=add_interrupt_sync_test#61c4a9ea29de39224cd5252754771433912009b2"
 dependencies = [
  "append-only-vec",
  "base58",
