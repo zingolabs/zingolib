@@ -569,12 +569,13 @@ pub mod scenarios {
                 .unwrap();
 
             ready_transmitter.send(()).unwrap();
-            for i in 0.. {
+            loop {
                 match proxy_server.accept().await {
-                    Ok((client, _)) => {
+                    Ok((client, sockaddr)) => {
+                        println!("Accepted connection from {sockaddr}");
                         let lwd_port = lwd_port.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = handle_client_conn(client, lwd_port, i).await {
+                            if let Err(e) = handle_client_conn(client, lwd_port, sockaddr).await {
                                 eprintln!("Proxy forwarding error: {e}")
                             }
                         });
@@ -591,14 +592,14 @@ pub mod scenarios {
         async fn handle_client_conn(
             mut client_conn: TcpStream,
             lwd_port: String,
-            i: usize,
+            i: impl std::fmt::Display + Copy,
         ) -> io::Result<()> {
             async fn teecp_stream(
                 name: &str,
                 mut sender: impl tokio::io::AsyncReadExt + Unpin,
                 mut first_receiver: impl tokio::io::AsyncWriteExt + Unpin,
                 mut second_receiver: impl tokio::io::AsyncWriteExt + Unpin,
-                i: usize,
+                i: impl std::fmt::Display + Copy,
                 timeout: Duration,
             ) -> io::Result<()> {
                 let mut buffer = [0u8; 4096];
@@ -606,7 +607,13 @@ pub mod scenarios {
                 let mut bytes_read_as_of_prev_time = 0;
                 let mut prev_time = Instant::now();
 
-                while let bytes_read @ 1.. = sender.read(&mut buffer).await? {
+                while let bytes_read @ 1.. = tokio::select!(
+                    _ = tokio::time::sleep(timeout) => {
+                        println!("{name}_{i} hit timeout!");
+                        0
+                    },
+                    bytes_read = sender.read(&mut buffer) => bytes_read?
+                ) {
                     let current_time = Instant::now();
                     if prev_time.duration_since(current_time) > timeout {
                         if bytes_read_as_of_prev_time == total_bytes_read {
@@ -623,11 +630,6 @@ pub mod scenarios {
                     );
                     res_1.unwrap();
                     res_2.unwrap();
-                    if name == "lightwalletd" {
-                        println!(
-                            "{name}_{i} has sent {bytes_read} bytes since last query for a total of {total_bytes_read} bytes"
-                        );
-                    }
                 }
                 println!("{name}_{i} has sent a total of {total_bytes_read} bytes");
 
@@ -667,6 +669,8 @@ pub mod scenarios {
             );
             Ok(())
         }
+
+        fn decode_grpc_shtufff() {}
     }
 
     pub async fn unfunded_client(
