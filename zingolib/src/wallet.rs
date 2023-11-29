@@ -1000,22 +1000,6 @@ impl LightWallet {
             )
             .await?;
 
-        let file_path = "transaction_hex.txt";
-        use std::fs::OpenOptions;
-        let mut buffer = vec![];
-        let mut cursor = std::io::Cursor::new(&mut buffer);
-        transaction
-            .write(&mut cursor)
-            .expect("To write to a buffer");
-        let hex_transaction = hex::encode(buffer);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(file_path)
-            .unwrap();
-        file.write_all(format!("{}\n", hex_transaction).as_bytes())
-            .unwrap();
-
         // Call the internal function
         match self
             .send_to_addresses_inner(transaction, submission_height, broadcast_fn)

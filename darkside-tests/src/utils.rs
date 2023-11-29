@@ -415,6 +415,30 @@ pub async fn init_darksidewalletd(
 
     Ok((handler, connector))
 }
+
+pub async fn generate_blocks(
+    connector: &DarksideConnector,
+    tree_state: TreeState,
+    current_height: i32,
+    target_height: i32,
+    nonce: i32,
+) -> i32 {
+    let count = target_height - current_height;
+    connector
+        .stage_blocks_create(current_height + 1, count, nonce)
+        .await
+        .unwrap();
+    connector
+        .add_tree_state(TreeState {
+            height: target_height as u64,
+            ..tree_state
+        })
+        .await
+        .unwrap();
+    connector.apply_staged(target_height).await.unwrap();
+    target_height
+}
+
 pub async fn stage_transaction(
     connector: &DarksideConnector,
     height: u64,
@@ -440,28 +464,7 @@ pub async fn stage_transaction(
     connector.add_tree_state(tree_state.clone()).await.unwrap();
     tree_state
 }
-pub async fn generate_blocks(
-    connector: &DarksideConnector,
-    tree_state: TreeState,
-    current_height: i32,
-    target_height: i32,
-    nonce: i32,
-) -> i32 {
-    let count = target_height - current_height;
-    connector
-        .stage_blocks_create(current_height + 1, count, nonce)
-        .await
-        .unwrap();
-    connector
-        .add_tree_state(TreeState {
-            height: target_height as u64,
-            ..tree_state
-        })
-        .await
-        .unwrap();
-    connector.apply_staged(target_height).await.unwrap();
-    target_height
-}
+
 pub async fn send_and_stage_transaction(
     connector: &DarksideConnector,
     sender: &LightClient,
@@ -473,10 +476,7 @@ pub async fn send_and_stage_transaction(
         .stage_blocks_create(height as i32, 1, 0)
         .await
         .unwrap();
-    sender
-        .do_send(vec![(receiver_address, value, None)])
-        .await
-        .unwrap();
+    send_and_write_transaction(connector, sender, receiver_address, value).await;
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
     connector.clear_incoming_transactions().await.unwrap();
     let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
@@ -487,4 +487,62 @@ pub async fn send_and_stage_transaction(
         .await
         .unwrap();
     update_tree_states_for_transaction(&connector.0, raw_tx.clone(), height).await
+}
+
+async fn send_and_write_transaction(
+    connector: &DarksideConnector,
+    sender: &LightClient,
+    receiver_address: &str,
+    value: u64,
+) {
+    let txid = sender
+        .do_send(vec![(receiver_address, value, None)])
+        .await
+        .unwrap();
+    let transaction = fetch_raw_transaction_from_hex_txid(connector.0.clone(), txid)
+        .await
+        .unwrap();
+    write_raw_transaction_to_hex_file(transaction);
+}
+
+async fn fetch_raw_transaction_from_hex_txid(
+    uri: Uri,
+    txid: String,
+) -> Result<RawTransaction, String> {
+    let txid = hex::decode(txid).unwrap();
+    let grpc_client = Arc::new(zingolib::grpc_connector::GrpcConnector::new(uri));
+    let txid = zcash_primitives::transaction::TxId::from_bytes(txid.try_into().unwrap());
+    let request = tonic::Request::new(zingolib::compact_formats::TxFilter {
+        block: None,
+        index: 0,
+        hash: txid.as_ref().to_vec(),
+    });
+    let mut grpc_client = grpc_client
+        .get_client()
+        .await
+        .map_err(|e| format!("Error getting client: {:?}", e))?;
+    let transaction = grpc_client
+        .get_transaction(request)
+        .await
+        .map_err(|e| format!("{}", e))?
+        .into_inner();
+    Ok(transaction)
+}
+
+fn write_raw_transaction_to_hex_file(transaction: RawTransaction) {
+    let file_path = "transaction_hex.txt";
+    use std::fs::OpenOptions;
+    let mut buffer = vec![];
+    let mut cursor = std::io::Cursor::new(&mut buffer);
+    transaction
+        .write(&mut cursor)
+        .expect("To write to a buffer");
+    let hex_transaction = hex::encode(buffer);
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_path)
+        .unwrap();
+    file.write_all(format!("{}\n", hex_transaction).as_bytes())
+        .unwrap();
 }
