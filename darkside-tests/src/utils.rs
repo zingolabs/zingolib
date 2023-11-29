@@ -1,23 +1,25 @@
+use http::Uri;
+use http_body::combinators::UnsyncBoxBody;
+use hyper::client::HttpConnector;
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use std::{
     fs,
     fs::File,
-    io::{self, BufRead},
+    io::{self, BufRead, Write},
     path::{Path, PathBuf},
     process::{Child, Command},
     sync::Arc,
     time::Duration,
 };
-
-use http::Uri;
-use http_body::combinators::UnsyncBoxBody;
-use hyper::client::HttpConnector;
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use tempdir;
 use tokio::time::sleep;
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
-use zcash_primitives::merkle_tree::read_commitment_tree;
-use zcash_primitives::sapling::{note_encryption::SaplingDomain, Node};
+use zcash_primitives::{
+    consensus::BranchId,
+    sapling::{note_encryption::SaplingDomain, Node},
+};
+use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingo_testutils::{
     self,
     incrementalmerkletree::frontier::CommitmentTree,
@@ -29,7 +31,7 @@ use zingolib::{lightclient::LightClient, wallet::traits::DomainWalletExt};
 use crate::{
     constants::BRANCH_ID,
     darkside_types::{
-        darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
+        self, darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
         DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty,
     },
 };
@@ -476,60 +478,34 @@ pub async fn send_and_stage_transaction(
         .stage_blocks_create(height as i32, 1, 0)
         .await
         .unwrap();
-    send_and_write_transaction(connector, sender, receiver_address, value).await;
+    sender
+        .do_send(vec![(receiver_address, value, None)])
+        .await
+        .unwrap();
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
     connector.clear_incoming_transactions().await.unwrap();
     let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
     // There should only be one transaction incoming
     assert!(streamed_raw_txns.message().await.unwrap().is_none());
+    write_raw_transaction(&raw_tx, BranchId::Nu5);
     connector
         .stage_transactions_stream(vec![(raw_tx.data.clone(), height)])
         .await
         .unwrap();
-    update_tree_states_for_transaction(&connector.0, raw_tx.clone(), height).await
+    update_tree_states_for_transaction(&connector.0, raw_tx, height).await
 }
 
-async fn send_and_write_transaction(
-    connector: &DarksideConnector,
-    sender: &LightClient,
-    receiver_address: &str,
-    value: u64,
-) {
-    let txid = sender
-        .do_send(vec![(receiver_address, value, None)])
-        .await
-        .unwrap();
-    let transaction = fetch_raw_transaction_from_hex_txid(connector.0.clone(), txid)
-        .await
-        .unwrap();
-    write_raw_transaction_to_hex_file(transaction);
+fn write_raw_transaction(raw_transaction: &darkside_types::RawTransaction, branch_id: BranchId) {
+    let transaction = create_transaction_from_raw_transaction(raw_transaction, branch_id).unwrap();
+    write_transaction_to_hex_file(transaction);
 }
-
-async fn fetch_raw_transaction_from_hex_txid(
-    uri: Uri,
-    txid: String,
-) -> Result<RawTransaction, String> {
-    let txid = hex::decode(txid).unwrap();
-    let grpc_client = Arc::new(zingolib::grpc_connector::GrpcConnector::new(uri));
-    let txid = zcash_primitives::transaction::TxId::from_bytes(txid.try_into().unwrap());
-    let request = tonic::Request::new(zingolib::compact_formats::TxFilter {
-        block: None,
-        index: 0,
-        hash: txid.as_ref().to_vec(),
-    });
-    let mut grpc_client = grpc_client
-        .get_client()
-        .await
-        .map_err(|e| format!("Error getting client: {:?}", e))?;
-    let transaction = grpc_client
-        .get_transaction(request)
-        .await
-        .map_err(|e| format!("{}", e))?
-        .into_inner();
-    Ok(transaction)
+fn create_transaction_from_raw_transaction(
+    raw_transaction: &darkside_types::RawTransaction,
+    branch_id: BranchId,
+) -> Result<Transaction, io::Error> {
+    Transaction::read(&raw_transaction.data[..], branch_id)
 }
-
-fn write_raw_transaction_to_hex_file(transaction: RawTransaction) {
+fn write_transaction_to_hex_file(transaction: Transaction) {
     let file_path = "transaction_hex.txt";
     use std::fs::OpenOptions;
     let mut buffer = vec![];
