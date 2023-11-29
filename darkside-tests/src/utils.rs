@@ -393,8 +393,9 @@ pub async fn init_darksidewalletd(
         handler.grpc_port
     )));
     let connector = DarksideConnector(server_id);
-    let mut client = connector.get_client().await.unwrap();
+
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    let mut client = connector.get_client().await.unwrap();
     client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
@@ -414,7 +415,15 @@ pub async fn init_darksidewalletd(
 
     Ok((handler, connector))
 }
-pub async fn stage_transaction(connector: &DarksideConnector, height: u64, hex_transaction: &str) {
+pub async fn stage_transaction(
+    connector: &DarksideConnector,
+    height: u64,
+    hex_transaction: &str,
+) -> TreeState {
+    connector
+        .stage_blocks_create(height as i32, 1, 0)
+        .await
+        .unwrap();
     connector
         .stage_transactions_stream(vec![(hex::decode(hex_transaction).unwrap(), height)])
         .await
@@ -428,23 +437,30 @@ pub async fn stage_transaction(connector: &DarksideConnector, height: u64, hex_t
         height,
     )
     .await;
+    connector.add_tree_state(tree_state.clone()).await.unwrap();
+    tree_state
+}
+pub async fn generate_blocks(
+    connector: &DarksideConnector,
+    tree_state: TreeState,
+    current_height: i32,
+    target_height: i32,
+    nonce: i32,
+) -> i32 {
+    let count = target_height - current_height;
+    connector
+        .stage_blocks_create(current_height + 1, count, nonce)
+        .await
+        .unwrap();
     connector
         .add_tree_state(TreeState {
-            height,
+            height: target_height as u64,
             ..tree_state
         })
         .await
         .unwrap();
-}
-pub async fn update_tree_state_and_apply_staged(connector: &DarksideConnector, height: u64) {
-    connector
-        .add_tree_state(TreeState {
-            height,
-            ..constants::first_tree_state()
-        })
-        .await
-        .unwrap();
-    connector.apply_staged(height as i32).await.unwrap();
+    connector.apply_staged(target_height).await.unwrap();
+    target_height
 }
 pub async fn send_and_stage_transaction(
     connector: &DarksideConnector,
@@ -452,7 +468,11 @@ pub async fn send_and_stage_transaction(
     receiver_address: &str,
     value: u64,
     height: u64,
-) {
+) -> TreeState {
+    connector
+        .stage_blocks_create(height as i32, 1, 0)
+        .await
+        .unwrap();
     sender
         .do_send(vec![(receiver_address, value, None)])
         .await
@@ -466,5 +486,5 @@ pub async fn send_and_stage_transaction(
         .stage_transactions_stream(vec![(raw_tx.data.clone(), height)])
         .await
         .unwrap();
-    update_tree_states_for_transaction(&connector.0, raw_tx.clone(), height).await;
+    update_tree_states_for_transaction(&connector.0, raw_tx.clone(), height).await
 }
