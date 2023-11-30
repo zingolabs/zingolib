@@ -276,6 +276,7 @@ impl Drop for DarksideHandler {
     }
 }
 
+/// Takes a raw transaction and then updates and returns tree state from the previous block
 pub async fn update_tree_states_for_transaction(
     server_id: &Uri,
     raw_tx: RawTransaction,
@@ -349,7 +350,9 @@ where
     Ok(io::BufReader::new(file).lines())
 }
 
-pub fn read_block_dataset<P>(filename: P) -> Vec<String>
+/// Tool for reading lists of blocks or transactions.
+/// Takes path to file and returns each line in a vec of strings.
+pub fn read_dataset<P>(filename: P) -> Vec<String>
 where
     P: AsRef<Path>,
 {
@@ -386,6 +389,9 @@ impl TreeState {
     }
 }
 
+/// Basic initialisation of darksidewalletd.
+/// Returns a darkside handler and darkside connector for chain builds.
+/// Generates a genesis block and adds initial treestate.
 pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
 ) -> Result<(DarksideHandler, DarksideConnector), String> {
@@ -418,6 +424,7 @@ pub async fn init_darksidewalletd(
     Ok((handler, connector))
 }
 
+/// Stage and apply a range of blocks and update tree state.
 pub async fn generate_blocks(
     connector: &DarksideConnector,
     tree_state: TreeState,
@@ -441,6 +448,7 @@ pub async fn generate_blocks(
     target_height
 }
 
+/// Stage a block and transaction, then update tree state.
 pub async fn stage_transaction(
     connector: &DarksideConnector,
     height: u64,
@@ -467,6 +475,9 @@ pub async fn stage_transaction(
     tree_state
 }
 
+/// Tool for chain builds.
+/// Send from funded lightclient and write hex transaction to file.
+/// All sends in a chain build are appended to same file in order.
 pub async fn send_and_stage_transaction(
     connector: &DarksideConnector,
     sender: &LightClient,
@@ -495,16 +506,19 @@ pub async fn send_and_stage_transaction(
     update_tree_states_for_transaction(&connector.0, raw_tx, height).await
 }
 
+/// Takes raw transaction and writes to file.
 fn write_raw_transaction(raw_transaction: &darkside_types::RawTransaction, branch_id: BranchId) {
     let transaction = create_transaction_from_raw_transaction(raw_transaction, branch_id).unwrap();
     write_transaction_to_hex_file(transaction);
 }
+/// Takes raw transaction and returns transaction.
 fn create_transaction_from_raw_transaction(
     raw_transaction: &darkside_types::RawTransaction,
     branch_id: BranchId,
 ) -> Result<Transaction, io::Error> {
     Transaction::read(&raw_transaction.data[..], branch_id)
 }
+/// Takes transaction and writes to file
 fn write_transaction_to_hex_file(transaction: Transaction) {
     let file_path = "transaction_hex.txt";
     use std::fs::OpenOptions;
