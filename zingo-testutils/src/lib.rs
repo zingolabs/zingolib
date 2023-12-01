@@ -253,6 +253,8 @@ pub mod scenarios {
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::io;
         use std::path::PathBuf;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
         use std::time::{Duration, Instant};
         use tokio::time::sleep;
         use zingolib::wallet::Pool;
@@ -567,15 +569,33 @@ pub mod scenarios {
             let proxy_server = TcpListener::bind(format!("127.0.0.1:{}", proxy_port))
                 .await
                 .unwrap();
+            // let connection_active = Arc::new(AtomicBool::new(true));
+            // let connection_active_for_tokiotask = connection_active.clone();
+            // tokio::task::spawn(async move {
+            //     let mut swap_active = false;
+            //     loop {
+            //         sleep(Duration::from_secs(5)).await;
+            //         swap_active = connection_active_for_tokiotask
+            //             .swap(swap_active, std::sync::atomic::Ordering::Relaxed);
+            //     }
+            // });
 
             ready_transmitter.send(()).unwrap();
-            loop {
+            for i in 1.. {
+                //     while connection_active.load(std::sync::atomic::Ordering::Relaxed) == false {
+                //         sleep(Duration::from_millis(50)).await
+                //     }
                 match proxy_server.accept().await {
                     Ok((client, sockaddr)) => {
+                        if i % 7 == 0 {
+                            println!("Dropped connection from {sockaddr}");
+                            Box::leak(Box::new(client));
+                            continue;
+                        }
                         println!("Accepted connection from {sockaddr}");
                         let lwd_port = lwd_port.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = handle_client_conn(client, lwd_port, sockaddr).await {
+                            if let Err(e) = handle_client_conn(client, lwd_port, i).await {
                                 eprintln!("Proxy forwarding error: {e}")
                             }
                         });
@@ -638,7 +658,7 @@ pub mod scenarios {
             let mut lwd_conn = TcpStream::connect(format!("127.0.0.1:{}", &lwd_port)).await?;
             let (client_sender, client_receiver) = client_conn.split();
             let (lwd_sender, lwd_receiver) = lwd_conn.split();
-            let timeout = Duration::from_secs(3);
+            let timeout = Duration::from_secs(1);
 
             let mut client_sent_bytes = Vec::new();
             let handle_one = teecp_stream(
