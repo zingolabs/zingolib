@@ -1,35 +1,37 @@
+use http::Uri;
+use http_body::combinators::UnsyncBoxBody;
+use hyper::client::HttpConnector;
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use std::{
     fs,
     fs::File,
-    io::{self, BufRead},
+    io::{self, BufRead, Write},
     path::{Path, PathBuf},
     process::{Child, Command},
     sync::Arc,
     time::Duration,
 };
-
-use http::Uri;
-use http_body::combinators::UnsyncBoxBody;
-use hyper::client::HttpConnector;
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use tempdir;
 use tokio::time::sleep;
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
-use zcash_primitives::merkle_tree::read_commitment_tree;
-use zcash_primitives::sapling::{note_encryption::SaplingDomain, Node};
+use zcash_primitives::{
+    consensus::BranchId,
+    sapling::{note_encryption::SaplingDomain, Node},
+};
+use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingo_testutils::{
     self,
     incrementalmerkletree::frontier::CommitmentTree,
     regtest::{get_cargo_manifest_dir, launch_lightwalletd},
     scenarios::setup::TestEnvironmentGenerator,
 };
-use zingolib::wallet::traits::DomainWalletExt;
+use zingolib::{lightclient::LightClient, wallet::traits::DomainWalletExt};
 
 use crate::{
     constants::BRANCH_ID,
     darkside_types::{
-        darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
+        self, darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
         DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty,
     },
 };
@@ -65,10 +67,6 @@ macro_rules! define_darkside_connector_methods(
 pub struct DarksideConnector(pub http::Uri);
 
 impl DarksideConnector {
-    pub fn new(uri: http::Uri) -> Self {
-        Self(uri)
-    }
-
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
@@ -147,6 +145,9 @@ impl DarksideConnector {
             )
         },
         get_incoming_transactions(&self) -> ::tonic::Streaming<RawTransaction> {
+            Empty {}
+        },
+        clear_incoming_transactions(&self) -> Empty {
             Empty {}
         }
     );
@@ -275,6 +276,7 @@ impl Drop for DarksideHandler {
     }
 }
 
+/// Takes a raw transaction and then updates and returns tree state from the previous block
 pub async fn update_tree_states_for_transaction(
     server_id: &Uri,
     raw_tx: RawTransaction,
@@ -330,7 +332,7 @@ pub async fn update_tree_states_for_transaction(
         hash: "".to_string(),
         time: 0,
     };
-    DarksideConnector::new(server_id.clone())
+    DarksideConnector(server_id.clone())
         .add_tree_state(new_tree_state.clone())
         .await
         .unwrap();
@@ -348,7 +350,9 @@ where
     Ok(io::BufReader::new(file).lines())
 }
 
-pub fn read_block_dataset<P>(filename: P) -> Vec<String>
+/// Tool for reading lists of blocks or transactions.
+/// Takes path to file and returns each line in a vec of strings.
+pub fn read_dataset<P>(filename: P) -> Vec<String>
 where
     P: AsRef<Path>,
 {
@@ -383,4 +387,152 @@ impl TreeState {
             orchard_tree: orchard_tree.to_string(),
         })
     }
+}
+
+/// Basic initialisation of darksidewalletd.
+/// Returns a darkside handler and darkside connector for chain builds.
+/// Generates a genesis block and adds initial treestate.
+pub async fn init_darksidewalletd(
+    set_port: Option<portpicker::Port>,
+) -> Result<(DarksideHandler, DarksideConnector), String> {
+    let handler = DarksideHandler::new(set_port);
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        handler.grpc_port
+    )));
+    let connector = DarksideConnector(server_id);
+
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    let mut client = connector.get_client().await.unwrap();
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    // reset with parameters
+    connector
+        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
+    // stage genesis block
+    connector
+        .stage_blocks_stream(vec![String::from(crate::constants::GENESIS_BLOCK)])
+        .await?;
+    connector
+        .add_tree_state(constants::first_tree_state())
+        .await
+        .unwrap();
+
+    Ok((handler, connector))
+}
+
+/// Stage and apply a range of blocks and update tree state.
+pub async fn generate_blocks(
+    connector: &DarksideConnector,
+    tree_state: TreeState,
+    current_height: i32,
+    target_height: i32,
+    nonce: i32,
+) -> i32 {
+    let count = target_height - current_height;
+    connector
+        .stage_blocks_create(current_height + 1, count, nonce)
+        .await
+        .unwrap();
+    connector
+        .add_tree_state(TreeState {
+            height: target_height as u64,
+            ..tree_state
+        })
+        .await
+        .unwrap();
+    connector.apply_staged(target_height).await.unwrap();
+    target_height
+}
+
+/// Stage a block and transaction, then update tree state.
+pub async fn stage_transaction(
+    connector: &DarksideConnector,
+    height: u64,
+    hex_transaction: &str,
+) -> TreeState {
+    connector
+        .stage_blocks_create(height as i32, 1, 0)
+        .await
+        .unwrap();
+    connector
+        .stage_transactions_stream(vec![(hex::decode(hex_transaction).unwrap(), height)])
+        .await
+        .unwrap();
+    let tree_state = update_tree_states_for_transaction(
+        &connector.0,
+        RawTransaction {
+            data: hex::decode(hex_transaction).unwrap(),
+            height,
+        },
+        height,
+    )
+    .await;
+    connector.add_tree_state(tree_state.clone()).await.unwrap();
+    tree_state
+}
+
+/// Tool for chain builds.
+/// Send from funded lightclient and write hex transaction to file.
+/// All sends in a chain build are appended to same file in order.
+pub async fn send_and_stage_transaction(
+    connector: &DarksideConnector,
+    sender: &LightClient,
+    receiver_address: &str,
+    value: u64,
+    height: u64,
+) -> TreeState {
+    connector
+        .stage_blocks_create(height as i32, 1, 0)
+        .await
+        .unwrap();
+    sender
+        .do_send(vec![(receiver_address, value, None)])
+        .await
+        .unwrap();
+    let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
+    connector.clear_incoming_transactions().await.unwrap();
+    let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+    // There should only be one transaction incoming
+    assert!(streamed_raw_txns.message().await.unwrap().is_none());
+    write_raw_transaction(&raw_tx, BranchId::Nu5);
+    connector
+        .stage_transactions_stream(vec![(raw_tx.data.clone(), height)])
+        .await
+        .unwrap();
+    update_tree_states_for_transaction(&connector.0, raw_tx, height).await
+}
+
+/// Takes raw transaction and writes to file.
+fn write_raw_transaction(raw_transaction: &darkside_types::RawTransaction, branch_id: BranchId) {
+    let transaction = create_transaction_from_raw_transaction(raw_transaction, branch_id).unwrap();
+    write_transaction_to_hex_file(transaction);
+}
+/// Takes raw transaction and returns transaction.
+fn create_transaction_from_raw_transaction(
+    raw_transaction: &darkside_types::RawTransaction,
+    branch_id: BranchId,
+) -> Result<Transaction, io::Error> {
+    Transaction::read(&raw_transaction.data[..], branch_id)
+}
+/// Takes transaction and writes to file
+fn write_transaction_to_hex_file(transaction: Transaction) {
+    let file_path = "transaction_hex.txt";
+    use std::fs::OpenOptions;
+    let mut buffer = vec![];
+    let mut cursor = std::io::Cursor::new(&mut buffer);
+    transaction
+        .write(&mut cursor)
+        .expect("To write to a buffer");
+    let hex_transaction = hex::encode(buffer);
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_path)
+        .unwrap();
+    file.write_all(format!("{}\n", hex_transaction).as_bytes())
+        .unwrap();
 }
