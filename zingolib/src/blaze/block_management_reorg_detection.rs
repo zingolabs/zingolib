@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
-        traits::{DomainWalletExt, FromCommitment, NoteInterface},
+        traits::{DomainWalletExt, FromCommitment, ShieldedNoteInterface},
         transactions::TransactionMetadataSet,
     },
 };
@@ -33,7 +33,7 @@ use zcash_primitives::{
 
 use super::sync_status::BatchSyncStatus;
 
-type Node<D> = <<D as DomainWalletExt>::WalletNote as NoteInterface>::Node;
+type Node<D> = <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Node;
 
 const ORCHARD_START: &str = "000000";
 /// The data relating to the blocks in the current batch
@@ -51,7 +51,7 @@ pub struct BlockManagementData {
     pub unverified_treestates: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
-    batch_size: u32,
+    batch_size: u64,
 
     // Highest verified trees
     // The incorrect type name "TreeState" is encoded in protobuf
@@ -63,21 +63,20 @@ pub struct BlockManagementData {
     pub sync_status: Arc<RwLock<BatchSyncStatus>>,
 }
 
-pub const BATCHSIZE: u32 = 25;
 impl BlockManagementData {
     pub fn new(sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
-            batch_size: BATCHSIZE,
+            batch_size: zingoconfig::BATCH_SIZE,
             highest_verified_trees: None,
             sync_status,
         }
     }
 
     #[cfg(test)]
-    pub fn new_with_batchsize(batch_size: u32) -> Self {
+    pub fn new_with_batchsize(batch_size: u64) -> Self {
         let mut s = Self::new(Arc::new(RwLock::new(BatchSyncStatus::default())));
         s.batch_size = batch_size;
 
@@ -501,7 +500,7 @@ impl BlockManagementData {
         transaction_num: usize,
         output_num: usize,
         activation_height: u64,
-    ) -> Result<IncrementalWitness<<D::WalletNote as NoteInterface>::Node, 32>, String>
+    ) -> Result<IncrementalWitness<<D::WalletNote as ShieldedNoteInterface>::Node, 32>, String>
     where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,
@@ -515,7 +514,7 @@ impl BlockManagementData {
         let (cb, mut tree) = {
             // In the edge case of a transition to a new network epoch, there is no previous tree.
             let tree = if prev_height < activation_height {
-                CommitmentTree::<<D::WalletNote as NoteInterface>::Node, 32>::empty()
+                CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
@@ -551,9 +550,10 @@ impl BlockManagementData {
                     .iter()
                     .enumerate()
             {
-                if let Some(node) =
-                    <D::WalletNote as NoteInterface>::Node::from_commitment(compactoutput.cmstar())
-                        .into()
+                if let Some(node) = <D::WalletNote as ShieldedNoteInterface>::Node::from_commitment(
+                    compactoutput.cmstar(),
+                )
+                .into()
                 {
                     tree.append(node).unwrap();
                     if t_num == transaction_num && o_num == output_num {
@@ -578,7 +578,7 @@ struct BlockManagementThreadData {
     /// Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<BatchSyncStatus>>,
     receiver: UnboundedReceiver<CompactBlock>,
-    batch_size: u32,
+    batch_size: u64,
     end_block: u64,
 }
 
@@ -596,8 +596,7 @@ impl BlockManagementThreadData {
         let mut last_block_expecting = self.end_block;
 
         while let Some(compact_block) = self.receiver.recv().await {
-            if compact_block.height % self.batch_size as u64 == 0 && !unprocessed_blocks.is_empty()
-            {
+            if compact_block.height % self.batch_size == 0 && !unprocessed_blocks.is_empty() {
                 // Add these blocks to the list
                 self.sync_status.write().await.blocks_done += unprocessed_blocks.len() as u64;
                 self.blocks_in_current_batch
