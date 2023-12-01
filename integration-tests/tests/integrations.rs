@@ -3165,7 +3165,7 @@ mod slow {
         //  3 * MARGINAL_FEE:
         assert!(
             Into::<u64>::into(test_one_fee) == 15_000u64
-                && test_one_tx.get_unmasked_transaction_fee().unwrap() == 15_000u64
+                && test_one_tx.get_transaction_fee().unwrap() == 15_000u64
         );
         bump_and_check_recipient!(o: 0 s: 0 t: 50_000);
 
@@ -3187,15 +3187,13 @@ mod slow {
         )
         .await;
         assert_eq!(Into::<u64>::into(test_two_fee), 20_000u64);
-        assert_eq!(
-            test_two_tx.get_unmasked_transaction_fee().unwrap(),
-            15_000u64
-        ); // 1 orchard spend, 1 orchard change, 1 receipt
+        assert_eq!(test_two_tx.get_transaction_fee().unwrap(), 15_000u64); // 1 orchard spend, 1 orchard change, 1 receipt
         bump_and_check_recipient!(o: 0 s: 50_000 t: 50_000);
 
         // Test Three: test of an orchard-only client to itself
         //  TODO:  Make it clearer in the error message that the problem is that the user can't send directly from the transparent pool.
-        panic!();
+        // NOTE:  Probably because there aren't sufficient funds for the send, from the beginning, the
+        // proposed fee is the minimum.
         dbg!("Test Three");
         assert!(recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 70_000, None)])
@@ -3205,14 +3203,14 @@ mod slow {
 
         // Test Four: test of shield:
         dbg!("Test Four");
-        let shield_tx = recipient
+        let test_four_tx = recipient
             .transaction_from_shield(&[Pool::Sapling, Pool::Transparent])
             .await
             .unwrap();
         //dbg!(&shield_tx);
         let test_four_fee = get_317_fee_from_masked_actions(
             &recipient,
-            &shield_tx,
+            &test_four_tx,
             PreMaskExpectedActions {
                 orchard_txouts: 2,
                 sapling_txins: 1,
@@ -3223,6 +3221,7 @@ mod slow {
         .await;
         assert_eq!(Into::<u64>::into(test_four_fee), 25_000u64); // 2 for orchard change, 2 for sapling pool, and 1 transparent
                                                                  // 4 tz transparent and sapling to orchard
+        assert_eq!(test_four_tx.get_transaction_fee().unwrap(), 25_000u64); // 1 orchard spend, 1 orchard change, 1 receipt
         bump_and_check_recipient!(o: 75_000 s: 0 t: 0);
         dbg!("Test Five");
         // 100_000 - 25_000 = 75_000
@@ -3248,11 +3247,11 @@ mod slow {
         .await;
         assert_eq!(Into::<u64>::into(test_five_fee), 25_000u64); // 2 for orchard change + in, 2 for sapling pool, and 1 transparent
         dbg!(&recipient.do_balance().await);
-        dbg!(&test_five_tx.get_unmasked_transaction_fee());
+        dbg!(&test_five_tx.get_transaction_fee());
         bump_and_check_recipient!(o: 5_000 s: 25_000 t: 25_000);
         dbg!(&recipient.do_balance().await);
-        panic!();
 
+        panic!();
         recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 20_000, None)])
             .await
