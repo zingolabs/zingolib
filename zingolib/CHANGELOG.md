@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LightClient pub fn get_wallet_dir_location
 
 ### Changed
+- load_client_config fn moves from zingolib to zingoconfig
 
 ### Removed
 
