@@ -38,7 +38,7 @@ fn construct_uri_load_config(
         "regtest" => ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
-    let mut config = match zingolib::load_clientconfig(
+    let mut config = match zingoconfig::load_clientconfig(
         lightwalletd_uri.clone(),
         None,
         chaintype,
