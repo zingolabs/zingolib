@@ -36,6 +36,38 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
 
+pub fn load_clientconfig(
+    lightwallet_uri: http::Uri,
+    data_dir: Option<PathBuf>,
+    chain: ChainType,
+    monitor_mempool: bool,
+) -> std::io::Result<ZingoConfig> {
+    use std::net::ToSocketAddrs;
+    format!(
+        "{}:{}",
+        lightwallet_uri.host().unwrap(),
+        lightwallet_uri.port().unwrap()
+    )
+    .to_socket_addrs()?
+    .next()
+    .ok_or(std::io::Error::new(
+        ErrorKind::ConnectionRefused,
+        "Couldn't resolve server!",
+    ))?;
+
+    // Create a Light Client Config
+    let config = ZingoConfig {
+        lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
+        chain,
+        monitor_mempool,
+        reorg_buffer_offset: REORG_BUFFER_OFFSET,
+        wallet_dir: data_dir,
+        wallet_name: DEFAULT_WALLET_NAME.into(),
+        logfile_name: DEFAULT_LOGFILE_NAME.into(),
+    };
+
+    Ok(config)
+}
 pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
         Some(s) => {

@@ -206,7 +206,7 @@ pub async fn load_wallet(
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
-        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
+        zingoconfig::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
@@ -404,7 +404,7 @@ pub mod scenarios {
                 regtest_network: zingoconfig::RegtestNetwork,
             ) -> zingoconfig::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
-                zingolib::load_clientconfig(
+                zingoconfig::load_clientconfig(
                     self.server_id.clone(),
                     Some(conf_path),
                     zingoconfig::ChainType::Regtest(regtest_network),

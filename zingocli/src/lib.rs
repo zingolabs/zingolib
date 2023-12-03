@@ -9,7 +9,7 @@ use clap::{self, Arg};
 use zingo_testutils::regtest;
 use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
-use zingolib::{commands, lightclient::LightClient, load_clientconfig};
+use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
@@ -400,7 +400,7 @@ pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
     // Try to get the configuration
-    let config = load_clientconfig(
+    let config = zingoconfig::load_clientconfig(
         filled_template.server.clone(),
         Some(filled_template.data_dir.clone()),
         filled_template.chaintype,

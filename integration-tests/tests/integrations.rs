@@ -932,7 +932,7 @@ mod slow {
         let original_recipient = client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
-        let zingo_config = zingolib::load_clientconfig(
+        let zingo_config = zingoconfig::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir),
             ChainType::Regtest(regtest_network),
