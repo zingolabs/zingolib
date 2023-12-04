@@ -18,45 +18,7 @@ include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
 pub struct SaplingParams;
-use std::{
-    io::{ErrorKind, Result},
-    path::PathBuf,
-    sync::{Arc, RwLock},
-};
-use zingoconfig::{ChainType, ZingoConfig, DEFAULT_LOGFILE_NAME, DEFAULT_WALLET_NAME};
 
-pub fn load_clientconfig(
-    lightwallet_uri: http::Uri,
-    data_dir: Option<PathBuf>,
-    chain: ChainType,
-    monitor_mempool: bool,
-) -> Result<ZingoConfig> {
-    use std::net::ToSocketAddrs;
-    format!(
-        "{}:{}",
-        lightwallet_uri.host().unwrap(),
-        lightwallet_uri.port().unwrap()
-    )
-    .to_socket_addrs()?
-    .next()
-    .ok_or(std::io::Error::new(
-        ErrorKind::ConnectionRefused,
-        "Couldn't resolve server!",
-    ))?;
-
-    // Create a Light Client Config
-    let config = ZingoConfig {
-        lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
-        chain,
-        monitor_mempool,
-        reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
-        wallet_dir: data_dir,
-        wallet_name: DEFAULT_WALLET_NAME.into(),
-        logfile_name: DEFAULT_LOGFILE_NAME.into(),
-    };
-
-    Ok(config)
-}
 pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u64> {
     tokio::runtime::Runtime::new()
         .unwrap()

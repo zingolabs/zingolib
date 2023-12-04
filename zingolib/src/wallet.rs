@@ -1000,8 +1000,6 @@ impl LightWallet {
             )
             .await?;
 
-        info!("{}: Transaction created", now() - start_time);
-        info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
         match self
             .send_to_addresses_inner(transaction, submission_height, broadcast_fn)
