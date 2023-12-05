@@ -3394,8 +3394,10 @@ mod slow {
                 .unwrap();
         }
 
-        println!("start");
-        // let reci_arc = std::sync::Arc::new(recipient);
+        let _synciiyur = recipient.do_sync(false).await;
+        let summ_sim = recipient.do_list_txsummaries().await;
+        let bala_sim = recipient.do_balance().await;
+
         recipient.clear_state().await;
         let timeout = 32;
         let what = sync_with_timeout_millis(&recipient, timeout).await;
@@ -3408,32 +3410,15 @@ mod slow {
             }
         }
 
-        println!(
-            "summaries_interrupted: {:#?}",
-            recipient.do_list_txsummaries().await,
-        );
-        println!("balance_interrupted: {:#?}", recipient.do_balance().await);
+        // let summ_int = recipient.do_list_txsummaries().await;
+        // let bala_int = recipient.do_balance().await;
         let _synciiyur = recipient.do_sync(false).await;
-        println!(
-            "summaries_synced: {:#?}",
-            recipient.do_list_txsummaries().await
-        );
-        println!("balance_synced: {:#?}", recipient.do_balance().await);
-        println!(
-            "finish_height recipient: {}",
-            recipient
-                .do_wallet_last_scanned_height()
-                .await
-                .as_u32()
-                .unwrap()
-        );
-        println!(
-            "finish_height faucet: {}",
-            faucet
-                .do_wallet_last_scanned_height()
-                .await
-                .as_u32()
-                .unwrap()
-        );
+        let summ_syn = recipient.do_list_txsummaries().await;
+        let bala_syn = recipient.do_balance().await;
+
+        println!("normal summaries: {:#?}", summ_sim);
+        println!("post interrupted_sync summaries: {:#?}", summ_syn);
+        assert_eq!(bala_sim, bala_syn);
+        assert_eq!(summ_sim, summ_syn);
     }
 }
