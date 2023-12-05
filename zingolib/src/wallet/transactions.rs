@@ -554,7 +554,7 @@ impl TransactionMetadataSet {
         output_index: u32,
     ) -> ZingoLibResult<u64> {
         match self.current.get_mut(&txid) {
-            None => ZingoLibError::NoSuchTxId(txid).print_and_pass_error(),
+            None => ZingoLibError::NoSuchTxId(txid).handle(),
             Some(transaction_metadata) => match spent_nullifier {
                 PoolNullifier::Sapling(_sapling_nullifier) => {
                     if let Some(sapling_note_data) = transaction_metadata
@@ -566,8 +566,7 @@ impl TransactionMetadataSet {
                         sapling_note_data.unconfirmed_spent = None;
                         Ok(sapling_note_data.note.value().inner())
                     } else {
-                        ZingoLibError::NoSuchSaplingOutputInTxId(txid, output_index)
-                            .print_and_pass_error()
+                        ZingoLibError::NoSuchSaplingOutputInTxId(txid, output_index).handle()
                     }
                 }
                 PoolNullifier::Orchard(_orchard_nullifier) => {
@@ -580,8 +579,7 @@ impl TransactionMetadataSet {
                         orchard_note_data.unconfirmed_spent = None;
                         Ok(orchard_note_data.note.value().inner())
                     } else {
-                        ZingoLibError::NoSuchOrchardOutputInTxId(txid, output_index)
-                            .print_and_pass_error()
+                        ZingoLibError::NoSuchOrchardOutputInTxId(txid, output_index).handle()
                     }
                 }
             },
