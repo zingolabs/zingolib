@@ -1,5 +1,5 @@
 use crate::compact_formats::CompactBlock;
-use crate::error::ZingoLibError;
+use crate::error::{ZingoLibError, ZingoLibResult};
 use crate::wallet::traits::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
@@ -194,7 +194,13 @@ impl WitnessTrees {
         if let Some(front) = non_empty_frontier {
             D::get_shardtree_mut(self)
                 .insert_frontier_nodes(front, Retention::Ephemeral)
-                .unwrap_or_else(|e| panic!("to insert non-empty {} frontier: {e}", D::NAME))
+                .unwrap_or_else(|e| {
+                    let _: ZingoLibResult<()> = ZingoLibError::Error(format!(
+                        "failed to insert non-empty {} frontier: {e}",
+                        D::NAME
+                    ))
+                    .handle();
+                })
         }
     }
 
