@@ -383,7 +383,7 @@ impl LightClient {
                     .map_err(ZingoLibError::WriteFileError)?;
                 Ok(true)
             } else {
-                ZingoLibError::EmptySaveBuffer.print_and_pass_error()
+                ZingoLibError::EmptySaveBuffer.handle()
             }
         }
     }
@@ -400,7 +400,7 @@ impl LightClient {
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
         } else {
-            ZingoLibError::EmptySaveBuffer.print_and_pass_error()
+            ZingoLibError::EmptySaveBuffer.handle()
         }
     }
 
