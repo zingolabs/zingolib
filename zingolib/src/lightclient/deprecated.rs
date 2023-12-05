@@ -221,7 +221,9 @@ mod tests {
             .expect("This path is available.");
 
         let wallet_name = data_dir.join("zingo-wallet.dat");
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
+        let config = ZingoConfig::build(ChainType::FakeMainnet)
+            .set_wallet_dir(data_dir)
+            .create();
         let lc = LightClient::create_from_wallet_base(
             WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
             &config,

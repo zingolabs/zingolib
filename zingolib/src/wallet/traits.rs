@@ -700,6 +700,7 @@ where
     Self::Recipient: Recipient,
 {
     const NU: NetworkUpgrade;
+    const NAME: &'static str;
 
     type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>;
 
@@ -763,6 +764,7 @@ where
 
 impl DomainWalletExt for SaplingDomain<ChainType> {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
+    const NAME: &'static str = "sapling";
 
     type Fvk = zip32::sapling::DiversifiableFullViewingKey;
 
@@ -839,6 +841,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
 impl DomainWalletExt for OrchardDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
+    const NAME: &'static str = "orchard";
 
     type Fvk = orchard::keys::FullViewingKey;
 
