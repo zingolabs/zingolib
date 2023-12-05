@@ -153,12 +153,13 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient = match LightClient::read_wallet_from_buffer_runtime(&config, &decoded_bytes[..]) {
-        Ok(l) => l,
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
+    let lightclient =
+        match LightClient::read_wallet_from_buffer_runtime(&config, &decoded_bytes[..]) {
+            Ok(l) => l,
+            Err(e) => {
+                return format!("Error: {}", e);
+            }
+        };
     lock_client_return_seed(lightclient)
 }
 
@@ -169,7 +170,7 @@ pub fn save_to_b64() -> String {
         let lc = LIGHTCLIENT.lock().unwrap();
 
         if lc.borrow().is_none() {
-            return format!("Error: Light Client is not initialized");
+            return "Error: Lightclient is not initialized".to_string();
         }
 
         lightclient = lc.borrow().as_ref().unwrap().clone();
@@ -191,7 +192,7 @@ pub fn execute(cmd: String, args_list: String) -> String {
             let lc = LIGHTCLIENT.lock().unwrap();
 
             if lc.borrow().is_none() {
-                return format!("Error: Light Client is not initialized");
+                return "Error: Lightclient is not initialized".to_string();
             }
 
             lightclient = lc.borrow().as_ref().unwrap().clone();
