@@ -33,7 +33,7 @@ use super::{
 /// this struct are threadsafe/locked properly.
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
-    pub(crate) some_highest_txid: Option<TxId>,
+    pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
     pub witness_trees: Option<WitnessTrees>,
 }
 
@@ -99,7 +99,7 @@ impl TransactionMetadataSet {
 
         Ok(Self {
             current: txs,
-            some_highest_txid: None,
+            some_txid_from_highest_wallet_block: None,
             witness_trees,
         })
     }
@@ -185,7 +185,7 @@ impl TransactionMetadataSet {
 
         Ok(Self {
             current,
-            some_highest_txid,
+            some_txid_from_highest_wallet_block: some_highest_txid,
             witness_trees,
         })
     }
@@ -307,7 +307,7 @@ impl TransactionMetadataSet {
 
     /// This returns an _arbitrary_ confirmed txid from the latest block the wallet is aware of.
     pub fn get_some_txid_from_highest_wallet_block(&self) -> &'_ Option<TxId> {
-        &self.some_highest_txid
+        &self.some_txid_from_highest_wallet_block
     }
 
     pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier, u32)> {
@@ -454,7 +454,7 @@ impl TransactionMetadataSet {
             })
             // if this transaction is new to our data, insert it
             .or_insert_with(|| {
-                self.some_highest_txid = Some(*txid); // TOdO IS this the highest wallet block?
+                self.some_txid_from_highest_wallet_block = Some(*txid); // TOdO IS this the highest wallet block?
                 TransactionMetadata::new(status, datetime, txid)
             })
     }
@@ -877,14 +877,14 @@ impl TransactionMetadataSet {
     pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
         Self {
             current: HashMap::default(),
-            some_highest_txid: None,
+            some_txid_from_highest_wallet_block: None,
             witness_trees: Some(WitnessTrees::default()),
         }
     }
     pub(crate) fn new_treeless() -> TransactionMetadataSet {
         Self {
             current: HashMap::default(),
-            some_highest_txid: None,
+            some_txid_from_highest_wallet_block: None,
             witness_trees: None,
         }
     }
