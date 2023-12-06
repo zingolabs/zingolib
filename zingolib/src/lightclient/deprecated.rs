@@ -37,7 +37,7 @@ impl LightClient {
         <D as Domain>::Note: PartialEq + Clone,
     {
         D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
-                    let block_height: u32 = transaction_metadata.block_height.into();
+                    let block_height: u32 = transaction_metadata.status.get_height().into();
                     object! {
                         "block_height" => block_height,
                         "unconfirmed"  => !transaction_metadata.status.is_confirmed(),
@@ -92,7 +92,7 @@ impl LightClient {
             })
             .collect::<Vec<JsonValue>>();
 
-        let block_height: u32 = wallet_transaction.block_height.into();
+        let block_height: u32 = wallet_transaction.status.get_height().into();
         object! {
             "block_height" => block_height,
             "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
@@ -144,7 +144,7 @@ impl LightClient {
                         }
                     } else {
                         // Create an input transaction for the transparent value as well.
-                        let block_height: u32 = wallet_transaction.block_height.into();
+                        let block_height: u32 = wallet_transaction.status.get_height().into();
                         consumer_notes_by_tx.push(object! {
                             "block_height" => block_height,
                             "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
