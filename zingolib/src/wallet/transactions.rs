@@ -42,18 +42,6 @@ impl TransactionMetadataSet {
         22
     }
 
-    pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
-        match self
-            .current
-            .get(txid)
-            .expect("To have the requested txid")
-            .get_transaction_fee()
-        {
-            Ok(tx_fee) => tx_fee,
-            Err(e) => panic!("{:?} for txid {}", e, txid,),
-        }
-    }
-
     pub fn read_old<R: Read>(
         mut reader: R,
         wallet_capability: &WalletCapability,
@@ -220,6 +208,8 @@ impl TransactionMetadataSet {
         self.witness_trees.as_mut().map(WitnessTrees::clear);
     }
 
+    // transaction handling
+
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.current.remove(txid);
@@ -305,101 +295,6 @@ impl TransactionMetadataSet {
         }
     }
 
-    /// This returns an _arbitrary_ confirmed txid from the latest block the wallet is aware of.
-    pub fn get_some_txid_from_highest_wallet_block(&self) -> &'_ Option<TxId> {
-        &self.some_highest_txid
-    }
-
-    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier, u32)> {
-        let before_block = BlockHeight::from_u32(before_block as u32);
-
-        self.current
-            .iter()
-            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed()) // Update only confirmed notes
-            .flat_map(|(txid, transaction_metadata)| {
-                // Fetch notes that are before the before_block.
-                transaction_metadata
-                    .sapling_notes
-                    .iter()
-                    .filter_map(move |sapling_note_description| {
-                        if transaction_metadata.status.is_confirmed_before_or_at(&before_block)
-                            && sapling_note_description.have_spending_key
-                            && sapling_note_description.spent.is_none()
-                        {
-                            Some((
-                                *txid,
-                                PoolNullifier::Sapling(
-                                    sapling_note_description.nullifier.unwrap_or_else(|| {
-                                        todo!("Do something about note even with missing nullifier")
-                                    }),
-                                ),
-                                sapling_note_description.output_index
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .chain(transaction_metadata.orchard_notes.iter().filter_map(
-                        move |orchard_note_description| {
-                            if transaction_metadata.status.is_confirmed_before_or_at(&before_block)
-                                && orchard_note_description.have_spending_key
-                                && orchard_note_description.spent.is_none()
-                            {
-                                Some((
-                                    *txid,
-                                    PoolNullifier::Orchard(orchard_note_description.nullifier.unwrap_or_else(|| {
-                                        todo!("Do something about note even with missing nullifier")
-                                    }))
-                                    , orchard_note_description.output_index
-,                                ))
-                            } else {
-                                None
-                            }
-                        },
-                    ))
-            })
-            .collect()
-    }
-
-    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
-        self.current
-            .get(txid)
-            .map(TransactionMetadata::total_value_spent)
-            .unwrap_or(0)
-    }
-
-    pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
-        &self,
-    ) -> Vec<(
-        <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier,
-        u64,
-        TxId,
-        u32,
-    )>
-    where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
-    {
-        self.current
-            .iter()
-            .flat_map(|(_, transaction_metadata)| {
-                D::to_notes_vec(transaction_metadata)
-                    .iter()
-                    .filter(|unspent_note_data| unspent_note_data.spent().is_none())
-                    .filter_map(move |unspent_note_data| {
-                        unspent_note_data.nullifier().map(|unspent_nullifier| {
-                            (
-                                unspent_nullifier,
-                                unspent_note_data.value(),
-                                transaction_metadata.txid,
-                                *unspent_note_data.output_index(),
-                            )
-                        })
-                    })
-            })
-            .collect()
-    }
-
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
 
@@ -457,10 +352,6 @@ impl TransactionMetadataSet {
                 self.some_highest_txid = Some(*txid); // TOdO IS this the highest wallet block?
                 TransactionMetadata::new(status, datetime, txid)
             })
-    }
-
-    pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
-        price.map(|p| self.current.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
@@ -607,41 +498,6 @@ impl TransactionMetadataSet {
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
-    }
-    /// A mark designates a leaf as non-ephemeral, mark removal causes
-    /// the leaf to eventually transition to the ephemeral state
-    pub fn remove_witness_mark<D>(
-        &mut self,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        output_index: u32,
-    ) where
-        D: DomainWalletExt,
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
-    {
-        let transaction_metadata = self
-            .current
-            .get_mut(&source_txid)
-            .expect("Txid should be present");
-
-        if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
-            .iter_mut()
-            .find(|n| *n.output_index() == output_index)
-        {
-            *note_datum.spent_mut() = Some((txid, height.into()));
-            if let Some(position) = *note_datum.witnessed_position() {
-                if let Some(ref mut tree) = D::transaction_metadata_set_to_shardtree_mut(self) {
-                    tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                        .unwrap();
-                }
-            } else {
-                todo!("Tried to mark note as spent with no position: FIX")
-            }
-        } else {
-            eprintln!("Could not remove node!")
-        }
     }
 
     pub fn mark_txid_utxo_spent(
@@ -816,6 +672,136 @@ impl TransactionMetadataSet {
         }
     }
 
+    // get data
+
+    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier, u32)> {
+        let before_block = BlockHeight::from_u32(before_block as u32);
+
+        self.current
+            .iter()
+            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed()) // Update only confirmed notes
+            .flat_map(|(txid, transaction_metadata)| {
+                // Fetch notes that are before the before_block.
+                transaction_metadata
+                    .sapling_notes
+                    .iter()
+                    .filter_map(move |sapling_note_description| {
+                        if transaction_metadata.status.is_confirmed_before_or_at(&before_block)
+                            && sapling_note_description.have_spending_key
+                            && sapling_note_description.spent.is_none()
+                        {
+                            Some((
+                                *txid,
+                                PoolNullifier::Sapling(
+                                    sapling_note_description.nullifier.unwrap_or_else(|| {
+                                        todo!("Do something about note even with missing nullifier")
+                                    }),
+                                ),
+                                sapling_note_description.output_index
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .chain(transaction_metadata.orchard_notes.iter().filter_map(
+                        move |orchard_note_description| {
+                            if transaction_metadata.status.is_confirmed_before_or_at(&before_block)
+                                && orchard_note_description.have_spending_key
+                                && orchard_note_description.spent.is_none()
+                            {
+                                Some((
+                                    *txid,
+                                    PoolNullifier::Orchard(orchard_note_description.nullifier.unwrap_or_else(|| {
+                                        todo!("Do something about note even with missing nullifier")
+                                    }))
+                                    , orchard_note_description.output_index
+,                                ))
+                            } else {
+                                None
+                            }
+                        },
+                    ))
+            })
+            .collect()
+    }
+
+    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
+        self.current
+            .get(txid)
+            .map(TransactionMetadata::total_value_spent)
+            .unwrap_or(0)
+    }
+
+    pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
+        &self,
+    ) -> Vec<(
+        <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier,
+        u64,
+        TxId,
+        u32,
+    )>
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        self.current
+            .iter()
+            .flat_map(|(_, transaction_metadata)| {
+                D::to_notes_vec(transaction_metadata)
+                    .iter()
+                    .filter(|unspent_note_data| unspent_note_data.spent().is_none())
+                    .filter_map(move |unspent_note_data| {
+                        unspent_note_data.nullifier().map(|unspent_nullifier| {
+                            (
+                                unspent_nullifier,
+                                unspent_note_data.value(),
+                                transaction_metadata.txid,
+                                *unspent_note_data.output_index(),
+                            )
+                        })
+                    })
+            })
+            .collect()
+    }
+
+    // shardtree
+
+    /// A mark designates a leaf as non-ephemeral, mark removal causes
+    /// the leaf to eventually transition to the ephemeral state
+    pub fn remove_witness_mark<D>(
+        &mut self,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        output_index: u32,
+    ) where
+        D: DomainWalletExt,
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        let transaction_metadata = self
+            .current
+            .get_mut(&source_txid)
+            .expect("Txid should be present");
+
+        if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
+            .iter_mut()
+            .find(|n| *n.output_index() == output_index)
+        {
+            *note_datum.spent_mut() = Some((txid, height.into()));
+            if let Some(position) = *note_datum.witnessed_position() {
+                if let Some(ref mut tree) = D::transaction_metadata_set_to_shardtree_mut(self) {
+                    tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
+                        .unwrap();
+                }
+            } else {
+                todo!("Tried to mark note as spent with no position: FIX")
+            }
+        } else {
+            eprintln!("Could not remove node!")
+        }
+    }
+
     pub(crate) fn mark_note_position<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
@@ -844,6 +830,23 @@ impl TransactionMetadataSet {
             println!("Could not update witness position");
         }
     }
+
+    pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
+        Self {
+            current: HashMap::default(),
+            some_highest_txid: None,
+            witness_trees: Some(WitnessTrees::default()),
+        }
+    }
+    pub(crate) fn new_treeless() -> TransactionMetadataSet {
+        Self {
+            current: HashMap::default(),
+            some_highest_txid: None,
+            witness_trees: None,
+        }
+    }
+
+    // misc
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
     pub(crate) fn add_memo_to_note_metadata<Nd: ShieldedNoteInterface>(
@@ -874,18 +877,26 @@ impl TransactionMetadataSet {
         }
     }
 
-    pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
-        Self {
-            current: HashMap::default(),
-            some_highest_txid: None,
-            witness_trees: Some(WitnessTrees::default()),
-        }
+    /// This returns an _arbitrary_ confirmed txid from the latest block the wallet is aware of.
+    pub fn get_some_txid_from_highest_wallet_block(&self) -> &'_ Option<TxId> {
+        &self.some_highest_txid
     }
-    pub(crate) fn new_treeless() -> TransactionMetadataSet {
-        Self {
-            current: HashMap::default(),
-            some_highest_txid: None,
-            witness_trees: None,
+    pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
+        price.map(|p| self.current.get_mut(txid).map(|tx| tx.price = Some(p)));
+    }
+}
+
+#[cfg(feature = "lightclient-deprecated")]
+impl TransactionMetadataSet {
+    pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
+        match self
+            .current
+            .get(txid)
+            .expect("To have the requested txid")
+            .get_transaction_fee()
+        {
+            Ok(tx_fee) => tx_fee,
+            Err(e) => panic!("{:?} for txid {}", e, txid,),
         }
     }
 }
