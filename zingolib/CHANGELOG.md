@@ -25,3 +25,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LightClient pub fn do_save
 - LightClient pub fn do_save_to_buffer
 - LightClient pub fn do_save_to_buffer_sync
+- LightWallet pub fn fix_spent_at_height
