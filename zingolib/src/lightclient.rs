@@ -2031,7 +2031,7 @@ impl LightClient {
                         if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
-                            let created_block:u32 = wtx.block_height.into();
+                            let created_block:u32 = wtx.status.get_height().into();
                             let recipient = zcash_client_backend::address::RecipientAddress::decode(&self.config.chain, &utxo.address);
                             let taddr = match recipient {
                             Some(zcash_client_backend::address::RecipientAddress::Transparent(taddr)) => taddr,
