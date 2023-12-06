@@ -443,7 +443,7 @@ impl TransactionMetadataSet {
         &mut self,
         txid: &TxId,
         status: ConfirmationStatus,
-        height: BlockHeight,
+        _height: BlockHeight,
         datetime: u64,
     ) -> &'_ mut TransactionMetadata {
         self.current
@@ -451,13 +451,12 @@ impl TransactionMetadataSet {
             // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
             .and_modify(|transaction_metadata| {
                 transaction_metadata.status = status;
-                transaction_metadata.block_height = height;
                 transaction_metadata.datetime = datetime;
             })
             // if this transaction is new to our data, insert it
             .or_insert_with(|| {
                 self.some_highest_txid = Some(*txid); // TOdO IS this the highest wallet block?
-                TransactionMetadata::new(status, height, datetime, txid)
+                TransactionMetadata::new(status, datetime, txid)
             })
     }
 

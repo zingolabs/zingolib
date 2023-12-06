@@ -891,9 +891,6 @@ pub struct TransactionMetadata {
     // the relationship of the note to the blockchain. can be either Local, Pending, or Confirmed.
     pub status: ConfirmationStatus,
 
-    // Block in which this tx was included OR submitted to mempool. Todo: this is incoherent
-    pub block_height: BlockHeight,
-
     // Timestamp of Tx. Added in v4
     pub datetime: u64,
 
@@ -997,15 +994,9 @@ impl TransactionMetadata {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
     }
-    pub fn new(
-        status: ConfirmationStatus,
-        height: BlockHeight,
-        datetime: u64,
-        transaction_id: &TxId,
-    ) -> Self {
+    pub fn new(status: ConfirmationStatus, datetime: u64, transaction_id: &TxId) -> Self {
         TransactionMetadata {
             status,
-            block_height: height,
             datetime,
             txid: *transaction_id,
             spent_sapling_nullifiers: vec![],
@@ -1136,7 +1127,6 @@ impl TransactionMetadata {
         let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
         Ok(Self {
             status,
-            block_height: block,
             datetime,
             txid: transaction_id,
             sapling_notes,
