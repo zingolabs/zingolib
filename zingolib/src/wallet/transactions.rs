@@ -391,10 +391,7 @@ impl TransactionMetadataSet {
         let txids_to_remove = self
             .current
             .iter()
-            .filter(|(_, transaction_metadata)| {
-                !transaction_metadata.status.is_confirmed()
-                    && transaction_metadata.block_height < cutoff
-            })
+            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_expired(&cutoff))
             .map(|(_, transaction_metadata)| transaction_metadata.txid)
             .collect::<Vec<_>>();
 
