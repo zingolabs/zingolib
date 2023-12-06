@@ -1991,7 +1991,7 @@ impl LightClient {
                             let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
                             let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
-                            let created_block:u32 = transaction_metadata.block_height.into();
+                            let created_block:u32 = transaction_metadata.status.get_height().into();
                             Some(object!{
                                 "created_in_block"   => created_block,
                                 "datetime"           => transaction_metadata.datetime,
