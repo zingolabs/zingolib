@@ -129,7 +129,7 @@ impl TransactionMetadataSet {
             ))
         })?;
 
-        // this gets a confirmed txid
+        // this gets a confirmed txid. it selects one with the highest confirmed height.
         let some_highest_txid = current
             .values()
             .fold(None, |highest: Option<(TxId, BlockHeight)>, w| {
