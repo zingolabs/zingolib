@@ -443,7 +443,6 @@ impl TransactionMetadataSet {
         &mut self,
         txid: &TxId,
         status: ConfirmationStatus,
-        _height: BlockHeight,
         datetime: u64,
     ) -> &'_ mut TransactionMetadata {
         self.current
@@ -521,7 +520,7 @@ impl TransactionMetadataSet {
         let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         // Record this Tx as having spent some funds
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, height, timestamp as u64);
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp as u64);
 
         if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
@@ -608,7 +607,7 @@ impl TransactionMetadataSet {
     ) {
         let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, height, timestamp);
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
         // Todo yeesh
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
@@ -704,7 +703,7 @@ impl TransactionMetadataSet {
             ConfirmationStatus::from_blockheight_and_unconfirmed_bool(blockheight, unconfirmed);
         // Read or create the current TxId
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, blockheight, timestamp);
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         // Add this UTXO if it doesn't already exist
         if transaction_metadata
@@ -744,7 +743,7 @@ impl TransactionMetadataSet {
     {
         let status = ConfirmationStatus::Broadcast(Some(height));
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, height, timestamp);
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         match D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
@@ -790,7 +789,7 @@ impl TransactionMetadataSet {
     {
         let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, height, timestamp);
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
