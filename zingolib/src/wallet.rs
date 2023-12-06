@@ -462,7 +462,7 @@ impl LightWallet {
             .await
             .current
             .values()
-            .map(|wtx| u64::from(wtx.block_height))
+            .map(|wtx| u64::from(wtx.status.get_height()))
             .min();
 
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
