@@ -468,15 +468,13 @@ impl TransactionMetadataSet {
     pub fn add_new_spent(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: PoolNullifier,
         value: u64,
         source_txid: TxId,
         output_index: u32,
     ) {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => self
                 .add_new_spent_internal::<OrchardDomain>(

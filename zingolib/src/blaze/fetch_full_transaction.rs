@@ -37,6 +37,7 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, ZingoConfig};
 
 #[derive(Clone)]
@@ -421,10 +422,10 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
+                    let status = ConfirmationStatus::Broadcast(Some(transaction_block_height));
                     self.transaction_metadata_set.write().await.add_new_spent(
                         transaction.txid(),
-                        transaction_block_height,
-                        true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
+                        status,
                         block_time,
                         (*nf).into(),
                         *value,

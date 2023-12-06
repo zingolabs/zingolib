@@ -14,6 +14,7 @@ use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::syncdata::BlazeSyncData;
 
@@ -142,10 +143,10 @@ impl UpdateNotes {
                             .unwrap_or(0);
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
+                        let status = ConfirmationStatus::Confirmed(spent_at_height);
                         wallet_transactions_write_unlocked.add_new_spent(
                             transaction_id_spent_in,
-                            spent_at_height,
-                            false,
+                            status,
                             ts,
                             maybe_spend_nullifier,
                             value,
