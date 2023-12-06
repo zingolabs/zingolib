@@ -354,7 +354,7 @@ impl LightWallet {
             .await
             .current
             .iter()
-            .map(|(transaction_id, wtx)| (*transaction_id, wtx.block_height))
+            .map(|(transaction_id, wtx)| (*transaction_id, wtx.status.get_height()))
             .collect();
 
         // Go over all the sapling notes that might need updating
