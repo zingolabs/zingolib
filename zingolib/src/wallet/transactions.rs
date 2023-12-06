@@ -271,7 +271,13 @@ impl TransactionMetadataSet {
             .current
             .values()
             .filter_map(|transaction_metadata| {
-                if transaction_metadata.block_height >= reorg_height {
+                if transaction_metadata
+                    .status
+                    .is_confirmed_after_or_at(&reorg_height)
+                    || transaction_metadata
+                        .status
+                        .is_broadcast_unconfirmed_after(&reorg_height)
+                {
                     Some(transaction_metadata.txid)
                 } else {
                     None
