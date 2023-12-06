@@ -69,6 +69,12 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
+    pub fn get_broadcast_unconfirmed_height(&self) -> Option<BlockHeight> {
+        match self {
+            Self::Broadcast(Some(blockheight)) => Some(*blockheight),
+            _ => None,
+        }
+    }
     // this function and the placeholder is not a preferred pattern. please use match whenever possible.
     pub fn get_height(&self) -> BlockHeight {
         match self {

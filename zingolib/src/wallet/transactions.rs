@@ -476,12 +476,12 @@ impl TransactionMetadataSet {
         source_txid: TxId,
         output_index: u32,
     ) {
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => self
                 .add_new_spent_internal::<OrchardDomain>(
                     txid,
-                    height,
-                    unconfirmed,
+                    status,
                     timestamp,
                     spent_nullifier,
                     value,
@@ -491,8 +491,7 @@ impl TransactionMetadataSet {
             PoolNullifier::Sapling(spent_nullifier) => self
                 .add_new_spent_internal::<SaplingDomain<ChainType>>(
                     txid,
-                    height,
-                    unconfirmed,
+                    status,
                     timestamp,
                     spent_nullifier,
                     value,
@@ -506,8 +505,7 @@ impl TransactionMetadataSet {
     fn add_new_spent_internal<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         value: u64,
@@ -517,7 +515,6 @@ impl TransactionMetadataSet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         // Record this Tx as having spent some funds
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp as u64);
@@ -535,10 +532,10 @@ impl TransactionMetadataSet {
         self.check_notes_mark_change(&txid);
 
         // Mark the source note as spent
-        if !unconfirmed {
+        if let Some(height) = status.get_confirmed_height() {
             // ie remove_witness_mark_sapling or _orchard
             self.remove_witness_mark::<D>(height, txid, source_txid, output_index);
-        } else {
+        } else if let Some(height) = status.get_broadcast_unconfirmed_height() {
             // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
             if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
                 if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
