@@ -307,7 +307,7 @@ impl TransactionMetadataSet {
                     .sapling_notes
                     .iter()
                     .filter_map(move |sapling_note_description| {
-                        if transaction_metadata.block_height <= before_block
+                        if transaction_metadata.status.is_confirmed_before_or_at(&before_block)
                             && sapling_note_description.have_spending_key
                             && sapling_note_description.spent.is_none()
                         {
