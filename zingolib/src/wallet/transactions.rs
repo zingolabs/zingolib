@@ -33,7 +33,7 @@ use super::{
 /// this struct are threadsafe/locked properly.
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
-    pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
+    pub(crate) some_highest_txid: Option<TxId>,
     pub witness_trees: Option<WitnessTrees>,
 }
 
@@ -99,7 +99,7 @@ impl TransactionMetadataSet {
 
         Ok(Self {
             current: txs,
-            some_txid_from_highest_wallet_block: None,
+            some_highest_txid: None,
             witness_trees,
         })
     }
@@ -129,13 +129,22 @@ impl TransactionMetadataSet {
             ))
         })?;
 
-        let some_txid_from_highest_wallet_block = current
+        // this gets a confirmed txid
+        let some_highest_txid = current
             .values()
-            .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
-                if c.is_none() || w.block_height > c.unwrap().1 {
-                    Some((w.txid, w.block_height))
-                } else {
-                    c
+            .fold(None, |highest: Option<(TxId, BlockHeight)>, w| {
+                match w.status.get_confirmed_height() {
+                    None => highest,
+                    Some(w_height) => match highest {
+                        None => Some((w.txid, w_height)),
+                        Some(highest_tuple) => {
+                            if highest_tuple.1 > w_height {
+                                highest
+                            } else {
+                                Some((w.txid, w_height))
+                            }
+                        }
+                    },
                 }
             })
             .map(|v| v.0);
@@ -176,7 +185,7 @@ impl TransactionMetadataSet {
 
         Ok(Self {
             current,
-            some_txid_from_highest_wallet_block,
+            some_highest_txid,
             witness_trees,
         })
     }
@@ -296,9 +305,9 @@ impl TransactionMetadataSet {
         }
     }
 
-    /// This returns an _arbitrary_ txid from the latest block the wallet is aware of.
+    /// This returns an _arbitrary_ confirmed txid from the latest block the wallet is aware of.
     pub fn get_some_txid_from_highest_wallet_block(&self) -> &'_ Option<TxId> {
-        &self.some_txid_from_highest_wallet_block
+        &self.some_highest_txid
     }
 
     pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier, u32)> {
@@ -447,7 +456,7 @@ impl TransactionMetadataSet {
             })
             // if this transaction is new to our data, insert it
             .or_insert_with(|| {
-                self.some_txid_from_highest_wallet_block = Some(*txid); // TOdO IS this the highest wallet block?
+                self.some_highest_txid = Some(*txid); // TOdO IS this the highest wallet block?
                 TransactionMetadata::new(status, height, datetime, txid)
             })
     }
@@ -875,14 +884,14 @@ impl TransactionMetadataSet {
     pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
         Self {
             current: HashMap::default(),
-            some_txid_from_highest_wallet_block: None,
+            some_highest_txid: None,
             witness_trees: Some(WitnessTrees::default()),
         }
     }
     pub(crate) fn new_treeless() -> TransactionMetadataSet {
         Self {
             current: HashMap::default(),
-            some_txid_from_highest_wallet_block: None,
+            some_highest_txid: None,
             witness_trees: None,
         }
     }
