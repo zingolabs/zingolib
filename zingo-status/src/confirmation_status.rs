@@ -49,10 +49,7 @@ impl ConfirmationStatus {
     }
     pub fn is_broadcast_unconfirmed_after(&self, height: &BlockHeight) -> bool {
         match self {
-            Self::Broadcast(option_blockheight) => match option_blockheight {
-                Some(blockheight) => blockheight <= height,
-                None => false,
-            },
+            Self::Broadcast(Some(blockheight)) => blockheight <= height,
             _ => false,
         }
     }
