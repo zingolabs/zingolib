@@ -52,6 +52,15 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+    pub fn is_broadcast_unconfirmed_after(&self, height: &BlockHeight) -> bool {
+        match self {
+            Self::Broadcast(option_blockheight) => match option_blockheight {
+                Some(blockheight) => blockheight <= height,
+                None => false,
+            },
+            _ => false,
+        }
+    }
     pub fn is_expired(&self, cutoff: &BlockHeight) -> bool {
         match self {
             Self::Local => true,
