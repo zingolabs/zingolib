@@ -1,14 +1,7 @@
 use zcash_primitives::consensus::BlockHeight;
 
 /// A 32 wide bitmask with 0 in the last 5 places
-pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = <u32>::max_value() - (16 + 8 + 4 + 2 + 1);
-/// A 32 wide bitmask with 1 in the least significant place, and 0 inn each of the next 4
-pub const BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL: u32 = <u32>::max_value() - (16 + 8 + 4 + 2);
-
-/// A 32 wide bitmask with 0 at 2^5, 2^3, 2^2, 2^1, and 2^0
-pub const BLOCKHEIGHT_PLACEHOLDER_NOKNOWNSPENDS: u32 = <u32>::max_value() - (32 + 8 + 4 + 2 + 1);
-/// A 32 wide bitmask with 0 at 2^5, 2^3, 2^2, and 2^1
-pub const BLOCKHEIGHT_PLACEHOLDER_PENDINGSPEND: u32 = <u32>::max_value() - (32 + 8 + 4 + 2);
+pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = (16 + 0 + 0 + 0 + 0);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
@@ -77,7 +70,6 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
-    // temporary. fixing this should fix the confirmation bug.
     // this function and the placeholder is not a preferred pattern. please use match whenever possible.
     pub fn get_height(&self) -> BlockHeight {
         match self {
