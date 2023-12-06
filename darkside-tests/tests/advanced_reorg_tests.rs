@@ -7,7 +7,7 @@ use darkside_tests::{
         TREE_STATE_FOLDER_PATH,
     },
     darkside_types::{Empty, TreeState},
-    utils::{read_block_dataset, read_lines, DarksideConnector, DarksideHandler},
+    utils::{read_dataset, read_lines, DarksideConnector, DarksideHandler},
 };
 
 use tokio::time::sleep;
@@ -121,7 +121,7 @@ async fn prepare_before_tx_height_change_reorg(uri: http::Uri) -> Result<(), Str
     println!("dataset path: {}", dataset_path);
 
     connector
-        .stage_blocks_stream(read_block_dataset(dataset_path))
+        .stage_blocks_stream(read_dataset(dataset_path))
         .await?;
 
     for i in 201..207 {
@@ -276,7 +276,7 @@ async fn prepare_before_tx_index_change_reorg(uri: http::Uri) -> Result<(), Stri
     println!("dataset path: {}", dataset_path);
 
     connector
-        .stage_blocks_stream(read_block_dataset(dataset_path))
+        .stage_blocks_stream(read_dataset(dataset_path))
         .await?;
 
     for i in 201..207 {
@@ -427,7 +427,7 @@ async fn prepare_expires_incoming_tx_before_reorg(uri: http::Uri) -> Result<(), 
     println!("dataset path: {}", dataset_path);
 
     connector
-        .stage_blocks_stream(read_block_dataset(dataset_path))
+        .stage_blocks_stream(read_dataset(dataset_path))
         .await?;
 
     for i in 201..207 {
@@ -705,7 +705,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
     println!("dataset path: {}", dataset_path);
 
     connector
-        .stage_blocks_stream(read_block_dataset(dataset_path))
+        .stage_blocks_stream(read_dataset(dataset_path))
         .await?;
 
     for i in 201..211 {
@@ -1108,7 +1108,7 @@ async fn test_read_block_dataset() {
         get_cargo_manifest_dir().to_string_lossy(),
         REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
     );
-    let blocks = read_block_dataset(dataset_path);
+    let blocks = read_dataset(dataset_path);
     assert_eq!(blocks.len(), 21)
 }
 

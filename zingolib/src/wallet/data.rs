@@ -1,6 +1,6 @@
 use crate::compact_formats::CompactBlock;
 use crate::error::ZingoLibError;
-use crate::wallet::traits::NoteInterface;
+use crate::wallet::traits::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
@@ -179,12 +179,14 @@ impl WitnessTrees {
         non_empty_sapling_frontier: Option<NonEmptyFrontier<sapling::Node>>,
         non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
-        self.insert_domain_frontier_notes::<SaplingDomain<ChainType>>(non_empty_sapling_frontier);
-        self.insert_domain_frontier_notes::<OrchardDomain>(non_empty_orchard_frontier);
+        self.insert_domain_frontier_nodes::<SaplingDomain<ChainType>>(non_empty_sapling_frontier);
+        self.insert_domain_frontier_nodes::<OrchardDomain>(non_empty_orchard_frontier);
     }
-    fn insert_domain_frontier_notes<D: DomainWalletExt>(
+    fn insert_domain_frontier_nodes<D: DomainWalletExt>(
         &mut self,
-        non_empty_frontier: Option<NonEmptyFrontier<<D::WalletNote as NoteInterface>::Node>>,
+        non_empty_frontier: Option<
+            NonEmptyFrontier<<D::WalletNote as ShieldedNoteInterface>::Node>,
+        >,
     ) where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -193,7 +195,7 @@ impl WitnessTrees {
         if let Some(front) = non_empty_frontier {
             D::get_shardtree_mut(self)
                 .insert_frontier_nodes(front, Retention::Ephemeral)
-                .expect("to insert non-empty sapling frontier")
+                .unwrap_or_else(|e| panic!("to insert non-empty {} frontier: {e}", D::NAME))
         }
     }
 

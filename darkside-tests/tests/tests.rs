@@ -1,83 +1,10 @@
-use darkside_tests::{
-    constants::{self, BRANCH_ID, GENESIS_BLOCK},
-    darkside_types::{Empty, RawTransaction, TreeState},
-    utils::{update_tree_states_for_transaction, DarksideConnector, DarksideHandler},
+use darkside_tests::utils::{
+    prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector, DarksideHandler,
 };
-
 use tokio::time::sleep;
 use zingo_testutils::{data::seeds::DARKSIDE_SEED, scenarios::setup::ClientBuilder};
 use zingoconfig::RegtestNetwork;
 use zingolib::{get_base_address, lightclient::PoolBalances};
-
-async fn prepare_darksidewalletd(
-    uri: http::Uri,
-    include_startup_funds: bool,
-) -> Result<(), String> {
-    dbg!(&uri);
-    let connector = DarksideConnector(uri.clone());
-
-    let mut client = connector.get_client().await.unwrap();
-    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    client.clear_address_utxo(Empty {}).await.unwrap();
-
-    // reset with parameters
-    connector
-        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
-        .await
-        .unwrap();
-
-    connector
-        .stage_blocks_stream(vec![String::from(GENESIS_BLOCK)])
-        .await?;
-
-    connector.stage_blocks_create(2, 2, 0).await.unwrap();
-
-    connector
-        .add_tree_state(constants::first_tree_state())
-        .await
-        .unwrap();
-    if include_startup_funds {
-        connector
-            .stage_transactions_stream(vec![(
-                hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
-                2,
-            )])
-            .await
-            .unwrap();
-        let tree_height_2 = update_tree_states_for_transaction(
-            &uri,
-            RawTransaction {
-                data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
-                height: 2,
-            },
-            2,
-        )
-        .await;
-        connector
-            .add_tree_state(TreeState {
-                height: 3,
-                ..tree_height_2
-            })
-            .await
-            .unwrap();
-    } else {
-        for height in [2, 3] {
-            connector
-                .add_tree_state(TreeState {
-                    height,
-                    ..constants::first_tree_state()
-                })
-                .await
-                .unwrap();
-        }
-    }
-
-    sleep(std::time::Duration::new(2, 0)).await;
-
-    connector.apply_staged(3).await?;
-
-    Ok(())
-}
 
 #[tokio::test]
 async fn simple_sync() {
