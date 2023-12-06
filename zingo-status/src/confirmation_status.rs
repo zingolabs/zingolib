@@ -1,6 +1,8 @@
 use zcash_primitives::consensus::BlockHeight;
 
 /// A 32 wide bitmask with 0 in the last 5 places
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = (16 + 0 + 0 + 0 + 0);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
