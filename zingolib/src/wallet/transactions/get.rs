@@ -126,6 +126,50 @@ impl TransactionMetadataSet {
     }
 }
 
+#[test]
+fn test_get_some_txid_from_highest_wallet_block() {
+    let mut tms = TransactionMetadataSet::new_treeless();
+    assert_eq!(tms.get_some_txid_from_highest_wallet_block(), None);
+    let txid_bytes_1 = [0u8; 32];
+    let txid_bytes_2 = [1u8; 32];
+    let txid_bytes_3 = [2u8; 32];
+    let txid_1 = TxId::from_bytes(txid_bytes_1);
+    let txid_2 = TxId::from_bytes(txid_bytes_2);
+    let txid_3 = TxId::from_bytes(txid_bytes_3);
+    tms.current.insert(
+        txid_1,
+        TransactionMetadata::new(
+            zingo_status::confirmation_status::ConfirmationStatus::Broadcast(Some(
+                BlockHeight::from_u32(3_200_000),
+            )),
+            100,
+            &txid_1,
+        ),
+    );
+    tms.current.insert(
+        txid_2,
+        TransactionMetadata::new(
+            zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                BlockHeight::from_u32(3_000_069),
+            ),
+            0,
+            &txid_2,
+        ),
+    );
+    tms.current.insert(
+        txid_3,
+        TransactionMetadata::new(
+            zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                BlockHeight::from_u32(2_650_000),
+            ),
+            0,
+            &txid_3,
+        ),
+    );
+    let highest = tms.get_some_txid_from_highest_wallet_block();
+    assert_eq!(highest, Some(txid_2));
+}
+
 #[cfg(feature = "lightclient-deprecated")]
 impl TransactionMetadataSet {
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
