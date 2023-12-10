@@ -26,7 +26,7 @@ impl ZingoLibError {
         log::error!("{}", self);
         Err(self)
     }
-    pub fn panic<T>(self) -> ZingoLibResult<T> {
+    pub fn handle_or_panic<T>(self) -> ZingoLibResult<T> {
         log::error!("{}", self);
 
         #[cfg(debug_assertions)]
