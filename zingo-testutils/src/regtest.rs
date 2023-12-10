@@ -334,7 +334,9 @@ impl RegtestManager {
         log::info!("{:?}", &command.get_envs());
         log::info!("{:?}", &command.get_program());
 
-        let child = command.spawn().unwrap();
+        let child = command
+            .spawn()
+            .expect("COULD NOT START ZCASHD does it exist? see $G/docs/ZINGOCLI-REGTEST.md");
         log::debug!("zcashd is starting in regtest mode, please standby...");
 
         (
