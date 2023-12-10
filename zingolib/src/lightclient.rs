@@ -347,7 +347,7 @@ impl LightClient {
 
     //        SAVE METHODS
 
-    async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
+    async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
         match self.save_internal_buffer().await {
             Ok(()) => self.rust_write_save_buffer_to_file().await,
             Err(err) => {
@@ -383,7 +383,7 @@ impl LightClient {
                     .map_err(ZingoLibError::WriteFileError)?;
                 Ok(true)
             } else {
-                ZingoLibError::EmptySaveBuffer.print_and_pass_error()
+                ZingoLibError::EmptySaveBuffer.handle()
             }
         }
     }
@@ -400,7 +400,7 @@ impl LightClient {
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
         } else {
-            ZingoLibError::EmptySaveBuffer.print_and_pass_error()
+            ZingoLibError::EmptySaveBuffer.handle()
         }
     }
 

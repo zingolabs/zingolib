@@ -888,7 +888,7 @@ pub mod summaries {
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionMetadata {
-    // the relationship of the note to the blockchain. can be either Local, Pending, or Confirmed.
+    // the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
     pub status: ConfirmationStatus,
 
     // Timestamp of Tx. Added in v4
@@ -976,7 +976,7 @@ impl TransactionMetadata {
                 self.total_change_returned(),
                 self,
             ))
-            .print_and_pass_error()
+            .handle()
         }
     }
 

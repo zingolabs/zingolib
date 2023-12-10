@@ -1,11 +1,12 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{self, Read, Write};
+use std::{
+    collections::HashMap,
+    io::{self, Read, Write},
+};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{
-    data::TransactionMetadata, keys::unified::WalletCapability, HashMap, WitnessTrees,
-};
+use crate::wallet::{data::TransactionMetadata, keys::unified::WalletCapability, WitnessTrees};
 
 use super::TransactionMetadataSet;
 impl TransactionMetadataSet {
