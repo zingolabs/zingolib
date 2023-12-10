@@ -167,7 +167,7 @@ impl TransactionMetadataSet {
     #[allow(clippy::too_many_arguments)]
     pub fn found_spend_nullifier(
         &mut self,
-        txid: TxId,
+        spending_txid: TxId,
         status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: PoolNullifier,
@@ -178,7 +178,7 @@ impl TransactionMetadataSet {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => self
                 .found_spent_nullifier_internal::<OrchardDomain>(
-                    txid,
+                    spending_txid,
                     status,
                     timestamp,
                     spent_nullifier,
@@ -188,7 +188,7 @@ impl TransactionMetadataSet {
                 ),
             PoolNullifier::Sapling(spent_nullifier) => self
                 .found_spent_nullifier_internal::<SaplingDomain<ChainType>>(
-                    txid,
+                    spending_txid,
                     status,
                     timestamp,
                     spent_nullifier,
@@ -202,7 +202,7 @@ impl TransactionMetadataSet {
     #[allow(clippy::too_many_arguments)]
     fn found_spent_nullifier_internal<D: DomainWalletExt>(
         &mut self,
-        txid: TxId,
+        spending_txid: TxId,
         status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
@@ -215,7 +215,7 @@ impl TransactionMetadataSet {
     {
         // Record this Tx as having spent some funds
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp as u64);
+            self.create_modify_get_transaction_metadata(&spending_txid, status, timestamp as u64);
 
         if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
@@ -227,12 +227,12 @@ impl TransactionMetadataSet {
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-        self.check_notes_mark_change(&txid);
+        self.check_notes_mark_change(&spending_txid);
 
         // Mark the source note as spent
         if let Some(height) = status.get_confirmed_height() {
             // ie remove_witness_mark_sapling or _orchard
-            self.remove_witness_mark::<D>(height, txid, source_txid, output_index);
+            self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index);
         } else if let Some(height) = status.get_broadcast_unconfirmed_height() {
             // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
             if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
@@ -240,7 +240,8 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
-                    *unconfirmed_spent_note.pending_spent_mut() = Some((txid, u32::from(height)));
+                    *unconfirmed_spent_note.pending_spent_mut() =
+                        Some((spending_txid, u32::from(height)));
                 }
             }
         }
