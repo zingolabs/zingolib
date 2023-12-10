@@ -492,7 +492,7 @@ impl TransactionContext {
                     }
                     Err(e) => {
                         let _memo_error: ZingoLibResult<()> =
-                            ZingoLibError::CouldNotDecodeMemo(e).print_and_pass_error();
+                            ZingoLibError::CouldNotDecodeMemo(e).handle();
                     }
                 }
             }

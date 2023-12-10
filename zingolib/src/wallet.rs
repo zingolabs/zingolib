@@ -21,7 +21,6 @@ use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
     cmp,
-    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, mpsc::channel, Arc},
     time::SystemTime,
@@ -341,59 +340,6 @@ impl LightWallet {
         }
 
         Err("No message matched".to_string())
-    }
-
-    // Add the spent_at_height for each sapling note that has been spent. This field was added in wallet version 8,
-    // so for older wallets, it will need to be added
-    pub async fn fix_spent_at_height(&self) {
-        // First, build an index of all the transaction_ids and the heights at which they were spent.
-        let spent_transaction_id_map: HashMap<_, _> = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .iter()
-            .map(|(transaction_id, wtx)| (*transaction_id, wtx.status.get_height()))
-            .collect();
-
-        // Go over all the sapling notes that might need updating
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .current
-            .values_mut()
-            .for_each(|wtx| {
-                wtx.sapling_notes
-                    .iter_mut()
-                    .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
-                    .for_each(|nd| {
-                        let transaction_id = nd.spent.unwrap().0;
-                        if let Some(height) = spent_transaction_id_map.get(&transaction_id).copied()
-                        {
-                            nd.spent = Some((transaction_id, height.into()));
-                        }
-                    })
-            });
-
-        // Go over all the Utxos that might need updating
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .current
-            .values_mut()
-            .for_each(|wtx| {
-                wtx.transparent_notes
-                    .iter_mut()
-                    .filter(|utxo| utxo.spent.is_some() && utxo.spent_at_height.is_none())
-                    .for_each(|utxo| {
-                        utxo.spent_at_height = spent_transaction_id_map
-                            .get(&utxo.spent.unwrap())
-                            .map(|b| u32::from(*b) as i32);
-                    })
-            });
     }
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
