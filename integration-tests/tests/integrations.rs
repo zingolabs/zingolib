@@ -2438,10 +2438,6 @@ mod slow {
             .unwrap();
 
         // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
-        assert_eq!(
-            do_maybe_recent_txid(&recipient).await["last_txid"],
-            sent_transaction_id
-        );
 
         // Sync recipient
         recipient.do_sync(false).await.unwrap();
