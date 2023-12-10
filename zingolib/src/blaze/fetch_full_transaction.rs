@@ -423,15 +423,18 @@ impl TransactionContext {
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
                     let status = ConfirmationStatus::Broadcast(Some(transaction_block_height));
-                    self.transaction_metadata_set.write().await.add_new_spent(
-                        transaction.txid(),
-                        status,
-                        block_time,
-                        (*nf).into(),
-                        *value,
-                        *transaction_id,
-                        *output_index,
-                    );
+                    self.transaction_metadata_set
+                        .write()
+                        .await
+                        .found_spend_nullifier(
+                            transaction.txid(),
+                            status,
+                            block_time,
+                            (*nf).into(),
+                            *value,
+                            *transaction_id,
+                            *output_index,
+                        );
                 }
             }
         }
