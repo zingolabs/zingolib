@@ -100,11 +100,7 @@ impl TransactionMetadataSet {
     }
 
     /// This returns an _arbitrary_ confirmed txid from the latest block the wallet is aware of.
-    pub fn get_some_txid_from_highest_wallet_block(&self) -> &'_ Option<TxId> {
-        &self.some_highest_txid
-    }
-
-    pub fn get_highest_txid(&self) -> Option<TxId> {
+    pub fn get_some_txid_from_highest_wallet_block(&self) -> Option<TxId> {
         self.current
             .values()
             .fold(

@@ -160,10 +160,7 @@ impl TransactionMetadataSet {
                 transaction_metadata.datetime = datetime;
             })
             // if this transaction is new to our data, insert it
-            .or_insert_with(|| {
-                self.some_highest_txid = Some(*txid); // TOdO IS this the highest wallet block?
-                TransactionMetadata::new(status, datetime, txid)
-            })
+            .or_insert_with(|| TransactionMetadata::new(status, datetime, txid))
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.

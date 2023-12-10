@@ -4,7 +4,7 @@ use std::{
     io::{self, Read, Write},
 };
 use zcash_encoding::{Optional, Vector};
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{data::TransactionMetadata, keys::unified::WalletCapability, WitnessTrees};
 
@@ -59,7 +59,6 @@ impl TransactionMetadataSet {
 
         Ok(Self {
             current: txs,
-            some_highest_txid: None,
             witness_trees,
         })
     }
@@ -88,26 +87,6 @@ impl TransactionMetadataSet {
                 TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
             ))
         })?;
-
-        // this gets a confirmed txid
-        let some_highest_txid = current
-            .values()
-            .fold(None, |highest: Option<(TxId, BlockHeight)>, w| {
-                match w.status.get_confirmed_height() {
-                    None => highest,
-                    Some(w_height) => match highest {
-                        None => Some((w.txid, w_height)),
-                        Some(highest_tuple) => {
-                            if highest_tuple.1 > w_height {
-                                highest
-                            } else {
-                                Some((w.txid, w_height))
-                            }
-                        }
-                    },
-                }
-            })
-            .map(|v| v.0);
 
         let _mempool: Vec<(TxId, TransactionMetadata)> = if version <= 20 {
             Vector::read_collected_mut(&mut reader, |r| {
@@ -145,7 +124,6 @@ impl TransactionMetadataSet {
 
         Ok(Self {
             current,
-            some_highest_txid,
             witness_trees,
         })
     }

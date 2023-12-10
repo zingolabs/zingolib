@@ -9,7 +9,6 @@ use super::data::{TransactionMetadata, WitnessTrees};
 /// this struct are threadsafe/locked properly.
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
-    pub(crate) some_highest_txid: Option<TxId>,
     pub witness_trees: Option<WitnessTrees>,
 }
 
@@ -22,14 +21,12 @@ impl TransactionMetadataSet {
     pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
         Self {
             current: HashMap::default(),
-            some_highest_txid: None,
             witness_trees: Some(WitnessTrees::default()),
         }
     }
     pub(crate) fn new_treeless() -> TransactionMetadataSet {
         Self {
             current: HashMap::default(),
-            some_highest_txid: None,
             witness_trees: None,
         }
     }
