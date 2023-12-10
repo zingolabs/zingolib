@@ -103,6 +103,31 @@ impl TransactionMetadataSet {
     pub fn get_some_txid_from_highest_wallet_block(&self) -> &'_ Option<TxId> {
         &self.some_highest_txid
     }
+
+    pub fn get_highest_txid(&self) -> Option<TxId> {
+        self.current
+            .values()
+            .fold(
+                None,
+                |highest: Option<(TxId, BlockHeight)>, w: &TransactionMetadata| match w
+                    .status
+                    .get_confirmed_height()
+                {
+                    None => highest,
+                    Some(w_height) => match highest {
+                        None => Some((w.txid, w_height)),
+                        Some(highest_tuple) => {
+                            if highest_tuple.1 > w_height {
+                                highest
+                            } else {
+                                Some((w.txid, w_height))
+                            }
+                        }
+                    },
+                },
+            )
+            .map(|v| v.0)
+    }
 }
 
 #[cfg(feature = "lightclient-deprecated")]
