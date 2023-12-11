@@ -8,7 +8,9 @@ use crate::{
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
-        traits::{CompactOutput as _, DomainWalletExt, FromCommitment, NoteInterface, Recipient},
+        traits::{
+            CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
+        },
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
@@ -90,31 +92,6 @@ impl TrialDecryptions {
 
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
-
-                if cbs.len() >= 125 {
-                    // We seem to have enough to delegate to a new thread.
-                    // Why 1000?
-                    let wc = wc.clone();
-                    let sapling_ivk = sapling_ivk.clone();
-                    let orchard_ivk = orchard_ivk.clone();
-                    let transaction_metadata_set = transaction_metadata_set.clone();
-                    let bsync_data = bsync_data.clone();
-                    let detected_transaction_id_sender = detected_transaction_id_sender.clone();
-                    let config = config.clone();
-
-                    workers.push(tokio::spawn(Self::trial_decrypt_batch(
-                        config,
-                        cbs.split_off(0), // This allocates all received cbs to the spawn.
-                        wc,
-                        bsync_data,
-                        sapling_ivk,
-                        orchard_ivk,
-                        transaction_metadata_set,
-                        transaction_size_filter,
-                        detected_transaction_id_sender,
-                        full_transaction_fetcher.clone(),
-                    )));
-                }
             }
             // Finish off the remaining < 125 cbs
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
@@ -302,7 +279,7 @@ impl TrialDecryptions {
         notes_to_mark_position: &mut [(
             u32,
             TxId,
-            <D::WalletNote as NoteInterface>::Node,
+            <D::WalletNote as ShieldedNoteInterface>::Node,
             Retention<BlockHeight>,
         )],
     ) where
@@ -310,7 +287,7 @@ impl TrialDecryptions {
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        <<D as DomainWalletExt>::WalletNote as NoteInterface>::Node: PartialEq,
+        <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Node: PartialEq,
     {
         let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
@@ -405,7 +382,7 @@ fn zip_outputs_with_retention_txids_indexes<D: DomainWalletExt>(
 ) -> Vec<(
     u32,
     TxId,
-    <D::WalletNote as NoteInterface>::Node,
+    <D::WalletNote as ShieldedNoteInterface>::Node,
     Retention<BlockHeight>,
 )>
 where
@@ -421,7 +398,8 @@ where
         (
             i as u32,
             TxId::from_bytes(<[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap()),
-            <D::WalletNote as NoteInterface>::Node::from_commitment(output.cmstar()).unwrap(),
+            <D::WalletNote as ShieldedNoteInterface>::Node::from_commitment(output.cmstar())
+                .unwrap(),
             Retention::Ephemeral,
         )
     })
@@ -434,7 +412,7 @@ fn update_witnesses<D>(
         Vec<(
             u32,
             TxId,
-            <D::WalletNote as NoteInterface>::Node,
+            <D::WalletNote as ShieldedNoteInterface>::Node,
             Retention<BlockHeight>,
         )>,
         BlockHeight,

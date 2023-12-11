@@ -4,6 +4,7 @@ zingocli/regtest/data/zingo/
 zingocli/regtest/logs/
 zingocli/regtest/zingo-wallet.dat
 zingocli/regtest/bin
+integration-tests/regtest/bin
 target
 zingolib/target
 zingocli/target
@@ -21,3 +22,5 @@ zingocli/tests/data/basic_zcashd.conf
 cobertura.xml
 zingocli/tests/times/*
 wallets/*
+darkside-tests/lightwalletd_bin/
+darkside-tests/transaction_hex*

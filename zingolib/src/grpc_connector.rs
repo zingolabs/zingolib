@@ -38,7 +38,7 @@ impl GrpcConnector {
         Self { uri }
     }
 
-    pub(crate) fn get_client(
+    pub fn get_client(
         &self,
     ) -> impl std::future::Future<
         Output = Result<CompactTxStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
@@ -387,7 +387,6 @@ impl GrpcConnector {
 
         let request = Request::new(Empty {});
 
-        dbg!("Getting mempool stream");
         let mut response = client
             .get_mempool_stream(request)
             .await

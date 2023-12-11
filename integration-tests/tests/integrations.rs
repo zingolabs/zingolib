@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-pub mod darkside;
 
 use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
@@ -8,7 +7,6 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr, time::Duration};
-use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
@@ -316,10 +314,9 @@ mod fast {
         let mut wallet_location = regtest_manager.zingo_datadir;
         wallet_location.pop();
         wallet_location.push("zingo_client_1");
-        let zingo_config = ZingoConfig::create_unconnected(
-            zingoconfig::ChainType::Regtest(regtest_network),
-            Some(wallet_location.clone()),
-        );
+        let zingo_config = ZingoConfig::build(zingoconfig::ChainType::Regtest(regtest_network))
+            .set_wallet_dir(wallet_location.clone())
+            .create();
         wallet_location.push("zingo-wallet.dat");
         let read_buffer = File::open(wallet_location.clone()).unwrap();
 
@@ -497,7 +494,7 @@ mod fast {
         // with 3 addresses containig all receivers.
         let data = include_bytes!("zingo-wallet-v26.dat");
 
-        let config = zingoconfig::ZingoConfig::create_unconnected(ChainType::Testnet, None);
+        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
         let wallet = LightWallet::read_internal(&data[..], &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
@@ -551,84 +548,6 @@ mod fast {
             assert!(addr.orchard().is_some());
             assert!(addr.sapling().is_some());
             assert!(addr.transparent().is_some());
-        }
-    }
-
-    pub mod framework_validation {
-        use crate::zingo_testutils::scenarios::setup::{self, ScenarioBuilder};
-        use zingoconfig::RegtestNetwork;
-
-        macro_rules! log_field_from_zcashd {
-            (
-        $regtest_manager:ident,
-        $log_message:expr,
-        $rpc_command:expr,
-        $query_field:expr,
-    ) => {
-                log::debug!(
-                    $log_message,
-                    json::parse(
-                        std::str::from_utf8(
-                            &$regtest_manager
-                                .get_cli_handle()
-                                .arg($rpc_command)
-                                .output()
-                                .unwrap()
-                                .stdout
-                        )
-                        .unwrap()
-                    )
-                    .unwrap()[$query_field]
-                );
-            };
-        }
-
-        #[tokio::test]
-        async fn reboot_zcashd() {
-            let regtest_network = RegtestNetwork::all_upgrades_active();
-            let ScenarioBuilder {
-                regtest_manager,
-                child_process_handler,
-                ..
-            } = setup::ScenarioBuilder::build_configure_launch(None, None, None, &regtest_network)
-                .await;
-            log::debug!("regtest_manager: {:#?}", &regtest_manager);
-            // Turn zcashd off and on again, to write down the blocks
-            log_field_from_zcashd!(
-                regtest_manager,
-                "old zcashd blocks: {}",
-                "getblockchaininfo",
-                "blocks",
-            );
-            log::debug!(
-                "stopping..  {}",
-                std::str::from_utf8(
-                    &regtest_manager
-                        .get_cli_handle()
-                        .arg("stop")
-                        .output()
-                        .unwrap()
-                        .stdout,
-                )
-                .unwrap()
-            );
-            std::thread::sleep(std::time::Duration::new(5, 0));
-            std::process::Command::new("rm")
-                .arg(&regtest_manager.zcashd_stdout_log)
-                .output()
-                .expect("to remove zcashd log");
-            std::process::Command::new("rm")
-                .arg(&regtest_manager.lightwalletd_log)
-                .output()
-                .expect("to remove ligthwalletd log");
-            drop(child_process_handler); // Turn off zcashd and lightwalletd
-            let _cph2 = regtest_manager.launch(false).unwrap();
-            log_field_from_zcashd!(
-                regtest_manager,
-                "new zcashd blocks: {}",
-                "getblockchaininfo",
-                "blocks",
-            );
         }
     }
 
@@ -1013,7 +932,7 @@ mod slow {
         let original_recipient = client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
-        let zingo_config = zingolib::load_clientconfig(
+        let zingo_config = zingoconfig::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir),
             ChainType::Regtest(regtest_network),
@@ -1607,44 +1526,6 @@ mod slow {
                 transaction
             );
         }
-    }
-    #[tokio::test]
-    #[traced_test]
-    async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
-        tracing_log::LogTracer::init().unwrap();
-        let (regtest_manager, _cph, _faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
-        recipient
-            .do_send(vec![(
-                &get_base_address!(recipient, "unified"),
-                5_000,
-                Some(Memo::from_str("Here's a memo!").unwrap().into()),
-            )])
-            .await
-            .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        // With user-specified memo, we list the metadata
-        assert!(!logs_contain(
-            "Received memo indicating you sent to an address you don't have on record."
-        ));
-        recipient
-            .do_send(vec![(
-                &get_base_address!(recipient, "unified"),
-                5_000,
-                None,
-            )])
-            .await
-            .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        // With a memo-less send to self, we hide the metadata from the UI. This should not
-        // trick the error detector.
-        assert!(!logs_contain(
-            "Received memo indicating you sent to an address you don't have on record."
-        ));
     }
     #[tokio::test]
     async fn send_orchard_back_and_forth() {
@@ -2250,10 +2131,7 @@ mod slow {
                         balance.spendable_sapling_balance.unwrap()
                             + balance.spendable_orchard_balance.unwrap()
                     } - u64::from(MINIMUM_FEE),
-                    match memo {
-                        Some(memo) => Some(Memo::from_str(memo).unwrap().into()),
-                        None => None,
-                    },
+                    memo.map(|memo| Memo::from_str(memo).unwrap().into()),
                 )])
                 .await
                 .unwrap();

@@ -21,7 +21,6 @@ use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
     cmp,
-    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, mpsc::channel, Arc},
     time::SystemTime,
@@ -52,7 +51,7 @@ use zingo_memo::create_wallet_internal_memo_version_0;
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
-use self::traits::{DomainWalletExt, NoteInterface, SpendableNote};
+use self::traits::{DomainWalletExt, ShieldedNoteInterface, SpendableNote};
 use self::{
     data::{BlockData, TransparentNote, WalletZecPriceInfo},
     message::Message,
@@ -254,14 +253,16 @@ impl LightWallet {
     fn get_legacy_frontier<D: DomainWalletExt>(
         trees: &crate::compact_formats::TreeState,
     ) -> Option<
-        incrementalmerkletree::frontier::NonEmptyFrontier<<D::WalletNote as NoteInterface>::Node>,
+        incrementalmerkletree::frontier::NonEmptyFrontier<
+            <D::WalletNote as ShieldedNoteInterface>::Node,
+        >,
     >
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
         zcash_primitives::merkle_tree::read_commitment_tree::<
-            <D::WalletNote as NoteInterface>::Node,
+            <D::WalletNote as ShieldedNoteInterface>::Node,
             &[u8],
             COMMITMENT_TREE_LEVELS,
         >(&hex::decode(D::get_tree(trees)).unwrap()[..])
@@ -339,59 +340,6 @@ impl LightWallet {
         }
 
         Err("No message matched".to_string())
-    }
-
-    // Add the spent_at_height for each sapling note that has been spent. This field was added in wallet version 8,
-    // so for older wallets, it will need to be added
-    pub async fn fix_spent_at_height(&self) {
-        // First, build an index of all the transaction_ids and the heights at which they were spent.
-        let spent_transaction_id_map: HashMap<_, _> = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .iter()
-            .map(|(transaction_id, wtx)| (*transaction_id, wtx.block_height))
-            .collect();
-
-        // Go over all the sapling notes that might need updating
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .current
-            .values_mut()
-            .for_each(|wtx| {
-                wtx.sapling_notes
-                    .iter_mut()
-                    .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
-                    .for_each(|nd| {
-                        let transaction_id = nd.spent.unwrap().0;
-                        if let Some(height) = spent_transaction_id_map.get(&transaction_id).copied()
-                        {
-                            nd.spent = Some((transaction_id, height.into()));
-                        }
-                    })
-            });
-
-        // Go over all the Utxos that might need updating
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .current
-            .values_mut()
-            .for_each(|wtx| {
-                wtx.transparent_notes
-                    .iter_mut()
-                    .filter(|utxo| utxo.spent.is_some() && utxo.spent_at_height.is_none())
-                    .for_each(|utxo| {
-                        utxo.spent_at_height = spent_transaction_id_map
-                            .get(&utxo.spent.unwrap())
-                            .map(|b| u32::from(*b) as i32);
-                    })
-            });
     }
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
@@ -998,8 +946,6 @@ impl LightWallet {
             )
             .await?;
 
-        info!("{}: Transaction created", now() - start_time);
-        info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
         match self
             .send_to_addresses_inner(transaction, submission_height, broadcast_fn)
@@ -1589,7 +1535,7 @@ impl LightWallet {
                     filtered_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
-                                <D::WalletNote as traits::NoteInterface>::value(notedata)
+                                <D::WalletNote as traits::ShieldedNoteInterface>::value(notedata)
                             } else {
                                 0
                             }

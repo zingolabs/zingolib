@@ -5,8 +5,10 @@ use zcash_primitives::transaction::TxId;
 
 #[derive(Debug)]
 pub enum ZingoLibError {
+    UnknownError,
+    Error(String),
     NoWalletLocation,
-    MetadataUnderflow,
+    MetadataUnderflow(String),
     InternalWriteBufferError(std::io::Error),
     WriteFileError(std::io::Error),
     EmptySaveBuffer,
@@ -20,9 +22,18 @@ pub enum ZingoLibError {
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
 
 impl ZingoLibError {
-    pub fn print_and_pass_error<T>(self) -> ZingoLibResult<T> {
+    pub fn handle<T>(self) -> ZingoLibResult<T> {
         log::error!("{}", self);
-        Err(self)
+
+        #[cfg(feature = "test-features")]
+        {
+            panic!("{}", self);
+        }
+
+        #[cfg(not(feature = "test-features"))]
+        {
+            Err(self)
+        }
     }
 }
 
@@ -30,13 +41,23 @@ impl std::fmt::Display for ZingoLibError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ZingoLibError::*;
         match self {
+            UnknownError => write!(
+                f,
+                "UnknownError",
+            ),
+            Error(string) => write!(
+                f,
+                "Error: {}",
+                string,
+            ),
             NoWalletLocation => write!(
                 f,
                 "No wallet location! (compiled for native rust, wallet location expected)"
             ),
-            MetadataUnderflow => write!(
+            MetadataUnderflow(explanation) => write!(
                 f,
-                "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday."
+                "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
+                explanation,
             ),
             InternalWriteBufferError(err) => write!(
                 f,

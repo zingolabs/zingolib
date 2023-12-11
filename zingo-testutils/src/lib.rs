@@ -206,7 +206,7 @@ pub async fn load_wallet(
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
-        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
+        zingoconfig::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
@@ -404,7 +404,7 @@ pub mod scenarios {
                 regtest_network: zingoconfig::RegtestNetwork,
             ) -> zingoconfig::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
-                zingolib::load_clientconfig(
+                zingoconfig::load_clientconfig(
                     self.server_id.clone(),
                     Some(conf_path),
                     zingoconfig::ChainType::Regtest(regtest_network),
@@ -453,20 +453,10 @@ pub mod scenarios {
         }
         impl TestEnvironmentGenerator {
             pub(crate) fn new(set_lightwalletd_port: Option<portpicker::Port>) -> Self {
-                let zcashd_rpcservice_port = portpicker::pick_unused_port()
-                    .expect("Port unpickable!")
-                    .to_string();
+                let zcashd_rpcservice_port =
+                    TestEnvironmentGenerator::pick_unused_port_to_string(None);
                 let lightwalletd_rpcservice_port =
-                    if let Some(lightwalletd_port) = set_lightwalletd_port {
-                        if !portpicker::is_free(lightwalletd_port) {
-                            panic!("Lightwalletd RPC service port is not free!");
-                        };
-                        lightwalletd_port.to_string()
-                    } else {
-                        portpicker::pick_unused_port()
-                            .expect("Port unpickable!")
-                            .to_string()
-                    };
+                    TestEnvironmentGenerator::pick_unused_port_to_string(set_lightwalletd_port);
                 let regtest_manager = RegtestManager::new(
                     tempdir::TempDir::new("zingo_integration_test")
                         .unwrap()
@@ -526,6 +516,18 @@ pub mod scenarios {
             }
             pub(crate) fn get_lightwalletd_uri(&self) -> http::Uri {
                 self.lightwalletd_uri.clone()
+            }
+            pub fn pick_unused_port_to_string(set_port: Option<portpicker::Port>) -> String {
+                if let Some(port) = set_port {
+                    if !portpicker::is_free(port) {
+                        panic!("Port is not free!");
+                    };
+                    port.to_string()
+                } else {
+                    portpicker::pick_unused_port()
+                        .expect("Port unpickable!")
+                        .to_string()
+                }
             }
         }
     }

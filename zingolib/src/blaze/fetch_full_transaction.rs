@@ -5,8 +5,8 @@ use crate::{
         data::OutgoingTxData,
         keys::{address_from_pubkeyhash, unified::WalletCapability},
         traits::{
-            self as zingo_traits, Bundle as _, DomainWalletExt, NoteInterface as _, Recipient as _,
-            ShieldedOutputExt as _, Spend as _, ToBytes as _,
+            self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
+            ShieldedNoteInterface as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
         },
         transactions::TransactionMetadataSet,
     },
@@ -421,20 +421,16 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .add_new_spent(
-                            transaction.txid(),
-                            transaction_block_height,
-                            true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
-                            block_time,
-                            (*nf).into(),
-                            *value,
-                            *transaction_id,
-                            *output_index,
-                        )
-                        .await;
+                    self.transaction_metadata_set.write().await.add_new_spent(
+                        transaction.txid(),
+                        transaction_block_height,
+                        true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
+                        block_time,
+                        (*nf).into(),
+                        *value,
+                        *transaction_id,
+                        *output_index,
+                    );
                 }
             }
         }
@@ -495,7 +491,7 @@ impl TransactionContext {
                     }
                     Err(e) => {
                         let _memo_error: ZingoLibResult<()> =
-                            ZingoLibError::CouldNotDecodeMemo(e).print_and_pass_error();
+                            ZingoLibError::CouldNotDecodeMemo(e).handle();
                     }
                 }
             }
