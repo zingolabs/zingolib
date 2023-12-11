@@ -3401,9 +3401,11 @@ mod slow {
         match what {
             Ok(_) => {
                 println!("synced in less than {} millis ", timeout);
+                dbg!("syncedd");
             }
             Err(_) => {
                 println!("interrupted after {} millis ", timeout);
+                dbg!("interruptedidd!");
             }
         }
 
