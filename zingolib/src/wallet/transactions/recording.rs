@@ -252,14 +252,12 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
-                    dbg!(&confirmed_spent_note);
                     *confirmed_spent_note.spent_mut() = Some((spending_txid, height.into()));
                     *confirmed_spent_note.pending_spent_mut() = None;
-                    dbg!(&confirmed_spent_note);
                     
                     confirmed_spent_note.value()
-                } else {0} // eror handling
-            } else {0} // eror handling
+                } else {ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?}
+            } else {ZingoLibError::NoSuchTxId(spending_txid).handle()?}
         } else if let Some(height) = status.get_broadcast_unconfirmed_height() {
             // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
             if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
@@ -270,9 +268,9 @@ impl TransactionMetadataSet {
                     *unconfirmed_spent_note.pending_spent_mut() =
                         Some((spending_txid, u32::from(height)));
                     unconfirmed_spent_note.value()
-                } else {0} // eror handling
-            } else {0} // eror handling
-        } else {0}) // TODO add error handling
+                } else {ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?}
+            } else {ZingoLibError::NoSuchTxId(spending_txid).handle()?}
+        } else {ZingoLibError::UnknownError.handle()?}) // TODO add error handling
     }
     
     pub fn add_taddr_spent(
