@@ -242,7 +242,7 @@ impl RegtestManager {
     pub fn get_chain_tip(&self) -> Result<std::process::Output, std::io::Error> {
         self.get_cli_handle().arg("getchaintips").output()
     }
-    fn prepare_working_directories(&self) {
+    fn clean_regtest_data(&self) {
         // remove contents of existing data directories
         let zcd_subdir = &self.zcashd_data_dir.join("regtest");
 
@@ -262,7 +262,6 @@ impl RegtestManager {
 
         let zingo_file_one = &self.zingo_datadir.join("zingo-wallet.dat");
         let zingo_file_two = &self.zingo_datadir.join("zingo-wallet.debug.log");
-
         std::process::Command::new("rm")
             .arg(zingo_file_one)
             .output()
@@ -350,7 +349,7 @@ impl RegtestManager {
         clean_regtest_data: bool,
     ) -> Result<ChildProcessHandler, LaunchChildProcessError> {
         if clean_regtest_data {
-            self.prepare_working_directories();
+            self.clean_regtest_data();
         }
 
         let (mut zcashd_handle, mut zcashd_logfile) = self.zcashd_launch();
@@ -444,9 +443,6 @@ impl RegtestManager {
             lightwalletd: lightwalletd_child,
             zcash_cli_command: self.get_cli_handle(),
         })
-    }
-    pub fn get_zingo_data_dir(&self) -> PathBuf {
-        self.zingo_datadir.clone()
     }
     pub fn get_current_height(&self) -> Result<u32, String> {
         let wut = self
