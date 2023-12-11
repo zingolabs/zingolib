@@ -263,11 +263,8 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
-                    dbg!("marking spent");
-                    dbg!(&confirmed_spent_note.spent());
                     *confirmed_spent_note.spent_mut() = Some((spending_txid, height.into()));
                     *confirmed_spent_note.pending_spent_mut() = None;
-                    dbg!(&confirmed_spent_note.spent());
 
                     confirmed_spent_note.value()
                 } else {

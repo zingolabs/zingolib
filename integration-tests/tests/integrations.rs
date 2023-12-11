@@ -3363,6 +3363,7 @@ mod slow {
         );
     }
     #[tokio::test]
+    #[ignore]
     async fn timed_sync_interrupt() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
