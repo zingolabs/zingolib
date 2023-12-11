@@ -31,7 +31,10 @@ impl ZingoLibError {
             panic!("{}", self);
         }
 
-        Err(self)
+        #[cfg(not(feature = "test-features"))]
+        {
+            Err(self)
+        }
     }
 }
 
