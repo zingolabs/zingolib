@@ -206,13 +206,44 @@ impl TransactionMetadataSet {
         status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
-        value: u64,
+        _: u64,
         source_txid: TxId,
         output_index: u32,
     ) where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
+        // Mark the source note as spent
+        let value = if let Some(height) = status.get_confirmed_height() {
+            // ie remove_witness_mark_sapling or _orchard
+            self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index);
+            if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
+                if let Some(confirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
+                    .iter_mut()
+                    .find(|note| note.nullifier() == Some(spent_nullifier))
+                {
+                    dbg!(&confirmed_spent_note);
+                    *confirmed_spent_note.spent_mut() = Some((spending_txid, height.into()));
+                    *confirmed_spent_note.pending_spent_mut() = None;
+                    dbg!(&confirmed_spent_note);
+                    
+                    confirmed_spent_note.value()
+                } else {0} // eror handling
+            } else {0} // eror handling
+        } else if let Some(height) = status.get_broadcast_unconfirmed_height() {
+            // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
+            if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
+                if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
+                    .iter_mut()
+                    .find(|note| note.nullifier() == Some(spent_nullifier))
+                {
+                    *unconfirmed_spent_note.pending_spent_mut() =
+                        Some((spending_txid, u32::from(height)));
+                    unconfirmed_spent_note.value()
+                } else {0} // eror handling
+            } else {0} // eror handling
+        } else {0}; // TODO add error handling
+        
         // Record this Tx as having spent some funds
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&spending_txid, status, timestamp as u64);
@@ -228,23 +259,6 @@ impl TransactionMetadataSet {
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
         self.check_notes_mark_change(&spending_txid);
-
-        // Mark the source note as spent
-        if let Some(height) = status.get_confirmed_height() {
-            // ie remove_witness_mark_sapling or _orchard
-            self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index);
-        } else if let Some(height) = status.get_broadcast_unconfirmed_height() {
-            // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
-            if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
-                if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
-                    .iter_mut()
-                    .find(|note| note.nullifier() == Some(spent_nullifier))
-                {
-                    *unconfirmed_spent_note.pending_spent_mut() =
-                        Some((spending_txid, u32::from(height)));
-                }
-            }
-        }
     }
 
     // Will mark a note as having been spent at the supplied height and spent_txid.
@@ -258,37 +272,34 @@ impl TransactionMetadataSet {
         spent_at_height: BlockHeight,
         output_index: u32,
     ) -> ZingoLibResult<u64> {
-        match self.current.get_mut(&source_txid) {
-            None => ZingoLibError::NoSuchTxId(source_txid).handle(),
-            Some(transaction_metadata) => match spent_nullifier {
-                PoolNullifier::Sapling(_sapling_nullifier) => {
-                    if let Some(note_datum) = transaction_metadata
-                        .sapling_notes
-                        .iter_mut()
-                        .find(|n| n.output_index == output_index)
-                    {
-                        note_datum.spent = Some((*spending_txid, spent_at_height.into()));
-                        note_datum.unconfirmed_spent = None;
-                        Ok(note_datum.note.value().inner())
-                    } else {
-                        ZingoLibError::NoSuchSaplingOutputInTxId(source_txid, output_index).handle()
-                    }
-                }
-                PoolNullifier::Orchard(_orchard_nullifier) => {
-                    if let Some(note_datum) = transaction_metadata
-                        .orchard_notes
-                        .iter_mut()
-                        .find(|n| n.output_index == output_index)
-                    {
-                        note_datum.spent = Some((*spending_txid, spent_at_height.into()));
-                        note_datum.unconfirmed_spent = None;
-                        Ok(note_datum.note.value().inner())
-                    } else {
-                        ZingoLibError::NoSuchOrchardOutputInTxId(source_txid, output_index).handle()
-                    }
-                }
-            },
-        }
+        Ok(0)
+        // match self.current.get_mut(&source_txid) {
+        //     None => ZingoLibError::NoSuchTxId(source_txid).handle(),
+        //     Some(transaction_metadata) => match spent_nullifier {
+        //         PoolNullifier::Sapling(_sapling_nullifier) => {
+        //             if let Some(note_datum) = transaction_metadata
+        //                 .sapling_notes
+        //                 .iter_mut()
+        //                 .find(|n| n.output_index == output_index)
+        //             {
+        //                 Ok(note_datum.note.value().inner())
+        //             } else {
+        //                 ZingoLibError::NoSuchSaplingOutputInTxId(source_txid, output_index).handle()
+        //             }
+        //         }
+        //         PoolNullifier::Orchard(_orchard_nullifier) => {
+        //             if let Some(note_datum) = transaction_metadata
+        //                 .orchard_notes
+        //                 .iter_mut()
+        //                 .find(|n| n.output_index == output_index)
+        //             {
+        //                 Ok(note_datum.note.value().inner())
+        //             } else {
+        //                 ZingoLibError::NoSuchOrchardOutputInTxId(source_txid, output_index).handle()
+        //             }
+        //         }
+        //     },
+        // }
     }
 
     pub fn add_taddr_spent(
