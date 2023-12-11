@@ -14,8 +14,9 @@ pub enum ZingoLibError {
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
     NoSuchTxId(TxId),
-    NoSuchSaplingOutputInTxId(TxId, u32),
-    NoSuchOrchardOutputInTxId(TxId, u32),
+    NoSuchSaplingOutputInTx(TxId, u32),
+    NoSuchOrchardOutputInTx(TxId, u32),
+    NoSuchNullifierInTx(TxId),
     CouldNotDecodeMemo(std::io::Error),
 }
 
@@ -83,16 +84,21 @@ impl std::fmt::Display for ZingoLibError {
                 "Cant find TxId {}!",
                 txid,
             ),
-            NoSuchSaplingOutputInTxId(txid, output_index) => write!(
+            NoSuchSaplingOutputInTx(txid, output_index) => write!(
                 f,
                 "Cant find note with sapling output_index {} in TxId {}",
                 output_index,
                 txid,
             ),
-            NoSuchOrchardOutputInTxId(txid, output_index) => write!(
+            NoSuchOrchardOutputInTx(txid, output_index) => write!(
                 f,
                 "Cant find note with orchard output_index {} in TxId {}",
                 output_index,
+                txid,
+            ),
+            NoSuchNullifierInTx(txid) => write!(
+                f,
+                "Cant find that Nullifier in TxId {}",
                 txid,
             ),
             CouldNotDecodeMemo(err) => write!(
