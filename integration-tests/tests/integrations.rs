@@ -3389,6 +3389,7 @@ mod slow {
                 .await
                 .unwrap();
         }
+        zingo_testutils::increase_server_height(&regtest_manager, 1).await;
 
         let _synciiyur = recipient.do_sync(false).await;
         let summ_sim = recipient.do_list_txsummaries().await;
@@ -3396,7 +3397,7 @@ mod slow {
 
         recipient.clear_state().await;
         dbg!("finished basic sync. restarting for interrupted data");
-        let timeout = 32;
+        let timeout = 28;
         let what = sync_with_timeout_millis(&recipient, timeout).await;
         match what {
             Ok(_) => {
