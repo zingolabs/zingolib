@@ -4192,6 +4192,7 @@ dependencies = [
  "serde_json",
  "tempdir",
  "tokio",
+ "tonic",
  "tracing",
  "zcash_address",
  "zcash_primitives",
