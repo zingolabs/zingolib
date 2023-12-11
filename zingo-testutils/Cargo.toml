@@ -16,6 +16,7 @@ zingolib = { path = "../zingolib" }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 orchard = { workspace = true }
+futures = { workspace = true }
 portpicker = { workspace = true}
 tempdir = { workspace = true }
 incrementalmerkletree = { workspace = true }

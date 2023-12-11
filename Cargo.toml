@@ -23,6 +23,7 @@ tonic-build = "0.7"
 tempdir = "0.3"
 portpicker = "0.1"
 incrementalmerkletree = { version = "0.5" }
+futures = "0.3.15"
 shardtree = "0.1"
 build_utils = { path = "./build_utils" }
 http = "0.2.4"
