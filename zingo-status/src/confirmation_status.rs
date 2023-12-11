@@ -1,13 +1,9 @@
 use zcash_primitives::consensus::BlockHeight;
 
-#[allow(warnings)]
-pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = (16 + 0 + 0 + 0 + 0);
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
-    Local,
     /// we may know when it entered the mempool.
-    Broadcast(Option<BlockHeight>),
+    Broadcast(BlockHeight),
     /// confirmed on blockchain implies a height. this data piece will eventually be a block height
     Confirmed(BlockHeight),
 }
@@ -18,11 +14,7 @@ impl ConfirmationStatus {
         unconfirmed: bool,
     ) -> Self {
         if unconfirmed {
-            if u32::from(blockheight) == 0 {
-                Self::Local
-            } else {
-                Self::Broadcast(Some(blockheight))
-            }
+            Self::Broadcast(blockheight)
         } else {
             Self::Confirmed(blockheight)
         }
@@ -47,17 +39,13 @@ impl ConfirmationStatus {
     }
     pub fn is_broadcast_unconfirmed_after(&self, height: &BlockHeight) -> bool {
         match self {
-            Self::Broadcast(Some(blockheight)) => blockheight <= height,
+            Self::Broadcast(blockheight) => blockheight <= height,
             _ => false,
         }
     }
     pub fn is_expired(&self, cutoff: &BlockHeight) -> bool {
         match self {
-            Self::Local => true,
-            Self::Broadcast(option_blockheight) => match option_blockheight {
-                None => true,
-                Some(blockheight) => blockheight < cutoff,
-            },
+            Self::Broadcast(blockheight) => blockheight < cutoff,
             Self::Confirmed(_) => false,
         }
     }
@@ -69,17 +57,14 @@ impl ConfirmationStatus {
     }
     pub fn get_broadcast_unconfirmed_height(&self) -> Option<BlockHeight> {
         match self {
-            Self::Broadcast(Some(blockheight)) => Some(*blockheight),
+            Self::Broadcast(blockheight) => Some(*blockheight),
             _ => None,
         }
     }
     // this function and the placeholder is not a preferred pattern. please use match whenever possible.
     pub fn get_height(&self) -> BlockHeight {
         match self {
-            Self::Local => BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL),
-            Self::Broadcast(option_blockheight) => {
-                option_blockheight.unwrap_or(BlockHeight::from_u32(BLOCKHEIGHT_PLACEHOLDER_LOCAL))
-            }
+            Self::Broadcast(blockheight) => *blockheight,
             Self::Confirmed(blockheight) => *blockheight,
         }
     }
@@ -89,13 +74,9 @@ impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ConfirmationStatus::*;
         match self {
-            Local => write!(f, "Transaction not published."),
-            Broadcast(option_blockheight) => match option_blockheight {
-                None => write!(f, "Transaction sent to mempool at unknown height.",),
-                Some(blockheight) => {
-                    write!(f, "Transaction sent to mempool at height {}.", blockheight)
-                }
-            },
+            Broadcast(blockheight) => {
+                write!(f, "Transaction sent to mempool at height {}.", blockheight)
+            }
             Confirmed(blockheight) => {
                 write!(
                     f,
