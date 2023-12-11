@@ -1,13 +1,16 @@
 pub mod data;
 pub use incrementalmerkletree;
-use zcash_address::unified::{Fvk, Ufvk};
-use zingolib::wallet::keys::unified::WalletCapability;
-use zingolib::wallet::WalletBase;
+// #[cfg(features = "grpc-proxy")]
+pub mod grpc_proxy;
 pub mod regtest;
+
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
 use std::time::Duration;
+use zcash_address::unified::{Fvk, Ufvk};
+use zingolib::wallet::keys::unified::WalletCapability;
+use zingolib::wallet::WalletBase;
 
 use json::JsonValue;
 use log::debug;
