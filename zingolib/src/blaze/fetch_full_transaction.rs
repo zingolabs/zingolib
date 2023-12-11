@@ -83,10 +83,10 @@ impl TransactionContext {
         )
         .await;
 
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         self.scan_sapling_bundle(
             transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -95,8 +95,7 @@ impl TransactionContext {
         .await;
         self.scan_orchard_bundle(
             transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -342,8 +341,7 @@ impl TransactionContext {
     async fn scan_sapling_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        pending: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -351,8 +349,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
-            height,
-            pending,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -364,8 +361,7 @@ impl TransactionContext {
     async fn scan_orchard_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        pending: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -373,8 +369,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<OrchardDomain>(
             transaction,
-            height,
-            pending,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -392,8 +387,7 @@ impl TransactionContext {
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
-        transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed" TODO note that this is an 'unconfirmed' assertion
-        pending: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -408,10 +402,6 @@ impl TransactionContext {
         type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(
-            transaction_block_height,
-            pending,
-        );
         if status.is_broadcast() {
             let unspent_nullifiers = self
                 .transaction_metadata_set
@@ -426,7 +416,6 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
-                    let status = ConfirmationStatus::Broadcast(Some(transaction_block_height));
                     let _ = self
                         .transaction_metadata_set
                         .write()
@@ -454,7 +443,7 @@ impl TransactionContext {
                 .flat_map(|bundle| bundle.output_elements().into_iter())
                 .map(|output| {
                     (
-                        output.domain(transaction_block_height, self.config.chain),
+                        output.domain(status.get_height(), self.config.chain),
                         output.clone(),
                     )
                 })
@@ -475,13 +464,13 @@ impl TransactionContext {
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-            if pending {
+            if let Some(height) = status.get_broadcast_unconfirmed_height() {
                 self.transaction_metadata_set
                     .write()
                     .await
                     .add_pending_note::<D>(
                         transaction.txid(),
-                        transaction_block_height,
+                        height,
                         block_time as u64,
                         note.clone(),
                         to,
@@ -514,7 +503,7 @@ impl TransactionContext {
                     D,
                     <FnGenBundle<D> as zingo_traits::Bundle<D>>::Output,
                 >(
-                    &output.domain(transaction_block_height, self.config.chain),
+                    &output.domain(status.get_height(), self.config.chain),
                     &ovk,
                     &output,
                     &output.value_commitment(),
