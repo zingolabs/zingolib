@@ -262,27 +262,27 @@ impl TransactionMetadataSet {
             None => ZingoLibError::NoSuchTxId(source_txid).handle(),
             Some(transaction_metadata) => match spent_nullifier {
                 PoolNullifier::Sapling(_sapling_nullifier) => {
-                    if let Some(sapling_note_data) = transaction_metadata
+                    if let Some(note_datum) = transaction_metadata
                         .sapling_notes
                         .iter_mut()
                         .find(|n| n.output_index == output_index)
                     {
-                        sapling_note_data.spent = Some((*spending_txid, spent_at_height.into()));
-                        sapling_note_data.unconfirmed_spent = None;
-                        Ok(sapling_note_data.note.value().inner())
+                        note_datum.spent = Some((*spending_txid, spent_at_height.into()));
+                        note_datum.unconfirmed_spent = None;
+                        Ok(note_datum.note.value().inner())
                     } else {
                         ZingoLibError::NoSuchSaplingOutputInTxId(source_txid, output_index).handle()
                     }
                 }
                 PoolNullifier::Orchard(_orchard_nullifier) => {
-                    if let Some(orchard_note_data) = transaction_metadata
+                    if let Some(note_datum) = transaction_metadata
                         .orchard_notes
                         .iter_mut()
                         .find(|n| n.output_index == output_index)
                     {
-                        orchard_note_data.spent = Some((*spending_txid, spent_at_height.into()));
-                        orchard_note_data.unconfirmed_spent = None;
-                        Ok(orchard_note_data.note.value().inner())
+                        note_datum.spent = Some((*spending_txid, spent_at_height.into()));
+                        note_datum.unconfirmed_spent = None;
+                        Ok(note_datum.note.value().inner())
                     } else {
                         ZingoLibError::NoSuchOrchardOutputInTxId(source_txid, output_index).handle()
                     }
