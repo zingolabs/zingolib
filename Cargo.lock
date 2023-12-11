@@ -1687,7 +1687,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2145869435ace5ea6ea3d35f59be559317ec9a0d04e1812d5f185a87b6d36f1a"
 dependencies = [
- "nonempty",
+ "nonempty 0.7.0",
 ]
 
 [[package]]
@@ -1781,6 +1781,12 @@ name = "nonempty"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9e591e719385e6ebaeb5ce5d3887f7d5676fceca6411d1925ccc95745f3d6f7"
+
+[[package]]
+name = "nonempty"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "995defdca0a589acfdd1bd2e8e3b896b4d4f7675a31fd14c32611440c7f608e6"
 
 [[package]]
 name = "nu-ansi-term"
@@ -1916,7 +1922,7 @@ dependencies = [
  "incrementalmerkletree",
  "lazy_static",
  "memuse",
- "nonempty",
+ "nonempty 0.7.0",
  "pasta_curves",
  "rand 0.8.5",
  "reddsa",
@@ -4053,7 +4059,7 @@ version = "0.2.0"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.2#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "byteorder",
- "nonempty",
+ "nonempty 0.7.0",
 ]
 
 [[package]]
@@ -4092,7 +4098,7 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "memuse",
- "nonempty",
+ "nonempty 0.7.0",
  "orchard",
  "rand 0.8.5",
  "rand_core 0.6.4",
@@ -4242,7 +4248,7 @@ dependencies = [
  "lazy_static",
  "log",
  "log4rs",
- "nonempty",
+ "nonempty 0.9.0",
  "orchard",
  "pairing",
  "portpicker",
