@@ -28,7 +28,7 @@ impl ConfirmationStatus {
             Self::Confirmed(blockheight)
         }
     }
-    pub fn is_in_mempool(&self) -> bool {
+    pub fn is_broadcast(&self) -> bool {
         matches!(self, Self::Broadcast(_))
     }
     pub fn is_confirmed(&self) -> bool {
