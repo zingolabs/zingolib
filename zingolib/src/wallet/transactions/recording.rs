@@ -261,6 +261,14 @@ impl TransactionMetadataSet {
         self.check_notes_mark_change(&spending_txid);
     }
 
+    pub fn mark_note_as_spent<D: DomainWalletExt> (
+        &mut self,
+    ) -> ZingoLibResult<u64> where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient, {
+        Ok(0)
+        }
+    
     // Will mark a note as having been spent at the supplied height and spent_txid.
     // Takes the nullifier of the spent note, the note's index in its containing transaction,
     // as well as the txid of its containing transaction. tODO: make generic
@@ -272,34 +280,33 @@ impl TransactionMetadataSet {
         spent_at_height: BlockHeight,
         output_index: u32,
     ) -> ZingoLibResult<u64> {
-        Ok(0)
-        // match self.current.get_mut(&source_txid) {
-        //     None => ZingoLibError::NoSuchTxId(source_txid).handle(),
-        //     Some(transaction_metadata) => match spent_nullifier {
-        //         PoolNullifier::Sapling(_sapling_nullifier) => {
-        //             if let Some(note_datum) = transaction_metadata
-        //                 .sapling_notes
-        //                 .iter_mut()
-        //                 .find(|n| n.output_index == output_index)
-        //             {
-        //                 Ok(note_datum.note.value().inner())
-        //             } else {
-        //                 ZingoLibError::NoSuchSaplingOutputInTxId(source_txid, output_index).handle()
-        //             }
-        //         }
-        //         PoolNullifier::Orchard(_orchard_nullifier) => {
-        //             if let Some(note_datum) = transaction_metadata
-        //                 .orchard_notes
-        //                 .iter_mut()
-        //                 .find(|n| n.output_index == output_index)
-        //             {
-        //                 Ok(note_datum.note.value().inner())
-        //             } else {
-        //                 ZingoLibError::NoSuchOrchardOutputInTxId(source_txid, output_index).handle()
-        //             }
-        //         }
-        //     },
-        // }
+        match self.current.get_mut(&source_txid) {
+            None => ZingoLibError::NoSuchTxId(source_txid).handle(),
+            Some(transaction_metadata) => match spent_nullifier {
+                PoolNullifier::Sapling(_sapling_nullifier) => {
+                    if let Some(note_datum) = transaction_metadata
+                        .sapling_notes
+                        .iter_mut()
+                        .find(|n| n.output_index == output_index)
+                    {
+                        Ok(note_datum.note.value().inner())
+                    } else {
+                        ZingoLibError::NoSuchSaplingOutputInTxId(source_txid, output_index).handle()
+                    }
+                }
+                PoolNullifier::Orchard(_orchard_nullifier) => {
+                    if let Some(note_datum) = transaction_metadata
+                        .orchard_notes
+                        .iter_mut()
+                        .find(|n| n.output_index == output_index)
+                    {
+                        Ok(note_datum.note.value().inner())
+                    } else {
+                        ZingoLibError::NoSuchOrchardOutputInTxId(source_txid, output_index).handle()
+                    }
+                }
+            },
+        }
     }
 
     pub fn add_taddr_spent(
