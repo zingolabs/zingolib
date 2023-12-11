@@ -11,6 +11,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+clap = "4.4"
 zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
 zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
