@@ -165,7 +165,7 @@ impl TransactionMetadataSet {
 
     // Records a TxId as having spent some nullifiers from the wallet.
     #[allow(clippy::too_many_arguments)]
-    pub fn found_spend_nullifier(
+    pub fn found_spent_nullifier(
         &mut self,
         spending_txid: TxId,
         status: ConfirmationStatus,
@@ -174,7 +174,7 @@ impl TransactionMetadataSet {
         value: u64,
         source_txid: TxId,
         output_index: u32,
-    ) {
+    ) -> ZingoLibResult<()> {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => self
                 .found_spent_nullifier_internal::<OrchardDomain>(
@@ -209,13 +209,20 @@ impl TransactionMetadataSet {
         _: u64,
         source_txid: TxId,
         output_index: u32,
-    ) where
+    ) -> ZingoLibResult<()>
+    where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
         // Mark the source note as spent
-        let value = self.mark_note_as_spent::<D>(spent_nullifier,spending_txid,status,source_txid,output_index).expect("aight"); // todo error handling
-        
+        let value = self.mark_note_as_spent::<D>(
+            spent_nullifier,
+            spending_txid,
+            status,
+            source_txid,
+            output_index,
+        )?; // todo error handling
+
         // Record this Tx as having spent some funds
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&spending_txid, status, timestamp as u64);
@@ -231,19 +238,23 @@ impl TransactionMetadataSet {
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
         self.check_notes_mark_change(&spending_txid);
+
+        Ok(())
     }
 
     // Will mark a note as having been spent at the supplied height and spent_txid.
-    pub fn mark_note_as_spent<D: DomainWalletExt> (
+    pub fn mark_note_as_spent<D: DomainWalletExt>(
         &mut self,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         spending_txid: TxId,
         status: ConfirmationStatus,
         source_txid: TxId,
         output_index: u32,
-    ) -> ZingoLibResult<u64> where
+    ) -> ZingoLibResult<u64>
+    where
         <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient, {
+        <D as Domain>::Recipient: traits::Recipient,
+    {
         Ok(if let Some(height) = status.get_confirmed_height() {
             // ie remove_witness_mark_sapling or _orchard
             self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index);
@@ -254,10 +265,14 @@ impl TransactionMetadataSet {
                 {
                     *confirmed_spent_note.spent_mut() = Some((spending_txid, height.into()));
                     *confirmed_spent_note.pending_spent_mut() = None;
-                    
+
                     confirmed_spent_note.value()
-                } else {ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?}
-            } else {ZingoLibError::NoSuchTxId(spending_txid).handle()?}
+                } else {
+                    ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
+                }
+            } else {
+                ZingoLibError::NoSuchTxId(spending_txid).handle()?
+            }
         } else if let Some(height) = status.get_broadcast_unconfirmed_height() {
             // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
             if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
@@ -268,11 +283,17 @@ impl TransactionMetadataSet {
                     *unconfirmed_spent_note.pending_spent_mut() =
                         Some((spending_txid, u32::from(height)));
                     unconfirmed_spent_note.value()
-                } else {ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?}
-            } else {ZingoLibError::NoSuchTxId(spending_txid).handle()?}
-        } else {ZingoLibError::UnknownError.handle()?}) // TODO add error handling
+                } else {
+                    ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
+                }
+            } else {
+                ZingoLibError::NoSuchTxId(spending_txid).handle()?
+            }
+        } else {
+            ZingoLibError::UnknownError.handle()?
+        }) // todO add special error variant
     }
-    
+
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,

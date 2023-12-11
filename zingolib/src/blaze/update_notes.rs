@@ -145,7 +145,7 @@ impl UpdateNotes {
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         let status = ConfirmationStatus::Confirmed(spent_at_height);
-                        wallet_transactions_write_unlocked.found_spend_nullifier(
+                        let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
                             transaction_id_spent_in,
                             status,
                             ts,
