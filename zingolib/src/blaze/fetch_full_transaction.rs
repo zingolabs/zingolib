@@ -392,7 +392,7 @@ impl TransactionContext {
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
-        transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed"
+        transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed" TODO note that this is an 'unconfirmed' assertion
         pending: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
