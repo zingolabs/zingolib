@@ -3395,6 +3395,7 @@ mod slow {
         let bala_sim = recipient.do_balance().await;
 
         recipient.clear_state().await;
+        dbg!("finished basic sync. restarting for interrupted data");
         let timeout = 32;
         let what = sync_with_timeout_millis(&recipient, timeout).await;
         match what {
