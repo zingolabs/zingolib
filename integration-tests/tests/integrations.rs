@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
@@ -16,12 +15,13 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client,
+    self, build_fvk_client, check_transaction_equality,
     data::{
         self, block_rewards,
         seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
     },
     increase_height_and_wait_for_client,
+    interrupts::sync_with_timeout_millis,
     regtest::get_cargo_manifest_dir,
     scenarios, BASE_HEIGHT,
 };
@@ -3361,5 +3361,60 @@ mod slow {
             recipient_loaded.do_balance().await.orchard_balance,
             Some(890_000)
         );
+    }
+    #[tokio::test]
+    async fn timed_sync_interrupt() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        for i in 1..4 {
+            let _ = faucet.do_sync(false).await;
+            faucet
+                .do_send(vec![(
+                    &get_base_address!(recipient, "sapling"),
+                    10_100,
+                    None,
+                )])
+                .await
+                .unwrap();
+            let chainwait: u32 = 6;
+            let amount: u64 = u64::from(chainwait * i);
+            zingo_testutils::increase_server_height(&regtest_manager, chainwait).await;
+            let _ = recipient.do_sync(false).await;
+            recipient
+                .do_send(vec![(
+                    &get_base_address!(recipient, "unified"),
+                    amount,
+                    None,
+                )])
+                .await
+                .unwrap();
+        }
+
+        let _synciiyur = recipient.do_sync(false).await;
+        let summ_sim = recipient.do_list_txsummaries().await;
+        let bala_sim = recipient.do_balance().await;
+
+        recipient.clear_state().await;
+        let timeout = 32;
+        let what = sync_with_timeout_millis(&recipient, timeout).await;
+        match what {
+            Ok(_) => {
+                println!("synced in less than {} millis ", timeout);
+            }
+            Err(_) => {
+                println!("interrupted after {} millis ", timeout);
+            }
+        }
+
+        // let summ_int = recipient.do_list_txsummaries().await;
+        // let bala_int = recipient.do_balance().await;
+        let _synciiyur = recipient.do_sync(false).await;
+        let summ_syn = recipient.do_list_txsummaries().await;
+        let bala_syn = recipient.do_balance().await;
+
+        println!("normal summaries: {:#?}", summ_sim);
+        println!("post interrupted_sync summaries: {:#?}", summ_syn);
+        assert_eq!(bala_sim, bala_syn);
+        assert_eq!(summ_sim, summ_syn);
     }
 }
