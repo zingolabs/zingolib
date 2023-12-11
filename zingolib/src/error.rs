@@ -31,23 +31,7 @@ impl ZingoLibError {
             panic!("{}", self);
         }
 
-        #[cfg(not(feature = "test-features"))]
-        {
-            Err(self)
-        }
-    }
-    pub fn handle_or_panic<T>(self) -> ZingoLibResult<T> {
-        log::error!("{}", self);
-
-        #[cfg(debug_assertions)]
-        {
-            panic!("{}", self);
-        }
-
-        #[cfg(not(debug_assertions))]
-        {
-            Err(self)
-        }
+        Err(self)
     }
 }
 

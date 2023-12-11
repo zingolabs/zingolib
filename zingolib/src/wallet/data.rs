@@ -982,7 +982,7 @@ impl TransactionMetadata {
                 self.total_change_returned(),
                 self,
             ))
-            .handle_or_panic()
+            .handle()
         }
     }
 
