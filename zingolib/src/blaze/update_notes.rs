@@ -132,17 +132,6 @@ impl UpdateNotes {
                         let mut wallet_transactions_write_unlocked =
                             wallet_transactions.write().await;
 
-                        let value = 0;
-                        // wallet_traxxxnsactions_write_unlocked
-                        // .process_spent_note(
-                        //     transaction_id_spent_from,
-                        //     &maybe_spend_nullifier,
-                        //     &transaction_id_spent_in,
-                        //     spent_at_height,
-                        //     output_index,
-                        // )
-                        // .unwrap_or(0);
-
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         let status = ConfirmationStatus::Confirmed(spent_at_height);
                         let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
@@ -150,7 +139,6 @@ impl UpdateNotes {
                             status,
                             ts,
                             maybe_spend_nullifier,
-                            value,
                             transaction_id_spent_from,
                             output_index,
                         );

@@ -418,7 +418,7 @@ impl TransactionContext {
                 .into_iter()
                 .flat_map(|bundle| bundle.spend_elements().into_iter())
             {
-                if let Some((nf, value, transaction_id, output_index)) = unspent_nullifiers
+                if let Some((nf, _value, transaction_id, output_index)) = unspent_nullifiers
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
@@ -432,7 +432,6 @@ impl TransactionContext {
                             status,
                             block_time,
                             (*nf).into(),
-                            *value,
                             *transaction_id,
                             *output_index,
                         );

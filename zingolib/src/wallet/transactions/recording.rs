@@ -171,7 +171,6 @@ impl TransactionMetadataSet {
         status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: PoolNullifier,
-        value: u64,
         source_txid: TxId,
         output_index: u32,
     ) -> ZingoLibResult<()> {
@@ -182,7 +181,6 @@ impl TransactionMetadataSet {
                     status,
                     timestamp,
                     spent_nullifier,
-                    value,
                     source_txid,
                     output_index,
                 ),
@@ -192,7 +190,6 @@ impl TransactionMetadataSet {
                     status,
                     timestamp,
                     spent_nullifier,
-                    value,
                     source_txid,
                     output_index,
                 ),
@@ -206,7 +203,6 @@ impl TransactionMetadataSet {
         status: ConfirmationStatus,
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
-        _: u64,
         source_txid: TxId,
         output_index: u32,
     ) -> ZingoLibResult<()>
