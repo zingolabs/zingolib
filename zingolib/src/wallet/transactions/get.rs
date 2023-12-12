@@ -139,9 +139,9 @@ fn test_get_some_txid_from_highest_wallet_block() {
     tms.current.insert(
         txid_1,
         TransactionMetadata::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Broadcast(Some(
+            zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
                 BlockHeight::from_u32(3_200_000),
-            )),
+            ),
             100,
             &txid_1,
         ),

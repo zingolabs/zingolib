@@ -11,6 +11,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+clap = "4.4"
 zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
 zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
@@ -30,7 +31,6 @@ http-body = "0.4.4"
 tonic = {version = "0.7.0", features = ["tls", "tls-roots", "tls-webpki-roots"]}
 prost = "0.10.0"
 tower = { version = "0.4" }
-json = "0.12.4"
 
 [profile.release]
 debug = false

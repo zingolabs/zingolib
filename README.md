@@ -36,7 +36,7 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 ```
 git clone https://github.com/zingolabs/zingolib.git
 cd zingolib
-cargo build --release
+cargo build --release --package zingo-cli
 ./target/release/zingo-cli --data-dir /path/to/data_directory/
 ```
 
