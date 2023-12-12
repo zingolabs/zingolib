@@ -68,11 +68,13 @@ pub fn build_clap_app() -> clap::ArgMatches {
         ).get_matches()
 }
 
-// Custom function to parse a string into an http::Uri
+/// Custom function to parse a string into an http::Uri
 fn parse_uri(s: &str) -> Result<http::Uri, String> {
     s.parse::<http::Uri>().map_err(|e| e.to_string())
 }
-// Custom function to parse a string into an http::Uri
+/// Custom function to parse a string into a compliant ZIP32/BIP39 mnemonic phrase
+/// currently this is just a whitespace delimited string of 24 words.  I am
+/// poking around to use the actual BIP39 parser (presumably from librustzcash).
 fn parse_seed(s: &str) -> Result<String, String> {
     if let Ok(s) = s.parse::<String>() {
         let count = s.split_whitespace().count();
