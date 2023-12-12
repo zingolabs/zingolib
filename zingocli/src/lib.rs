@@ -42,6 +42,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
+                .value_parser(clap::value_parser!(u32))
                 .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction."))
             .arg(Arg::new("server")
                 .long("server")
@@ -280,9 +281,9 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let from = matches.get_one::<&str>("from");
+        let from = matches.get_one::<String>("from");
         let maybe_birthday = matches
-            .get_one::<&str>("birthday")
+            .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
         if from.is_some() && maybe_birthday.is_none() {
             eprintln!("ERROR!");
