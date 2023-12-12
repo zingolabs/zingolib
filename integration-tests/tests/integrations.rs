@@ -16,18 +16,18 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client,
-    data::{
-        self, block_rewards,
-        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
-    },
-    increase_height_and_wait_for_client,
-    regtest::get_cargo_manifest_dir,
-    scenarios, BASE_HEIGHT,
+    self, build_fvk_client, increase_height_and_wait_for_client, regtest::get_cargo_manifest_dir,
+    scenarios,
 };
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
-    check_client_balances, get_base_address,
+    check_client_balances,
+    data::{
+        self, block_rewards,
+        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+        BASE_HEIGHT,
+    },
+    get_base_address,
     lightclient::{LightClient, PoolBalances},
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},

@@ -1,13 +1,17 @@
+#  The order of the members reflects a dimension of the dependency relation, the first four depend on
+#     *  zingolib
+#  which depends in turn, on the bottom 3.
+#  This doesn't account for all dependency relations, for example, zingocli depends on zingoconfig directly (for now).
 [workspace]
 members = [
-    "zingolib",
-    "zingocli",
-    "zingoconfig",
-    "zingo-memo",
     "zingo-testutils",
-    "zingo-testdata",
     "integration-tests",
-    "darkside-tests"
+    "darkside-tests",
+    "zingocli",
+    "zingolib",
+    "zingoconfig",
+    "zingo-testdata",
+    "zingo-memo",
 ]
 resolver = "2"
 

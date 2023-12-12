@@ -207,7 +207,7 @@ impl LightClient {
 #[cfg(test)]
 mod tests {
     use tokio::runtime::Runtime;
-    use zingo_testutils::data::seeds::CHIMNEY_BETTER_SEED;
+    use zingo_testdata::seeds::CHIMNEY_BETTER_SEED;
     use zingoconfig::{ChainType, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};

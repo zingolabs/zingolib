@@ -10,7 +10,7 @@ edition = "2021"
 deprecations = ["lightclient-deprecated"]
 test = ["lightclient-deprecated", "test-features"]
 lightclient-deprecated = []
-test-features = []
+test-features = ["zingo-testdata"]
 default = ["embed_params"]
 embed_params = []
 darkside_tests = []
@@ -18,6 +18,7 @@ darkside_tests = []
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
+zingo-testdata = { path = "../zingo-testdata", optional = true }
 
 http-body = { workspace = true }
 hyper = { workspace = true }
@@ -80,7 +81,6 @@ either = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
 
 [dev-dependencies]
-zingo-testutils = { path = "../zingo-testutils" }
 portpicker = "0.1.0"
 tempfile = "3.3.0"
 concat-idents = "1.1.3"

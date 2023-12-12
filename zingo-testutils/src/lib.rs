@@ -1,4 +1,3 @@
-pub mod data;
 pub use incrementalmerkletree;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::keys::unified::WalletCapability;
@@ -17,8 +16,6 @@ use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
-
-pub const BASE_HEIGHT: u32 = 3;
 
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
@@ -236,18 +233,16 @@ pub mod scenarios {
     //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
-    use crate::{
-        data::{self, seeds::HOSPITAL_MUSEUM_SEED},
-        increase_height_and_wait_for_client, BASE_HEIGHT,
-    };
+    use crate::increase_height_and_wait_for_client;
+    use zingolib::data::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
     pub mod setup {
-        use crate::data::{
+        use super::BASE_HEIGHT;
+        use zingolib::data::{
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
         };
-        use crate::BASE_HEIGHT;
 
         use super::super::regtest::get_regtest_dir;
         use super::{data, ChildProcessHandler, RegtestManager};
