@@ -14,15 +14,14 @@ impl TransactionMetadataSet {
 
         self.current
             .iter()
-            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed()) // Update only confirmed notes
+            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed_before_or_at(&before_block)) // Update only confirmed notes
             .flat_map(|(txid, transaction_metadata)| {
                 // Fetch notes that are before the before_block.
                 transaction_metadata
                     .sapling_notes
                     .iter()
                     .filter_map(move |sapling_note_description| {
-                        if transaction_metadata.status.is_confirmed_before_or_at(&before_block)
-                            && sapling_note_description.have_spending_key
+                        if sapling_note_description.have_spending_key
                             && sapling_note_description.spent.is_none()
                         {
                             Some((
@@ -40,8 +39,7 @@ impl TransactionMetadataSet {
                     })
                     .chain(transaction_metadata.orchard_notes.iter().filter_map(
                         move |orchard_note_description| {
-                            if transaction_metadata.status.is_confirmed_before_or_at(&before_block)
-                                && orchard_note_description.have_spending_key
+                            if orchard_note_description.have_spending_key
                                 && orchard_note_description.spent.is_none()
                             {
                                 Some((
