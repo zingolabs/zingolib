@@ -48,6 +48,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .long("server")
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
+                .value_parser(parse_uri)
                 .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
@@ -66,6 +67,10 @@ pub fn build_clap_app() -> clap::ArgMatches {
         ).get_matches()
 }
 
+// Custom function to parse a string into an http::Uri
+fn parse_uri(s: &str) -> Result<http::Uri, String> {
+    s.parse::<http::Uri>().map_err(|e| e.to_string())
+}
 #[cfg(target_os = "linux")]
 /// This function is only tested against Linux.
 fn report_permission_error() {
@@ -323,7 +328,7 @@ to scan from the start of the blockchain."
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
-            .get_one::<String>("server")
+            .get_one::<http::Uri>("server")
             .map(|server| server.to_string());
         let mut child_process_handler = None;
         // Regtest specific launch:
