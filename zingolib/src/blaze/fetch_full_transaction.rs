@@ -422,7 +422,7 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
-                    let status = ConfirmationStatus::Broadcast(Some(transaction_block_height));
+                    let status = ConfirmationStatus::Broadcast(transaction_block_height);
                     self.transaction_metadata_set
                         .write()
                         .await
