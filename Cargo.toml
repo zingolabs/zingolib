@@ -5,6 +5,7 @@ members = [
     "zingoconfig",
     "zingo-memo",
     "zingo-testutils",
+    "zingo-testdata",
     "integration-tests",
     "darkside-tests"
 ]
