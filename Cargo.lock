@@ -4179,6 +4179,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-testdata"
+version = "0.1.0"
+
+[[package]]
 name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
