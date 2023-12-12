@@ -38,6 +38,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .alias("seed")
                 .alias("viewing-key")
                 .value_name("from")
+                .value_parser(parse_seed)
                 .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")
@@ -70,6 +71,19 @@ pub fn build_clap_app() -> clap::ArgMatches {
 // Custom function to parse a string into an http::Uri
 fn parse_uri(s: &str) -> Result<http::Uri, String> {
     s.parse::<http::Uri>().map_err(|e| e.to_string())
+}
+// Custom function to parse a string into an http::Uri
+fn parse_seed(s: &str) -> Result<String, String> {
+    if let Ok(s) = s.parse::<String>() {
+        let count = s.split_whitespace().count();
+        if count == 24 {
+            Ok(s)
+        } else {
+            Err(format!("Expected 24 words, but received: {}.", count))
+        }
+    } else {
+        Err("Unexpected failure to parse String!!".to_string())
+    }
 }
 #[cfg(target_os = "linux")]
 /// This function is only tested against Linux.
