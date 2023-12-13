@@ -569,29 +569,34 @@ pub mod scenarios {
             let proxy_server = TcpListener::bind(format!("127.0.0.1:{}", proxy_port))
                 .await
                 .unwrap();
-            // let connection_active = Arc::new(AtomicBool::new(true));
-            // let connection_active_for_tokiotask = connection_active.clone();
-            // tokio::task::spawn(async move {
-            //     let mut swap_active = false;
-            //     loop {
-            //         sleep(Duration::from_secs(5)).await;
-            //         swap_active = connection_active_for_tokiotask
-            //             .swap(swap_active, std::sync::atomic::Ordering::Relaxed);
-            //     }
-            // });
+            let connection_active = Arc::new(AtomicBool::new(true));
+            let connection_active_for_tokiotask = connection_active.clone();
+            tokio::task::spawn(async move {
+                let mut swap_active = false;
+                loop {
+                    // Time online, time offline. This could be made far more configurable
+                    sleep(Duration::from_secs(5)).await;
+                    swap_active = connection_active_for_tokiotask
+                        .swap(swap_active, std::sync::atomic::Ordering::Relaxed);
+                }
+            });
 
             ready_transmitter.send(()).unwrap();
             for i in 1.. {
-                //     while connection_active.load(std::sync::atomic::Ordering::Relaxed) == false {
-                //         sleep(Duration::from_millis(50)).await
-                //     }
+                // Clippy doesn't like this line, but I argue '== false' is harder to misread than a '!'
+                #[allow(clippy::bool_comparison)]
+                while connection_active.load(std::sync::atomic::Ordering::Relaxed) == false {
+                    sleep(Duration::from_millis(50)).await
+                }
                 match proxy_server.accept().await {
                     Ok((client, sockaddr)) => {
-                        if i % 7 == 0 {
-                            println!("Dropped connection from {sockaddr}");
-                            Box::leak(Box::new(client));
-                            continue;
-                        }
+                        // The following code can be used to completely drop connections...this will cause sync to hang indefinately
+
+                        // if i % 7 == 0 {
+                        //     println!("Dropped connection from {sockaddr}");
+                        //     Box::leak(Box::new(client));
+                        //     continue;
+                        // }
                         println!("Accepted connection from {sockaddr}");
                         let lwd_port = lwd_port.clone();
                         tokio::spawn(async move {
@@ -632,7 +637,7 @@ pub mod scenarios {
                         println!("{name}_{i} hit timeout!");
                         0
                     },
-                    bytes_read = sender.read(&mut buffer) => bytes_read?
+                    bytes_read_inner = sender.read(&mut buffer) => bytes_read_inner?
                 ) {
                     let current_time = Instant::now();
                     if prev_time.duration_since(current_time) > timeout {
@@ -689,8 +694,6 @@ pub mod scenarios {
             );
             Ok(())
         }
-
-        fn decode_grpc_shtufff() {}
     }
 
     pub async fn unfunded_client(
