@@ -1,24 +1,24 @@
 pub const BASE_HEIGHT: u32 = 3;
-pub mod seeds {
-    pub const DARKSIDE_SEED: &str =
+pub mod seed_phrases {
+    pub const DARKSIDE: &str =
 "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread";
     #[test]
     fn validate_seeds() {
-        let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+        let abandon_art_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
             .to_string();
-        assert_eq!(ABANDON_ART_SEED, abandon_art_seed);
+        assert_eq!(ABANDON_ART, abandon_art_phrase);
         // TODO user get_zaddr_from_bip39seed to generate this address from that seed.
     }
     //Generate test seed
-    pub const ABANDON_ART_SEED: &str =
+    pub const ABANDON_ART: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon art";
-    pub const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
+    pub const HOSPITAL_MUSEUM: &str = "hospital museum valve antique skate museum \
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
-    pub const CHIMNEY_BETTER_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
+    pub const CHIMNEY_BETTER: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
 }
 
 // faucet addresses

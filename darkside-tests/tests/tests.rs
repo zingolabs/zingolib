@@ -20,7 +20,7 @@ async fn simple_sync() {
         .unwrap();
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .build_client(DARKSIDE.to_string(), 0, true, regtest_network)
         .await;
 
     let result = light_client.do_sync(true).await.unwrap();
@@ -60,7 +60,7 @@ async fn reorg_away_receipt() {
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .build_client(DARKSIDE.to_string(), 0, true, regtest_network)
         .await;
 
     light_client.do_sync(true).await.unwrap();
@@ -114,7 +114,7 @@ async fn sent_transaction_reorged_into_mempool() {
         ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = client_manager
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .build_client(DARKSIDE.to_string(), 0, true, regtest_network)
         .await;
     let recipient = client_manager
         .build_client(

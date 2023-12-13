@@ -38,7 +38,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .alias("seed")
                 .alias("viewing-key")
                 .value_name("from")
-                .value_parser(parse_seed)
+                //.value_parser(WalletBase::from_string)
                 .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")

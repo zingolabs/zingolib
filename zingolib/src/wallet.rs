@@ -197,6 +197,9 @@ pub enum WalletBase {
 }
 impl WalletBase {
     pub fn from_string(base: String) -> WalletBase {
+        /// Sanity check that this string is a
+        /// valid BIP0039 English phrase
+        zcash_primitives::zip339::Mnemonic::validate(&base);
         if (&base[0..5]) == "uview" {
             WalletBase::Ufvk(base)
         } else {
@@ -1772,6 +1775,13 @@ mod test {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 
+    mod seed_injections {
+        #[test]
+        fn invalid_phrases_detected() {
+            let phrase_one = crate::data::seed_phrases::DARKSIDE;
+            todo!()
+        }
+    }
     #[test]
     fn anchor_from_tree_works() {
         // These commitment values copied from zcash/orchard, and were originally derived from the bundle

@@ -422,7 +422,7 @@ pub mod scenarios {
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
                 self.build_client(
-                    seeds::ABANDON_ART_SEED.to_string(),
+                    seed_phrases::ABANDON_ART.to_string(),
                     0,
                     overwrite,
                     regtest_network,
@@ -545,7 +545,7 @@ pub mod scenarios {
             scenario_builder.child_process_handler.unwrap(),
             scenario_builder
                 .client_builder
-                .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+                .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
                 .await,
         )
     }
@@ -610,7 +610,7 @@ pub mod scenarios {
         let recipient = sb
             .client_builder
             .build_client(
-                HOSPITAL_MUSEUM_SEED.to_string(),
+                HOSPITAL_MUSEUM.to_string(),
                 BASE_HEIGHT as u64,
                 false,
                 regtest_network,
@@ -803,7 +803,7 @@ pub mod scenarios {
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
         faucet
@@ -841,7 +841,7 @@ pub mod scenarios {
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
             .await;
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
@@ -906,7 +906,7 @@ pub mod scenarios {
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
             .await;
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
@@ -1040,7 +1040,7 @@ pub mod scenarios {
             faucet.do_sync(false).await.unwrap();
             let recipient = sb
                 .client_builder
-                .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+                .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
                 .await;
             (
                 sb.regtest_manager,
@@ -1062,7 +1062,7 @@ pub mod scenarios {
             let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
             let recipient = sb
                 .client_builder
-                .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+                .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
                 .await;
             (
                 sb.regtest_manager,

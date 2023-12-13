@@ -24,7 +24,7 @@ use zingolib::{
     lightclient::{LightClient, PoolBalances},
     testvectors::{
         self, block_rewards,
-        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+        seed_phrases::{CHIMNEY_BETTER, HOSPITAL_MUSEUM},
         BASE_HEIGHT,
     },
     wallet::{
@@ -465,7 +465,7 @@ mod fast {
         let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
         let client_b = client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
             .await;
 
         assert_eq!(
@@ -499,7 +499,7 @@ mod fast {
             .unwrap();
 
         let expected_mnemonic = (
-            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+            Mnemonic::from_phrase(CHIMNEY_BETTER.to_string()).unwrap(),
             0,
         );
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
@@ -928,7 +928,7 @@ mod slow {
             scenarios::custom_clients_default().await;
         let faucet = client_builder.build_faucet(false, regtest_network).await;
         let original_recipient = client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
             .await;
         let zingo_config = zingoconfig::load_clientconfig(
             client_builder.server_id,
@@ -2940,7 +2940,7 @@ mod slow {
             scenarios::custom_clients_default().await;
         let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
         let pool_migration_client = client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM.to_string(), 0, false, regtest_network)
             .await;
         let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
         let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
