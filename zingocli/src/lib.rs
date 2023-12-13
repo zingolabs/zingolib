@@ -13,25 +13,24 @@ use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
-pub fn build_clap_app() -> clap::App<'static> {
-    clap::App::new("Zingo CLI").version(version::VERSION)
+pub fn build_clap_app() -> clap::ArgMatches {
+    clap::Command::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::new("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
                 .short('n')
-                .takes_value(false))
-            .arg(Arg::new("recover")
-                .long("recover")
-                .help("Attempt to recover the seed from the wallet")
-                .takes_value(false))
-            .arg(Arg::new("password")
-                .long("password")
-                .help("When recovering seed, specify a password for the encrypted wallet")
-                .takes_value(true))
+                .action(clap::ArgAction::SetTrue))
+            .arg(Arg::new("regtest")
+                .long("regtest")
+                .help("Regtest mode")
+                .action(clap::ArgAction::SetTrue) )
+            .arg(Arg::new("no-clean")
+                .long("no-clean")
+                .help("Don't clean regtest state before running. Regtest mode only")
+                .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("chain")
                 .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#)
-                .takes_value(true))
+                .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#))
             .arg(Arg::new("from")
                 .short('f')
                 .short_alias('s')
@@ -39,44 +38,31 @@ pub fn build_clap_app() -> clap::App<'static> {
                 .alias("seed")
                 .alias("viewing-key")
                 .value_name("from")
-                .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists")
-                .takes_value(true))
+                .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
-                .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction.")
-                .takes_value(true))
+                .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction."))
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
-                .takes_value(true)
-                .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER)
-                .takes_value(true))
+                .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
-                .help("Absolute path to use as data directory")
-                .takes_value(true))
-            .arg(Arg::new("regtest")
-                .long("regtest")
-                .value_name("regtest")
-                .help("Regtest mode")
-                .takes_value(false))
-            .arg(Arg::new("no-clean")
-                .long("no-clean")
-                .value_name("no-clean")
-                .help("Don't clean regtest state before running. Regtest mode only")
-                .takes_value(false))
+                .help("Absolute path to use as data directory"))
             .arg(Arg::new("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
                 .index(1))
-            .arg(Arg::new("PARAMS")
+            .arg(Arg::new("extra_args")
                 .help("Params to execute command with. Run the 'help' command to get usage help.")
                 .required(false)
-                .multiple(true)
-                .index(2))
+                .num_args(1..)
+                .index(2)
+                .action(clap::ArgAction::Append)
+        ).get_matches()
 }
 
 #[cfg(target_os = "linux")]
@@ -279,28 +265,25 @@ impl From<regtest::LaunchChildProcessError> for TemplateFillError {
 ///    is specified, then the system should execute only logic necessary to support that command,
 ///    in other words "help" the ShortCitcuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
-    fn fill(configured_clap_app: clap::App<'static>) -> Result<Self, TemplateFillError> {
-        let configured_app = configured_clap_app;
-        let matches = configured_app.get_matches();
-        let command = matches.value_of("COMMAND");
-        // Begin short_circuit section
-        let params: Vec<String> = matches
-            .values_of("PARAMS")
-            .map(|v| v.collect::<Vec<_>>())
-            .unwrap_or_default()
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let command = if let Some(refstr) = command {
-            if refstr == "help" {
+    fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
+        let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
+        let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
+            vals.cloned().collect()
+        } else {
+            vec![]
+        };
+        let command = if let Some(refstr) = matches.get_one::<String>("COMMAND") {
+            if refstr == &"help".to_string() {
                 short_circuit_on_help(params.clone());
             }
             Some(refstr.to_string())
         } else {
             None
         };
-        let from = matches.value_of("from").map(|s| s.to_string());
-        let maybe_birthday = matches.value_of("birthday");
+        let from = matches.get_one::<&str>("from");
+        let maybe_birthday = matches
+            .get_one::<&str>("birthday")
+            .map(|bday| bday.to_string());
         if from.is_some() && maybe_birthday.is_none() {
             eprintln!("ERROR!");
             eprintln!(
@@ -313,12 +296,13 @@ to scan from the start of the blockchain."
                     .to_string(),
             ));
         }
-        if matches.contains_id("chain") && matches.contains_id("regtest") {
+        let from = from.map(|seed| seed.to_string());
+        if matches.contains_id("chain") && is_regtest {
             return Err(TemplateFillError::RegtestAndChainSpecified(
                 "regtest mode incompatible with custom chain selection".to_string(),
             ));
         }
-        let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
+        let birthday = match maybe_birthday.unwrap_or("0".to_string()).parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
                 return Err(TemplateFillError::InvalidBirthday(format!(
@@ -328,29 +312,31 @@ to scan from the start of the blockchain."
             }
         };
 
-        let clean_regtest_data = !matches.is_present("no-clean");
+        let clean_regtest_data = !matches.get_flag("no-clean");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
-        } else if matches.is_present("regtest") {
+        } else if is_regtest {
             regtest::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
+        let mut server = matches
+            .get_one::<String>("server")
+            .map(|server| server.to_string());
         let mut child_process_handler = None;
         // Regtest specific launch:
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
-        let regtest_manager = if matches.is_present("regtest") {
+        let regtest_manager = if is_regtest {
             let regtest_manager = regtest::RegtestManager::new(data_dir.clone());
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
-            maybe_server = Some("http://127.0.0.1".to_string());
+            server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
         } else {
             None
         };
-        let server = zingoconfig::construct_lightwalletd_uri(maybe_server);
+        let server = zingoconfig::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
@@ -358,7 +344,7 @@ to scan from the start of the blockchain."
                 "regtest" => ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
                 _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
             }
-        } else if matches.is_present("regtest") {
+        } else if is_regtest {
             ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active())
         } else {
             ChainType::Mainnet
@@ -371,7 +357,7 @@ to scan from the start of the blockchain."
                 server )));
         }
 
-        let sync = !matches.is_present("nosync");
+        let sync = !matches.get_flag("nosync");
         Ok(Self {
             params,
             server,
@@ -400,9 +386,14 @@ pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
     // Try to get the configuration
+    let data_dir = if let Some(regtest_manager) = filled_template.regtest_manager.clone() {
+        regtest_manager.zingo_datadir
+    } else {
+        filled_template.data_dir.clone()
+    };
     let config = zingoconfig::load_clientconfig(
         filled_template.server.clone(),
-        Some(filled_template.data_dir.clone()),
+        Some(data_dir),
         filled_template.chaintype,
         true,
     )
@@ -503,9 +494,6 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                 error!("{}", e);
             }
         }
-
-        // Save before exit
-        resp_receiver.recv().unwrap();
     }
 }
 pub fn run_cli() {
