@@ -11,43 +11,55 @@ use zingolib::{
     grpc_connector::GrpcConnector,
 };
 
+macro_rules! define_grpc_passthrough {
+    (fn
+        $name:ident(
+            &$self:ident$(,$($arg:ident: $argty:ty,)*)?
+        ) -> $ret:ty
+    ) => {
+        #[must_use]
+        #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
+        fn $name<'life0, 'async_trait>(&'life0 $self$($(, $arg: $argty)*)?) ->
+           ::core::pin::Pin<Box<
+                dyn ::core::future::Future<
+                    Output = ::core::result::Result<
+                        ::tonic::Response<$ret>,
+                        ::tonic::Status
+                >
+            > + ::core::marker::Send + 'async_trait
+        >>
+        where
+            'life0: 'async_trait,
+            Self: 'async_trait,
+        {
+            Box::pin(async {
+                ::zingolib::grpc_connector::GrpcConnector::new($self.0.clone())
+                    .get_client()
+                    .await
+                    .expect("Proxy server failed to create client")
+                    .$name($($($arg),*)?)
+                    .await
+            })
+        }
+    };
+}
+
 pub struct ProxyServer(http::Uri);
 
-#[tonic::async_trait]
 impl CompactTxStreamer for ProxyServer {
-    #[doc = " Return the height of the tip of the best chain"]
-    async fn get_latest_block(
-        &self,
-        request: tonic::Request<ChainSpec>,
-    ) -> Result<tonic::Response<BlockId>, tonic::Status> {
-        GrpcConnector::new(self.0.clone())
-            .get_client()
-            .await
-            .expect("Proxy server failed to get client")
-            .get_latest_block(request)
-            .await
-    }
+    define_grpc_passthrough!(
+        fn get_latest_block(
+            &self,
+            request: tonic::Request<ChainSpec>,
+        ) -> BlockId
+    );
 
-    #[doc = " Return the compact block corresponding to the given block identifier"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_block<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<BlockId>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<CompactBlock>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_block(
+            &self,
+            request: tonic::Request<BlockId>,
+        ) -> CompactBlock
+    );
 
     #[doc = "Server streaming response type for the GetBlockRange method."]
     type GetBlockRangeStream =
