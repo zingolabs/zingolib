@@ -1,33 +1,31 @@
 use std::pin::Pin;
 
-use zingolib::compact_formats::{
-    compact_tx_streamer_server::CompactTxStreamer, Address, AddressList, Balance, BlockId,
-    BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude, GetAddressUtxosArg,
-    GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, RawTransaction,
-    SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+use zingolib::{
+    compact_formats::{
+        compact_tx_streamer_server::CompactTxStreamer, Address, AddressList, Balance, BlockId,
+        BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
+        GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo,
+        PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState,
+        TxFilter,
+    },
+    grpc_connector::GrpcConnector,
 };
 
-pub struct ProxyServer;
+pub struct ProxyServer(http::Uri);
 
+#[tonic::async_trait]
 impl CompactTxStreamer for ProxyServer {
     #[doc = " Return the height of the tip of the best chain"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_latest_block<'life0, 'async_trait>(
-        &'life0 self,
+    async fn get_latest_block(
+        &self,
         request: tonic::Request<ChainSpec>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<Output = Result<tonic::Response<BlockId>, tonic::Status>>
-                + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
+    ) -> Result<tonic::Response<BlockId>, tonic::Status> {
+        GrpcConnector::new(self.0.clone())
+            .get_client()
+            .await
+            .expect("Proxy server failed to get client")
+            .get_latest_block(request)
+            .await
     }
 
     #[doc = " Return the compact block corresponding to the given block identifier"]
