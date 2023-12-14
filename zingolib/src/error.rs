@@ -22,7 +22,7 @@ pub enum ZingoLibError {
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
 
 impl ZingoLibError {
-    pub fn handle<T>(self) -> ZingoLibResult<T> {
+    pub fn handle_notest<T>(self) -> ZingoLibResult<T> {
         log::error!("{}", self);
 
         #[cfg(feature = "test-features")]

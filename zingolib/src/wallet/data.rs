@@ -978,7 +978,7 @@ impl TransactionMetadata {
                 self.total_change_returned(),
                 self,
             ))
-            .handle()
+            .handle_notest()
         }
     }
 
