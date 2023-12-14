@@ -112,49 +112,23 @@ impl CompactTxStreamer for ProxyServer {
     );
 
     #[doc = "Server streaming response type for the GetTaddressTxids method."]
-    type GetTaddressTxidsStream =
-        Pin<Box<dyn futures::Stream<Item = Result<RawTransaction, tonic::Status>> + Send + Sync>>;
+    type GetTaddressTxidsStream = tonic::Streaming<RawTransaction>;
 
-    #[doc = " Return the txids corresponding to the given t-address within the given block range"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_taddress_txids<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<TransparentAddressBlockFilter>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<Self::GetTaddressTxidsStream>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_taddress_txids(
+            &self,
+            request: tonic::Request<TransparentAddressBlockFilter>,
+        ) -> Self::GetTaddressTxidsStream
+    );
 
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_taddress_balance<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<AddressList>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<Output = Result<tonic::Response<Balance>, tonic::Status>>
-                + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_taddress_balance(
+            &self,
+            request: tonic::Request<AddressList>,
+        ) -> Balance
+    );
 
+    /// This isn't easily definable with the macro, and I beleive it to be unused
     #[must_use]
     #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
     fn get_taddress_balance_stream<'life0, 'async_trait>(
@@ -171,138 +145,52 @@ impl CompactTxStreamer for ProxyServer {
         'life0: 'async_trait,
         Self: 'async_trait,
     {
-        todo!()
+        todo!("this isn't expected to be called. Please implement this if you need it")
     }
 
     #[doc = "Server streaming response type for the GetMempoolTx method."]
-    type GetMempoolTxStream =
-        Pin<Box<dyn futures::Stream<Item = Result<CompactTx, tonic::Status>> + Send + Sync>>;
+    type GetMempoolTxStream = tonic::Streaming<CompactTx>;
 
-    #[doc = " Return the compact transactions currently in the mempool; the results"]
-    #[doc = " can be a few seconds out of date. If the Exclude list is empty, return"]
-    #[doc = " all transactions; otherwise return all *except* those in the Exclude list"]
-    #[doc = " (if any); this allows the client to avoid receiving transactions that it"]
-    #[doc = " already has (from an earlier call to this rpc). The transaction IDs in the"]
-    #[doc = " Exclude list can be shortened to any number of bytes to make the request"]
-    #[doc = " more bandwidth-efficient; if two or more transactions in the mempool"]
-    #[doc = " match a shortened txid, they are all sent (none is excluded). Transactions"]
-    #[doc = " in the exclude list that don\'t exist in the mempool are ignored."]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_mempool_tx<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<Exclude>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<Self::GetMempoolTxStream>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_mempool_tx(
+            &self,
+            request: tonic::Request<Exclude>,
+        ) -> Self::GetMempoolTxStream
+    );
 
     #[doc = "Server streaming response type for the GetMempoolStream method."]
-    type GetMempoolStreamStream =
-        Pin<Box<dyn futures::Stream<Item = Result<RawTransaction, tonic::Status>> + Send + Sync>>;
+    type GetMempoolStreamStream = tonic::Streaming<RawTransaction>;
 
-    #[doc = " Return a stream of current Mempool transactions. This will keep the output stream open while"]
-    #[doc = " there are mempool transactions. It will close the returned stream when a new block is mined."]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_mempool_stream<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<Empty>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<Self::GetMempoolStreamStream>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_mempool_stream(
+            &self,
+            request: tonic::Request<Empty>,
+        ) -> Self::GetMempoolStreamStream
+    );
 
-    #[doc = " GetTreeState returns the note commitment tree state corresponding to the given block."]
-    #[doc = " See section 3.7 of the Zcash protocol specification. It returns several other useful"]
-    #[doc = " values also (even though they can be obtained using GetBlock)."]
-    #[doc = " The block can be specified by either height or hash."]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_tree_state<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<BlockId>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<Output = Result<tonic::Response<TreeState>, tonic::Status>>
-                + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_tree_state(
+            &self,
+            request: tonic::Request<BlockId>,
+        ) -> TreeState
+    );
 
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_address_utxos<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<GetAddressUtxosArg>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<GetAddressUtxosReplyList>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_address_utxos(
+            &self,
+            request: tonic::Request<GetAddressUtxosArg>,
+        ) -> GetAddressUtxosReplyList
+    );
 
     #[doc = "Server streaming response type for the GetAddressUtxosStream method."]
-    type GetAddressUtxosStreamStream = Pin<
-        Box<dyn futures::Stream<Item = Result<GetAddressUtxosReply, tonic::Status>> + Send + Sync>,
-    >;
+    type GetAddressUtxosStreamStream = tonic::Streaming<GetAddressUtxosReply>;
 
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_address_utxos_stream<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<GetAddressUtxosArg>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<
-                        tonic::Response<Self::GetAddressUtxosStreamStream>,
-                        tonic::Status,
-                    >,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_address_utxos_stream(
+            &self,
+            request: tonic::Request<GetAddressUtxosArg>,
+        ) -> tonic::Streaming<GetAddressUtxosReply>
+    );
 
     define_grpc_passthrough!(
         fn get_lightd_info(
@@ -311,24 +199,10 @@ impl CompactTxStreamer for ProxyServer {
         ) -> LightdInfo
     );
 
-    #[doc = " Testing-only, requires lightwalletd --ping-very-insecure (do not enable in production)"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn ping<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<Duration>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<PingResponse>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn ping(
+            &self,
+            request: tonic::Request<Duration>,
+        ) -> PingResponse
+    );
 }
