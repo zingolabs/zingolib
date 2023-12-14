@@ -2,6 +2,7 @@
 
 use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
+use itertools::assert_equal;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
@@ -3366,4 +3367,38 @@ mod slow {
             Some(890_000)
         );
     }
+}
+
+#[tokio::test]
+async fn show_unconfirmed_funds() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            100_000,
+            None,
+        )])
+        .await
+        .unwrap();
+    recipient.do_sync(false).await.unwrap();
+    assert_eq!(
+        recipient.do_balance().await.unverified_orchard_balance,
+        Some(100_000)
+    );
+    assert_eq!(
+        recipient.do_balance().await.verified_orchard_balance,
+        Some(0)
+    );
+
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        recipient.do_balance().await.unverified_orchard_balance,
+        Some(0)
+    );
+    assert_eq!(
+        recipient.do_balance().await.verified_orchard_balance,
+        Some(100_000)
+    );
 }
