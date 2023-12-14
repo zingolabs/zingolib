@@ -1600,6 +1600,7 @@ mod slow {
             o: faucet_final_orch s: 0 t: 0
         );
         check_client_balances!(recipient, o: recipient_final_orch s: 0 t: 0);
+        tokio::time::sleep(Duration::from_secs(3)).await;
     }
     #[tokio::test]
     async fn send_mined_sapling_to_orchard() {
