@@ -1,12 +1,16 @@
-use std::pin::Pin;
+use std::{
+    net::SocketAddr,
+    pin::Pin,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use zingolib::{
     compact_formats::{
-        compact_tx_streamer_server::CompactTxStreamer, Address, AddressList, Balance, BlockId,
-        BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
-        GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo,
-        PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState,
-        TxFilter,
+        compact_tx_streamer_server::{CompactTxStreamer, CompactTxStreamerServer},
+        Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
+        Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply,
+        GetAddressUtxosReplyList, LightdInfo, PingResponse, RawTransaction, SendResponse,
+        TransparentAddressBlockFilter, TreeState, TxFilter,
     },
     grpc_connector::GrpcConnector,
 };
@@ -33,7 +37,11 @@ macro_rules! define_grpc_passthrough {
             Self: 'async_trait,
         {
             Box::pin(async {
-                ::zingolib::grpc_connector::GrpcConnector::new($self.0.clone())
+                while !$self.online.load(::core::sync::atomic::Ordering::Relaxed) {
+                    ::tokio::time::sleep(::core::time::Duration::from_millis(50)).await;
+                }
+                println!("Proxy passing through {} call", stringify!($name));
+                ::zingolib::grpc_connector::GrpcConnector::new($self.lightwalletd_uri.clone())
                     .get_client()
                     .await
                     .expect("Proxy server failed to create client")
@@ -44,7 +52,25 @@ macro_rules! define_grpc_passthrough {
     };
 }
 
-pub struct ProxyServer(http::Uri);
+pub struct ProxyServer {
+    pub lightwalletd_uri: http::Uri,
+    pub online: Arc<AtomicBool>,
+}
+
+impl ProxyServer {
+    pub fn serve(
+        self,
+        listen_at: SocketAddr,
+    ) -> tokio::task::JoinHandle<Result<(), tonic::transport::Error>> {
+        tokio::task::spawn(async move {
+            let svc = CompactTxStreamerServer::new(self);
+            tonic::transport::Server::builder()
+                .add_service(svc)
+                .serve(listen_at)
+                .await
+        })
+    }
+}
 
 impl CompactTxStreamer for ProxyServer {
     define_grpc_passthrough!(
@@ -321,25 +347,12 @@ impl CompactTxStreamer for ProxyServer {
         todo!()
     }
 
-    #[doc = " Return information about this lightwalletd instance and the blockchain"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_lightd_info<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<Empty>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<Output = Result<tonic::Response<LightdInfo>, tonic::Status>>
-                + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_lightd_info(
+            &self,
+            request: tonic::Request<Empty>,
+        ) -> LightdInfo
+    );
 
     #[doc = " Testing-only, requires lightwalletd --ping-very-insecure (do not enable in production)"]
     #[must_use]
