@@ -7,6 +7,7 @@ pub mod regtest;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
+use std::sync::Arc;
 use std::time::Duration;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::keys::unified::WalletCapability;
@@ -1073,4 +1074,25 @@ pub mod scenarios {
             )
         }
     }
+}
+
+pub async fn check_proxy_server_works() {
+    let (regtest_manager, cph, faucet) = scenarios::faucet_default().await;
+    let proxy_online = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let proxy_port = portpicker::pick_unused_port().unwrap();
+    let proxy_uri = format!("http://localhost:{proxy_port}");
+    let proxy_socket = format!("127.0.0.1:{proxy_port}");
+    let proxy_handle = grpc_proxy::ProxyServer {
+        lightwalletd_uri: faucet.get_server_uri(),
+        online: proxy_online.clone(),
+    }
+    .serve(proxy_socket.parse().unwrap());
+    faucet.set_server(proxy_uri.parse().unwrap());
+    tokio::task::spawn(async move {
+        sleep(Duration::from_secs(5)).await;
+        println!("Wakening proxy!");
+        proxy_online.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    println!("Doing info!");
+    println!("{}", faucet.do_info().await)
 }

@@ -21,6 +21,7 @@ use zingo_testutils::{
         self, block_rewards,
         seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
     },
+    grpc_proxy::ProxyServer,
     increase_height_and_wait_for_client,
     regtest::get_cargo_manifest_dir,
     scenarios, BASE_HEIGHT,
@@ -3366,4 +3367,9 @@ mod slow {
             Some(890_000)
         );
     }
+}
+
+#[tokio::test]
+async fn proxy_server_worky() {
+    zingo_testutils::check_proxy_server_works().await
 }
