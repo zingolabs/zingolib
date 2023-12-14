@@ -10,7 +10,7 @@ members = [
     "zingocli",
     "zingolib",
     "zingoconfig",
-    "zingo-testdata",
+    "zingo-testvectors",
     "zingo-memo",
 ]
 resolver = "2"
