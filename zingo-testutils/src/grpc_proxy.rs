@@ -88,71 +88,28 @@ impl CompactTxStreamer for ProxyServer {
     );
 
     #[doc = "Server streaming response type for the GetBlockRange method."]
-    type GetBlockRangeStream =
-        Pin<Box<dyn futures::Stream<Item = Result<CompactBlock, tonic::Status>> + Send + Sync>>;
+    type GetBlockRangeStream = tonic::Streaming<CompactBlock>;
 
-    #[doc = " Return a list of consecutive compact blocks"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_block_range<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<BlockRange>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<Self::GetBlockRangeStream>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_block_range(
+            &self,
+            request: tonic::Request<BlockRange>,
+        ) -> Self::GetBlockRangeStream
+    );
 
-    #[doc = " Return the requested full (not compact) transaction (as from zcashd)"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn get_transaction<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<TxFilter>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<RawTransaction>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn get_transaction(
+            &self,
+            request: tonic::Request<TxFilter>,
+        ) -> RawTransaction
+    );
 
-    #[doc = " Submit the given transaction to the Zcash network"]
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn send_transaction<'life0, 'async_trait>(
-        &'life0 self,
-        request: tonic::Request<RawTransaction>,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<
-                    Output = Result<tonic::Response<SendResponse>, tonic::Status>,
-                > + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
-    }
+    define_grpc_passthrough!(
+        fn send_transaction(
+            &self,
+            request: tonic::Request<RawTransaction>,
+        ) -> SendResponse
+    );
 
     #[doc = "Server streaming response type for the GetTaddressTxids method."]
     type GetTaddressTxidsStream =
