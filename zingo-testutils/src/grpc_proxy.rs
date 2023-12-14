@@ -1,18 +1,14 @@
 use std::{
     net::SocketAddr,
-    pin::Pin,
     sync::{atomic::AtomicBool, Arc},
 };
 
-use zingolib::{
-    compact_formats::{
-        compact_tx_streamer_server::{CompactTxStreamer, CompactTxStreamerServer},
-        Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
-        Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply,
-        GetAddressUtxosReplyList, LightdInfo, PingResponse, RawTransaction, SendResponse,
-        TransparentAddressBlockFilter, TreeState, TxFilter,
-    },
-    grpc_connector::GrpcConnector,
+use zingolib::compact_formats::{
+    compact_tx_streamer_server::{CompactTxStreamer, CompactTxStreamerServer},
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
+    Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList,
+    LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
+    TreeState, TxFilter,
 };
 
 macro_rules! define_grpc_passthrough {
@@ -133,7 +129,7 @@ impl CompactTxStreamer for ProxyServer {
     #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
     fn get_taddress_balance_stream<'life0, 'async_trait>(
         &'life0 self,
-        request: tonic::Request<tonic::Streaming<Address>>,
+        _request: tonic::Request<tonic::Streaming<Address>>,
     ) -> ::core::pin::Pin<
         Box<
             dyn ::core::future::Future<Output = Result<tonic::Response<Balance>, tonic::Status>>
