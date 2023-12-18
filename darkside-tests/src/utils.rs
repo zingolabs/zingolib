@@ -576,6 +576,8 @@ pub mod scenarios {
         /// All sends in a chain build are appended to same file in order.
         pub async fn send_and_stage_transaction(
             &mut self,
+            // We can't just take a reference to a LightClient, as that might be a reference to
+            // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
             sender: super::DarksideSender<'_>,
             receiver_address: &str,
             value: u64,
