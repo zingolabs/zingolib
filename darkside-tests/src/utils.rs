@@ -576,7 +576,7 @@ pub mod scenarios {
         /// All sends in a chain build are appended to same file in order.
         pub async fn send_and_stage_transaction(
             &mut self,
-            sender: &LightClient,
+            sender: super::DarksideSender<'_>,
             receiver_address: &str,
             value: u64,
         ) -> &mut DarksideScenario {
@@ -585,7 +585,12 @@ pub mod scenarios {
                 .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
                 .await
                 .unwrap();
-            sender
+            let lightclient = match sender {
+                crate::utils::DarksideSender::Faucet => self.get_faucet(),
+                crate::utils::DarksideSender::IndexedClient(n) => self.get_lightclient(n),
+                crate::utils::DarksideSender::ExternalClient(cli) => cli,
+            };
+            lightclient
                 .do_send(vec![(receiver_address, value, None)])
                 .await
                 .unwrap();
@@ -682,4 +687,14 @@ pub mod scenarios {
             &self.tree_state
         }
     }
+}
+
+/// A way to specify which client to send funds from
+pub enum DarksideSender<'a> {
+    // The faucet of the DarksideScenario
+    Faucet,
+    // A generated non-faucet client, accessed by index
+    IndexedClient(u64),
+    // A client not managed by the DarksideScenario itself
+    ExternalClient(&'a LightClient),
 }

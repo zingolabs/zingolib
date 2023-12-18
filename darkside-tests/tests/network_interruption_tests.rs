@@ -23,13 +23,13 @@ async fn interrupt_sync_chainbuild() {
             .generate_blocks(thousands_blocks_count * 1000 - 1, thousands_blocks_count)
             .await;
         scenario.get_faucet().do_sync(false).await.unwrap();
-        // scenario
-        //     .send_and_stage_transaction(
-        //         scenario.get_faucet(),
-        //         &get_base_address!(scenario.get_faucet(), "unified"),
-        //         40_000,
-        //     )
-        //     .await;
+        scenario
+            .send_and_stage_transaction(
+                darkside_tests::utils::DarksideSender::Faucet,
+                &get_base_address!(scenario.get_faucet(), "unified"),
+                40_000,
+            )
+            .await;
     }
     // stage and apply final blocks
     scenario.generate_blocks(BLOCKCHAIN_HEIGHT, 150).await;
