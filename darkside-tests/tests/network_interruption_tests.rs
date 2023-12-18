@@ -3,7 +3,6 @@ use darkside_tests::{
     utils::{
         init_darksidewalletd, read_dataset,
         scenarios::{self, DarksideScenario},
-        send_and_stage_transaction, stage_transaction,
     },
 };
 use zingo_testutils::{data::seeds, scenarios::setup::ClientBuilder};

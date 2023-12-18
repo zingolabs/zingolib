@@ -469,7 +469,7 @@ pub mod scenarios {
         utils::{update_tree_states_for_transaction, write_raw_transaction},
     };
 
-    use super::{init_darksidewalletd, stage_transaction, DarksideConnector, DarksideHandler};
+    use super::{init_darksidewalletd, DarksideConnector, DarksideHandler};
 
     pub struct DarksideScenario {
         darkside_handler: DarksideHandler,
@@ -531,12 +531,7 @@ pub mod scenarios {
                 }
             };
             self.staged_blockheight = self.staged_blockheight.add(1);
-            self.tree_state = stage_transaction(
-                &self.darkside_connector,
-                self.staged_blockheight,
-                faucet_funding_transaction,
-            )
-            .await;
+            self.stage_transaction(faucet_funding_transaction).await;
             self
         }
         /// Builds a new lightclient from a seed phrase
