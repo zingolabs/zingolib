@@ -661,31 +661,30 @@ pub mod scenarios {
             self.tree_state = tree_state;
         }
 
-        pub fn get_handler<'a>(&'a self) -> &'a DarksideHandler {
+        pub fn get_handler(&self) -> &DarksideHandler {
             &self.darkside_handler
         }
-        pub fn get_connector<'a>(&'a self) -> &'a DarksideConnector {
+        pub fn get_connector(&self) -> &DarksideConnector {
             &self.darkside_connector
         }
-        pub fn get_client_builder<'a>(&'a self) -> &'a ClientBuilder {
+        pub fn get_client_builder(&self) -> &ClientBuilder {
             &self.client_builder
         }
-        pub fn get_regtest_network<'a>(&'a self) -> &'a RegtestNetwork {
+        pub fn get_regtest_network(&self) -> &RegtestNetwork {
             &self.regtest_network
         }
-        pub fn get_faucet<'a>(&'a self) -> &'a LightClient {
-            &self
-                .faucet
+        pub fn get_faucet(&self) -> &LightClient {
+            self.faucet
                 .as_ref()
                 .expect("scenario should have a faucet lightclient")
         }
-        pub fn get_lightclient<'a>(&'a self, lightclient_index: u64) -> &'a LightClient {
+        pub fn get_lightclient(&self, lightclient_index: u64) -> &LightClient {
             &self.lightclients[lightclient_index as usize]
         }
-        pub fn get_staged_blockheight<'a>(&'a self) -> &'a BlockHeight {
+        pub fn get_staged_blockheight(&self) -> &BlockHeight {
             &self.staged_blockheight
         }
-        pub fn get_tree_state<'a>(&'a self) -> &'a TreeState {
+        pub fn get_tree_state(&self) -> &TreeState {
             &self.tree_state
         }
     }
