@@ -530,7 +530,6 @@ pub mod scenarios {
                     panic!("Error: Transparent funding transactions for faucet are not currently implemented!")
                 }
             };
-            self.staged_blockheight = self.staged_blockheight.add(1);
             self.stage_transaction(faucet_funding_transaction).await;
             self
         }
