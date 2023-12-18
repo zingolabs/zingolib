@@ -571,7 +571,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 2_500_000_000 s: 0 t: 0);
+        check_client_balances!(faucet, o: 2_500_000_000u64 s: 0 t: 0);
     }
 
     #[tokio::test]
@@ -583,7 +583,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 2_500_000_000 t: 0);
+        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0);
     }
 
     #[tokio::test]
@@ -595,7 +595,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000);
+        check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000u64);
     }
 
     // test fails to exit when syncing pre-sapling
@@ -1142,12 +1142,12 @@ mod slow {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
+        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         faucet.do_shield(&[Pool::Sapling], None).await.unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 3_499_990_000 s: 625_010_000 t: 0);
+        check_client_balances!(faucet, o: 3_499_990_000u64 s: 625_010_000u64 t: 0);
     }
     #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
@@ -1640,11 +1640,11 @@ mod slow {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
+        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
-                3_499_990_000,
+                3_499_990_000u64,
                 None,
             )])
             .await
@@ -1653,7 +1653,7 @@ mod slow {
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        check_client_balances!(recipient, o: 3_499_990_000 s: 0 t: 0);
+        check_client_balances!(recipient, o: 3_499_990_000u64 s: 0 t: 0);
     }
     #[tokio::test]
     async fn send_funds_to_all_pools() {
