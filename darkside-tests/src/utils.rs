@@ -546,14 +546,14 @@ pub mod scenarios {
         pub async fn generate_blocks(
             &mut self,
             target_blockheight: u64,
-            nonce: i32,
+            nonce: u64,
         ) -> &mut DarksideScenario {
             let count = target_blockheight - u64::from(self.staged_blockheight);
             self.darkside_connector
                 .stage_blocks_create(
                     u32::from(self.staged_blockheight) as i32 + 1,
                     count as i32,
-                    nonce,
+                    nonce as i32,
                 )
                 .await
                 .unwrap();

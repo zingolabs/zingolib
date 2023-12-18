@@ -11,27 +11,35 @@ use zingolib::{get_base_address, wallet::Pool};
 
 // Temporary test to showcase new darkside helpers
 #[tokio::test]
-async fn darkside_scenario_test() {
-    const BLOCKCHAIN_HEIGHT: i32 = 100;
+async fn interrupt_sync_chainbuild() {
+    const BLOCKCHAIN_HEIGHT: u64 = 150_000;
 
     let mut scenario = DarksideScenario::default().await;
-    scenario
-        .build_faucet(Pool::Sapling)
-        .await
-        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 0)
-        .await
-        .generate_blocks(5, 1)
-        .await;
+    scenario.build_faucet(Pool::Sapling).await;
 
-    let faucet = scenario.get_faucet();
-    faucet.do_sync(false).await.unwrap();
-    dbg!(faucet.do_balance().await);
+    // stage a send to self every thousand blocks
+    for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {
+        scenario
+            .generate_blocks(thousands_blocks_count * 1000 - 1, thousands_blocks_count)
+            .await;
+        scenario.get_faucet().do_sync(false).await.unwrap();
+        // scenario
+        //     .send_and_stage_transaction(
+        //         scenario.get_faucet(),
+        //         &get_base_address!(scenario.get_faucet(), "unified"),
+        //         40_000,
+        //     )
+        //     .await;
+    }
+    // stage and apply final blocks
+    scenario.generate_blocks(BLOCKCHAIN_HEIGHT, 150).await;
+    scenario.get_faucet().do_sync(false).await.unwrap();
 
-    let recipient = scenario.get_lightclient(0);
-    recipient.do_sync(false).await.unwrap();
-    dbg!(recipient.do_balance().await);
-
-    scenario.generate_blocks(12, 2).await;
-
-    dbg!(scenario.get_lightclient(0).do_sync(false).await.unwrap());
+    println!("do balance:");
+    dbg!(scenario.get_faucet().do_balance().await);
+    println!("do list_notes:");
+    println!(
+        "{}",
+        json::stringify_pretty(scenario.get_faucet().do_list_notes(true).await, 4)
+    );
 }
