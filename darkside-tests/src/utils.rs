@@ -424,30 +424,6 @@ pub async fn init_darksidewalletd(
     Ok((handler, connector))
 }
 
-/// Stage and apply a range of blocks and update tree state.
-pub async fn generate_blocks(
-    connector: &DarksideConnector,
-    tree_state: TreeState,
-    current_height: i32,
-    target_height: i32,
-    nonce: i32,
-) -> i32 {
-    let count = target_height - current_height;
-    connector
-        .stage_blocks_create(current_height + 1, count, nonce)
-        .await
-        .unwrap();
-    connector
-        .add_tree_state(TreeState {
-            height: target_height as u64,
-            ..tree_state
-        })
-        .await
-        .unwrap();
-    connector.apply_staged(target_height).await.unwrap();
-    target_height
-}
-
 /// Stage a block and transaction, then update tree state.
 pub async fn stage_transaction(
     connector: &DarksideConnector,
@@ -621,12 +597,41 @@ pub mod scenarios {
             self
         }
         /// Builds a new lightclient from a seed phrase
-        pub async fn build_client(mut self, seed: String) -> DarksideScenario {
+        pub async fn build_client(mut self, seed: String, birthday: u64) -> DarksideScenario {
             let lightclient = self
                 .client_builder
-                .build_client(seed, 0, true, self.regtest_network)
+                .build_client(seed, birthday, true, self.regtest_network)
                 .await;
             self.lightclients.push(lightclient);
+            self
+        }
+        /// Stage and apply a range of blocks and update tree state.
+        pub async fn generate_blocks(
+            mut self,
+            target_blockheight: u64,
+            nonce: i32,
+        ) -> DarksideScenario {
+            let count = target_blockheight - u64::from(self.staged_blockheight);
+            self.darkside_connector
+                .stage_blocks_create(
+                    u32::from(self.staged_blockheight) as i32 + 1,
+                    count as i32,
+                    nonce,
+                )
+                .await
+                .unwrap();
+            self.darkside_connector
+                .add_tree_state(TreeState {
+                    height: target_blockheight,
+                    ..self.tree_state.clone()
+                })
+                .await
+                .unwrap();
+            self.darkside_connector
+                .apply_staged(target_blockheight as i32)
+                .await
+                .unwrap();
+            self.staged_blockheight = BlockHeight::from(target_blockheight as u32);
             self
         }
 
