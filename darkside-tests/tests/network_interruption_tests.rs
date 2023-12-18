@@ -31,4 +31,8 @@ async fn darkside_scenario_test() {
     let recipient = scenario.get_lightclient(0);
     recipient.do_sync(false).await.unwrap();
     dbg!(recipient.do_balance().await);
+
+    scenario.generate_blocks(12, 2).await;
+
+    dbg!(scenario.get_lightclient(0).do_sync(false).await.unwrap());
 }

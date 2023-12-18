@@ -424,67 +424,6 @@ pub async fn init_darksidewalletd(
     Ok((handler, connector))
 }
 
-/// Stage a block and transaction, then update tree state.
-pub async fn stage_transaction(
-    connector: &DarksideConnector,
-    height: BlockHeight,
-    hex_transaction: &str,
-) -> TreeState {
-    connector
-        .stage_blocks_create(u64::from(height) as i32, 1, 0)
-        .await
-        .unwrap();
-    connector
-        .stage_transactions_stream(vec![(
-            hex::decode(hex_transaction).unwrap(),
-            u64::from(height),
-        )])
-        .await
-        .unwrap();
-    let tree_state = update_tree_states_for_transaction(
-        &connector.0,
-        RawTransaction {
-            data: hex::decode(hex_transaction).unwrap(),
-            height: u64::from(height),
-        },
-        u64::from(height),
-    )
-    .await;
-    connector.add_tree_state(tree_state.clone()).await.unwrap();
-    tree_state
-}
-
-/// Tool for chain builds.
-/// Send from funded lightclient and write hex transaction to file.
-/// All sends in a chain build are appended to same file in order.
-pub async fn send_and_stage_transaction(
-    connector: &DarksideConnector,
-    sender: &LightClient,
-    receiver_address: &str,
-    value: u64,
-    height: u64,
-) -> TreeState {
-    connector
-        .stage_blocks_create(height as i32, 1, 0)
-        .await
-        .unwrap();
-    sender
-        .do_send(vec![(receiver_address, value, None)])
-        .await
-        .unwrap();
-    let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
-    connector.clear_incoming_transactions().await.unwrap();
-    let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
-    // There should only be one transaction incoming
-    assert!(streamed_raw_txns.message().await.unwrap().is_none());
-    write_raw_transaction(&raw_tx, BranchId::Nu5);
-    connector
-        .stage_transactions_stream(vec![(raw_tx.data.clone(), height)])
-        .await
-        .unwrap();
-    update_tree_states_for_transaction(&connector.0, raw_tx, height).await
-}
-
 /// Hex encodes raw transaction and writes to file.
 fn write_raw_transaction(raw_transaction: &darkside_types::RawTransaction, branch_id: BranchId) {
     let transaction = create_transaction_from_raw_transaction(raw_transaction, branch_id).unwrap();
@@ -519,12 +458,16 @@ fn write_transaction(transaction: Transaction) {
 pub mod scenarios {
     use std::ops::Add;
 
-    use zcash_primitives::consensus::BlockHeight;
+    use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zingo_testutils::{data::seeds, scenarios::setup::ClientBuilder};
     use zingoconfig::RegtestNetwork;
     use zingolib::{lightclient::LightClient, wallet::Pool};
 
-    use crate::{constants, darkside_types::TreeState};
+    use crate::{
+        constants,
+        darkside_types::{RawTransaction, TreeState},
+        utils::{update_tree_states_for_transaction, write_raw_transaction},
+    };
 
     use super::{init_darksidewalletd, stage_transaction, DarksideConnector, DarksideHandler};
 
@@ -632,6 +575,81 @@ pub mod scenarios {
                 .await
                 .unwrap();
             self.staged_blockheight = BlockHeight::from(target_blockheight as u32);
+            self
+        }
+        /// Tool for chain builds.
+        /// Send from funded lightclient and write hex transaction to file.
+        /// All sends in a chain build are appended to same file in order.
+        pub async fn send_and_stage_transaction(
+            &mut self,
+            sender: &LightClient,
+            receiver_address: &str,
+            value: u64,
+        ) -> &mut DarksideScenario {
+            self.staged_blockheight = self.staged_blockheight.add(1);
+            self.darkside_connector
+                .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
+                .await
+                .unwrap();
+            sender
+                .do_send(vec![(receiver_address, value, None)])
+                .await
+                .unwrap();
+            let mut streamed_raw_txns = self
+                .darkside_connector
+                .get_incoming_transactions()
+                .await
+                .unwrap();
+            self.darkside_connector
+                .clear_incoming_transactions()
+                .await
+                .unwrap();
+            let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+            // There should only be one transaction incoming
+            assert!(streamed_raw_txns.message().await.unwrap().is_none());
+            write_raw_transaction(&raw_tx, BranchId::Nu5);
+            self.darkside_connector
+                .stage_transactions_stream(vec![(
+                    raw_tx.data.clone(),
+                    u64::from(self.staged_blockheight),
+                )])
+                .await
+                .unwrap();
+            self.tree_state = update_tree_states_for_transaction(
+                &self.darkside_connector.0,
+                raw_tx,
+                u64::from(self.staged_blockheight),
+            )
+            .await;
+            self
+        }
+        /// Stage a block and transaction, then update tree state.
+        pub async fn stage_transaction(&mut self, hex_transaction: &str) -> &mut DarksideScenario {
+            self.staged_blockheight = self.staged_blockheight.add(1);
+            self.darkside_connector
+                .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
+                .await
+                .unwrap();
+            self.darkside_connector
+                .stage_transactions_stream(vec![(
+                    hex::decode(hex_transaction).unwrap(),
+                    u64::from(self.staged_blockheight),
+                )])
+                .await
+                .unwrap();
+            self.tree_state = update_tree_states_for_transaction(
+                &self.darkside_connector.0,
+                RawTransaction {
+                    data: hex::decode(hex_transaction).unwrap(),
+                    height: u64::from(self.staged_blockheight),
+                },
+                u64::from(self.staged_blockheight),
+            )
+            .await;
+            self.darkside_connector
+                .add_tree_state(self.tree_state.clone())
+                .await
+                .unwrap();
             self
         }
 
