@@ -565,7 +565,7 @@ pub mod scenarios {
 
         /// Builds a lightclient with spending capability to the initial source of funds to the darkside blockchain
         /// The staged block with the funding transaction is not applied and the faucet is not synced
-        pub async fn build_faucet(mut self, funded_pool: Pool) -> DarksideScenario {
+        pub async fn build_faucet(&mut self, funded_pool: Pool) -> &mut DarksideScenario {
             if self.faucet.is_some() {
                 panic!("Error: Faucet already exists!");
             }
@@ -597,7 +597,7 @@ pub mod scenarios {
             self
         }
         /// Builds a new lightclient from a seed phrase
-        pub async fn build_client(mut self, seed: String, birthday: u64) -> DarksideScenario {
+        pub async fn build_client(&mut self, seed: String, birthday: u64) -> &mut DarksideScenario {
             let lightclient = self
                 .client_builder
                 .build_client(seed, birthday, true, self.regtest_network)
@@ -607,10 +607,10 @@ pub mod scenarios {
         }
         /// Stage and apply a range of blocks and update tree state.
         pub async fn generate_blocks(
-            mut self,
+            &mut self,
             target_blockheight: u64,
             nonce: i32,
-        ) -> DarksideScenario {
+        ) -> &mut DarksideScenario {
             let count = target_blockheight - u64::from(self.staged_blockheight);
             self.darkside_connector
                 .stage_blocks_create(

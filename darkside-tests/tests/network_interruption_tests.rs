@@ -15,8 +15,8 @@ use zingolib::{get_base_address, wallet::Pool};
 async fn darkside_scenario_test() {
     const BLOCKCHAIN_HEIGHT: i32 = 100;
 
-    let scenario = DarksideScenario::default()
-        .await
+    let mut scenario = DarksideScenario::default().await;
+    scenario
         .build_faucet(Pool::Sapling)
         .await
         .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 0)
