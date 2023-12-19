@@ -5,7 +5,7 @@ use darkside_tests::utils::{
 use zingolib::{get_base_address, wallet::Pool};
 
 // Test not finished, requires gRPC network interrupter
-// #[ignore]
+#[ignore]
 #[tokio::test]
 async fn network_interrupt_chainbuild() {
     const BLOCKCHAIN_HEIGHT: u64 = 150_000;
