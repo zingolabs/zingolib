@@ -26,7 +26,7 @@ use zingo_testutils::{
     regtest::{get_cargo_manifest_dir, launch_lightwalletd},
     scenarios::setup::TestEnvironmentGenerator,
 };
-use zingolib::{lightclient::LightClient, wallet::traits::DomainWalletExt};
+use zingolib::wallet::traits::DomainWalletExt;
 
 use crate::{
     constants::BRANCH_ID,
@@ -390,7 +390,7 @@ impl TreeState {
 }
 
 /// Basic initialisation of darksidewalletd.
-/// Returns a darkside handler and darkside connector for chain builds.
+/// Returns a darkside handler and darkside connector.
 /// Generates a genesis block and adds initial treestate.
 pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
@@ -424,115 +424,317 @@ pub async fn init_darksidewalletd(
     Ok((handler, connector))
 }
 
-/// Stage and apply a range of blocks and update tree state.
-pub async fn generate_blocks(
-    connector: &DarksideConnector,
-    tree_state: TreeState,
-    current_height: i32,
-    target_height: i32,
-    nonce: i32,
-) -> i32 {
-    let count = target_height - current_height;
-    connector
-        .stage_blocks_create(current_height + 1, count, nonce)
-        .await
-        .unwrap();
-    connector
-        .add_tree_state(TreeState {
-            height: target_height as u64,
-            ..tree_state
-        })
-        .await
-        .unwrap();
-    connector.apply_staged(target_height).await.unwrap();
-    target_height
-}
-
-/// Stage a block and transaction, then update tree state.
-pub async fn stage_transaction(
-    connector: &DarksideConnector,
-    height: u64,
-    hex_transaction: &str,
-) -> TreeState {
-    connector
-        .stage_blocks_create(height as i32, 1, 0)
-        .await
-        .unwrap();
-    connector
-        .stage_transactions_stream(vec![(hex::decode(hex_transaction).unwrap(), height)])
-        .await
-        .unwrap();
-    let tree_state = update_tree_states_for_transaction(
-        &connector.0,
-        RawTransaction {
-            data: hex::decode(hex_transaction).unwrap(),
-            height,
+/// Creates a file for writing transactions to store pre-built blockchains.
+/// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
+/// For writing transactions, see `send_and_write_transaction` method in DarksideScenario.
+pub fn create_chainbuild_file(test_name: &str) -> File {
+    let path = format!(
+        "{}/tests/data/chainbuilds/{}",
+        zingo_testutils::regtest::get_cargo_manifest_dir().to_string_lossy(),
+        test_name
+    );
+    match fs::create_dir(path.clone()) {
+        Ok(_) => (),
+        Err(e) => match e.kind() {
+            io::ErrorKind::AlreadyExists => (),
+            _ => panic!("Error creating directory: {}", e),
         },
-        height,
-    )
-    .await;
-    connector.add_tree_state(tree_state.clone()).await.unwrap();
-    tree_state
+    }
+    let filename = "hex_transactions.txt";
+    fs::OpenOptions::new()
+        .create_new(true)
+        .append(true)
+        .open(format!("{}/{}", path, filename))
+        .expect("file should not already exist")
 }
-
-/// Tool for chain builds.
-/// Send from funded lightclient and write hex transaction to file.
-/// All sends in a chain build are appended to same file in order.
-pub async fn send_and_stage_transaction(
-    connector: &DarksideConnector,
-    sender: &LightClient,
-    receiver_address: &str,
-    value: u64,
-    height: u64,
-) -> TreeState {
-    connector
-        .stage_blocks_create(height as i32, 1, 0)
-        .await
-        .unwrap();
-    sender
-        .do_send(vec![(receiver_address, value, None)])
-        .await
-        .unwrap();
-    let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
-    connector.clear_incoming_transactions().await.unwrap();
-    let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
-    // There should only be one transaction incoming
-    assert!(streamed_raw_txns.message().await.unwrap().is_none());
-    write_raw_transaction(&raw_tx, BranchId::Nu5);
-    connector
-        .stage_transactions_stream(vec![(raw_tx.data.clone(), height)])
-        .await
-        .unwrap();
-    update_tree_states_for_transaction(&connector.0, raw_tx, height).await
+/// Loads a vec of strings from a list of hex transactions in the chainbuild file
+/// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
+/// For staging hex transactions, see `stage_transaction` method in DarksideScenario
+pub fn load_chainbuild_file(test_name: &str) -> Vec<String> {
+    let path = format!(
+        "{}/tests/data/chainbuilds/{}",
+        zingo_testutils::regtest::get_cargo_manifest_dir().to_string_lossy(),
+        test_name
+    );
+    let filename = "hex_transactions.txt";
+    read_dataset(format!("{}/{}", path, filename))
 }
-
-/// Takes raw transaction and writes to file.
-fn write_raw_transaction(raw_transaction: &darkside_types::RawTransaction, branch_id: BranchId) {
+/// Hex encodes raw transaction and writes to file.
+fn write_raw_transaction(
+    raw_transaction: &darkside_types::RawTransaction,
+    branch_id: BranchId,
+    chainbuild_file: &File,
+) {
     let transaction = create_transaction_from_raw_transaction(raw_transaction, branch_id).unwrap();
-    write_transaction_to_hex_file(transaction);
+    write_transaction(transaction, chainbuild_file);
 }
-/// Takes raw transaction and returns transaction.
+/// Converts raw transaction to transaction.
 fn create_transaction_from_raw_transaction(
     raw_transaction: &darkside_types::RawTransaction,
     branch_id: BranchId,
 ) -> Result<Transaction, io::Error> {
     Transaction::read(&raw_transaction.data[..], branch_id)
 }
-/// Takes transaction and writes to file
-fn write_transaction_to_hex_file(transaction: Transaction) {
-    let file_path = "transaction_hex.txt";
-    use std::fs::OpenOptions;
+/// Hex encodes transaction and writes to file
+fn write_transaction(transaction: Transaction, mut chainbuild_file: &File) {
     let mut buffer = vec![];
     let mut cursor = std::io::Cursor::new(&mut buffer);
     transaction
         .write(&mut cursor)
-        .expect("To write to a buffer");
+        .expect("transaction should be written to a buffer");
     let hex_transaction = hex::encode(buffer);
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(file_path)
+    chainbuild_file
+        .write_all(format!("{}\n", hex_transaction).as_bytes())
         .unwrap();
-    file.write_all(format!("{}\n", hex_transaction).as_bytes())
-        .unwrap();
+}
+
+pub mod scenarios {
+    use std::fs::File;
+    use std::ops::Add;
+
+    use zcash_primitives::consensus::{BlockHeight, BranchId};
+    use zingo_testutils::{data::seeds, scenarios::setup::ClientBuilder};
+    use zingoconfig::RegtestNetwork;
+    use zingolib::{lightclient::LightClient, wallet::Pool};
+
+    use crate::{
+        constants,
+        darkside_types::{RawTransaction, TreeState},
+    };
+
+    use super::{
+        init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
+        DarksideConnector, DarksideHandler,
+    };
+
+    pub struct DarksideScenario {
+        darkside_handler: DarksideHandler,
+        darkside_connector: DarksideConnector,
+        client_builder: ClientBuilder,
+        regtest_network: RegtestNetwork,
+        faucet: Option<LightClient>,
+        lightclients: Vec<LightClient>,
+        staged_blockheight: BlockHeight,
+        tree_state: TreeState,
+    }
+    impl DarksideScenario {
+        /// Initialises and launches darksidewalletd, stages the genesis block and creates the lightclient builder
+        pub async fn new(set_port: Option<portpicker::Port>) -> DarksideScenario {
+            let (darkside_handler, darkside_connector) =
+                init_darksidewalletd(set_port).await.unwrap();
+            let client_builder = ClientBuilder::new(
+                darkside_connector.0.clone(),
+                darkside_handler.darkside_dir.clone(),
+            );
+            let regtest_network = RegtestNetwork::all_upgrades_active();
+            DarksideScenario {
+                darkside_handler,
+                darkside_connector,
+                client_builder,
+                regtest_network,
+                faucet: None,
+                lightclients: vec![],
+                staged_blockheight: BlockHeight::from(1),
+                tree_state: constants::first_tree_state(),
+            }
+        }
+        pub async fn default() -> DarksideScenario {
+            DarksideScenario::new(None).await
+        }
+
+        /// Builds a lightclient with spending capability to the initial source of funds to the darkside blockchain
+        /// The staged block with the funding transaction is not applied and the faucet is not synced
+        pub async fn build_faucet(&mut self, funded_pool: Pool) -> &mut DarksideScenario {
+            if self.faucet.is_some() {
+                panic!("Error: Faucet already exists!");
+            }
+            self.faucet = Some(
+                self.client_builder
+                    .build_client(
+                        seeds::DARKSIDE_SEED.to_string(),
+                        0,
+                        true,
+                        self.regtest_network,
+                    )
+                    .await,
+            );
+
+            let faucet_funding_transaction = match funded_pool {
+                Pool::Orchard => constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT,
+                Pool::Sapling => constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT,
+                Pool::Transparent => {
+                    panic!("Error: Transparent funding transactions for faucet are not currently implemented!")
+                }
+            };
+            self.stage_transaction(faucet_funding_transaction).await;
+            self
+        }
+        /// Builds a new lightclient from a seed phrase
+        pub async fn build_client(&mut self, seed: String, birthday: u64) -> &mut DarksideScenario {
+            let lightclient = self
+                .client_builder
+                .build_client(seed, birthday, true, self.regtest_network)
+                .await;
+            self.lightclients.push(lightclient);
+            self
+        }
+        /// Stage and apply a range of blocks and update tree state.
+        pub async fn generate_blocks(
+            &mut self,
+            target_blockheight: u64,
+            nonce: u64,
+        ) -> &mut DarksideScenario {
+            let count = target_blockheight - u64::from(self.staged_blockheight);
+            self.darkside_connector
+                .stage_blocks_create(
+                    u32::from(self.staged_blockheight) as i32 + 1,
+                    count as i32,
+                    nonce as i32,
+                )
+                .await
+                .unwrap();
+            self.darkside_connector
+                .add_tree_state(TreeState {
+                    height: target_blockheight,
+                    ..self.tree_state.clone()
+                })
+                .await
+                .unwrap();
+            self.darkside_connector
+                .apply_staged(target_blockheight as i32)
+                .await
+                .unwrap();
+            self.staged_blockheight = BlockHeight::from(target_blockheight as u32);
+            self
+        }
+        /// Tool for chainbuilds.
+        /// Send from funded lightclient and write hex transaction to file.
+        /// All sends in a chainbuild are appended to same file in order.
+        pub async fn send_and_write_transaction(
+            &mut self,
+            // We can't just take a reference to a LightClient, as that might be a reference to
+            // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
+            sender: DarksideSender<'_>,
+            receiver_address: &str,
+            value: u64,
+            chainbuild_file: &File,
+        ) -> &mut DarksideScenario {
+            self.staged_blockheight = self.staged_blockheight.add(1);
+            self.darkside_connector
+                .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
+                .await
+                .unwrap();
+            let lightclient = match sender {
+                DarksideSender::Faucet => self.get_faucet(),
+                DarksideSender::IndexedClient(n) => self.get_lightclient(n),
+                DarksideSender::ExternalClient(lc) => lc,
+            };
+            lightclient
+                .do_send(vec![(receiver_address, value, None)])
+                .await
+                .unwrap();
+            let mut streamed_raw_txns = self
+                .darkside_connector
+                .get_incoming_transactions()
+                .await
+                .unwrap();
+            self.darkside_connector
+                .clear_incoming_transactions()
+                .await
+                .unwrap();
+            let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+            // There should only be one transaction incoming
+            assert!(streamed_raw_txns.message().await.unwrap().is_none());
+            write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
+            self.darkside_connector
+                .stage_transactions_stream(vec![(
+                    raw_tx.data.clone(),
+                    u64::from(self.staged_blockheight),
+                )])
+                .await
+                .unwrap();
+            self.tree_state = update_tree_states_for_transaction(
+                &self.darkside_connector.0,
+                raw_tx,
+                u64::from(self.staged_blockheight),
+            )
+            .await;
+            self
+        }
+        /// Stage a block and transaction, then update tree state.
+        pub async fn stage_transaction(&mut self, hex_transaction: &str) -> &mut DarksideScenario {
+            self.staged_blockheight = self.staged_blockheight.add(1);
+            self.darkside_connector
+                .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
+                .await
+                .unwrap();
+            self.darkside_connector
+                .stage_transactions_stream(vec![(
+                    hex::decode(hex_transaction).unwrap(),
+                    u64::from(self.staged_blockheight),
+                )])
+                .await
+                .unwrap();
+            self.tree_state = update_tree_states_for_transaction(
+                &self.darkside_connector.0,
+                RawTransaction {
+                    data: hex::decode(hex_transaction).unwrap(),
+                    height: u64::from(self.staged_blockheight),
+                },
+                u64::from(self.staged_blockheight),
+            )
+            .await;
+            self.darkside_connector
+                .add_tree_state(self.tree_state.clone())
+                .await
+                .unwrap();
+            self
+        }
+
+        /// Update the height of the staged blockchain
+        pub fn set_staged_blockheight(&mut self, height: u64) {
+            self.staged_blockheight = BlockHeight::from(height as u32);
+        }
+        /// Update the latest tree state
+        pub fn set_tree_state(&mut self, tree_state: TreeState) {
+            self.tree_state = tree_state;
+        }
+
+        pub fn get_handler(&self) -> &DarksideHandler {
+            &self.darkside_handler
+        }
+        pub fn get_connector(&self) -> &DarksideConnector {
+            &self.darkside_connector
+        }
+        pub fn get_client_builder(&self) -> &ClientBuilder {
+            &self.client_builder
+        }
+        pub fn get_regtest_network(&self) -> &RegtestNetwork {
+            &self.regtest_network
+        }
+        pub fn get_faucet(&self) -> &LightClient {
+            self.faucet
+                .as_ref()
+                .expect("scenario should have a faucet lightclient")
+        }
+        pub fn get_lightclient(&self, lightclient_index: u64) -> &LightClient {
+            &self.lightclients[lightclient_index as usize]
+        }
+        pub fn get_staged_blockheight(&self) -> &BlockHeight {
+            &self.staged_blockheight
+        }
+        pub fn get_tree_state(&self) -> &TreeState {
+            &self.tree_state
+        }
+    }
+
+    /// A way to specify which client to send funds from
+    pub enum DarksideSender<'a> {
+        // The faucet of the DarksideScenario
+        Faucet,
+        // A generated non-faucet client, accessed by index
+        IndexedClient(u64),
+        // A client not managed by the DarksideScenario itself
+        ExternalClient(&'a LightClient),
+    }
 }

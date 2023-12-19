@@ -24,4 +24,3 @@ zingocli/tests/times/*
 wallets/*
 zingocli/wallets/*
 darkside-tests/lightwalletd_bin/
-darkside-tests/transaction_hex*
