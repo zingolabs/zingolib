@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
-zingolib = { path = "../zingolib" }
+zingolib = { path = "../zingolib", features = ["test"] }
 
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
