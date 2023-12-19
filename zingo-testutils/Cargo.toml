@@ -23,3 +23,4 @@ http = "0.2.4"
 tracing = "0.1.37"
 serde_json = "1.0.100"
 serde = { version = "1.0.166", features = ["derive"] }
+build_const = "0.2.2"
