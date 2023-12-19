@@ -10,6 +10,8 @@ pub mod error;
 pub mod grpc_connector;
 pub mod lightclient;
 pub mod wallet;
+#[cfg(feature = "test")]
+pub use zingo_testvectors as testvectors;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
