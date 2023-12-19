@@ -16,7 +16,7 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client, increase_height_and_wait_for_client, regtest::get_cargo_manifest_dir,
+    self, build_fvk_client, increase_height_and_wait_for_client, paths::{get_cargo_manifest_dir},
     scenarios,
 };
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};

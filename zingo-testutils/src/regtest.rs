@@ -4,13 +4,6 @@ use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::PathBuf;
 use std::process::Child;
-pub fn get_cargo_manifest_dir() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."))
-}
-
-pub fn get_regtest_dir() -> PathBuf {
-    get_cargo_manifest_dir().join("regtest")
-}
 
 ///  To manage the state associated a "regtest" run this type:
 ///   * sets up paths to config and log directories
@@ -178,7 +171,7 @@ impl RegtestManager {
         let regtest_dir = rootpathname;
         let confs_dir = regtest_dir.join("conf");
         std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
-        let bin_dir = get_regtest_dir().join("bin");
+        let bin_dir = super::paths::get_bin_dir();
         std::fs::create_dir_all(&bin_dir).expect("Couldn't create dir.");
         let cli_bin = bin_dir.join("zcash-cli");
         let logs_dir = regtest_dir.join("logs");
