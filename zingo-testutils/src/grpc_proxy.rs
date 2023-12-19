@@ -36,7 +36,12 @@ macro_rules! define_grpc_passthrough {
                 while !$self.online.load(::core::sync::atomic::Ordering::Relaxed) {
                     ::tokio::time::sleep(::core::time::Duration::from_millis(50)).await;
                 }
-                println!("Proxy passing through {} call", stringify!($name));
+                let rpc_name = stringify!($name);
+                // if rpc_name == "get_tree_state" {
+                //     ::tokio::time::sleep(::core::time::Duration::from_millis(1500)).await;
+                //     println!("Proxy passing through {rpc_name} call after delay");
+                // }
+                println!("Proxy passing through {rpc_name} call");
                 ::zingolib::grpc_connector::GrpcConnector::new($self.lightwalletd_uri.clone())
                     .get_client()
                     .await
