@@ -1,18 +1,9 @@
-use std::{env, path::PathBuf, process::Command};
+use std::{process::Command};
 
-// macro_rules! p {
-//     ($($tokens: tt)*) => {
-//         println!("cargo:warning={}", format!($($tokens)*))
-//     }
-// }
+include!("src/paths.rs");
 
 fn main() {
-    let out_dir = env::var_os("OUT_DIR").unwrap();
-    let mut bin_path = PathBuf::from(out_dir);
-    bin_path.pop();
-    bin_path.pop();
-    bin_path.pop();
-    // p!("{:?}", bin_path);
+    let bin_path = get_cargo_manifest_dir();
     let _output = Command::new("git")
         .current_dir(bin_path)
         .args(["clone", "https://github.com/zingolabs/test_binaries.git"])

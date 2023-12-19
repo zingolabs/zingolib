@@ -23,7 +23,8 @@ use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transacti
 use zingo_testutils::{
     self,
     incrementalmerkletree::frontier::CommitmentTree,
-    regtest::{get_cargo_manifest_dir, launch_lightwalletd},
+    regtest::{launch_lightwalletd},
+    paths::{get_cargo_manifest_dir, get_bin_dir},
     scenarios::setup::TestEnvironmentGenerator,
 };
 use zingolib::wallet::traits::DomainWalletExt;
@@ -251,7 +252,7 @@ impl DarksideHandler {
             darkside_dir.join("logs"),
             darkside_dir.join("conf"),
             darkside_dir.join("data"),
-            get_cargo_manifest_dir().join("lightwalletd_bin"),
+            get_bin_dir(),
             check_interval,
             grpc_bind_addr,
         );
@@ -430,7 +431,7 @@ pub async fn init_darksidewalletd(
 pub fn create_chainbuild_file(test_name: &str) -> File {
     let path = format!(
         "{}/tests/data/chainbuilds/{}",
-        zingo_testutils::regtest::get_cargo_manifest_dir().to_string_lossy(),
+        get_cargo_manifest_dir().to_string_lossy(),
         test_name
     );
     match fs::create_dir(path.clone()) {
@@ -453,7 +454,7 @@ pub fn create_chainbuild_file(test_name: &str) -> File {
 pub fn load_chainbuild_file(test_name: &str) -> Vec<String> {
     let path = format!(
         "{}/tests/data/chainbuilds/{}",
-        zingo_testutils::regtest::get_cargo_manifest_dir().to_string_lossy(),
+        get_cargo_manifest_dir().to_string_lossy(),
         test_name
     );
     let filename = "hex_transactions.txt";
