@@ -16,7 +16,7 @@ use tokio::time::sleep;
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
 use zcash_primitives::{
-    consensus::{BlockHeight, BranchId},
+    consensus::BranchId,
     sapling::{note_encryption::SaplingDomain, Node},
 };
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
@@ -26,7 +26,7 @@ use zingo_testutils::{
     regtest::{get_cargo_manifest_dir, launch_lightwalletd},
     scenarios::setup::TestEnvironmentGenerator,
 };
-use zingolib::{lightclient::LightClient, wallet::traits::DomainWalletExt};
+use zingolib::wallet::traits::DomainWalletExt;
 
 use crate::{
     constants::BRANCH_ID,
@@ -390,7 +390,7 @@ impl TreeState {
 }
 
 /// Basic initialisation of darksidewalletd.
-/// Returns a darkside handler and darkside connector for chain builds.
+/// Returns a darkside handler and darkside connector.
 /// Generates a genesis block and adds initial treestate.
 pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
@@ -424,10 +424,49 @@ pub async fn init_darksidewalletd(
     Ok((handler, connector))
 }
 
+/// Creates a file for writing transactions to store pre-built blockchains.
+/// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
+/// For writing transactions, see `send_and_write_transaction` method in DarksideScenario.
+pub fn create_chainbuild_file(test_name: &str) -> File {
+    let path = format!(
+        "{}/tests/data/chainbuilds/{}",
+        zingo_testutils::regtest::get_cargo_manifest_dir().to_string_lossy(),
+        test_name
+    );
+    match fs::create_dir(path.clone()) {
+        Ok(_) => (),
+        Err(e) => match e.kind() {
+            io::ErrorKind::AlreadyExists => (),
+            _ => panic!("Error creating directory: {}", e),
+        },
+    }
+    let filename = "hex_transactions.txt";
+    fs::OpenOptions::new()
+        .create_new(true)
+        .append(true)
+        .open(format!("{}/{}", path, filename))
+        .expect("file should not already exist")
+}
+/// Loads a vec of strings from a list of hex transactions in the chainbuild file
+/// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
+/// For staging hex transactions, see `stage_transaction` method in DarksideScenario
+pub fn load_chainbuild_file(test_name: &str) -> Vec<String> {
+    let path = format!(
+        "{}/tests/data/chainbuilds/{}",
+        zingo_testutils::regtest::get_cargo_manifest_dir().to_string_lossy(),
+        test_name
+    );
+    let filename = "hex_transactions.txt";
+    read_dataset(format!("{}/{}", path, filename))
+}
 /// Hex encodes raw transaction and writes to file.
-fn write_raw_transaction(raw_transaction: &darkside_types::RawTransaction, branch_id: BranchId) {
+fn write_raw_transaction(
+    raw_transaction: &darkside_types::RawTransaction,
+    branch_id: BranchId,
+    chainbuild_file: &File,
+) {
     let transaction = create_transaction_from_raw_transaction(raw_transaction, branch_id).unwrap();
-    write_transaction(transaction);
+    write_transaction(transaction, chainbuild_file);
 }
 /// Converts raw transaction to transaction.
 fn create_transaction_from_raw_transaction(
@@ -437,25 +476,20 @@ fn create_transaction_from_raw_transaction(
     Transaction::read(&raw_transaction.data[..], branch_id)
 }
 /// Hex encodes transaction and writes to file
-fn write_transaction(transaction: Transaction) {
-    let file_path = "transaction_hex.txt";
-    use std::fs::OpenOptions;
+fn write_transaction(transaction: Transaction, mut chainbuild_file: &File) {
     let mut buffer = vec![];
     let mut cursor = std::io::Cursor::new(&mut buffer);
     transaction
         .write(&mut cursor)
-        .expect("To write to a buffer");
+        .expect("transaction should be written to a buffer");
     let hex_transaction = hex::encode(buffer);
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(file_path)
-        .unwrap();
-    file.write_all(format!("{}\n", hex_transaction).as_bytes())
+    chainbuild_file
+        .write_all(format!("{}\n", hex_transaction).as_bytes())
         .unwrap();
 }
 
 pub mod scenarios {
+    use std::fs::File;
     use std::ops::Add;
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
@@ -466,10 +500,12 @@ pub mod scenarios {
     use crate::{
         constants,
         darkside_types::{RawTransaction, TreeState},
-        utils::{update_tree_states_for_transaction, write_raw_transaction},
     };
 
-    use super::{init_darksidewalletd, DarksideConnector, DarksideHandler};
+    use super::{
+        init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
+        DarksideConnector, DarksideHandler,
+    };
 
     pub struct DarksideScenario {
         darkside_handler: DarksideHandler,
@@ -571,16 +607,17 @@ pub mod scenarios {
             self.staged_blockheight = BlockHeight::from(target_blockheight as u32);
             self
         }
-        /// Tool for chain builds.
+        /// Tool for chainbuilds.
         /// Send from funded lightclient and write hex transaction to file.
-        /// All sends in a chain build are appended to same file in order.
-        pub async fn send_and_stage_transaction(
+        /// All sends in a chainbuild are appended to same file in order.
+        pub async fn send_and_write_transaction(
             &mut self,
             // We can't just take a reference to a LightClient, as that might be a reference to
             // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
-            sender: super::DarksideSender<'_>,
+            sender: DarksideSender<'_>,
             receiver_address: &str,
             value: u64,
+            chainbuild_file: &File,
         ) -> &mut DarksideScenario {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
@@ -588,9 +625,9 @@ pub mod scenarios {
                 .await
                 .unwrap();
             let lightclient = match sender {
-                crate::utils::DarksideSender::Faucet => self.get_faucet(),
-                crate::utils::DarksideSender::IndexedClient(n) => self.get_lightclient(n),
-                crate::utils::DarksideSender::ExternalClient(cli) => cli,
+                DarksideSender::Faucet => self.get_faucet(),
+                DarksideSender::IndexedClient(n) => self.get_lightclient(n),
+                DarksideSender::ExternalClient(lc) => lc,
             };
             lightclient
                 .do_send(vec![(receiver_address, value, None)])
@@ -608,7 +645,7 @@ pub mod scenarios {
             let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
             // There should only be one transaction incoming
             assert!(streamed_raw_txns.message().await.unwrap().is_none());
-            write_raw_transaction(&raw_tx, BranchId::Nu5);
+            write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
             self.darkside_connector
                 .stage_transactions_stream(vec![(
                     raw_tx.data.clone(),
@@ -654,9 +691,11 @@ pub mod scenarios {
             self
         }
 
+        /// Update the height of the staged blockchain
         pub fn set_staged_blockheight(&mut self, height: u64) {
             self.staged_blockheight = BlockHeight::from(height as u32);
         }
+        /// Update the latest tree state
         pub fn set_tree_state(&mut self, tree_state: TreeState) {
             self.tree_state = tree_state;
         }
@@ -688,14 +727,14 @@ pub mod scenarios {
             &self.tree_state
         }
     }
-}
 
-/// A way to specify which client to send funds from
-pub enum DarksideSender<'a> {
-    // The faucet of the DarksideScenario
-    Faucet,
-    // A generated non-faucet client, accessed by index
-    IndexedClient(u64),
-    // A client not managed by the DarksideScenario itself
-    ExternalClient(&'a LightClient),
+    /// A way to specify which client to send funds from
+    pub enum DarksideSender<'a> {
+        // The faucet of the DarksideScenario
+        Faucet,
+        // A generated non-faucet client, accessed by index
+        IndexedClient(u64),
+        // A client not managed by the DarksideScenario itself
+        ExternalClient(&'a LightClient),
+    }
 }
