@@ -2677,7 +2677,7 @@ mod slow {
         let cached_data_dir = get_cargo_manifest_dir()
             .parent()
             .unwrap()
-            .join("zingo-testdata")
+            .join("zingo-testvectors")
             .join("old_wallet_reorg_test_wallet");
         let zcd_source = cached_data_dir
             .join("zcashd")
