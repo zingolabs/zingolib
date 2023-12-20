@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     sync::{atomic::AtomicBool, Arc},
 };
@@ -40,7 +41,7 @@ macro_rules! define_grpc_passthrough {
                     ::tokio::time::sleep(::core::time::Duration::from_millis(50)).await;
                 }
                 let rpc_name = stringify!($name);
-                // if rpc_name == "get_tree_state" {
+                $self.passthrough_helper(rpc_name);
                 //     ::tokio::time::sleep(::core::time::Duration::from_millis(1500)).await;
                 //     println!("Proxy passing through {rpc_name} call after delay");
                 // }
@@ -59,6 +60,7 @@ macro_rules! define_grpc_passthrough {
 pub struct ProxyServer {
     pub lightwalletd_uri: http::Uri,
     pub online: Arc<AtomicBool>,
+    pub conditional_operations: HashMap<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>,
 }
 
 impl ProxyServer {
@@ -73,6 +75,11 @@ impl ProxyServer {
                 .serve(listen_at)
                 .await
         })
+    }
+    fn passthrough_helper(&self, name: &str) {
+        if let Some(fun) = self.conditional_operations.get(name) {
+            fun(&self.online)
+        }
     }
 }
 

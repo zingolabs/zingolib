@@ -4,6 +4,7 @@ pub use incrementalmerkletree;
 pub mod grpc_proxy;
 pub mod regtest;
 
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
@@ -1073,7 +1074,10 @@ pub mod scenarios {
     }
 }
 
-pub fn start_proxy_and_connect_lightclient(client: &LightClient) -> Arc<AtomicBool> {
+pub fn start_proxy_and_connect_lightclient(
+    client: &LightClient,
+    conditional_operations: HashMap<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>,
+) -> Arc<AtomicBool> {
     let proxy_online = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let proxy_port = portpicker::pick_unused_port().unwrap();
     let proxy_uri = format!("http://localhost:{proxy_port}");
@@ -1081,6 +1085,7 @@ pub fn start_proxy_and_connect_lightclient(client: &LightClient) -> Arc<AtomicBo
     let _proxy_handle = ProxyServer {
         lightwalletd_uri: client.get_server_uri(),
         online: proxy_online.clone(),
+        conditional_operations,
     }
     .serve(proxy_socket.parse().unwrap());
     client.set_server(proxy_uri.parse().unwrap());
@@ -1088,8 +1093,8 @@ pub fn start_proxy_and_connect_lightclient(client: &LightClient) -> Arc<AtomicBo
 }
 
 pub async fn check_proxy_server_works() {
-    let (regtest_manager, cph, ref faucet) = scenarios::faucet_default().await;
-    let proxy_status = start_proxy_and_connect_lightclient(faucet);
+    let (_regtest_manager, _cph, ref faucet) = scenarios::faucet_default().await;
+    let proxy_status = start_proxy_and_connect_lightclient(faucet, HashMap::new());
     proxy_status.store(false, std::sync::atomic::Ordering::Relaxed);
     tokio::task::spawn(async move {
         sleep(Duration::from_secs(5)).await;
