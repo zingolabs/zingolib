@@ -1,5 +1,4 @@
 use crate::{
-    compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
@@ -11,6 +10,8 @@ use incrementalmerkletree::{
     frontier, frontier::CommitmentTree, witness::IncrementalWitness, Hashable,
 };
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
+use zcash_client_backend::proto::service::TreeState;
 use zcash_note_encryption::Domain;
 use zingoconfig::ChainType;
 
@@ -744,7 +745,6 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
 
 #[cfg(test)]
 mod test {
-    use crate::compact_formats::CompactBlock;
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;

@@ -5,7 +5,6 @@ use crate::{
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
-    compact_formats::RawTransaction,
     error::{ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
     wallet::{
@@ -42,7 +41,10 @@ use tokio::{
 };
 use zcash_address::ZcashAddress;
 
-use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
+use zcash_client_backend::{
+    encoding::{decode_payment_address, encode_payment_address},
+    proto::service::RawTransaction,
+};
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},

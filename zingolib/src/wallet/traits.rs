@@ -10,14 +10,11 @@ use super::{
     transactions::TransactionMetadataSet,
     Pool,
 };
-use crate::compact_formats::{
-    slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
-};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
 use orchard::{
-    note_encryption::OrchardDomain,
+    note_encryption::{CompactAction, OrchardDomain},
     primitives::redpallas::{Signature, SpendAuth},
     tree::MerkleHashOrchard,
     Action,
@@ -26,10 +23,17 @@ use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use subtle::CtOption;
 use zcash_address::unified::{self, Receiver};
-use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    encoding::encode_payment_address,
+    proto::{
+        compact_formats::{CompactOrchardAction, CompactSaplingOutput, CompactTx},
+        service::TreeState,
+    },
+};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
-    BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
+    BatchDomain, Domain, EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
@@ -37,7 +41,11 @@ use zcash_primitives::{
     merkle_tree::{read_incremental_witness, HashSer},
     sapling::note_encryption::SaplingDomain,
     transaction::{
-        components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
+        components::{
+            self,
+            sapling::{self, GrothProofBytes},
+            Amount, OutputDescription, SpendDescription,
+        },
         Transaction, TxId,
     },
     zip32,
@@ -257,18 +265,25 @@ impl Recipient for zcash_primitives::sapling::PaymentAddress {
     }
 }
 
-pub trait CompactOutput<D: DomainWalletExt>:
-    Sized + ShieldedOutput<D, COMPACT_NOTE_SIZE> + Clone
+fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
+    <&[u8; N]>::try_from(slice).unwrap_or(&[0; N])
+    //todo: This default feels dangerous. Find better solution
+}
+
+pub trait CompactOutput<D: DomainWalletExt>: Sized + Clone
 where
     D::Recipient: Recipient,
     <D as Domain>::Note: PartialEq + Clone,
 {
+    type CompactAction: ShieldedOutput<D, COMPACT_NOTE_SIZE>;
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<Self>;
     fn cmstar(&self) -> &[u8; 32];
     fn domain(&self, parameters: ChainType, height: BlockHeight) -> D;
+    fn to_compact_output_impl(&self) -> Self::CompactAction;
 }
 
 impl CompactOutput<SaplingDomain<ChainType>> for CompactSaplingOutput {
+    type CompactAction = sapling::CompactOutputDescription;
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactSaplingOutput> {
         &compact_transaction.outputs
     }
@@ -280,9 +295,14 @@ impl CompactOutput<SaplingDomain<ChainType>> for CompactSaplingOutput {
     fn domain(&self, parameters: ChainType, height: BlockHeight) -> SaplingDomain<ChainType> {
         SaplingDomain::for_height(parameters, height)
     }
+
+    fn to_compact_output_impl(&self) -> Self::CompactAction {
+        self.clone().try_into().unwrap()
+    }
 }
 
 impl CompactOutput<OrchardDomain> for CompactOrchardAction {
+    type CompactAction = CompactAction;
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactOrchardAction> {
         &compact_transaction.actions
     }
@@ -293,6 +313,15 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
     fn domain(&self, _parameters: ChainType, _heightt: BlockHeight) -> OrchardDomain {
         OrchardDomain::for_nullifier(
             orchard::note::Nullifier::from_bytes(slice_to_array(&self.nullifier)).unwrap(),
+        )
+    }
+
+    fn to_compact_output_impl(&self) -> Self::CompactAction {
+        CompactAction::from_parts(
+            orchard::note::Nullifier::from_bytes(slice_to_array(&self.nullifier)).unwrap(),
+            orchard::note::ExtractedNoteCommitment::from_bytes(slice_to_array(&self.cmx)).unwrap(),
+            EphemeralKeyBytes(*slice_to_array(&self.ephemeral_key)),
+            *slice_to_array(&self.ciphertext),
         )
     }
 }
