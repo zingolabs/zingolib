@@ -1,6 +1,6 @@
-use crate::compact_formats::RawTransaction;
 use crate::wallet::keys::address_from_pubkeyhash;
 use crate::wallet::keys::unified::WalletCapability;
+use zcash_client_backend::proto::service::RawTransaction;
 
 use std::sync::Arc;
 use tokio::join;

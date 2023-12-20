@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
@@ -16,20 +15,18 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client,
-    data::{
-        self, block_rewards,
-        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
-    },
-    grpc_proxy::ProxyServer,
-    increase_height_and_wait_for_client,
-    regtest::get_cargo_manifest_dir,
-    scenarios, BASE_HEIGHT,
+    build_fvk_client, check_transaction_equality, increase_height_and_wait_for_client,
+    regtest::get_cargo_manifest_dir, scenarios,
 };
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
     lightclient::{LightClient, PoolBalances},
+    testvectors::{
+        self, block_rewards,
+        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+        BASE_HEIGHT,
+    },
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
@@ -1019,7 +1016,7 @@ mod slow {
             watch_client.do_rescan().await.unwrap();
             assert_eq!(
                 watch_client
-                    .do_send(vec![(data::EXT_TADDR, 1000, None)])
+                    .do_send(vec![(testvectors::EXT_TADDR, 1000, None)])
                     .await,
                 Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
             );
@@ -1053,7 +1050,7 @@ mod slow {
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
         let sent_transaction_error = recipient
-            .do_send(vec![(data::EXT_TADDR, sent_value, None)])
+            .do_send(vec![(testvectors::EXT_TADDR, sent_value, None)])
             .await
             .unwrap_err();
         assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.");
@@ -2674,11 +2671,12 @@ mod slow {
 
         let zcd_datadir = &regtest_manager.zcashd_data_dir;
         let zingo_datadir = &regtest_manager.zingo_datadir;
+        // This test is the unique consumer of:
+        // zingo-testutils/old_wallet_reorg_test_wallet
         let cached_data_dir = get_cargo_manifest_dir()
             .parent()
             .unwrap()
-            .join("zingo-testutils")
-            .join("data")
+            .join("zingo-testvectors")
             .join("old_wallet_reorg_test_wallet");
         let zcd_source = cached_data_dir
             .join("zcashd")

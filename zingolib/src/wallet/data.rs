@@ -1,4 +1,3 @@
-use crate::compact_formats::CompactBlock;
 use crate::error::ZingoLibError;
 use crate::wallet::traits::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -15,6 +14,7 @@ use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
@@ -295,7 +295,7 @@ impl BlockData {
         for compact_transaction in &mut cb.vtx {
             for co in &mut compact_transaction.outputs {
                 co.ciphertext.clear();
-                co.epk.clear();
+                co.ephemeral_key.clear();
             }
         }
 

@@ -1,10 +1,5 @@
 use std::sync::Arc;
 
-use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
-use crate::compact_formats::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, RawTransaction,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
-};
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -19,6 +14,12 @@ use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Request;
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
+use zcash_client_backend::proto::service::{
+    BlockId, BlockRange, ChainSpec, Empty, LightdInfo, RawTransaction,
+    TransparentAddressBlockFilter, TreeState, TxFilter,
+};
 use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters};
 use zcash_primitives::transaction::{Transaction, TxId};
 

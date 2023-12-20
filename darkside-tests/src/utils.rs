@@ -493,7 +493,7 @@ pub mod scenarios {
     use std::ops::Add;
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
-    use zingo_testutils::{data::seeds, scenarios::setup::ClientBuilder};
+    use zingo_testutils::scenarios::setup::ClientBuilder;
     use zingoconfig::RegtestNetwork;
     use zingolib::{lightclient::LightClient, wallet::Pool};
 
@@ -551,7 +551,7 @@ pub mod scenarios {
             self.faucet = Some(
                 self.client_builder
                     .build_client(
-                        seeds::DARKSIDE_SEED.to_string(),
+                        zingolib::testvectors::seeds::DARKSIDE_SEED.to_string(),
                         0,
                         true,
                         self.regtest_network,

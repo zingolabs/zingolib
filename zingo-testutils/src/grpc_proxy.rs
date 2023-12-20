@@ -3,12 +3,15 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
-use zingolib::compact_formats::{
-    compact_tx_streamer_server::{CompactTxStreamer, CompactTxStreamerServer},
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
-    Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList,
-    LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
-    TreeState, TxFilter,
+use zcash_client_backend::proto::{
+    compact_formats::{CompactBlock, CompactTx},
+    service::{
+        compact_tx_streamer_server::{CompactTxStreamer, CompactTxStreamerServer},
+        Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, Duration, Empty, Exclude,
+        GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetSubtreeRootsArg,
+        LightdInfo, PingResponse, RawTransaction, SendResponse, SubtreeRoot,
+        TransparentAddressBlockFilter, TreeState, TxFilter,
+    },
 };
 
 macro_rules! define_grpc_passthrough {
@@ -206,4 +209,37 @@ impl CompactTxStreamer for ProxyServer {
             request: tonic::Request<Duration>,
         ) -> PingResponse
     );
+
+    define_grpc_passthrough!(
+        fn get_block_nullifiers(
+            &self,
+            request: tonic::Request<BlockId>,
+        ) -> CompactBlock
+    );
+
+    define_grpc_passthrough!(
+        fn get_block_range_nullifiers(
+            &self,
+            request: tonic::Request<BlockRange>,
+        ) -> Self::GetBlockRangeNullifiersStream
+    );
+    #[doc = " Server streaming response type for the GetBlockRangeNullifiers method."]
+    type GetBlockRangeNullifiersStream = tonic::Streaming<CompactBlock>;
+
+    define_grpc_passthrough!(
+        fn get_latest_tree_state(
+            &self,
+            request: tonic::Request<Empty>,
+        ) -> TreeState
+    );
+
+    define_grpc_passthrough!(
+        fn get_subtree_roots(
+            &self,
+            request: tonic::Request<GetSubtreeRootsArg>,
+        ) -> Self::GetSubtreeRootsStream
+    );
+
+    #[doc = " Server streaming response type for the GetSubtreeRoots method."]
+    type GetSubtreeRootsStream = tonic::Streaming<SubtreeRoot>;
 }
