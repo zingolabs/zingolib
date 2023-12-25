@@ -26,19 +26,6 @@ impl ZingoLibError {
         log::error!("{}", self);
         Err(self)
     }
-    pub fn handle_notest<T>(self) -> ZingoLibResult<T> {
-        log::error!("{}", self);
-
-        #[cfg(feature = "test-features")]
-        {
-            panic!("{}", self);
-        }
-
-        #[cfg(not(feature = "test-features"))]
-        {
-            Err(self)
-        }
-    }
 }
 
 impl std::fmt::Display for ZingoLibError {
