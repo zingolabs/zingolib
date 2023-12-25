@@ -11,4 +11,9 @@ impl LightClient {
         .await
         .map_err(ZingoLibError::CantReadWallet)
     }
+    pub async fn do_list_txsummaries_assert(&self) -> Vec<ValueTransfer> {
+        let lts = self.list_tx_summaries().await;
+        assert_eq!(lts.1.len(), 0);
+        lts.0
+    }
 }
