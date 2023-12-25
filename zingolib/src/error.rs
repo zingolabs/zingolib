@@ -24,16 +24,7 @@ pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
 impl ZingoLibError {
     pub fn handle<T>(self) -> ZingoLibResult<T> {
         log::error!("{}", self);
-
-        #[cfg(feature = "test-features")]
-        {
-            panic!("{}", self);
-        }
-
-        #[cfg(not(feature = "test-features"))]
-        {
-            Err(self)
-        }
+        Err(self)
     }
 }
 
