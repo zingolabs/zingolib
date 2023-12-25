@@ -729,7 +729,12 @@ impl LightClient {
     }
 
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
+        self.list_tx_summaries().await.0
+    }
+
+    pub async fn list_tx_summaries(&self) -> (Vec<ValueTransfer>, Vec<ZingoLibError>) {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
+        let mut errors: Vec<ZingoLibError> = Vec::new();
 
         for (txid, transaction_md) in self
             .wallet
@@ -742,7 +747,8 @@ impl LightClient {
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
 
-            if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
+            let fee_result = transaction_md.get_transaction_fee();
+            if let Ok(tx_fee) = fee_result {
                 if transaction_md.is_outgoing_transaction() {
                     let (block_height, datetime, price, unconfirmed) = (
                         transaction_md.block_height,
@@ -760,10 +766,12 @@ impl LightClient {
                         unconfirmed,
                     });
                 }
-            };
+            } else if let Err(e) = fee_result {
+                errors.push(e);
+            }
         }
         summaries.sort_by_key(|summary| summary.block_height);
-        summaries
+        (summaries, errors)
     }
 
     /// Create a new address, deriving it from the seed.
