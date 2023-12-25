@@ -732,6 +732,12 @@ impl LightClient {
         self.list_tx_summaries().await.0
     }
 
+    pub async fn do_list_txsummaries_assert(&self) -> Vec<ValueTransfer> {
+        let lts = self.list_tx_summaries().await;
+        assert_eq!(lts.1.len(), 0);
+        lts.0
+    }
+
     pub async fn list_tx_summaries(&self) -> (Vec<ValueTransfer>, Vec<ZingoLibError>) {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
         let mut errors: Vec<ZingoLibError> = Vec::new();
