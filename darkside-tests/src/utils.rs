@@ -23,8 +23,8 @@ use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transacti
 use zingo_testutils::{
     self,
     incrementalmerkletree::frontier::CommitmentTree,
-    regtest::{launch_lightwalletd},
-    paths::{get_cargo_manifest_dir, get_bin_dir},
+    paths::{get_bin_dir, get_cargo_manifest_dir},
+    regtest::launch_lightwalletd,
     scenarios::setup::TestEnvironmentGenerator,
 };
 use zingolib::wallet::traits::DomainWalletExt;

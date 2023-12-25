@@ -15,7 +15,7 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    build_fvk_client, check_transaction_equality, increase_height_and_wait_for_client,
+    self, build_fvk_client, check_transaction_equality, increase_height_and_wait_for_client,
     paths::get_cargo_manifest_dir, scenarios,
 };
 

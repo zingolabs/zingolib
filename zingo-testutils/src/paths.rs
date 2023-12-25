@@ -11,5 +11,7 @@ pub fn get_regtest_dir() -> PathBuf {
 pub fn get_bin_dir() -> PathBuf {
     let mut dir = get_cargo_manifest_dir();
     dir.pop();
-    dir.join("zingo-testutils").join("test_binaries").join("bins")
+    dir.join("zingo-testutils")
+        .join("test_binaries")
+        .join("bins")
 }
