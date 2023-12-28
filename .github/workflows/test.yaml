@@ -58,6 +58,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: create binaries dir
+        run: mkdir -p ./zingo-testutils/test_binaries/bins
+
       - name: Symlink lightwalletd and zcash binaries
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./zingo-testutils/test_binaries/bins/
 
