@@ -13,6 +13,7 @@ members = [
     "zingo-testvectors",
     "zingo-memo",
 ]
+exclude = ["mainnet-tests"]
 resolver = "2"
 
 [workspace.dependencies]
