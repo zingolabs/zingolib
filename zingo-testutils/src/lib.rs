@@ -442,6 +442,23 @@ pub mod scenarios {
                 .await
                 .unwrap()
             }
+            pub async fn build_client_live(
+                &mut self,
+                mnemonic_phrase: String,
+                birthday: u64,
+                overwrite: bool,
+                regtest_network: zingoconfig::RegtestNetwork,
+            ) -> LightClient {
+                let zingo_config = self.make_unique_data_dir_and_load_config(regtest_network);
+                LightClient::create_from_wallet_base_async(
+                    WalletBase::MnemonicPhrase(mnemonic_phrase),
+                    &zingo_config,
+                    birthday,
+                    overwrite,
+                )
+                .await
+                .unwrap()
+            }
         }
         pub struct TestEnvironmentGenerator {
             zcashd_rpcservice_port: String,

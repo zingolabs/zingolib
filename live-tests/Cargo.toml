@@ -10,3 +10,4 @@ tempdir = "0.3.7"
 tokio = "1.35.1"
 zingo-testutils = { path = "../zingo-testutils" }
 zingolib = { path = "../zingolib", features = ["test"] }
+zingoconfig = { path = "../zingoconfig" }

@@ -1395,6 +1395,7 @@ dependencies = [
  "tempdir",
  "tokio",
  "zingo-testutils",
+ "zingoconfig",
  "zingolib",
 ]
 
