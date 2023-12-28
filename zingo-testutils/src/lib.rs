@@ -379,19 +379,22 @@ pub mod scenarios {
                     client_number,
                 }
             }
+            pub fn make_unique_data_dir(&mut self) -> PathBuf {
+                //! Each client requires a unique data_dir, we use the
+                //! client_number counter for this.
+                self.client_number += 1;
+                PathBuf::from(format!(
+                    "{}_client_{}",
+                    self.zingo_datadir.to_string_lossy(),
+                    self.client_number
+                ))
+            }
             pub fn make_unique_data_dir_and_load_config(
                 &mut self,
                 regtest_network: zingoconfig::RegtestNetwork,
             ) -> zingoconfig::ZingoConfig {
-                //! Each client requires a unique data_dir, we use the
-                //! client_number counter for this.
-                self.client_number += 1;
-                let conf_path = format!(
-                    "{}_client_{}",
-                    self.zingo_datadir.to_string_lossy(),
-                    self.client_number
-                );
-                self.create_clientconfig(PathBuf::from(conf_path), regtest_network)
+                let cp = self.make_unique_data_dir();
+                self.create_clientconfig(cp, regtest_network)
             }
             pub fn create_clientconfig(
                 &self,
