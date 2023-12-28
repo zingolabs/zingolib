@@ -2,7 +2,8 @@ use zingolib::lightclient::LightClient;
 
 #[tokio::test]
 async fn equality() {
-    let x = 0;
-    // let client = LightClient::new();
-    // client.do_sync(false).await;
+    // let darkside_dir = tempdir::TempDir::new("zingo_darkside_test")
+    //     .unwrap()
+    //     .into_path();
+    // let client_build = ClientBuilder::new
 }

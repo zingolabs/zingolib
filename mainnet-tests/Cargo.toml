@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 tokio = "1.35.1"
+zingo-testutils = { path = "../zingo-testutils" }
 zingolib = { path = "../zingolib", features = ["test"] }
