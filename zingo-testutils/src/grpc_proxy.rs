@@ -81,6 +81,13 @@ impl ProxyServer {
             fun(&self.online)
         }
     }
+    pub fn new(lightwalletd_uri: http::Uri) -> Self {
+        Self {
+            lightwalletd_uri,
+            online: Arc::new(AtomicBool::new(true)),
+            conditional_operations: HashMap::new(),
+        }
+    }
 }
 
 impl CompactTxStreamer for ProxyServer {
