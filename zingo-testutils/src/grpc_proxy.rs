@@ -86,7 +86,7 @@ impl ProxyServer {
         self,
     ) -> (
         tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
-        String,
+        http::Uri,
     ) {
         let port = portpicker::pick_unused_port().unwrap();
         (self.serve(port), port_to_localhost_uri(port))
