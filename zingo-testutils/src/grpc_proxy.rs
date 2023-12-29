@@ -4,7 +4,6 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
-use http::uri::Port;
 use zcash_client_backend::proto::{
     compact_formats::{CompactBlock, CompactTx},
     service::{
@@ -67,7 +66,7 @@ pub struct ProxyServer {
 impl ProxyServer {
     pub fn serve(
         self,
-        port: impl Into<u16> + Send + Sync,
+        port: impl Into<u16> + Send + Sync + 'static,
     ) -> tokio::task::JoinHandle<Result<(), tonic::transport::Error>> {
         tokio::task::spawn(async move {
             let svc = CompactTxStreamerServer::new(self);
