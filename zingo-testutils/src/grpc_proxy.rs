@@ -15,6 +15,8 @@ use zcash_client_backend::proto::{
     },
 };
 
+use crate::port_to_localhost_uri;
+
 macro_rules! define_grpc_passthrough {
     (fn
         $name:ident(
@@ -79,6 +81,17 @@ impl ProxyServer {
                 .await
         })
     }
+
+    pub fn serve_and_pick_proxy_uri(
+        self,
+    ) -> (
+        tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+        String,
+    ) {
+        let port = portpicker::pick_unused_port().unwrap();
+        (self.serve(port), port_to_localhost_uri(port))
+    }
+
     fn passthrough_helper(&self, name: &str) {
         if let Some(fun) = self.conditional_operations.get(name) {
             fun(&self.online)
