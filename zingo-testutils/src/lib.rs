@@ -1103,3 +1103,7 @@ pub async fn check_proxy_server_works() {
     println!("Doing info!");
     println!("{}", faucet.do_info().await)
 }
+
+pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> String {
+    format!("http://localhost:{port}")
+}
