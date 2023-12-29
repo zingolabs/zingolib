@@ -1101,13 +1101,12 @@ pub fn start_proxy_and_connect_lightclient(
     let proxy_online = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let proxy_port = portpicker::pick_unused_port().unwrap();
     let proxy_uri = format!("http://localhost:{proxy_port}");
-    let proxy_socket = format!("127.0.0.1:{proxy_port}");
     let _proxy_handle = ProxyServer {
         lightwalletd_uri: client.get_server_uri(),
         online: proxy_online.clone(),
         conditional_operations,
     }
-    .serve(proxy_socket.parse().unwrap());
+    .serve(proxy_port);
     client.set_server(proxy_uri.parse().unwrap());
     proxy_online
 }

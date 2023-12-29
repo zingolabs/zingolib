@@ -1,9 +1,10 @@
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{Ipv4Addr, SocketAddr},
     sync::{atomic::AtomicBool, Arc},
 };
 
+use http::uri::Port;
 use zcash_client_backend::proto::{
     compact_formats::{CompactBlock, CompactTx},
     service::{
@@ -66,13 +67,16 @@ pub struct ProxyServer {
 impl ProxyServer {
     pub fn serve(
         self,
-        listen_at: SocketAddr,
+        port: impl Into<u16> + Send + Sync,
     ) -> tokio::task::JoinHandle<Result<(), tonic::transport::Error>> {
         tokio::task::spawn(async move {
             let svc = CompactTxStreamerServer::new(self);
             tonic::transport::Server::builder()
                 .add_service(svc)
-                .serve(listen_at)
+                .serve(SocketAddr::new(
+                    std::net::IpAddr::V4(Ipv4Addr::LOCALHOST),
+                    port.into(),
+                ))
                 .await
         })
     }
