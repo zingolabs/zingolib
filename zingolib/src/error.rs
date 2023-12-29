@@ -17,6 +17,7 @@ pub enum ZingoLibError {
     NoSuchSaplingOutputInTxId(TxId, u32),
     NoSuchOrchardOutputInTxId(TxId, u32),
     CouldNotDecodeMemo(std::io::Error),
+    CouldNotParseUfvkString(String),
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -90,6 +91,11 @@ impl std::fmt::Display for ZingoLibError {
                 f,
                 "Could not decode memo. Zingo plans to support foreign memo formats soon. {}",
                 err,
+            ),
+            CouldNotParseUfvkString(input) => write!(
+                f,
+                "This string is not parseable as a Ufvk: {}",
+                input,
             ),
         }
     }

@@ -21,6 +21,7 @@ use zcash_primitives::{
 };
 use zingoconfig::ZingoConfig;
 
+use crate::error::ZingoLibError;
 use crate::wallet::traits::ReadableWriteable;
 
 use super::{
@@ -382,13 +383,26 @@ impl WalletCapability {
         })
     }
 
-    pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, String> {
+    pub fn parse_string_encoded_ufvk(
+        config: &ZingoConfig,
+        ufvk_encoded: String,
+    ) -> Result<(zcash_address::Network, Ufvk), ZingoLibError> {
         // Decode UFVK
         if ufvk_encoded.starts_with(config.hrp_sapling_viewing_key()) {
-            return Err("Viewing keys must be imported in the unified format".to_string());
+            return Err(ZingoLibError::CouldNotParseUfvkString(
+                "Viewing keys must be imported in the unified format".to_string(),
+            ));
         }
-        let (network, ufvk) = Ufvk::decode(&ufvk_encoded)
-            .map_err(|e| format!("Error decoding unified full viewing key: {}", e))?;
+        let (network, ufvk) = Ufvk::decode(&ufvk_encoded).map_err(|e| {
+            ZingoLibError::CouldNotParseUfvkString(format!(
+                "Error decoding unified full viewing key: {}",
+                e
+            ))
+        })?;
+        Ok((network, ufvk))
+    }
+    pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, String> {
+        let (network, ufvk) = WalletCapability::parse_string_encoded_ufvk(config, ufvk_encoded)?;
         if network != config.chain.to_zcash_address_network() {
             return Err("Given UFVK is not valid for current chain".to_string());
         }

@@ -213,6 +213,12 @@ impl WalletBase {
         zcash_primitives::zip339::Mnemonic::validate(input)?;
         Ok(input.to_string())
     }
+    pub fn parse_input_to_viewkey(input: &str) -> Result<String, bip0039::Error> {
+        // sanity check that this string is a
+        // valid bip0039 english phrase
+        zcash_primitives::zip339::Mnemonic::validate(input)?;
+        Ok(input.to_string())
+    }
 }
 
 pub struct LightWallet {
