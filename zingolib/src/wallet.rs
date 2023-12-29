@@ -182,6 +182,7 @@ impl WalletOptions {
 }
 
 /// Data used to initialize new instance of LightWallet
+#[derive(Debug)]
 pub enum WalletBase {
     FreshEntropy,
     SeedBytes([u8; 32]),
@@ -196,15 +197,21 @@ pub enum WalletBase {
     Usk(Vec<u8>),
 }
 impl WalletBase {
-    pub fn from_string(base: String) -> WalletBase {
-        /// Sanity check that this string is a
-        /// valid BIP0039 English phrase
-        zcash_primitives::zip339::Mnemonic::validate(&base);
+    /// This interface is pub, so I am leaving the parameter type "String"
+    pub fn from_string(input: String) -> WalletBase {
+        let base = WalletBase::parse_input_to_phrase(&input)
+            .expect("To receive a bip0039 compliant phrase.");
         if (&base[0..5]) == "uview" {
             WalletBase::Ufvk(base)
         } else {
             WalletBase::MnemonicPhrase(base)
         }
+    }
+    pub fn parse_input_to_phrase(input: &str) -> Result<String, bip0039::Error> {
+        // sanity check that this string is a
+        // valid bip0039 english phrase
+        zcash_primitives::zip339::Mnemonic::validate(input)?;
+        Ok(input.to_string())
     }
 }
 
@@ -1778,8 +1785,34 @@ mod test {
     mod seed_injections {
         #[test]
         fn invalid_phrases_detected() {
-            let phrase_one = crate::data::seed_phrases::DARKSIDE;
-            todo!()
+            use crate::testvectors::seed_phrases::DARKSIDE;
+            use crate::wallet::WalletBase;
+            let valid_phrase_parsed = WalletBase::parse_input_to_phrase(DARKSIDE);
+            if let Ok(dark_seed_phrase) = valid_phrase_parsed {
+                assert_eq!(dark_seed_phrase, DARKSIDE.to_string())
+            }
+            let one_word_phrase = "9999999999999";
+            let short_phrase_error = WalletBase::parse_input_to_phrase(one_word_phrase);
+            if let Err(bad_phrase) = short_phrase_error {
+                assert_eq!(
+                    bad_phrase.to_string(),
+                    "BIP-0039 mnemonic only supports 12/15/18/21/24 words: 1"
+                );
+            } else {
+                panic!("9999999999999 is not a valid seed phrase");
+            }
+
+            let words = (1..=12).map(|i| format!("9{} ", i)).collect::<String>();
+            let twelve_word_phrase = words.trim_end();
+            let twelve_word_phrase_error = WalletBase::parse_input_to_phrase(twelve_word_phrase);
+            if let Err(bad_phrase) = twelve_word_phrase_error {
+                assert_eq!(
+                    bad_phrase.to_string(),
+                    "mnemonic contains an unknown word: 91"
+                );
+            } else {
+                panic!("twelve_word_phrase isn't valid?");
+            }
         }
     }
     #[test]

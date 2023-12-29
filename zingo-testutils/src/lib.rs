@@ -241,13 +241,13 @@ pub mod scenarios {
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::increase_height_and_wait_for_client;
-    use zingolib::testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
+    use zingolib::testvectors::{self, seed_phrases::HOSPITAL_MUSEUM, BASE_HEIGHT};
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
     pub mod setup {
         use super::BASE_HEIGHT;
         use zingolib::testvectors::{
-            seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
+            seed_phrases, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
         };
 

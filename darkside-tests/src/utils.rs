@@ -551,7 +551,7 @@ pub mod scenarios {
             self.faucet = Some(
                 self.client_builder
                     .build_client(
-                        zingolib::testvectors::seeds::DARKSIDE_SEED.to_string(),
+                        zingolib::testvectors::seed_phrases::DARKSIDE.to_string(),
                         0,
                         true,
                         self.regtest_network,

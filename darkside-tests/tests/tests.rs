@@ -4,7 +4,7 @@ use darkside_tests::utils::{
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
-use zingolib::testvectors::seeds::DARKSIDE_SEED;
+use zingolib::testvectors::seed_phrases::DARKSIDE;
 use zingolib::{get_base_address, lightclient::PoolBalances};
 
 #[tokio::test]
@@ -118,7 +118,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .await;
     let recipient = client_manager
         .build_client(
-            zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            zingolib::testvectors::seed_phrases::HOSPITAL_MUSEUM.to_string(),
             1,
             true,
             regtest_network,
