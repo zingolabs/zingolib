@@ -199,11 +199,11 @@ pub enum WalletBase {
 impl WalletBase {
     /// This interface is pub, so I am leaving the parameter type "String"
     pub fn from_string(input: String) -> WalletBase {
-        let base = WalletBase::parse_input_to_phrase(&input)
-            .expect("To receive a bip0039 compliant phrase.");
-        if (&base[0..5]) == "uview" {
-            WalletBase::Ufvk(base)
+        if (&input[0..5]) == "uview" {
+            WalletBase::Ufvk(input)
         } else {
+            let base = WalletBase::parse_input_to_phrase(&input)
+                .expect("To receive a bip0039 compliant phrase.");
             WalletBase::MnemonicPhrase(base)
         }
     }
