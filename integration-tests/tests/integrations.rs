@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
@@ -16,8 +15,8 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client, increase_height_and_wait_for_client, regtest::get_cargo_manifest_dir,
-    scenarios,
+    build_fvk_client, check_transaction_equality, increase_height_and_wait_for_client,
+    regtest::get_cargo_manifest_dir, scenarios,
 };
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
@@ -3366,4 +3365,9 @@ mod slow {
             Some(890_000)
         );
     }
+}
+
+#[tokio::test]
+async fn proxy_server_worky() {
+    zingo_testutils::check_proxy_server_works().await
 }

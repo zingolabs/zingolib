@@ -18,17 +18,18 @@ resolver = "2"
 
 [workspace.dependencies]
 clap = "4.4"
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2", features = ["lightwalletd-tonic"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2.1" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2.1", features = ["lightwalletd-tonic"] }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2.1" }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2.1" }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2.1" }
 orchard = "0.6"
 tonic-build = "0.10"
 tempdir = "0.3"
 portpicker = "0.1"
 incrementalmerkletree = { version = "0.5" }
+futures = "0.3.15"
 shardtree = "0.1"
 build_utils = { path = "./build_utils" }
 http = "0.2.4"
