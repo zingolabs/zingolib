@@ -30,16 +30,14 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("chain")
                 .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
-            .arg(Arg::new("from")
-                .short('f')
-                .short_alias('s')
-                .long("from")
-                .alias("seed")
-                .alias("viewing-key")
-                .value_name("from")
+                .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#))
+            .arg(Arg::new("seed-phrase")
+                .long("seed-phrase")
+                .env("SEED_PHRASE")
+                .hide_env(true)
+                .value_name("seed_phrase")
                 .value_parser(WalletBase::parse_input_to_phrase)
-                .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
+                .help("Create a new wallet with the given phrase as the value of the SEED_PHRASE environment variable. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
@@ -287,7 +285,7 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let from = matches.get_one::<String>("from");
+        let from = matches.get_one::<String>("seed-phrase");
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());

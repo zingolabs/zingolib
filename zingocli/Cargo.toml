@@ -8,7 +8,7 @@ zingolib = { path = "../zingolib/", features = ["deprecations"] }
 zingoconfig = { path = "../zingoconfig/" }
 zingo-testutils = { path = "../zingo-testutils" }
 
-clap = { workspace = true }
+clap = { workspace = true, features = ["env"] }
 http = { workspace = true }
 
 rustyline = "11.0.0"
