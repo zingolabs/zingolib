@@ -43,7 +43,7 @@ log4rs = "1.1.1"
 base64 = "0.13.0"
 bytes = "0.4"
 rand = "0.8.5"
-hyper-rustls = { version = "0.23", features = ["http2"] }
+hyper-rustls = { version = "0.24", features = ["http2"] }
 serde_json = "1.0.82"
 tokio =  { version = "1.24.2", features = ["full"] }
 tokio-stream = "0.1.6"
