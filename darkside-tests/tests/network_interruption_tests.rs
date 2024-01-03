@@ -76,11 +76,8 @@ async fn network_interrupt_test() {
     conditional_logic.insert(
         "get_tree_state",
         Box::new(|online: &Arc<AtomicBool>| {
-            {
-                println!("Turning off, as we received get_tree_state call");
-                online.store(false, Ordering::Relaxed);
-            }
-            .into()
+            println!("Turning off, as we received get_tree_state call");
+            online.store(false, Ordering::Relaxed);
         }),
     );
 
