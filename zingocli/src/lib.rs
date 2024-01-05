@@ -30,7 +30,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("chain")
                 .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#))
+                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
             .arg(Arg::new("from")
                 .short('f')
                 .short_alias('s')
@@ -44,7 +44,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .long("birthday")
                 .value_name("birthday")
                 .value_parser(clap::value_parser!(u32))
-                .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction."))
+                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
@@ -285,7 +285,7 @@ impl From<regtest::LaunchChildProcessError> for TemplateFillError {
 ///  * handle parameters as efficiently as possible.
 ///      * If a ShortCircuitCommand
 ///    is specified, then the system should execute only logic necessary to support that command,
-///    in other words "help" the ShortCitcuitCommand _MUST_ not launch either zcashd or lightwalletd
+///    in other words "help" the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section

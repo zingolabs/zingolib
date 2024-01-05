@@ -364,7 +364,7 @@ impl BlockManagementData {
                 .await
                 .map_err(|e| format!("Error processing blocks: {}", e))??;
 
-            // Return the earlist block that was synced, accounting for all reorgs
+            // Return the earliest block that was synced, accounting for all reorgs
             Ok(earliest_block)
         });
 
@@ -668,7 +668,7 @@ fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: Tr
 pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
-    // Type alias, sapling equivilant to the type manually written out for orchard
+    // Type alias, sapling equivalent to the type manually written out for orchard
     pub sapling_tree: zcash_primitives::sapling::CommitmentTree,
     pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard, 32>,
 }

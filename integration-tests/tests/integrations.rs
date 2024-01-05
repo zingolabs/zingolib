@@ -490,7 +490,7 @@ mod fast {
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
         // --birthday 0
         // --nosync
-        // with 3 addresses containig all receivers.
+        // with 3 addresses containing all receivers.
         let data = include_bytes!("zingo-wallet-v26.dat");
 
         let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
@@ -953,7 +953,7 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        // 2. send a transaction contaning all types of outputs
+        // 2. send a transaction containing all types of outputs
         faucet.do_send(addr_amount_memos).await.unwrap();
         zingo_testutils::increase_height_and_wait_for_client(
             &regtest_manager,
@@ -987,7 +987,7 @@ mod slow {
             vec![&o_fvk, &s_fvk, &t_fvk],
         ];
         for fvks in fvks_sets.iter() {
-            log::info!("testing UFVK containig:");
+            log::info!("testing UFVK containing:");
             log::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
             log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
             log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
@@ -2151,7 +2151,7 @@ mod slow {
             json::stringify_pretty(post_rescan_transactions.clone(), 4)
         );
 
-        // Notes are not in deterministic order after rescan. Insead, iterate over all
+        // Notes are not in deterministic order after rescan. Instead, iterate over all
         // the notes and check that they exist post-rescan
         for (field_name, field) in notes.entries() {
             for note in field.members() {
@@ -2198,7 +2198,7 @@ mod slow {
         let client_2_saplingaddress = get_base_address!(recipient, "sapling");
         // Send three transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
-        // subequently receive funding via it's orchard-packed UA.
+        // subsequently receive funding via it's orchard-packed UA.
         faucet
             .do_send(
                 (1..=3)
@@ -2263,7 +2263,7 @@ mod slow {
             .collect::<Vec<_>>();
         // client_2 got a total of 3000+2000+1000
         // It sent 3000 to the client_1, and also
-        // paid the defualt transaction fee.
+        // paid the default transaction fee.
         // In non change notes it has 1000.
         // There is an outstanding 2000 that is marked as change.
         // After sync the unspent_sapling_notes should go to 3000.

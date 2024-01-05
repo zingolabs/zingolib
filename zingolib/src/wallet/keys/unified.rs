@@ -452,7 +452,7 @@ impl WalletCapability {
     }
 
     pub fn first_sapling_address(&self) -> &zcash_primitives::sapling::PaymentAddress {
-        // This index is dangerous, but all ways to instanciate a UnifiedSpendAuthority
+        // This index is dangerous, but all ways to instantiate a UnifiedSpendAuthority
         // create it with a suitable first address
         self.addresses()[0].sapling().unwrap()
     }
@@ -510,7 +510,7 @@ where
             x => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Unknow wallet Capability type: {}", x),
+                    format!("Unknown wallet Capability type: {}", x),
                 ))
             }
         })

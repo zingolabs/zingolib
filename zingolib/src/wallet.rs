@@ -221,7 +221,7 @@ pub struct LightWallet {
     // Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>,
 
-    // Heighest verified block
+    // Highest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
     // Progress of an outgoing transaction
@@ -1239,7 +1239,7 @@ impl LightWallet {
 
             let earmark_total_plus_default_fee =
                 total_earmarked_for_recipients + u64::from(proposed_fee);
-            // Select notes as a fn of target anount
+            // Select notes as a fn of target amount
             (
                 orchard_notes,
                 sapling_notes,
