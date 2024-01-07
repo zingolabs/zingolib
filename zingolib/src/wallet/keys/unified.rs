@@ -392,7 +392,7 @@ impl WalletCapability {
                 "Viewing keys cannot be naked Sapling view keys, they must be imported in the unified format".to_string(),
             ));
         }
-        let (network, ufvk) = Ufvk::decode(&ufvk_encoded).map_err(|e| {
+        let (network, ufvk) = Ufvk::decode(ufvk_encoded).map_err(|e| {
             ZingoLibError::CouldNotParseUfvkString(format!(
                 "Error decoding unified full viewing key: {}",
                 e

@@ -8,6 +8,7 @@ use log::{error, info};
 use clap::{self, Arg};
 use zingo_testutils::regtest;
 use zingoconfig::ChainType;
+use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -37,22 +38,22 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .value_name("seed_phrase")
                 .value_parser(WalletBase::parse_input_to_phrase)
                 .requires("birthday")
-                .help("Create a new wallet with the given seed phrase. Cannot be used with --view-key, or --wallet."))
+                .help("Create a new wallet with the given seed phrase. Cannot be used with --view-key, or --wallet-dir."))
             .arg(Arg::new("view-key")
                 .long("view-key")
                 .hide_env(true)
                 .value_name("view-key")
-                .value_parser(WalletBase::parse_input_to_viewkey)
+                .value_parser(WalletCapability::parse_string_encoded_ufvk)
                 .requires("birthday")
-                .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --wallet."))
+                .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --wallet-dir."))
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
                 .value_parser(clap::value_parser!(u32))
                 .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction."))
-            .arg(Arg::new("wallet")
-                .long("wallet")
-                .value_name("wallet")
+            .arg(Arg::new("wallet-dir")
+                .long("wallet-dir")
+                .value_name("wallet-dir")
                 .help("Launch with an existing wallet specified by the value which is the absolute path to the wallet. Cannot be used with --seed-phrase, or --view-key."))
             .arg(Arg::new("server")
                 .long("server")
@@ -70,7 +71,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .num_args(1..)
                 .index(2)
                 .action(clap::ArgAction::Append)
-        ).group(clap::ArgGroup::new("source").args(["wallet", "seed-phrase", "view-key"])).get_matches()
+        ).group(clap::ArgGroup::new("source").args(["wallet-dir", "seed-phrase", "view-key"])).get_matches()
 }
 
 /// Custom function to parse a string into an http::Uri
@@ -296,19 +297,6 @@ impl ConfigTemplate {
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
-        if from.is_some() && maybe_birthday.is_none() {
-            eprintln!("ERROR!");
-            eprintln!(
-                "Please specify the wallet birthday (eg. '--birthday 600000') to restore a wallet. (If you want to load the entire blockchain instead, you can use birthday 0. /this would require extensive time and computational resources)"
-            );
-            return Err(TemplateFillError::BirthdaylessSeed(
-                "This should be the block height where the wallet was created.\
-If you don't remember the block height, you can pass '--birthday 0'\
-to scan from the start of the blockchain."
-                    .to_string(),
-            ));
-        }
-        let from = from.map(|seed| seed.to_string());
         if matches.contains_id("chain") && is_regtest {
             return Err(TemplateFillError::RegtestAndChainSpecified(
                 "regtest mode incompatible with custom chain selection".to_string(),
@@ -325,7 +313,7 @@ to scan from the start of the blockchain."
         };
 
         let clean_regtest_data = !matches.get_flag("no-clean");
-        let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
+        let data_dir = if let Some(dir) = matches.get_one::<String>("wallet-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
             regtest::get_regtest_dir()
