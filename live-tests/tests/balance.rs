@@ -57,6 +57,19 @@ async fn balance_interrupt_proxy() {
     let proxy_status = proxy.online.clone();
     let (proxy_handle, int_port) = proxy.serve_and_pick_proxy_uri();
 
+    tokio::task::spawn(async move {
+        loop {
+            sleep(Duration::from_millis(32)).await;
+            let online = proxy_status.load(Ordering::Relaxed);
+            proxy_status.store(!online, std::sync::atomic::Ordering::Relaxed);
+            println!("set proxy status to {}", !online);
+            sleep(Duration::from_secs(2)).await;
+            let online = proxy_status.load(Ordering::Relaxed);
+            proxy_status.store(!online, std::sync::atomic::Ordering::Relaxed);
+            println!("set proxy status to {}", !online);
+        }
+    });
+
     let config = load_clientconfig(int_port, Some(dir), Mainnet, false).unwrap();
     let client = LightClient::create_from_wallet_base_async(
         WalletBase::MnemonicPhrase("daughter safe tonight pull clarify discover gesture sting carry shine cup tourist say six ignore benefit wise argue issue above invest milk holiday source".to_string()),
@@ -66,19 +79,6 @@ async fn balance_interrupt_proxy() {
     )
     .await
     .unwrap();
-
-    tokio::task::spawn(async move {
-        loop {
-            sleep(Duration::from_millis(8)).await;
-            let online = proxy_status.load(Ordering::Relaxed);
-            proxy_status.store(!online, std::sync::atomic::Ordering::Relaxed);
-            println!("set proxy status to {}", !online);
-            sleep(Duration::from_secs(8)).await;
-            let online = proxy_status.load(Ordering::Relaxed);
-            proxy_status.store(!online, std::sync::atomic::Ordering::Relaxed);
-            println!("set proxy status to {}", !online);
-        }
-    });
 
     client.do_sync(true).await.unwrap();
     let balance = client.do_balance().await;
