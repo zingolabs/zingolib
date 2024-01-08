@@ -1094,6 +1094,7 @@ pub mod scenarios {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn start_proxy_and_connect_lightclient(
     client: &LightClient,
     conditional_operations: HashMap<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>,
