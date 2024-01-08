@@ -256,7 +256,7 @@ fn short_circuit_on_help(params: Vec<String>) {
 use std::string::String;
 #[derive(Debug)]
 enum TemplateFillError {
-    BirthdaylessSeed(String),
+    _BirthdaylessSeed(String),
     InvalidBirthday(String),
     MalformedServerURL(String),
     ChildLaunchError(regtest::LaunchChildProcessError),
