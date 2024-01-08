@@ -12,8 +12,9 @@ members = [
     "zingoconfig",
     "zingo-testvectors",
     "zingo-memo",
+    "live-tests",
 ]
-exclude = ["live-tests"]
+# exclude = ["live-tests"]
 resolver = "2"
 
 [workspace.dependencies]
