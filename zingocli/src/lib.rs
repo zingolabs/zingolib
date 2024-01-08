@@ -34,15 +34,15 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#))
             .arg(Arg::new("seed-phrase")
                 .long("seed-phrase")
+                .env("SEED_PHRASE")
                 .hide_env(true)
-                .value_name("seed_phrase")
                 .value_parser(WalletBase::parse_input_to_phrase)
                 .requires("birthday")
                 .help("Create a new wallet with the given seed phrase. Cannot be used with --view-key, or --wallet-dir."))
             .arg(Arg::new("view-key")
                 .long("view-key")
+                .env("VIEW_KEY")
                 .hide_env(true)
-                .value_name("view-key")
                 .value_parser(WalletCapability::parse_string_encoded_ufvk)
                 .requires("birthday")
                 .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --wallet-dir."))
@@ -293,7 +293,7 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let from = matches.get_one::<String>("seed-phrase");
+        let from = matches.get_one::<String>("seed-phrase").cloned();
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
