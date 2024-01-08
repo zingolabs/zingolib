@@ -1,7 +1,14 @@
+use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
+pub mod grpc_proxy;
+pub mod regtest;
+
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::keys::unified::WalletCapability;
@@ -17,7 +24,6 @@ use zingolib::lightclient::LightClient;
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
 pub mod paths;
-pub mod regtest;
 
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
@@ -1067,4 +1073,39 @@ pub mod scenarios {
             )
         }
     }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn start_proxy_and_connect_lightclient(
+    client: &LightClient,
+    conditional_operations: HashMap<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>,
+) -> Arc<AtomicBool> {
+    let proxy_online = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let proxy_port = portpicker::pick_unused_port().unwrap();
+    let proxy_uri = format!("http://localhost:{proxy_port}");
+    let _proxy_handle = ProxyServer {
+        lightwalletd_uri: client.get_server_uri(),
+        online: proxy_online.clone(),
+        conditional_operations,
+    }
+    .serve(proxy_port);
+    client.set_server(proxy_uri.parse().unwrap());
+    proxy_online
+}
+
+pub async fn check_proxy_server_works() {
+    let (_regtest_manager, _cph, ref faucet) = scenarios::faucet_default().await;
+    let proxy_status = start_proxy_and_connect_lightclient(faucet, HashMap::new());
+    proxy_status.store(false, std::sync::atomic::Ordering::Relaxed);
+    tokio::task::spawn(async move {
+        sleep(Duration::from_secs(5)).await;
+        println!("Wakening proxy!");
+        proxy_status.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    println!("Doing info!");
+    println!("{}", faucet.do_info().await)
+}
+
+pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {
+    format!("http://localhost:{port}").parse().unwrap()
 }
