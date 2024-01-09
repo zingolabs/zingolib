@@ -1,4 +1,5 @@
 pub const BASE_HEIGHT: u32 = 3;
+pub const MAINNET_ALPHA_VIEWKEY: &str = "uview1ah2qw247djujxwu5tdr20t7naaqvd5qkljxtm0yrw92tzy6fvafdhv7uchvsrzxaqskc7mxphzafgn5aca6pscrdx8xqu95ruyefng0hcctsnle4jq9f97gvymlf78pal7zqwf3yfej6han20pvhj0j0ew05dzq685kx29phyy5ffuw63wxmvesm9r23jhccfrdm9yxr5tz4hkw40t0ak5j4lgr67zdcl9rhluaqwatudjhaq0lep5ffcc8yrruvf0tz9zmxl5zfg9lx728mwdz4705wsr9fr8h4u7nc5ja8c560j45jn0jqty8hcqjedjakjkj04najmvzk4fr0g9kevshe6verg8h9pr4phx86wsc2xa5rdp78zrr5upuyqanhk98w4u3vs9mssdnxrwe9xf4qlffqq46faaxuvnsst4mn87eyk4j6h4jm6t3kzcmwh0waw8u5500yqyfm35ndcerzkx8xr5xaznqrma0zy69qvgz7nnyq";
 pub mod seed_phrases {
     pub const DARKSIDE: &str =
 "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread";
@@ -19,6 +20,7 @@ pub mod seed_phrases {
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
     pub const CHIMNEY_BETTER: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
+    pub const MAINNET_ALPHA_SEED_FORVIEW_ALPA: &str = "kitchen rubber iron retreat machine boring scrap tower awkward dynamic night double involve erode ski noise much total dumb lyrics purse tattoo sick wash";
 }
 
 // faucet addresses

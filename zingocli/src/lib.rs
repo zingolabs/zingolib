@@ -24,7 +24,14 @@ fn ufvk_to_string_helper(raw_ufvk: &str) -> Result<String, zingolib::error::Zing
 }
 #[test]
 fn helper_handles_raw_strings() {
-    ufvk_to_string_helper("f");
+    let res = ufvk_to_string_helper("f");
+    assert!(res.is_err());
+    let res2 = ufvk_to_string_helper(zingolib::testvectors::MAINNET_ALPHA_VIEWKEY);
+    assert!(res2.is_ok());
+    let last = res2.as_ref().unwrap().len() - 1;
+    let dropped_char = &res2.unwrap()[0..last];
+    let res3 = ufvk_to_string_helper(dropped_char);
+    assert!(res3.is_err())
 }
 pub fn build_clap_app() -> clap::ArgMatches {
     clap::Command::new("Zingo CLI").version(version::VERSION)
