@@ -293,15 +293,17 @@ impl ConfigTemplate {
             None
         };
         let from = matches.get_one::<String>("seed-phrase").cloned();
-        let maybe_birthday = matches
-            .get_one::<u32>("birthday")
-            .map(|bday| bday.to_string());
         if matches.contains_id("chain") && is_regtest {
             return Err(TemplateFillError::RegtestAndChainSpecified(
                 "regtest mode incompatible with custom chain selection".to_string(),
             ));
         }
-        let birthday = match maybe_birthday.unwrap_or("0".to_string()).parse::<u64>() {
+        let birthday = match matches
+            .get_one::<u32>("birthday")
+            .map(|bday| bday.to_string())
+            .unwrap_or("0".to_string())
+            .parse::<u64>()
+        {
             Ok(b) => b,
             Err(e) => {
                 return Err(TemplateFillError::InvalidBirthday(format!(
