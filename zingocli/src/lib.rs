@@ -14,6 +14,14 @@ use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
+fn ufvk_to_string_helper(raw_ufvk: &str) -> Result<String, zingolib::error::ZingoLibError> {
+    match WalletCapability::parse_string_encoded_ufvk(raw_ufvk) {
+        Ok((_, _)) => Ok(raw_ufvk.to_string()),
+        Err(_) => Err(zingolib::error::ZingoLibError::CouldNotParseUfvkString(
+            raw_ufvk.to_string(),
+        )),
+    }
+}
 pub fn build_clap_app() -> clap::ArgMatches {
     clap::Command::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::new("nosync")
@@ -42,7 +50,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .long("view-key")
                 .hide(true)
                 .env("VIEW_KEY")
-                .value_parser(WalletCapability::parse_string_encoded_ufvk)
+                .value_parser(ufvk_to_string_helper)
                 .requires("birthday")
                 .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --wallet-dir."))
             .arg(Arg::new("birthday")
@@ -268,6 +276,25 @@ impl From<regtest::LaunchChildProcessError> for TemplateFillError {
         Self::ChildLaunchError(underlyingerror)
     }
 }
+fn get_from_and_set_to(matches: &clap::ArgMatches, is_regtest: bool) -> (Option<String>, PathBuf) {
+    (
+        if matches.get_one::<String>("seed-phrase").is_some() {
+            matches.get_one::<String>("seed-phrase").cloned()
+        } else if matches.get_one::<String>("view-key").is_some() {
+            matches.get_one::<String>("view-key").cloned()
+        } else {
+            None
+        },
+        if let Some(dir) = matches.get_one::<String>("wallet-dir") {
+            PathBuf::from(dir.clone())
+        } else if is_regtest {
+            // Begin short_circuit section
+            regtest::get_regtest_dir()
+        } else {
+            PathBuf::from("wallets")
+        },
+    )
+}
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: <https://crates.io/crates/clap>
 ///  * behave correctly as a function of each parameter that may have been passed
@@ -292,7 +319,6 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let from = matches.get_one::<String>("seed-phrase").cloned();
         if matches.contains_id("chain") && is_regtest {
             return Err(TemplateFillError::RegtestAndChainSpecified(
                 "regtest mode incompatible with custom chain selection".to_string(),
@@ -314,13 +340,7 @@ impl ConfigTemplate {
         };
 
         let clean_regtest_data = !matches.get_flag("no-clean");
-        let data_dir = if let Some(dir) = matches.get_one::<String>("wallet-dir") {
-            PathBuf::from(dir.clone())
-        } else if is_regtest {
-            regtest::get_regtest_dir()
-        } else {
-            PathBuf::from("wallets")
-        };
+        let (from, data_dir) = get_from_and_set_to(&matches, is_regtest);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
             .get_one::<http::Uri>("server")
