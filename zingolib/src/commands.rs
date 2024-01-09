@@ -36,7 +36,7 @@ impl Command for GetVersionCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Get verion of build code"
+        "Get version of build code"
     }
 
     fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
@@ -403,7 +403,7 @@ impl Command for RescanCommand {
             Usage:
             rescan
 
-            This command will download all blocks since the intial block again from the light client server
+            This command will download all blocks since the initial block again from the light client server
             and attempt to scan each block for transactions belonging to the wallet.
         "#}
     }
@@ -1415,7 +1415,7 @@ impl Command for QuitCommand {
                 .expect("error running ps");
 
             let owned_child_processes: String = String::from_utf8(raw_child_processes.stdout)
-                .expect("error unwraping stdout of ps");
+                .expect("error unwrapping stdout of ps");
             let child_processes = owned_child_processes.split('\n').collect::<Vec<&str>>();
 
             // &str representation of PIDs

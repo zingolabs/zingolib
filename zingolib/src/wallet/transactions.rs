@@ -404,7 +404,7 @@ impl TransactionMetadataSet {
     }
 
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
-    // transction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
+    // transaction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {

@@ -66,7 +66,7 @@ impl Message {
         // by the receiver, but it is needed to recover the note by the sender.
         let cmu = note.cmu();
 
-        // Create the note encrytion object
+        // Create the note encryption object
         let ne = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
             ovk,
             note,
@@ -183,7 +183,7 @@ impl Message {
         }
 
         // Attempt decryption. We attempt at main_network at 1,000,000 height, but it doesn't
-        // really apply, since this note is not spendable anyway, so the rseed and the note iteself
+        // really apply, since this note is not spendable anyway, so the rseed and the note itself
         // are not usable.
         match try_sapling_note_decryption(
             &MAIN_NETWORK,
