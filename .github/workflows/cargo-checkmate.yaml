@@ -28,6 +28,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Install protoc
+        run: sudo apt-get install protobuf-compiler
+
       - name: Run cargo checkmate
         run: cargo-checkmate run ${{ matrix.phase }}
 

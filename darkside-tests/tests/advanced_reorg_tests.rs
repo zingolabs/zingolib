@@ -859,7 +859,7 @@ async fn reorg_expires_outgoing_tx_height() {
         Err(err_str) => println!("{}", err_str),
     };
 
-    // Assert that balance is equal to the intial balance since the
+    // Assert that balance is equal to the initial balance since the
     // sent transaction was never mined and has expired.
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 

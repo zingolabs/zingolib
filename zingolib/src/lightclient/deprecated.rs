@@ -53,7 +53,7 @@ impl LightClient {
                 })
     }
 
-    /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
+    /// This fn is _only_ called inside a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
         wallet_transaction: &TransactionMetadata,
         received_utxo_value: u64,
@@ -207,7 +207,7 @@ impl LightClient {
 #[cfg(test)]
 mod tests {
     use tokio::runtime::Runtime;
-    use zingo_testutils::data::seeds::CHIMNEY_BETTER_SEED;
+    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
     use zingoconfig::{ChainType, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};

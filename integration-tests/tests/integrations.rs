@@ -15,20 +15,18 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client, check_transaction_equality,
-    data::{
-        self, block_rewards,
-        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
-    },
-    increase_height_and_wait_for_client,
-    interrupts::sync_with_timeout_millis,
-    regtest::get_cargo_manifest_dir,
-    scenarios, BASE_HEIGHT,
+    build_fvk_client, check_transaction_equality, increase_height_and_wait_for_client,
+    regtest::get_cargo_manifest_dir, scenarios,
 };
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
     lightclient::{LightClient, PoolBalances},
+    testvectors::{
+        self, block_rewards,
+        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+        BASE_HEIGHT,
+    },
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
@@ -491,7 +489,7 @@ mod fast {
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
         // --birthday 0
         // --nosync
-        // with 3 addresses containig all receivers.
+        // with 3 addresses containing all receivers.
         let data = include_bytes!("zingo-wallet-v26.dat");
 
         let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
@@ -954,7 +952,7 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        // 2. send a transaction contaning all types of outputs
+        // 2. send a transaction containing all types of outputs
         faucet.do_send(addr_amount_memos).await.unwrap();
         zingo_testutils::increase_height_and_wait_for_client(
             &regtest_manager,
@@ -988,7 +986,7 @@ mod slow {
             vec![&o_fvk, &s_fvk, &t_fvk],
         ];
         for fvks in fvks_sets.iter() {
-            log::info!("testing UFVK containig:");
+            log::info!("testing UFVK containing:");
             log::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
             log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
             log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
@@ -1018,7 +1016,7 @@ mod slow {
             watch_client.do_rescan().await.unwrap();
             assert_eq!(
                 watch_client
-                    .do_send(vec![(data::EXT_TADDR, 1000, None)])
+                    .do_send(vec![(testvectors::EXT_TADDR, 1000, None)])
                     .await,
                 Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
             );
@@ -1052,7 +1050,7 @@ mod slow {
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
         let sent_transaction_error = recipient
-            .do_send(vec![(data::EXT_TADDR, sent_value, None)])
+            .do_send(vec![(testvectors::EXT_TADDR, sent_value, None)])
             .await
             .unwrap_err();
         assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.");
@@ -2152,7 +2150,7 @@ mod slow {
             json::stringify_pretty(post_rescan_transactions.clone(), 4)
         );
 
-        // Notes are not in deterministic order after rescan. Insead, iterate over all
+        // Notes are not in deterministic order after rescan. Instead, iterate over all
         // the notes and check that they exist post-rescan
         for (field_name, field) in notes.entries() {
             for note in field.members() {
@@ -2199,7 +2197,7 @@ mod slow {
         let client_2_saplingaddress = get_base_address!(recipient, "sapling");
         // Send three transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
-        // subequently receive funding via it's orchard-packed UA.
+        // subsequently receive funding via it's orchard-packed UA.
         faucet
             .do_send(
                 (1..=3)
@@ -2264,7 +2262,7 @@ mod slow {
             .collect::<Vec<_>>();
         // client_2 got a total of 3000+2000+1000
         // It sent 3000 to the client_1, and also
-        // paid the defualt transaction fee.
+        // paid the default transaction fee.
         // In non change notes it has 1000.
         // There is an outstanding 2000 that is marked as change.
         // After sync the unspent_sapling_notes should go to 3000.
@@ -2669,11 +2667,12 @@ mod slow {
 
         let zcd_datadir = &regtest_manager.zcashd_data_dir;
         let zingo_datadir = &regtest_manager.zingo_datadir;
+        // This test is the unique consumer of:
+        // zingo-testutils/old_wallet_reorg_test_wallet
         let cached_data_dir = get_cargo_manifest_dir()
             .parent()
             .unwrap()
-            .join("zingo-testutils")
-            .join("data")
+            .join("zingo-testvectors")
             .join("old_wallet_reorg_test_wallet");
         let zcd_source = cached_data_dir
             .join("zcashd")
@@ -3399,8 +3398,9 @@ mod slow {
         recipient.clear_state().await;
         dbg!("finished basic sync. restarting for interrupted data");
         let timeout = 28;
-        let what = sync_with_timeout_millis(&recipient, timeout).await;
-        match what {
+        let race_condition =
+            zingo_testutils::interrupts::sync_with_timeout_millis(&recipient, timeout).await;
+        match race_condition {
             Ok(_) => {
                 println!("synced in less than {} millis ", timeout);
                 dbg!("syncedd");
@@ -3422,4 +3422,9 @@ mod slow {
         assert_eq!(bala_sim, bala_syn);
         assert_eq!(summ_sim, summ_syn);
     }
+}
+
+#[tokio::test]
+async fn proxy_server_worky() {
+    zingo_testutils::check_proxy_server_works().await
 }

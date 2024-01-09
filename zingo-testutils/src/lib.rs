@@ -1,14 +1,21 @@
-pub mod data;
 pub mod interrupts;
+
+use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
-use zcash_address::unified::{Fvk, Ufvk};
-use zingolib::wallet::keys::unified::WalletCapability;
-use zingolib::wallet::WalletBase;
+// #[cfg(features = "grpc-proxy")]
+pub mod grpc_proxy;
 pub mod regtest;
+
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
+use zcash_address::unified::{Fvk, Ufvk};
+use zingolib::wallet::keys::unified::WalletCapability;
+use zingolib::wallet::WalletBase;
 
 use json::JsonValue;
 use log::debug;
@@ -18,8 +25,6 @@ use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
-
-pub const BASE_HEIGHT: u32 = 3;
 
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
@@ -237,21 +242,19 @@ pub mod scenarios {
     //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
-    use crate::{
-        data::{self, seeds::HOSPITAL_MUSEUM_SEED},
-        increase_height_and_wait_for_client, BASE_HEIGHT,
-    };
+    use crate::increase_height_and_wait_for_client;
+    use zingolib::testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
     pub mod setup {
-        use crate::data::{
+        use super::BASE_HEIGHT;
+        use zingolib::testvectors::{
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
         };
-        use crate::BASE_HEIGHT;
 
         use super::super::regtest::get_regtest_dir;
-        use super::{data, ChildProcessHandler, RegtestManager};
+        use super::{testvectors, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use tokio::time::sleep;
         use zingolib::wallet::Pool;
@@ -479,12 +482,12 @@ pub mod scenarios {
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) -> PathBuf {
                 let config = match mine_to_address {
-                    Some(address) => data::config_template_fillers::zcashd::funded(
+                    Some(address) => testvectors::config_template_fillers::zcashd::funded(
                         address,
                         &self.zcashd_rpcservice_port,
                         regtest_network,
                     ),
-                    None => data::config_template_fillers::zcashd::basic(
+                    None => testvectors::config_template_fillers::zcashd::basic(
                         &self.zcashd_rpcservice_port,
                         regtest_network,
                         "",
@@ -495,7 +498,7 @@ pub mod scenarios {
             pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
                 self.write_contents_and_return_path(
                     "lightwalletd",
-                    data::config_template_fillers::lightwalletd::basic(
+                    testvectors::config_template_fillers::lightwalletd::basic(
                         &self.lightwalletd_rpcservice_port,
                     ),
                 )
@@ -1071,4 +1074,39 @@ pub mod scenarios {
             )
         }
     }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn start_proxy_and_connect_lightclient(
+    client: &LightClient,
+    conditional_operations: HashMap<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>,
+) -> Arc<AtomicBool> {
+    let proxy_online = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let proxy_port = portpicker::pick_unused_port().unwrap();
+    let proxy_uri = format!("http://localhost:{proxy_port}");
+    let _proxy_handle = ProxyServer {
+        lightwalletd_uri: client.get_server_uri(),
+        online: proxy_online.clone(),
+        conditional_operations,
+    }
+    .serve(proxy_port);
+    client.set_server(proxy_uri.parse().unwrap());
+    proxy_online
+}
+
+pub async fn check_proxy_server_works() {
+    let (_regtest_manager, _cph, ref faucet) = scenarios::faucet_default().await;
+    let proxy_status = start_proxy_and_connect_lightclient(faucet, HashMap::new());
+    proxy_status.store(false, std::sync::atomic::Ordering::Relaxed);
+    tokio::task::spawn(async move {
+        sleep(Duration::from_secs(5)).await;
+        println!("Wakening proxy!");
+        proxy_status.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    println!("Doing info!");
+    println!("{}", faucet.do_info().await)
+}
+
+pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {
+    format!("http://localhost:{port}").parse().unwrap()
 }

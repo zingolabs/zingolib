@@ -5,7 +5,6 @@ use crate::{
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
-    compact_formats::RawTransaction,
     error::{ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
     wallet::{
@@ -42,7 +41,10 @@ use tokio::{
 };
 use zcash_address::ZcashAddress;
 
-use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
+use zcash_client_backend::{
+    encoding::{decode_payment_address, encode_payment_address},
+    proto::service::RawTransaction,
+};
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
@@ -860,7 +862,7 @@ impl LightClient {
     ) -> Result<String, String> {
         let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
         let transaction_submission_height = self.get_submission_height().await?;
-        // First, get the concensus branch ID
+        // First, get the consensus branch ID
         debug!("Creating transaction");
 
         let result = {
@@ -1661,9 +1663,9 @@ impl LightClient {
             .await;
         self.wallet.set_blocks(blocks).await;
 
-        // 2. If sync was successfull, also try to get historical prices
+        // 2. If sync was successful, also try to get historical prices
         // self.update_historical_prices().await;
-        // zingolabs considers this to be a serious privacy/secuity leak
+        // zingolabs considers this to be a serious privacy/security leak
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
         blaze_sync_data.finish().await;
@@ -1675,7 +1677,7 @@ impl LightClient {
             .await
             .clear_expired_mempool(start_block);
 
-        // 6. Set the heighest verified tree
+        // 6. Set the highest verified tree
         if highest_tree.is_some() {
             *self.wallet.verified_tree.write().await = highest_tree;
         }

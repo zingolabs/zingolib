@@ -10,7 +10,7 @@ edition = "2021"
 deprecations = ["lightclient-deprecated"]
 test = ["lightclient-deprecated", "test-features"]
 lightclient-deprecated = []
-test-features = []
+test-features = ["zingo-testvectors"]
 default = ["embed_params"]
 embed_params = []
 darkside_tests = []
@@ -19,6 +19,7 @@ darkside_tests = []
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
+zingo-testvectors = { path = "../zingo-testvectors", optional = true }
 
 http-body = { workspace = true }
 hyper = { workspace = true }
@@ -51,7 +52,7 @@ tokio-rustls = "0.23.3"
 reqwest = { version = "0.11", features = ["json"] }
 rustls-pemfile = "1.0.0"
 tower-http = { version = "0.2", features = ["add-extension"] }
-futures = "0.3.15"
+futures = { workspace = true }
 hex = "0.3"
 ring = "0.17.0"
 json = "0.12.4"
@@ -81,7 +82,6 @@ either = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
 
 [dev-dependencies]
-zingo-testutils = { path = "../zingo-testutils" }
 portpicker = "0.1.0"
 tempfile = "3.3.0"
 concat-idents = "1.1.3"

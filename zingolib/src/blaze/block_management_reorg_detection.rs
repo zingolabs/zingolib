@@ -1,5 +1,4 @@
 use crate::{
-    compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
@@ -11,6 +10,8 @@ use incrementalmerkletree::{
     frontier, frontier::CommitmentTree, witness::IncrementalWitness, Hashable,
 };
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
+use zcash_client_backend::proto::service::TreeState;
 use zcash_note_encryption::Domain;
 use zingoconfig::ChainType;
 
@@ -363,7 +364,7 @@ impl BlockManagementData {
                 .await
                 .map_err(|e| format!("Error processing blocks: {}", e))??;
 
-            // Return the earlist block that was synced, accounting for all reorgs
+            // Return the earliest block that was synced, accounting for all reorgs
             Ok(earliest_block)
         });
 
@@ -667,7 +668,7 @@ fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: Tr
 pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
-    // Type alias, sapling equivilant to the type manually written out for orchard
+    // Type alias, sapling equivalent to the type manually written out for orchard
     pub sapling_tree: zcash_primitives::sapling::CommitmentTree,
     pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard, 32>,
 }
@@ -744,7 +745,6 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
 
 #[cfg(test)]
 mod test {
-    use crate::compact_formats::CompactBlock;
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;

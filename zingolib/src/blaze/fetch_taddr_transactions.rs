@@ -1,6 +1,6 @@
-use crate::compact_formats::RawTransaction;
 use crate::wallet::keys::address_from_pubkeyhash;
 use crate::wallet::keys::unified::WalletCapability;
+use zcash_client_backend::proto::service::RawTransaction;
 
 use std::sync::Arc;
 use tokio::join;
@@ -23,7 +23,7 @@ pub struct FetchTaddrTransactions {
 /// A request to fetch taddrs between a start/end height: `(taddrs, start, end)`
 pub type FetchTaddrRequest = (Vec<String>, u64, u64);
 
-/// A reponse for a particular taddr
+/// A response for a particular taddr
 pub type FetchTaddrResponse = Result<RawTransaction, String>;
 
 impl FetchTaddrTransactions {
@@ -121,7 +121,7 @@ impl FetchTaddrTransactions {
                 let mut prev_height = 0;
 
                 while let Some(raw_transaction) = ordered_raw_transaction_receiver.recv().await {
-                    // We should be reciving transactions strictly in height order, so make sure
+                    // We should be receiving transactions strictly in height order, so make sure
                     if raw_transaction.height < prev_height {
                         return Err(format!(
                             "Wrong height order while processing transparent transactions!. Was {}, prev={}",

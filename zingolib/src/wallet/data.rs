@@ -1,4 +1,3 @@
-use crate::compact_formats::CompactBlock;
 use crate::error::{ZingoLibError, ZingoLibResult};
 use crate::wallet::traits::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -15,6 +14,7 @@ use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
@@ -302,7 +302,7 @@ impl BlockData {
         for compact_transaction in &mut cb.vtx {
             for co in &mut compact_transaction.outputs {
                 co.ciphertext.clear();
-                co.epk.clear();
+                co.ephemeral_key.clear();
             }
         }
 
@@ -450,7 +450,7 @@ pub struct SaplingNote {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
-    // The postion of this note's value commitment in the global commitment tree
+    // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
     pub(crate) witnessed_position: Option<Position>,
 
@@ -476,7 +476,7 @@ pub struct OrchardNote {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
-    // The postion of this note's value commitment in the global commitment tree
+    // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
     pub witnessed_position: Option<Position>,
 

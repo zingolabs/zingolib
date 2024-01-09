@@ -30,7 +30,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("chain")
                 .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#))
+                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
             .arg(Arg::new("from")
                 .short('f')
                 .short_alias('s')
@@ -38,15 +38,18 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .alias("seed")
                 .alias("viewing-key")
                 .value_name("from")
+                .value_parser(parse_seed)
                 .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
-                .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction."))
+                .value_parser(clap::value_parser!(u32))
+                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
+                .value_parser(parse_uri)
                 .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
@@ -65,6 +68,25 @@ pub fn build_clap_app() -> clap::ArgMatches {
         ).get_matches()
 }
 
+/// Custom function to parse a string into an http::Uri
+fn parse_uri(s: &str) -> Result<http::Uri, String> {
+    s.parse::<http::Uri>().map_err(|e| e.to_string())
+}
+/// Custom function to parse a string into a compliant ZIP32/BIP39 mnemonic phrase
+/// currently this is just a whitespace delimited string of 24 words.  I am
+/// poking around to use the actual BIP39 parser (presumably from librustzcash).
+fn parse_seed(s: &str) -> Result<String, String> {
+    if let Ok(s) = s.parse::<String>() {
+        let count = s.split_whitespace().count();
+        if count == 24 {
+            Ok(s)
+        } else {
+            Err(format!("Expected 24 words, but received: {}.", count))
+        }
+    } else {
+        Err("Unexpected failure to parse String!!".to_string())
+    }
+}
 #[cfg(target_os = "linux")]
 /// This function is only tested against Linux.
 fn report_permission_error() {
@@ -263,7 +285,7 @@ impl From<regtest::LaunchChildProcessError> for TemplateFillError {
 ///  * handle parameters as efficiently as possible.
 ///      * If a ShortCircuitCommand
 ///    is specified, then the system should execute only logic necessary to support that command,
-///    in other words "help" the ShortCitcuitCommand _MUST_ not launch either zcashd or lightwalletd
+///    in other words "help" the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
@@ -280,9 +302,9 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let from = matches.get_one::<&str>("from");
+        let from = matches.get_one::<String>("from");
         let maybe_birthday = matches
-            .get_one::<&str>("birthday")
+            .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
         if from.is_some() && maybe_birthday.is_none() {
             eprintln!("ERROR!");
@@ -322,7 +344,7 @@ to scan from the start of the blockchain."
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
-            .get_one::<String>("server")
+            .get_one::<http::Uri>("server")
             .map(|server| server.to_string());
         let mut child_process_handler = None;
         // Regtest specific launch:

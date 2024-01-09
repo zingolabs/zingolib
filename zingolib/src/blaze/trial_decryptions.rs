@@ -3,17 +3,14 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use crate::{
-    compact_formats::{CompactBlock, CompactTx},
-    wallet::{
-        data::{PoolNullifier, TransactionMetadata},
-        keys::unified::WalletCapability,
-        traits::{
-            CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
-        },
-        transactions::TransactionMetadataSet,
-        MemoDownloadOption,
+use crate::wallet::{
+    data::{PoolNullifier, TransactionMetadata},
+    keys::unified::WalletCapability,
+    traits::{
+        CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
     },
+    transactions::TransactionMetadataSet,
+    MemoDownloadOption,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
@@ -27,6 +24,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
@@ -292,7 +290,12 @@ impl TrialDecryptions {
         let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
             .iter()
-            .map(|output| (output.domain(config.chain, height), output.clone()))
+            .map(|output| {
+                (
+                    output.domain(config.chain, height),
+                    output.to_compact_output_impl(),
+                )
+            })
             .collect::<Vec<_>>();
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);

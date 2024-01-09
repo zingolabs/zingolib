@@ -8,7 +8,7 @@ This repo provides both a library for zingo-mobile, as well as an included cli a
 ## Privacy
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
 * The server also learns other metadata about you like your ip address etc...
-* Also remember that t-addresses are publically visible on the blockchain.
+* Also remember that t-addresses are publicly visible on the blockchain.
 * Price information is retrieved from Gemini exchange.
 
 ### Note Management
@@ -59,7 +59,7 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
 * `--server`: Connect to a custom zcash lightwalletd server.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/ --server 127.0.0.1:9067`
 * `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase
-* `--birthday`: Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction.
+* `--birthday`: Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/ --seed "twenty four words seed phrase" --birthday 1234567`
 * `--recover`: Attempt to recover the seed phrase from a corrupted wallet
 

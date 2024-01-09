@@ -1,9 +1,9 @@
-use crate::compact_formats::{CompactBlock, CompactSaplingOutput, CompactTx};
 use incrementalmerkletree::{frontier::CommitmentTree, witness::IncrementalWitness, Hashable};
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 
+use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactSaplingOutput, CompactTx};
 use zcash_primitives::{
     block::BlockHash,
     merkle_tree::{write_incremental_witness, HashSer},

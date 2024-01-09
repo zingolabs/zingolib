@@ -1,7 +1,6 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
-use crate::compact_formats::TreeState;
 use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 
 use bip0039::Mnemonic;
@@ -27,6 +26,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 use zcash_client_backend::address;
+use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
@@ -221,7 +221,7 @@ pub struct LightWallet {
     // Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>,
 
-    // Heighest verified block
+    // Highest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
     // Progress of an outgoing transaction
@@ -240,7 +240,7 @@ type Receivers = Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>;
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, OsRng>;
 impl LightWallet {
     fn get_legacy_frontiers(
-        trees: crate::compact_formats::TreeState,
+        trees: TreeState,
     ) -> (
         Option<incrementalmerkletree::frontier::NonEmptyFrontier<zcash_primitives::sapling::Node>>,
         Option<incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>>,
@@ -251,7 +251,7 @@ impl LightWallet {
         )
     }
     fn get_legacy_frontier<D: DomainWalletExt>(
-        trees: &crate::compact_formats::TreeState,
+        trees: &TreeState,
     ) -> Option<
         incrementalmerkletree::frontier::NonEmptyFrontier<
             <D::WalletNote as ShieldedNoteInterface>::Node,
@@ -269,7 +269,7 @@ impl LightWallet {
         .ok()
         .and_then(|tree| tree.to_frontier().take())
     }
-    pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
+    pub(crate) async fn initiate_witness_trees(&self, trees: TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
             LightWallet::get_legacy_frontiers(trees);
         if let Some(ref mut trees) = self
@@ -1239,7 +1239,7 @@ impl LightWallet {
 
             let earmark_total_plus_default_fee =
                 total_earmarked_for_recipients + u64::from(proposed_fee);
-            // Select notes as a fn of target anount
+            // Select notes as a fn of target amount
             (
                 orchard_notes,
                 sapling_notes,
