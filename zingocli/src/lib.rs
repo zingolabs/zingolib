@@ -22,6 +22,10 @@ fn ufvk_to_string_helper(raw_ufvk: &str) -> Result<String, zingolib::error::Zing
         )),
     }
 }
+#[test]
+fn helper_handles_raw_strings() {
+    ufvk_to_string_helper("f");
+}
 pub fn build_clap_app() -> clap::ArgMatches {
     clap::Command::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::new("nosync")
