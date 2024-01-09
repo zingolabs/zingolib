@@ -443,7 +443,7 @@ pub struct SaplingNote {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
-    // The postion of this note's value commitment in the global commitment tree
+    // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
     pub(crate) witnessed_position: Option<Position>,
 
@@ -469,7 +469,7 @@ pub struct OrchardNote {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
-    // The postion of this note's value commitment in the global commitment tree
+    // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
     pub witnessed_position: Option<Position>,
 

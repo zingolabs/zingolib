@@ -36,7 +36,7 @@ It currently takes a few seconds to do so, even on a fast machine, to give the d
 These daemons will be killed when the user exits `zingo-cli` using the `quit` command.
 However, if there is an issue starting or shutting down regtest mode, it's possible you will have to shut down the daemons manually.
 
-You should see several diagnostic messsages, and then:
+You should see several diagnostic messages, and then:
 `regtest detected and network set correctly!
 Lightclient connecting to http://127.0.0.1:9067/`
 at which point the interactive cli application should work with your regtest network.
