@@ -56,22 +56,22 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .env("SEED_PHRASE")
                 .value_parser(WalletBase::parse_input_to_phrase)
                 .requires("birthday")
-                .help("Create a new wallet with the given seed phrase. Cannot be used with --view-key, or --wallet-dir."))
+                .help("Create a new wallet with the given seed phrase. Cannot be used with --view-key, or --load-wallet."))
             .arg(Arg::new("view-key")
                 .long("view-key")
                 .hide(true)
                 .env("VIEW_KEY")
                 .value_parser(ufvk_to_string_helper)
                 .requires("birthday")
-                .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --wallet-dir."))
+                .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --load-wallet."))
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
                 .value_parser(clap::value_parser!(u32))
                 .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction."))
-            .arg(Arg::new("wallet-dir")
-                .long("wallet-dir")
-                .value_name("wallet-dir")
+            .arg(Arg::new("load-wallet")
+                .long("load-wallet")
+                .value_name("load-wallet")
                 .help("Launch with an existing wallet specified by the value which is the absolute path to the wallet. Cannot be used with --seed-phrase, or --view-key."))
             .arg(Arg::new("server")
                 .long("server")
@@ -89,7 +89,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .num_args(1..)
                 .index(2)
                 .action(clap::ArgAction::Append)
-        ).group(clap::ArgGroup::new("source").args(["wallet-dir", "seed-phrase", "view-key"])).get_matches()
+        ).group(clap::ArgGroup::new("source").args(["load-wallet", "seed-phrase", "view-key"])).get_matches()
 }
 
 /// Custom function to parse a string into an http::Uri
@@ -296,7 +296,7 @@ fn get_from_and_set_to(matches: &clap::ArgMatches, is_regtest: bool) -> (Option<
         } else {
             None
         },
-        if let Some(dir) = matches.get_one::<String>("wallet-dir") {
+        if let Some(dir) = matches.get_one::<String>("load-wallet") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
             // Begin short_circuit section
