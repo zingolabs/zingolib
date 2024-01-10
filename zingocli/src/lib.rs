@@ -7,7 +7,8 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use zingo_testutils::regtest;
-use zingoconfig::ChainType;
+use zingoconfig::{ChainType, ZingoConfig};
+use zingolib::error::ZingoLibError;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
@@ -32,6 +33,23 @@ fn helper_handles_raw_strings() {
     let dropped_char = &res2.unwrap()[0..last];
     let res3 = ufvk_to_string_helper(dropped_char);
     assert!(res3.is_err())
+}
+
+fn load_wallet_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
+    // For example, checking if the path exists (though this might not always be appropriate):
+    if std::path::Path::new(path_str).exists() {
+        Ok(PathBuf::from(path_str))
+    } else {
+        Err(format!("Invalid path: {}", path_str))
+    }
+}
+fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
+    // For example, checking if the path exists (though this might not always be appropriate):
+    if !std::path::Path::new(path_str).exists() {
+        Ok(PathBuf::from(path_str))
+    } else {
+        Err(format!("Invalid path: {}", path_str))
+    }
 }
 pub fn build_clap_app() -> clap::ArgMatches {
     clap::Command::new("Zingo CLI").version(version::VERSION)
@@ -100,6 +118,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .long("load-wallet")
                 .help("Launch with an existing wallet specified by the value which is the absolute path to the wallet. Cannot be used with --seed-phrase, or --view-key.")
                 .conflicts_with_all(["seed-phrase", "view-key", "birthday"])
+                .value_parser(load_wallet_to_pathbuf)
             )
             .arg(Arg::new("birthday")
                 .long("birthday")
@@ -113,6 +132,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .help("Specify where the newly created wallet will be located. Cannot be used *without* --seed-phrase, or --view-key.")
                 .conflicts_with("load-wallet")
                 .requires("fresh_sources") // each fresh source directly requires birthday
+                .value_parser(fresh_outdir_to_pathbuf)
         )
         .group(clap::ArgGroup::new("fresh_sources").args(["seed-phrase", "view-key"]))
         .get_matches()
@@ -277,18 +297,23 @@ pub fn command_loop(
     (command_transmitter, resp_receiver)
 }
 
+#[derive(Clone)]
+enum Source {
+    SeedPhrase(WalletBase),
+    ViewKey(WalletBase),
+    WrittenWallet(PathBuf),
+    Fresh,
+}
 pub struct ConfigTemplate {
-    params: Vec<String>,
     server: http::Uri,
-    from: Option<String>,
+    params: Vec<String>,
+    source: Source,
     birthday: u64,
-    data_dir: PathBuf,
     sync: bool,
     command: Option<String>,
-    regtest_manager: Option<regtest::RegtestManager>,
     #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
     child_process_handler: Option<regtest::ChildProcessHandler>,
-    chaintype: ChainType,
+    config: ZingoConfig,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -306,6 +331,15 @@ enum TemplateFillError {
     ChildLaunchError(regtest::LaunchChildProcessError),
     InvalidChain(String),
     RegtestAndChainSpecified(String),
+    InvalidSource(ZingoLibError),
+}
+#[derive(Debug)]
+enum FailClientBuildError {
+    FailToBuildSeedClient,
+    FailToBuildUfvkClient,
+    FailToBuildWrittenWalletClient,
+    FailToBuildFreshClient,
+    FailToGetBlockHeight,
 }
 
 impl From<regtest::LaunchChildProcessError> for TemplateFillError {
@@ -313,24 +347,15 @@ impl From<regtest::LaunchChildProcessError> for TemplateFillError {
         Self::ChildLaunchError(underlyingerror)
     }
 }
-fn get_from_and_set_to(matches: &clap::ArgMatches, is_regtest: bool) -> (Option<String>, PathBuf) {
-    (
-        if matches.get_one::<String>("seed-phrase").is_some() {
-            matches.get_one::<String>("seed-phrase").cloned()
-        } else if matches.get_one::<String>("view-key").is_some() {
-            matches.get_one::<String>("view-key").cloned()
-        } else {
-            None
-        },
-        if let Some(dir) = matches.get_one::<String>("load-wallet") {
-            PathBuf::from(dir.clone())
-        } else if is_regtest {
-            // Begin short_circuit section
-            regtest::get_regtest_dir()
-        } else {
-            PathBuf::from("wallets")
-        },
-    )
+fn get_datadir(matches: &clap::ArgMatches, is_regtest: bool) -> PathBuf {
+    if let Some(dir) = matches.get_one::<PathBuf>("load-wallet") {
+        dir.clone()
+    } else if is_regtest {
+        // Begin short_circuit section
+        regtest::get_regtest_dir()
+    } else {
+        PathBuf::from("wallets")
+    }
 }
 fn get_birthday(matches: &clap::ArgMatches) -> Result<u64, TemplateFillError> {
     match matches
@@ -346,6 +371,50 @@ fn get_birthday(matches: &clap::ArgMatches) -> Result<u64, TemplateFillError> {
         ))),
     }
 }
+fn build_lightclient(
+    filled_template: &ConfigTemplate,
+) -> Result<LightClient, FailClientBuildError> {
+    let lc = match filled_template.source.clone() {
+        Source::SeedPhrase(phrase_base) => LightClient::create_from_wallet_base(
+            phrase_base,
+            &filled_template.config,
+            filled_template.birthday,
+            false,
+        )
+        .map_err(|_| FailClientBuildError::FailToBuildSeedClient)?,
+
+        Source::ViewKey(viewkey_base) => LightClient::create_from_wallet_base(
+            viewkey_base,
+            &filled_template.config,
+            filled_template.birthday,
+            false,
+        )
+        .map_err(|_| FailClientBuildError::FailToBuildUfvkClient)?,
+        Source::WrittenWallet(wallet_path) => {
+            if wallet_path.exists() {
+                LightClient::read_wallet_from_disk(&filled_template.config)
+                    .map_err(|_| FailClientBuildError::FailToBuildWrittenWalletClient)?
+            } else {
+                panic!("Missing Wallet");
+            }
+        }
+        Source::Fresh => {
+            println!("Creating a new wallet");
+            // Call the lightwalletd server to get the current block-height
+            // Do a getinfo first, before opening the wallet
+            let block_height = zingolib::get_latest_block_height(filled_template.server.clone());
+            // Create a wallet with height - 100, to protect against reorgs
+            LightClient::new(
+                &filled_template.config,
+                block_height
+                    .map_err(|_| FailClientBuildError::FailToGetBlockHeight)?
+                    .saturating_sub(100),
+            )
+            .map_err(|_| FailClientBuildError::FailToBuildFreshClient)?
+        }
+    };
+    Ok(lc)
+}
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: <https://crates.io/crates/clap>
 ///  * behave correctly as a function of each parameter that may have been passed
@@ -355,6 +424,26 @@ fn get_birthday(matches: &clap::ArgMatches) -> Result<u64, TemplateFillError> {
 ///    is specified, then the system should execute only logic necessary to support that command,
 ///    in other words "help" the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
+    fn get_source(matches: &clap::ArgMatches) -> Result<Source, ZingoLibError> {
+        if matches.contains_id("view-key") {
+            Ok(Source::ViewKey(WalletBase::Ufvk(
+                matches.get_one::<String>("view-key").unwrap().to_string(),
+            )))
+        } else if matches.contains_id("seed-phrase") {
+            Ok(Source::SeedPhrase(WalletBase::MnemonicPhrase(
+                matches
+                    .get_one::<String>("seed-phrase")
+                    .unwrap()
+                    .to_string(),
+            )))
+        } else if matches.contains_id("load-wallet") {
+            Ok(Source::WrittenWallet(
+                matches.get_one::<PathBuf>("load-wallet").unwrap().clone(),
+            ))
+        } else {
+            Ok(Source::Fresh)
+        }
+    }
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
@@ -377,8 +466,9 @@ impl ConfigTemplate {
         }
 
         let clean_regtest_data = !matches.get_flag("no-clean");
-        //let source = set_source()
-        let (from, data_dir) = get_from_and_set_to(&matches, is_regtest);
+        let source = ConfigTemplate::get_source(&matches)
+            .map_err(|e| TemplateFillError::InvalidSource(e))?;
+        let mut data_dir = get_datadir(&matches, is_regtest);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
             .get_one::<http::Uri>("server")
@@ -389,6 +479,7 @@ impl ConfigTemplate {
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if is_regtest {
             let regtest_manager = regtest::RegtestManager::new(data_dir.clone());
+            data_dir = regtest_manager.zingo_datadir.clone();
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
@@ -416,18 +507,28 @@ impl ConfigTemplate {
                 server )));
         }
 
+        dbg!(&data_dir);
+        // There is no distinction between fresh-output-dir and an "old" load-wallet dir in ZingoConfig
+        if let Some(fresh_out_dir) = matches.get_one::<PathBuf>("fresh_output_dir") {
+            data_dir = fresh_out_dir.clone();
+        }
+
+        let config =
+            zingoconfig::load_clientconfig(server.clone(), Some(data_dir), chaintype, true)
+                .unwrap();
+
+        regtest_config_check(&regtest_manager, &config.chain);
+        let birthday = get_birthday(&matches)?;
         let sync = !matches.get_flag("nosync");
         Ok(Self {
             params,
-            server,
-            from,
-            birthday: get_birthday(&matches)?,
-            data_dir,
+            source,
+            birthday,
             sync,
             command,
-            regtest_manager,
             child_process_handler,
-            chaintype,
+            config,
+            server,
         })
     }
 }
@@ -438,12 +539,6 @@ pub type CommandRequest = (String, Vec<String>);
 /// Command responses are strings
 pub type CommandResponse = String;
 
-/*
-enum Source {
-    SeedPhrase(WalletBase),
-    ViewKey(WalletBase),
-    WrittenWallet(PathBuf),
-}*/
 /// Used by the zingocli crate, and the zingo-mobile application:
 /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
 /// <https://github.com/zingolabs/zingo-mobile>
@@ -451,55 +546,21 @@ pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
     // Try to get the configuration
-    let data_dir = if let Some(regtest_manager) = filled_template.regtest_manager.clone() {
-        regtest_manager.zingo_datadir
-    } else {
-        filled_template.data_dir.clone()
-    };
-    let config = zingoconfig::load_clientconfig(
-        filled_template.server.clone(),
-        Some(data_dir),
-        filled_template.chaintype,
-        true,
-    )
-    .unwrap();
-    regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
-    let lightclient = match filled_template.from.clone() {
-        Some(phrase) => Arc::new(LightClient::create_from_wallet_base(
-            WalletBase::from_string(phrase),
-            &config,
-            filled_template.birthday,
-            false,
-        )?),
-        None => {
-            if config.wallet_path_exists() {
-                Arc::new(LightClient::read_wallet_from_disk(&config)?)
-            } else {
-                println!("Creating a new wallet");
-                // Call the lightwalletd server to get the current block-height
-                // Do a getinfo first, before opening the wallet
-                let server_uri = config.get_lightwalletd_uri();
-                let block_height = zingolib::get_latest_block_height(server_uri);
-                // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(
-                    &config,
-                    block_height?.saturating_sub(100),
-                )?)
-            }
-        }
-    };
-
+    let lightclient = Arc::new(
+        build_lightclient(filled_template)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?,
+    );
     if filled_template.command.is_none() {
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-        info!("Light Client config {:?}", config);
-
         info!(
-            "Lightclient connecting to {}",
-            config.get_lightwalletd_uri()
+            "Light Client wallet_location {:?}",
+            lightclient.get_wallet_file_location()
         );
+
+        info!("Lightclient connecting to {}", lightclient.get_server_uri());
     }
 
     // At startup, run a sync.

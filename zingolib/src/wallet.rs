@@ -182,7 +182,7 @@ impl WalletOptions {
 }
 
 /// Data used to initialize new instance of LightWallet
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WalletBase {
     FreshEntropy,
     SeedBytes([u8; 32]),
