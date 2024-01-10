@@ -519,15 +519,10 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     }
 }
 pub fn run_cli() {
-    manual_test_automation();
     // Initialize logging
-    // if let Err(e) = LightClient::init_logging() {
-    //     eprintln!("Could not initialize logging: {e}")
-    // };
-    // let cli_config = ConfigTemplate::fill(build_clap_app()).unwrap();
-    // dispatch_command_or_start_interactive(&cli_config);
-}
-
-fn manual_test_automation() {
-    todo!()
+    if let Err(e) = LightClient::init_logging() {
+        eprintln!("Could not initialize logging: {e}")
+    };
+    let cli_config = ConfigTemplate::fill(build_clap_app()).unwrap();
+    dispatch_command_or_start_interactive(&cli_config);
 }
