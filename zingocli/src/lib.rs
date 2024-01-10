@@ -274,7 +274,7 @@ pub fn command_loop(
 pub struct ConfigTemplate {
     params: Vec<String>,
     server: http::Uri,
-    source: WalletBase,
+    from: Option<String>,
     birthday: u64,
     data_dir: PathBuf,
     sync: bool,
@@ -371,6 +371,7 @@ impl ConfigTemplate {
         }
 
         let clean_regtest_data = !matches.get_flag("no-clean");
+        //let source = set_source()
         let (from, data_dir) = get_from_and_set_to(&matches, is_regtest);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
@@ -413,7 +414,7 @@ impl ConfigTemplate {
         Ok(Self {
             params,
             server,
-            source,
+            from,
             birthday: get_birthday(&matches)?,
             data_dir,
             sync,
@@ -431,11 +432,12 @@ pub type CommandRequest = (String, Vec<String>);
 /// Command responses are strings
 pub type CommandResponse = String;
 
+/*
 enum Source {
-    SeedPhrase(String),
-    ViewKey(String),
+    SeedPhrase(WalletBase),
+    ViewKey(WalletBase),
     WrittenWallet(PathBuf),
-}
+}*/
 /// Used by the zingocli crate, and the zingo-mobile application:
 /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
 /// <https://github.com/zingolabs/zingo-mobile>
