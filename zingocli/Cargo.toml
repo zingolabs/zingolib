@@ -22,3 +22,6 @@ tokio-stream = "0.1.6"
 tokio-rustls = "0.23.3"
 webpki-roots = "0.21.0"
 json = "0.12.4"
+
+[[example]]
+name = "iplink_interrupt"
