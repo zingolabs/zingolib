@@ -328,12 +328,10 @@ fn get_birthday(matches: &clap::ArgMatches) -> Result<u64, TemplateFillError> {
         .parse::<u64>()
     {
         Ok(b) => Ok(b),
-        Err(e) => {
-            return Err(TemplateFillError::InvalidBirthday(format!(
-                "Couldn't parse birthday. This should be a block number. Error={}",
-                e
-            )));
-        }
+        Err(e) => Err(TemplateFillError::InvalidBirthday(format!(
+            "Couldn't parse birthday. This should be a block number. Error={}",
+            e
+        ))),
     }
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
