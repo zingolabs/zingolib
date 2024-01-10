@@ -89,7 +89,10 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .num_args(1..)
                 .index(2)
                 .action(clap::ArgAction::Append)
-        ).group(clap::ArgGroup::new("source").args(["load-wallet", "seed-phrase", "view-key"])).get_matches()
+        )
+        .group(clap::ArgGroup::new("all_sources").args(["load-wallet", "seed-phrase", "view-key"]).multiple(false))
+        .group(clap::ArgGroup::new("fresh_sources").args(["seed-phrase", "view-key"]))
+        .get_matches()
 }
 
 /// Custom function to parse a string into an http::Uri
@@ -306,6 +309,22 @@ fn get_from_and_set_to(matches: &clap::ArgMatches, is_regtest: bool) -> (Option<
         },
     )
 }
+fn get_birthday(matches: &clap::ArgMatches) -> Result<u64, TemplateFillError> {
+    match matches
+        .get_one::<u32>("birthday")
+        .map(|bday| bday.to_string())
+        .unwrap_or("0".to_string())
+        .parse::<u64>()
+    {
+        Ok(b) => Ok(b),
+        Err(e) => {
+            return Err(TemplateFillError::InvalidBirthday(format!(
+                "Couldn't parse birthday. This should be a block number. Error={}",
+                e
+            )));
+        }
+    }
+}
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: <https://crates.io/crates/clap>
 ///  * behave correctly as a function of each parameter that may have been passed
@@ -335,20 +354,6 @@ impl ConfigTemplate {
                 "regtest mode incompatible with custom chain selection".to_string(),
             ));
         }
-        let birthday = match matches
-            .get_one::<u32>("birthday")
-            .map(|bday| bday.to_string())
-            .unwrap_or("0".to_string())
-            .parse::<u64>()
-        {
-            Ok(b) => b,
-            Err(e) => {
-                return Err(TemplateFillError::InvalidBirthday(format!(
-                    "Couldn't parse birthday. This should be a block number. Error={}",
-                    e
-                )));
-            }
-        };
 
         let clean_regtest_data = !matches.get_flag("no-clean");
         let (from, data_dir) = get_from_and_set_to(&matches, is_regtest);
@@ -394,7 +399,7 @@ impl ConfigTemplate {
             params,
             server,
             from,
-            birthday,
+            birthday: get_birthday(&matches)?,
             data_dir,
             sync,
             command,
