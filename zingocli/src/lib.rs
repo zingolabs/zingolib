@@ -268,7 +268,7 @@ pub fn command_loop(
 pub struct ConfigTemplate {
     params: Vec<String>,
     server: http::Uri,
-    from: Option<String>,
+    source: Source,
     birthday: u64,
     data_dir: PathBuf,
     sync: bool,
@@ -407,7 +407,7 @@ impl ConfigTemplate {
         Ok(Self {
             params,
             server,
-            from,
+            source,
             birthday: get_birthday(&matches)?,
             data_dir,
             sync,
@@ -425,6 +425,11 @@ pub type CommandRequest = (String, Vec<String>);
 /// Command responses are strings
 pub type CommandResponse = String;
 
+enum Source {
+    SeedPhrase(String),
+    ViewKey(String),
+    WrittenWallet(PathBuf),
+}
 /// Used by the zingocli crate, and the zingo-mobile application:
 /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
 /// <https://github.com/zingolabs/zingo-mobile>
