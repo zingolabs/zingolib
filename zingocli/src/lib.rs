@@ -35,6 +35,7 @@ fn helper_handles_raw_strings() {
 }
 pub fn build_clap_app() -> clap::ArgMatches {
     clap::Command::new("Zingo CLI").version(version::VERSION)
+        // Positional arguments
             .arg(Arg::new("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
@@ -45,6 +46,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .num_args(1..)
                 .index(2)
                 .action(clap::ArgAction::Append))
+        // Optional arguments
             .arg(Arg::new("server")
                 .long("server")
                 .help("Lightwalletd server to connect to.")
