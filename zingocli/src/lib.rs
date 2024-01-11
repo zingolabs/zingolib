@@ -51,14 +51,10 @@ fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
         Err(format!("Invalid path: {}", path_str))
     }
 }
-fn get_wallets_path(is_regtest: bool) -> Option<PathBuf> {
-    env::var("HOME").ok().map(|home| {
+fn get_wallets_path() -> Option<PathBuf> {
+    std::env::var("HOME").ok().map(|home| {
         let mut path = PathBuf::from(home);
-        if !is_regtest {
-            path.push(".zingo/wallets");
-        } else {
-            path.push(".zingo/regtest/wallets");
-        }
+        path.push(".zingo/wallets");
         path
     })
 }
@@ -449,7 +445,7 @@ fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
         // from a random source, or load an existing wallet from the default location.
         // There's no existence check in this case because we could either be loading
         // an existing wallet from the default location, or writing a fresh wallet to it.
-        get_wallets_path(matches.get_flag("regtest"))
+        get_wallets_path()
             .unwrap()
             .join(zingoconfig::DEFAULT_WALLET_NAME)
     }
@@ -466,6 +462,10 @@ impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
         let (source, target) = ConfigTemplate::map_capability_to_wallet_file(&matches);
+        let data_dir = target
+            .parent()
+            .expect("To access the wallet directory path.")
+            .to_path_buf();
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
@@ -494,7 +494,7 @@ impl ConfigTemplate {
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if is_regtest {
-            let regtest_manager = regtest::RegtestManager::new(data_dir.clone());
+            let regtest_manager = regtest::RegtestManager::new(data_dir);
             data_dir = regtest_manager.zingo_datadir.clone();
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             server = Some("http://127.0.0.1".to_string());
@@ -574,13 +574,13 @@ impl ConfigTemplate {
         } else if matches.contains_id("load-existing-wallet") {
             Source::WrittenWallet(target_wallet)
         } else if !target_wallet.exists() {
-            // There's not a wallet at the (default or regtest-default) location
+            // There's not a wallet at the default location
             // and we're not generating from an explicit (view-key or seed-phrase) cap
             // Therefore..  we're Fresh.
             Source::Fresh(target_wallet)
         } else {
             // We're not from an explicit cap, and we're not fresh, we're loading the
-            // default (or regtest-default) wallet.
+            // default wallet.
             Source::WrittenWallet(target_wallet)
         };
         (source, target_wallet)
