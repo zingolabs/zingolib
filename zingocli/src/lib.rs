@@ -8,7 +8,6 @@ use log::{error, info};
 use clap::{self, Arg};
 use zingo_testutils::regtest;
 use zingoconfig::{ChainType, ZingoConfig};
-use zingolib::error::ZingoLibError;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
@@ -307,8 +306,8 @@ pub fn command_loop(
 enum Source {
     SeedPhrase(WalletBase),
     ViewKey(WalletBase),
-    WrittenWallet(PathBuf),
-    Fresh(PathBuf),
+    WrittenWallet(PathBuf), // More useful if/when path is moved from ZingoConfig
+    Fresh(PathBuf),         // More useful if/when path is moved from ZingoConfig
 }
 pub struct ConfigTemplate {
     server: http::Uri,
@@ -337,7 +336,6 @@ enum TemplateFillError {
     ChildLaunchError(regtest::LaunchChildProcessError),
     InvalidChain(String),
     RegtestAndChainSpecified(String),
-    InvalidSource(ZingoLibError),
 }
 #[derive(Debug)]
 enum FailClientBuildError {
@@ -351,16 +349,6 @@ enum FailClientBuildError {
 impl From<regtest::LaunchChildProcessError> for TemplateFillError {
     fn from(underlyingerror: regtest::LaunchChildProcessError) -> Self {
         Self::ChildLaunchError(underlyingerror)
-    }
-}
-fn set_output_dir(matches: &clap::ArgMatches) -> PathBuf {
-    if let Some(dir) = matches.get_one::<PathBuf>("load-existing-wallet") {
-        dir.clone()
-    } else if is_regtest {
-        // Begin short_circuit section
-        regtest::get_regtest_dir()
-    } else {
-        PathBuf::from("wallets")
     }
 }
 fn get_birthday(matches: &clap::ArgMatches) -> Result<u64, TemplateFillError> {
@@ -396,11 +384,9 @@ fn build_lightclient(
             false,
         )
         .map_err(|_| FailClientBuildError::FailToBuildUfvkClient)?,
-        Source::WrittenWallet(wallet_path) => {
-            LightClient::read_wallet_from_disk(&filled_template.config)
-                .map_err(|_| FailClientBuildError::FailToBuildWrittenWalletClient)?
-        }
-        Source::Fresh(fresh_wallet_path) => {
+        Source::WrittenWallet(_) => LightClient::read_wallet_from_disk(&filled_template.config)
+            .map_err(|_| FailClientBuildError::FailToBuildWrittenWalletClient)?,
+        Source::Fresh(_) => {
             println!("Creating a new wallet");
             // Call the lightwalletd server to get the current block-height
             // Do a getinfo first, before opening the wallet
@@ -462,7 +448,7 @@ impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
         let (source, target) = ConfigTemplate::map_capability_to_wallet_file(&matches);
-        let data_dir = target
+        let mut data_dir = target
             .parent()
             .expect("To access the wallet directory path.")
             .to_path_buf();
@@ -524,11 +510,6 @@ impl ConfigTemplate {
         }
 
         dbg!(&data_dir);
-        // There is no distinction between fresh-wallet and an "old" load-existing-wallet dir in ZingoConfig
-        if let Some(fresh_out_dir) = matches.get_one::<PathBuf>("fresh-wallet") {
-            data_dir = fresh_out_dir.clone();
-        }
-
         let config =
             zingoconfig::load_clientconfig(server.clone(), Some(data_dir), chaintype, true)
                 .unwrap();
@@ -572,16 +553,16 @@ impl ConfigTemplate {
                     .to_string(),
             ))
         } else if matches.contains_id("load-existing-wallet") {
-            Source::WrittenWallet(target_wallet)
+            Source::WrittenWallet(target_wallet.clone())
         } else if !target_wallet.exists() {
             // There's not a wallet at the default location
             // and we're not generating from an explicit (view-key or seed-phrase) cap
             // Therefore..  we're Fresh.
-            Source::Fresh(target_wallet)
+            Source::Fresh(target_wallet.clone())
         } else {
             // We're not from an explicit cap, and we're not fresh, we're loading the
             // default wallet.
-            Source::WrittenWallet(target_wallet)
+            Source::WrittenWallet(target_wallet.clone())
         };
         (source, target_wallet)
     }
