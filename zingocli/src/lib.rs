@@ -465,8 +465,7 @@ fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
-        let (source, target) = ConfigTemplate::map_capability_to_wallet_file(&matches)
-            .map_err(|e| TemplateFillError::InvalidSource(e))?;
+        let (source, target) = ConfigTemplate::map_capability_to_wallet_file(&matches);
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
@@ -487,8 +486,6 @@ impl ConfigTemplate {
         }
 
         let clean_regtest_data = !matches.get_flag("no-clean");
-        let mut data_dir = set_output_dir(&matches, is_regtest);
-        log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
             .get_one::<http::Uri>("server")
             .map(|server| server.to_string());
@@ -550,9 +547,7 @@ impl ConfigTemplate {
             server,
         })
     }
-    fn map_capability_to_wallet_file(
-        matches: &clap::ArgMatches,
-    ) -> Result<(Source, PathBuf), TemplateFillError> {
+    fn map_capability_to_wallet_file(matches: &clap::ArgMatches) -> (Source, PathBuf) {
         // In the fresh capabililty case, there's not an extant wallet.
         //   Fresh Capability Cases:
         //     - seed-phrase
@@ -588,6 +583,7 @@ impl ConfigTemplate {
             // default (or regtest-default) wallet.
             Source::WrittenWallet(target_wallet)
         };
+        (source, target_wallet)
     }
 }
 
