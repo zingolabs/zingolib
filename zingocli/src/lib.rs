@@ -51,6 +51,17 @@ fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
         Err(format!("Invalid path: {}", path_str))
     }
 }
+fn get_wallets_path(is_regtest: bool) -> Option<PathBuf> {
+    env::var("HOME").ok().map(|home| {
+        let mut path = PathBuf::from(home);
+        if ! is_regtest {
+            path.push(".zingo/wallets");
+        } else {
+            path.push(".zingo/regtest/wallets");
+        }
+        path
+    })
+}
 pub fn build_clap_app() -> clap::ArgMatches {
     clap::Command::new("Zingo CLI").version(version::VERSION)
         // Positional arguments
@@ -81,7 +92,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("regtest")
                 .long("regtest")
                 .help("Regtest mode")
-                .conflicts_with_all(["load-wallet", "fresh-output-dir"])
+                .conflicts_with_all(["load-existing-wallet", "fresh-wallet"])
                 .action(clap::ArgAction::SetTrue)
             )
             .arg(Arg::new("no-clean")
@@ -96,9 +107,9 @@ pub fn build_clap_app() -> clap::ArgMatches {
             )
             .arg(Arg::new("seed-phrase")
                 .long("seed-phrase")
-                .help("Create a new wallet with the given seed phrase. Cannot be used with --view-key, or --load-wallet.
+                .help("Create a new wallet with the given seed phrase. Cannot be used with --view-key, or --load-existing-wallet.
                      \nNOTE: This value may be read from the SEED_PHRASE environment variable.\n")
-                .conflicts_with_all(["load-wallet", "view-key"])
+                .conflicts_with_all(["load-existing-wallet", "view-key"])
                 .requires("birthday")
                 .value_parser(WalletBase::parse_input_to_phrase)
                 .env("SEED_PHRASE")
@@ -106,32 +117,31 @@ pub fn build_clap_app() -> clap::ArgMatches {
             )
             .arg(Arg::new("view-key")
                 .long("view-key")
-                .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --load-wallet.
+                .help("Create a new wallet with the given viewkey. Cannot be used with --seed-phrase, or --load-existing-wallet.
                      \nNOTE: This value may be read from the VIEW_KEY environment variable.\n")
-                .conflicts_with_all(["load-wallet", "seed-phrase"])
+                .conflicts_with_all(["load-existing-wallet", "seed-phrase"])
                 .requires("birthday")
                 .value_parser(ufvk_to_string_helper)
                 .env("VIEW_KEY")
                 .hide_env(true)
             )
-            .arg(Arg::new("load-wallet")
-                .long("load-wallet")
-                .help("Launch with an existing wallet specified by the value which is the absolute path to the wallet. Cannot be used with --seed-phrase, or --view-key.")
+            .arg(Arg::new("load-existing-wallet")
+                .long("load-existing-wallet")
+                .help("Launch with an existing wallet specified by the value which is the absolute path to the wallet-containing directory. Cannot be used with --seed-phrase, or --view-key.")
                 .conflicts_with_all(["seed-phrase", "view-key", "birthday"])
                 .value_parser(load_wallet_to_pathbuf)
             )
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction.")
-                .conflicts_with("load-wallet")
+                .conflicts_with("load-existing-wallet")
                 .requires("fresh_sources")
                 .value_parser(clap::value_parser!(u32))
              )
-            .arg(Arg::new("fresh-output-dir")
-                .long("fresh-output-dir")
-                .help("Specify where the newly created wallet will be located. Cannot be used *without* --seed-phrase, or --view-key.")
-                .conflicts_with("load-wallet")
-                .requires("fresh_sources") // each fresh source directly requires birthday
+            .arg(Arg::new("fresh-wallet")
+                .long("fresh-wallet")
+                .help("Specifies the directory that will contain the newly created wallet.")
+                .conflicts_with("load-existing-wallet")
                 .value_parser(fresh_outdir_to_pathbuf)
         )
         .group(clap::ArgGroup::new("fresh_sources").args(["seed-phrase", "view-key"]))
@@ -302,7 +312,7 @@ enum Source {
     SeedPhrase(WalletBase),
     ViewKey(WalletBase),
     WrittenWallet(PathBuf),
-    Fresh,
+    Fresh(PathBuf),
 }
 pub struct ConfigTemplate {
     server: http::Uri,
@@ -347,8 +357,8 @@ impl From<regtest::LaunchChildProcessError> for TemplateFillError {
         Self::ChildLaunchError(underlyingerror)
     }
 }
-fn get_datadir(matches: &clap::ArgMatches, is_regtest: bool) -> PathBuf {
-    if let Some(dir) = matches.get_one::<PathBuf>("load-wallet") {
+fn set_output_dir(matches: &clap::ArgMatches) -> PathBuf {
+    if let Some(dir) = matches.get_one::<PathBuf>("load-existing-wallet") {
         dir.clone()
     } else if is_regtest {
         // Begin short_circuit section
@@ -391,14 +401,10 @@ fn build_lightclient(
         )
         .map_err(|_| FailClientBuildError::FailToBuildUfvkClient)?,
         Source::WrittenWallet(wallet_path) => {
-            if wallet_path.exists() {
                 LightClient::read_wallet_from_disk(&filled_template.config)
                     .map_err(|_| FailClientBuildError::FailToBuildWrittenWalletClient)?
-            } else {
-                panic!("Missing Wallet");
             }
-        }
-        Source::Fresh => {
+        Source::Fresh(fresh_wallet_path) => {
             println!("Creating a new wallet");
             // Call the lightwalletd server to get the current block-height
             // Do a getinfo first, before opening the wallet
@@ -415,6 +421,34 @@ fn build_lightclient(
     };
     Ok(lc)
 }
+fn build_path(matches: &clap::ArgMatches, kind: &str) -> PathBuf {
+      matches.get_one::<PathBuf>(kind).unwrap().join(zingoconfig::DEFAULT_WALLET_NAME)
+}
+/// Given an ArgMatches return the unique wallet file path
+/// explicit load-existing-wallet, and fresh-output calls
+/// This will panic out in cases where the flow indicates
+/// incompatibility between capability and file.
+fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
+    if matches.contains_id("load-existing-wallet") {
+        let filep = build_path(matches, "load-existing-wallet");
+        if !filep.exists() {
+            panic!("Trying to load a file that does not exist.");
+        }
+        filep
+    } else if matches.contains_id("fresh-wallet"){
+        let filep = build_path(matches, "fresh-wallet");
+        if filep.exists() {
+            panic!("Trying to create a fresh wallet where file already exists.");
+        }
+        filep
+    } else {
+        // This is the "implicit case" we want to indiscriminately create a new wallet
+        // from a random source, or load an existing wallet from the default location.
+        // There's no existence check in this case because we could either be loading
+        // an existing wallet from the default location, or writing a fresh wallet to it.
+        get_wallets_path(matches.get_flag("regtest")).unwrap().join(zingoconfig::DEFAULT_WALLET_NAME)
+    }
+}
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: <https://crates.io/crates/clap>
 ///  * behave correctly as a function of each parameter that may have been passed
@@ -424,28 +458,10 @@ fn build_lightclient(
 ///    is specified, then the system should execute only logic necessary to support that command,
 ///    in other words "help" the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
-    fn get_source(matches: &clap::ArgMatches) -> Result<Source, ZingoLibError> {
-        if matches.contains_id("view-key") {
-            Ok(Source::ViewKey(WalletBase::Ufvk(
-                matches.get_one::<String>("view-key").unwrap().to_string(),
-            )))
-        } else if matches.contains_id("seed-phrase") {
-            Ok(Source::SeedPhrase(WalletBase::MnemonicPhrase(
-                matches
-                    .get_one::<String>("seed-phrase")
-                    .unwrap()
-                    .to_string(),
-            )))
-        } else if matches.contains_id("load-wallet") {
-            Ok(Source::WrittenWallet(
-                matches.get_one::<PathBuf>("load-wallet").unwrap().clone(),
-            ))
-        } else {
-            Ok(Source::Fresh)
-        }
-    }
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
+        let (source, target) = ConfigTemplate::map_capability_to_wallet_file(&matches)
+            .map_err(|e| TemplateFillError::InvalidSource(e))?;
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
@@ -466,9 +482,7 @@ impl ConfigTemplate {
         }
 
         let clean_regtest_data = !matches.get_flag("no-clean");
-        let source = ConfigTemplate::get_source(&matches)
-            .map_err(|e| TemplateFillError::InvalidSource(e))?;
-        let mut data_dir = get_datadir(&matches, is_regtest);
+        let mut data_dir = set_output_dir(&matches, is_regtest);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
             .get_one::<http::Uri>("server")
@@ -508,8 +522,8 @@ impl ConfigTemplate {
         }
 
         dbg!(&data_dir);
-        // There is no distinction between fresh-output-dir and an "old" load-wallet dir in ZingoConfig
-        if let Some(fresh_out_dir) = matches.get_one::<PathBuf>("fresh_output_dir") {
+        // There is no distinction between fresh-wallet and an "old" load-existing-wallet dir in ZingoConfig
+        if let Some(fresh_out_dir) = matches.get_one::<PathBuf>("fresh-wallet") {
             data_dir = fresh_out_dir.clone();
         }
 
@@ -530,6 +544,33 @@ impl ConfigTemplate {
             config,
             server,
         })
+    }
+    fn map_capability_to_wallet_file(matches: &clap::ArgMatches) -> Result<(Source, PathBuf), TemplateFillError> {
+        // In the fresh capabililty case, there's not an extant wallet.
+        //   Fresh Capability Cases:
+        //     - seed-phrase
+        //     - view-key
+        //     - FreshEntropy
+        let target = target_wallet_file(matches);
+        let source = if matches.contains_id("view-key") {
+            Source::ViewKey(WalletBase::Ufvk(
+                matches.get_one::<String>("view-key").unwrap().to_string(),
+            ))
+        } else if matches.contains_id("seed-phrase") {
+            Source::SeedPhrase(WalletBase::MnemonicPhrase(
+                matches
+                    .get_one::<String>("seed-phrase")
+                    .unwrap()
+                    .to_string(),
+            ))
+        } else if matches.contains_id("load-existing-wallet") {
+            // In this case source and target are the same.
+            assert_eq!(&target, &matches.get_one::<PathBuf>("load-existing-wallet").unwrap().clone());
+            Source::WrittenWallet(target)
+        } else if  {
+        } else {
+            Ok(Source::Fresh)
+        }
     }
 }
 
