@@ -54,7 +54,7 @@ fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
 fn get_wallets_path(is_regtest: bool) -> Option<PathBuf> {
     env::var("HOME").ok().map(|home| {
         let mut path = PathBuf::from(home);
-        if ! is_regtest {
+        if !is_regtest {
             path.push(".zingo/wallets");
         } else {
             path.push(".zingo/regtest/wallets");
@@ -401,9 +401,9 @@ fn build_lightclient(
         )
         .map_err(|_| FailClientBuildError::FailToBuildUfvkClient)?,
         Source::WrittenWallet(wallet_path) => {
-                LightClient::read_wallet_from_disk(&filled_template.config)
-                    .map_err(|_| FailClientBuildError::FailToBuildWrittenWalletClient)?
-            }
+            LightClient::read_wallet_from_disk(&filled_template.config)
+                .map_err(|_| FailClientBuildError::FailToBuildWrittenWalletClient)?
+        }
         Source::Fresh(fresh_wallet_path) => {
             println!("Creating a new wallet");
             // Call the lightwalletd server to get the current block-height
@@ -422,7 +422,10 @@ fn build_lightclient(
     Ok(lc)
 }
 fn build_path(matches: &clap::ArgMatches, kind: &str) -> PathBuf {
-      matches.get_one::<PathBuf>(kind).unwrap().join(zingoconfig::DEFAULT_WALLET_NAME)
+    matches
+        .get_one::<PathBuf>(kind)
+        .unwrap()
+        .join(zingoconfig::DEFAULT_WALLET_NAME)
 }
 /// Given an ArgMatches return the unique wallet file path
 /// explicit load-existing-wallet, and fresh-output calls
@@ -435,7 +438,7 @@ fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
             panic!("Trying to load a file that does not exist.");
         }
         filep
-    } else if matches.contains_id("fresh-wallet"){
+    } else if matches.contains_id("fresh-wallet") {
         let filep = build_path(matches, "fresh-wallet");
         if filep.exists() {
             panic!("Trying to create a fresh wallet where file already exists.");
@@ -446,7 +449,9 @@ fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
         // from a random source, or load an existing wallet from the default location.
         // There's no existence check in this case because we could either be loading
         // an existing wallet from the default location, or writing a fresh wallet to it.
-        get_wallets_path(matches.get_flag("regtest")).unwrap().join(zingoconfig::DEFAULT_WALLET_NAME)
+        get_wallets_path(matches.get_flag("regtest"))
+            .unwrap()
+            .join(zingoconfig::DEFAULT_WALLET_NAME)
     }
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
@@ -545,18 +550,26 @@ impl ConfigTemplate {
             server,
         })
     }
-    fn map_capability_to_wallet_file(matches: &clap::ArgMatches) -> Result<(Source, PathBuf), TemplateFillError> {
+    fn map_capability_to_wallet_file(
+        matches: &clap::ArgMatches,
+    ) -> Result<(Source, PathBuf), TemplateFillError> {
         // In the fresh capabililty case, there's not an extant wallet.
         //   Fresh Capability Cases:
         //     - seed-phrase
         //     - view-key
         //     - FreshEntropy
-        let target = target_wallet_file(matches);
+        let target_wallet = target_wallet_file(matches);
         let source = if matches.contains_id("view-key") {
+            if target_wallet.exists() {
+                panic!("Trying to overwrite existing wallet file from view-key cap.");
+            }
             Source::ViewKey(WalletBase::Ufvk(
                 matches.get_one::<String>("view-key").unwrap().to_string(),
             ))
         } else if matches.contains_id("seed-phrase") {
+            if target_wallet.exists() {
+                panic!("Trying to overwrite existing wallet file from seed-phrase cap.");
+            }
             Source::SeedPhrase(WalletBase::MnemonicPhrase(
                 matches
                     .get_one::<String>("seed-phrase")
@@ -564,13 +577,17 @@ impl ConfigTemplate {
                     .to_string(),
             ))
         } else if matches.contains_id("load-existing-wallet") {
-            // In this case source and target are the same.
-            assert_eq!(&target, &matches.get_one::<PathBuf>("load-existing-wallet").unwrap().clone());
-            Source::WrittenWallet(target)
-        } else if  {
+            Source::WrittenWallet(target_wallet)
+        } else if !target_wallet.exists() {
+            // There's not a wallet at the (default or regtest-default) location
+            // and we're not generating from an explicit (view-key or seed-phrase) cap
+            // Therefore..  we're Fresh.
+            Source::Fresh(target_wallet)
         } else {
-            Ok(Source::Fresh)
-        }
+            // We're not from an explicit cap, and we're not fresh, we're loading the
+            // default (or regtest-default) wallet.
+            Source::WrittenWallet(target_wallet)
+        };
     }
 }
 
