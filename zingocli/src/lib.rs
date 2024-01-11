@@ -338,12 +338,12 @@ enum TemplateFillError {
     RegtestAndChainSpecified(String),
 }
 #[derive(Debug)]
-enum FailClientBuildError {
-    FailToBuildSeedClient,
-    FailToBuildUfvkClient,
-    FailToBuildWrittenWalletClient,
-    FailToBuildFreshClient,
-    FailToGetBlockHeight,
+enum ClientBuildError {
+    BuildSeedClient,
+    BuildUfvkClient,
+    BuildWrittenWalletClient,
+    BuildFreshClient,
+    GetBlockHeight,
 }
 
 impl From<regtest::LaunchChildProcessError> for TemplateFillError {
@@ -365,9 +365,7 @@ fn get_birthday(matches: &clap::ArgMatches) -> Result<u64, TemplateFillError> {
         ))),
     }
 }
-fn build_lightclient(
-    filled_template: &ConfigTemplate,
-) -> Result<LightClient, FailClientBuildError> {
+fn build_lightclient(filled_template: &ConfigTemplate) -> Result<LightClient, ClientBuildError> {
     let lc = match filled_template.source.clone() {
         Source::SeedPhrase(phrase_base) => LightClient::create_from_wallet_base(
             phrase_base,
@@ -375,7 +373,7 @@ fn build_lightclient(
             filled_template.birthday,
             false,
         )
-        .map_err(|_| FailClientBuildError::FailToBuildSeedClient)?,
+        .map_err(|_| ClientBuildError::BuildSeedClient)?,
 
         Source::ViewKey(viewkey_base) => LightClient::create_from_wallet_base(
             viewkey_base,
@@ -383,9 +381,9 @@ fn build_lightclient(
             filled_template.birthday,
             false,
         )
-        .map_err(|_| FailClientBuildError::FailToBuildUfvkClient)?,
+        .map_err(|_| ClientBuildError::BuildUfvkClient)?,
         Source::WrittenWallet(_) => LightClient::read_wallet_from_disk(&filled_template.config)
-            .map_err(|_| FailClientBuildError::FailToBuildWrittenWalletClient)?,
+            .map_err(|_| ClientBuildError::BuildWrittenWalletClient)?,
         Source::Fresh(_) => {
             println!("Creating a new wallet");
             // Call the lightwalletd server to get the current block-height
@@ -395,10 +393,10 @@ fn build_lightclient(
             LightClient::new(
                 &filled_template.config,
                 block_height
-                    .map_err(|_| FailClientBuildError::FailToGetBlockHeight)?
+                    .map_err(|_| ClientBuildError::GetBlockHeight)?
                     .saturating_sub(100),
             )
-            .map_err(|_| FailClientBuildError::FailToBuildFreshClient)?
+            .map_err(|_| ClientBuildError::BuildFreshClient)?
         }
     };
     Ok(lc)
