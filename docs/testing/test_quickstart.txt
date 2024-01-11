@@ -1,8 +1,8 @@
 PREREQUISITES
 
-$cargo install cargo-nextest --locked
+$ cargo install cargo-nextest --locked
 
-install git-lfs in order to download test binaries (lightwalletd, zcashd, zcash-cli) to test against
+install git-lfs
 
 
 EXPLANATION
@@ -14,5 +14,10 @@ there are two categories of integration tests:
 > those running against lightwalletd's darkside mode (darkside tests)
   see ./TEST-DARKSIDE.md
 
+git-lfs downloads binaries (lightwalletd, zcashd, zcash-cli) to test against
+they are installed during cargo build to zingo-testutils/test_binaries/bins
+	
 the union can be run simply with
 $ cargo nextest run
+or run a specific test with
+$ cargo nextest run --features test {TESTNAME} --nocapture
