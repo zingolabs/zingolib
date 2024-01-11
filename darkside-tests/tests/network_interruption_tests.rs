@@ -52,7 +52,6 @@ async fn network_interrupt_chainbuild() {
         json::stringify_pretty(scenario.get_faucet().do_list_notes(true).await, 4)
     );
 }
-#[ignore]
 #[tokio::test]
 async fn network_interrupt_test() {
     const BLOCKCHAIN_HEIGHT: u64 = 150_000;
