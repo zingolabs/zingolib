@@ -5,15 +5,9 @@
 /procgov
 /testdata
 cobertura.xml
-darkside-tests/lightwalletd_bin/
 docker-ci/lightwalletd
-integration-tests/regtest/bin
 target
 wallets/*
-zingocli/regtest/bin
-zingocli/regtest/data/lightwalletd/
-zingocli/regtest/data/zcashd/regtest/
-zingocli/regtest/data/zingo/
 zingocli/regtest/logs/
 zingocli/regtest/zingo-wallet.dat
 zingocli/target
