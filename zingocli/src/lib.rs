@@ -53,7 +53,7 @@ fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
 fn get_wallets_path() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(|home| {
         let mut path = PathBuf::from(home);
-        path.push(".zingo/wallets");
+        path.push(".zcash/zingo/wallets");
         path
     })
 }
