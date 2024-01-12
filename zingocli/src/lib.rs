@@ -535,14 +535,22 @@ impl ConfigTemplate {
         let target_wallet = target_wallet_file(matches);
         let source = if matches.contains_id("view-key") {
             if target_wallet.exists() {
-                panic!("Trying to overwrite existing wallet file from view-key cap.");
+                panic!(
+                    "Trying to overwrite existing wallet file from view-key cap
+                        Perhaps you intended to load-existing-wallet OR create a
+                        fresh-wallet-dir."
+                );
             }
             Source::ViewKey(WalletBase::Ufvk(
                 matches.get_one::<String>("view-key").unwrap().to_string(),
             ))
         } else if matches.contains_id("seed-phrase") {
             if target_wallet.exists() {
-                panic!("Trying to overwrite existing wallet file from seed-phrase cap.");
+                panic!(
+                    "Trying to overwrite existing wallet file from seed-phrase cap
+                        Perhaps you intended to load-existing-wallet OR create a
+                        fresh-wallet-dir."
+                );
             }
             Source::SeedPhrase(WalletBase::MnemonicPhrase(
                 matches
