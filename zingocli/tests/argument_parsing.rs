@@ -39,13 +39,13 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
         std::string::String::from_utf8_lossy(&output.stdout),
         expected_output
     );
-    if std::fs::metadata(CLI_PARSE_TEST_DATA).is_ok() {
+    if std::fs::metadata(&temp_data_dir).is_ok() {
         std::fs::remove_dir_all(temp_data_dir).expect("Failed to remove existing foo directory");
     }
 }
 #[test]
 fn clargs_view_key_birthday_seed_phrase() {
-    let expected_error_fragment: &str = "error: the argument '--view-key <view-key>' cannot be used with '--seed-phrase <seed-phrase>'\n\nUsage: zingo-cli --birthday <birthday> --nosync <--seed-phrase <seed-phrase>|--view-key <view-key>> <COMMAND> [extra_args]...\n\nFor more information, try '--help'.";
+    let expected_error_fragment: &str = "error: the argument '--view-key <view-key>' cannot be used with '--seed-phrase <seed-phrase>'";
     let output = std::process::Command::new("cargo")
         .args(&["run", "--"])
         .args(&["--view-key", zingolib::testvectors::MAINNET_ALPHA_VIEWKEY]) // shortened for brevity
@@ -59,10 +59,17 @@ fn clargs_view_key_birthday_seed_phrase() {
         .output()
         .expect("Failed to execute cargo run command");
     assert!(!output.status.success());
-    assert!(std::string::String::from_utf8_lossy(&output.stderr).contains(expected_error_fragment));
+    let outstring = std::string::String::from_utf8_lossy(&output.stderr);
+    assert!(
+        outstring.contains(expected_error_fragment),
+        "Observed:{}\nExpected:{}",
+        outstring,
+        expected_error_fragment
+    );
 }
 #[test]
 fn collide_stale_and_fresh() {
+    let expected_error_fragment: &str = "error: the argument '--view-key <view-key>' cannot be used with '--seed-phrase <seed-phrase>'\n\nusage: zingo-cli --birthday <birthday> --nosync <--seed-phrase <seed-phrase>|--view-key <view-key>> <command> [extra_args]...\n\nfor more information, try '--help'.";
     let temp_data_dir = make_data_dir("collide_stale_and_fresh");
     let dir_path = std::path::Path::new(temp_data_dir.to_str().unwrap());
     let file_path = dir_path.join(DEFAULT_WALLET_NAME);
@@ -70,4 +77,12 @@ fn collide_stale_and_fresh() {
     std::fs::File::create(&file_path).unwrap();
     let target = temp_data_dir.join(file_path);
     dbg!(target);
+    let output = std::process::Command::new("cargo")
+        .args(&["run", "--"])
+        .args(&["--fresh-wallet-dir", temp_data_dir.to_str().unwrap()])
+        .args(&["--nosync"])
+        .args(&["exportufvk"])
+        .output()
+        .expect("Failed to execute cargo run command");
+    assert!(std::string::String::from_utf8_lossy(&output.stderr).contains(expected_error_fragment));
 }
