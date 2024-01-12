@@ -1708,8 +1708,6 @@ impl LightClient {
             transaction_md.is_outgoing_transaction(),
             transaction_md.is_incoming_transaction(),
         ) {
-            // This transaction is entirely composed of what we consider
-            // to be 'change'. We just make a Fee transfer and move on
             (false, false) => (),
             // All received funds were change, this is a normal send
             (true, false) => {
