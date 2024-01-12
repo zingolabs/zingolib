@@ -2,6 +2,13 @@ use zingoconfig::DEFAULT_WALLET_NAME;
 
 const CLI_PARSE_TEST_DATA: &str = "./cli_parse_test_data";
 
+fn make_data_dir(test_name: &str) -> std::path::PathBuf {
+    let p = std::path::Path::new(CLI_PARSE_TEST_DATA).join(test_name);
+    if p.exists() {
+        std::fs::remove_dir_all(&p).expect("Failed to remove existing directory");
+    }
+    p
+}
 #[test]
 fn clargs_view_key_birthday_fresh_wallet_dir() {
     let expected_output: &str = r#"{
@@ -9,11 +16,7 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
   "birthday": 2363649
 }
 "#;
-    let temp_data_dir =
-        std::path::Path::new(CLI_PARSE_TEST_DATA).join("clargs_view_key_birthday_fresh_wallet_dir");
-    if temp_data_dir.exists() {
-        std::fs::remove_dir_all(&temp_data_dir).expect("Failed to remove existing directory");
-    }
+    let temp_data_dir = make_data_dir("clargs_view_key_birthday_fresh_wallet_dir");
 
     // Run the cargo command
     let output = std::process::Command::new("cargo")
@@ -60,11 +63,7 @@ fn clargs_view_key_birthday_seed_phrase() {
 }
 #[test]
 fn collide_stale_and_fresh() {
-    // Remove the 'foo' directory if it exists
-    let temp_data_dir = std::path::Path::new(CLI_PARSE_TEST_DATA).join("collide_stale_and_fres");
-    if temp_data_dir.exists() {
-        std::fs::remove_dir_all(&temp_data_dir).expect("Failed to remove existing foo directory");
-    }
+    let temp_data_dir = make_data_dir("collide_stale_and_fresh");
     let dir_path = std::path::Path::new(temp_data_dir.to_str().unwrap());
     let file_path = dir_path.join(DEFAULT_WALLET_NAME);
     std::fs::create_dir_all(&dir_path).unwrap();
