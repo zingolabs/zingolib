@@ -34,20 +34,29 @@ fn helper_handles_raw_strings() {
     assert!(res3.is_err())
 }
 
+/// Single use parser for load-existing-wallet
 fn load_wallet_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
-    // For example, checking if the path exists (though this might not always be appropriate):
-    if std::path::Path::new(path_str).exists() {
-        Ok(PathBuf::from(path_str))
+    // Requires that the wallet-to-load exists:
+    let dir = std::path::Path::new(path_str);
+    let fp = dir.join(zingoconfig::DEFAULT_WALLET_NAME);
+    if fp.exists() {
+        Ok(fp)
     } else {
-        Err(format!("Invalid path: {}", path_str))
+        Err(format!("Invalid wallet to load does not exist: {:?}", fp))
     }
 }
+/// Single use parser for fresh-wallet-dir
 fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
-    // For example, checking if the path exists (though this might not always be appropriate):
-    if !std::path::Path::new(path_str).exists() {
-        Ok(PathBuf::from(path_str))
+    // Requires that the target wallet-creation location does *NOT* exist:
+    let dir = std::path::Path::new(path_str);
+    let fp = dir.join(zingoconfig::DEFAULT_WALLET_NAME);
+    if !fp.exists() {
+        Ok(fp)
     } else {
-        Err(format!("Invalid path: {}", path_str))
+        Err(format!(
+            "Invalid wallet creation target *already* exists: {:?}",
+            fp
+        ))
     }
 }
 fn get_wallets_path() -> Option<PathBuf> {
@@ -87,7 +96,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("regtest")
                 .long("regtest")
                 .help("Regtest mode")
-                .conflicts_with_all(["load-existing-wallet", "fresh-wallet"])
+                .conflicts_with_all(["load-existing-wallet", "fresh-wallet-dir"])
                 .action(clap::ArgAction::SetTrue)
             )
             .arg(Arg::new("no-clean")
@@ -133,8 +142,8 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .requires("fresh_sources")
                 .value_parser(clap::value_parser!(u32))
              )
-            .arg(Arg::new("fresh-wallet")
-                .long("fresh-wallet")
+            .arg(Arg::new("fresh-wallet-dir")
+                .long("fresh-wallet-dir")
                 .help("Specifies the directory that will contain the newly created wallet.")
                 .conflicts_with("load-existing-wallet")
                 .value_parser(fresh_outdir_to_pathbuf)
@@ -418,8 +427,8 @@ fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
             panic!("Trying to load a file that does not exist.");
         }
         filep
-    } else if matches.contains_id("fresh-wallet") {
-        let filep = build_path(matches, "fresh-wallet");
+    } else if matches.contains_id("fresh-wallet-dir") {
+        let filep = build_path(matches, "fresh-wallet-dir");
         if filep.exists() {
             panic!("Trying to create a fresh wallet where file already exists.");
         }
