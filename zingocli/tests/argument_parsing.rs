@@ -39,3 +39,21 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
             .expect("Failed to remove existing foo directory");
     }
 }
+#[test]
+fn clargs_view_key_birthday_seed_phrase() {
+    let expected_error_fragment: &str = "error: the argument '--view-key <view-key>' cannot be used with '--seed-phrase <seed-phrase>'\n\nUsage: zingo-cli --birthday <birthday> --nosync <--seed-phrase <seed-phrase>|--view-key <view-key>> <COMMAND> [extra_args]...\n\nFor more information, try '--help'.";
+    let output = std::process::Command::new("cargo")
+        .args(&["run", "--"])
+        .args(&["--view-key", zingolib::testvectors::MAINNET_ALPHA_VIEWKEY]) // shortened for brevity
+        .args(&[
+            "--seed-phrase",
+            zingolib::testvectors::seed_phrases::MAINNET_ALPHA_SEED_FORVIEW_ALPA,
+        ]) // shortened for brevity
+        .args(&["--birthday", "2363649"])
+        .args(&["--nosync"])
+        .args(&["exportufvk"])
+        .output()
+        .expect("Failed to execute cargo run command");
+    assert!(!output.status.success());
+    assert!(std::string::String::from_utf8_lossy(&output.stderr).contains(expected_error_fragment));
+}
