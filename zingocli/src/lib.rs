@@ -7,7 +7,7 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use zingo_testutils::regtest;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig, DEFAULT_WALLET_NAME};
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
@@ -38,7 +38,7 @@ fn helper_handles_raw_strings() {
 fn load_wallet_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
     // Requires that the wallet-to-load exists:
     let dir = std::path::Path::new(path_str);
-    let fp = dir.join(zingoconfig::DEFAULT_WALLET_NAME);
+    let fp = dir.join(DEFAULT_WALLET_NAME);
     if fp.exists() {
         Ok(fp)
     } else {
@@ -49,7 +49,7 @@ fn load_wallet_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
 fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
     // Requires that the target wallet-creation location does *NOT* exist:
     let dir = std::path::Path::new(path_str);
-    let fp = dir.join(zingoconfig::DEFAULT_WALLET_NAME);
+    let fp = dir.join(DEFAULT_WALLET_NAME);
     if !fp.exists() {
         Ok(fp)
     } else {
@@ -61,9 +61,10 @@ fn fresh_outdir_to_pathbuf(path_str: &str) -> Result<PathBuf, String> {
 }
 fn get_wallets_path() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(|home| {
-        let mut path = PathBuf::from(home);
-        path.push(".zcash/zingo/wallets");
-        path
+        let mut pbuf = PathBuf::from(home);
+        pbuf.push(".zcash/zingo/wallets");
+        pbuf.push(DEFAULT_WALLET_NAME);
+        pbuf
     })
 }
 pub fn build_clap_app() -> clap::ArgMatches {
@@ -148,7 +149,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .conflicts_with("load-existing-wallet")
                 .value_parser(fresh_outdir_to_pathbuf)
         )
-        .group(clap::ArgGroup::new("fresh_sources").args(["seed-phrase", "view-key"]))
+        .group(clap::ArgGroup::new("fresh_sources").args(["seed-phrase", "view-key"]).multiple(false))
         .get_matches()
 }
 
@@ -410,37 +411,27 @@ fn build_lightclient(filled_template: &ConfigTemplate) -> Result<LightClient, Cl
     };
     Ok(lc)
 }
-fn build_path(matches: &clap::ArgMatches, kind: &str) -> PathBuf {
-    matches
-        .get_one::<PathBuf>(kind)
-        .unwrap()
-        .join(zingoconfig::DEFAULT_WALLET_NAME)
-}
 /// Given an ArgMatches return the unique wallet file path
 /// explicit load-existing-wallet, and fresh-output calls
 /// This will panic out in cases where the flow indicates
 /// incompatibility between capability and file.
 fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
     if matches.contains_id("load-existing-wallet") {
-        let filep = build_path(matches, "load-existing-wallet");
-        if !filep.exists() {
-            panic!("Trying to load a file that does not exist.");
-        }
-        filep
+        matches
+            .get_one::<PathBuf>("load-existing-wallet")
+            .expect("To get the validated path.")
+            .clone()
     } else if matches.contains_id("fresh-wallet-dir") {
-        let filep = build_path(matches, "fresh-wallet-dir");
-        if filep.exists() {
-            panic!("Trying to create a fresh wallet where file already exists.");
-        }
-        filep
+        matches
+            .get_one::<PathBuf>("fresh-wallet-dir") // This returns the actual wallet path
+            .expect("To get the validated path.")
+            .clone()
     } else {
         // This is the "implicit case" we want to indiscriminately create a new wallet
         // from a random source, or load an existing wallet from the default location.
         // There's no existence check in this case because we could either be loading
         // an existing wallet from the default location, or writing a fresh wallet to it.
-        get_wallets_path()
-            .unwrap()
-            .join(zingoconfig::DEFAULT_WALLET_NAME)
+        get_wallets_path().expect("A wallet path to be available.")
     }
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
