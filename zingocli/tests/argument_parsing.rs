@@ -69,7 +69,7 @@ fn clargs_view_key_birthday_seed_phrase() {
 }
 #[test]
 fn collide_stale_and_fresh() {
-    let expected_error_fragment: &str = "error: the argument '--view-key <view-key>' cannot be used with '--seed-phrase <seed-phrase>'\n\nusage: zingo-cli --birthday <birthday> --nosync <--seed-phrase <seed-phrase>|--view-key <view-key>> <command> [extra_args]...\n\nfor more information, try '--help'.";
+    let expected_error_fragment: &str = r#"invalid value './cli_parse_test_data/collide_stale_and_fresh' for '--fresh-wallet-dir <fresh-wallet-dir>': Invalid wallet creation target *already* exists: "./cli_parse_test_data/collide_stale_and_fresh/zingo-wallet.dat"#;
     let temp_data_dir = make_data_dir("collide_stale_and_fresh");
     let dir_path = std::path::Path::new(temp_data_dir.to_str().unwrap());
     let file_path = dir_path.join(DEFAULT_WALLET_NAME);
@@ -84,5 +84,11 @@ fn collide_stale_and_fresh() {
         .args(&["exportufvk"])
         .output()
         .expect("Failed to execute cargo run command");
-    assert!(std::string::String::from_utf8_lossy(&output.stderr).contains(expected_error_fragment));
+    let outstring = std::string::String::from_utf8_lossy(&output.stderr);
+    assert!(
+        outstring.contains(expected_error_fragment),
+        "Observed:{}\nExpected:{}",
+        outstring,
+        expected_error_fragment
+    );
 }
