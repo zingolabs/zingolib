@@ -316,8 +316,9 @@ pub fn command_loop(
 enum Source {
     SeedPhrase(WalletBase),
     ViewKey(WalletBase),
-    WrittenWallet(PathBuf), // More useful if/when path is moved from ZingoConfig
-    Fresh(PathBuf),         // More useful if/when path is moved from ZingoConfig
+    WrittenWalletLoad(PathBuf), // More useful if/when path is moved from ZingoConfig
+    DefaultWalletLoad(PathBuf), // More useful if/when path is moved from ZingoConfig
+    Fresh(PathBuf),             // More useful if/when path is moved from ZingoConfig
 }
 pub struct ConfigTemplate {
     server: http::Uri,
@@ -392,8 +393,10 @@ fn build_lightclient(filled_template: &ConfigTemplate) -> Result<LightClient, Cl
             false,
         )
         .map_err(|_| ClientBuildError::BuildUfvkClient)?,
-        Source::WrittenWallet(_) => LightClient::read_wallet_from_disk(&filled_template.config)
-            .map_err(|_| ClientBuildError::BuildWrittenWalletClient)?,
+        Source::WrittenWalletLoad(_) | Source::DefaultWalletLoad(_) => {
+            LightClient::read_wallet_from_disk(&filled_template.config)
+                .map_err(|_| ClientBuildError::BuildWrittenWalletClient)?
+        }
         Source::Fresh(_) => {
             println!("Creating a new wallet");
             // Call the lightwalletd server to get the current block-height
@@ -559,12 +562,12 @@ impl ConfigTemplate {
                     .to_string(),
             ))
         } else if matches.contains_id("load-existing-wallet") {
-            Source::WrittenWallet(target_wallet.clone())
+            Source::WrittenWalletLoad(target_wallet.clone())
         } else if target_wallet.exists() {
             // Existence of the target_wallet => Fresh
             // Since we're not from an explicit cap, and we're not fresh:
             //   we're loading the default wallet.
-            Source::WrittenWallet(target_wallet.clone())
+            Source::DefaultWalletLoad(target_wallet.clone())
         } else {
             // There's not a wallet at the targeted location
             // and we're not generating from an explicit (view-key or seed-phrase) cap
