@@ -560,15 +560,16 @@ impl ConfigTemplate {
             ))
         } else if matches.contains_id("load-existing-wallet") {
             Source::WrittenWallet(target_wallet.clone())
-        } else if !target_wallet.exists() {
-            // There's not a wallet at the default location
+        } else if target_wallet.exists() {
+            // Existence of the target_wallet => Fresh
+            // Since we're not from an explicit cap, and we're not fresh:
+            //   we're loading the default wallet.
+            Source::WrittenWallet(target_wallet.clone())
+        } else {
+            // There's not a wallet at the targeted location
             // and we're not generating from an explicit (view-key or seed-phrase) cap
             // Therefore..  we're Fresh.
             Source::Fresh(target_wallet.clone())
-        } else {
-            // We're not from an explicit cap, and we're not fresh, we're loading the
-            // default wallet.
-            Source::WrittenWallet(target_wallet.clone())
         };
         (source, target_wallet)
     }
