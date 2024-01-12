@@ -510,7 +510,6 @@ impl ConfigTemplate {
                 server )));
         }
 
-        dbg!(&data_dir);
         let config =
             zingoconfig::load_clientconfig(server.clone(), Some(data_dir), chaintype, true)
                 .unwrap();
