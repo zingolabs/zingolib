@@ -14,7 +14,8 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
         .args(&["--view-key", zingolib::testvectors::MAINNET_ALPHA_VIEWKEY]) // shortened for brevity
         .args(&["--birthday", "2363649"])
         .args(&["--fresh-wallet-dir", cli_parse_test_data])
-        .args(&["help"])
+        .args(&["--nosync"])
+        .args(&["info"])
         .output()
         .expect("Failed to execute cargo run command");
 

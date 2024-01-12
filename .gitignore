@@ -24,3 +24,4 @@ zingocli/tests/times/*
 wallets/*
 zingocli/wallets/*
 darkside-tests/lightwalletd_bin/
+*cli_parse_test_data*
