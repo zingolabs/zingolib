@@ -253,7 +253,7 @@ impl TransactionMetadataSet {
     {
         Ok(if let Some(height) = status.get_confirmed_height() {
             // ie remove_witness_mark_sapling or _orchard
-            self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index);
+            self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index)?;
             if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
                 if let Some(confirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
                     .iter_mut()
