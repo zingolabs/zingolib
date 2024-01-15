@@ -3391,7 +3391,7 @@ mod slow {
         zingo_testutils::increase_server_height(&regtest_manager, 1).await;
 
         let _synciiyur = recipient.do_sync(false).await;
-        let summ_sim = recipient.do_list_txsummaries().await;
+        // let summ_sim = recipient.do_list_txsummaries().await;
         let bala_sim = recipient.do_balance().await;
 
         recipient.clear_state().await;
@@ -3413,7 +3413,7 @@ mod slow {
         // let summ_int = recipient.do_list_txsummaries().await;
         // let bala_int = recipient.do_balance().await;
         let _synciiyur = recipient.do_sync(false).await;
-        let summ_syn = recipient.do_list_txsummaries().await;
+        // let summ_syn = recipient.do_list_txsummaries().await;
         let bala_syn = recipient.do_balance().await;
 
         dbg!(
@@ -3425,6 +3425,8 @@ mod slow {
                 .await
                 .current
         );
+
+        assert_eq!(bala_sim, bala_syn);
     }
 }
 
