@@ -103,12 +103,10 @@ impl TransactionContext {
     pub(crate) async fn scan_full_tx(
         &self,
         transaction: Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         price: Option<f64>,
     ) {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         // Set up data structures to record scan results
         let mut txid_indexed_zingo_memos = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
@@ -638,8 +636,9 @@ pub async fn start(
                     last_progress.store(progress, Ordering::SeqCst);
                 }
 
+                let status = ConfirmationStatus::Confirmed(height);
                 per_txid_iter_context
-                    .scan_full_tx(transaction, height, false, block_time, None)
+                    .scan_full_tx(transaction, status, block_time, None)
                     .await;
 
                 Ok::<_, String>(())
@@ -677,8 +676,9 @@ pub async fn start(
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
+            let status = ConfirmationStatus::Confirmed(height);
             transaction_context
-                .scan_full_tx(transaction, height, false, block_time, None)
+                .scan_full_tx(transaction, status, block_time, None)
                 .await;
         }
 

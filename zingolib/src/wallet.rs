@@ -47,6 +47,7 @@ use zcash_primitives::{
     },
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
@@ -1426,11 +1427,11 @@ impl LightWallet {
         {
             let price = self.price.read().await.clone();
 
+            let status = ConfirmationStatus::Broadcast(submission_height);
             self.transaction_context
                 .scan_full_tx(
                     transaction,
-                    submission_height,
-                    true,
+                    status,
                     now() as u32,
                     TransactionMetadata::get_price(now(), &price),
                 )

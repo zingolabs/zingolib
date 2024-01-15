@@ -40,6 +40,7 @@ use tokio::{
     time::sleep,
 };
 use zcash_address::ZcashAddress;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use zcash_client_backend::{
     encoding::{decode_payment_address, encode_payment_address},
@@ -1295,6 +1296,10 @@ impl LightClient {
                         ) {
                             let price = price.read().await.clone();
                             //debug!("Mempool attempting to scan {}", tx.txid());
+                            let status = ConfirmationStatus::Broadcast(BlockHeight::from_u32(
+                                rtransaction.height as u32,
+                            ));
+
                             TransactionContext::new(
                                 &config,
                                 key.clone(),
@@ -1302,8 +1307,7 @@ impl LightClient {
                             )
                             .scan_full_tx(
                                 transaction,
-                                BlockHeight::from_u32(rtransaction.height as u32),
-                                true,
+                                status,
                                 now() as u32,
                                 TransactionMetadata::get_price(now(), &price),
                             )
