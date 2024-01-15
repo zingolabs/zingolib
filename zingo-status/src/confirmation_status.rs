@@ -2,9 +2,29 @@ use zcash_primitives::consensus::BlockHeight;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
-    /// we may know when it entered the mempool.
+    /// The value the client has for the height of the chain when the transaction is broadcast.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Broadcast(BlockHeight::from_u32(100));
+    /// assert_eq!(status.is_broadcast(), true);
+    /// assert_eq!(status.get_height(), BlockHeight::from_u32(100));
+    /// ```
     Broadcast(BlockHeight),
-    /// confirmed on blockchain implies a height. this data piece will eventually be a block height
+    /// The height of a confirmed block that contains the transaction.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(BlockHeight::from_u32(200));
+    /// assert_eq!(status.is_confirmed(), true);
+    /// assert_eq!(status.get_height(), BlockHeight::from_u32(200));
+    /// ```
     Confirmed(BlockHeight),
 }
 
