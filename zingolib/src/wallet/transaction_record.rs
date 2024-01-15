@@ -55,7 +55,26 @@ pub struct TransactionRecord {
     pub price: Option<f64>,
 }
 
+// set
 impl TransactionRecord {
+    pub fn new(status: ConfirmationStatus, datetime: u64, transaction_id: &TxId) -> Self {
+        TransactionRecord {
+            status,
+            datetime,
+            txid: *transaction_id,
+            spent_sapling_nullifiers: vec![],
+            spent_orchard_nullifiers: vec![],
+            sapling_notes: vec![],
+            orchard_notes: vec![],
+            transparent_notes: vec![],
+            total_transparent_value_spent: 0,
+            total_sapling_value_spent: 0,
+            total_orchard_value_spent: 0,
+            outgoing_tx_data: vec![],
+            full_tx_scanned: false,
+            price: None,
+        }
+    }
     pub fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
@@ -68,23 +87,9 @@ impl TransactionRecord {
             }
         }
     }
-
-    pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
-        match price.zec_price {
-            None => None,
-            Some((t, p)) => {
-                // If the price was fetched within 24 hours of this Tx, we use the "current" price
-                // else, we mark it as None, for the historical price fetcher to get
-                // TODO:  Investigate the state of "the historical price fetcher".
-                if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
-                    Some(p)
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
+}
+//get
+impl TransactionRecord {
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
         let outputted = self.value_outgoing() + self.total_change_returned();
         if self.total_value_spent() >= outputted {
@@ -117,29 +122,6 @@ impl TransactionRecord {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
     }
-    pub fn new(status: ConfirmationStatus, datetime: u64, transaction_id: &TxId) -> Self {
-        TransactionRecord {
-            status,
-            datetime,
-            txid: *transaction_id,
-            spent_sapling_nullifiers: vec![],
-            spent_orchard_nullifiers: vec![],
-            sapling_notes: vec![],
-            orchard_notes: vec![],
-            transparent_notes: vec![],
-            total_transparent_value_spent: 0,
-            total_sapling_value_spent: 0,
-            total_orchard_value_spent: 0,
-            outgoing_tx_data: vec![],
-            full_tx_scanned: false,
-            price: None,
-        }
-    }
-    pub fn new_txid(txid: &[u8]) -> TxId {
-        let mut txid_bytes = [0u8; 32];
-        txid_bytes.copy_from_slice(txid);
-        TxId::from_bytes(txid_bytes)
-    }
     fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -158,7 +140,59 @@ impl TransactionRecord {
             .map(|note_and_metadata| note_and_metadata.value())
             .sum()
     }
+    pub fn total_change_returned(&self) -> u64 {
+        self.pool_change_returned::<SaplingDomain<ChainType>>()
+            + self.pool_change_returned::<OrchardDomain>()
+    }
+    pub fn total_value_received(&self) -> u64 {
+        self.pool_value_received::<OrchardDomain>()
+            + self.pool_value_received::<SaplingDomain<ChainType>>()
+            + self
+                .transparent_notes
+                .iter()
+                .map(|utxo| utxo.value)
+                .sum::<u64>()
+    }
+    pub fn total_value_spent(&self) -> u64 {
+        self.value_spent_by_pool().iter().sum()
+    }
 
+    pub fn value_outgoing(&self) -> u64 {
+        self.outgoing_tx_data
+            .iter()
+            .fold(0, |running_total, tx_data| tx_data.value + running_total)
+    }
+
+    pub fn value_spent_by_pool(&self) -> [u64; 3] {
+        [
+            self.total_transparent_value_spent,
+            self.total_sapling_value_spent,
+            self.total_orchard_value_spent,
+        ]
+    }
+    pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
+        match price.zec_price {
+            None => None,
+            Some((t, p)) => {
+                // If the price was fetched within 24 hours of this Tx, we use the "current" price
+                // else, we mark it as None, for the historical price fetcher to get
+                // TODO:  Investigate the state of "the historical price fetcher".
+                if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
+                    Some(p)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+// read/write
+impl TransactionRecord {
+    pub fn new_txid(txid: &[u8]) -> TxId {
+        let mut txid_bytes = [0u8; 32];
+        txid_bytes.copy_from_slice(txid);
+        TxId::from_bytes(txid_bytes)
+    }
     #[allow(clippy::type_complexity)]
     pub fn read<R: Read>(
         mut reader: R,
@@ -270,36 +304,6 @@ impl TransactionRecord {
         23
     }
 
-    pub fn total_change_returned(&self) -> u64 {
-        self.pool_change_returned::<SaplingDomain<ChainType>>()
-            + self.pool_change_returned::<OrchardDomain>()
-    }
-    pub fn total_value_received(&self) -> u64 {
-        self.pool_value_received::<OrchardDomain>()
-            + self.pool_value_received::<SaplingDomain<ChainType>>()
-            + self
-                .transparent_notes
-                .iter()
-                .map(|utxo| utxo.value)
-                .sum::<u64>()
-    }
-    pub fn total_value_spent(&self) -> u64 {
-        self.value_spent_by_pool().iter().sum()
-    }
-
-    pub fn value_outgoing(&self) -> u64 {
-        self.outgoing_tx_data
-            .iter()
-            .fold(0, |running_total, tx_data| tx_data.value + running_total)
-    }
-
-    pub fn value_spent_by_pool(&self) -> [u64; 3] {
-        [
-            self.total_transparent_value_spent,
-            self.total_sapling_value_spent,
-            self.total_orchard_value_spent,
-        ]
-    }
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
