@@ -323,8 +323,7 @@ impl TransactionContext {
 
             self.transaction_metadata_set.write().await.add_taddr_spent(
                 transaction.txid(),
-                height,
-                unconfirmed,
+                status,
                 block_time as u64,
                 total_transparent_value_spent,
             );

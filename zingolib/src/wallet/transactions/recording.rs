@@ -293,12 +293,10 @@ impl TransactionMetadataSet {
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
         // Todo yeesh
