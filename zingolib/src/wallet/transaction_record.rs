@@ -90,6 +90,9 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    pub fn get_transparent_value_spent(&self) -> u64 {
+        self.total_transparent_value_spent
+    }
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
         let outputted = self.value_outgoing() + self.total_change_returned();
         if self.total_value_spent() >= outputted {
