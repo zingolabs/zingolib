@@ -299,7 +299,7 @@ impl TransactionMetadataSet {
     ) {
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
-        // Todo yeesh
+
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
