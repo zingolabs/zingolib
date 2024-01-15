@@ -168,7 +168,7 @@ impl TransactionRecord {
 
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
         [
-            self.total_transparent_value_spent,
+            self.get_transparent_value_spent(),
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
