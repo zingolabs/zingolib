@@ -3,7 +3,8 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::wallet::{
     data::{PoolNullifier, TransactionMetadata},
-    traits::{DomainWalletExt, Recipient, ShieldedNoteInterface},
+    note::ShieldedNoteInterface,
+    traits::{DomainWalletExt, Recipient},
 };
 
 use super::TransactionMetadataSet;

@@ -1,8 +1,10 @@
+use crate::wallet::traits::FromCommitment;
 use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
-        traits::{DomainWalletExt, FromCommitment, ShieldedNoteInterface},
+        note::ShieldedNoteInterface,
+        traits::DomainWalletExt,
         transactions::TransactionMetadataSet,
     },
 };

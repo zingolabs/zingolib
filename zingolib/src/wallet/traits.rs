@@ -7,6 +7,7 @@ use super::{
         WitnessCache, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
+    note::{OrchardNote, SaplingNote},
     transactions::TransactionMetadataSet,
 };
 use crate::wallet::note::ShieldedNoteInterface;
@@ -38,7 +39,7 @@ use zcash_note_encryption::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::{read_incremental_witness, HashSer},
+    merkle_tree::read_incremental_witness,
     sapling::note_encryption::SaplingDomain,
     transaction::{
         components::{

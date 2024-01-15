@@ -14,9 +14,8 @@ use crate::{
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
-        now,
-        traits::ShieldedNoteInterface,
-        LightWallet, Pool, SendProgress, WalletBase,
+        note::ShieldedNoteInterface,
+        now, LightWallet, Pool, SendProgress, WalletBase,
     },
 };
 use futures::future::join_all;

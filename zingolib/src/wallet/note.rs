@@ -265,7 +265,7 @@ pub struct OrchardNote {
 impl ShieldedNoteInterface for OrchardNote {
     type Diversifier = orchard::keys::Diversifier;
     type Note = orchard::note::Note;
-    type Node = MerkleHashOrchard;
+    type Node = orchard::tree::MerkleHashOrchard;
     type Nullifier = orchard::note::Nullifier;
 
     fn diversifier(&self) -> &Self::Diversifier {

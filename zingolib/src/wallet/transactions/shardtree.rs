@@ -2,7 +2,8 @@ use incrementalmerkletree::Position;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::traits::{DomainWalletExt, Recipient, ShieldedNoteInterface};
+use crate::wallet::note::ShieldedNoteInterface;
+use crate::wallet::traits::{DomainWalletExt, Recipient};
 
 use super::TransactionMetadataSet;
 

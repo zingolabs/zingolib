@@ -3,12 +3,11 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
+use crate::wallet::note::ShieldedNoteInterface;
 use crate::wallet::{
     data::{PoolNullifier, TransactionMetadata},
     keys::unified::WalletCapability,
-    traits::{
-        CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
-    },
+    traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
     transactions::TransactionMetadataSet,
     MemoDownloadOption,
 };
