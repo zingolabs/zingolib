@@ -826,7 +826,11 @@ fn single_transparent_note_makes_is_incoming_true() {
     // A single transparent note makes is_incoming_trsaction true.
     let txid = TxId::from_bytes([0u8; 32]);
     let spent_txid = TxId::from_bytes([1u8; 32]);
-    let mut tmd = TransactionMetadata::new(BlockHeight::from_u32(5), 1705077003, &txid, false);
+    let mut tmd = TransactionRecord::new(
+        zingo_status::confirmation_status::ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
+        1705077003,
+        &txid,
+    );
     let transparent_note = TransparentNote {
         address: "t".to_string(),
         txid,
