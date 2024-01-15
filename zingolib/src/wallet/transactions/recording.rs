@@ -322,13 +322,19 @@ impl TransactionMetadataSet {
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
-                if unconfirmed {
-                    spent_utxo.unconfirmed_spent = Some((source_txid, source_height));
-                } else {
-                    // Mark this one as spent
+                let blockheight = BlockHeight::from(source_height);
+                let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(
+                    blockheight,
+                    unconfirmed,
+                );
+                if status.is_confirmed() {
+                    // Mark this utxo as spent
                     spent_utxo.spent = Some(source_txid);
-                    spent_utxo.spent_at_height = Some(source_height as i32);
+                    spent_utxo.spent_at_height = Some(u32::from(status.get_height()) as i32);
                     spent_utxo.unconfirmed_spent = None;
+                } else {
+                    spent_utxo.unconfirmed_spent =
+                        Some((source_txid, u32::from(status.get_height())));
                 }
 
                 spent_utxo.value
