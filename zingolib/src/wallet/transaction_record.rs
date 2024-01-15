@@ -1,4 +1,12 @@
-use super::*;
+use incrementalmerkletree::witness::IncrementalWitness;
+use zcash_primitives::{sapling, transaction::TxId};
+
+use crate::error::ZingoLibError;
+
+use super::{
+    data::{OutgoingTxData, PoolNullifier},
+    *,
+};
 
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]

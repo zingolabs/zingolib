@@ -1,4 +1,6 @@
+use super::traits::{self, DomainWalletExt, ToBytes};
 use crate::error::{ZingoLibError, ZingoLibResult};
+use crate::wallet::note::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
@@ -26,12 +28,7 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{components::OutPoint, TxId},
 };
-use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, MAX_REORG};
-
-use super::keys::unified::WalletCapability;
-use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
-use crate::wallet::note::*;
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub const MAX_SHARD_LEVEL: u8 = 16;
@@ -822,8 +819,7 @@ pub mod summaries {
     pub struct TransactionIndex(HashMap<zcash_primitives::transaction::TxId, ValueTransfer>);
 }
 
-pub mod transaction_record;
-pub use transaction_record::TransactionRecord;
+pub use crate::wallet::transaction_record::TransactionRecord;
 
 #[derive(Debug)]
 pub struct SpendableSaplingNote {

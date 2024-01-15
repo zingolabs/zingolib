@@ -66,6 +66,7 @@ pub mod keys;
 pub(crate) mod message;
 pub mod note;
 pub mod traits;
+pub mod transaction_record;
 pub(crate) mod transactions;
 pub(crate) mod utils;
 
