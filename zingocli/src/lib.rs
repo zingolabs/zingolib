@@ -78,7 +78,9 @@ fn parse_uri(s: &str) -> Result<http::Uri, String> {
 fn parse_seed(s: &str) -> Result<String, String> {
     if let Ok(s) = s.parse::<String>() {
         let count = s.split_whitespace().count();
-        if count == 24 {
+        if count == 24 || count == 1
+        /*temporary hack to allow viewkey*/
+        {
             Ok(s)
         } else {
             Err(format!("Expected 24 words, but received: {}.", count))
