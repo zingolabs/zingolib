@@ -249,6 +249,7 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
     ) {
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         // Scan all transparent outputs to see if we received any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
@@ -256,11 +257,6 @@ impl TransactionContext {
                     let output_taddr = address_from_pubkeyhash(&self.config, taddr);
                     if taddrs_set.contains(&output_taddr) {
                         // This is our address. Add this as an output to the txid
-                        let blockheight = BlockHeight::from(height);
-                        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(
-                            blockheight,
-                            unconfirmed,
-                        );
                         self.transaction_metadata_set
                             .write()
                             .await
@@ -303,7 +299,6 @@ impl TransactionContext {
                                 prev_transaction_id,
                                 prev_n as u32,
                                 transaction.txid(),
-                                height,
                             ));
                         }
                     }
@@ -312,12 +307,10 @@ impl TransactionContext {
         }
 
         // Mark all the UTXOs that were spent here back in their original txns.
-        for (prev_transaction_id, prev_n, transaction_id, height) in spent_utxos {
+        for (prev_transaction_id, prev_n, transaction_id) in spent_utxos {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            let status =
-                ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
             self.transaction_metadata_set
                 .write()
                 .await
