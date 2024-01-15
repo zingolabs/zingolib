@@ -64,8 +64,7 @@ impl TransactionContext {
     async fn execute_bundlescans_internal(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -74,7 +73,6 @@ impl TransactionContext {
     ) {
         //todo: investigate scanning all bundles simultaneously
 
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         self.scan_transparent_bundle(
             transaction,
             status,
@@ -110,6 +108,7 @@ impl TransactionContext {
         block_time: u32,
         price: Option<f64>,
     ) {
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         // Set up data structures to record scan results
         let mut txid_indexed_zingo_memos = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
@@ -132,8 +131,7 @@ impl TransactionContext {
         // Execute scanning operations
         self.execute_bundlescans_internal(
             &transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
