@@ -2,8 +2,8 @@
 
 ## Regtest Mode
 WARNING Experimental!
-The CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
-This is now working with a simple `zingo-cli` invocation flag, with a little user setup.
+Zingocli has a set of tests based on zcashd regtest mode, by locally running a `zcashd` and `lightwalletd`.
+This is now working with a simple `zingo-cli` invocation flag.
 
 There are pre-made directories in this repo to support ready use of regtest mode. These are found in the `$G/zingocli/regtest/` subdirectory.
 
