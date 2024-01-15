@@ -15,7 +15,6 @@ pub struct TransactionMetadataSet {
 pub mod get;
 pub mod read_write;
 pub mod recording;
-pub mod shardtree;
 
 impl TransactionMetadataSet {
     pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
