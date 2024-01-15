@@ -14,7 +14,7 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
     ) where
         D: DomainWalletExt,
         <D as Domain>::Note: PartialEq + Clone,
@@ -27,7 +27,13 @@ impl TransactionMetadataSet {
 
         if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| *n.output_index() == output_index)
+            .find(|n| {
+                // TODO: This is a sanity-check and should never fail...but if it does
+                // we need to handle the case. I've added it, as I suspect panicking is
+                // better than our current solution
+                assert_eq!(n.output_index().is_some(), output_index.is_some());
+                *n.output_index() == output_index
+            })
         {
             *note_datum.spent_mut() = Some((txid, height.into()));
             if let Some(position) = *note_datum.witnessed_position() {
@@ -46,7 +52,7 @@ impl TransactionMetadataSet {
     pub(crate) fn mark_note_position<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
         position: Position,
         fvk: &D::Fvk,
     ) where
@@ -54,10 +60,13 @@ impl TransactionMetadataSet {
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.current.get_mut(&txid) {
-            if let Some(nnmd) = &mut D::to_notes_vec_mut(tmd)
-                .iter_mut()
-                .find(|nnmd| *nnmd.output_index() == output_index)
-            {
+            if let Some(nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find(|nnmd| {
+                // TODO: As above, this is a sanity-check and should never fail...but if it does
+                // we need to handle the case. I've added it, as I suspect panicking is
+                // better than our current solution
+                assert_eq!(nnmd.output_index().is_some(), output_index.is_some());
+                *nnmd.output_index() == output_index
+            }) {
                 *nnmd.witnessed_position_mut() = Some(position);
                 *nnmd.nullifier_mut() = Some(D::get_nullifier_from_note_fvk_and_witness_position(
                     &nnmd.note().clone(),

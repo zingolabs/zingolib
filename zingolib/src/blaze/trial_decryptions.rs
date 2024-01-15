@@ -63,7 +63,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         transaction_size_filter: Option<u32>,
@@ -132,7 +132,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         full_transaction_fetcher: UnboundedSender<(
@@ -270,7 +270,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
@@ -361,7 +361,7 @@ impl TrialDecryptions {
                                 transaction_id,
                                 spend_nullifier.into(),
                                 height,
-                                i as u32,
+                                Some(i as u32),
                                 true,
                             ))
                             .unwrap();
@@ -441,7 +441,7 @@ fn update_witnesses<D>(
                 if retention != Retention::Ephemeral {
                     txmds_writelock.mark_note_position::<D>(
                         transaction_id,
-                        output_index,
+                        Some(output_index),
                         position + i as u64,
                         &D::wc_to_fvk(wc).unwrap(),
                     );

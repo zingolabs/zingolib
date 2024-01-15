@@ -9,7 +9,10 @@ use crate::wallet::{
 use super::TransactionMetadataSet;
 
 impl TransactionMetadataSet {
-    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier, u32)> {
+    pub fn get_notes_for_updating(
+        &self,
+        before_block: u64,
+    ) -> Vec<(TxId, PoolNullifier, Option<u32>)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
         self.current
@@ -71,7 +74,7 @@ impl TransactionMetadataSet {
         <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier,
         u64,
         TxId,
-        u32,
+        Option<u32>,
     )>
     where
         <D as Domain>::Note: PartialEq + Clone,

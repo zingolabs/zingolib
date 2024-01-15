@@ -172,7 +172,7 @@ impl TransactionMetadataSet {
         timestamp: u32,
         spent_nullifier: PoolNullifier,
         source_txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> ZingoLibResult<()> {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => self
@@ -204,7 +204,7 @@ impl TransactionMetadataSet {
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         source_txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> ZingoLibResult<()>
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -245,7 +245,7 @@ impl TransactionMetadataSet {
         spending_txid: TxId,
         status: ConfirmationStatus,
         source_txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> ZingoLibResult<u64>
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -419,7 +419,7 @@ impl TransactionMetadataSet {
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
                     false,
-                    output_index as u32,
+                    Some(output_index as u32),
                 );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
@@ -460,7 +460,7 @@ impl TransactionMetadataSet {
             // if this is change, we'll mark it later in check_notes_mark_change
             false,
             have_spending_key,
-            output_index,
+            Some(output_index),
         );
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()

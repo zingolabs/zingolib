@@ -440,7 +440,7 @@ pub trait ShieldedNoteInterface: Sized {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> Self;
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
@@ -454,8 +454,7 @@ pub trait ShieldedNoteInterface: Sized {
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Option<Self::Nullifier>;
     fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier>;
-    fn output_index(&self) -> &u32;
-    fn output_index_mut(&mut self) -> &mut u32;
+    fn output_index(&self) -> &Option<u32>;
     fn pending_receipt(&self) -> bool {
         self.nullifier().is_none()
     }
@@ -501,7 +500,7 @@ impl ShieldedNoteInterface for SaplingNote {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> Self {
         Self {
             diversifier,
@@ -591,12 +590,8 @@ impl ShieldedNoteInterface for SaplingNote {
         &mut self.witnessed_position
     }
 
-    fn output_index(&self) -> &u32 {
+    fn output_index(&self) -> &Option<u32> {
         &self.output_index
-    }
-
-    fn output_index_mut(&mut self) -> &mut u32 {
-        &mut self.output_index
     }
 }
 
@@ -624,7 +619,7 @@ impl ShieldedNoteInterface for OrchardNote {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> Self {
         Self {
             diversifier,
@@ -711,12 +706,8 @@ impl ShieldedNoteInterface for OrchardNote {
     fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
     }
-    fn output_index(&self) -> &u32 {
+    fn output_index(&self) -> &Option<u32> {
         &self.output_index
-    }
-
-    fn output_index_mut(&mut self) -> &mut u32 {
-        &mut self.output_index
     }
 }
 
@@ -1403,10 +1394,12 @@ where
         let have_spending_key = reader.read_u8()? > 0;
 
         let output_index = if external_version >= 4 {
-            reader.read_u32::<LittleEndian>()?
+            match reader.read_u32::<LittleEndian>()? {
+                u32::MAX => None,
+                otherwise => Some(otherwise),
+            }
         } else {
-            // TODO: This value is obviously incorrect, we can fix it if it becomes a problem
-            u32::MAX
+            None
         };
 
         Ok(T::from_parts(
@@ -1464,7 +1457,7 @@ where
 
         writer.write_u8(if self.have_spending_key() { 1 } else { 0 })?;
 
-        writer.write_u32::<LittleEndian>(*self.output_index())?;
+        writer.write_u32::<LittleEndian>(self.output_index().unwrap_or(u32::MAX))?;
 
         Ok(())
     }

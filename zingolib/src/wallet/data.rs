@@ -455,7 +455,7 @@ pub struct SaplingNote {
     pub(crate) witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
-    pub(crate) output_index: u32,
+    pub(crate) output_index: Option<u32>,
 
     pub(super) nullifier: Option<zcash_primitives::sapling::Nullifier>,
 
@@ -481,7 +481,7 @@ pub struct OrchardNote {
     pub witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
-    pub(crate) output_index: u32,
+    pub(crate) output_index: Option<u32>,
 
     pub(super) nullifier: Option<orchard::note::Nullifier>,
 
