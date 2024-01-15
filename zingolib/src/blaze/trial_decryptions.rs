@@ -31,6 +31,7 @@ use zcash_primitives::{
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, ZingoConfig};
 
 use super::syncdata::BlazeSyncData;
@@ -341,10 +342,10 @@ impl TrialDecryptions {
                             u64::from(witness.witnessed_position()),
                         );
 
+                        let status = ConfirmationStatus::Confirmed(height);
                         transaction_metadata_set.write().await.add_new_note::<D>(
                             transaction_id,
-                            height,
-                            false,
+                            status,
                             timestamp,
                             note,
                             to,

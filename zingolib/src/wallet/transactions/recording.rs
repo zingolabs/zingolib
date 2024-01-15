@@ -428,8 +428,7 @@ impl TransactionMetadataSet {
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u64,
         note: <D::WalletNote as ShieldedNoteInterface>::Note,
         to: D::Recipient,
@@ -441,7 +440,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
