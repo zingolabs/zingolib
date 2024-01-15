@@ -256,14 +256,18 @@ impl TransactionContext {
                     let output_taddr = address_from_pubkeyhash(&self.config, taddr);
                     if taddrs_set.contains(&output_taddr) {
                         // This is our address. Add this as an output to the txid
+                        let blockheight = BlockHeight::from(height);
+                        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(
+                            blockheight,
+                            unconfirmed,
+                        );
                         self.transaction_metadata_set
                             .write()
                             .await
                             .add_new_taddr_output(
                                 transaction.txid(),
                                 output_taddr.clone(),
-                                height.into(),
-                                unconfirmed,
+                                status,
                                 block_time as u64,
                                 vout,
                                 n as u32,

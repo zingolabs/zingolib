@@ -350,15 +350,11 @@ impl TransactionMetadataSet {
         &mut self,
         txid: TxId,
         taddr: String,
-        height: u32,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u64,
         vout: &TxOut,
         output_num: u32,
     ) {
-        let blockheight = BlockHeight::from(height);
-        let status =
-            ConfirmationStatus::from_blockheight_and_unconfirmed_bool(blockheight, unconfirmed);
         // Read or create the current TxId
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
