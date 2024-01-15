@@ -3,8 +3,8 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata,
-        WitnessCache, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
+        WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     note::{OrchardNote, SaplingNote},
@@ -401,19 +401,19 @@ impl Bundle<OrchardDomain> for orchard::bundle::Bundle<orchard::bundle::Authoriz
 pub trait Nullifier:
     PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send + Into<PoolNullifier>
 {
-    fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self>;
+    fn get_nullifiers_spent_in_transaction(transaction: &TransactionRecord) -> &Vec<Self>;
 }
 
 impl Nullifier for zcash_primitives::sapling::Nullifier {
     fn get_nullifiers_spent_in_transaction(
-        transaction_metadata_set: &TransactionMetadata,
+        transaction_metadata_set: &TransactionRecord,
     ) -> &Vec<Self> {
         &transaction_metadata_set.spent_sapling_nullifiers
     }
 }
 
 impl Nullifier for orchard::note::Nullifier {
-    fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self> {
+    fn get_nullifiers_spent_in_transaction(transaction: &TransactionRecord) -> &Vec<Self> {
         &transaction.spent_orchard_nullifiers
     }
 }
@@ -442,7 +442,7 @@ where
 
     type Bundle: Bundle<Self>;
 
-    fn sum_pool_change(transaction_md: &TransactionMetadata) -> u64 {
+    fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
         Self::to_notes_vec(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
@@ -477,8 +477,8 @@ where
         position: u64,
     ) -> <Self::WalletNote as ShieldedNoteInterface>::Nullifier;
     fn get_tree(tree_state: &TreeState) -> &String;
-    fn to_notes_vec(_: &TransactionMetadata) -> &Vec<Self::WalletNote>;
-    fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
+    fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
+    fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -535,11 +535,11 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
         &tree_state.sapling_tree
     }
 
-    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
         &transaction_md.sapling_notes
     }
 
-    fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
+    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
     fn ua_from_contained_receiver<'a>(
@@ -612,11 +612,11 @@ impl DomainWalletExt for OrchardDomain {
         &tree_state.orchard_tree
     }
 
-    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
         &transaction_md.orchard_notes
     }
 
-    fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
+    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
     fn ua_from_contained_receiver<'a>(

@@ -2,7 +2,7 @@ use incrementalmerkletree::{Hashable, Position};
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 
 use super::{
-    data::TransactionMetadata,
+    data::TransactionRecord,
     keys::unified::WalletCapability,
     traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
     Pool,
@@ -54,10 +54,9 @@ pub trait ShieldedNoteInterface: Sized {
     fn pool() -> Pool;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
-    fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
-    fn transaction_metadata_notes_mut(
-        wallet_transaction: &mut TransactionMetadata,
-    ) -> &mut Vec<Self>;
+    fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self>;
+    fn transaction_metadata_notes_mut(wallet_transaction: &mut TransactionRecord)
+        -> &mut Vec<Self>;
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
@@ -197,12 +196,12 @@ impl ShieldedNoteInterface for SaplingNote {
         &mut self.spent
     }
 
-    fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
+    fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {
         &wallet_transaction.sapling_notes
     }
 
     fn transaction_metadata_notes_mut(
-        wallet_transaction: &mut TransactionMetadata,
+        wallet_transaction: &mut TransactionRecord,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.sapling_notes
     }
@@ -345,12 +344,12 @@ impl ShieldedNoteInterface for OrchardNote {
         &mut self.spent
     }
 
-    fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
+    fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {
         &wallet_transaction.orchard_notes
     }
 
     fn transaction_metadata_notes_mut(
-        wallet_transaction: &mut TransactionMetadata,
+        wallet_transaction: &mut TransactionRecord,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
     }

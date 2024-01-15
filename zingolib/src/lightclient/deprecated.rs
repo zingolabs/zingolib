@@ -4,7 +4,7 @@ use zcash_note_encryption::Domain;
 impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
-        transaction_metadata: &'b TransactionMetadata,
+        transaction_metadata: &'b TransactionRecord,
         unified_spend_auth: &'c crate::wallet::keys::unified::WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -25,7 +25,7 @@ impl LightClient {
 
     fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
-        transaction_metadata: &'b TransactionMetadata,
+        transaction_metadata: &'b TransactionRecord,
         unified_spend_auth: &'c crate::wallet::keys::unified::WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -55,7 +55,7 @@ impl LightClient {
 
     /// This fn is _only_ called inside a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
-        wallet_transaction: &TransactionMetadata,
+        wallet_transaction: &TransactionRecord,
         received_utxo_value: u64,
     ) -> JsonValue {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not

@@ -1,6 +1,6 @@
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::{PoolNullifier, TransactionMetadata},
+    data::{PoolNullifier, TransactionRecord},
     transactions::TransactionMetadataSet,
 };
 use std::sync::Arc;
@@ -125,7 +125,7 @@ impl UpdateNotes {
                             .await;
 
                         let transaction_id_spent_in =
-                            TransactionMetadata::new_txid(&compact_transaction.hash);
+                            TransactionRecord::new_txid(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent

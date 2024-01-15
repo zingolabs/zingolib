@@ -2,7 +2,7 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::wallet::{
-    data::{PoolNullifier, TransactionMetadata},
+    data::{PoolNullifier, TransactionRecord},
     note::ShieldedNoteInterface,
     traits::{DomainWalletExt, Recipient},
 };
@@ -62,7 +62,7 @@ impl TransactionMetadataSet {
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
             .get(txid)
-            .map(TransactionMetadata::total_value_spent)
+            .map(TransactionRecord::total_value_spent)
             .unwrap_or(0)
     }
 
@@ -104,7 +104,7 @@ impl TransactionMetadataSet {
             .values()
             .fold(
                 None,
-                |highest: Option<(TxId, BlockHeight)>, w: &TransactionMetadata| match w
+                |highest: Option<(TxId, BlockHeight)>, w: &TransactionRecord| match w
                     .status
                     .get_confirmed_height()
                 {
@@ -137,7 +137,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
     let txid_3 = TxId::from_bytes(txid_bytes_3);
     tms.current.insert(
         txid_1,
-        TransactionMetadata::new(
+        TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
                 BlockHeight::from_u32(3_200_000),
             ),
@@ -147,7 +147,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
     );
     tms.current.insert(
         txid_2,
-        TransactionMetadata::new(
+        TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
                 BlockHeight::from_u32(3_000_069),
             ),
@@ -157,7 +157,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
     );
     tms.current.insert(
         txid_3,
-        TransactionMetadata::new(
+        TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
                 BlockHeight::from_u32(2_650_000),
             ),

@@ -15,7 +15,7 @@ use log::error;
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
-        data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote},
+        data::{OutgoingTxData, PoolNullifier, TransactionRecord, TransparentNote},
         note::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},
     },
@@ -152,7 +152,7 @@ impl TransactionMetadataSet {
         txid: &TxId,
         status: ConfirmationStatus,
         datetime: u64,
-    ) -> &'_ mut TransactionMetadata {
+    ) -> &'_ mut TransactionRecord {
         self.current
             .entry(*txid)
             // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
@@ -161,7 +161,7 @@ impl TransactionMetadataSet {
                 transaction_metadata.datetime = datetime;
             })
             // if this transaction is new to our data, insert it
-            .or_insert_with(|| TransactionMetadata::new(status, datetime, txid))
+            .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.

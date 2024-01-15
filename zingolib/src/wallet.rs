@@ -1,7 +1,7 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
-use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
+use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -1435,7 +1435,7 @@ impl LightWallet {
                     transaction,
                     status,
                     now() as u32,
-                    TransactionMetadata::get_price(now(), &price),
+                    TransactionRecord::get_price(now(), &price),
                 )
                 .await;
         }
@@ -1498,7 +1498,7 @@ impl LightWallet {
     async fn shielded_balance<D>(
         &self,
         target_addr: Option<String>,
-        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool + '_>],
+        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
     ) -> Option<u64>
     where
         D: DomainWalletExt,
@@ -1598,7 +1598,7 @@ impl LightWallet {
     {
         let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
             &[Box::new(|nnmd, transaction| {
                 !transaction
                     .status
@@ -1626,7 +1626,7 @@ impl LightWallet {
     {
         let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] = &[
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
             Box::new(|_, transaction| {
                 transaction
                     .status

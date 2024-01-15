@@ -6,7 +6,7 @@ use std::{
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::{data::TransactionMetadata, keys::unified::WalletCapability, WitnessTrees};
+use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
 
 use super::TransactionMetadataSet;
 impl TransactionMetadataSet {
@@ -33,7 +33,7 @@ impl TransactionMetadataSet {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
+                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
                     .unwrap(),
             ))
         })?;
@@ -84,16 +84,16 @@ impl TransactionMetadataSet {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
+                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
             ))
         })?;
 
-        let _mempool: Vec<(TxId, TransactionMetadata)> = if version <= 20 {
+        let _mempool: Vec<(TxId, TransactionRecord)> = if version <= 20 {
             Vector::read_collected_mut(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
                 let transaction_metadata =
-                    TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?;
+                    TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -138,7 +138,7 @@ impl TransactionMetadataSet {
             let mut transaction_metadatas = self
                 .current
                 .iter()
-                .collect::<Vec<(&TxId, &TransactionMetadata)>>();
+                .collect::<Vec<(&TxId, &TransactionRecord)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover
             // it on reload
             transaction_metadatas.retain(|metadata| metadata.1.status.is_confirmed());

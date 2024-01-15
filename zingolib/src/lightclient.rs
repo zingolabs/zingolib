@@ -10,7 +10,7 @@ use crate::{
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionMetadata,
+            TransactionRecord,
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
@@ -1308,7 +1308,7 @@ impl LightClient {
                                 transaction,
                                 status,
                                 now() as u32,
-                                TransactionMetadata::get_price(now(), &price),
+                                TransactionRecord::get_price(now(), &price),
                             )
                             .await;
                         }
@@ -1700,7 +1700,7 @@ impl LightClient {
     fn tx_summary_matcher(
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
-        transaction_md: &TransactionMetadata,
+        transaction_md: &TransactionRecord,
     ) {
         let (block_height, datetime, price, unconfirmed) = (
             transaction_md.status.get_height(),

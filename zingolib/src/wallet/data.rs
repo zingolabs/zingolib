@@ -823,7 +823,7 @@ pub mod summaries {
 }
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
-pub struct TransactionMetadata {
+pub struct TransactionRecord {
     // the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
     pub status: ConfirmationStatus,
 
@@ -868,7 +868,7 @@ pub struct TransactionMetadata {
     pub price: Option<f64>,
 }
 
-impl TransactionMetadata {
+impl TransactionRecord {
     pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
@@ -931,7 +931,7 @@ impl TransactionMetadata {
         self.total_value_spent() - self.total_change_returned()
     }
     pub fn new(status: ConfirmationStatus, datetime: u64, transaction_id: &TxId) -> Self {
-        TransactionMetadata {
+        TransactionRecord {
             status,
             datetime,
             txid: *transaction_id,

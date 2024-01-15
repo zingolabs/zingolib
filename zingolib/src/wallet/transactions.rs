@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use zcash_primitives::transaction::TxId;
 
-use super::data::{TransactionMetadata, WitnessTrees};
+use super::data::{TransactionRecord, WitnessTrees};
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TransactionMetadataSet {
-    pub current: HashMap<TxId, TransactionMetadata>,
+    pub current: HashMap<TxId, TransactionRecord>,
     pub witness_trees: Option<WitnessTrees>,
 }
 
