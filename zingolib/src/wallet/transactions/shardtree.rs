@@ -2,7 +2,10 @@ use incrementalmerkletree::Position;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::traits::{DomainWalletExt, Recipient, ShieldedNoteInterface};
+use crate::{
+    error::{ZingoLibError, ZingoLibResult},
+    wallet::traits::{DomainWalletExt, Recipient, ShieldedNoteInterface},
+};
 
 use super::TransactionMetadataSet;
 
@@ -15,7 +18,8 @@ impl TransactionMetadataSet {
         txid: TxId,
         source_txid: TxId,
         output_index: Option<u32>,
-    ) where
+    ) -> ZingoLibResult<()>
+    where
         D: DomainWalletExt,
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
@@ -25,28 +29,39 @@ impl TransactionMetadataSet {
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
+        if let Some(maybe_nnmd) = D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| {
-                // TODO: This is a sanity-check and should never fail...but if it does
-                // we need to handle the case. I've added it, as I suspect panicking is
-                // better than our current solution
-                assert_eq!(n.output_index().is_some(), output_index.is_some());
-                *n.output_index() == output_index
+            .find_map(|nnmd| {
+                if nnmd.output_index().is_some() != output_index.is_some() {
+                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                }
+                if *nnmd.output_index() == output_index {
+                    Some(Ok(nnmd))
+                } else {
+                    None
+                }
             })
         {
-            *note_datum.spent_mut() = Some((txid, height.into()));
-            if let Some(position) = *note_datum.witnessed_position() {
-                if let Some(ref mut tree) = D::transaction_metadata_set_to_shardtree_mut(self) {
-                    tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                        .unwrap();
+            match maybe_nnmd {
+                Ok(note_datum) => {
+                    *note_datum.spent_mut() = Some((txid, height.into()));
+                    if let Some(position) = *note_datum.witnessed_position() {
+                        if let Some(ref mut tree) =
+                            D::transaction_metadata_set_to_shardtree_mut(self)
+                        {
+                            tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
+                                .unwrap();
+                        }
+                    } else {
+                        todo!("Tried to mark note as spent with no position: FIX")
+                    }
                 }
-            } else {
-                todo!("Tried to mark note as spent with no position: FIX")
+                Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
             }
         } else {
             eprintln!("Could not remove node!")
         }
+        Ok(())
     }
 
     pub(crate) fn mark_note_position<D: DomainWalletExt>(
@@ -55,29 +70,40 @@ impl TransactionMetadataSet {
         output_index: Option<u32>,
         position: Position,
         fvk: &D::Fvk,
-    ) where
+    ) -> ZingoLibResult<()>
+    where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.current.get_mut(&txid) {
-            if let Some(nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find(|nnmd| {
-                // TODO: As above, this is a sanity-check and should never fail...but if it does
-                // we need to handle the case. I've added it, as I suspect panicking is
-                // better than our current solution
-                assert_eq!(nnmd.output_index().is_some(), output_index.is_some());
-                *nnmd.output_index() == output_index
+            if let Some(maybe_nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find_map(|nnmd| {
+                if nnmd.output_index().is_some() != output_index.is_some() {
+                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                }
+                if *nnmd.output_index() == output_index {
+                    Some(Ok(nnmd))
+                } else {
+                    None
+                }
             }) {
-                *nnmd.witnessed_position_mut() = Some(position);
-                *nnmd.nullifier_mut() = Some(D::get_nullifier_from_note_fvk_and_witness_position(
-                    &nnmd.note().clone(),
-                    fvk,
-                    u64::from(position),
-                ));
+                match maybe_nnmd {
+                    Ok(nnmd) => {
+                        *nnmd.witnessed_position_mut() = Some(position);
+                        *nnmd.nullifier_mut() =
+                            Some(D::get_nullifier_from_note_fvk_and_witness_position(
+                                &nnmd.note().clone(),
+                                fvk,
+                                u64::from(position),
+                            ));
+                    }
+                    Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
+                }
             } else {
                 println!("Could not update witness position");
             }
         } else {
             println!("Could not update witness position");
         }
+        Ok(())
     }
 }

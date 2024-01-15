@@ -3,14 +3,17 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use crate::wallet::{
-    data::{PoolNullifier, TransactionMetadata},
-    keys::unified::WalletCapability,
-    traits::{
-        CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
+use crate::{
+    error::ZingoLibResult,
+    wallet::{
+        data::{PoolNullifier, TransactionMetadata},
+        keys::unified::WalletCapability,
+        traits::{
+            CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
+        },
+        transactions::TransactionMetadataSet,
+        MemoDownloadOption,
     },
-    transactions::TransactionMetadataSet,
-    MemoDownloadOption,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
@@ -244,12 +247,12 @@ impl TrialDecryptions {
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        );
+        )?;
         update_witnesses::<OrchardDomain>(
             orchard_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        );
+        )?;
 
         // Return a nothing-value
         Ok::<(), String>(())
@@ -422,7 +425,8 @@ fn update_witnesses<D>(
     )>,
     txmds_writelock: &mut TransactionMetadataSet,
     wc: &Arc<WalletCapability>,
-) where
+) -> ZingoLibResult<()>
+where
     D: DomainWalletExt,
     <D as Domain>::Note: PartialEq + Clone,
     <D as Domain>::Recipient: Recipient,
@@ -444,7 +448,7 @@ fn update_witnesses<D>(
                         Some(output_index),
                         position + i as u64,
                         &D::wc_to_fvk(wc).unwrap(),
-                    );
+                    )?;
                 }
                 nodes_retention.push((node, retention));
             }
@@ -458,4 +462,5 @@ fn update_witnesses<D>(
             }
         }
     }
+    Ok(())
 }

@@ -17,6 +17,7 @@ pub enum ZingoLibError {
     NoSuchSaplingOutputInTx(TxId, u32),
     NoSuchOrchardOutputInTx(TxId, u32),
     NoSuchNullifierInTx(TxId),
+    MissingOutputIndex(TxId),
     CouldNotDecodeMemo(std::io::Error),
 }
 
@@ -96,6 +97,10 @@ impl std::fmt::Display for ZingoLibError {
                 f,
                 "Could not decode memo. Zingo plans to support foreign memo formats soon. {}",
                 err,
+            ),
+            MissingOutputIndex(txid) => write!(
+                f,
+                "{txid} is missing output_index for note, cannot mark change"
             ),
         }
     }
