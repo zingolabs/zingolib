@@ -19,8 +19,8 @@ use zingolib::{get_base_address, lightclient::PoolBalances, wallet::Pool};
 #[ignore]
 #[tokio::test]
 async fn network_interrupt_chainbuild() {
-    const BLOCKCHAIN_HEIGHT: u64 = 150_000;
-    let chainbuild_file = create_chainbuild_file("network_interrupt");
+    const BLOCKCHAIN_HEIGHT: u64 = 2_000;
+    let chainbuild_file = create_chainbuild_file("network_interrupt_single_tx");
     let mut scenario = DarksideScenario::default().await;
 
     scenario.build_faucet(Pool::Sapling).await;
@@ -54,9 +54,11 @@ async fn network_interrupt_chainbuild() {
 }
 #[tokio::test]
 async fn network_interrupt_test() {
-    const BLOCKCHAIN_HEIGHT: u64 = 150_000;
-    let transaction_set = load_chainbuild_file("network_interrupt");
+    const BLOCKCHAIN_HEIGHT: u64 = 2_000;
+    let transaction_set = load_chainbuild_file("network_interrupt_single_tx");
     let mut scenario = DarksideScenario::default().await;
+
+    scenario.build_faucet(Pool::Sapling).await;
 
     // stage a send to self every thousand blocks
     for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {
@@ -70,7 +72,6 @@ async fn network_interrupt_test() {
     // stage and apply final blocks
     scenario.generate_blocks(BLOCKCHAIN_HEIGHT, 150).await;
 
-    scenario.build_faucet(Pool::Sapling).await;
     let mut conditional_logic =
         HashMap::<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>::new();
     conditional_logic.insert(
@@ -80,19 +81,25 @@ async fn network_interrupt_test() {
             online.store(false, Ordering::Relaxed);
         }),
     );
+    conditional_logic.insert(
+        "get_transaction",
+        Box::new(|online: &Arc<AtomicBool>| {
+            println!("Turning off, as we received get_transaction call");
+            online.store(false, Ordering::Relaxed);
+        }),
+    );
 
     let proxy_status =
         start_proxy_and_connect_lightclient(scenario.get_faucet(), conditional_logic);
     tokio::task::spawn(async move {
         loop {
-            sleep(Duration::from_secs(5)).await;
-            let online = proxy_status.load(Ordering::Relaxed);
-            proxy_status.store(!online, std::sync::atomic::Ordering::Relaxed);
-            println!("set proxy status to {}", !online);
+            sleep(Duration::from_secs(30)).await;
+            proxy_status.store(true, std::sync::atomic::Ordering::Relaxed);
+            println!("Set proxy status to true");
         }
     });
 
-    scenario.get_faucet().do_sync(false).await.unwrap();
+    scenario.get_faucet().do_sync(true).await.unwrap();
 
     println!("do balance:");
     dbg!(scenario.get_faucet().do_balance().await);
@@ -103,10 +110,10 @@ async fn network_interrupt_test() {
             verified_sapling_balance: Some(0),
             spendable_sapling_balance: Some(0),
             unverified_sapling_balance: Some(0),
-            orchard_balance: Some(8510000),
-            verified_orchard_balance: Some(8510000),
+            orchard_balance: Some(9_990_000),
+            verified_orchard_balance: Some(9_990_000),
             unverified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(8510000),
+            spendable_orchard_balance: Some(9_990_000),
             transparent_balance: Some(0),
         }
     );
