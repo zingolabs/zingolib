@@ -73,6 +73,8 @@ impl TransactionContext {
         taddrs_set: &HashSet<String>,
     ) {
         //todo: investigate scanning all bundles simultaneously
+
+        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         self.scan_transparent_bundle(
             transaction,
             height,
@@ -82,8 +84,6 @@ impl TransactionContext {
             taddrs_set,
         )
         .await;
-
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         self.scan_sapling_bundle(
             transaction,
             status,
