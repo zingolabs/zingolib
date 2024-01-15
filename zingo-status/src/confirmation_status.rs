@@ -1,4 +1,7 @@
 use zcash_primitives::consensus::BlockHeight;
+/// Transaction confirmation states. Every transaction is in exactly one of these states.
+/// Transitions between states are managed by ????
+/// TODO: If we want an exhaustive partition of states, do we have all necessary variants?
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
