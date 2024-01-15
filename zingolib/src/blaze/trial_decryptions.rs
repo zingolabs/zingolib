@@ -5,10 +5,11 @@
 
 use crate::wallet::note::ShieldedNoteInterface;
 use crate::wallet::{
-    data::{PoolNullifier, TransactionRecord},
+    data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
     transactions::TransactionMetadataSet,
+    utils::txid_from_slice,
     MemoDownloadOption,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -219,7 +220,7 @@ impl TrialDecryptions {
                 // Note the memos are immediately discarded.
                 // Perhaps this obfuscates the memos of interest?
                 if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
-                    let transaction_id = TransactionRecord::new_txid(&compact_transaction.hash);
+                    let transaction_id = txid_from_slice(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
                     full_transaction_fetcher
                         .send((transaction_id, transmitter))
@@ -286,7 +287,7 @@ impl TrialDecryptions {
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
         <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Node: PartialEq,
     {
-        let transaction_id = TransactionRecord::new_txid(&compact_transaction.hash);
+        let transaction_id = txid_from_slice(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
             .iter()
             .map(|output| {

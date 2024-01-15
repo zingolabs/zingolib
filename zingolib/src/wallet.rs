@@ -68,7 +68,7 @@ pub mod note;
 pub mod traits;
 pub mod transaction_record;
 pub(crate) mod transactions;
-pub(crate) mod utils;
+pub mod utils;
 
 pub fn now() -> u64 {
     SystemTime::now()

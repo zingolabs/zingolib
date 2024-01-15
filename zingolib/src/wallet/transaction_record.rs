@@ -188,11 +188,6 @@ impl TransactionRecord {
 }
 // read/write
 impl TransactionRecord {
-    pub fn new_txid(txid: &[u8]) -> TxId {
-        let mut txid_bytes = [0u8; 32];
-        txid_bytes.copy_from_slice(txid);
-        TxId::from_bytes(txid_bytes)
-    }
     #[allow(clippy::type_complexity)]
     pub fn read<R: Read>(
         mut reader: R,

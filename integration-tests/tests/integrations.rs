@@ -3253,7 +3253,7 @@ mod slow {
 
         let notes_before = recipient.do_list_notes(true).await;
         let list_before = recipient.do_list_transactions().await;
-        let requested_txid = &zingolib::wallet::data::TransactionRecord::new_txid(
+        let requested_txid = &zingolib::wallet::utils::txid_from_slice(
             hex::decode(sent_transaction_id.clone())
                 .unwrap()
                 .into_iter()
