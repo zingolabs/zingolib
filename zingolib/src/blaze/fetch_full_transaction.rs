@@ -77,8 +77,7 @@ impl TransactionContext {
         let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         self.scan_transparent_bundle(
             transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             is_outgoing_transaction,
             taddrs_set,
@@ -243,13 +242,11 @@ impl TransactionContext {
     async fn scan_transparent_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
     ) {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         // Scan all transparent outputs to see if we received any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
