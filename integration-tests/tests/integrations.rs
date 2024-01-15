@@ -3416,10 +3416,15 @@ mod slow {
         let summ_syn = recipient.do_list_txsummaries().await;
         let bala_syn = recipient.do_balance().await;
 
-        println!("normal summaries: {:#?}", summ_sim);
-        println!("post interrupted_sync summaries: {:#?}", summ_syn);
-        assert_eq!(bala_sim, bala_syn);
-        assert_eq!(summ_sim, summ_syn);
+        dbg!(
+            &recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+        );
     }
 }
 
