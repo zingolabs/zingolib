@@ -459,7 +459,7 @@ pub struct SaplingNote {
 
     pub(super) nullifier: Option<zcash_primitives::sapling::Nullifier>,
 
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is incoherent
+    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
 
     // If this note was spent in a send, but has not yet been confirmed.
     // Contains the transaction id and height at which it was broadcast
@@ -485,7 +485,7 @@ pub struct OrchardNote {
 
     pub(super) nullifier: Option<orchard::note::Nullifier>,
 
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is incoherent
+    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
 
     // If this note was spent in a send, but has not yet been confirmed.
     // Contains the transaction id and height at which it was broadcast
@@ -562,7 +562,7 @@ pub struct TransparentNote {
     pub value: u64,
 
     pub spent_at_height: Option<i32>,
-    pub spent: Option<TxId>, // If this utxo was confirmed spent Todo: incoherent with unconfirmed_spent
+    pub spent: Option<TxId>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
 
     // If this utxo was spent in a send, but has not yet been confirmed.
     // Contains the txid and height at which the Tx was broadcast
