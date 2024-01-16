@@ -124,8 +124,8 @@ async fn network_interrupt_test() {
     );
     println!("do list tx summaries:");
     dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
-    println!("do list transactions:");
-    dbg!(scenario.get_lightclient(0).do_list_transactions().await);
+    // println!("do list transactions:");
+    // dbg!(scenario.get_lightclient(0).do_list_transactions().await);
     assert_eq!(
         scenario.get_lightclient(0).do_balance().await,
         PoolBalances {
