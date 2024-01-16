@@ -28,10 +28,10 @@ pub struct TransactionRecord {
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub sapling_notes: Vec<SaplingNote>,
+    pub sapling_notes: Vec<notes::SaplingNote>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub orchard_notes: Vec<OrchardNote>,
+    pub orchard_notes: Vec<notes::OrchardNote>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
     pub transparent_notes: Vec<TransparentNote>,
@@ -230,11 +230,11 @@ impl TransactionRecord {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
-            SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
+            notes::SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
         })?;
         let orchard_notes = if version > 22 {
             Vector::read_collected_mut(&mut reader, |r| {
-                OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
+                notes::OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
             })?
         } else {
             vec![]
