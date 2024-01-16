@@ -2,7 +2,7 @@ use incrementalmerkletree::witness::IncrementalWitness;
 use zcash_primitives::{sapling, transaction::TxId};
 
 use crate::error::ZingoLibError;
-use crate::wallet::notes;
+use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentNote};
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
