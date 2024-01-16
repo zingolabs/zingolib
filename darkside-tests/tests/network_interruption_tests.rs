@@ -63,7 +63,8 @@ async fn network_interrupt_chainbuild() {
 }
 #[tokio::test]
 async fn network_interrupt_test() {
-    const BLOCKCHAIN_HEIGHT: u64 = 100_000;
+    const BLOCKCHAIN_HEIGHT: u64 = 5_000;
+    // const BLOCKCHAIN_HEIGHT: u64 = 100_000;
     let transaction_set = load_chainbuild_file("network_interrupt");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
@@ -121,6 +122,8 @@ async fn network_interrupt_test() {
     //     "{}",
     //     json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
     // );
+    println!("do list tx summaries:");
+    dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
     assert_eq!(
         scenario.get_lightclient(0).do_balance().await,
         PoolBalances {
