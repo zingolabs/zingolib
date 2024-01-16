@@ -1,4 +1,6 @@
-use crate::{BlockHeight, TransactionRecord, TransparentNote, TxId};
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+
+use crate::wallet::{data::TransparentNote, transaction_record::TransactionRecord};
 // Other necessary imports...
 
 pub fn create_mock_transaction_record(confirmed: bool) -> TransactionRecord {
@@ -15,6 +17,7 @@ pub fn create_mock_transaction_record(confirmed: bool) -> TransactionRecord {
             zingo_status::confirmation_status::ConfirmationStatus::Unconfirmed
         },
         // other parameters...
+        todo!();
     );
 
     // Add any additional data to mock_record if necessary
