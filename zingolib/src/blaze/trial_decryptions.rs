@@ -3,7 +3,7 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use crate::wallet::note::ShieldedNoteInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,

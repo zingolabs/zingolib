@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
-        note::ShieldedNoteInterface,
+        notes::ShieldedNoteInterface,
         traits::DomainWalletExt,
         transactions::TransactionMetadataSet,
     },

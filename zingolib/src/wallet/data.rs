@@ -1,6 +1,6 @@
 use super::traits::{self, DomainWalletExt, ToBytes};
 use crate::error::{ZingoLibError, ZingoLibResult};
-use crate::wallet::note::*;
+use crate::wallet::notes::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;

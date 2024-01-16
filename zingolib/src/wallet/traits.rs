@@ -7,10 +7,10 @@ use super::{
         WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
-    note::{OrchardNote, SaplingNote},
+    notes::{OrchardNote, SaplingNote},
     transactions::TransactionMetadataSet,
 };
-use crate::wallet::note::ShieldedNoteInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;

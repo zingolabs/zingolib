@@ -51,7 +51,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
-use self::note::*;
+use self::notes::*;
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
 use self::{
@@ -64,7 +64,7 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub mod data;
 pub mod keys;
 pub(crate) mod message;
-pub mod note;
+pub mod notes;
 pub mod traits;
 pub mod transaction_record;
 pub(crate) mod transactions;
