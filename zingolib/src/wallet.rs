@@ -2,6 +2,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
+use crate::wallet::notes::ShieldedNoteInterface;
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -51,7 +52,6 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
-use self::notes::*;
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
 use self::{
@@ -258,7 +258,7 @@ impl LightWallet {
         trees: &TreeState,
     ) -> Option<
         incrementalmerkletree::frontier::NonEmptyFrontier<
-            <D::WalletNote as ShieldedNoteInterface>::Node,
+            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
         >,
     >
     where
@@ -266,7 +266,7 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
     {
         zcash_primitives::merkle_tree::read_commitment_tree::<
-            <D::WalletNote as ShieldedNoteInterface>::Node,
+            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
             &[u8],
             COMMITMENT_TREE_LEVELS,
         >(&hex::decode(D::get_tree(trees)).unwrap()[..])
