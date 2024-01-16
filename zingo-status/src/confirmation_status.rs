@@ -55,9 +55,6 @@ impl ConfirmationStatus {
             Self::Confirmed(blockheight)
         }
     }
-    pub fn is_broadcast(&self) -> bool {
-        matches!(self, Self::Broadcast(_))
-    }
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
     }
