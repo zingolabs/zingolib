@@ -1,14 +1,50 @@
 use zcash_primitives::consensus::BlockHeight;
+/// Transaction confirmation states. Every transaction maps to exactly one of these variants.
+/// Transitions between states are enforced by ????
+/// TODO: If we want an exhaustive partition of states, do we have all necessary variants?
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
-    /// we may know when it entered the mempool.
+    /// The value the client has for the height of the chain when the transaction is broadcast.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Broadcast(BlockHeight::from_u32(100));
+    /// assert_eq!(status.is_broadcast(), true);
+    /// assert_eq!(status.get_height(), BlockHeight::from_u32(100));
+    /// ```
     Broadcast(BlockHeight),
-    /// confirmed on blockchain implies a height. this data piece will eventually be a block height
+    /// The height of a confirmed block that contains the transaction.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(BlockHeight::from_u32(200));
+    /// assert_eq!(status.is_confirmed(), true);
+    /// assert_eq!(status.get_height(), BlockHeight::from_u32(200));
+    /// ```
     Confirmed(BlockHeight),
 }
 
 impl ConfirmationStatus {
+    /// Converts a blockheight and unconfirmed status into a `ConfirmationStatus`.
+    /// TODO:  I think we are missing a state, what about after a record is created, but before it's broadcast?!
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::{ConfirmationStatus, BlockHeight};
+    ///
+    /// let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(BlockHeight(10), false);
+    /// assert_eq!(status, ConfirmationStatus::Confirmed(BlockHeight(10)));
+    ///
+    /// let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(BlockHeight(10), true);
+    /// assert_eq!(status, ConfirmationStatus::Broadcast(BlockHeight(10)));
+    /// ```
     pub fn from_blockheight_and_unconfirmed_bool(
         blockheight: BlockHeight,
         unconfirmed: bool,
@@ -18,9 +54,6 @@ impl ConfirmationStatus {
         } else {
             Self::Confirmed(blockheight)
         }
-    }
-    pub fn is_broadcast(&self) -> bool {
-        matches!(self, Self::Broadcast(_))
     }
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))

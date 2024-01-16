@@ -153,3 +153,34 @@ impl TransactionMetadataSet {
         Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[tokio::test]
+    async fn test_write() {
+        let mut tms = TransactionMetadataSet {
+            current: HashMap::new(), // Populate with test data as necessary
+            witness_trees: Some(WitnessTrees::default()), // Adjust as needed
+        };
+
+        let mut buffer = Cursor::new(Vec::new());
+
+        // Perform the write operation
+        tms.write(&mut buffer)
+            .await
+            .expect("Write operation failed");
+
+        // Optionally, you can then read back from the buffer and verify the contents
+        // This part of the test depends on the structure of your data and how you expect it to be written
+        buffer.set_position(0);
+        let mut read_buffer = vec![];
+        buffer
+            .read_to_end(&mut read_buffer)
+            .expect("Failed to read from buffer");
+
+        // Verify the buffer contents here
+        // ...
+    }
+}

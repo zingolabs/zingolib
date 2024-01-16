@@ -15,8 +15,8 @@ use log::error;
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
-        data::{OutgoingTxData, PoolNullifier, TransactionRecord, TransparentNote},
-        note::ShieldedNoteInterface,
+        data::{OutgoingTxData, PoolNullifier, TransactionRecord},
+        notes::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},
     },
 };
@@ -369,7 +369,7 @@ impl TransactionMetadataSet {
         } else {
             transaction_metadata
                 .transparent_notes
-                .push(TransparentNote {
+                .push(crate::wallet::notes::TransparentNote {
                     address: taddr,
                     txid,
                     output_index: output_num as u64,

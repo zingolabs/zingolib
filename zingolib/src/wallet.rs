@@ -2,6 +2,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
+use crate::wallet::notes::ShieldedNoteInterface;
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -51,11 +52,10 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
-use self::note::*;
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
 use self::{
-    data::{BlockData, TransparentNote, WalletZecPriceInfo},
+    data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transactions::TransactionMetadataSet,
 };
@@ -64,7 +64,7 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub mod data;
 pub mod keys;
 pub(crate) mod message;
-pub mod note;
+pub mod notes;
 pub mod traits;
 pub mod transaction_record;
 pub(crate) mod transactions;
@@ -258,7 +258,7 @@ impl LightWallet {
         trees: &TreeState,
     ) -> Option<
         incrementalmerkletree::frontier::NonEmptyFrontier<
-            <D::WalletNote as ShieldedNoteInterface>::Node,
+            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
         >,
     >
     where
@@ -266,7 +266,7 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
     {
         zcash_primitives::merkle_tree::read_commitment_tree::<
-            <D::WalletNote as ShieldedNoteInterface>::Node,
+            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
             &[u8],
             COMMITMENT_TREE_LEVELS,
         >(&hex::decode(D::get_tree(trees)).unwrap()[..])
@@ -469,7 +469,7 @@ impl LightWallet {
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_utxos(&self) -> Vec<TransparentNote> {
+    pub async fn get_utxos(&self) -> Vec<notes::TransparentNote> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -483,7 +483,7 @@ impl LightWallet {
                     .filter(|utxo| utxo.spent.is_none())
             })
             .cloned()
-            .collect::<Vec<TransparentNote>>()
+            .collect::<Vec<notes::TransparentNote>>()
     }
 
     pub async fn last_synced_hash(&self) -> String {
@@ -825,7 +825,7 @@ impl LightWallet {
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
-            Vec<TransparentNote>,
+            Vec<notes::TransparentNote>,
             u64,
         ),
         u64,
@@ -987,7 +987,7 @@ impl LightWallet {
         witness_trees: &WitnessTrees,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
-        utxos: &[TransparentNote],
+        utxos: &[notes::TransparentNote],
     ) -> Result<TxBuilder<'_>, String> {
         // Add all tinputs
         // Create a map from address -> sk for all taddrs, so we can spend from the

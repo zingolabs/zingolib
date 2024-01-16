@@ -14,7 +14,7 @@ use crate::{
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
-        note::ShieldedNoteInterface,
+        notes::ShieldedNoteInterface,
         now, LightWallet, Pool, SendProgress, WalletBase,
     },
 };
