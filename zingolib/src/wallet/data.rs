@@ -710,8 +710,7 @@ pub use crate::wallet::transaction_record::TransactionRecord;
 #[test]
 fn single_transparent_note_makes_is_incoming_true() {
     // A single transparent note makes is_incoming_trsaction true.
-    use crate::test_framework::TransparentNoteBuilder;
-    let transparent_note = TransparentNoteBuilder::new()
+    let transparent_note = crate::test_framework::TransparentNoteBuilder::new()
         .address("t".to_string())
         .spent_at_height(Some(3))
         .build();
