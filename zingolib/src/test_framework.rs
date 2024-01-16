@@ -1,9 +1,8 @@
 pub(crate) mod macros;
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::transaction::TxId;
 
 use crate::wallet::data::TransparentNote;
-// Other necessary imports...
 pub struct TransparentNoteBuilder {
     address: Option<String>,
     txid: Option<TxId>,
@@ -14,30 +13,19 @@ pub struct TransparentNoteBuilder {
     spent: Option<Option<TxId>>,
     unconfirmed_spent: Option<Option<(TxId, u32)>>,
 }
-
-impl Default for TransparentNoteBuilder {
-    fn default() -> Self {
-        TransparentNoteBuilder {
-            address: Some("default_address".to_string()),
-            txid: Some(TxId::from_bytes([0u8; 32])),
-            output_index: Some(0),
-            script: Some(vec![]),
-            value: Some(0),
-            spent_at_height: Some(None),
-            spent: Some(None),
-            unconfirmed_spent: Some(None),
-        }
-    }
-}
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
-        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
+        pub fn $name(mut self, $name: $localtype) -> Self {
             self.$name = Some($name);
             self
         }
     };
 }
+#[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
 impl TransparentNoteBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
     // Methods to set each field
     build_method!(address, String);
     build_method!(txid, TxId);
@@ -59,6 +47,21 @@ impl TransparentNoteBuilder {
             spent_at_height: self.spent_at_height.unwrap(),
             spent: self.spent.unwrap(),
             unconfirmed_spent: self.unconfirmed_spent.unwrap(),
+        }
+    }
+}
+
+impl Default for TransparentNoteBuilder {
+    fn default() -> Self {
+        TransparentNoteBuilder {
+            address: Some("default_address".to_string()),
+            txid: Some(TxId::from_bytes([0u8; 32])),
+            output_index: Some(0),
+            script: Some(vec![]),
+            value: Some(0),
+            spent_at_height: Some(None),
+            spent: Some(None),
+            unconfirmed_spent: Some(None),
         }
     }
 }
