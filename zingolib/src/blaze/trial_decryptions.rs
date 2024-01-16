@@ -3,6 +3,7 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
+use crate::error::ZingoLibResult;
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
@@ -64,7 +65,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         transaction_size_filter: Option<u32>,
@@ -133,7 +134,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         full_transaction_fetcher: UnboundedSender<(
@@ -245,12 +246,12 @@ impl TrialDecryptions {
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        );
+        )?;
         update_witnesses::<OrchardDomain>(
             orchard_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        );
+        )?;
 
         // Return a nothing-value
         Ok::<(), String>(())
@@ -271,7 +272,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
@@ -362,7 +363,7 @@ impl TrialDecryptions {
                                 transaction_id,
                                 spend_nullifier.into(),
                                 height,
-                                i as u32,
+                                Some(i as u32),
                                 true,
                             ))
                             .unwrap();
@@ -423,7 +424,8 @@ fn update_witnesses<D>(
     )>,
     txmds_writelock: &mut TransactionMetadataSet,
     wc: &Arc<WalletCapability>,
-) where
+) -> ZingoLibResult<()>
+where
     D: DomainWalletExt,
     <D as Domain>::Note: PartialEq + Clone,
     <D as Domain>::Recipient: Recipient,
@@ -442,10 +444,10 @@ fn update_witnesses<D>(
                 if retention != Retention::Ephemeral {
                     txmds_writelock.mark_note_position::<D>(
                         transaction_id,
-                        output_index,
+                        Some(output_index),
                         position + i as u64,
                         &D::wc_to_fvk(wc).unwrap(),
-                    );
+                    )?;
                 }
                 nodes_retention.push((node, retention));
             }
@@ -459,4 +461,5 @@ fn update_witnesses<D>(
             }
         }
     }
+    Ok(())
 }

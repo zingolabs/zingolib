@@ -173,7 +173,7 @@ impl TransactionMetadataSet {
         timestamp: u32,
         spent_nullifier: PoolNullifier,
         source_txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> ZingoLibResult<()> {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => self
@@ -205,7 +205,7 @@ impl TransactionMetadataSet {
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         source_txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> ZingoLibResult<()>
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -246,7 +246,7 @@ impl TransactionMetadataSet {
         spending_txid: TxId,
         status: ConfirmationStatus,
         source_txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
     ) -> ZingoLibResult<u64>
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -254,7 +254,7 @@ impl TransactionMetadataSet {
     {
         Ok(if let Some(height) = status.get_confirmed_height() {
             // ie remove_witness_mark_sapling or _orchard
-            self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index);
+            self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index)?;
             if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
                 if let Some(confirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
                     .iter_mut()
@@ -415,7 +415,7 @@ impl TransactionMetadataSet {
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
                     false,
-                    output_index as u32,
+                    Some(output_index as u32),
                 );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
@@ -454,7 +454,7 @@ impl TransactionMetadataSet {
             // if this is change, we'll mark it later in check_notes_mark_change
             false,
             have_spending_key,
-            output_index,
+            Some(output_index),
         );
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
@@ -516,8 +516,9 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        output_index: u32,
-    ) where
+        output_index: Option<u32>,
+    ) -> ZingoLibResult<()>
+    where
         D: DomainWalletExt,
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
@@ -527,50 +528,81 @@ impl TransactionMetadataSet {
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
+        if let Some(maybe_note) = D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| *n.output_index() == output_index)
-        {
-            *note_datum.spent_mut() = Some((txid, height.into()));
-            if let Some(position) = *note_datum.witnessed_position() {
-                if let Some(ref mut tree) = D::transaction_metadata_set_to_shardtree_mut(self) {
-                    tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                        .unwrap();
+            .find_map(|nnmd| {
+                if nnmd.output_index().is_some() != output_index.is_some() {
+                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
                 }
-            } else {
-                todo!("Tried to mark note as spent with no position: FIX")
+                if *nnmd.output_index() == output_index {
+                    Some(Ok(nnmd))
+                } else {
+                    None
+                }
+            })
+        {
+            match maybe_note {
+                Ok(note_datum) => {
+                    *note_datum.spent_mut() = Some((txid, height.into()));
+                    if let Some(position) = *note_datum.witnessed_position() {
+                        if let Some(ref mut tree) =
+                            D::transaction_metadata_set_to_shardtree_mut(self)
+                        {
+                            tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
+                                .unwrap();
+                        }
+                    } else {
+                        todo!("Tried to mark note as spent with no position: FIX")
+                    }
+                }
+                Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
             }
         } else {
             eprintln!("Could not remove node!")
         }
+        Ok(())
     }
 
     pub(crate) fn mark_note_position<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        output_index: u32,
+        output_index: Option<u32>,
         position: Position,
         fvk: &D::Fvk,
-    ) where
+    ) -> ZingoLibResult<()>
+    where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.current.get_mut(&txid) {
-            if let Some(nnmd) = &mut D::to_notes_vec_mut(tmd)
-                .iter_mut()
-                .find(|nnmd| *nnmd.output_index() == output_index)
-            {
-                *nnmd.witnessed_position_mut() = Some(position);
-                *nnmd.nullifier_mut() = Some(D::get_nullifier_from_note_fvk_and_witness_position(
-                    &nnmd.note().clone(),
-                    fvk,
-                    u64::from(position),
-                ));
+            if let Some(maybe_nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find_map(|nnmd| {
+                if nnmd.output_index().is_some() != output_index.is_some() {
+                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                }
+                if *nnmd.output_index() == output_index {
+                    Some(Ok(nnmd))
+                } else {
+                    None
+                }
+            }) {
+                match maybe_nnmd {
+                    Ok(nnmd) => {
+                        *nnmd.witnessed_position_mut() = Some(position);
+                        *nnmd.nullifier_mut() =
+                            Some(D::get_nullifier_from_note_fvk_and_witness_position(
+                                &nnmd.note().clone(),
+                                fvk,
+                                u64::from(position),
+                            ));
+                    }
+                    Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
+                }
             } else {
                 println!("Could not update witness position");
             }
         } else {
             println!("Could not update witness position");
         }
+        Ok(())
     }
 }

@@ -1101,10 +1101,12 @@ where
         let have_spending_key = reader.read_u8()? > 0;
 
         let output_index = if external_version >= 4 {
-            reader.read_u32::<LittleEndian>()?
+            match reader.read_u32::<LittleEndian>()? {
+                u32::MAX => None,
+                otherwise => Some(otherwise),
+            }
         } else {
-            // TODO: This value is obviously incorrect, we can fix it if it becomes a problem
-            u32::MAX
+            None
         };
 
         Ok(T::from_parts(
@@ -1162,7 +1164,7 @@ where
 
         writer.write_u8(if self.have_spending_key() { 1 } else { 0 })?;
 
-        writer.write_u32::<LittleEndian>(*self.output_index())?;
+        writer.write_u32::<LittleEndian>(self.output_index().unwrap_or(u32::MAX))?;
 
         Ok(())
     }
