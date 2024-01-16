@@ -46,8 +46,6 @@ impl TransparentNoteBuilder {
     build_method!(spent, Option<TxId>);
     build_method!(unconfirmed_spent, Option<(TxId, u32)>);
 
-    // ... similar methods for other fields ...
-
     // Build method
     pub fn build(self) -> TransparentNote {
         TransparentNote {
