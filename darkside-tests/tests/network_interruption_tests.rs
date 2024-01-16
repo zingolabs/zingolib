@@ -140,10 +140,10 @@ async fn network_interrupt_test() {
             verified_sapling_balance: Some(0),
             spendable_sapling_balance: Some(0),
             unverified_sapling_balance: Some(0),
-            orchard_balance: Some(160_000),
-            verified_orchard_balance: Some(160_000),
+            orchard_balance: Some(760_000),
+            verified_orchard_balance: Some(760_000),
             unverified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(160_000),
+            spendable_orchard_balance: Some(760_000),
             transparent_balance: Some(0),
         }
     );
