@@ -1225,6 +1225,25 @@ impl TransactionMetadata {
     }
 }
 
+#[test]
+fn single_transparent_note_makes_is_incoming_true() {
+    // A single transparent note makes is_incoming_trsaction true.
+    let txid = TxId::from_bytes([0u8; 32]);
+    let spent_txid = TxId::from_bytes([1u8; 32]);
+    let mut tmd = TransactionMetadata::new(BlockHeight::from_u32(5), 1705077003, &txid, false);
+    let transparent_note = TransparentNote {
+        address: "t".to_string(),
+        txid,
+        output_index: 1u64,
+        script: vec![0u8],
+        value: 0u64,
+        spent_at_height: Some(3),
+        spent: Some(spent_txid),
+        unconfirmed_spent: None,
+    };
+    tmd.transparent_notes.push(transparent_note);
+    assert!(tmd.is_incoming_transaction());
+}
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
     pub transaction_id: TxId,
