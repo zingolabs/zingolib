@@ -2,6 +2,14 @@ pub(crate) mod macros;
 
 use zcash_primitives::transaction::TxId;
 
+macro_rules! build_method {
+    ($name:ident, $localtype:ty) => {
+        pub fn $name(mut self, $name: $localtype) -> Self {
+            self.$name = Some($name);
+            self
+        }
+    };
+}
 use crate::wallet::data::TransparentNote;
 pub struct TransparentNoteBuilder {
     address: Option<String>,
@@ -12,14 +20,6 @@ pub struct TransparentNoteBuilder {
     spent_at_height: Option<Option<i32>>,
     spent: Option<Option<TxId>>,
     unconfirmed_spent: Option<Option<(TxId, u32)>>,
-}
-macro_rules! build_method {
-    ($name:ident, $localtype:ty) => {
-        pub fn $name(mut self, $name: $localtype) -> Self {
-            self.$name = Some($name);
-            self
-        }
-    };
 }
 #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
 impl TransparentNoteBuilder {
