@@ -1,28 +1,65 @@
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{data::TransparentNote, transaction_record::TransactionRecord};
+use crate::wallet::data::TransparentNote;
+const MOCK_TXID: TxId = TxId::from_bytes([0u8; 32]);
 // Other necessary imports...
-
-pub fn create_mock_transaction_record(confirmed: bool) -> TransactionRecord {
-    let txid = TxId::from_bytes([0u8; 32]);
-    let spent_txid = TxId::from_bytes([1u8; 32]);
-
-    // Construct TransactionRecord with either confirmed or unconfirmed status
-    let mut mock_record = TransactionRecord::new(
-        if confirmed {
-            zingo_status::confirmation_status::ConfirmationStatus::Confirmed(BlockHeight::from_u32(
-                5,
-            ))
-        } else {
-            zingo_status::confirmation_status::ConfirmationStatus::Unconfirmed
-        },
-        // other parameters...
-        todo!();
-    );
-
-    // Add any additional data to mock_record if necessary
-
-    mock_record
+pub struct TransparentNoteBuilder {
+    address: Option<String>,
+    txid: Option<TxId>,
+    output_index: Option<u64>,
+    script: Option<Vec<u8>>,
+    value: Option<u64>,
+    spent_at_height: Option<Option<u32>>,
+    spent: Option<Option<TxId>>,
+    unconfirmed_spent: Option<Option<TxId>>,
 }
 
-// This function can be used in your test cases and other parts of the codebase.
+impl Default for TransparentNoteBuilder {
+    fn default() -> Self {
+        TransparentNoteBuilder {
+            address: Some("default_address".to_string()),
+            txid: Some(MOCK_TXID),
+            output_index: Some(0),
+            script: Some(vec![]),
+            value: Some(0),
+            spent_at_height: Some(None),
+            spent: Some(None),
+            unconfirmed_spent: Some(None),
+        }
+    }
+}
+macro_rules! build_method {
+    ($name:ident, $localtype:ty) => {
+        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
+            self.$name = Some($name);
+            self
+        }
+    };
+}
+impl TransparentNoteBuilder {
+    // Methods to set each field
+    build_method!(address, String);
+    build_method!(txid, TxId);
+    build_method!(output_index, u64);
+    build_method!(script, Vec<u8>);
+    build_method!(value, u64);
+    build_method!(spent_at_height, Option<u32>);
+    build_method!(spent, Option<TxId>);
+    build_method!(unconfirmed_spent, Option<TxId>);
+
+    // ... similar methods for other fields ...
+
+    // Build method
+    pub fn build(self) -> TransparentNote {
+        TransparentNote {
+            address: self.address.unwrap(),
+            txid: self.txid.unwrap(),
+            output_index: self.output_index.unwrap(),
+            script: self.script.unwrap(),
+            value: self.value.unwrap(),
+            spent_at_height: self.spent_at_height.unwrap(),
+            spent: self.spent.unwrap(),
+            unconfirmed_spent: self.unconfirmed_spent.unwrap(),
+        }
+    }
+}
