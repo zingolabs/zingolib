@@ -158,8 +158,6 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    // Other necessary imports...
-
     #[tokio::test]
     async fn test_write() {
         let mut tms = TransactionMetadataSet {
