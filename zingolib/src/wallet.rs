@@ -55,7 +55,7 @@ use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
 use self::{
-    data::{BlockData, TransparentNote, WalletZecPriceInfo},
+    data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transactions::TransactionMetadataSet,
 };
@@ -469,7 +469,7 @@ impl LightWallet {
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_utxos(&self) -> Vec<TransparentNote> {
+    pub async fn get_utxos(&self) -> Vec<notes::TransparentNote> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -483,7 +483,7 @@ impl LightWallet {
                     .filter(|utxo| utxo.spent.is_none())
             })
             .cloned()
-            .collect::<Vec<TransparentNote>>()
+            .collect::<Vec<notes::TransparentNote>>()
     }
 
     pub async fn last_synced_hash(&self) -> String {
@@ -825,7 +825,7 @@ impl LightWallet {
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
-            Vec<TransparentNote>,
+            Vec<notes::TransparentNote>,
             u64,
         ),
         u64,
@@ -987,7 +987,7 @@ impl LightWallet {
         witness_trees: &WitnessTrees,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
-        utxos: &[TransparentNote],
+        utxos: &[notes::TransparentNote],
     ) -> Result<TxBuilder<'_>, String> {
         // Add all tinputs
         // Create a map from address -> sk for all taddrs, so we can spend from the

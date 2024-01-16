@@ -2,6 +2,7 @@ use incrementalmerkletree::witness::IncrementalWitness;
 use zcash_primitives::{sapling, transaction::TxId};
 
 use crate::error::ZingoLibError;
+use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
@@ -34,7 +35,7 @@ pub struct TransactionRecord {
     pub orchard_notes: Vec<notes::OrchardNote>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
-    pub transparent_notes: Vec<TransparentNote>,
+    pub transparent_notes: Vec<notes::TransparentNote>,
 
     // Total value of all the sapling nullifiers that were spent in this Tx
     pub total_sapling_value_spent: u64,
@@ -239,7 +240,7 @@ impl TransactionRecord {
         } else {
             vec![]
         };
-        let utxos = Vector::read(&mut reader, |r| TransparentNote::read(r))?;
+        let utxos = Vector::read(&mut reader, |r| notes::TransparentNote::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;

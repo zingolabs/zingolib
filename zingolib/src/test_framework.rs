@@ -10,7 +10,7 @@ macro_rules! build_method {
         }
     };
 }
-use crate::wallet::data::TransparentNote;
+use crate::wallet::notes::TransparentNote;
 pub struct TransparentNoteBuilder {
     address: Option<String>,
     txid: Option<TxId>,

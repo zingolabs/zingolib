@@ -23,10 +23,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::{self, Node};
-use zcash_primitives::{
-    memo::Memo,
-    transaction::{components::OutPoint, TxId},
-};
+use zcash_primitives::{memo::Memo, transaction::TxId};
 use zingoconfig::{ChainType, MAX_REORG};
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
@@ -476,116 +473,6 @@ pub(crate) fn write_sapling_rseed<W: Write>(
     match rseed {
         zcash_primitives::sapling::Rseed::BeforeZip212(fr) => writer.write_all(&fr.to_bytes()),
         zcash_primitives::sapling::Rseed::AfterZip212(b) => writer.write_all(b),
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct TransparentNote {
-    pub address: String,
-    pub txid: TxId,
-    pub output_index: u64,
-    pub script: Vec<u8>,
-    pub value: u64,
-
-    pub spent_at_height: Option<i32>,
-    pub spent: Option<TxId>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
-
-    // If this utxo was spent in a send, but has not yet been confirmed.
-    // Contains the txid and height at which the Tx was broadcast
-    pub unconfirmed_spent: Option<(TxId, u32)>,
-}
-
-impl TransparentNote {
-    pub fn serialized_version() -> u64 {
-        4
-    }
-
-    pub fn to_outpoint(&self) -> OutPoint {
-        OutPoint::new(*self.txid.as_ref(), self.output_index as u32)
-    }
-
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
-        let version = reader.read_u64::<LittleEndian>()?;
-
-        let address_len = reader.read_i32::<LittleEndian>()?;
-        let mut address_bytes = vec![0; address_len as usize];
-        reader.read_exact(&mut address_bytes)?;
-        let address = String::from_utf8(address_bytes).unwrap();
-        assert_eq!(address.chars().take(1).collect::<Vec<char>>()[0], 't');
-
-        let mut transaction_id_bytes = [0; 32];
-        reader.read_exact(&mut transaction_id_bytes)?;
-        let transaction_id = TxId::from_bytes(transaction_id_bytes);
-
-        let output_index = reader.read_u64::<LittleEndian>()?;
-        let value = reader.read_u64::<LittleEndian>()?;
-        let _height = reader.read_i32::<LittleEndian>()?;
-
-        let script = Vector::read(&mut reader, |r| {
-            let mut byte = [0; 1];
-            r.read_exact(&mut byte)?;
-            Ok(byte[0])
-        })?;
-
-        let spent = Optional::read(&mut reader, |r| {
-            let mut transaction_bytes = [0u8; 32];
-            r.read_exact(&mut transaction_bytes)?;
-            Ok(TxId::from_bytes(transaction_bytes))
-        })?;
-
-        let spent_at_height = if version <= 1 {
-            None
-        } else {
-            Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())?
-        };
-
-        let _unconfirmed_spent = if version == 3 {
-            Optional::read(&mut reader, |r| {
-                let mut transaction_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_bytes)?;
-
-                let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId::from_bytes(transaction_bytes), height))
-            })?
-        } else {
-            None
-        };
-
-        Ok(TransparentNote {
-            address,
-            txid: transaction_id,
-            output_index,
-            script,
-            value,
-            spent_at_height,
-            spent,
-            unconfirmed_spent: None,
-        })
-    }
-
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
-
-        writer.write_u32::<LittleEndian>(self.address.as_bytes().len() as u32)?;
-        writer.write_all(self.address.as_bytes())?;
-
-        writer.write_all(self.txid.as_ref())?;
-
-        writer.write_u64::<LittleEndian>(self.output_index)?;
-        writer.write_u64::<LittleEndian>(self.value)?;
-        writer.write_i32::<LittleEndian>(0)?;
-
-        Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
-
-        Optional::write(&mut writer, self.spent, |w, transaction_id| {
-            w.write_all(transaction_id.as_ref())
-        })?;
-
-        Optional::write(&mut writer, self.spent_at_height, |w, s| {
-            w.write_i32::<LittleEndian>(s)
-        })?;
-
-        Ok(())
     }
 }
 
