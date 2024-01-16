@@ -11,15 +11,21 @@ use darkside_tests::utils::{
     create_chainbuild_file, load_chainbuild_file,
     scenarios::{DarksideScenario, DarksideSender},
 };
+use json::JsonValue;
 use tokio::time::sleep;
 use zingo_testutils::start_proxy_and_connect_lightclient;
-use zingolib::{get_base_address, lightclient::PoolBalances, testvectors::seeds, wallet::Pool};
+use zingolib::{
+    get_base_address,
+    lightclient::PoolBalances,
+    testvectors::seeds,
+    wallet::{data::summaries::ValueTransferKind, Pool},
+};
 
 // Test not finished, not failing
-#[ignore]
+// #[ignore]
 #[tokio::test]
 async fn network_interrupt_chainbuild() {
-    const BLOCKCHAIN_HEIGHT: u64 = 5_000;
+    const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     let chainbuild_file = create_chainbuild_file("network_interrupt");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
@@ -49,21 +55,23 @@ async fn network_interrupt_chainbuild() {
             .shield_and_write_transaction(DarksideSender::IndexedClient(0), &chainbuild_file)
             .await;
     }
-    // stage and apply final blocks
-    scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
-    scenario.get_lightclient(0).do_sync(false).await.unwrap();
 
-    println!("do balance:");
-    dbg!(scenario.get_lightclient(0).do_balance().await);
-    println!("do list_notes:");
-    println!(
-        "{}",
-        json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
-    );
+    // DEBUG
+    // // stage and apply final blocks
+    // scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
+    // scenario.get_lightclient(0).do_sync(false).await.unwrap();
+
+    // println!("do balance:");
+    // dbg!(scenario.get_lightclient(0).do_balance().await);
+    // println!("do list_notes:");
+    // println!(
+    //     "{}",
+    //     json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
+    // );
 }
 #[tokio::test]
 async fn network_interrupt_test() {
-    const BLOCKCHAIN_HEIGHT: u64 = 5_000;
+    const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     // const BLOCKCHAIN_HEIGHT: u64 = 100_000;
     let transaction_set = load_chainbuild_file("network_interrupt");
     let mut scenario = DarksideScenario::default().await;
@@ -115,8 +123,7 @@ async fn network_interrupt_test() {
 
     scenario.get_lightclient(0).do_sync(false).await.unwrap();
 
-    // println!("do balance:");
-    // dbg!(scenario.get_lightclient(0).do_balance().await);
+    // debug info
     println!("do list_notes:");
     println!(
         "{}",
@@ -124,8 +131,8 @@ async fn network_interrupt_test() {
     );
     println!("do list tx summaries:");
     dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
-    // println!("do list transactions:");
-    // dbg!(scenario.get_lightclient(0).do_list_transactions().await);
+
+    // assert the balance is correct
     assert_eq!(
         scenario.get_lightclient(0).do_balance().await,
         PoolBalances {
@@ -139,6 +146,28 @@ async fn network_interrupt_test() {
             spendable_orchard_balance: Some(160_000),
             transparent_balance: Some(0),
         }
+    );
+    // assert all unspent orchard notes (shielded notes) are marked as change
+    let notes = scenario.get_lightclient(0).do_list_notes(true).await;
+    if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
+        for notes in unspent_orchard_notes {
+            assert_eq!(notes["is_change"].as_bool().unwrap(), true);
+        }
+    }
+    // assert all fees are 10000 zats
+    let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
+    for value_transfer in &value_transfers {
+        if let ValueTransferKind::Fee { amount } = value_transfer.kind {
+            assert_eq!(amount, 10_000)
+        }
+    }
+    // assert that every shield has a send-to-self value transfer
+    assert_eq!(
+        value_transfers
+            .iter()
+            .filter(|vt| vt.kind == ValueTransferKind::SendToSelf)
+            .count(),
+        (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
     );
 }
 
