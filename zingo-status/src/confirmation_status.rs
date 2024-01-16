@@ -1,6 +1,6 @@
 use zcash_primitives::consensus::BlockHeight;
-/// Transaction confirmation states. Every transaction is in exactly one of these states.
-/// Transitions between states are managed by ????
+/// Transaction confirmation states. Every transaction maps to exactly one of these variants.
+/// Transitions between states are enforced by ????
 /// TODO: If we want an exhaustive partition of states, do we have all necessary variants?
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,6 +32,20 @@ pub enum ConfirmationStatus {
 }
 
 impl ConfirmationStatus {
+    /// Converts a blockheight and unconfirmed status into a `ConfirmationStatus`.
+    /// TODO:  I think we are missing a state, what about after a record is created, but before it's broadcast?!
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::{ConfirmationStatus, BlockHeight};
+    ///
+    /// let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(BlockHeight(10), false);
+    /// assert_eq!(status, ConfirmationStatus::Confirmed(BlockHeight(10)));
+    ///
+    /// let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(BlockHeight(10), true);
+    /// assert_eq!(status, ConfirmationStatus::Broadcast(BlockHeight(10)));
+    /// ```
+
     pub fn from_blockheight_and_unconfirmed_bool(
         blockheight: BlockHeight,
         unconfirmed: bool,
