@@ -22,28 +22,28 @@ pub struct TransactionRecord {
     // WalletTx in LightWallet::txs)
     pub txid: TxId,
 
-    // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
+    // List of all nullifiers spent by this wallet in this Tx.
     pub spent_sapling_nullifiers: Vec<zcash_primitives::sapling::Nullifier>,
 
-    // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
+    // List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
-    // List of all sapling notes received in this tx. Some of these might be change notes.
+    // List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
     pub sapling_notes: Vec<notes::SaplingNote>,
 
-    // List of all sapling notes received in this tx. Some of these might be change notes.
+    // List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
     pub orchard_notes: Vec<notes::OrchardNote>,
 
-    // List of all Utxos received in this Tx. Some of these might be change notes
+    // List of all Utxos by this wallet received in this Tx. Some of these might be change notes
     pub transparent_notes: Vec<notes::TransparentNote>,
 
-    // Total value of all the sapling nullifiers that were spent in this Tx
+    // Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
 
-    // Total value of all the orchard nullifiers that were spent in this Tx
+    // Total value of all the orchard nullifiers that were spent by this wallet in this Tx
     pub total_orchard_value_spent: u64,
 
-    // Total amount of transparent funds that belong to us that were spent in this Tx.
+    // Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
     pub total_transparent_value_spent: u64,
 
     // All outgoing sends
