@@ -1,6 +1,5 @@
 use super::traits::{self, DomainWalletExt, ToBytes};
 use crate::error::{ZingoLibError, ZingoLibResult};
-use crate::wallet::notes::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
@@ -182,7 +181,7 @@ impl WitnessTrees {
     fn insert_domain_frontier_nodes<D: DomainWalletExt>(
         &mut self,
         non_empty_frontier: Option<
-            NonEmptyFrontier<<D::WalletNote as ShieldedNoteInterface>::Node>,
+            NonEmptyFrontier<<D::WalletNote as super::notes::ShieldedNoteInterface>::Node>,
         >,
     ) where
         <D as Domain>::Note: PartialEq + Clone,
