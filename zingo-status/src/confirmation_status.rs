@@ -45,7 +45,6 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(BlockHeight(10), true);
     /// assert_eq!(status, ConfirmationStatus::Broadcast(BlockHeight(10)));
     /// ```
-
     pub fn from_blockheight_and_unconfirmed_bool(
         blockheight: BlockHeight,
         unconfirmed: bool,

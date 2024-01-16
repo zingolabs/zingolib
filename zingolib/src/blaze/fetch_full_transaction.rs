@@ -388,7 +388,7 @@ impl TransactionContext {
         type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
-        if status.is_broadcast() {
+        if let ConfirmationStatus::Broadcast(_) = status {
             let unspent_nullifiers = self
                 .transaction_metadata_set
                 .read()
