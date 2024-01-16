@@ -1,0 +1,15 @@
+PREREQUISITES
+
+$cargo install cargo-nextest --locked
+
+install git-lfs in order to download test binaries (lightwalletd, zcashd, zcash-cli) to test against
+
+
+EXPLANATION
+
+there are two categories of integration tests: those running against zcashd's regtest mode (integration tests) and those running against lightwalletd's darkside mode (darkside tests)
+
+each of these modes is described in more detail in another document in this folder
+
+the union can be run simply with
+$ cargo nextest run
