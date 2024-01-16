@@ -715,13 +715,13 @@ fn single_transparent_note_makes_is_incoming_true() {
         .spent_at_height(Some(3))
         .build();
     let txid = TxId::from_bytes([0u8; 32]);
-    let mut tmd = TransactionRecord::new(
+    let mut transaction_record = TransactionRecord::new(
         zingo_status::confirmation_status::ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
         1705077003,
         &txid,
     );
-    tmd.transparent_notes.push(transparent_note);
-    assert!(tmd.is_incoming_transaction());
+    transaction_record.transparent_notes.push(transparent_note);
+    assert!(transaction_record.is_incoming_transaction());
 }
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
