@@ -10,13 +10,12 @@ use crate::{
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionMetadata,
+            TransactionRecord,
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
-        now,
-        traits::ShieldedNoteInterface,
-        LightWallet, Pool, SendProgress, WalletBase,
+        notes::ShieldedNoteInterface,
+        now, LightWallet, Pool, SendProgress, WalletBase,
     },
 };
 use futures::future::join_all;
@@ -40,6 +39,7 @@ use tokio::{
     time::sleep,
 };
 use zcash_address::ZcashAddress;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use zcash_client_backend::{
     encoding::{decode_payment_address, encode_payment_address},
@@ -1295,6 +1295,10 @@ impl LightClient {
                         ) {
                             let price = price.read().await.clone();
                             //debug!("Mempool attempting to scan {}", tx.txid());
+                            let status = ConfirmationStatus::Broadcast(BlockHeight::from_u32(
+                                rtransaction.height as u32,
+                            ));
+
                             TransactionContext::new(
                                 &config,
                                 key.clone(),
@@ -1302,10 +1306,9 @@ impl LightClient {
                             )
                             .scan_full_tx(
                                 transaction,
-                                BlockHeight::from_u32(rtransaction.height as u32),
-                                true,
+                                status,
                                 now() as u32,
-                                TransactionMetadata::get_price(now(), &price),
+                                TransactionRecord::get_price(now(), &price),
                             )
                             .await;
                         }
@@ -1697,7 +1700,7 @@ impl LightClient {
     fn tx_summary_matcher(
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
-        transaction_md: &TransactionMetadata,
+        transaction_md: &TransactionRecord,
     ) {
         let (block_height, datetime, price, unconfirmed) = (
             transaction_md.status.get_height(),

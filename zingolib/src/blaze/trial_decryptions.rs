@@ -3,17 +3,15 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use crate::{
-    error::ZingoLibResult,
-    wallet::{
-        data::{PoolNullifier, TransactionMetadata},
-        keys::unified::WalletCapability,
-        traits::{
-            CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
-        },
-        transactions::TransactionMetadataSet,
-        MemoDownloadOption,
-    },
+use crate::error::ZingoLibResult;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::{
+    data::PoolNullifier,
+    keys::unified::WalletCapability,
+    traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
+    transactions::TransactionMetadataSet,
+    utils::txid_from_slice,
+    MemoDownloadOption,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
@@ -34,6 +32,7 @@ use zcash_primitives::{
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, ZingoConfig};
 
 use super::syncdata::BlazeSyncData;
@@ -223,7 +222,7 @@ impl TrialDecryptions {
                 // Note the memos are immediately discarded.
                 // Perhaps this obfuscates the memos of interest?
                 if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
-                    let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
+                    let transaction_id = txid_from_slice(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
                     full_transaction_fetcher
                         .send((transaction_id, transmitter))
@@ -290,7 +289,7 @@ impl TrialDecryptions {
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
         <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Node: PartialEq,
     {
-        let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
+        let transaction_id = txid_from_slice(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
             .iter()
             .map(|output| {
@@ -344,10 +343,10 @@ impl TrialDecryptions {
                             u64::from(witness.witnessed_position()),
                         );
 
+                        let status = ConfirmationStatus::Confirmed(height);
                         transaction_metadata_set.write().await.add_new_note::<D>(
                             transaction_id,
-                            height,
-                            false,
+                            status,
                             timestamp,
                             note,
                             to,

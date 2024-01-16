@@ -15,8 +15,9 @@ use log::error;
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
-        data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote},
-        traits::{self, DomainWalletExt, Nullifier, Recipient, ShieldedNoteInterface},
+        data::{OutgoingTxData, PoolNullifier, TransactionRecord},
+        notes::ShieldedNoteInterface,
+        traits::{self, DomainWalletExt, Nullifier, Recipient},
     },
 };
 
@@ -151,7 +152,7 @@ impl TransactionMetadataSet {
         txid: &TxId,
         status: ConfirmationStatus,
         datetime: u64,
-    ) -> &'_ mut TransactionMetadata {
+    ) -> &'_ mut TransactionRecord {
         self.current
             .entry(*txid)
             // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
@@ -160,7 +161,7 @@ impl TransactionMetadataSet {
                 transaction_metadata.datetime = datetime;
             })
             // if this transaction is new to our data, insert it
-            .or_insert_with(|| TransactionMetadata::new(status, datetime, txid))
+            .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
@@ -293,15 +294,13 @@ impl TransactionMetadataSet {
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
-        // Todo yeesh
+
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -312,8 +311,7 @@ impl TransactionMetadataSet {
         spent_txid: TxId,
         output_num: u32,
         source_txid: TxId,
-        source_height: u32,
-        unconfirmed: bool,
+        spending_tx_status: ConfirmationStatus,
     ) -> u64 {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
@@ -322,13 +320,15 @@ impl TransactionMetadataSet {
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
-                if unconfirmed {
-                    spent_utxo.unconfirmed_spent = Some((source_txid, source_height));
-                } else {
-                    // Mark this one as spent
+                if spending_tx_status.is_confirmed() {
+                    // Mark this utxo as spent
                     spent_utxo.spent = Some(source_txid);
-                    spent_utxo.spent_at_height = Some(source_height as i32);
+                    spent_utxo.spent_at_height =
+                        Some(u32::from(spending_tx_status.get_height()) as i32);
                     spent_utxo.unconfirmed_spent = None;
+                } else {
+                    spent_utxo.unconfirmed_spent =
+                        Some((source_txid, u32::from(spending_tx_status.get_height())));
                 }
 
                 spent_utxo.value
@@ -350,15 +350,11 @@ impl TransactionMetadataSet {
         &mut self,
         txid: TxId,
         taddr: String,
-        height: u32,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u64,
         vout: &TxOut,
         output_num: u32,
     ) {
-        let blockheight = BlockHeight::from(height);
-        let status =
-            ConfirmationStatus::from_blockheight_and_unconfirmed_bool(blockheight, unconfirmed);
         // Read or create the current TxId
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
@@ -373,7 +369,7 @@ impl TransactionMetadataSet {
         } else {
             transaction_metadata
                 .transparent_notes
-                .push(TransparentNote {
+                .push(crate::wallet::notes::TransparentNote {
                     address: taddr,
                     txid,
                     output_index: output_num as u64,
@@ -432,8 +428,7 @@ impl TransactionMetadataSet {
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         timestamp: u64,
         note: <D::WalletNote as ShieldedNoteInterface>::Note,
         to: D::Recipient,
@@ -445,7 +440,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(height, unconfirmed);
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
@@ -510,5 +504,105 @@ impl TransactionMetadataSet {
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
         price.map(|p| self.current.get_mut(txid).map(|tx| tx.price = Some(p)));
+    }
+}
+
+// shardtree
+impl TransactionMetadataSet {
+    /// A mark designates a leaf as non-ephemeral, mark removal causes
+    /// the leaf to eventually transition to the ephemeral state
+    pub fn remove_witness_mark<D>(
+        &mut self,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        output_index: Option<u32>,
+    ) -> ZingoLibResult<()>
+    where
+        D: DomainWalletExt,
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: Recipient,
+    {
+        let transaction_metadata = self
+            .current
+            .get_mut(&source_txid)
+            .expect("Txid should be present");
+
+        if let Some(maybe_note) = D::to_notes_vec_mut(transaction_metadata)
+            .iter_mut()
+            .find_map(|nnmd| {
+                if nnmd.output_index().is_some() != output_index.is_some() {
+                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                }
+                if *nnmd.output_index() == output_index {
+                    Some(Ok(nnmd))
+                } else {
+                    None
+                }
+            })
+        {
+            match maybe_note {
+                Ok(note_datum) => {
+                    *note_datum.spent_mut() = Some((txid, height.into()));
+                    if let Some(position) = *note_datum.witnessed_position() {
+                        if let Some(ref mut tree) =
+                            D::transaction_metadata_set_to_shardtree_mut(self)
+                        {
+                            tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
+                                .unwrap();
+                        }
+                    } else {
+                        todo!("Tried to mark note as spent with no position: FIX")
+                    }
+                }
+                Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
+            }
+        } else {
+            eprintln!("Could not remove node!")
+        }
+        Ok(())
+    }
+
+    pub(crate) fn mark_note_position<D: DomainWalletExt>(
+        &mut self,
+        txid: TxId,
+        output_index: Option<u32>,
+        position: Position,
+        fvk: &D::Fvk,
+    ) -> ZingoLibResult<()>
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: Recipient,
+    {
+        if let Some(tmd) = self.current.get_mut(&txid) {
+            if let Some(maybe_nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find_map(|nnmd| {
+                if nnmd.output_index().is_some() != output_index.is_some() {
+                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                }
+                if *nnmd.output_index() == output_index {
+                    Some(Ok(nnmd))
+                } else {
+                    None
+                }
+            }) {
+                match maybe_nnmd {
+                    Ok(nnmd) => {
+                        *nnmd.witnessed_position_mut() = Some(position);
+                        *nnmd.nullifier_mut() =
+                            Some(D::get_nullifier_from_note_fvk_and_witness_position(
+                                &nnmd.note().clone(),
+                                fvk,
+                                u64::from(position),
+                            ));
+                    }
+                    Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
+                }
+            } else {
+                println!("Could not update witness position");
+            }
+        } else {
+            println!("Could not update witness position");
+        }
+        Ok(())
     }
 }
