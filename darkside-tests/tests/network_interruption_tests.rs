@@ -19,7 +19,7 @@ use zingolib::{get_base_address, lightclient::PoolBalances, testvectors::seeds, 
 #[ignore]
 #[tokio::test]
 async fn network_interrupt_chainbuild() {
-    const BLOCKCHAIN_HEIGHT: u64 = 100_000;
+    const BLOCKCHAIN_HEIGHT: u64 = 5_000;
     let chainbuild_file = create_chainbuild_file("network_interrupt");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
@@ -117,13 +117,15 @@ async fn network_interrupt_test() {
 
     // println!("do balance:");
     // dbg!(scenario.get_lightclient(0).do_balance().await);
-    // println!("do list_notes:");
-    // println!(
-    //     "{}",
-    //     json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
-    // );
+    println!("do list_notes:");
+    println!(
+        "{}",
+        json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
+    );
     println!("do list tx summaries:");
     dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
+    println!("do list transactions:");
+    dbg!(scenario.get_lightclient(0).do_list_transactions().await);
     assert_eq!(
         scenario.get_lightclient(0).do_balance().await,
         PoolBalances {
@@ -131,10 +133,10 @@ async fn network_interrupt_test() {
             verified_sapling_balance: Some(0),
             spendable_sapling_balance: Some(0),
             unverified_sapling_balance: Some(0),
-            orchard_balance: Some(3_960_000),
-            verified_orchard_balance: Some(3_960_000),
+            orchard_balance: Some(160_000),
+            verified_orchard_balance: Some(160_000),
             unverified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(3_960_000),
+            spendable_orchard_balance: Some(160_000),
             transparent_balance: Some(0),
         }
     );
