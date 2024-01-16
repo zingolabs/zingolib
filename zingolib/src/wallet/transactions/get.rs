@@ -68,6 +68,7 @@ impl TransactionMetadataSet {
             .unwrap_or(0)
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
         &self,
     ) -> Vec<(

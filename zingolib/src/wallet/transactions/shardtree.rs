@@ -29,23 +29,23 @@ impl TransactionMetadataSet {
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(maybe_nnmd) = D::to_notes_vec_mut(transaction_metadata)
+        if let Some(maybe_note) = D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
-            .find_map(|nnmd| {
-                if nnmd.output_index().is_some() != output_index.is_some() {
+            .find_map(|note| {
+                if note.output_index().is_some() != output_index.is_some() {
                     return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
                 }
-                if *nnmd.output_index() == output_index {
-                    Some(Ok(nnmd))
+                if *note.output_index() == output_index {
+                    Some(Ok(note))
                 } else {
                     None
                 }
             })
         {
-            match maybe_nnmd {
-                Ok(note_datum) => {
-                    *note_datum.spent_mut() = Some((txid, height.into()));
-                    if let Some(position) = *note_datum.witnessed_position() {
+            match maybe_note {
+                Ok(note) => {
+                    *note.spent_mut() = Some((txid, height.into()));
+                    if let Some(position) = *note.witnessed_position() {
                         if let Some(ref mut tree) =
                             D::transaction_metadata_set_to_shardtree_mut(self)
                         {
