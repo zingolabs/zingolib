@@ -112,7 +112,7 @@ impl TransactionRecord {
         }
     }
 
-    // TODO: This is incorrect in the edge case where where we have a send-to-self with
+    // TODO: This is incorrect in the edge case where we have a send-to-self with
     // no text memo and 0-value fee
     pub fn is_outgoing_transaction(&self) -> bool {
         (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
