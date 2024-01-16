@@ -1,7 +1,6 @@
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::wallet::data::TransparentNote;
-const MOCK_TXID: TxId = TxId::from_bytes([0u8; 32]);
 // Other necessary imports...
 pub struct TransparentNoteBuilder {
     address: Option<String>,
@@ -9,16 +8,16 @@ pub struct TransparentNoteBuilder {
     output_index: Option<u64>,
     script: Option<Vec<u8>>,
     value: Option<u64>,
-    spent_at_height: Option<Option<u32>>,
+    spent_at_height: Option<Option<i32>>,
     spent: Option<Option<TxId>>,
-    unconfirmed_spent: Option<Option<TxId>>,
+    unconfirmed_spent: Option<Option<(TxId, u32)>>,
 }
 
 impl Default for TransparentNoteBuilder {
     fn default() -> Self {
         TransparentNoteBuilder {
             address: Some("default_address".to_string()),
-            txid: Some(MOCK_TXID),
+            txid: Some(TxId::from_bytes([0u8; 32])),
             output_index: Some(0),
             script: Some(vec![]),
             value: Some(0),
@@ -43,9 +42,9 @@ impl TransparentNoteBuilder {
     build_method!(output_index, u64);
     build_method!(script, Vec<u8>);
     build_method!(value, u64);
-    build_method!(spent_at_height, Option<u32>);
+    build_method!(spent_at_height, Option<i32>); //  TODO:  WHY IS THIS AN i32?!
     build_method!(spent, Option<TxId>);
-    build_method!(unconfirmed_spent, Option<TxId>);
+    build_method!(unconfirmed_spent, Option<(TxId, u32)>);
 
     // ... similar methods for other fields ...
 
