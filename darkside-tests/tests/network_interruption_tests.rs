@@ -21,12 +21,16 @@ use zingolib::{
     wallet::{data::summaries::ValueTransferKind, Pool},
 };
 
-// Test not finished, not failing
-// #[ignore]
+// Verifies that shielded transactions correctly mark notes as change
+// Also verifies:
+// - send-to-self value transfer is created
+// - fees have correct value
+// - balance is correct
+#[ignore]
 #[tokio::test]
-async fn network_interrupt_chainbuild() {
+async fn shielded_note_marked_as_change_chainbuild() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
-    let chainbuild_file = create_chainbuild_file("network_interrupt");
+    let chainbuild_file = create_chainbuild_file("shielded_note_marked_as_change");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
     scenario
@@ -45,14 +49,18 @@ async fn network_interrupt_chainbuild() {
                 &get_base_address!(scenario.get_lightclient(0), "sapling"),
                 50_000,
                 &chainbuild_file,
-            )
+            ) l
             .await;
         scenario
             .apply_blocks(thousands_blocks_count * 1000 - 1)
             .await;
         scenario.get_lightclient(0).do_sync(false).await.unwrap();
         scenario
-            .shield_and_write_transaction(DarksideSender::IndexedClient(0), &chainbuild_file)
+            .shield_and_write_transaction(
+                DarksideSender::IndexedClient(0),
+                Pool::Sapling,
+                &chainbuild_file,
+            )
             .await;
     }
 
@@ -70,10 +78,10 @@ async fn network_interrupt_chainbuild() {
     // );
 }
 #[tokio::test]
-async fn network_interrupt_test() {
+async fn shielded_note_marked_as_change_test() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     // const BLOCKCHAIN_HEIGHT: u64 = 100_000;
-    let transaction_set = load_chainbuild_file("network_interrupt");
+    let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
     scenario
@@ -94,6 +102,7 @@ async fn network_interrupt_test() {
     // stage and apply final blocks
     scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
 
+    // setup gRPC network interrupt conditions
     let mut conditional_logic =
         HashMap::<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>::new();
     conditional_logic.insert(
@@ -121,6 +130,7 @@ async fn network_interrupt_test() {
         }
     });
 
+    // start test
     scenario.get_lightclient(0).do_sync(false).await.unwrap();
 
     // debug info
@@ -169,67 +179,4 @@ async fn network_interrupt_test() {
             .count(),
         (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
     );
-}
-
-mod assorted_interrupt_attempts {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore]
-    async fn network_interrupt_5_on_5_off() {
-        const BLOCKCHAIN_HEIGHT: u64 = 150_000;
-        let transaction_set = load_chainbuild_file("network_interrupt");
-        let mut scenario = DarksideScenario::default().await;
-
-        // stage a send to self every thousand blocks
-        for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {
-            scenario
-                .stage_and_apply_blocks(thousands_blocks_count * 1000 - 1, thousands_blocks_count)
-                .await;
-            scenario
-                .stage_transaction(&transaction_set[(thousands_blocks_count - 1) as usize])
-                .await;
-        }
-        // stage and apply final blocks
-        scenario
-            .stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 150)
-            .await;
-
-        scenario.build_faucet(Pool::Sapling).await;
-
-        let proxy_status =
-            start_proxy_and_connect_lightclient(scenario.get_faucet(), HashMap::new());
-        tokio::task::spawn(async move {
-            let mut online = false;
-            loop {
-                sleep(Duration::from_secs(5)).await;
-                online = proxy_status.swap(online, std::sync::atomic::Ordering::Relaxed);
-                println!("set proxy status to {}", !online);
-            }
-        });
-
-        scenario.get_faucet().do_sync(false).await.unwrap();
-
-        println!("do balance:");
-        dbg!(scenario.get_faucet().do_balance().await);
-        assert_eq!(
-            scenario.get_faucet().do_balance().await,
-            PoolBalances {
-                sapling_balance: Some(0),
-                verified_sapling_balance: Some(0),
-                spendable_sapling_balance: Some(0),
-                unverified_sapling_balance: Some(0),
-                orchard_balance: Some(8510000),
-                verified_orchard_balance: Some(8510000),
-                unverified_orchard_balance: Some(0),
-                spendable_orchard_balance: Some(8510000),
-                transparent_balance: Some(0),
-            }
-        );
-        // println!("do list_notes:");
-        // println!(
-        //     "{}",
-        //     json::stringify_pretty(scenario.get_faucet().do_list_notes(true).await, 4)
-        // );
-    }
 }

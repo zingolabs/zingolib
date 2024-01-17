@@ -681,6 +681,7 @@ pub mod scenarios {
         }
         /// Tool for chainbuilds.
         /// Stage a block and a shield from funded lightclient, then write hex transaction to file.
+        /// Only one pool can be shielded at a time.
         /// All sends in a chainbuild are appended to same file in order.
         /// Does not apply block.
         pub async fn shield_and_write_transaction(
@@ -688,6 +689,7 @@ pub mod scenarios {
             // We can't just take a reference to a LightClient, as that might be a reference to
             // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
             sender: DarksideSender<'_>,
+            pool_to_shield: Pool,
             chainbuild_file: &File,
         ) -> &mut DarksideScenario {
             self.staged_blockheight = self.staged_blockheight.add(1);
@@ -700,7 +702,10 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            lightclient.do_shield(&[Pool::Sapling], None).await.unwrap();
+            lightclient
+                .do_shield(&[pool_to_shield], None)
+                .await
+                .unwrap();
             let mut streamed_raw_txns = self
                 .darkside_connector
                 .get_incoming_transactions()
