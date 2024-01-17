@@ -338,7 +338,7 @@ to scan from the start of the blockchain."
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
-            regtest::get_regtest_dir()
+            zingo_testutils::paths::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
         };
