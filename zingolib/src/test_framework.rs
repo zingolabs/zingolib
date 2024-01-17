@@ -4,7 +4,7 @@ use zcash_primitives::transaction::TxId;
 
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
-        pub fn $name(mut self, $name: $localtype) -> Self {
+        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
             self.$name = Some($name);
             self
         }
