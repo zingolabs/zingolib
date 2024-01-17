@@ -49,7 +49,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
                 &get_base_address!(scenario.get_lightclient(0), "sapling"),
                 50_000,
                 &chainbuild_file,
-            ) l
+            )
             .await;
         scenario
             .apply_blocks(thousands_blocks_count * 1000 - 1)
@@ -80,7 +80,6 @@ async fn shielded_note_marked_as_change_chainbuild() {
 #[tokio::test]
 async fn shielded_note_marked_as_change_test() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
-    // const BLOCKCHAIN_HEIGHT: u64 = 100_000;
     let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;

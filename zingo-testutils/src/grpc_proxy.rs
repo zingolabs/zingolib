@@ -45,8 +45,6 @@ macro_rules! define_grpc_passthrough {
                     ::tokio::time::sleep(::core::time::Duration::from_millis(50)).await;
                 }
 
-                // TIMED TCP INTERRUPTER
-
                 println!("Proxy passing through {rpc_name} call");
                 ::zingolib::grpc_connector::GrpcConnector::new($self.lightwalletd_uri.clone())
                     .get_client()
