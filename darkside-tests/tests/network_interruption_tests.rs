@@ -130,7 +130,7 @@ async fn shielded_note_marked_as_change_test() {
         start_proxy_and_connect_lightclient(scenario.get_lightclient(0), conditional_logic);
     tokio::task::spawn(async move {
         loop {
-            sleep(Duration::from_secs(3)).await;
+            sleep(Duration::from_secs(5)).await;
             proxy_status.store(true, std::sync::atomic::Ordering::Relaxed);
             println!("Set proxy status to true");
         }

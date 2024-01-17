@@ -769,7 +769,7 @@ pub mod scenarios {
         /// Temporary until tree states are also written to file.
         pub async fn stage_next_transaction(
             &mut self,
-            transaction_set: &Vec<String>,
+            transaction_set: &[String],
         ) -> &mut DarksideScenario {
             self.stage_transaction(&transaction_set[self.transaction_set_index as usize])
                 .await;
