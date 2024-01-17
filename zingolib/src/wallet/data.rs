@@ -710,19 +710,18 @@ pub use crate::wallet::transaction_record::TransactionRecord;
 #[test]
 fn single_transparent_note_makes_is_incoming_true() {
     // A single transparent note makes is_incoming_trsaction true.
-    use crate::test_framework::TransparentNoteBuilder;
-    let transparent_note = TransparentNoteBuilder::new()
+    let transparent_note = crate::test_framework::TransparentNoteBuilder::new()
         .address("t".to_string())
         .spent_at_height(Some(3))
         .build();
     let txid = TxId::from_bytes([0u8; 32]);
-    let mut tmd = TransactionRecord::new(
+    let mut transaction_record = TransactionRecord::new(
         zingo_status::confirmation_status::ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
         1705077003,
         &txid,
     );
-    tmd.transparent_notes.push(transparent_note);
-    assert!(tmd.is_incoming_transaction());
+    transaction_record.transparent_notes.push(transparent_note);
+    assert!(transaction_record.is_incoming_transaction());
 }
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
