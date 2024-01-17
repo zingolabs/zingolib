@@ -127,7 +127,8 @@ mod get_transaction_fee_tests {
         transaction_record
             .transparent_notes
             .push(transparent_note_three);
-        assert_eq!(transaction_record.get_transaction_fee().unwrap(), 0);
+        transaction_record.total_orchard_value_spent = 1000;
+        assert_eq!(transaction_record.get_transaction_fee().unwrap(), 940);
     }
 }
 impl TransactionRecord {
