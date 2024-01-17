@@ -17,6 +17,7 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
 }
 "#;
     let temp_data_dir = make_data_dir("clargs_view_key_birthday_fresh_wallet_dir");
+    dbg!(&temp_data_dir);
 
     // Run the cargo command
     let output = std::process::Command::new("cargo")
@@ -30,7 +31,19 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
         .expect("Failed to execute cargo run command");
 
     // Check that the command executed successfully
-    assert!(output.status.success());
+    // Check that the command executed successfully
+    if !output.status.success() {
+        eprintln!("Command failed with status: {:?}", output.status);
+        eprintln!(
+            "Standard Output: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        eprintln!(
+            "Standard Error: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        panic!("Command did not execute successfully");
+    }
 
     // Additional assertions based on the expected behavior of your application
     // For example, check if the 'foo' directory was created
