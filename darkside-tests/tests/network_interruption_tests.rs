@@ -104,6 +104,13 @@ async fn shielded_note_marked_as_change_test() {
     // setup gRPC network interrupt conditions
     let mut conditional_logic =
         HashMap::<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>::new();
+    // conditional_logic.insert(
+    //     "get_block_range",
+    //     Box::new(|online: &Arc<AtomicBool>| {
+    //         println!("Turning off, as we received get_block_range call");
+    //         online.store(false, Ordering::Relaxed);
+    //     }),
+    // );
     conditional_logic.insert(
         "get_tree_state",
         Box::new(|online: &Arc<AtomicBool>| {
