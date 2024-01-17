@@ -39,12 +39,12 @@ impl TransparentNoteBuilder {
     build_method!(unconfirmed_spent, Option<(TxId, u32)>);
 
     // Build method
-    pub fn build(self) -> TransparentNote {
+    pub fn build(&self) -> TransparentNote {
         TransparentNote {
-            address: self.address.unwrap(),
+            address: self.address.clone().unwrap(),
             txid: self.txid.unwrap(),
             output_index: self.output_index.unwrap(),
-            script: self.script.unwrap(),
+            script: self.script.clone().unwrap(),
             value: self.value.unwrap(),
             spent_at_height: self.spent_at_height.unwrap(),
             spent: self.spent.unwrap(),
@@ -68,6 +68,7 @@ impl Default for TransparentNoteBuilder {
     }
 }
 
+#[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
 pub struct ShieldedNoteBuilder<T: ShieldedNoteInterface> {
     diversifier: Option<T::Diversifier>,
     note: Option<T::Note>,
@@ -81,6 +82,7 @@ pub struct ShieldedNoteBuilder<T: ShieldedNoteInterface> {
     output_index: Option<Option<u32>>,
 }
 
+#[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
 impl<T: ShieldedNoteInterface> ShieldedNoteBuilder<T> {
     pub fn new() -> Self {
         Self::default()

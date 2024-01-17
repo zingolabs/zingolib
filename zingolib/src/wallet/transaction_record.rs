@@ -86,7 +86,28 @@ impl TransactionRecord {
     }
     // much data assignment of this struct is done through the pub fields as of january 2024. Todo: should have private fields and public methods.
 }
-//get
+#[test]
+fn check_transaction_fees() {
+    use crate::test_framework::{ShieldedNoteBuilder, TransparentNoteBuilder};
+    let transaction_height = 10u32;
+    let transaction_block_height = BlockHeight::from_u32(transaction_height);
+    let txid = TxId::from_bytes([0u8; 32]);
+    let transparent_note_one = TransparentNoteBuilder::new()
+        .value(10)
+        .spent(Some(txid))
+        .build();
+    let transparent_note_two = TransparentNoteBuilder::new()
+        .value(20)
+        .spent(Some(txid))
+        .build();
+    let transparent_note_three = TransparentNoteBuilder::new()
+        .value(30)
+        .spent(Some(txid))
+        .build();
+    let status = ConfirmationStatus::Confirmed(transaction_block_height);
+    let transaction_record = TransactionRecord::new(status, 1705517102, &txid);
+}
+
 impl TransactionRecord {
     pub fn get_transparent_value_spent(&self) -> u64 {
         self.total_transparent_value_spent
