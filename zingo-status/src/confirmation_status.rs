@@ -1,11 +1,10 @@
 use zcash_primitives::consensus::BlockHeight;
-/// Transaction confirmation states. Every transaction maps to exactly one of these variants.
-/// Transitions between states are enforced by ????
-/// TODO: If we want an exhaustive partition of states, do we have all necessary variants?
+/// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
-    /// The value the client has for the height of the chain when the transaction is broadcast.
+    /// The transaction has been broadcast to the zcash blockchain. It may be waiting in the mempool.
+    /// The height of the chain as the transaction was broadcast.
     /// # Examples
     ///
     /// ```
@@ -17,6 +16,7 @@ pub enum ConfirmationStatus {
     /// assert_eq!(status.get_height(), BlockHeight::from_u32(100));
     /// ```
     Broadcast(BlockHeight),
+    /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
     /// # Examples
     ///
@@ -33,7 +33,6 @@ pub enum ConfirmationStatus {
 
 impl ConfirmationStatus {
     /// Converts a blockheight and unconfirmed status into a `ConfirmationStatus`.
-    /// TODO:  I think we are missing a state, what about after a record is created, but before it's broadcast?!
     /// # Examples
     ///
     /// ```
