@@ -88,6 +88,7 @@ impl TransactionRecord {
             }
         }
     }
+    // much data assignment of this struct is done through the pub fields as of january 2024. Todo: should have private fields and public methods.
 }
 //get
 impl TransactionRecord {
@@ -340,5 +341,33 @@ impl TransactionRecord {
         })?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::wallet::utils::txid_from_slice;
+
+    use super::*;
+
+    #[test]
+    pub fn blank_record() {
+        let new = TransactionRecord::new(
+            ConfirmationStatus::Confirmed(2_000_000.into()),
+            103,
+            &txid_from_slice(&[0u8; 32]),
+        );
+        assert_eq!(new.get_transparent_value_spent(), 0);
+        assert_eq!(new.get_transaction_fee().unwrap(), 0);
+        assert_eq!(new.is_outgoing_transaction(), false);
+        assert_eq!(new.is_incoming_transaction(), false);
+        // assert_eq!(new.net_spent(), 0);
+        assert_eq!(new.pool_change_returned::<OrchardDomain>(), 0);
+        assert_eq!(new.pool_change_returned::<SaplingDomain<ChainType>>(), 0);
+        assert_eq!(new.total_value_received(), 0);
+        assert_eq!(new.total_value_spent(), 0);
+        assert_eq!(new.value_outgoing(), 0);
+        let t: [u64; 3] = [0, 0, 0];
+        assert_eq!(new.value_spent_by_pool(), t);
     }
 }
