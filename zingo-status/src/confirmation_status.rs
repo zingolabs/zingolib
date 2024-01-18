@@ -32,18 +32,7 @@ pub enum ConfirmationStatus {
 }
 
 impl ConfirmationStatus {
-    /// Converts a blockheight and unconfirmed status into a `ConfirmationStatus`.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::{ConfirmationStatus, BlockHeight};
-    ///
-    /// let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(BlockHeight(10), false);
-    /// assert_eq!(status, ConfirmationStatus::Confirmed(BlockHeight(10)));
-    ///
-    /// let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(BlockHeight(10), true);
-    /// assert_eq!(status, ConfirmationStatus::Broadcast(BlockHeight(10)));
-    /// ```
+    /// Converts from a blockheight and `unconfirmed`. unconfirmed is deprecated and is only needed in loading from save.
     pub fn from_blockheight_and_unconfirmed_bool(
         blockheight: BlockHeight,
         unconfirmed: bool,
@@ -54,18 +43,76 @@ impl ConfirmationStatus {
             Self::Confirmed(blockheight)
         }
     }
+    /// A wrapper matching the Broadcast case.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// assert_eq!(status.is_broadcast(), true);
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_broadcast(), false);
+    /// ```
     pub fn is_broadcast(&self) -> bool {
         matches!(self, Self::Broadcast(_))
     }
+    /// A wrapper matching the Confirmed case.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// assert_eq!(status.is_confirmed(), false);
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed(), true);
+    /// ```
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
     }
+    /// To return true, the status must be confirmed and no earlier than specified height.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed_after_or_at(8), true);
+    ///
+    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// assert_eq!(status.is_confirmed_after_or_at(10), false);
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed_after_or_at(12), false);
+    /// ```
     pub fn is_confirmed_after_or_at(&self, height: &BlockHeight) -> bool {
         match self {
             Self::Confirmed(blockheight) => blockheight >= height,
             _ => false,
         }
     }
+    /// To return true, the status must be confirmed and no later than specified height.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed_after_or_at(8), true);
+    ///
+    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// assert_eq!(status.is_confirmed_after_or_at(10), false);
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed_after_or_at(12), false);
+    /// ```
     pub fn is_confirmed_before_or_at(&self, height: &BlockHeight) -> bool {
         match self {
             Self::Confirmed(blockheight) => blockheight <= height,
