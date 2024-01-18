@@ -39,14 +39,12 @@ macro_rules! define_grpc_passthrough {
             Self: 'async_trait,
         {
             Box::pin(async {
+                let rpc_name = stringify!($name);
+                $self.passthrough_helper(rpc_name);
                 while !$self.online.load(::core::sync::atomic::Ordering::Relaxed) {
                     ::tokio::time::sleep(::core::time::Duration::from_millis(50)).await;
                 }
-                let rpc_name = stringify!($name);
-                $self.passthrough_helper(rpc_name);
-                //     ::tokio::time::sleep(::core::time::Duration::from_millis(1500)).await;
-                //     println!("Proxy passing through {rpc_name} call after delay");
-                // }
+
                 println!("Proxy passing through {rpc_name} call");
                 ::zingolib::grpc_connector::GrpcConnector::new($self.lightwalletd_uri.clone())
                     .get_client()
