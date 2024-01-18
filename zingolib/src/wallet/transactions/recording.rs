@@ -86,9 +86,7 @@ impl TransactionMetadataSet {
                 if transaction_metadata
                     .status
                     .is_confirmed_after_or_at(&reorg_height)
-                    || transaction_metadata
-                        .status
-                        .is_broadcast_unconfirmed_after(&reorg_height)
+                // we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
                 {
                     Some(transaction_metadata.txid)
                 } else {
@@ -114,7 +112,9 @@ impl TransactionMetadataSet {
         let txids_to_remove = self
             .current
             .iter()
-            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_expired(&cutoff))
+            .filter(|(_, transaction_metadata)| {
+                transaction_metadata.status.is_broadcast_before(&cutoff)
+            }) // this transaction was submitted to the mempool before the cutoff and has not been confirmed. we deduce that it has expired.
             .map(|(_, transaction_metadata)| transaction_metadata.txid)
             .collect::<Vec<_>>();
 
@@ -270,7 +270,7 @@ impl TransactionMetadataSet {
             } else {
                 ZingoLibError::NoSuchTxId(spending_txid).handle()?
             }
-        } else if let Some(height) = status.get_broadcast_unconfirmed_height() {
+        } else if let Some(height) = status.get_broadcast_height() {
             // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
             if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
                 if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
