@@ -187,3 +187,50 @@ impl TransactionMetadataSet {
         }
     }
 }
+
+#[cfg(test)]
+mod unit {
+    use std::time::UNIX_EPOCH;
+
+    use proptest::{
+        strategy::{Strategy, ValueTree},
+        test_runner::TestRunner,
+    };
+    use rand::Rng;
+    use zcash_primitives::sapling::{note_encryption::SaplingDomain, value::NoteValue};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingoconfig::ChainType;
+
+    use crate::test_framework::ShieldedNoteBuilder;
+
+    use super::*;
+
+    #[test]
+    fn nullifier_value_txid_unspent_notes() {
+        let mut tmds = TransactionMetadataSet::new_treeless();
+        let mut first_sapling_note = ShieldedNoteBuilder::new();
+        let mock_note = zcash_primitives::sapling::testing::arb_note(NoteValue::from_raw(70))
+            .new_tree(&mut TestRunner::deterministic())
+            .unwrap()
+            .current();
+        first_sapling_note.note(mock_note);
+        let mock_txid = TxId::from_bytes(rand::rngs::mock::StepRng::new(0, u64::MAX - 23).gen());
+        let mut mock_transaction = TransactionRecord::new(
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            &mock_txid,
+        );
+        mock_transaction
+            .sapling_notes
+            .push(first_sapling_note.build());
+        tmds.current.insert(mock_txid, mock_transaction);
+        panic!(
+            "{:?}",
+            tmds.get_nullifier_value_txid_outputindex_of_unspent_notes::<SaplingDomain<ChainType>>(
+            )
+        );
+    }
+}
