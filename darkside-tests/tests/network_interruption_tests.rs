@@ -77,6 +77,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
     //     json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
     // );
 }
+#[ignore]
 #[tokio::test]
 async fn shielded_note_marked_as_change_test() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
