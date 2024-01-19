@@ -175,21 +175,6 @@ impl TransactionRecord {
             self.total_orchard_value_spent,
         ]
     }
-    pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
-        match price.zec_price {
-            None => None,
-            Some((t, p)) => {
-                // If the price was fetched within 24 hours of this Tx, we use the "current" price
-                // else, we mark it as None, for the historical price fetcher to get
-                // TODO:  Investigate the state of "the historical price fetcher".
-                if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
-                    Some(p)
-                } else {
-                    None
-                }
-            }
-        }
-    }
 }
 // read/write
 impl TransactionRecord {
