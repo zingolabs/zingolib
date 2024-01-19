@@ -207,14 +207,21 @@ mod unit {
 
     #[test]
     fn nullifier_value_txid_unspent_notes() {
+        let mut determinstic_rng = rand::rngs::mock::StepRng::new(0, u64::MAX - 23);
+        let note_value = 70;
+        let nullifier =
+            zcash_primitives::sapling::Nullifier::from_slice(&determinstic_rng.gen::<[u8; 32]>())
+                .unwrap();
         let mut tmds = TransactionMetadataSet::new_treeless();
         let mut first_sapling_note = ShieldedNoteBuilder::new();
-        let mock_note = zcash_primitives::sapling::testing::arb_note(NoteValue::from_raw(70))
-            .new_tree(&mut TestRunner::deterministic())
-            .unwrap()
-            .current();
+        first_sapling_note.nullifier(Some(nullifier));
+        let mock_note =
+            zcash_primitives::sapling::testing::arb_note(NoteValue::from_raw(note_value))
+                .new_tree(&mut TestRunner::deterministic())
+                .unwrap()
+                .current();
         first_sapling_note.note(mock_note);
-        let mock_txid = TxId::from_bytes(rand::rngs::mock::StepRng::new(0, u64::MAX - 23).gen());
+        let mock_txid = TxId::from_bytes(determinstic_rng.gen());
         let mut mock_transaction = TransactionRecord::new(
             ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
             std::time::SystemTime::now()
@@ -227,10 +234,12 @@ mod unit {
             .sapling_notes
             .push(first_sapling_note.build());
         tmds.current.insert(mock_txid, mock_transaction);
-        panic!(
-            "{:?}",
-            tmds.get_nullifier_value_txid_outputindex_of_unspent_notes::<SaplingDomain<ChainType>>(
-            )
-        );
+        let nvto_vec = tmds
+            .get_nullifier_value_txid_outputindex_of_unspent_notes::<SaplingDomain<ChainType>>();
+        assert_eq!(nvto_vec.len(), 1);
+        let found_note = nvto_vec.first().unwrap();
+        assert_eq!(found_note.0, nullifier);
+        assert_eq!(found_note.1, note_value);
+        assert_eq!(found_note.2, mock_txid);
     }
 }
