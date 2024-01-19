@@ -22,3 +22,7 @@ zingo-testutils/test_binaries/bins/lightwalletd
 zingo-testutils/test_binaries/bins/zcash-cli
 zingo-testutils/test_binaries/bins/zcashd
 
+integration-tests/regtest/
+zingocli/regtest/bin/
+darkside-tests/lightwalletd_bin/lightwalletd
+zingocli/regtest/data/
