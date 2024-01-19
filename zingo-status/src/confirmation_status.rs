@@ -99,6 +99,12 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+    pub fn is_broadcast_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
+        match self {
+            Self::Broadcast(self_height) => self_height >= comparison_height,
+            _ => false,
+        }
+    }
     /// To return true, the status must not be confirmed and it must have been submitted sufficiently far in the past. This allows deduction of expired transactions.
     /// # Examples
     ///

@@ -86,7 +86,10 @@ impl TransactionMetadataSet {
                 if transaction_metadata
                     .status
                     .is_confirmed_after_or_at(&reorg_height)
-                // we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
+                    || transaction_metadata
+                        .status
+                        .is_broadcast_after_or_at(&reorg_height)
+                // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
                 {
                     Some(transaction_metadata.txid)
                 } else {
