@@ -188,101 +188,74 @@ async fn shielded_note_marked_as_change_test() {
     );
 }
 
-// #[ignore]
+// Verifies lightclients sync all blocks from birthday to tip of blockchain
+// Also verifies this:
+// - across multiple batches
+// - when the blockchain has grown since previous sync
+#[ignore]
 #[tokio::test]
-async fn receive_every_block_from_birthday_chainbuild() {
-    const BLOCKCHAIN_HEIGHT: u64 = 110;
-    let chainbuild_file = create_chainbuild_file("receive_every_block_from_birthday");
+async fn sync_all_blocks_chainbuild() {
+    const BLOCKCHAIN_HEIGHT: u64 = 150;
+    let chainbuild_file = create_chainbuild_file("sync_all_blocks");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
     scenario
         .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
         .await;
 
-    scenario.stage_and_apply_blocks(3, 0).await;
+    scenario.stage_and_apply_blocks(2, 0).await;
 
-    // send from faucet to recipient every block from recipient's birthday
-    for n in 4..=BLOCKCHAIN_HEIGHT {
-        scenario.get_faucet().do_sync(false).await.unwrap();
-        scenario
-            .send_and_write_transaction(
-                DarksideSender::Faucet,
-                &get_base_address!(scenario.get_lightclient(0), "sapling"),
-                50_000,
-                &chainbuild_file,
-            )
-            .await;
-        scenario.apply_blocks(n).await;
-    }
-
-    // DEBUG
-    // // stage and apply final blocks
-    // scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
-    // scenario.get_lightclient(0).do_sync(false).await.unwrap();
-
-    // println!("do balance:");
-    // dbg!(scenario.get_lightclient(0).do_balance().await);
-    // println!("do list_notes:");
-    // println!(
-    //     "{}",
-    //     json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
-    // );
-}
-// #[ignore]
-#[tokio::test]
-async fn receive_every_block_from_birthday_test() {
-    const BLOCKCHAIN_HEIGHT: u64 = 110;
-    let transaction_set = load_chainbuild_file("receive_every_block_from_birthday");
-    let mut scenario = DarksideScenario::default().await;
-    scenario.build_faucet(Pool::Sapling).await;
-    scenario
-        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
-        .await;
-
-    scenario.stage_and_apply_blocks(3, 0).await;
-
-    // send from faucet to recipient every block from recipient's birthday
-    for n in 4..=BLOCKCHAIN_HEIGHT {
-        scenario.stage_next_transaction(&transaction_set).await;
-        scenario.apply_blocks(n).await;
-    }
-
-    // setup gRPC network interrupt conditions
-    let mut conditional_logic =
-        HashMap::<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>::new();
-    // conditional_logic.insert(
-    //     "get_block_range",
-    //     Box::new(|online: &Arc<AtomicBool>| {
-    //         println!("Turning off, as we received get_block_range call");
-    //         online.store(false, Ordering::Relaxed);
-    //     }),
-    // );
-    // conditional_logic.insert(
-    //     "get_tree_state",
-    //     Box::new(|online: &Arc<AtomicBool>| {
-    //         println!("Turning off, as we received get_tree_state call");
-    //         online.store(false, Ordering::Relaxed);
-    //     }),
-    // );
-    // conditional_logic.insert(
-    //     "get_transaction",
-    //     Box::new(|online: &Arc<AtomicBool>| {
-    //         println!("Turning off, as we received get_transaction call");
-    //         online.store(false, Ordering::Relaxed);
-    //     }),
-    // );
-
-    let proxy_status =
-        start_proxy_and_connect_lightclient(scenario.get_lightclient(0), conditional_logic);
-    tokio::task::spawn(async move {
-        loop {
-            sleep(Duration::from_secs(3)).await;
-            proxy_status.store(true, std::sync::atomic::Ordering::Relaxed);
-            println!("Set proxy status to true");
+    // send from faucet to recipient every odd block
+    // shield recipient's sapling pool every even block
+    for block_count in 3..=BLOCKCHAIN_HEIGHT {
+        if block_count % 2 != 0 {
+            scenario.get_faucet().do_sync(false).await.unwrap();
+            scenario
+                .send_and_write_transaction(
+                    DarksideSender::Faucet,
+                    &get_base_address!(scenario.get_lightclient(0), "sapling"),
+                    50_000,
+                    &chainbuild_file,
+                )
+                .await;
+        } else {
+            scenario.get_lightclient(0).do_sync(false).await.unwrap();
+            scenario
+                .shield_and_write_transaction(
+                    DarksideSender::IndexedClient(0),
+                    Pool::Sapling,
+                    &chainbuild_file,
+                )
+                .await;
         }
-    });
+        scenario.apply_blocks(block_count).await;
+    }
+}
+#[tokio::test]
+async fn sync_all_blocks_test() {
+    const BLOCKCHAIN_HEIGHT: u64 = 150;
+    let transaction_set = load_chainbuild_file("sync_all_blocks");
+    let mut scenario = DarksideScenario::default().await;
+    scenario.build_faucet(Pool::Sapling).await;
+    scenario
+        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
+        .await;
 
-    // start test
+    scenario.stage_and_apply_blocks(2, 0).await;
+
+    // send from faucet to recipient every odd block
+    // shield recipient's sapling pool every even block
+    for block_count in 3..110 {
+        scenario.stage_next_transaction(&transaction_set).await;
+        scenario.apply_blocks(block_count).await;
+    }
+    // 1st sync
+    scenario.get_lightclient(0).do_sync(false).await.unwrap();
+    for block_count in 110..=BLOCKCHAIN_HEIGHT {
+        scenario.stage_next_transaction(&transaction_set).await;
+        scenario.apply_blocks(block_count).await;
+    }
+    // 2nd sync
     scenario.get_lightclient(0).do_sync(false).await.unwrap();
 
     // debug info
@@ -298,25 +271,18 @@ async fn receive_every_block_from_birthday_test() {
     assert_eq!(
         scenario.get_lightclient(0).do_balance().await,
         PoolBalances {
-            sapling_balance: Some(5_350_000),
-            verified_sapling_balance: Some(5_350_000),
-            spendable_sapling_balance: Some(5_350_000),
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
             unverified_sapling_balance: Some(0),
-            orchard_balance: Some(0),
-            verified_orchard_balance: Some(0),
+            orchard_balance: Some(2_960_000),
+            verified_orchard_balance: Some(2_960_000),
             unverified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(0),
+            spendable_orchard_balance: Some(2_960_000),
             transparent_balance: Some(0),
         }
     );
-    // assert all received notes have correct value
-    let notes = scenario.get_lightclient(0).do_list_notes(true).await;
-    if let JsonValue::Array(unspent_sapling_notes) = &notes["unspent_sapling_notes"] {
-        for notes in unspent_sapling_notes {
-            assert_eq!(notes["value"].as_u64().unwrap(), 50_000);
-        }
-    }
-    // assert that every receipt has a received value transfer
+    // assert the correct number of received value transfers
     let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
     assert_eq!(
         value_transfers
@@ -327,6 +293,20 @@ async fn receive_every_block_from_birthday_test() {
                     amount: 50_000
                 })
             .count(),
-        (BLOCKCHAIN_HEIGHT - 3) as usize
+        74
     );
+    // assert the correct number of fee value transfers
+    assert_eq!(
+        value_transfers
+            .iter()
+            .filter(|k| matches!(k.kind, ValueTransferKind::Fee { .. }))
+            .count(),
+        74
+    );
+    // assert all fees have correct value
+    for value_transfer in &value_transfers {
+        if let ValueTransferKind::Fee { amount } = value_transfer.kind {
+            assert_eq!(amount, 10_000)
+        }
+    }
 }

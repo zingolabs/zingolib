@@ -12,13 +12,13 @@ use super::TransactionMetadataSet;
 impl TransactionMetadataSet {
     pub fn get_notes_for_updating(
         &self,
-        before_block: u64,
+        max_note_height: u64,
     ) -> Vec<(TxId, PoolNullifier, Option<u32>)> {
-        let before_block = BlockHeight::from_u32(before_block as u32);
+        let max_note_height = BlockHeight::from_u32(max_note_height as u32);
 
         self.current
             .iter()
-            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed_before_or_at(&before_block)) // Update only confirmed notes
+            .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed_before_or_at(&max_note_height)) // Update only confirmed notes
             .flat_map(|(txid, transaction_metadata)| {
                 // Fetch notes that are before the before_block.
                 transaction_metadata
