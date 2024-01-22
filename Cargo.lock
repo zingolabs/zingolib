@@ -4178,6 +4178,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
+ "zingo-netutils",
  "zingoconfig",
  "zingolib",
 ]
@@ -4262,7 +4263,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "webpki-roots 0.21.1",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
