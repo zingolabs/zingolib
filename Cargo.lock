@@ -4084,6 +4084,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-netutils"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-rustls",
+ "prost",
+ "rustls-pemfile",
+ "tokio-rustls 0.23.4",
+ "tonic",
+ "tower",
+ "webpki-roots 0.21.1",
+ "zcash_client_backend",
+]
+
+[[package]]
 name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
@@ -4104,6 +4121,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
+ "zingo-netutils",
  "zingoconfig",
  "zingolib",
 ]
@@ -4169,7 +4187,6 @@ dependencies = [
  "ring 0.17.7",
  "ripemd160",
  "rust-embed",
- "rustls-pemfile",
  "secp256k1",
  "serde",
  "serde_json",
@@ -4187,7 +4204,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "webpki-roots 0.21.1",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -4195,6 +4211,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_proofs",
  "zingo-memo",
+ "zingo-netutils",
  "zingo-testvectors",
  "zingoconfig",
 ]

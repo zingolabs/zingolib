@@ -283,7 +283,7 @@ pub async fn update_tree_states_for_transaction(
     raw_tx: RawTransaction,
     height: u64,
 ) -> TreeState {
-    let trees = zingolib::grpc_connector::GrpcConnector::get_trees(server_id.clone(), height - 1)
+    let trees = zingolib::grpc_connector::get_trees(server_id.clone(), height - 1)
         .await
         .unwrap();
     let mut sapling_tree: zcash_primitives::sapling::CommitmentTree = read_commitment_tree(

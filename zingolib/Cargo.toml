@@ -19,6 +19,7 @@ darkside_tests = []
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
 zingo-testvectors = { path = "../zingo-testvectors", optional = true }
+zingo-netutils = { path = "../zingo-netutils" }
 
 http-body = { workspace = true }
 hyper = { workspace = true }
@@ -34,6 +35,7 @@ zcash_encoding = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
+tokio-rustls = { workspace = true }
 
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
 
@@ -43,19 +45,16 @@ log4rs = "1.1.1"
 base64 = "0.13.0"
 bytes = "0.4"
 rand = "0.8.5"
-hyper-rustls = { version = "0.23", features = ["http2"] }
+hyper-rustls.workspace = true 
 serde_json = "1.0.82"
 tokio =  { version = "1.24.2", features = ["full"] }
 tokio-stream = "0.1.6"
-tokio-rustls = "0.23.3"
 reqwest = { version = "0.11", features = ["json"] }
-rustls-pemfile = "1.0.0"
 tower-http = { version = "0.2", features = ["add-extension"] }
 futures = { workspace = true }
 hex = "0.3"
 ring = "0.17.0"
 json = "0.12.4"
-webpki-roots = "0.21.0"
 lazy_static = "1.4.0"
 secp256k1 = "=0.26.0"
 ripemd160 = "0.9.1"

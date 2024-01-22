@@ -2574,7 +2574,7 @@ mod slow {
             .witness_tree_orchard
             .max_leaf_position(0)
             .unwrap();
-        let server_trees = zingolib::grpc_connector::GrpcConnector::get_trees(
+        let server_trees = zingolib::grpc_connector::get_trees(
             recipient.get_server_uri(),
             recipient.wallet.last_synced_height().await,
         )

@@ -12,6 +12,7 @@ default = ["grpc-proxy"]
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
 zingolib = { path = "../zingolib", features = ["test"] }
+zingo-netutils = { path = "../zingo-netutils", features = ["test"] }
 
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }

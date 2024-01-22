@@ -48,7 +48,7 @@ macro_rules! define_grpc_passthrough {
                 //     println!("Proxy passing through {rpc_name} call after delay");
                 // }
                 println!("Proxy passing through {rpc_name} call");
-                ::zingolib::grpc_connector::GrpcConnector::new($self.lightwalletd_uri.clone())
+                ::zingo_netutils::GrpcConnector::new($self.lightwalletd_uri.clone())
                     .get_client()
                     .await
                     .expect("Proxy server failed to create client")

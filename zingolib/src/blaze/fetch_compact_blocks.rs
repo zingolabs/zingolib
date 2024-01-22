@@ -35,7 +35,7 @@ impl FetchCompactBlocks {
 
             debug!("Fetching blocks {}-{}", start, end);
 
-            grpc_client.get_block_range(start, end, senders).await?;
+            crate::grpc_connector::get_block_range(&grpc_client, start, end, senders).await?;
         }
 
         Ok(())
