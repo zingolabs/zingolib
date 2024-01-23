@@ -551,6 +551,73 @@ mod fast {
     }
 
     #[tokio::test]
+    async fn load_wallet_from_v28_dat_file() {
+        // We test that the LightWallet can be read from v28 .dat file
+        // A testnet wallet initiated with
+        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+        // --birthday 0
+        // --nosync
+        // with 3 addresses containing all receivers.
+        let data = include_bytes!("zingo-wallet-v28.dat");
+
+        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
+        let wallet = LightWallet::read_internal(&data[..], &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
+            .unwrap();
+
+        let expected_mnemonic = (
+            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+            0,
+        );
+        assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+
+        let expected_wc =
+            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
+                .unwrap();
+        let wc = wallet.wallet_capability();
+
+        // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
+        // so we have to compare each component instead
+
+        // Compare Orchard
+        let Capability::Spend(orchard_sk) = &wc.orchard else {
+            panic!("Expected Orchard Spending Key");
+        };
+        assert_eq!(
+            orchard_sk.to_bytes(),
+            orchard::keys::SpendingKey::try_from(&expected_wc)
+                .unwrap()
+                .to_bytes()
+        );
+
+        // Compare Sapling
+        let Capability::Spend(sapling_sk) = &wc.sapling else {
+            panic!("Expected Sapling Spending Key");
+        };
+        assert_eq!(
+            sapling_sk,
+            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+        );
+
+        // Compare transparent
+        let Capability::Spend(transparent_sk) = &wc.transparent else {
+            panic!("Expected transparent extended private key");
+        };
+        assert_eq!(
+            transparent_sk,
+            &ExtendedPrivKey::try_from(&expected_wc).unwrap()
+        );
+
+        assert_eq!(wc.addresses().len(), 3);
+        for addr in wc.addresses().iter() {
+            assert!(addr.orchard().is_some());
+            assert!(addr.sapling().is_some());
+            assert!(addr.transparent().is_some());
+        }
+    }
+
+    #[tokio::test]
     async fn sync_all_epochs_from_sapling() {
         let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
         let (regtest_manager, _cph, lightclient) =
