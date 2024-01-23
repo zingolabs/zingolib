@@ -93,7 +93,7 @@ impl TrialDecryptions {
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
             }
-            // Finish off the remaining < 125 cbs
+            // Finish off the remaining < 125 cbs, outdated comment??
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
                 config,
                 cbs,

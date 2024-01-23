@@ -184,6 +184,7 @@ impl TransparentNote {
         Ok(())
     }
 }
+
 pub struct SaplingNote {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,

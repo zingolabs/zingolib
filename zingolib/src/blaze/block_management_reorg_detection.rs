@@ -878,7 +878,7 @@ mod test {
         let start_block = blocks.first().unwrap().height;
         let end_block = blocks.last().unwrap().height;
 
-        let mut nw = BlockManagementData::new_with_batchsize(25);
+        let mut nw = BlockManagementData::new_with_batchsize(zingoconfig::BATCH_SIZE);
         nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
