@@ -450,7 +450,7 @@ impl TransactionContext {
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-            if let Some(height) = status.get_broadcast_unconfirmed_height() {
+            if let Some(height) = status.get_broadcast_height() {
                 self.transaction_metadata_set
                     .write()
                     .await
