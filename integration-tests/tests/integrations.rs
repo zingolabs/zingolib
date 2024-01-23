@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
@@ -124,6 +123,8 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
+    use zcash_primitives::zip339::Mnemonic;
+
     use super::*;
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {

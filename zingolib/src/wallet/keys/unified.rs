@@ -6,7 +6,6 @@ use std::{
 };
 
 use append_only_vec::AppendOnlyVec;
-use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
 
@@ -15,6 +14,7 @@ use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::Vector;
+use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
     legacy::TransparentAddress, sapling::note_encryption::PreparedIncomingViewingKey,
     zip32::DiversifierIndex,

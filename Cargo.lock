@@ -664,7 +664,6 @@ name = "darkside-tests"
 version = "0.1.0"
 dependencies = [
  "bech32",
- "bip0039",
  "env_logger",
  "futures-util",
  "hex 0.3.2",
@@ -1419,7 +1418,6 @@ dependencies = [
 name = "integration-tests"
 version = "0.2.0"
 dependencies = [
- "bip0039",
  "hex 0.3.2",
  "itertools 0.10.5",
  "json",
@@ -4154,7 +4152,6 @@ dependencies = [
  "base58",
  "base64 0.13.1",
  "bech32",
- "bip0039",
  "bls12_381",
  "build_utils",
  "byteorder",

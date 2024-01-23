@@ -18,7 +18,6 @@ resolver = "2"
 
 [workspace.dependencies]
 clap = "4.4"
-bip0039 = "0.10.1"
 hyper-rustls = { version = "0.23", features = ["http2"] }
 zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2.1" }
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2.1", features = ["lightwalletd-tonic"] }
