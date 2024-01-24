@@ -563,7 +563,7 @@ mod fast {
         let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
         let wallet = LightWallet::read_internal(&data[..], &config)
             .await
-            .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
+            .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
             .unwrap();
 
         let expected_mnemonic = (
@@ -615,6 +615,10 @@ mod fast {
             assert!(addr.sapling().is_some());
             assert!(addr.transparent().is_some());
         }
+
+        let client = LightClient::create_from_wallet(wallet, config);
+        let balance = client.do_balance().await;
+        assert_eq!(balance.orchard_balance, Some(10342837));
     }
 
     #[tokio::test]
