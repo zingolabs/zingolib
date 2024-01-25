@@ -61,9 +61,9 @@ impl UpdateNotes {
 
         let h0: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             // First, wait for notification that the blocks are done loading, and get the earliest block from there.
-            let earliest_block = dbg!(blocks_done_receiver
+            let earliest_block = blocks_done_receiver
                 .await
-                .map_err(|e| format!("Error getting notification that blocks are done. {}", e))?);
+                .map_err(|e| format!("Error getting notification that blocks are done. {}", e))?;
 
             // Get all notes from the wallet that are already existing, i.e., the ones that are before the earliest block that the block loader loaded
             let notes = wallet_transactions
@@ -132,6 +132,9 @@ impl UpdateNotes {
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         let status = ConfirmationStatus::Confirmed(spent_at_height);
+
+                        // here is the function that causes sapling balance bug when not called
+                        // !!!
                         let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
                             transaction_id_spent_in,
                             status,
