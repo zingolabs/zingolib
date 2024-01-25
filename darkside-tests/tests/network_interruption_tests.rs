@@ -189,7 +189,7 @@ async fn shielded_note_marked_as_change_test() {
 }
 #[tokio::test]
 async fn add_nullifier_test() {
-    const BLOCKCHAIN_HEIGHT: u64 = 30;
+    const BLOCKCHAIN_HEIGHT: u64 = 500;
     let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
@@ -198,13 +198,18 @@ async fn add_nullifier_test() {
         .await;
 
     // stage a send to self every thousand blocks
-    for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 10 {
-        scenario
-            .stage_and_apply_blocks(thousands_blocks_count * 10 - 2, 0)
-            .await;
-        scenario.stage_next_transaction(&transaction_set).await;
-        scenario.apply_blocks(thousands_blocks_count * 10 - 1).await;
-        scenario.stage_next_transaction(&transaction_set).await;
+    for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 100 {
+        if thousands_blocks_count % 2 != 0 {
+            scenario
+                .stage_and_apply_blocks(thousands_blocks_count * 100 - 60, 0)
+                .await;
+            scenario.stage_next_transaction(&transaction_set).await;
+        } else {
+            scenario
+                .stage_and_apply_blocks(thousands_blocks_count * 100 - 20, 0)
+                .await;
+            scenario.stage_next_transaction(&transaction_set).await;
+        }
     }
     // stage and apply final blocks
     scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
