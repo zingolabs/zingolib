@@ -197,20 +197,34 @@ async fn add_nullifier_test() {
         .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
         .await;
 
-    // stage a send to self every thousand blocks
-    for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 100 {
-        if thousands_blocks_count % 2 != 0 {
-            scenario
-                .stage_and_apply_blocks(thousands_blocks_count * 100 - 60, 0)
-                .await;
-            scenario.stage_next_transaction(&transaction_set).await;
-        } else {
-            scenario
-                .stage_and_apply_blocks(thousands_blocks_count * 100 - 20, 0)
-                .await;
-            scenario.stage_next_transaction(&transaction_set).await;
-        }
-    }
+    // scenario.stage_and_apply_blocks(15, 0).await;
+    // scenario.get_lightclient(0).do_sync(false).await.unwrap();
+
+    // // stage a send to self every thousand blocks
+    // for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 100 {
+    //     if thousands_blocks_count % 2 != 0 {
+    //         scenario
+    //             .stage_and_apply_blocks(thousands_blocks_count * 100 - 60, 0)
+    //             .await;
+    //         scenario.stage_next_transaction(&transaction_set).await;
+    //     } else {
+    //         scenario
+    //             .stage_and_apply_blocks(thousands_blocks_count * 100 - 20, 0)
+    //             .await;
+    //         scenario.stage_next_transaction(&transaction_set).await;
+    //     }
+    // }
+
+    // receive, shield, then receive again in same batch
+    scenario.stage_and_apply_blocks(49, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
+    scenario.stage_and_apply_blocks(59, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
+    scenario.stage_and_apply_blocks(69, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
+    // shield in later batch
+    scenario.stage_and_apply_blocks(349, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
     // stage and apply final blocks
     scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
 

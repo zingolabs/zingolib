@@ -1611,7 +1611,7 @@ impl LightClient {
 
         // 2. Notify the notes updater that the blocks are done updating
         // let earliest_block = 1;
-        // dbg!(earliest_block);
+        dbg!(earliest_block);
         blocks_done_transmitter.send(earliest_block).unwrap();
 
         // 3. Verify all the downloaded data
