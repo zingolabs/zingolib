@@ -18,6 +18,7 @@ darkside_tests = []
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
+zingo-status = { path = "../zingo-status" }
 zingo-testvectors = { path = "../zingo-testvectors", optional = true }
 
 http-body = { workspace = true }

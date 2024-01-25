@@ -3,13 +3,14 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
+use crate::error::ZingoLibResult;
+use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
-    data::{PoolNullifier, TransactionMetadata},
+    data::PoolNullifier,
     keys::unified::WalletCapability,
-    traits::{
-        CompactOutput as _, DomainWalletExt, FromCommitment, Recipient, ShieldedNoteInterface,
-    },
+    traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
     transactions::TransactionMetadataSet,
+    utils::txid_from_slice,
     MemoDownloadOption,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -31,6 +32,7 @@ use zcash_primitives::{
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, ZingoConfig};
 
 use super::syncdata::BlazeSyncData;
@@ -63,7 +65,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         transaction_size_filter: Option<u32>,
@@ -132,7 +134,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         full_transaction_fetcher: UnboundedSender<(
@@ -220,7 +222,7 @@ impl TrialDecryptions {
                 // Note the memos are immediately discarded.
                 // Perhaps this obfuscates the memos of interest?
                 if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
-                    let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
+                    let transaction_id = txid_from_slice(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
                     full_transaction_fetcher
                         .send((transaction_id, transmitter))
@@ -244,12 +246,12 @@ impl TrialDecryptions {
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        );
+        )?;
         update_witnesses::<OrchardDomain>(
             orchard_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        );
+        )?;
 
         // Return a nothing-value
         Ok::<(), String>(())
@@ -270,7 +272,7 @@ impl TrialDecryptions {
             TxId,
             PoolNullifier,
             BlockHeight,
-            u32,
+            Option<u32>,
             bool,
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
@@ -287,7 +289,7 @@ impl TrialDecryptions {
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
         <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Node: PartialEq,
     {
-        let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
+        let transaction_id = txid_from_slice(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
             .iter()
             .map(|output| {
@@ -341,10 +343,10 @@ impl TrialDecryptions {
                             u64::from(witness.witnessed_position()),
                         );
 
+                        let status = ConfirmationStatus::Confirmed(height);
                         transaction_metadata_set.write().await.add_new_note::<D>(
                             transaction_id,
-                            height,
-                            false,
+                            status,
                             timestamp,
                             note,
                             to,
@@ -361,7 +363,7 @@ impl TrialDecryptions {
                                 transaction_id,
                                 spend_nullifier.into(),
                                 height,
-                                i as u32,
+                                Some(i as u32),
                                 true,
                             ))
                             .unwrap();
@@ -422,7 +424,8 @@ fn update_witnesses<D>(
     )>,
     txmds_writelock: &mut TransactionMetadataSet,
     wc: &Arc<WalletCapability>,
-) where
+) -> ZingoLibResult<()>
+where
     D: DomainWalletExt,
     <D as Domain>::Note: PartialEq + Clone,
     <D as Domain>::Recipient: Recipient,
@@ -441,10 +444,10 @@ fn update_witnesses<D>(
                 if retention != Retention::Ephemeral {
                     txmds_writelock.mark_note_position::<D>(
                         transaction_id,
-                        output_index,
+                        Some(output_index),
                         position + i as u64,
                         &D::wc_to_fvk(wc).unwrap(),
-                    );
+                    )?;
                 }
                 nodes_retention.push((node, retention));
             }
@@ -458,4 +461,5 @@ fn update_witnesses<D>(
             }
         }
     }
+    Ok(())
 }

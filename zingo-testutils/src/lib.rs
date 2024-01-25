@@ -1,9 +1,7 @@
+pub mod interrupts;
+
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
-// #[cfg(features = "grpc-proxy")]
-pub mod grpc_proxy;
-pub mod regtest;
-
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -23,6 +21,10 @@ use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
+
+pub mod grpc_proxy;
+pub mod paths;
+pub mod regtest;
 
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
@@ -174,7 +176,7 @@ pub fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
             let one_sapling_wallet = format!(
                 "{}/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
-                regtest::get_cargo_manifest_dir().to_string_lossy()
+                paths::get_cargo_manifest_dir().to_string_lossy()
             );
             let wallet_path = Path::new(&one_sapling_wallet);
             let wallet_dir = wallet_path.parent().unwrap();
@@ -251,7 +253,7 @@ pub mod scenarios {
             REG_Z_ADDR_FROM_ABANDONART,
         };
 
-        use super::super::regtest::get_regtest_dir;
+        use super::super::paths::get_regtest_dir;
         use super::{testvectors, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use tokio::time::sleep;

@@ -4,13 +4,6 @@ use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::PathBuf;
 use std::process::Child;
-pub fn get_cargo_manifest_dir() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."))
-}
-
-pub fn get_regtest_dir() -> PathBuf {
-    get_cargo_manifest_dir().join("regtest")
-}
 
 ///  To manage the state associated a "regtest" run this type:
 ///   * sets up paths to config and log directories
@@ -138,7 +131,7 @@ pub fn launch_lightwalletd(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/integration-tests/regtest/bin/ directory, and in $G/darkside-tests/lightwalletd-bin. see docs/integration-tests.txt");
+        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/zingo-testutils/test_binaries/bins/. see docs/integration-tests.txt");
 
     if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
         std::thread::spawn(move || {
@@ -178,7 +171,7 @@ impl RegtestManager {
         let regtest_dir = rootpathname;
         let confs_dir = regtest_dir.join("conf");
         std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
-        let bin_dir = get_regtest_dir().join("bin");
+        let bin_dir = super::paths::get_bin_dir();
         std::fs::create_dir_all(&bin_dir).expect("Couldn't create dir.");
         let cli_bin = bin_dir.join("zcash-cli");
         let logs_dir = regtest_dir.join("logs");
@@ -328,7 +321,7 @@ impl RegtestManager {
                 .unwrap(),
             &"-debug=1"
         );
-        dbg!("{:?}", &command.get_current_dir());
+        log::info!("{:?}", &command.get_current_dir());
         log::info!("{:?}", &command.get_args());
         log::info!("{:?}", &command.get_envs());
         log::info!("{:?}", &command.get_program());
