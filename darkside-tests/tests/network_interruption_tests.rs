@@ -219,20 +219,20 @@ async fn add_nullifier_test() {
     //         online.store(false, Ordering::Relaxed);
     //     }),
     // );
-    conditional_logic.insert(
-        "get_tree_state",
-        Box::new(|online: &Arc<AtomicBool>| {
-            println!("Turning off, as we received get_tree_state call");
-            online.store(false, Ordering::Relaxed);
-        }),
-    );
-    conditional_logic.insert(
-        "get_transaction",
-        Box::new(|online: &Arc<AtomicBool>| {
-            println!("Turning off, as we received get_transaction call");
-            online.store(false, Ordering::Relaxed);
-        }),
-    );
+    // conditional_logic.insert(
+    //     "get_tree_state",
+    //     Box::new(|online: &Arc<AtomicBool>| {
+    //         println!("Turning off, as we received get_tree_state call");
+    //         online.store(false, Ordering::Relaxed);
+    //     }),
+    // );
+    // conditional_logic.insert(
+    //     "get_transaction",
+    //     Box::new(|online: &Arc<AtomicBool>| {
+    //         println!("Turning off, as we received get_transaction call");
+    //         online.store(false, Ordering::Relaxed);
+    //     }),
+    // );
 
     let proxy_status =
         start_proxy_and_connect_lightclient(scenario.get_lightclient(0), conditional_logic);
