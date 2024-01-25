@@ -448,11 +448,7 @@ fn target_wallet_file(matches: &clap::ArgMatches) -> PathBuf {
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
-        let (source, target) = ConfigTemplate::map_capability_to_wallet_file(&matches);
-        let mut data_dir = target
-            .parent()
-            .expect("To access the wallet directory path.")
-            .to_path_buf();
+        let (source, _target) = ConfigTemplate::map_capability_to_wallet_file(&matches);
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {

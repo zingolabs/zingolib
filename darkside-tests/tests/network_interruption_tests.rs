@@ -17,7 +17,7 @@ use zingo_testutils::start_proxy_and_connect_lightclient;
 use zingolib::{
     get_base_address,
     lightclient::PoolBalances,
-    testvectors::seeds,
+    testvectors::seed_phrases,
     wallet::{data::summaries::ValueTransferKind, Pool},
 };
 
@@ -34,7 +34,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
     scenario
-        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
+        .build_client(seed_phrases::HOSPITAL_MUSEUM.to_string(), 4)
         .await;
 
     // stage a sapling to orchard send-to-self every thousand blocks
@@ -85,7 +85,7 @@ async fn shielded_note_marked_as_change_test() {
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
     scenario
-        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
+        .build_client(seed_phrases::HOSPITAL_MUSEUM.to_string(), 4)
         .await;
 
     // stage a send to self every thousand blocks

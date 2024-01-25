@@ -567,7 +567,7 @@ mod fast {
             .unwrap();
 
         let expected_mnemonic = (
-            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+            Mnemonic::from_phrase(CHIMNEY_BETTER.to_string()).unwrap(),
             0,
         );
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
