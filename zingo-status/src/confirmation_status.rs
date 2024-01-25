@@ -185,12 +185,11 @@ impl ConfirmationStatus {
 
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ConfirmationStatus::*;
         match self {
-            Broadcast(self_height) => {
+            Self::Broadcast(self_height) => {
                 write!(f, "Transaction sent to mempool at height {}.", self_height)
             }
-            Confirmed(self_height) => {
+            Self::Confirmed(self_height) => {
                 write!(
                     f,
                     "Transaction confirmed on chain at height {}.",
