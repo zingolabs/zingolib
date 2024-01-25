@@ -15,7 +15,9 @@ use crate::{
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
         notes::ShieldedNoteInterface,
-        now, LightWallet, Pool, SendProgress, WalletBase,
+        now,
+        utils::get_price,
+        LightWallet, Pool, SendProgress, WalletBase,
     },
 };
 use futures::future::join_all;
@@ -1308,7 +1310,7 @@ impl LightClient {
                                 transaction,
                                 status,
                                 now() as u32,
-                                TransactionRecord::get_price(now(), &price),
+                                get_price(now(), &price),
                             )
                             .await;
                         }
