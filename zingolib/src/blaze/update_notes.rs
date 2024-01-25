@@ -135,14 +135,14 @@ impl UpdateNotes {
 
                         // here is the function that causes sapling balance bug when not called
                         // !!!
-                        // let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
-                        //     transaction_id_spent_in,
-                        //     status,
-                        //     ts,
-                        //     maybe_spend_nullifier,
-                        //     transaction_id_spent_from,
-                        //     output_index,
-                        // );
+                        let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
+                            transaction_id_spent_in,
+                            status,
+                            ts,
+                            maybe_spend_nullifier,
+                            transaction_id_spent_from,
+                            output_index,
+                        );
 
                         drop(wallet_transactions_write_unlocked);
 
