@@ -1,7 +1,8 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
-use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
+use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
+use crate::wallet::notes::ShieldedNoteInterface;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
@@ -47,13 +48,15 @@ use zcash_primitives::{
     },
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
-use self::traits::{DomainWalletExt, ShieldedNoteInterface, SpendableNote};
+use self::traits::{DomainWalletExt, SpendableNote};
+use self::utils::get_price;
 use self::{
-    data::{BlockData, TransparentNote, WalletZecPriceInfo},
+    data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transactions::TransactionMetadataSet,
 };
@@ -62,9 +65,11 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub mod data;
 pub mod keys;
 pub(crate) mod message;
+pub mod notes;
 pub mod traits;
+pub mod transaction_record;
 pub(crate) mod transactions;
-pub(crate) mod utils;
+pub mod utils;
 
 pub fn now() -> u64 {
     SystemTime::now()
@@ -254,7 +259,7 @@ impl LightWallet {
         trees: &TreeState,
     ) -> Option<
         incrementalmerkletree::frontier::NonEmptyFrontier<
-            <D::WalletNote as ShieldedNoteInterface>::Node,
+            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
         >,
     >
     where
@@ -262,7 +267,7 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
     {
         zcash_primitives::merkle_tree::read_commitment_tree::<
-            <D::WalletNote as ShieldedNoteInterface>::Node,
+            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
             &[u8],
             COMMITMENT_TREE_LEVELS,
         >(&hex::decode(D::get_tree(trees)).unwrap()[..])
@@ -408,7 +413,7 @@ impl LightWallet {
             .await
             .current
             .values()
-            .map(|wtx| u64::from(wtx.block_height))
+            .map(|wtx| u64::from(wtx.status.get_height()))
             .min();
 
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
@@ -465,7 +470,7 @@ impl LightWallet {
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_utxos(&self) -> Vec<TransparentNote> {
+    pub async fn get_utxos(&self) -> Vec<notes::TransparentNote> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -479,7 +484,7 @@ impl LightWallet {
                     .filter(|utxo| utxo.spent.is_none())
             })
             .cloned()
-            .collect::<Vec<TransparentNote>>()
+            .collect::<Vec<notes::TransparentNote>>()
     }
 
     pub async fn last_synced_hash(&self) -> String {
@@ -821,7 +826,7 @@ impl LightWallet {
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
-            Vec<TransparentNote>,
+            Vec<notes::TransparentNote>,
             u64,
         ),
         u64,
@@ -983,7 +988,7 @@ impl LightWallet {
         witness_trees: &WitnessTrees,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
-        utxos: &[TransparentNote],
+        utxos: &[notes::TransparentNote],
     ) -> Result<TxBuilder<'_>, String> {
         // Add all tinputs
         // Create a map from address -> sk for all taddrs, so we can spend from the
@@ -1426,14 +1431,9 @@ impl LightWallet {
         {
             let price = self.price.read().await.clone();
 
+            let status = ConfirmationStatus::Broadcast(submission_height);
             self.transaction_context
-                .scan_full_tx(
-                    transaction,
-                    submission_height,
-                    true,
-                    now() as u32,
-                    TransactionMetadata::get_price(now(), &price),
-                )
+                .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
                 .await;
         }
 
@@ -1495,7 +1495,7 @@ impl LightWallet {
     async fn shielded_balance<D>(
         &self,
         target_addr: Option<String>,
-        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool + '_>],
+        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
     ) -> Option<u64>
     where
         D: DomainWalletExt,
@@ -1535,7 +1535,7 @@ impl LightWallet {
                     filtered_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
-                                <D::WalletNote as traits::ShieldedNoteInterface>::value(notedata)
+                                <D::WalletNote as ShieldedNoteInterface>::value(notedata)
                             } else {
                                 0
                             }
@@ -1595,9 +1595,11 @@ impl LightWallet {
     {
         let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
             &[Box::new(|nnmd, transaction| {
-                transaction.block_height > BlockHeight::from_u32(anchor_height)
+                !transaction
+                    .status
+                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
                     || nnmd.pending_receipt()
             })];
         self.shielded_balance::<D>(target_addr, filters).await
@@ -1621,9 +1623,11 @@ impl LightWallet {
     {
         let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] = &[
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
             Box::new(|_, transaction| {
-                transaction.block_height <= BlockHeight::from_u32(anchor_height)
+                transaction
+                    .status
+                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
             }),
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
         ];

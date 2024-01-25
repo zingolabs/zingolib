@@ -4,7 +4,7 @@ use zcash_note_encryption::Domain;
 impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
-        transaction_metadata: &'b TransactionMetadata,
+        transaction_metadata: &'b TransactionRecord,
         unified_spend_auth: &'c crate::wallet::keys::unified::WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -25,7 +25,7 @@ impl LightClient {
 
     fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
-        transaction_metadata: &'b TransactionMetadata,
+        transaction_metadata: &'b TransactionRecord,
         unified_spend_auth: &'c crate::wallet::keys::unified::WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -37,10 +37,10 @@ impl LightClient {
         <D as Domain>::Note: PartialEq + Clone,
     {
         D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
-                    let block_height: u32 = transaction_metadata.block_height.into();
+                    let block_height: u32 = transaction_metadata.status.get_height().into();
                     object! {
                         "block_height" => block_height,
-                        "unconfirmed" => transaction_metadata.unconfirmed,
+                        "unconfirmed"  => !transaction_metadata.status.is_confirmed(),
                         "datetime"     => transaction_metadata.datetime,
                         "position"     => i,
                         "txid"         => format!("{}", transaction_metadata.txid),
@@ -55,7 +55,7 @@ impl LightClient {
 
     /// This fn is _only_ called inside a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
-        wallet_transaction: &TransactionMetadata,
+        wallet_transaction: &TransactionRecord,
         received_utxo_value: u64,
     ) -> JsonValue {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
@@ -92,10 +92,10 @@ impl LightClient {
             })
             .collect::<Vec<JsonValue>>();
 
-        let block_height: u32 = wallet_transaction.block_height.into();
+        let block_height: u32 = wallet_transaction.status.get_height().into();
         object! {
             "block_height" => block_height,
-            "unconfirmed" => wallet_transaction.unconfirmed,
+            "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
             "datetime"     => wallet_transaction.datetime,
             "txid"         => format!("{}", wallet_transaction.txid),
             "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
@@ -130,7 +130,7 @@ impl LightClient {
 
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
-                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.get_transparent_value_spent() as i64;
                 let address = wallet_transaction.transparent_notes.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
                 if net_transparent_value > 0 {
                     if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
@@ -144,10 +144,10 @@ impl LightClient {
                         }
                     } else {
                         // Create an input transaction for the transparent value as well.
-                        let block_height: u32 = wallet_transaction.block_height.into();
+                        let block_height: u32 = wallet_transaction.status.get_height().into();
                         consumer_notes_by_tx.push(object! {
                             "block_height" => block_height,
-                            "unconfirmed"  => wallet_transaction.unconfirmed,
+                            "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
                             "datetime"     => wallet_transaction.datetime,
                             "txid"         => format!("{}", txid),
                             "amount"       => net_transparent_value,
@@ -202,68 +202,5 @@ impl LightClient {
         });
 
         JsonValue::Array(consumer_ui_notes)
-    }
-}
-#[cfg(test)]
-mod tests {
-    use tokio::runtime::Runtime;
-    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingoconfig::{ChainType, ZingoConfig};
-
-    use crate::{lightclient::LightClient, wallet::WalletBase};
-
-    #[test]
-    fn new_wallet_from_phrase() {
-        let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
-        let data_dir = temp_dir
-            .into_path()
-            .canonicalize()
-            .expect("This path is available.");
-
-        let wallet_name = data_dir.join("zingo-wallet.dat");
-        let config = ZingoConfig::build(ChainType::FakeMainnet)
-            .set_wallet_dir(data_dir)
-            .create();
-        let lc = LightClient::create_from_wallet_base(
-            WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
-            &config,
-            0,
-            false,
-        )
-        .unwrap();
-        assert_eq!(
-        format!(
-            "{:?}",
-            LightClient::create_from_wallet_base(
-                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
-                &config,
-                0,
-                false
-            )
-            .err()
-            .unwrap()
-        ),
-        format!(
-            "{:?}",
-            std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!("Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}", wallet_name),
-            )
-        )
-    );
-
-        // The first t address and z address should be derived
-        Runtime::new().unwrap().block_on(async move {
-            let addresses = lc.do_addresses().await;
-            assert_eq!(
-                "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
-                    .to_string(),
-                addresses[0]["receivers"]["sapling"]
-            );
-            assert_eq!(
-                "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui",
-                addresses[0]["receivers"]["transparent"]
-            );
-        });
     }
 }

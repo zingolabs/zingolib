@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 #[macro_use]
 extern crate rust_embed;
-mod test_framework;
 
 pub mod blaze;
 pub mod commands;
@@ -11,6 +10,8 @@ pub mod lightclient;
 pub mod wallet;
 #[cfg(feature = "test")]
 pub use zingo_testvectors as testvectors;
+#[cfg(feature = "test")]
+pub(crate) mod test_framework;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

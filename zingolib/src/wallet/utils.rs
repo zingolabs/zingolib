@@ -1,6 +1,8 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Read, Write};
-use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::{memo::MemoBytes, transaction::TxId};
+
+use super::data::WalletZecPriceInfo;
 
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
     // Strings are written as <littleendian> len + bytes
@@ -35,4 +37,24 @@ pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
 
     MemoBytes::from_bytes(&s_bytes)
         .map_err(|_| format!("Error creating output. Memo '{:?}' is too long", memo_str))
+}
+pub fn txid_from_slice(txid: &[u8]) -> TxId {
+    let mut txid_bytes = [0u8; 32];
+    txid_bytes.copy_from_slice(txid);
+    TxId::from_bytes(txid_bytes)
+}
+pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
+    match price.zec_price {
+        None => None,
+        Some((t, p)) => {
+            // If the price was fetched within 24 hours of this Tx, we use the "current" price
+            // else, we mark it as None, for the historical price fetcher to get
+            // TODO:  Investigate the state of "the historical price fetcher".
+            if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
+                Some(p)
+            } else {
+                None
+            }
+        }
+    }
 }

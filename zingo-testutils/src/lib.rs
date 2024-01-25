@@ -1,3 +1,5 @@
+pub mod interrupts;
+
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
 use std::collections::HashMap;

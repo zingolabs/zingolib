@@ -1,7 +1,6 @@
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::{PoolNullifier, TransactionMetadata},
-    transactions::TransactionMetadataSet,
+    data::PoolNullifier, transactions::TransactionMetadataSet, utils::txid_from_slice,
 };
 use std::sync::Arc;
 
@@ -14,6 +13,7 @@ use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::syncdata::BlazeSyncData;
 
@@ -44,14 +44,14 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32, bool)>,
+        UnboundedSender<(TxId, PoolNullifier, BlockHeight, Option<u32>, bool)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32, bool)>();
+            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, Option<u32>, bool)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.transaction_metadata_set.clone();
@@ -123,32 +123,20 @@ impl UpdateNotes {
                             )
                             .await;
 
-                        let transaction_id_spent_in =
-                            TransactionMetadata::new_txid(&compact_transaction.hash);
+                        let transaction_id_spent_in = txid_from_slice(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent
                         let mut wallet_transactions_write_unlocked =
                             wallet_transactions.write().await;
 
-                        let value = wallet_transactions_write_unlocked
-                            .process_spent_note(
-                                transaction_id_spent_from,
-                                &maybe_spend_nullifier,
-                                &transaction_id_spent_in,
-                                spent_at_height,
-                                output_index,
-                            )
-                            .unwrap_or(0);
-
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
-                        wallet_transactions_write_unlocked.add_new_spent(
+                        let status = ConfirmationStatus::Confirmed(spent_at_height);
+                        let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
                             transaction_id_spent_in,
-                            spent_at_height,
-                            false,
+                            status,
                             ts,
                             maybe_spend_nullifier,
-                            value,
                             transaction_id_spent_from,
                             output_index,
                         );

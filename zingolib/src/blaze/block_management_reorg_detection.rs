@@ -1,6 +1,8 @@
+use crate::wallet::traits::FromCommitment;
 use crate::wallet::{
     data::{BlockData, PoolNullifier},
-    traits::{DomainWalletExt, FromCommitment, ShieldedNoteInterface},
+    notes::ShieldedNoteInterface,
+    traits::DomainWalletExt,
     transactions::TransactionMetadataSet,
 };
 use incrementalmerkletree::{

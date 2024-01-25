@@ -552,6 +552,77 @@ mod fast {
     }
 
     #[tokio::test]
+    async fn load_wallet_from_v28_dat_file() {
+        // We test that the LightWallet can be read from v28 .dat file
+        // A testnet wallet initiated with
+        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+        // --birthday 0
+        // --nosync
+        // with 3 addresses containing all receivers.
+        let data = include_bytes!("zingo-wallet-v28.dat");
+
+        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
+        let wallet = LightWallet::read_internal(&data[..], &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
+            .unwrap();
+
+        let expected_mnemonic = (
+            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+            0,
+        );
+        assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+
+        let expected_wc =
+            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
+                .unwrap();
+        let wc = wallet.wallet_capability();
+
+        // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
+        // so we have to compare each component instead
+
+        // Compare Orchard
+        let Capability::Spend(orchard_sk) = &wc.orchard else {
+            panic!("Expected Orchard Spending Key");
+        };
+        assert_eq!(
+            orchard_sk.to_bytes(),
+            orchard::keys::SpendingKey::try_from(&expected_wc)
+                .unwrap()
+                .to_bytes()
+        );
+
+        // Compare Sapling
+        let Capability::Spend(sapling_sk) = &wc.sapling else {
+            panic!("Expected Sapling Spending Key");
+        };
+        assert_eq!(
+            sapling_sk,
+            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+        );
+
+        // Compare transparent
+        let Capability::Spend(transparent_sk) = &wc.transparent else {
+            panic!("Expected transparent extended private key");
+        };
+        assert_eq!(
+            transparent_sk,
+            &ExtendedPrivKey::try_from(&expected_wc).unwrap()
+        );
+
+        assert_eq!(wc.addresses().len(), 3);
+        for addr in wc.addresses().iter() {
+            assert!(addr.orchard().is_some());
+            assert!(addr.sapling().is_some());
+            assert!(addr.transparent().is_some());
+        }
+
+        let client = LightClient::create_from_wallet(wallet, config);
+        let balance = client.do_balance().await;
+        assert_eq!(balance.orchard_balance, Some(10342837));
+    }
+
+    #[tokio::test]
     async fn sync_all_epochs_from_sapling() {
         let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
         let (regtest_manager, _cph, lightclient) =
@@ -2437,12 +2508,6 @@ mod slow {
             .await
             .unwrap();
 
-        // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
-        assert_eq!(
-            do_maybe_recent_txid(&recipient).await["last_txid"],
-            sent_transaction_id
-        );
-
         // Sync recipient
         recipient.do_sync(false).await.unwrap();
         dbg!(
@@ -3259,7 +3324,7 @@ mod slow {
 
         let notes_before = recipient.do_list_notes(true).await;
         let list_before = recipient.do_list_transactions().await;
-        let requested_txid = &zingolib::wallet::data::TransactionMetadata::new_txid(
+        let requested_txid = &zingolib::wallet::utils::txid_from_slice(
             hex::decode(sent_transaction_id.clone())
                 .unwrap()
                 .into_iter()
@@ -3366,6 +3431,73 @@ mod slow {
             recipient_loaded.do_balance().await.orchard_balance,
             Some(890_000)
         );
+    }
+    #[tokio::test]
+    async fn timed_sync_interrupt() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        for i in 1..4 {
+            let _ = faucet.do_sync(false).await;
+            faucet
+                .do_send(vec![(
+                    &get_base_address!(recipient, "sapling"),
+                    10_100,
+                    None,
+                )])
+                .await
+                .unwrap();
+            let chainwait: u32 = 6;
+            let amount: u64 = u64::from(chainwait * i);
+            zingo_testutils::increase_server_height(&regtest_manager, chainwait).await;
+            let _ = recipient.do_sync(false).await;
+            recipient
+                .do_send(vec![(
+                    &get_base_address!(recipient, "unified"),
+                    amount,
+                    None,
+                )])
+                .await
+                .unwrap();
+        }
+        zingo_testutils::increase_server_height(&regtest_manager, 1).await;
+
+        let _synciiyur = recipient.do_sync(false).await;
+        // let summ_sim = recipient.do_list_txsummaries().await;
+        let bala_sim = recipient.do_balance().await;
+
+        recipient.clear_state().await;
+        dbg!("finished basic sync. restarting for interrupted data");
+        let timeout = 28;
+        let race_condition =
+            zingo_testutils::interrupts::sync_with_timeout_millis(&recipient, timeout).await;
+        match race_condition {
+            Ok(_) => {
+                println!("synced in less than {} millis ", timeout);
+                dbg!("syncedd");
+            }
+            Err(_) => {
+                println!("interrupted after {} millis ", timeout);
+                dbg!("interruptedidd!");
+            }
+        }
+
+        // let summ_int = recipient.do_list_txsummaries().await;
+        // let bala_int = recipient.do_balance().await;
+        let _synciiyur = recipient.do_sync(false).await;
+        // let summ_syn = recipient.do_list_txsummaries().await;
+        let bala_syn = recipient.do_balance().await;
+
+        dbg!(
+            &recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+        );
+
+        assert_eq!(bala_sim, bala_syn);
     }
 }
 
