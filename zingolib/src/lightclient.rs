@@ -10,13 +10,12 @@ use crate::{
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionMetadata,
+            TransactionRecord,
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
-        now,
-        traits::ShieldedNoteInterface,
-        LightWallet, Pool, SendProgress, WalletBase,
+        notes::ShieldedNoteInterface,
+        now, LightWallet, Pool, SendProgress, WalletBase,
     },
 };
 use futures::future::join_all;
@@ -40,6 +39,7 @@ use tokio::{
     time::sleep,
 };
 use zcash_address::ZcashAddress;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use zcash_client_backend::{
     encoding::{decode_payment_address, encode_payment_address},
@@ -557,8 +557,9 @@ impl LightClient {
             .current
             .iter()
             .for_each(|(_, tx)| {
-                let mature =
-                    !tx.unconfirmed && tx.block_height <= BlockHeight::from_u32(anchor_height);
+                let mature = tx
+                    .status
+                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height));
                 let incoming = tx.is_incoming_transaction();
 
                 let mut change = 0;
@@ -633,7 +634,7 @@ impl LightClient {
                 }
 
                 if auto_shielding {
-                    if tx.unconfirmed {
+                    if !tx.status.is_confirmed() {
                         balances.incoming += utxo_value;
                     } else {
                         balances.immature_income += utxo_value;
@@ -647,7 +648,7 @@ impl LightClient {
                     // Spendable
                     balances.spendable += useful_value + change;
                     balances.dust += dust_value;
-                } else if !tx.unconfirmed {
+                } else if tx.status.is_confirmed() {
                     // Confirmed, but not yet spendable
                     balances.immature_income += useful_value;
                     balances.immature_change += change;
@@ -745,10 +746,10 @@ impl LightClient {
             if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
                 if transaction_md.is_outgoing_transaction() {
                     let (block_height, datetime, price, unconfirmed) = (
-                        transaction_md.block_height,
+                        transaction_md.status.get_height(),
                         transaction_md.datetime,
                         transaction_md.price,
-                        transaction_md.unconfirmed,
+                        !transaction_md.status.is_confirmed(),
                     );
                     summaries.push(ValueTransfer {
                         block_height,
@@ -1294,6 +1295,10 @@ impl LightClient {
                         ) {
                             let price = price.read().await.clone();
                             //debug!("Mempool attempting to scan {}", tx.txid());
+                            let status = ConfirmationStatus::Broadcast(BlockHeight::from_u32(
+                                rtransaction.height as u32,
+                            ));
+
                             TransactionContext::new(
                                 &config,
                                 key.clone(),
@@ -1301,10 +1306,9 @@ impl LightClient {
                             )
                             .scan_full_tx(
                                 transaction,
-                                BlockHeight::from_u32(rtransaction.height as u32),
-                                true,
+                                status,
                                 now() as u32,
-                                TransactionMetadata::get_price(now(), &price),
+                                TransactionRecord::get_price(now(), &price),
                             )
                             .await;
                         }
@@ -1696,13 +1700,13 @@ impl LightClient {
     fn tx_summary_matcher(
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
-        transaction_md: &TransactionMetadata,
+        transaction_md: &TransactionRecord,
     ) {
         let (block_height, datetime, price, unconfirmed) = (
-            transaction_md.block_height,
+            transaction_md.status.get_height(),
             transaction_md.datetime,
             transaction_md.price,
-            transaction_md.unconfirmed,
+            !transaction_md.status.is_confirmed(),
         );
         match (
             transaction_md.is_outgoing_transaction(),
@@ -1947,15 +1951,15 @@ impl LightClient {
                             None
                         } else {
                             let address = LightWallet::note_address::<zcash_primitives::sapling::note_encryption::SaplingDomain<zingoconfig::ChainType>>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
-                            let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
+                            let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
-                            let created_block:u32 = transaction_metadata.block_height.into();
+                            let created_block:u32 = transaction_metadata.status.get_height().into();
                             Some(object!{
                                 "created_in_block"   => created_block,
                                 "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id.clone()),
                                 "value"              => note_metadata.note.value().inner(),
-                                "unconfirmed"        => transaction_metadata.unconfirmed,
+                                "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
                                 "is_change"          => note_metadata.is_change,
                                 "address"            => address,
                                 "spendable"          => spendable,
@@ -1990,15 +1994,15 @@ impl LightClient {
                             None
                         } else {
                             let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
-                            let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
+                            let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
-                            let created_block:u32 = transaction_metadata.block_height.into();
+                            let created_block:u32 = transaction_metadata.status.get_height().into();
                             Some(object!{
                                 "created_in_block"   => created_block,
                                 "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
                                 "value"              => orch_note_metadata.note.value().inner(),
-                                "unconfirmed"        => transaction_metadata.unconfirmed,
+                                "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
                                 "is_change"          => orch_note_metadata.is_change,
                                 "address"            => address,
                                 "spendable"          => spendable,
@@ -2032,7 +2036,7 @@ impl LightClient {
                         if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
-                            let created_block:u32 = wtx.block_height.into();
+                            let created_block:u32 = wtx.status.get_height().into();
                             let recipient = zcash_client_backend::address::RecipientAddress::decode(&self.config.chain, &utxo.address);
                             let taddr = match recipient {
                             Some(zcash_client_backend::address::RecipientAddress::Transparent(taddr)) => taddr,

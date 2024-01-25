@@ -131,7 +131,7 @@ pub fn launch_lightwalletd(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/integration-tests/regtest/bin/ directory, and in $G/darkside-tests/lightwalletd-bin. see docs/integration-tests.txt");
+        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/zingo-testutils/test_binaries/bins/. see docs/integration-tests.txt");
 
     if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
         std::thread::spawn(move || {
@@ -321,7 +321,7 @@ impl RegtestManager {
                 .unwrap(),
             &"-debug=1"
         );
-        dbg!("{:?}", &command.get_current_dir());
+        log::info!("{:?}", &command.get_current_dir());
         log::info!("{:?}", &command.get_args());
         log::info!("{:?}", &command.get_envs());
         log::info!("{:?}", &command.get_program());

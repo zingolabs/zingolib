@@ -517,6 +517,7 @@ pub mod scenarios {
         lightclients: Vec<LightClient>,
         staged_blockheight: BlockHeight,
         tree_state: TreeState,
+        transaction_set_index: u64,
     }
     impl DarksideScenario {
         /// Initialises and launches darksidewalletd, stages the genesis block and creates the lightclient builder
@@ -537,6 +538,7 @@ pub mod scenarios {
                 lightclients: vec![],
                 staged_blockheight: BlockHeight::from(1),
                 tree_state: constants::first_tree_state(),
+                transaction_set_index: 0,
             }
         }
         pub async fn default() -> DarksideScenario {
@@ -579,8 +581,9 @@ pub mod scenarios {
             self.lightclients.push(lightclient);
             self
         }
-        /// Stage and apply a range of blocks and update tree state.
-        pub async fn generate_blocks(
+        /// Stage blocks up to target height and update tree state.
+        /// Does not apply block.
+        pub async fn stage_blocks(
             &mut self,
             target_blockheight: u64,
             nonce: u64,
@@ -601,16 +604,31 @@ pub mod scenarios {
                 })
                 .await
                 .unwrap();
+            self.staged_blockheight = BlockHeight::from(target_blockheight as u32);
+            self
+        }
+        /// Apply blocks up to target height.
+        pub async fn apply_blocks(&mut self, target_blockheight: u64) -> &mut DarksideScenario {
             self.darkside_connector
                 .apply_staged(target_blockheight as i32)
                 .await
                 .unwrap();
-            self.staged_blockheight = BlockHeight::from(target_blockheight as u32);
+            self
+        }
+        /// Stage and apply blocks up to target height and update tree state.
+        pub async fn stage_and_apply_blocks(
+            &mut self,
+            target_blockheight: u64,
+            nonce: u64,
+        ) -> &mut DarksideScenario {
+            self.stage_blocks(target_blockheight, nonce).await;
+            self.apply_blocks(target_blockheight).await;
             self
         }
         /// Tool for chainbuilds.
-        /// Send from funded lightclient and write hex transaction to file.
+        /// Stage a block and a send from funded lightclient, then write hex transaction to file.
         /// All sends in a chainbuild are appended to same file in order.
+        /// Does not apply block.
         pub async fn send_and_write_transaction(
             &mut self,
             // We can't just take a reference to a LightClient, as that might be a reference to
@@ -662,7 +680,63 @@ pub mod scenarios {
             .await;
             self
         }
+        /// Tool for chainbuilds.
+        /// Stage a block and a shield from funded lightclient, then write hex transaction to file.
+        /// Only one pool can be shielded at a time.
+        /// All sends in a chainbuild are appended to same file in order.
+        /// Does not apply block.
+        pub async fn shield_and_write_transaction(
+            &mut self,
+            // We can't just take a reference to a LightClient, as that might be a reference to
+            // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
+            sender: DarksideSender<'_>,
+            pool_to_shield: Pool,
+            chainbuild_file: &File,
+        ) -> &mut DarksideScenario {
+            self.staged_blockheight = self.staged_blockheight.add(1);
+            self.darkside_connector
+                .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
+                .await
+                .unwrap();
+            let lightclient = match sender {
+                DarksideSender::Faucet => self.get_faucet(),
+                DarksideSender::IndexedClient(n) => self.get_lightclient(n),
+                DarksideSender::ExternalClient(lc) => lc,
+            };
+            lightclient
+                .do_shield(&[pool_to_shield], None)
+                .await
+                .unwrap();
+            let mut streamed_raw_txns = self
+                .darkside_connector
+                .get_incoming_transactions()
+                .await
+                .unwrap();
+            self.darkside_connector
+                .clear_incoming_transactions()
+                .await
+                .unwrap();
+            let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+            // There should only be one transaction incoming
+            assert!(streamed_raw_txns.message().await.unwrap().is_none());
+            write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
+            self.darkside_connector
+                .stage_transactions_stream(vec![(
+                    raw_tx.data.clone(),
+                    u64::from(self.staged_blockheight),
+                )])
+                .await
+                .unwrap();
+            self.tree_state = update_tree_states_for_transaction(
+                &self.darkside_connector.0,
+                raw_tx,
+                u64::from(self.staged_blockheight),
+            )
+            .await;
+            self
+        }
         /// Stage a block and transaction, then update tree state.
+        /// Does not apply block.
         pub async fn stage_transaction(&mut self, hex_transaction: &str) -> &mut DarksideScenario {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
@@ -689,6 +763,18 @@ pub mod scenarios {
                 .add_tree_state(self.tree_state.clone())
                 .await
                 .unwrap();
+            self
+        }
+        /// Stage a block and next transaction in transaction set, then update tree state.
+        /// Does not apply block.
+        /// Temporary until tree states are also written to file.
+        pub async fn stage_next_transaction(
+            &mut self,
+            transaction_set: &[String],
+        ) -> &mut DarksideScenario {
+            self.stage_transaction(&transaction_set[self.transaction_set_index as usize])
+                .await;
+            self.transaction_set_index += 1;
             self
         }
 

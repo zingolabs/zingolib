@@ -4,9 +4,10 @@ use crate::{
     wallet::{
         data::OutgoingTxData,
         keys::{address_from_pubkeyhash, unified::WalletCapability},
+        notes::ShieldedNoteInterface,
         traits::{
             self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
-            ShieldedNoteInterface as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
+            ShieldedOutputExt as _, Spend as _, ToBytes as _,
         },
         transactions::TransactionMetadataSet,
     },
@@ -37,6 +38,7 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::{ChainType, ZingoConfig};
 
 #[derive(Clone)]
@@ -63,8 +65,7 @@ impl TransactionContext {
     async fn execute_bundlescans_internal(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -72,20 +73,18 @@ impl TransactionContext {
         taddrs_set: &HashSet<String>,
     ) {
         //todo: investigate scanning all bundles simultaneously
+
         self.scan_transparent_bundle(
             transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             is_outgoing_transaction,
             taddrs_set,
         )
         .await;
-
         self.scan_sapling_bundle(
             transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -94,8 +93,7 @@ impl TransactionContext {
         .await;
         self.scan_orchard_bundle(
             transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -106,8 +104,7 @@ impl TransactionContext {
     pub(crate) async fn scan_full_tx(
         &self,
         transaction: Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         price: Option<f64>,
     ) {
@@ -133,8 +130,7 @@ impl TransactionContext {
         // Execute scanning operations
         self.execute_bundlescans_internal(
             &transaction,
-            height,
-            unconfirmed,
+            status,
             block_time,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
@@ -243,8 +239,7 @@ impl TransactionContext {
     async fn scan_transparent_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
@@ -262,8 +257,7 @@ impl TransactionContext {
                             .add_new_taddr_output(
                                 transaction.txid(),
                                 output_taddr.clone(),
-                                height.into(),
-                                unconfirmed,
+                                status,
                                 block_time as u64,
                                 vout,
                                 n as u32,
@@ -299,7 +293,6 @@ impl TransactionContext {
                                 prev_transaction_id,
                                 prev_n as u32,
                                 transaction.txid(),
-                                height,
                             ));
                         }
                     }
@@ -308,20 +301,14 @@ impl TransactionContext {
         }
 
         // Mark all the UTXOs that were spent here back in their original txns.
-        for (prev_transaction_id, prev_n, transaction_id, height) in spent_utxos {
+        for (prev_transaction_id, prev_n, transaction_id) in spent_utxos {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
             self.transaction_metadata_set
                 .write()
                 .await
-                .mark_txid_utxo_spent(
-                    prev_transaction_id,
-                    prev_n,
-                    transaction_id,
-                    height.into(),
-                    unconfirmed,
-                );
+                .mark_txid_utxo_spent(prev_transaction_id, prev_n, transaction_id, status);
         }
 
         // If this transaction spent value, add the spent amount to the TxID
@@ -330,8 +317,7 @@ impl TransactionContext {
 
             self.transaction_metadata_set.write().await.add_taddr_spent(
                 transaction.txid(),
-                height,
-                unconfirmed,
+                status,
                 block_time as u64,
                 total_transparent_value_spent,
             );
@@ -341,8 +327,7 @@ impl TransactionContext {
     async fn scan_sapling_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        pending: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -350,8 +335,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
-            height,
-            pending,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -363,8 +347,7 @@ impl TransactionContext {
     async fn scan_orchard_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        pending: bool,
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -372,8 +355,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<OrchardDomain>(
             transaction,
-            height,
-            pending,
+            status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -391,8 +373,7 @@ impl TransactionContext {
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
-        transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed"
-        pending: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
+        status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -407,7 +388,7 @@ impl TransactionContext {
         type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
-        if pending {
+        if status.is_broadcast() {
             let unspent_nullifiers = self
                 .transaction_metadata_set
                 .read()
@@ -417,20 +398,22 @@ impl TransactionContext {
                 .into_iter()
                 .flat_map(|bundle| bundle.spend_elements().into_iter())
             {
-                if let Some((nf, value, transaction_id, output_index)) = unspent_nullifiers
+                if let Some((nf, _value, transaction_id, output_index)) = unspent_nullifiers
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
-                    self.transaction_metadata_set.write().await.add_new_spent(
-                        transaction.txid(),
-                        transaction_block_height,
-                        true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
-                        block_time,
-                        (*nf).into(),
-                        *value,
-                        *transaction_id,
-                        *output_index,
-                    );
+                    let _ = self
+                        .transaction_metadata_set
+                        .write()
+                        .await
+                        .found_spent_nullifier(
+                            transaction.txid(),
+                            status,
+                            block_time,
+                            (*nf).into(),
+                            *transaction_id,
+                            *output_index,
+                        );
                 }
             }
         }
@@ -446,7 +429,7 @@ impl TransactionContext {
                 .flat_map(|bundle| bundle.output_elements().into_iter())
                 .map(|output| {
                     (
-                        output.domain(transaction_block_height, self.config.chain),
+                        output.domain(status.get_height(), self.config.chain),
                         output.clone(),
                     )
                 })
@@ -467,13 +450,13 @@ impl TransactionContext {
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-            if pending {
+            if let Some(height) = status.get_broadcast_height() {
                 self.transaction_metadata_set
                     .write()
                     .await
                     .add_pending_note::<D>(
                         transaction.txid(),
-                        transaction_block_height,
+                        height,
                         block_time as u64,
                         note.clone(),
                         to,
@@ -506,7 +489,7 @@ impl TransactionContext {
                     D,
                     <FnGenBundle<D> as zingo_traits::Bundle<D>>::Output,
                 >(
-                    &output.domain(transaction_block_height, self.config.chain),
+                    &output.domain(status.get_height(), self.config.chain),
                     &ovk,
                     &output,
                     &output.value_commitment(),
@@ -654,8 +637,9 @@ pub async fn start(
                     last_progress.store(progress, Ordering::SeqCst);
                 }
 
+                let status = ConfirmationStatus::Confirmed(height);
                 per_txid_iter_context
-                    .scan_full_tx(transaction, height, false, block_time, None)
+                    .scan_full_tx(transaction, status, block_time, None)
                     .await;
 
                 Ok::<_, String>(())
@@ -693,8 +677,9 @@ pub async fn start(
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
+            let status = ConfirmationStatus::Confirmed(height);
             transaction_context
-                .scan_full_tx(transaction, height, false, block_time, None)
+                .scan_full_tx(transaction, status, block_time, None)
                 .await;
         }
 
