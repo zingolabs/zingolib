@@ -2219,7 +2219,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 #[cfg(test)]
 mod tests {
     use tokio::runtime::Runtime;
-    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use zingo_testvectors::seed_phrases::CHIMNEY_BETTER;
     use zingoconfig::{ChainType, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
@@ -2237,7 +2237,7 @@ mod tests {
             .set_wallet_dir(data_dir)
             .create();
         let lc = LightClient::create_from_wallet_base(
-            WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+            WalletBase::MnemonicPhrase(CHIMNEY_BETTER.to_string()),
             &config,
             0,
             false,
@@ -2247,7 +2247,7 @@ mod tests {
         format!(
             "{:?}",
             LightClient::create_from_wallet_base(
-                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+                WalletBase::MnemonicPhrase(CHIMNEY_BETTER.to_string()),
                 &config,
                 0,
                 false

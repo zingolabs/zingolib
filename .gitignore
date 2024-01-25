@@ -16,9 +16,11 @@ zingocli/tests/data/externalwallet_coinbaseaddress.conf
 zingocli/tests/data/lightwalletd.yml
 zingocli/tests/times/*
 zingocli/wallets/*
+darkside-tests/lightwalletd_bin/
+*cli_parse_test_data*
+darkside-tests/lightwalletd_bin/
 zingolib/target
 zingolib/test-data/*
 zingo-testutils/test_binaries/bins/lightwalletd
 zingo-testutils/test_binaries/bins/zcash-cli
 zingo-testutils/test_binaries/bins/zcashd
-
