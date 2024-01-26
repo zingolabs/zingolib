@@ -132,3 +132,20 @@ impl<T: ShieldedNoteInterface> Default for ShieldedNoteBuilder<T> {
         }
     }
 }
+
+#[cfg(test)]
+impl ShieldedNoteBuilder<crate::wallet::notes::SaplingNote> {
+    pub fn arb_note_with_value(
+        &mut self,
+        value: zcash_primitives::sapling::value::NoteValue,
+    ) -> &mut Self {
+        self.note(proptest::strategy::ValueTree::current(
+            &proptest::strategy::Strategy::new_tree(
+                &zcash_primitives::sapling::testing::arb_note(value),
+                &mut proptest::test_runner::TestRunner::deterministic(),
+            )
+            .unwrap(),
+        ));
+        self
+    }
+}
