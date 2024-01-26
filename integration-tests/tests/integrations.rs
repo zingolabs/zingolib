@@ -197,7 +197,9 @@ mod fast {
         let wallet_dir = wallet_path.parent().unwrap();
         let (wallet, config) =
             zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-        let client = LightClient::create_from_wallet(wallet, config);
+        let client = LightClient::create_from_wallet_async(wallet, config)
+            .await
+            .unwrap();
         let transactions = client.do_list_transactions().await[0].clone();
         //env_logger::init();
         let expected_consumer_ui_note = r#"{
@@ -326,7 +328,10 @@ mod fast {
                 .unwrap();
 
         // Create client based on config and wallet of faucet
-        let faucet_copy = LightClient::create_from_wallet(faucet_wallet, zingo_config.clone());
+        let faucet_copy =
+            LightClient::create_from_wallet_async(faucet_wallet, zingo_config.clone())
+                .await
+                .unwrap();
         assert_eq!(
             &faucet_copy.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
@@ -616,7 +621,9 @@ mod fast {
             assert!(addr.transparent().is_some());
         }
 
-        let client = LightClient::create_from_wallet(wallet, config);
+        let client = LightClient::create_from_wallet_async(wallet, config)
+            .await
+            .unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(10342837));
     }
@@ -689,7 +696,9 @@ mod fast {
             assert!(addr.transparent().is_some());
         }
 
-        let client = LightClient::create_from_wallet(wallet, config);
+        let client = LightClient::create_from_wallet_async(wallet, config)
+            .await
+            .unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(10342837));
     }
@@ -2856,7 +2865,9 @@ mod slow {
         println!("setting uri");
         *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
         println!("creating lightclient");
-        let recipient = LightClient::create_from_wallet(wallet, conf);
+        let recipient = LightClient::create_from_wallet_async(wallet, conf)
+            .await
+            .unwrap();
         println!(
             "pre-sync transactions: {}",
             recipient.do_list_transactions().await.pretty(2)

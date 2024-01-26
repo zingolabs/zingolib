@@ -53,7 +53,9 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
         .unwrap(),
         &zcash_address::Network::Regtest,
     );
-    LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap()
+    LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0)
+        .await
+        .unwrap()
 }
 
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {

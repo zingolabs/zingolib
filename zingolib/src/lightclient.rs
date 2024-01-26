@@ -250,17 +250,6 @@ pub struct LightClient {
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
 ///  overly broad and vague definition!
 impl LightClient {
-    pub fn create_from_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
-        LightClient {
-            wallet,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-            save_buffer: ZingoSaveBuffer::default(),
-        }
-    }
     /// this is the standard initializer for a LightClient.
     // toDo rework ZingoConfig.
     pub async fn create_from_wallet_async(
@@ -313,10 +302,11 @@ impl LightClient {
                 ));
             }
         }
-        let lightclient = LightClient::create_from_wallet(
+        let lightclient = LightClient::create_from_wallet_async(
             LightWallet::new(config.clone(), wallet_base, birthday)?,
             config.clone(),
-        );
+        )
+        .await?;
 
         lightclient.set_wallet_initial_state(birthday).await;
         lightclient
@@ -328,21 +318,23 @@ impl LightClient {
 
         Ok(lightclient)
     }
-    pub fn create_unconnected(
+    pub async fn create_unconnected(
         config: &ZingoConfig,
         wallet_base: WalletBase,
         height: u64,
     ) -> io::Result<Self> {
-        let lightclient = LightClient::create_from_wallet(
+        let lightclient = LightClient::create_from_wallet_async(
             LightWallet::new(config.clone(), wallet_base, height)?,
             config.clone(),
-        );
+        )
+        .await?;
         Ok(lightclient)
     }
 
     fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
+            let l =
+                LightClient::create_unconnected(config, WalletBase::FreshEntropy, height).await?;
             l.set_wallet_initial_state(height).await;
 
             debug!("Created new wallet with a new seed!");
