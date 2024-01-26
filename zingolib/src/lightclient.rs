@@ -1713,7 +1713,7 @@ impl LightClient {
 
         debug!("About to run save after syncing {}th batch!", batch_num);
 
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        // #[cfg(not(any(target_os = "ios", target_os = "android")))]
         self.save_internal_rust().await.unwrap();
 
         Ok(SyncResult {
