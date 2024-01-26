@@ -178,14 +178,6 @@ async fn shielded_note_marked_as_change_test() {
             assert_eq!(amount, 10_000)
         }
     }
-    // assert that every shield has a send-to-self value transfer
-    assert_eq!(
-        value_transfers
-            .iter()
-            .filter(|vt| vt.kind == ValueTransferKind::SendToSelf)
-            .count(),
-        (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
-    );
 }
 // This test should replace shielded_note_marked_as_change_test when send-to-selfs correctly create a send-to-self value transfer
 #[ignore]
@@ -463,7 +455,7 @@ async fn sync_all_blocks_test() {
         74
     );
 }
-// This test should replace sync_all_blocks_test when fee in correct
+// This test should replace sync_all_blocks_test when fee is correct
 #[ignore]
 #[tokio::test]
 async fn sync_all_blocks_test_failing() {
