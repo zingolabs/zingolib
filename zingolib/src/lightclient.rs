@@ -154,6 +154,14 @@ struct ZingoSaveBuffer {
     pub buffer: Arc<RwLock<Vec<u8>>>,
 }
 
+impl ZingoSaveBuffer {
+    fn new(buffer: Vec<u8>) -> Self {
+        ZingoSaveBuffer {
+            buffer: Arc::new(RwLock::new(buffer)),
+        }
+    }
+}
+
 /// Balances that may be presented to a user in a wallet app.
 /// The goal is to present a user-friendly and useful view of what the user has or can soon expect
 /// *without* requiring the user to understand the details of the Zcash protocol.
@@ -244,16 +252,21 @@ pub struct LightClient {
 impl LightClient {
     /// this is the standard initializer for a LightClient.
     // toDo rework ZingoConfig.
-    pub fn create_from_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
-        LightClient {
+    pub async fn create_from_wallet_async(
+        wallet: LightWallet,
+        config: ZingoConfig,
+    ) -> io::Result<Self> {
+        let mut buffer: Vec<u8> = vec![];
+        wallet.write(&mut buffer).await?;
+        Ok(LightClient {
             wallet,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            save_buffer: ZingoSaveBuffer::default(),
-        }
+            save_buffer: ZingoSaveBuffer::new(buffer),
+        })
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
@@ -289,10 +302,11 @@ impl LightClient {
                 ));
             }
         }
-        let lightclient = LightClient::create_from_wallet(
+        let lightclient = LightClient::create_from_wallet_async(
             LightWallet::new(config.clone(), wallet_base, birthday)?,
             config.clone(),
-        );
+        )
+        .await?;
 
         lightclient.set_wallet_initial_state(birthday).await;
         lightclient
@@ -304,21 +318,23 @@ impl LightClient {
 
         Ok(lightclient)
     }
-    pub fn create_unconnected(
+    pub async fn create_unconnected(
         config: &ZingoConfig,
         wallet_base: WalletBase,
         height: u64,
     ) -> io::Result<Self> {
-        let lightclient = LightClient::create_from_wallet(
+        let lightclient = LightClient::create_from_wallet_async(
             LightWallet::new(config.clone(), wallet_base, height)?,
             config.clone(),
-        );
+        )
+        .await?;
         Ok(lightclient)
     }
 
     fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
+            let l =
+                LightClient::create_unconnected(config, WalletBase::FreshEntropy, height).await?;
             l.set_wallet_initial_state(height).await;
 
             debug!("Created new wallet with a new seed!");
@@ -399,7 +415,7 @@ impl LightClient {
     }
 
     pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
-        self.save_internal_rust().await?;
+        // self.save_internal_rust().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
@@ -434,7 +450,7 @@ impl LightClient {
     ) -> io::Result<Self> {
         let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
-        let lc = LightClient::create_from_wallet(wallet, config.clone());
+        let lc = LightClient::create_from_wallet_async(wallet, config.clone()).await?;
 
         debug!(
             "Read wallet with birthday {}",
@@ -783,7 +799,7 @@ impl LightClient {
             .wallet_capability()
             .new_address(desired_receivers)?;
 
-        self.save_internal_rust().await?;
+        // self.save_internal_rust().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -796,7 +812,7 @@ impl LightClient {
         let response = self.do_sync(true).await;
 
         if response.is_ok() {
-            self.save_internal_rust().await?;
+            // self.save_internal_rust().await?;
         }
 
         debug!("Rescan finished");
@@ -1689,7 +1705,7 @@ impl LightClient {
 
         debug!("About to run save after syncing {}th batch!", batch_num);
 
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        // #[cfg(not(any(target_os = "ios", target_os = "android")))]
         self.save_internal_rust().await.unwrap();
 
         Ok(SyncResult {
