@@ -599,14 +599,14 @@ impl BlockManagementThreadData {
         let mut last_block_expecting = self.end_block;
 
         while let Some(compact_block) = self.receiver.recv().await {
-            if compact_block.height % self.batch_size == 0 && !unprocessed_blocks.is_empty() {
-                // Add these blocks to the list
-                self.sync_status.write().await.blocks_done += unprocessed_blocks.len() as u64;
-                self.blocks_in_current_batch
-                    .write()
-                    .await
-                    .append(&mut unprocessed_blocks);
-            }
+            // if compact_block.height % self.batch_size == 0 && !unprocessed_blocks.is_empty() {
+            // Add these blocks to the list
+            self.sync_status.write().await.blocks_done += unprocessed_blocks.len() as u64;
+            self.blocks_in_current_batch
+                .write()
+                .await
+                .append(&mut unprocessed_blocks);
+            // }
 
             // Check if this is the last block we are expecting
             if compact_block.height == last_block_expecting {
