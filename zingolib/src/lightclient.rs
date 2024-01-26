@@ -154,6 +154,14 @@ struct ZingoSaveBuffer {
     pub buffer: Arc<RwLock<Vec<u8>>>,
 }
 
+impl ZingoSaveBuffer {
+    fn new(buffer: Vec<u8>) -> Self {
+        ZingoSaveBuffer {
+            buffer: Arc::new(RwLock::new(buffer)),
+        }
+    }
+}
+
 /// Balances that may be presented to a user in a wallet app.
 /// The goal is to present a user-friendly and useful view of what the user has or can soon expect
 /// *without* requiring the user to understand the details of the Zcash protocol.
@@ -242,8 +250,6 @@ pub struct LightClient {
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
 ///  overly broad and vague definition!
 impl LightClient {
-    /// this is the standard initializer for a LightClient.
-    // toDo rework ZingoConfig.
     pub fn create_from_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
@@ -254,6 +260,24 @@ impl LightClient {
             interrupt_sync: Arc::new(RwLock::new(false)),
             save_buffer: ZingoSaveBuffer::default(),
         }
+    }
+    /// this is the standard initializer for a LightClient.
+    // toDo rework ZingoConfig.
+    pub async fn create_from_wallet_async(
+        wallet: LightWallet,
+        config: ZingoConfig,
+    ) -> io::Result<Self> {
+        let mut buffer: Vec<u8> = vec![];
+        wallet.write(&mut buffer).await?;
+        Ok(LightClient {
+            wallet,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            sync_lock: Mutex::new(()),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+            save_buffer: ZingoSaveBuffer::new(buffer),
+        })
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
@@ -434,7 +458,7 @@ impl LightClient {
     ) -> io::Result<Self> {
         let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
-        let lc = LightClient::create_from_wallet(wallet, config.clone());
+        let lc = LightClient::create_from_wallet_async(wallet, config.clone()).await?;
 
         debug!(
             "Read wallet with birthday {}",
