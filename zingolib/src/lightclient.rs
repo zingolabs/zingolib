@@ -15,7 +15,9 @@ use crate::{
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
         notes::ShieldedNoteInterface,
-        now, LightWallet, Pool, SendProgress, WalletBase,
+        now,
+        utils::get_price,
+        LightWallet, Pool, SendProgress, WalletBase,
     },
 };
 use futures::future::join_all;
@@ -1308,7 +1310,7 @@ impl LightClient {
                                 transaction,
                                 status,
                                 now() as u32,
-                                TransactionRecord::get_price(now(), &price),
+                                get_price(now(), &price),
                             )
                             .await;
                         }
@@ -2212,6 +2214,70 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
             .expect("a and b are non-nan f64, I think that makes them comparable")
     });
     Ok(trades[5])
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::runtime::Runtime;
+    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use zingoconfig::{ChainType, ZingoConfig};
+
+    use crate::{lightclient::LightClient, wallet::WalletBase};
+
+    #[test]
+    fn new_wallet_from_phrase() {
+        let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
+        let data_dir = temp_dir
+            .into_path()
+            .canonicalize()
+            .expect("This path is available.");
+
+        let wallet_name = data_dir.join("zingo-wallet.dat");
+        let config = ZingoConfig::build(ChainType::FakeMainnet)
+            .set_wallet_dir(data_dir)
+            .create();
+        let lc = LightClient::create_from_wallet_base(
+            WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+            &config,
+            0,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+        format!(
+            "{:?}",
+            LightClient::create_from_wallet_base(
+                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+                &config,
+                0,
+                false
+            )
+            .err()
+            .unwrap()
+        ),
+        format!(
+            "{:?}",
+            std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}", wallet_name),
+            )
+        )
+    );
+
+        // The first t address and z address should be derived
+        Runtime::new().unwrap().block_on(async move {
+            let addresses = lc.do_addresses().await;
+            assert_eq!(
+                "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                    .to_string(),
+                addresses[0]["receivers"]["sapling"]
+            );
+            assert_eq!(
+                "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui",
+                addresses[0]["receivers"]["transparent"]
+            );
+        });
+    }
 }
 
 #[cfg(feature = "lightclient-deprecated")]

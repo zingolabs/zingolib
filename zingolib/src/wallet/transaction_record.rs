@@ -49,9 +49,6 @@ pub struct TransactionRecord {
     // All outgoing sends
     pub outgoing_tx_data: Vec<OutgoingTxData>,
 
-    // Whether this TxID was downloaded from the server and scanned for Memos
-    pub full_tx_scanned: bool,
-
     // Price of Zec when this Tx was created
     pub price: Option<f64>,
 }
@@ -72,7 +69,6 @@ impl TransactionRecord {
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
             outgoing_tx_data: vec![],
-            full_tx_scanned: false,
             price: None,
         }
     }
@@ -175,21 +171,6 @@ impl TransactionRecord {
             self.total_orchard_value_spent,
         ]
     }
-    pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
-        match price.zec_price {
-            None => None,
-            Some((t, p)) => {
-                // If the price was fetched within 24 hours of this Tx, we use the "current" price
-                // else, we mark it as None, for the historical price fetcher to get
-                // TODO:  Investigate the state of "the historical price fetcher".
-                if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
-                    Some(p)
-                } else {
-                    None
-                }
-            }
-        }
-    }
 }
 // read/write
 impl TransactionRecord {
@@ -254,7 +235,7 @@ impl TransactionRecord {
         // Outgoing metadata was only added in version 2
         let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxData::read(r))?;
 
-        let full_tx_scanned = reader.read_u8()? > 0;
+        let _full_tx_scanned = reader.read_u8()? > 0;
 
         let zec_price = if version <= 4 {
             None
@@ -295,7 +276,6 @@ impl TransactionRecord {
             total_transparent_value_spent,
             total_orchard_value_spent,
             outgoing_tx_data: outgoing_metadata,
-            full_tx_scanned,
             price: zec_price,
         })
     }
@@ -327,7 +307,7 @@ impl TransactionRecord {
         // Write the outgoing metadata
         Vector::write(&mut writer, &self.outgoing_tx_data, |w, om| om.write(w))?;
 
-        writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
+        writer.write_u8(0)?;
 
         Optional::write(&mut writer, self.price, |w, p| {
             w.write_f64::<LittleEndian>(p)
