@@ -133,8 +133,6 @@ impl UpdateNotes {
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         let status = ConfirmationStatus::Confirmed(spent_at_height);
 
-                        // here is the function that causes sapling balance bug when not called
-                        // !!!
                         let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
                             transaction_id_spent_in,
                             status,

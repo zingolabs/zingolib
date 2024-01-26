@@ -187,9 +187,11 @@ async fn shielded_note_marked_as_change_test() {
         (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
     );
 }
+// This test should replace shielded_note_marked_as_change_test when send-to-selfs correctly create a send-to-self value transfer
+#[ignore]
 #[tokio::test]
-async fn add_nullifier_test() {
-    const BLOCKCHAIN_HEIGHT: u64 = 500;
+async fn shielded_note_marked_as_change_test_failing() {
+    const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");
     let mut scenario = DarksideScenario::default().await;
     scenario.build_faucet(Pool::Sapling).await;
@@ -197,34 +199,17 @@ async fn add_nullifier_test() {
         .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
         .await;
 
-    // scenario.stage_and_apply_blocks(15, 0).await;
-    // scenario.get_lightclient(0).do_sync(false).await.unwrap();
-
-    // // stage a send to self every thousand blocks
-    // for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 100 {
-    //     if thousands_blocks_count % 2 != 0 {
-    //         scenario
-    //             .stage_and_apply_blocks(thousands_blocks_count * 100 - 60, 0)
-    //             .await;
-    //         scenario.stage_next_transaction(&transaction_set).await;
-    //     } else {
-    //         scenario
-    //             .stage_and_apply_blocks(thousands_blocks_count * 100 - 20, 0)
-    //             .await;
-    //         scenario.stage_next_transaction(&transaction_set).await;
-    //     }
-    // }
-
-    // receive, shield, then receive again in same batch
-    scenario.stage_and_apply_blocks(49, 0).await;
-    scenario.stage_next_transaction(&transaction_set).await;
-    scenario.stage_and_apply_blocks(59, 0).await;
-    scenario.stage_next_transaction(&transaction_set).await;
-    scenario.stage_and_apply_blocks(69, 0).await;
-    scenario.stage_next_transaction(&transaction_set).await;
-    // shield in later batch
-    scenario.stage_and_apply_blocks(349, 0).await;
-    scenario.stage_next_transaction(&transaction_set).await;
+    // stage a send to self every thousand blocks
+    for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {
+        scenario
+            .stage_and_apply_blocks(thousands_blocks_count * 1000 - 2, 0)
+            .await;
+        scenario.stage_next_transaction(&transaction_set).await;
+        scenario
+            .apply_blocks(thousands_blocks_count * 1000 - 1)
+            .await;
+        scenario.stage_next_transaction(&transaction_set).await;
+    }
     // stage and apply final blocks
     scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
 
@@ -238,20 +223,20 @@ async fn add_nullifier_test() {
     //         online.store(false, Ordering::Relaxed);
     //     }),
     // );
-    // conditional_logic.insert(
-    //     "get_tree_state",
-    //     Box::new(|online: &Arc<AtomicBool>| {
-    //         println!("Turning off, as we received get_tree_state call");
-    //         online.store(false, Ordering::Relaxed);
-    //     }),
-    // );
-    // conditional_logic.insert(
-    //     "get_transaction",
-    //     Box::new(|online: &Arc<AtomicBool>| {
-    //         println!("Turning off, as we received get_transaction call");
-    //         online.store(false, Ordering::Relaxed);
-    //     }),
-    // );
+    conditional_logic.insert(
+        "get_tree_state",
+        Box::new(|online: &Arc<AtomicBool>| {
+            println!("Turning off, as we received get_tree_state call");
+            online.store(false, Ordering::Relaxed);
+        }),
+    );
+    conditional_logic.insert(
+        "get_transaction",
+        Box::new(|online: &Arc<AtomicBool>| {
+            println!("Turning off, as we received get_transaction call");
+            online.store(false, Ordering::Relaxed);
+        }),
+    );
 
     let proxy_status =
         start_proxy_and_connect_lightclient(scenario.get_lightclient(0), conditional_logic);
@@ -275,46 +260,91 @@ async fn add_nullifier_test() {
     println!("do list tx summaries:");
     dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
 
+    // assert the balance is correct
+    assert_eq!(
+        scenario.get_lightclient(0).do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(760_000),
+            verified_orchard_balance: Some(760_000),
+            unverified_orchard_balance: Some(0),
+            spendable_orchard_balance: Some(760_000),
+            transparent_balance: Some(0),
+        }
+    );
+    // assert all unspent orchard notes (shielded notes) are marked as change
+    let notes = scenario.get_lightclient(0).do_list_notes(true).await;
+    if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
+        for notes in unspent_orchard_notes {
+            assert_eq!(notes["is_change"].as_bool().unwrap(), true);
+        }
+    }
+    // assert all fees are 10000 zats
+    let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
+    for value_transfer in &value_transfers {
+        if let ValueTransferKind::Fee { amount } = value_transfer.kind {
+            assert_eq!(amount, 10_000)
+        }
+    }
+    // assert that every shield has a send-to-self value transfer
+    assert_eq!(
+        value_transfers
+            .iter()
+            .filter(|vt| vt.kind == ValueTransferKind::SendToSelf)
+            .count(),
+        (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
+    );
+}
+// This test is ignored due to incorrect fee
+#[ignore]
+#[tokio::test]
+async fn shield_note_from_earlier_batch_test() {
+    const BLOCKCHAIN_HEIGHT: u64 = 500;
+    let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");
+    let mut scenario = DarksideScenario::default().await;
+    scenario.build_faucet(Pool::Sapling).await;
+    scenario
+        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
+        .await;
+
+    // receive, shield, then receive again in same batch
+    scenario.stage_and_apply_blocks(49, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
+    scenario.stage_and_apply_blocks(59, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
+    scenario.stage_and_apply_blocks(69, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
+    // shield in later batch
+    scenario.stage_and_apply_blocks(349, 0).await;
+    scenario.stage_next_transaction(&transaction_set).await;
+    // stage and apply final blocks
+    scenario.stage_and_apply_blocks(BLOCKCHAIN_HEIGHT, 0).await;
+
+    // start test
+    scenario.get_lightclient(0).do_sync(false).await.unwrap();
+
+    // debug info
+    println!("do list_notes:");
+    println!(
+        "{}",
+        json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
+    );
+    println!("do list tx summaries:");
+    dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
+
     println!("do balance:");
     dbg!(scenario.get_lightclient(0).do_balance().await);
 
-    // // assert the balance is correct
-    // assert_eq!(
-    //     scenario.get_lightclient(0).do_balance().await,
-    //     PoolBalances {
-    //         sapling_balance: Some(0),
-    //         verified_sapling_balance: Some(0),
-    //         spendable_sapling_balance: Some(0),
-    //         unverified_sapling_balance: Some(0),
-    //         orchard_balance: Some(760_000),
-    //         verified_orchard_balance: Some(760_000),
-    //         unverified_orchard_balance: Some(0),
-    //         spendable_orchard_balance: Some(760_000),
-    //         transparent_balance: Some(0),
-    //     }
-    // );
-    // // assert all unspent orchard notes (shielded notes) are marked as change
-    // let notes = scenario.get_lightclient(0).do_list_notes(true).await;
-    // if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
-    //     for notes in unspent_orchard_notes {
-    //         assert_eq!(notes["is_change"].as_bool().unwrap(), true);
-    //     }
-    // }
-    // // assert all fees are 10000 zats
-    // let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
-    // for value_transfer in &value_transfers {
-    //     if let ValueTransferKind::Fee { amount } = value_transfer.kind {
-    //         assert_eq!(amount, 10_000)
-    //     }
-    // }
-    // // assert that every shield has a send-to-self value transfer
-    // assert_eq!(
-    //     value_transfers
-    //         .iter()
-    //         .filter(|vt| vt.kind == ValueTransferKind::SendToSelf)
-    //         .count(),
-    //     (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
-    // );
+    // assert all fees are 10000 zats
+    let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
+    for value_transfer in &value_transfers {
+        if let ValueTransferKind::Fee { amount } = value_transfer.kind {
+            assert_eq!(amount, 10_000)
+        }
+    }
 }
 
 // Verifies lightclients sync all blocks from birthday to tip of blockchain
@@ -396,46 +426,121 @@ async fn sync_all_blocks_test() {
     // println!("do list tx summaries:");
     // dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
 
-    // // assert the balance is correct
-    // assert_eq!(
-    //     scenario.get_lightclient(0).do_balance().await,
-    //     PoolBalances {
-    //         sapling_balance: Some(0),
-    //         verified_sapling_balance: Some(0),
-    //         spendable_sapling_balance: Some(0),
-    //         unverified_sapling_balance: Some(0),
-    //         orchard_balance: Some(2_960_000),
-    //         verified_orchard_balance: Some(2_960_000),
-    //         unverified_orchard_balance: Some(0),
-    //         spendable_orchard_balance: Some(2_960_000),
-    //         transparent_balance: Some(0),
-    //     }
+    // assert the balance is correct
+    assert_eq!(
+        scenario.get_lightclient(0).do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(2_960_000),
+            verified_orchard_balance: Some(2_960_000),
+            unverified_orchard_balance: Some(0),
+            spendable_orchard_balance: Some(2_960_000),
+            transparent_balance: Some(0),
+        }
+    );
+    // assert the correct number of received value transfers
+    let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
+    assert_eq!(
+        value_transfers
+            .iter()
+            .filter(|vt| vt.kind
+                == ValueTransferKind::Received {
+                    pool: Pool::Sapling,
+                    amount: 50_000
+                })
+            .count(),
+        74
+    );
+    // assert the correct number of fee value transfers
+    assert_eq!(
+        value_transfers
+            .iter()
+            .filter(|k| matches!(k.kind, ValueTransferKind::Fee { .. }))
+            .count(),
+        74
+    );
+}
+// This test should replace sync_all_blocks_test when fee in correct
+#[ignore]
+#[tokio::test]
+async fn sync_all_blocks_test_failing() {
+    const BLOCKCHAIN_HEIGHT: u64 = 150;
+    let transaction_set = load_chainbuild_file("sync_all_blocks");
+    let mut scenario = DarksideScenario::default().await;
+    scenario.build_faucet(Pool::Sapling).await;
+    scenario
+        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
+        .await;
+
+    scenario.stage_and_apply_blocks(2, 0).await;
+
+    // send from faucet to recipient every odd block
+    // shield recipient's sapling pool every even block
+    for block_count in 3..110 {
+        scenario.stage_next_transaction(&transaction_set).await;
+        scenario.apply_blocks(block_count).await;
+    }
+    // 1st sync
+    scenario.get_lightclient(0).do_sync(false).await.unwrap();
+    for block_count in 110..=BLOCKCHAIN_HEIGHT {
+        scenario.stage_next_transaction(&transaction_set).await;
+        scenario.apply_blocks(block_count).await;
+    }
+    // 2nd sync
+    scenario.get_lightclient(0).do_sync(false).await.unwrap();
+
+    // // debug info
+    // println!("do list_notes:");
+    // println!(
+    //     "{}",
+    //     json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
     // );
-    // // assert the correct number of received value transfers
-    // let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
-    // assert_eq!(
-    //     value_transfers
-    //         .iter()
-    //         .filter(|vt| vt.kind
-    //             == ValueTransferKind::Received {
-    //                 pool: Pool::Sapling,
-    //                 amount: 50_000
-    //             })
-    //         .count(),
-    //     74
-    // );
-    // // assert the correct number of fee value transfers
-    // assert_eq!(
-    //     value_transfers
-    //         .iter()
-    //         .filter(|k| matches!(k.kind, ValueTransferKind::Fee { .. }))
-    //         .count(),
-    //     74
-    // );
-    // // assert all fees have correct value
-    // for value_transfer in &value_transfers {
-    //     if let ValueTransferKind::Fee { amount } = value_transfer.kind {
-    //         assert_eq!(amount, 10_000)
-    //     }
-    // }
+    // println!("do list tx summaries:");
+    // dbg!(scenario.get_lightclient(0).do_list_txsummaries().await);
+
+    // assert the balance is correct
+    assert_eq!(
+        scenario.get_lightclient(0).do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(2_960_000),
+            verified_orchard_balance: Some(2_960_000),
+            unverified_orchard_balance: Some(0),
+            spendable_orchard_balance: Some(2_960_000),
+            transparent_balance: Some(0),
+        }
+    );
+    // assert the correct number of received value transfers
+    let value_transfers = scenario.get_lightclient(0).do_list_txsummaries().await;
+    assert_eq!(
+        value_transfers
+            .iter()
+            .filter(|vt| vt.kind
+                == ValueTransferKind::Received {
+                    pool: Pool::Sapling,
+                    amount: 50_000
+                })
+            .count(),
+        74
+    );
+    // assert the correct number of fee value transfers
+    assert_eq!(
+        value_transfers
+            .iter()
+            .filter(|k| matches!(k.kind, ValueTransferKind::Fee { .. }))
+            .count(),
+        74
+    );
+    // assert all fees have correct value
+    for value_transfer in &value_transfers {
+        if let ValueTransferKind::Fee { amount } = value_transfer.kind {
+            assert_eq!(amount, 10_000)
+        }
+    }
 }
