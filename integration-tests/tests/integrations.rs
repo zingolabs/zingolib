@@ -637,7 +637,9 @@ mod fast {
             .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
             .unwrap();
 
-        let mid_client = LightClient::create_from_wallet(mid_wallet, config.clone());
+        let mid_client = LightClient::create_from_wallet_async(mid_wallet, config.clone())
+            .await
+            .unwrap();
         let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
         let wallet = LightWallet::read_internal(&mid_buffer[..], &config)
             .await
