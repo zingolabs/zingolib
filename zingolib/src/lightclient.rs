@@ -399,7 +399,7 @@ impl LightClient {
     }
 
     pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
-        self.save_internal_rust().await?;
+        // self.save_internal_rust().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
@@ -783,7 +783,7 @@ impl LightClient {
             .wallet_capability()
             .new_address(desired_receivers)?;
 
-        self.save_internal_rust().await?;
+        // self.save_internal_rust().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -796,7 +796,7 @@ impl LightClient {
         let response = self.do_sync(true).await;
 
         if response.is_ok() {
-            self.save_internal_rust().await?;
+            // self.save_internal_rust().await?;
         }
 
         debug!("Rescan finished");
