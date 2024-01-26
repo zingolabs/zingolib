@@ -622,6 +622,77 @@ mod fast {
     }
 
     #[tokio::test]
+    async fn reload_wallet_from_buffer() {
+        // We test that the LightWallet can be read from v28 .dat file
+        // A testnet wallet initiated with
+        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+        // --birthday 0
+        // --nosync
+        // with 3 addresses containing all receivers.
+        let data = include_bytes!("zingo-wallet-v28.dat");
+
+        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
+        let mid_wallet = LightWallet::read_internal(&data[..], &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
+            .unwrap();
+
+        let mid_client = LightClient::create_from_wallet(mid_wallet, config.clone());
+        let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
+        let wallet = LightWallet::read_internal(&mid_buffer[..], &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
+            .unwrap();
+        let expected_mnemonic = (
+            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+            0,
+        );
+        assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+
+        let expected_wc =
+            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
+                .unwrap();
+        let wc = wallet.wallet_capability();
+
+        let Capability::Spend(orchard_sk) = &wc.orchard else {
+            panic!("Expected Orchard Spending Key");
+        };
+        assert_eq!(
+            orchard_sk.to_bytes(),
+            orchard::keys::SpendingKey::try_from(&expected_wc)
+                .unwrap()
+                .to_bytes()
+        );
+
+        let Capability::Spend(sapling_sk) = &wc.sapling else {
+            panic!("Expected Sapling Spending Key");
+        };
+        assert_eq!(
+            sapling_sk,
+            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+        );
+
+        let Capability::Spend(transparent_sk) = &wc.transparent else {
+            panic!("Expected transparent extended private key");
+        };
+        assert_eq!(
+            transparent_sk,
+            &ExtendedPrivKey::try_from(&expected_wc).unwrap()
+        );
+
+        assert_eq!(wc.addresses().len(), 3);
+        for addr in wc.addresses().iter() {
+            assert!(addr.orchard().is_some());
+            assert!(addr.sapling().is_some());
+            assert!(addr.transparent().is_some());
+        }
+
+        let client = LightClient::create_from_wallet(wallet, config);
+        let balance = client.do_balance().await;
+        assert_eq!(balance.orchard_balance, Some(10342837));
+    }
+
+    #[tokio::test]
     async fn sync_all_epochs_from_sapling() {
         let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
         let (regtest_manager, _cph, lightclient) =
