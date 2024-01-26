@@ -148,10 +148,6 @@ impl TransactionMetadataSet {
 mod unit {
     use std::time::UNIX_EPOCH;
 
-    use proptest::{
-        strategy::{Strategy, ValueTree},
-        test_runner::TestRunner,
-    };
     use rand::Rng;
     use zcash_primitives::sapling::{note_encryption::SaplingDomain, value::NoteValue};
     use zingo_status::confirmation_status::ConfirmationStatus;
