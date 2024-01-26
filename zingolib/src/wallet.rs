@@ -54,6 +54,7 @@ use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
+use self::utils::get_price;
 use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
@@ -1432,12 +1433,7 @@ impl LightWallet {
 
             let status = ConfirmationStatus::Broadcast(submission_height);
             self.transaction_context
-                .scan_full_tx(
-                    transaction,
-                    status,
-                    now() as u32,
-                    TransactionRecord::get_price(now(), &price),
-                )
+                .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
                 .await;
         }
 
