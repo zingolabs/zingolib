@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LightClient pub fn export_save_buffer_runtime
 - LightClient pub fn get_wallet_file_location
 - LightClient pub fn get_wallet_dir_location
+- WalletBase pub fn parse_input_to_phrase
+- WalletCapability pub fn parse_string_encoded_ufvk
 
 ### Changed
 - load_client_config fn moves from zingolib to zingoconfig
