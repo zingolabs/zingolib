@@ -236,6 +236,7 @@ mod tests {
             Err(_) => panic!(),
         }
         let test_client = LightClient::create_unconnected(&config, wallet_base, 1)
+            .await
             .expect("To create a lightclient.");
         dbg!(test_client.do_info().await);
     }
