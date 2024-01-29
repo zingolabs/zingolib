@@ -1,10 +1,14 @@
-//! Test
+//! # Zingo Sync
+//!
+//! Re-org currently undefined.
 
-mod error;
-mod map_nullifier;
-mod note;
-mod proxy_connector;
-mod scan_director;
-mod scan_transaction;
-mod transaction;
-mod trial_decrypt;
+pub mod error;
+pub mod map_nullifier;
+pub mod note;
+pub mod proxy_connector;
+pub mod scan_director;
+pub mod scan_transaction;
+pub mod transaction;
+pub mod trial_decrypt;
+pub mod update_spend;
+pub mod witness;
