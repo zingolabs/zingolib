@@ -185,8 +185,8 @@ impl TransparentNote {
     }
 }
 pub struct SaplingNote {
-    pub diversifier: zcash_primitives::sapling::Diversifier,
-    pub note: zcash_primitives::sapling::Note,
+    pub diversifier: sapling_crypto::Diversifier,
+    pub note: sapling_crypto::Note,
 
     // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
@@ -195,7 +195,7 @@ pub struct SaplingNote {
     // The note's index in its containing transaction
     pub(crate) output_index: Option<u32>,
 
-    pub(super) nullifier: Option<zcash_primitives::sapling::Nullifier>,
+    pub(super) nullifier: Option<sapling_crypto::Nullifier>,
 
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
 
@@ -230,10 +230,10 @@ impl std::fmt::Debug for SaplingNote {
 }
 
 impl ShieldedNoteInterface for SaplingNote {
-    type Diversifier = zcash_primitives::sapling::Diversifier;
-    type Note = zcash_primitives::sapling::Note;
-    type Node = zcash_primitives::sapling::Node;
-    type Nullifier = zcash_primitives::sapling::Nullifier;
+    type Diversifier = sapling_crypto::Diversifier;
+    type Note = sapling_crypto::Note;
+    type Node = sapling_crypto::Node;
+    type Nullifier = sapling_crypto::Nullifier;
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
@@ -244,10 +244,10 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 
     fn from_parts(
-        diversifier: zcash_primitives::sapling::Diversifier,
-        note: zcash_primitives::sapling::Note,
+        diversifier: sapling_crypto::Diversifier,
+        note: sapling_crypto::Note,
         witnessed_position: Option<Position>,
-        nullifier: Option<zcash_primitives::sapling::Nullifier>,
+        nullifier: Option<sapling_crypto::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,

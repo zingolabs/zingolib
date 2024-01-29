@@ -1,5 +1,5 @@
 use incrementalmerkletree::witness::IncrementalWitness;
-use zcash_primitives::{sapling, transaction::TxId};
+use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
 use crate::wallet::notes;
@@ -23,7 +23,7 @@ pub struct TransactionRecord {
     pub txid: TxId,
 
     // List of all nullifiers spent by this wallet in this Tx.
-    pub spent_sapling_nullifiers: Vec<zcash_primitives::sapling::Nullifier>,
+    pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
 
     // List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
@@ -142,12 +142,11 @@ impl TransactionRecord {
             .sum()
     }
     pub fn total_change_returned(&self) -> u64 {
-        self.pool_change_returned::<SaplingDomain<ChainType>>()
-            + self.pool_change_returned::<OrchardDomain>()
+        self.pool_change_returned::<SaplingDomain>() + self.pool_change_returned::<OrchardDomain>()
     }
     pub fn total_value_received(&self) -> u64 {
         self.pool_value_received::<OrchardDomain>()
-            + self.pool_value_received::<SaplingDomain<ChainType>>()
+            + self.pool_value_received::<SaplingDomain>()
             + self
                 .transparent_notes
                 .iter()
@@ -181,7 +180,7 @@ impl TransactionRecord {
             &WalletCapability,
             Option<&mut (
                 Vec<(
-                    IncrementalWitness<sapling::Node, COMMITMENT_TREE_LEVELS>,
+                    IncrementalWitness<sapling_crypto::Node, COMMITMENT_TREE_LEVELS>,
                     BlockHeight,
                 )>,
                 Vec<(
@@ -249,7 +248,7 @@ impl TransactionRecord {
             Vector::read(&mut reader, |r| {
                 let mut n = [0u8; 32];
                 r.read_exact(&mut n)?;
-                Ok(zcash_primitives::sapling::Nullifier(n))
+                Ok(sapling_crypto::Nullifier(n))
             })?
         };
 
@@ -343,7 +342,7 @@ mod tests {
         assert_eq!(new.is_incoming_transaction(), false);
         // assert_eq!(new.net_spent(), 0);
         assert_eq!(new.pool_change_returned::<OrchardDomain>(), 0);
-        assert_eq!(new.pool_change_returned::<SaplingDomain<ChainType>>(), 0);
+        assert_eq!(new.pool_change_returned::<SaplingDomain>(), 0);
         assert_eq!(new.total_value_received(), 0);
         assert_eq!(new.total_value_spent(), 0);
         assert_eq!(new.value_outgoing(), 0);
