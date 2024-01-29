@@ -34,9 +34,11 @@ pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -
             .to_bytes(),
     );
     let s_fvk = Fvk::Sapling(
-        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(wallet_capability)
-            .unwrap()
-            .to_bytes(),
+        zcash_client_backend::keys::sapling::DiversifiableFullViewingKey::try_from(
+            wallet_capability,
+        )
+        .unwrap()
+        .to_bytes(),
     );
     let mut t_fvk_bytes = [0u8; 65];
     let t_ext_pk: zingolib::wallet::keys::extended_transparent::ExtendedPubKey =

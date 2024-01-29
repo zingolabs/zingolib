@@ -11,7 +11,7 @@ impl LightClient {
         'a: 'b,
         'c: 'b,
     {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, zcash_primitives::sapling::note_encryption::SaplingDomain<zingoconfig::ChainType>>(
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, sapling_crypto::note_encryption::SaplingDomain>(
             transaction_metadata,
             unified_spend_auth,
         )

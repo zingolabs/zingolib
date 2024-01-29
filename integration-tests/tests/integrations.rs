@@ -538,7 +538,8 @@ mod fast {
         };
         assert_eq!(
             sapling_sk,
-            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+            &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc)
+                .unwrap()
         );
 
         // Compare transparent
@@ -605,7 +606,8 @@ mod fast {
         };
         assert_eq!(
             sapling_sk,
-            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+            &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc)
+                .unwrap()
         );
 
         // Compare transparent
@@ -681,7 +683,8 @@ mod fast {
         };
         assert_eq!(
             sapling_sk,
-            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+            &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc)
+                .unwrap()
         );
 
         let Capability::Spend(transparent_sk) = &wc.transparent else {
@@ -2762,10 +2765,10 @@ mod slow {
         assert_eq!(
             wallet_trees
                 .witness_tree_orchard
-                .witness(last_leaf.unwrap(), 0)
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
                 .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
             server_orchard_shardtree
-                .witness(last_leaf.unwrap(), 0)
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
                 .unwrap()
         )
     }
@@ -3438,7 +3441,7 @@ mod slow {
             .as_ref()
             .unwrap()
             .witness_tree_orchard
-            .witness(
+            .witness_at_checkpoint_depth(
                 recipient
                     .wallet
                     .transaction_context
@@ -3478,7 +3481,7 @@ mod slow {
             .as_ref()
             .unwrap()
             .witness_tree_orchard
-            .witness(
+            .witness_at_checkpoint_depth(
                 recipient
                     .wallet
                     .transaction_context

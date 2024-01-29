@@ -50,7 +50,9 @@ use zcash_client_backend::{
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
-    transaction::{fees::zip317::MINIMUM_FEE, Transaction, TxId},
+    transaction::{
+        components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+    },
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ZingoConfig, MAX_REORG};
@@ -842,8 +844,8 @@ impl LightClient {
         tos: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<
         Vec<(
-            zcash_client_backend::address::RecipientAddress,
-            zcash_primitives::transaction::components::Amount,
+            zcash_client_backend::address::Address,
+            NonNegativeAmount,
             Option<MemoBytes>,
         )>,
         String,
@@ -853,7 +855,7 @@ impl LightClient {
         }
         tos.iter()
             .map(|to| {
-                let ra = match zcash_client_backend::address::RecipientAddress::decode(
+                let ra = match zcash_client_backend::address::Address::decode(
                     &self.config.chain,
                     to.0,
                 ) {
@@ -865,8 +867,7 @@ impl LightClient {
                     }
                 };
 
-                let value =
-                    zcash_primitives::transaction::components::Amount::from_u64(to.1).unwrap();
+                let value = NonNegativeAmount::from_u64(to.1).unwrap();
 
                 Ok((ra, value, to.2.clone()))
             })
@@ -1323,7 +1324,7 @@ impl LightClient {
                                 transaction_metadata_set.clone(),
                             )
                             .scan_full_tx(
-                                transaction,
+                                &transaction,
                                 status,
                                 now() as u32,
                                 get_price(now(), &price),
@@ -1968,7 +1969,7 @@ impl LightClient {
                         if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<zcash_primitives::sapling::note_encryption::SaplingDomain<zingoconfig::ChainType>>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
+                            let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
                             let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -2055,9 +2056,9 @@ impl LightClient {
                             None
                         } else {
                             let created_block:u32 = wtx.status.get_height().into();
-                            let recipient = zcash_client_backend::address::RecipientAddress::decode(&self.config.chain, &utxo.address);
+                            let recipient = zcash_client_backend::address::Address::decode(&self.config.chain, &utxo.address);
                             let taddr = match recipient {
-                            Some(zcash_client_backend::address::RecipientAddress::Transparent(taddr)) => taddr,
+                            Some(zcash_client_backend::address::Address::Transparent(taddr)) => taddr,
                                 _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
                             };
 
