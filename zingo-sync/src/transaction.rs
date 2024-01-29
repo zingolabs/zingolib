@@ -7,5 +7,5 @@
 //! the neccessary information has been collected.
 //!
 //! An enhanced transaction includes references to all notes consumed in the transaction and
-//! therefore cannot be created until all previous compact blocks have been trial decrypted and
-//! transactions scanned from any successful decryption attempts.
+//! therefore cannot be created until these notes have been created by scanning previous
+//! transactions

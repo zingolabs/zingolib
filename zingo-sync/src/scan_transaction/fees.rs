@@ -1,6 +1,7 @@
 //! Fee calculation
 //!
 //! Library for calculating fees during transaction scanning.
+//! Should implement zip317
 //!
 //! Should process fee as a validator would with no need for viewing key or notes.
 //! Requires the transactions of all transparent inputs to have been scanned before fee can

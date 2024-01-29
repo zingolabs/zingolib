@@ -33,14 +33,13 @@
 //! Batches mitigate the queued TXIDs to `scan transaction` from getting too large, may not be neccessary.
 //!
 //! Transaction scanning:
-//! - When `trial decrypt`, `transparent TXID fetcher` or `update spend` returns a TXID, add a copy to a
-//! queued transactions list or hashmap and pass to `priority` to be ordered, then send to `scan
-//! transaction`
-//! - When `scan transaction` returns txid of transaction successfuly scanned, remove from queued
-//! transactions
+//! - When the trial decryptor, transparent TXID fetcher or a match from nullifier map returns a
+//! TXID, add to the queued transactions list and pass to `priority` to be ordered, then send to
+//! `scan transaction`
+//! - When `scan transaction` returns succesffuly, remove txid from queued transactions
 //!
 //! On reload:
-//! Queued transactions list/hashmap will ensure that when wallet is saved that one of three cases
+//! Queued transactions list` will ensure that when wallet is saved that one of three cases
 //! will keep wallet state correct
 //! 1. Save was called before, for example, `trial decrypt` finished it's batch and wallet
 //! crashed/closed. In this case, `trial decrypt` would re-scan the incomplete batch on reload.
