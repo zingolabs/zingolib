@@ -2,23 +2,20 @@ use byteorder::ReadBytesExt;
 use bytes::{Buf, Bytes, IntoBuf};
 use group::GroupEncoding;
 use rand::{rngs::OsRng, CryptoRng, Rng, RngCore};
-use std::{
-    convert::TryInto,
-    io::{self, ErrorKind, Read},
+use sapling_crypto::{
+    keys::{EphemeralPublicKey, OutgoingViewingKey},
+    note::ExtractedNoteCommitment,
+    note_encryption::{try_sapling_note_decryption, PreparedIncomingViewingKey, SaplingDomain},
+    value::NoteValue,
+    PaymentAddress, Rseed, SaplingIvk,
 };
+use std::io::{self, ErrorKind, Read};
 use zcash_note_encryption::{
     Domain, EphemeralKeyBytes, NoteEncryption, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
-    consensus::{BlockHeight, MainNetwork, MAIN_NETWORK},
-    keys::OutgoingViewingKey,
-    memo::Memo,
-    sapling::{
-        keys::EphemeralPublicKey,
-        note::ExtractedNoteCommitment,
-        note_encryption::{try_sapling_note_decryption, PreparedIncomingViewingKey, SaplingDomain},
-        PaymentAddress, Rseed, SaplingIvk,
-    },
+    consensus::{sapling_zip212_enforcement, BlockHeight},
+    memo::{Memo, MemoBytes},
 };
 use zingoconfig::ChainType;
 
@@ -54,7 +51,7 @@ impl Message {
         String,
     > {
         // 0-value note
-        let value = 0;
+        let value = NoteValue::ZERO;
 
         // Construct the value commitment, used if an OVK was supplied to create out_ciphertext
         let rseed = Rseed::AfterZip212(rng.gen::<[u8; 32]>());
@@ -67,17 +64,16 @@ impl Message {
         let cmu = note.cmu();
 
         // Create the note encryption object
-        let ne = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
+        let ne = NoteEncryption::<SaplingDomain>::new(
             ovk,
             note,
-            self.memo.clone().into(),
+            *MemoBytes::from(self.memo.clone()).as_array(),
         );
 
         // EPK, which needs to be sent to the receiver.
         // A very awkward unpack-repack here, as EphemeralPublicKey doesn't implement Clone,
         // So in order to get the EPK instead of a reference, we convert it to epk_bytes and back
-        let epk = SaplingDomain::<ChainType>::epk(&SaplingDomain::<ChainType>::epk_bytes(ne.epk()))
-            .unwrap();
+        let epk = SaplingDomain::epk(&SaplingDomain::epk_bytes(ne.epk())).unwrap();
 
         // enc_ciphertext is the encrypted note, out_ciphertext is the outgoing cipher text that the
         // sender can recover
@@ -102,7 +98,7 @@ impl Message {
         data.push(Message::serialized_version());
         data.extend_from_slice(&cmu.to_bytes());
         // Main Network is maybe incorrect, but not used in the calculation of epk_bytes
-        data.extend_from_slice(&SaplingDomain::<MainNetwork>::epk_bytes(&epk).0);
+        data.extend_from_slice(&SaplingDomain::epk_bytes(&epk).0);
         data.extend_from_slice(&enc_ciphertext);
 
         Ok(data)
@@ -170,7 +166,7 @@ impl Message {
             enc_bytes: [u8; ENC_CIPHERTEXT_SIZE],
         }
 
-        impl ShieldedOutput<SaplingDomain<MainNetwork>, ENC_CIPHERTEXT_SIZE> for Unspendable {
+        impl ShieldedOutput<SaplingDomain, ENC_CIPHERTEXT_SIZE> for Unspendable {
             fn ephemeral_key(&self) -> EphemeralKeyBytes {
                 EphemeralKeyBytes(self.epk_bytes)
             }
@@ -186,18 +182,17 @@ impl Message {
         // really apply, since this note is not spendable anyway, so the rseed and the note itself
         // are not usable.
         match try_sapling_note_decryption(
-            &MAIN_NETWORK,
-            BlockHeight::from_u32(1_100_000),
             &PreparedIncomingViewingKey::new(ivk),
             &Unspendable {
                 cmu_bytes,
                 epk_bytes,
                 enc_bytes,
             },
+            sapling_zip212_enforcement(&ChainType::Mainnet, BlockHeight::from_u32(1_100_000)),
         ) {
             Some((_note, address, memo)) => Ok(Self::new(
                 address,
-                memo.try_into().map_err(|_e| {
+                Memo::from_bytes(&memo).map_err(|_e| {
                     io::Error::new(ErrorKind::InvalidData, "Failed to decrypt".to_string())
                 })?,
             )),
@@ -212,16 +207,10 @@ impl Message {
 #[cfg(test)]
 pub mod tests {
     use ff::Field;
-    use rand::{rngs::OsRng, Rng};
-    use zcash_note_encryption::{Domain, OUT_PLAINTEXT_SIZE};
-    use zcash_primitives::{
-        memo::Memo,
-        sapling::{note_encryption::SaplingDomain, PaymentAddress, Rseed, SaplingIvk},
-        zip32::ExtendedSpendingKey,
-    };
-    use zingoconfig::ChainType;
+    use sapling_crypto::zip32::ExtendedSpendingKey;
+    use zcash_note_encryption::OUT_PLAINTEXT_SIZE;
 
-    use super::{Message, ENC_CIPHERTEXT_SIZE};
+    use super::*;
 
     fn get_random_zaddr() -> (ExtendedSpendingKey, SaplingIvk, PaymentAddress) {
         let mut rng = OsRng;
@@ -308,18 +297,18 @@ pub mod tests {
         assert!(dec_success.is_err());
 
         // Create a new, random EPK
-        let note = to.create_note(0, Rseed::BeforeZip212(jubjub::Fr::random(&mut rng)));
+        let note = to.create_note(
+            NoteValue::ZERO,
+            Rseed::BeforeZip212(jubjub::Fr::random(&mut rng)),
+        );
         let mut random_bytes = [0; OUT_PLAINTEXT_SIZE];
         random_bytes[32..OUT_PLAINTEXT_SIZE]
             .copy_from_slice(&jubjub::Scalar::random(&mut rng).to_bytes());
-        let epk_bad =
-            SaplingDomain::<ChainType>::epk_bytes(&SaplingDomain::<ChainType>::ka_derive_public(
-                &note,
-                &SaplingDomain::<ChainType>::extract_esk(
-                    &zcash_note_encryption::OutPlaintextBytes(random_bytes),
-                )
+        let epk_bad = SaplingDomain::epk_bytes(&SaplingDomain::ka_derive_public(
+            &note,
+            &SaplingDomain::extract_esk(&zcash_note_encryption::OutPlaintextBytes(random_bytes))
                 .unwrap(),
-            ));
+        ));
 
         let mut bad_enc = enc.clone();
         bad_enc.splice(prefix_len..prefix_len + 33, epk_bad.0.to_vec());

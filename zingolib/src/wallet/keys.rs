@@ -2,13 +2,13 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use base58::ToBase58;
 use ripemd160::Digest;
+use sapling_crypto::{
+    zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
+    PaymentAddress,
+};
 use sha2::Sha256;
 use zcash_client_backend::address;
-use zcash_primitives::{
-    legacy::TransparentAddress,
-    sapling::PaymentAddress,
-    zip32::{ChildIndex, DiversifiableFullViewingKey, ExtendedSpendingKey},
-};
+use zcash_primitives::{legacy::TransparentAddress, zip32::ChildIndex};
 use zingoconfig::ZingoConfig;
 
 pub mod extended_transparent;
@@ -57,9 +57,9 @@ pub fn get_zaddr_from_bip39seed(
     let extsk: ExtendedSpendingKey = ExtendedSpendingKey::from_path(
         &ExtendedSpendingKey::master(bip39_seed),
         &[
-            ChildIndex::Hardened(32),
-            ChildIndex::Hardened(config.get_coin_type()),
-            ChildIndex::Hardened(pos),
+            ChildIndex::hardened(32),
+            ChildIndex::hardened(config.get_coin_type()),
+            ChildIndex::hardened(pos),
         ],
     );
     let fvk = extsk.to_diversifiable_full_viewing_key();
@@ -81,8 +81,8 @@ pub fn get_zaddr_from_bip39seed(
 
 pub fn is_shielded_address(addr: &str, config: &ZingoConfig) -> bool {
     matches!(
-        address::RecipientAddress::decode(&config.chain, addr),
-        Some(address::RecipientAddress::Shielded(_)) | Some(address::RecipientAddress::Unified(_))
+        address::Address::decode(&config.chain, addr),
+        Some(address::Address::Sapling(_)) | Some(address::Address::Unified(_))
     )
 }
 

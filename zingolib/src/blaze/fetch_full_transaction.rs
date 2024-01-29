@@ -14,6 +14,7 @@ use crate::{
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use std::{
     collections::HashSet,
     convert::TryInto,
@@ -29,17 +30,16 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_client_backend::address::{RecipientAddress, UnifiedAddress};
+use zcash_client_backend::address::{Address, UnifiedAddress};
 use zcash_note_encryption::try_output_recovery_with_ovk;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
-    sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::ZingoConfig;
 
 #[derive(Clone)]
 pub struct TransactionContext {
@@ -103,7 +103,7 @@ impl TransactionContext {
     }
     pub(crate) async fn scan_full_tx(
         &self,
-        transaction: Transaction,
+        transaction: &Transaction,
         status: ConfirmationStatus,
         block_time: u32,
         price: Option<f64>,
@@ -333,7 +333,7 @@ impl TransactionContext {
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
     ) {
-        self.scan_bundle::<SaplingDomain<ChainType>>(
+        self.scan_bundle::<SaplingDomain>(
             transaction,
             status,
             block_time,
@@ -511,17 +511,11 @@ impl TransactionContext {
                             Ok(memo) => {
                                 if self.key.addresses().iter().any(|unified_address| {
                                     [
-                                        unified_address
-                                            .transparent()
-                                            .cloned()
-                                            .map(RecipientAddress::from),
-                                        unified_address
-                                            .sapling()
-                                            .cloned()
-                                            .map(RecipientAddress::from),
+                                        unified_address.transparent().cloned().map(Address::from),
+                                        unified_address.sapling().cloned().map(Address::from),
                                         unified_address.orchard().cloned().map(
                                             |orchard_receiver| {
-                                                RecipientAddress::from(
+                                                Address::from(
                                                     UnifiedAddress::from_receivers(
                                                         Some(orchard_receiver),
                                                         None,
@@ -639,7 +633,7 @@ pub async fn start(
 
                 let status = ConfirmationStatus::Confirmed(height);
                 per_txid_iter_context
-                    .scan_full_tx(transaction, status, block_time, None)
+                    .scan_full_tx(&transaction, status, block_time, None)
                     .await;
 
                 Ok::<_, String>(())
@@ -679,7 +673,7 @@ pub async fn start(
                 .await;
             let status = ConfirmationStatus::Confirmed(height);
             transaction_context
-                .scan_full_tx(transaction, status, block_time, None)
+                .scan_full_tx(&transaction, status, block_time, None)
                 .await;
         }
 

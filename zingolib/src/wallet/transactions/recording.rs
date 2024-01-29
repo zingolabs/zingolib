@@ -1,14 +1,14 @@
 use incrementalmerkletree::Position;
 use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
-    sapling::note_encryption::SaplingDomain,
     transaction::{components::TxOut, TxId},
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::{ChainType, MAX_REORG};
+use zingoconfig::MAX_REORG;
 
 use log::error;
 
@@ -45,7 +45,7 @@ impl TransactionMetadataSet {
                     }
                 })
         });
-        self.remove_domain_specific_txids::<SaplingDomain<ChainType>>(&txids_to_remove);
+        self.remove_domain_specific_txids::<SaplingDomain>(&txids_to_remove);
         self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
     }
 
@@ -189,7 +189,7 @@ impl TransactionMetadataSet {
                     output_index,
                 ),
             PoolNullifier::Sapling(spent_nullifier) => self
-                .found_spent_nullifier_internal::<SaplingDomain<ChainType>>(
+                .found_spent_nullifier_internal::<SaplingDomain>(
                     spending_txid,
                     status,
                     timestamp,

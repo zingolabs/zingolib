@@ -15,10 +15,8 @@ use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::Vector;
-use zcash_primitives::{
-    legacy::TransparentAddress, sapling::note_encryption::PreparedIncomingViewingKey,
-    zip32::DiversifierIndex,
-};
+use zcash_primitives::zip32::AccountId;
+use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
@@ -65,8 +63,8 @@ pub struct WalletCapability {
         super::extended_transparent::ExtendedPrivKey,
     >,
     pub sapling: Capability<
-        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey,
-        zcash_primitives::zip32::sapling::ExtendedSpendingKey,
+        sapling_crypto::zip32::DiversifiableFullViewingKey,
+        sapling_crypto::zip32::ExtendedSpendingKey,
     >,
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
@@ -171,7 +169,7 @@ impl WalletCapability {
                 .to_bytes(),
         );
         let s_fvk = Fvk::Sapling(
-            zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(self)
+            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)
                 .unwrap()
                 .to_bytes(),
         );
@@ -220,7 +218,7 @@ impl WalletCapability {
             let mut sapling_diversifier_index = DiversifierIndex::new();
             let mut address;
             let mut count = 0;
-            let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
+            let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey =
                 self.try_into().expect("to create an fvk");
             loop {
                 (sapling_diversifier_index, address) = fvk
@@ -341,9 +339,12 @@ impl WalletCapability {
                 config, seed, position,
             );
 
-        let orchard_key =
-            orchard::keys::SpendingKey::from_zip32_seed(seed, config.get_coin_type(), position)
-                .unwrap();
+        let orchard_key = orchard::keys::SpendingKey::from_zip32_seed(
+            seed,
+            config.get_coin_type(),
+            AccountId::try_from(position).unwrap(),
+        )
+        .unwrap();
         Self {
             orchard: Capability::Spend(orchard_key),
             sapling: Capability::Spend(sapling_key),
@@ -405,7 +406,7 @@ impl WalletCapability {
                 }
                 Fvk::Sapling(key_bytes) => {
                     wc.sapling = Capability::View(
-                        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::read(
+                        sapling_crypto::zip32::DiversifiableFullViewingKey::read(
                             &key_bytes[..],
                             (),
                         )
@@ -451,10 +452,10 @@ impl WalletCapability {
             .collect()
     }
 
-    pub fn first_sapling_address(&self) -> &zcash_primitives::sapling::PaymentAddress {
+    pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
         // This index is dangerous, but all ways to instantiate a UnifiedSpendAuthority
         // create it with a suitable first address
-        self.addresses()[0].sapling().unwrap()
+        *self.addresses()[0].sapling().unwrap()
     }
 
     /// Returns a selection of pools where the wallet can spend funds.
@@ -541,7 +542,7 @@ impl ReadableWriteable<()> for WalletCapability {
             // in version 1, only spending keys are stored
             1 => {
                 let orchard = orchard::keys::SpendingKey::read(&mut reader, ())?;
-                let sapling = zcash_primitives::zip32::ExtendedSpendingKey::read(&mut reader)?;
+                let sapling = sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
                 let transparent =
                     super::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
                 Self {
@@ -602,7 +603,7 @@ impl TryFrom<&WalletCapability> for super::extended_transparent::ExtendedPrivKey
     }
 }
 
-impl TryFrom<&WalletCapability> for zcash_primitives::zip32::ExtendedSpendingKey {
+impl TryFrom<&WalletCapability> for sapling_crypto::zip32::ExtendedSpendingKey {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
         match &wc.sapling {
@@ -648,7 +649,7 @@ impl TryFrom<&WalletCapability> for orchard::keys::FullViewingKey {
     }
 }
 
-impl TryFrom<&WalletCapability> for zcash_primitives::zip32::sapling::DiversifiableFullViewingKey {
+impl TryFrom<&WalletCapability> for sapling_crypto::zip32::DiversifiableFullViewingKey {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
         match &wc.sapling {
@@ -664,12 +665,12 @@ impl TryFrom<&WalletCapability> for zcash_primitives::zip32::sapling::Diversifia
     }
 }
 
-impl TryFrom<&WalletCapability> for PreparedIncomingViewingKey {
+impl TryFrom<&WalletCapability> for sapling_crypto::note_encryption::PreparedIncomingViewingKey {
     type Error = String;
 
     fn try_from(value: &WalletCapability) -> Result<Self, Self::Error> {
-        zcash_primitives::sapling::SaplingIvk::try_from(value)
-            .map(|k| PreparedIncomingViewingKey::new(&k))
+        sapling_crypto::SaplingIvk::try_from(value)
+            .map(|k| sapling_crypto::note_encryption::PreparedIncomingViewingKey::new(&k))
     }
 }
 
@@ -689,10 +690,10 @@ impl TryFrom<&WalletCapability> for orchard::keys::PreparedIncomingViewingKey {
     }
 }
 
-impl TryFrom<&WalletCapability> for zcash_primitives::sapling::SaplingIvk {
+impl TryFrom<&WalletCapability> for sapling_crypto::SaplingIvk {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
-        let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey = wc.try_into()?;
+        let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey = wc.try_into()?;
         Ok(fvk.fvk().vk.ivk())
     }
 }
@@ -705,10 +706,10 @@ impl TryFrom<&WalletCapability> for orchard::keys::OutgoingViewingKey {
     }
 }
 
-impl TryFrom<&WalletCapability> for zcash_primitives::keys::OutgoingViewingKey {
+impl TryFrom<&WalletCapability> for sapling_crypto::keys::OutgoingViewingKey {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
-        let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey = wc.try_into()?;
+        let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey = wc.try_into()?;
         Ok(fvk.fvk().ovk)
     }
 }
