@@ -469,13 +469,14 @@ impl ConfigTemplate {
         }
 
         let clean_regtest_data = !matches.get_flag("no-clean");
-        let mut data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
-            PathBuf::from(dir.clone())
-        } else if is_regtest {
-            zingo_testutils::paths::get_regtest_dir()
-        } else {
-            PathBuf::from("wallets")
-        };
+        let mut data_dir =
+            if let Some(dir) = matches.get_one::<std::path::PathBuf>("fresh-wallet-dir") {
+                PathBuf::from(dir.clone())
+            } else if is_regtest {
+                zingo_testutils::paths::get_regtest_dir()
+            } else {
+                PathBuf::from("wallets")
+            };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut server = matches
             .get_one::<http::Uri>("server")

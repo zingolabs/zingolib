@@ -17,7 +17,6 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
 }
 "#;
     let temp_data_dir = make_data_dir("clargs_view_key_birthday_fresh_wallet_dir");
-    dbg!(&temp_data_dir);
 
     // Run the cargo command
     let output = std::process::Command::new("cargo")
@@ -30,7 +29,6 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
         .output()
         .expect("Failed to execute cargo run command");
 
-    // Check that the command executed successfully
     // Check that the command executed successfully
     if !output.status.success() {
         eprintln!("Command failed with status: {:?}", output.status);
@@ -48,10 +46,9 @@ fn clargs_view_key_birthday_fresh_wallet_dir() {
     // Additional assertions based on the expected behavior of your application
     // For example, check if the 'foo' directory was created
     assert!(std::fs::metadata(&temp_data_dir).is_ok());
-    assert_eq!(
-        std::string::String::from_utf8_lossy(&output.stdout),
-        expected_output
-    );
+    // Not asserting equality because the output contains information about the cli running as well.
+    // (Asserting equality would need a separate output after cli is running.)
+    assert!(std::string::String::from_utf8_lossy(&output.stdout).contains(expected_output));
     if std::fs::metadata(&temp_data_dir).is_ok() {
         std::fs::remove_dir_all(temp_data_dir).expect("Failed to remove existing foo directory");
     }
