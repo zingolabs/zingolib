@@ -338,8 +338,8 @@ mod tests {
         );
         assert_eq!(new.get_transparent_value_spent(), 0);
         assert_eq!(new.get_transaction_fee().unwrap(), 0);
-        assert_eq!(new.is_outgoing_transaction(), false);
-        assert_eq!(new.is_incoming_transaction(), false);
+        assert!(!new.is_outgoing_transaction());
+        assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
         assert_eq!(new.pool_change_returned::<OrchardDomain>(), 0);
         assert_eq!(new.pool_change_returned::<SaplingDomain>(), 0);
