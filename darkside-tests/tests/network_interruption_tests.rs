@@ -168,7 +168,7 @@ async fn shielded_note_marked_as_change_test() {
     let notes = scenario.get_lightclient(0).do_list_notes(true).await;
     if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
         for notes in unspent_orchard_notes {
-            assert_eq!(notes["is_change"].as_bool().unwrap(), true);
+            assert!(notes["is_change"].as_bool().unwrap());
         }
     }
     // assert all fees are 10000 zats

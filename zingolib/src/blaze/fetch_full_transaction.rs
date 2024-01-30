@@ -129,7 +129,7 @@ impl TransactionContext {
         let mut outgoing_metadatas = vec![];
         // Execute scanning operations
         self.execute_bundlescans_internal(
-            &transaction,
+            transaction,
             status,
             block_time,
             &mut is_outgoing_transaction,
@@ -148,7 +148,7 @@ impl TransactionContext {
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
-                            value: u64::try_from(vout.value).expect("A u64 representable Amount."),
+                            value: u64::from(vout.value),
                             memo: Memo::Empty,
                             recipient_ua: None,
                         });

@@ -1125,7 +1125,7 @@ impl LightWallet {
                         tx_builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
-                            u64::try_from(value).expect("u64 representable"),
+                            u64::from(value),
                             validated_memo,
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
@@ -1212,10 +1212,7 @@ impl LightWallet {
         let mut tx_builder;
         let mut proposed_fee = MINIMUM_FEE;
         let mut total_value_covered_by_selected;
-        let total_earmarked_for_recipients: u64 = receivers
-            .iter()
-            .map(|to| u64::try_from(to.1).expect("u64 representable"))
-            .sum();
+        let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_earmarked_for_recipients,
