@@ -437,6 +437,28 @@ where
             .map(|nd| nd.value())
             .sum()
     }
+    fn get_zcb_received_note(
+        transaction_record: &TransactionRecord,
+        txid: &zcash_primitives::transaction::TxId,
+        index: u32,
+    ) -> Option<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    {
+        let note = Self::to_notes_vec(transaction_record)
+            .iter()
+            .find(|note| *note.output_index() == Some(index));
+        note.and_then(|n| {
+            n.witnessed_position().map(|pos| {
+                zcash_client_backend::wallet::ReceivedNote::from_parts(
+                    (),
+                    *txid,
+                    index as u16,
+                    n.to_zcb_note(),
+                    zip32::Scope::External,
+                    pos,
+                )
+            })
+        })
+    }
     fn transaction_metadata_set_to_shardtree(
         txmds: &TransactionMetadataSet,
     ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {

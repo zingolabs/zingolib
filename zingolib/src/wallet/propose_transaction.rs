@@ -1,6 +1,8 @@
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::data_api::InputSource;
 
-use super::transactions::TransactionMetadataSet;
+use super::{traits::DomainWalletExt, transactions::TransactionMetadataSet};
 use crate::error::ZingoLibError;
 
 pub struct ZingoInputSource {
@@ -28,16 +30,16 @@ impl InputSource for ZingoInputSource {
         Self::Error,
     > {
         let transaction = self.metadata.current.get(txid);
-        Ok(transaction.map(|transaction_record| match protocol {
-            zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
-                .sapling_notes
-                .iter()
-                .find(|note| note.output_index == Some(index)),
-            zcash_client_backend::ShieldedProtocol::Orchard => transaction_record
-                .orchard_notes
-                .iter()
-                .find(|note| note.output_index == Some(index)),
-        }))
+        Ok(transaction
+            .map(|transaction_record| match protocol {
+                zcash_client_backend::ShieldedProtocol::Sapling => {
+                    SaplingDomain::get_zcb_received_note(transaction_record, txid, index)
+                }
+                zcash_client_backend::ShieldedProtocol::Orchard => {
+                    OrchardDomain::get_zcb_received_note(transaction_record, txid, index)
+                }
+            })
+            .flatten())
     }
 
     fn select_spendable_notes(
