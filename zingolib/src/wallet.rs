@@ -71,6 +71,7 @@ pub mod data;
 pub mod keys;
 pub(crate) mod message;
 pub mod notes;
+pub mod propose_transaction;
 pub mod traits;
 pub mod transaction_record;
 pub(crate) mod transactions;
