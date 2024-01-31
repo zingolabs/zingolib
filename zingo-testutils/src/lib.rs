@@ -2,16 +2,16 @@ pub mod interrupts;
 
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
-use std::collections::HashMap;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::string::String;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    io::Read,
+    path::{Path, PathBuf},
+    string::String,
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
 use zcash_address::unified::{Fvk, Ufvk};
-use zingolib::wallet::keys::unified::WalletCapability;
-use zingolib::wallet::WalletBase;
+use zingolib::wallet::{keys::unified::WalletCapability, WalletBase};
 
 use json::JsonValue;
 use log::debug;
@@ -247,8 +247,12 @@ pub mod scenarios {
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::increase_height_and_wait_for_client;
-    use zingolib::testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-    use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
+    use zingolib::{
+        get_base_address,
+        lightclient::LightClient,
+        testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT},
+        wallet::Pool,
+    };
 
     pub mod setup {
         use super::BASE_HEIGHT;
@@ -257,12 +261,15 @@ pub mod scenarios {
             REG_Z_ADDR_FROM_ABANDONART,
         };
 
-        use super::super::paths::get_regtest_dir;
-        use super::{testvectors, ChildProcessHandler, RegtestManager};
+        use super::{
+            super::paths::get_regtest_dir, testvectors, ChildProcessHandler, RegtestManager,
+        };
         use std::path::PathBuf;
         use tokio::time::sleep;
-        use zingolib::wallet::Pool;
-        use zingolib::{lightclient::LightClient, wallet::WalletBase};
+        use zingolib::{
+            lightclient::LightClient,
+            wallet::{Pool, WalletBase},
+        };
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
             pub regtest_manager: RegtestManager,

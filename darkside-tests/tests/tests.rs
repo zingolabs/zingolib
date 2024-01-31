@@ -4,8 +4,7 @@ use darkside_tests::utils::{
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
-use zingolib::testvectors::seeds::DARKSIDE_SEED;
-use zingolib::{get_base_address, lightclient::PoolBalances};
+use zingolib::{get_base_address, lightclient::PoolBalances, testvectors::seeds::DARKSIDE_SEED};
 
 #[tokio::test]
 async fn simple_sync() {

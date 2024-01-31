@@ -1,18 +1,20 @@
-use crate::wallet::keys::address_from_pubkeyhash;
-use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::keys::{address_from_pubkeyhash, unified::WalletCapability};
 use zcash_client_backend::proto::service::RawTransaction;
 
 use std::sync::Arc;
-use tokio::join;
-use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::oneshot;
-use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
+use tokio::{
+    join,
+    sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
+    task::JoinHandle,
+};
 
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::consensus::BranchId;
-use zcash_primitives::consensus::Parameters;
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::{
+    consensus::{BlockHeight, BranchId, Parameters},
+    transaction::Transaction,
+};
 use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {

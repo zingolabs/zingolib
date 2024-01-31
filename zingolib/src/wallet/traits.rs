@@ -21,8 +21,7 @@ use orchard::{
     Action,
 };
 use sapling_crypto::{bundle::GrothProofBytes, note_encryption::SaplingDomain};
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
+use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use subtle::CtOption;
 use zcash_address::unified::{self, Receiver};
 use zcash_client_backend::{

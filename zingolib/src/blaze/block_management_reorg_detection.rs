@@ -1,19 +1,21 @@
-use crate::wallet::traits::FromCommitment;
 use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
         notes::ShieldedNoteInterface,
-        traits::DomainWalletExt,
+        traits::{DomainWalletExt, FromCommitment},
         transactions::TransactionMetadataSet,
     },
 };
-use incrementalmerkletree::frontier::CommitmentTree;
-use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
+use incrementalmerkletree::{
+    frontier, frontier::CommitmentTree, witness::IncrementalWitness, Hashable,
+};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use sapling_crypto::note_encryption::SaplingDomain;
-use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
-use zcash_client_backend::proto::service::TreeState;
+use zcash_client_backend::proto::{
+    compact_formats::{CompactBlock, CompactTx},
+    service::TreeState,
+};
 use zcash_note_encryption::Domain;
 
 use futures::future::join_all;

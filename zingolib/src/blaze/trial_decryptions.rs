@@ -3,22 +3,23 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use crate::error::ZingoLibResult;
-use crate::wallet::notes::ShieldedNoteInterface;
-use crate::wallet::{
-    data::PoolNullifier,
-    keys::unified::WalletCapability,
-    traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    transactions::TransactionMetadataSet,
-    utils::txid_from_slice,
-    MemoDownloadOption,
+use crate::{
+    error::ZingoLibResult,
+    wallet::{
+        data::PoolNullifier,
+        keys::unified::WalletCapability,
+        notes::ShieldedNoteInterface,
+        traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
+        transactions::TransactionMetadataSet,
+        utils::txid_from_slice,
+        MemoDownloadOption,
+    },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
 use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
-use sapling_crypto::note_encryption::SaplingDomain;
-use sapling_crypto::SaplingIvk;
+use sapling_crypto::{note_encryption::SaplingDomain, SaplingIvk};
 use std::sync::Arc;
 use tokio::{
     sync::{

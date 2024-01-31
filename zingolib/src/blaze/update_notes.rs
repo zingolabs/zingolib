@@ -1,18 +1,20 @@
-use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
     data::PoolNullifier, transactions::TransactionMetadataSet, utils::txid_from_slice,
+    MemoDownloadOption,
 };
 use std::sync::Arc;
 
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use tokio::join;
-use tokio::sync::oneshot;
-use tokio::sync::{mpsc::unbounded_channel, RwLock};
-use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
+use futures::{stream::FuturesUnordered, StreamExt};
+use tokio::{
+    join,
+    sync::{
+        mpsc::{unbounded_channel, UnboundedSender},
+        oneshot, RwLock,
+    },
+    task::JoinHandle,
+};
 
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::syncdata::BlazeSyncData;

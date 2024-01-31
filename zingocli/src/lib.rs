@@ -1,15 +1,18 @@
 #![forbid(unsafe_code)]
-use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
+use std::{
+    path::PathBuf,
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc,
+    },
+};
 
 use log::{error, info};
 
 use clap::{self, Arg};
 use zingo_testutils::regtest;
 use zingoconfig::ChainType;
-use zingolib::wallet::WalletBase;
-use zingolib::{commands, lightclient::LightClient};
+use zingolib::{commands, lightclient::LightClient, wallet::WalletBase};
 
 pub mod version;
 

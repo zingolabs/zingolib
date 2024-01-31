@@ -14,8 +14,7 @@ use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_testutils::{paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder};
 use zingoconfig::RegtestNetwork;
-use zingolib::lightclient::PoolBalances;
-use zingolib::wallet::data::summaries::ValueTransferKind;
+use zingolib::{lightclient::PoolBalances, wallet::data::summaries::ValueTransferKind};
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
     let darkside_handler = DarksideHandler::new(None);
