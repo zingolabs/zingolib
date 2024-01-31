@@ -129,50 +129,6 @@ impl TransactionMetadataSet {
     }
 }
 
-#[test]
-fn test_get_some_txid_from_highest_wallet_block() {
-    let mut tms = TransactionMetadataSet::new_treeless();
-    assert_eq!(tms.get_some_txid_from_highest_wallet_block(), None);
-    let txid_bytes_1 = [0u8; 32];
-    let txid_bytes_2 = [1u8; 32];
-    let txid_bytes_3 = [2u8; 32];
-    let txid_1 = TxId::from_bytes(txid_bytes_1);
-    let txid_2 = TxId::from_bytes(txid_bytes_2);
-    let txid_3 = TxId::from_bytes(txid_bytes_3);
-    tms.current.insert(
-        txid_1,
-        TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
-                BlockHeight::from_u32(3_200_000),
-            ),
-            100,
-            &txid_1,
-        ),
-    );
-    tms.current.insert(
-        txid_2,
-        TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
-                BlockHeight::from_u32(3_000_069),
-            ),
-            0,
-            &txid_2,
-        ),
-    );
-    tms.current.insert(
-        txid_3,
-        TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
-                BlockHeight::from_u32(2_650_000),
-            ),
-            0,
-            &txid_3,
-        ),
-    );
-    let highest = tms.get_some_txid_from_highest_wallet_block();
-    assert_eq!(highest, Some(txid_2));
-}
-
 #[cfg(feature = "lightclient-deprecated")]
 impl TransactionMetadataSet {
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
@@ -185,5 +141,96 @@ impl TransactionMetadataSet {
             Ok(tx_fee) => tx_fee,
             Err(e) => panic!("{:?} for txid {}", e, txid,),
         }
+    }
+}
+
+#[cfg(test)]
+mod unit {
+    use std::time::UNIX_EPOCH;
+
+    use rand::Rng;
+    use zcash_primitives::sapling::{note_encryption::SaplingDomain, value::NoteValue};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingoconfig::ChainType;
+
+    use crate::test_framework::ShieldedNoteBuilder;
+
+    use super::*;
+
+    #[test]
+    fn nullifier_value_txid_unspent_notes() {
+        let mut determinstic_rng = rand::rngs::mock::StepRng::new(0, u64::MAX - 23);
+        let note_value = 70;
+        let nullifier =
+            zcash_primitives::sapling::Nullifier::from_slice(&determinstic_rng.gen::<[u8; 32]>())
+                .unwrap();
+        let mut tmds = TransactionMetadataSet::new_treeless();
+        let mut first_sapling_note = ShieldedNoteBuilder::new();
+        first_sapling_note.nullifier(Some(nullifier));
+        first_sapling_note.arb_note_with_value(NoteValue::from_raw(note_value));
+        let mock_txid = TxId::from_bytes(determinstic_rng.gen());
+        let mut mock_transaction = TransactionRecord::new(
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            &mock_txid,
+        );
+        mock_transaction
+            .sapling_notes
+            .push(first_sapling_note.build());
+        tmds.current.insert(mock_txid, mock_transaction);
+        let nvto_vec = tmds
+            .get_nullifier_value_txid_outputindex_of_unspent_notes::<SaplingDomain<ChainType>>();
+        assert_eq!(nvto_vec.len(), 1);
+        let found_note = nvto_vec.first().unwrap();
+        assert_eq!(found_note.0, nullifier);
+        assert_eq!(found_note.1, note_value);
+        assert_eq!(found_note.2, mock_txid);
+    }
+
+    #[test]
+    fn test_get_some_txid_from_highest_wallet_block() {
+        let mut tms = TransactionMetadataSet::new_treeless();
+        assert_eq!(tms.get_some_txid_from_highest_wallet_block(), None);
+        let txid_bytes_1 = [0u8; 32];
+        let txid_bytes_2 = [1u8; 32];
+        let txid_bytes_3 = [2u8; 32];
+        let txid_1 = TxId::from_bytes(txid_bytes_1);
+        let txid_2 = TxId::from_bytes(txid_bytes_2);
+        let txid_3 = TxId::from_bytes(txid_bytes_3);
+        tms.current.insert(
+            txid_1,
+            TransactionRecord::new(
+                zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
+                    BlockHeight::from_u32(3_200_000),
+                ),
+                100,
+                &txid_1,
+            ),
+        );
+        tms.current.insert(
+            txid_2,
+            TransactionRecord::new(
+                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                    BlockHeight::from_u32(3_000_069),
+                ),
+                0,
+                &txid_2,
+            ),
+        );
+        tms.current.insert(
+            txid_3,
+            TransactionRecord::new(
+                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                    BlockHeight::from_u32(2_650_000),
+                ),
+                0,
+                &txid_3,
+            ),
+        );
+        let highest = tms.get_some_txid_from_highest_wallet_block();
+        assert_eq!(highest, Some(txid_2));
     }
 }
