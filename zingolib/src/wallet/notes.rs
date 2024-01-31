@@ -43,6 +43,9 @@ pub trait ShieldedNoteInterface: Sized {
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
+    fn is_pending_spent(&self) -> bool {
+        Self::pending_spent(self).is_some()
+    }
     fn is_change_mut(&mut self) -> &mut bool;
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
@@ -55,6 +58,11 @@ pub trait ShieldedNoteInterface: Sized {
     fn output_index(&self) -> &Option<u32>;
     fn pending_receipt(&self) -> bool {
         self.nullifier().is_none()
+    }
+    fn spendable(&self) -> bool {
+        !self.is_spent() && !self.is_pending_spent() && !self.pending_receipt() && 
+            //This check is currently meaningless
+            self.have_spending_key()
     }
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;

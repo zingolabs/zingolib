@@ -22,6 +22,10 @@ pub enum ZingoLibError {
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
 
+pub enum ZingoInputSourceError {
+    NonZeroAccountId,
+}
+
 impl ZingoLibError {
     pub fn handle<T>(self) -> ZingoLibResult<T> {
         log::error!("{}", self);

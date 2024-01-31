@@ -1,16 +1,20 @@
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-use zcash_client_backend::data_api::InputSource;
+use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
+use zcash_primitives::zip32::AccountId;
 
 use super::{traits::DomainWalletExt, transactions::TransactionMetadataSet};
-use crate::error::ZingoLibError;
+use crate::{
+    error::{ZingoInputSourceError, ZingoLibError},
+    wallet::notes::ShieldedNoteInterface,
+};
 
 pub struct ZingoInputSource {
     metadata: TransactionMetadataSet,
 }
 
 impl InputSource for ZingoInputSource {
-    type Error = ZingoLibError;
+    type Error = ZingoInputSourceError;
 
     // We can always change this later if we decide we need it
     type NoteRef = ();
@@ -58,6 +62,23 @@ impl InputSource for ZingoInputSource {
         >,
         Self::Error,
     > {
+        if account != AccountId::ZERO {
+            return Err(ZingoInputSourceError::NonZeroAccountId);
+        }
+        if sources.contains(&ShieldedProtocol::Sapling)
+        //TODO: Genericize
+        {
+            let noteset = self
+                .metadata
+                .current
+                .values()
+                .flat_map(|transaction_record| {
+                    transaction_record
+                        .sapling_notes
+                        .iter()
+                        .filter(|sapnote| sapnote.spendable())
+                });
+        }
         todo!()
     }
 }
