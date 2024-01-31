@@ -7,6 +7,8 @@ use incrementalmerkletree::{Address, Hashable, Level, Position};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
+use sapling_crypto::note_encryption::SaplingDomain;
+use sapling_crypto::Node;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore};
 use shardtree::LocatedPrunableTree;
@@ -21,10 +23,8 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
-use zcash_primitives::sapling::note_encryption::SaplingDomain;
-use zcash_primitives::sapling::{self, Node};
 use zcash_primitives::{memo::Memo, transaction::TxId};
-use zingoconfig::{ChainType, MAX_REORG};
+use zingoconfig::MAX_REORG;
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub const MAX_SHARD_LEVEL: u8 = 16;
@@ -35,7 +35,7 @@ pub const MAX_SHARD_LEVEL: u8 = 16;
 /// <https://github.com/zingolabs/zingolib/issues/64>
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PoolNullifier {
-    Sapling(zcash_primitives::sapling::Nullifier),
+    Sapling(sapling_crypto::Nullifier),
     Orchard(orchard::note::Nullifier),
 }
 
@@ -169,10 +169,10 @@ impl WitnessTrees {
     }
     pub(crate) fn insert_all_frontier_nodes(
         &mut self,
-        non_empty_sapling_frontier: Option<NonEmptyFrontier<sapling::Node>>,
+        non_empty_sapling_frontier: Option<NonEmptyFrontier<Node>>,
         non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
-        self.insert_domain_frontier_nodes::<SaplingDomain<ChainType>>(non_empty_sapling_frontier);
+        self.insert_domain_frontier_nodes::<SaplingDomain>(non_empty_sapling_frontier);
         self.insert_domain_frontier_nodes::<OrchardDomain>(non_empty_orchard_frontier);
     }
     fn insert_domain_frontier_nodes<D: DomainWalletExt>(
@@ -326,7 +326,7 @@ impl BlockData {
 
         // We don't need this, but because of a quirk, the version is stored later, so we can't actually
         // detect the version here. So we write an empty tree and read it back here
-        let tree: zcash_primitives::sapling::CommitmentTree = read_commitment_tree(&mut reader)?;
+        let tree: sapling_crypto::CommitmentTree = read_commitment_tree(&mut reader)?;
         let _tree = if tree.size() == 0 { None } else { Some(tree) };
 
         let version = reader.read_u64::<LittleEndian>()?;
@@ -355,7 +355,7 @@ impl BlockData {
         writer.write_all(&hash_bytes[..])?;
 
         write_commitment_tree(
-            &CommitmentTree::<zcash_primitives::sapling::Node, 32>::empty(),
+            &CommitmentTree::<sapling_crypto::Node, 32>::empty(),
             &mut writer,
         )?;
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
@@ -441,19 +441,15 @@ impl<Node: Hashable> WitnessCache<Node> {
 }
 
 // Reading a note also needs the corresponding address to read from.
-pub(crate) fn read_sapling_rseed<R: Read>(
-    mut reader: R,
-) -> io::Result<zcash_primitives::sapling::Rseed> {
+pub(crate) fn read_sapling_rseed<R: Read>(mut reader: R) -> io::Result<sapling_crypto::Rseed> {
     let note_type = reader.read_u8()?;
 
     let mut r_bytes: [u8; 32] = [0; 32];
     reader.read_exact(&mut r_bytes)?;
 
     let r = match note_type {
-        1 => zcash_primitives::sapling::Rseed::BeforeZip212(
-            jubjub::Fr::from_bytes(&r_bytes).unwrap(),
-        ),
-        2 => zcash_primitives::sapling::Rseed::AfterZip212(r_bytes),
+        1 => sapling_crypto::Rseed::BeforeZip212(jubjub::Fr::from_bytes(&r_bytes).unwrap()),
+        2 => sapling_crypto::Rseed::AfterZip212(r_bytes),
         _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Bad note type")),
     };
 
@@ -462,17 +458,17 @@ pub(crate) fn read_sapling_rseed<R: Read>(
 
 pub(crate) fn write_sapling_rseed<W: Write>(
     mut writer: W,
-    rseed: &zcash_primitives::sapling::Rseed,
+    rseed: &sapling_crypto::Rseed,
 ) -> io::Result<()> {
     let note_type = match rseed {
-        zcash_primitives::sapling::Rseed::BeforeZip212(_) => 1,
-        zcash_primitives::sapling::Rseed::AfterZip212(_) => 2,
+        sapling_crypto::Rseed::BeforeZip212(_) => 1,
+        sapling_crypto::Rseed::AfterZip212(_) => 2,
     };
     writer.write_u8(note_type)?;
 
     match rseed {
-        zcash_primitives::sapling::Rseed::BeforeZip212(fr) => writer.write_all(&fr.to_bytes()),
-        zcash_primitives::sapling::Rseed::AfterZip212(b) => writer.write_all(b),
+        sapling_crypto::Rseed::BeforeZip212(fr) => writer.write_all(&fr.to_bytes()),
+        sapling_crypto::Rseed::AfterZip212(b) => writer.write_all(b),
     }
 }
 
@@ -726,11 +722,11 @@ fn single_transparent_note_makes_is_incoming_true() {
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
     pub transaction_id: TxId,
-    pub nullifier: zcash_primitives::sapling::Nullifier,
-    pub diversifier: zcash_primitives::sapling::Diversifier,
-    pub note: zcash_primitives::sapling::Note,
+    pub nullifier: sapling_crypto::Nullifier,
+    pub diversifier: sapling_crypto::Diversifier,
+    pub note: sapling_crypto::Note,
     pub witnessed_position: Position,
-    pub extsk: Option<zcash_primitives::zip32::sapling::ExtendedSpendingKey>,
+    pub extsk: Option<sapling_crypto::zip32::ExtendedSpendingKey>,
 }
 
 #[derive(Debug)]
@@ -822,12 +818,12 @@ fn read_write_empty_sapling_tree() {
     let mut buffer = Vec::new();
 
     write_commitment_tree(
-        &CommitmentTree::<zcash_primitives::sapling::Node, 32>::empty(),
+        &CommitmentTree::<sapling_crypto::Node, 32>::empty(),
         &mut buffer,
     )
     .unwrap();
     assert_eq!(
-        CommitmentTree::<zcash_primitives::sapling::Node, 32>::empty(),
+        CommitmentTree::<sapling_crypto::Node, 32>::empty(),
         read_commitment_tree(&mut buffer.as_slice()).unwrap()
     )
 }

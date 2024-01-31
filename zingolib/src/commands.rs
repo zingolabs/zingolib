@@ -9,7 +9,7 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_client_backend::address::RecipientAddress;
+use zcash_client_backend::address::Address;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 lazy_static! {
@@ -185,7 +185,7 @@ impl Command for ParseAddressCommand {
                     ),
                 ]
                 .iter()
-                .find_map(|chain| RecipientAddress::decode(chain, args[0]).zip(Some(chain)))
+                .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
                 .map(|(recipient_address, chain_name)| {
                     let chain_name_string = match chain_name {
                         zingoconfig::ChainType::Mainnet => "main",
@@ -195,17 +195,17 @@ impl Command for ParseAddressCommand {
                     };
 
                     match recipient_address {
-                        RecipientAddress::Shielded(_) => object! {
+                        Address::Sapling(_) => object! {
                             "status" => "success",
                             "chain_name" => chain_name_string,
                             "address_kind" => "sapling",
                         },
-                        RecipientAddress::Transparent(_) => object! {
+                        Address::Transparent(_) => object! {
                             "status" => "success",
                             "chain_name" => chain_name_string,
                             "address_kind" => "transparent",
                         },
-                        RecipientAddress::Unified(ua) => {
+                        Address::Unified(ua) => {
                             let mut receivers_available = vec![];
                             if ua.orchard().is_some() {
                                 receivers_available.push("orchard")

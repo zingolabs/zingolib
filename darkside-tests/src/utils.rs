@@ -2,6 +2,7 @@ use http::Uri;
 use http_body::combinators::UnsyncBoxBody;
 use hyper::client::HttpConnector;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use sapling_crypto::note_encryption::SaplingDomain;
 use std::{
     fs,
     fs::File,
@@ -15,10 +16,7 @@ use tempdir;
 use tokio::time::sleep;
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
-use zcash_primitives::{
-    consensus::BranchId,
-    sapling::{note_encryption::SaplingDomain, Node},
-};
+use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingo_testutils::{
     self,
@@ -286,7 +284,7 @@ pub async fn update_tree_states_for_transaction(
     let trees = zingolib::grpc_connector::GrpcConnector::get_trees(server_id.clone(), height - 1)
         .await
         .unwrap();
-    let mut sapling_tree: zcash_primitives::sapling::CommitmentTree = read_commitment_tree(
+    let mut sapling_tree: sapling_crypto::CommitmentTree = read_commitment_tree(
         hex::decode(SaplingDomain::get_tree(&trees))
             .unwrap()
             .as_slice(),
@@ -308,7 +306,9 @@ pub async fn update_tree_states_for_transaction(
         .iter()
         .flat_map(|bundle| bundle.shielded_outputs())
     {
-        sapling_tree.append(Node::from_cmu(output.cmu())).unwrap()
+        sapling_tree
+            .append(sapling_crypto::Node::from_cmu(output.cmu()))
+            .unwrap()
     }
     for action in transaction
         .orchard_bundle()

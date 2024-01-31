@@ -8,14 +8,13 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use incrementalmerkletree::{
-    frontier, frontier::CommitmentTree, witness::IncrementalWitness, Hashable,
-};
+use incrementalmerkletree::frontier::CommitmentTree;
+use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_client_backend::proto::service::TreeState;
 use zcash_note_encryption::Domain;
-use zingoconfig::ChainType;
 
 use futures::future::join_all;
 use http::Uri;
@@ -31,7 +30,6 @@ use tokio::{
 use zcash_primitives::{
     consensus::BlockHeight,
     merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer},
-    sapling::note_encryption::SaplingDomain,
 };
 
 use super::sync_status::BatchSyncStatus;
@@ -272,7 +270,7 @@ impl BlockManagementData {
                 &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
             )
             .or_else(|error| match error.kind() {
-                std::io::ErrorKind::UnexpectedEof => Ok(CommitmentTree::empty()),
+                std::io::ErrorKind::UnexpectedEof => Ok(frontier::CommitmentTree::empty()),
                 _ => Err(error),
             })
             .expect("Invalid orchard tree!");
@@ -517,7 +515,7 @@ impl BlockManagementData {
         let (cb, mut tree) = {
             // In the edge case of a transition to a new network epoch, there is no previous tree.
             let tree = if prev_height < activation_height {
-                CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
+                frontier::CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
@@ -671,7 +669,7 @@ pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
     // Type alias, sapling equivalent to the type manually written out for orchard
-    pub sapling_tree: zcash_primitives::sapling::CommitmentTree,
+    pub sapling_tree: sapling_crypto::CommitmentTree,
     pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard, 32>,
 }
 
@@ -720,14 +718,11 @@ pub fn tree_to_string<Node: Hashable + HashSer>(tree: &CommitmentTree<Node, 32>)
 }
 
 pub fn update_trees_with_compact_transaction(
-    sapling_tree: &mut CommitmentTree<zcash_primitives::sapling::Node, 32>,
+    sapling_tree: &mut CommitmentTree<sapling_crypto::Node, 32>,
     orchard_tree: &mut CommitmentTree<MerkleHashOrchard, 32>,
     compact_transaction: &CompactTx,
 ) {
-    update_tree_with_compact_transaction::<SaplingDomain<ChainType>>(
-        sapling_tree,
-        compact_transaction,
-    );
+    update_tree_with_compact_transaction::<SaplingDomain>(sapling_tree, compact_transaction);
     update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
 }
 
@@ -750,7 +745,6 @@ mod test {
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
-    use zingoconfig::ChainType;
 
     use super::*;
 
@@ -1085,7 +1079,7 @@ mod test {
         let cb = decode_block();
 
         for compact_transaction in &cb.vtx {
-            super::update_tree_with_compact_transaction::<SaplingDomain<ChainType>>(
+            super::update_tree_with_compact_transaction::<SaplingDomain>(
                 &mut start_tree,
                 compact_transaction,
             )

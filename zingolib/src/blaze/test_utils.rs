@@ -3,13 +3,12 @@ use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 
+use sapling_crypto::{value::NoteValue, zip32::ExtendedSpendingKey, Note, Rseed};
 use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactSaplingOutput, CompactTx};
 use zcash_primitives::{
     block::BlockHash,
     merkle_tree::{write_incremental_witness, HashSer},
-    sapling::{self, value::NoteValue, Note, Rseed},
     transaction::components::Amount,
-    zip32::ExtendedSpendingKey,
 };
 
 // This function can be used by TestServerData, or other test code
@@ -17,7 +16,7 @@ use zcash_primitives::{
 pub fn trees_from_cblocks(
     compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
 ) -> (
-    Vec<sapling::CommitmentTree>,
+    Vec<sapling_crypto::CommitmentTree>,
     Vec<CommitmentTree<MerkleHashOrchard, 32>>,
 ) {
     let mut sapling_trees = Vec::new();
