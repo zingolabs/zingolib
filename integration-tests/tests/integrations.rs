@@ -634,6 +634,15 @@ mod fast {
             .unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(10342837));
+        let _ = client
+            .do_send(vec![(&get_base_address!(client, "unified"), 11011, None)])
+            .await
+            .unwrap();
+        let _ = client.do_sync(true).await.unwrap();
+        let _ = client
+            .do_send(vec![(&get_base_address!(client, "unified"), 28000, None)])
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
