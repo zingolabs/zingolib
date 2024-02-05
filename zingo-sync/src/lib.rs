@@ -1,6 +1,7 @@
 //! # Zingo Sync
 //!
 //! Re-org currently undefined.
+//! Mempool currently undefined.
 
 pub mod error;
 pub mod map_nullifier;
