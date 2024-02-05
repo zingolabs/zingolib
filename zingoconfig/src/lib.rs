@@ -116,6 +116,16 @@ pub struct ZingoConfig {
     pub logfile_name: PathBuf,
 }
 impl ZingoConfigBuilder {
+    /// the proxy server we download blockchain information from
+    /// # Examples
+    /// ```
+    /// use zingoconfig::ZingoConfigBuilder;
+    /// use http::Uri;
+    /// use tempdir::TempDir;
+    /// let dir = TempDir::new("zingo_doc_test").unwrap().into_path();
+    /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
+    /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
+    /// ```
     pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &Self {
         self.wallet_dir = Some(dir);
         self
