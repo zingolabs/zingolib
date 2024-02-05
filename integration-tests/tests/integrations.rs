@@ -566,7 +566,13 @@ mod fast {
         // with 3 addresses containing all receivers.
         let data = include_bytes!("zingo-wallet-v28.dat");
 
-        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
+        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet)
+            .set_lightwalletd_uri(
+                ("https://zcash.mysideoftheweb.com:19067")
+                    .parse::<http::Uri>()
+                    .unwrap(),
+            )
+            .create();
         let wallet = LightWallet::read_internal(&data[..], &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
