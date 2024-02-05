@@ -121,6 +121,26 @@ impl ZingoConfigBuilder {
     /// ```
     /// use zingoconfig::ZingoConfigBuilder;
     /// use http::Uri;
+    /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
+    /// ```
+    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &Self {
+        self.lightwalletd_uri = Some(lightwalletd_uri);
+        self
+    }
+    /// # Examples
+    /// ```
+    /// use zingoconfig::ZingoConfigBuilder;
+    /// use zingoconfig::ChainType::Testnet;
+    /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
+    /// ```
+    pub fn set_chain(&mut self, chain: ChainType) -> &Self {
+        self.chain = chain;
+        self
+    }
+    /// the proxy server we download blockchain information from
+    /// # Examples
+    /// ```
+    /// use zingoconfig::ZingoConfigBuilder;
     /// use tempdir::TempDir;
     /// let dir = TempDir::new("zingo_doc_test").unwrap().into_path();
     /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
@@ -128,17 +148,6 @@ impl ZingoConfigBuilder {
     /// ```
     pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &Self {
         self.wallet_dir = Some(dir);
-        self
-    }
-    /// the proxy server we download blockchain information from
-    /// # Examples
-    /// ```
-    /// use zingoconfig::ZingoConfigBuilder;
-    /// use http::Uri;
-    /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
-    /// ```
-    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &Self {
-        self.lightwalletd_uri = Some(lightwalletd_uri);
         self
     }
     pub fn create(&self) -> ZingoConfig {
