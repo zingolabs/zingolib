@@ -120,6 +120,14 @@ impl ZingoConfigBuilder {
         self.wallet_dir = Some(dir);
         self
     }
+    /// the proxy server we download blockchain information from
+    /// # Examples
+    /// ```
+    /// use zingoconfig::ZingoConfigBuilder;
+    /// use http::Uri;
+    /// let config_builder = ZingoConfigBuilder::default().set_lightwalletd(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap());
+    /// assert_eq!(config_builder.lightwalletd_uri.unwrap(), "https://zcash.mysideoftheweb.com:19067");
+    /// ```
     pub fn set_lightwalletd(mut self, lightwalletd_uri: http::Uri) -> Self {
         self.lightwalletd_uri = Some(lightwalletd_uri);
         self
