@@ -4208,6 +4208,7 @@ dependencies = [
  "http",
  "log",
  "log4rs",
+ "tempdir",
  "zcash_address",
  "zcash_primitives",
 ]
