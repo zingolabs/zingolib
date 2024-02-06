@@ -2234,6 +2234,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "test-features")]
 mod tests {
     use tokio::runtime::Runtime;
     use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;

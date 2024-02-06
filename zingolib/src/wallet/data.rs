@@ -704,6 +704,7 @@ pub mod summaries {
 pub use crate::wallet::transaction_record::TransactionRecord;
 
 #[test]
+#[cfg(feature = "test-features")]
 fn single_transparent_note_makes_is_incoming_true() {
     // A single transparent note makes is_incoming_trsaction true.
     let transparent_note = crate::test_framework::TransparentNoteBuilder::new()
