@@ -605,7 +605,7 @@ mod fast {
         // including orchard and sapling transactions
         let data = include_bytes!("zingo-wallet-v26-2.dat");
 
-        load_wallet_from_data_and_assert(data, 10274837, 1).await;
+        load_wallet_from_data_and_assert(data, 10177826, 1).await;
     }
 
     #[tokio::test]
