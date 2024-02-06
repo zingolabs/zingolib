@@ -480,7 +480,11 @@ mod fast {
         );
     }
 
-    async fn load_wallet_from_data_and_assert(data: &[u8], expected_balance: u64) {
+    async fn load_wallet_from_data_and_assert(
+        data: &[u8],
+        expected_balance: u64,
+        num_addresses: usize,
+    ) {
         let config = zingoconfig::ZingoConfig::build(ChainType::Testnet)
             .set_lightwalletd_uri(
                 ("https://zcash.mysideoftheweb.com:19067")
@@ -537,7 +541,7 @@ mod fast {
             &ExtendedPrivKey::try_from(&expected_wc).unwrap()
         );
 
-        assert_eq!(wc.addresses().len(), 3);
+        assert_eq!(wc.addresses().len(), num_addresses);
         for addr in wc.addresses().iter() {
             assert!(addr.orchard().is_some());
             assert!(addr.sapling().is_some());
@@ -555,7 +559,11 @@ mod fast {
             .unwrap();
         let _ = client.do_sync(true).await.unwrap();
         let _ = client
-            .do_send(vec![(&get_base_address!(client, "sapling"), 28000, None)])
+            .do_send(vec![(
+                &get_base_address!(client, "transparent"),
+                28000,
+                None,
+            )])
             .await
             .unwrap();
     }
@@ -577,7 +585,27 @@ mod fast {
         // including orchard and sapling transactions
         let data = include_bytes!("zingo-wallet-v26.dat");
 
-        load_wallet_from_data_and_assert(data, 10342837).await;
+        load_wallet_from_data_and_assert(data, 10342837, 3).await;
+    }
+
+    #[tokio::test]
+    async fn load_wallet_from_v26_2_dat_file() {
+        // We test that the LightWallet can be read from v26 .dat file
+        // Changes in version 27:
+        //   - The wallet does not have to have a mnemonic.
+        //     Absence of mnemonic is represented by an empty byte vector in v27.
+        //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
+        //   - The wallet capabilities can be restricted from spending to view-only or none.
+        //     We introduce `Capability` type represent different capability types in v27.
+        //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
+
+        // A testnet wallet initiated with
+        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+        // with 3 addresses containing all receivers.
+        // including orchard and sapling transactions
+        let data = include_bytes!("zingo-wallet-v26-2.dat");
+
+        load_wallet_from_data_and_assert(data, 10274837, 1).await;
     }
 
     #[tokio::test]
@@ -587,7 +615,7 @@ mod fast {
         // with 3 addresses containing all receivers.
         let data = include_bytes!("zingo-wallet-v28.dat");
 
-        load_wallet_from_data_and_assert(data, 10342837).await;
+        load_wallet_from_data_and_assert(data, 10342837, 3).await;
     }
 
     #[tokio::test]
