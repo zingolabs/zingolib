@@ -126,12 +126,21 @@ pub fn launch_lightwalletd(
         ]
     });
     let prepped_args = args.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-    let mut lightwalletd_child = std::process::Command::new(bin)
+    let mut lightwalletd_child = std::process::Command::new(bin.clone())
         .args(prepped_args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/test_binaries/bins/. see docs/integration-tests.txt");
+        .unwrap_or_else(|_| {
+            panic!(
+                "{}",
+                format!(
+                    "failed to start lightwalletd at {}. see docs/integration-tests.txt",
+                    bin.display()
+                )
+                .to_owned()
+            )
+        });
 
     if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
         std::thread::spawn(move || {
@@ -326,9 +335,17 @@ impl RegtestManager {
         log::info!("{:?}", &command.get_envs());
         log::info!("{:?}", &command.get_program());
 
-        let child = command
-            .spawn()
-            .expect("COULD NOT START ZCASHD does it exist? see $G/docs/ZINGOCLI-REGTEST.md");
+        let child = command.spawn().unwrap_or_else(|_| {
+            panic!(
+                "{}",
+                format!(
+                    "failed to start zcashd at {}. see docs/integration-tests.txt",
+                    self.bin_dir.clone().display()
+                )
+                .to_owned()
+            )
+        });
+
         log::debug!("zcashd is starting in regtest mode, please standby...");
 
         (
