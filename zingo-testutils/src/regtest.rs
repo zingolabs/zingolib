@@ -126,12 +126,12 @@ pub fn launch_lightwalletd(
         ]
     });
     let prepped_args = args.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-    let mut lightwalletd_child = std::process::Command::new(bin)
+    let mut lightwalletd_child = std::process::Command::new(bin.clone())
         .args(prepped_args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the $G/test_binaries/bins/. see docs/integration-tests.txt");
+        .expect(&format!("failed to start lightwalletd. It's possible the lightwalletd binary is not in {}. see docs/integration-tests.txt", bin.display()).to_owned());
 
     if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
         std::thread::spawn(move || {
