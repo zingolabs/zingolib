@@ -1,3 +1,5 @@
+use crate::wallet::keys::keystore::Keystore;
+
 use super::*;
 use zcash_note_encryption::Domain;
 
@@ -5,7 +7,7 @@ impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
         transaction_metadata: &'b TransactionRecord,
-        unified_spend_auth: &'c crate::wallet::keys::unified::WalletCapability,
+        unified_spend_auth: &'c Keystore,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
@@ -26,7 +28,7 @@ impl LightClient {
     fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
         transaction_metadata: &'b TransactionRecord,
-        unified_spend_auth: &'c crate::wallet::keys::unified::WalletCapability,
+        unified_spend_auth: &'c Keystore,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
@@ -123,7 +125,7 @@ impl LightClient {
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &self.wallet.wallet_capability()));
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &self.wallet.keystore()));
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point

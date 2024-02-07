@@ -7,7 +7,7 @@ use crate::error::ZingoLibResult;
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
-    keys::unified::WalletCapability,
+    keys::keystore::Keystore,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
     transactions::TransactionMetadataSet,
     utils::txid_from_slice,
@@ -39,7 +39,7 @@ use zingoconfig::ZingoConfig;
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
-    wc: Arc<WalletCapability>,
+    wc: Arc<Keystore>,
     transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     config: Arc<ZingoConfig>,
 }
@@ -47,7 +47,7 @@ pub struct TrialDecryptions {
 impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
-        wc: Arc<WalletCapability>,
+        wc: Arc<Keystore>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
@@ -125,7 +125,7 @@ impl TrialDecryptions {
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
-        wc: Arc<WalletCapability>,
+        wc: Arc<Keystore>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: Option<SaplingIvk>,
         orchard_ivk: Option<OrchardIvk>,
@@ -260,7 +260,7 @@ impl TrialDecryptions {
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
         config: &zingoconfig::ZingoConfig,
-        wc: &Arc<WalletCapability>,
+        wc: &Arc<Keystore>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(
@@ -418,7 +418,7 @@ fn update_witnesses<D>(
         BlockHeight,
     )>,
     txmds_writelock: &mut TransactionMetadataSet,
-    wc: &Arc<WalletCapability>,
+    wc: &Arc<Keystore>,
 ) -> ZingoLibResult<()>
 where
     D: DomainWalletExt,

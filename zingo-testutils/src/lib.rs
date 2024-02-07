@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use zcash_address::unified::{Fvk, Ufvk};
-use zingolib::wallet::keys::unified::WalletCapability;
+use zingolib::wallet::keys::keystore::Keystore;
 use zingolib::wallet::WalletBase;
 
 use json::JsonValue;
@@ -26,7 +26,7 @@ pub mod grpc_proxy;
 pub mod paths;
 pub mod regtest;
 
-pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
+pub fn build_fvks_from_wallet_capability(wallet_capability: &Keystore) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
         orchard::keys::FullViewingKey::try_from(wallet_capability)
             .unwrap()

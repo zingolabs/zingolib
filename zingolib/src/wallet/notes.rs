@@ -10,7 +10,7 @@ use zcash_primitives::{
 
 use super::{
     data::TransactionRecord,
-    keys::unified::WalletCapability,
+    keys::keystore::Keystore,
     traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
     Pool,
 };
@@ -20,9 +20,7 @@ use super::{
 pub trait ShieldedNoteInterface: Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
-    type Note: PartialEq
-        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
-        + Clone;
+    type Note: PartialEq + for<'a> ReadableWriteable<(Self::Diversifier, &'a Keystore)> + Clone;
     type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;
     type Nullifier: Nullifier;
 

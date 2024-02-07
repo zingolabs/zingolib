@@ -177,7 +177,7 @@ impl TransactionRecord {
     pub fn read<R: Read>(
         mut reader: R,
         (wallet_capability, mut trees): (
-            &WalletCapability,
+            &Keystore,
             Option<&mut (
                 Vec<(
                     IncrementalWitness<sapling_crypto::Node, COMMITMENT_TREE_LEVELS>,

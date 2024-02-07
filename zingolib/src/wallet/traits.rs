@@ -6,7 +6,7 @@ use super::{
         PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
         WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
-    keys::unified::WalletCapability,
+    keys::keystore::Keystore,
     notes::{OrchardNote, SaplingNote},
     transactions::TransactionMetadataSet,
 };
@@ -420,7 +420,7 @@ where
 
     type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>;
 
-    type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
+    type SpendingKey: for<'a> TryFrom<&'a Keystore> + Clone;
     type CompactOutput: CompactOutput<Self>;
     type WalletNote: ShieldedNoteInterface<
         Note = <Self as Domain>::Note,
@@ -469,13 +469,13 @@ where
     fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
     fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a WalletCapability,
+        unified_spend_auth: &'a Keystore,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
+    fn wc_to_fvk(wc: &Keystore) -> Result<Self::Fvk, String>;
+    fn wc_to_ivk(wc: &Keystore) -> Result<Self::IncomingViewingKey, String>;
+    fn wc_to_ovk(wc: &Keystore) -> Result<Self::OutgoingViewingKey, String>;
+    fn wc_to_sk(wc: &Keystore) -> Result<Self::SpendingKey, String>;
 }
 
 impl DomainWalletExt for SaplingDomain {
@@ -532,7 +532,7 @@ impl DomainWalletExt for SaplingDomain {
         &mut transaction.sapling_notes
     }
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a WalletCapability,
+        unified_spend_auth: &'a Keystore,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_auth
@@ -540,17 +540,17 @@ impl DomainWalletExt for SaplingDomain {
             .iter()
             .find(|ua| ua.sapling() == Some(receiver))
     }
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+    fn wc_to_fvk(wc: &Keystore) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+    fn wc_to_ivk(wc: &Keystore) -> Result<Self::IncomingViewingKey, String> {
         Self::IncomingViewingKey::try_from(wc)
     }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+    fn wc_to_ovk(wc: &Keystore) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
 
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+    fn wc_to_sk(wc: &Keystore) -> Result<Self::SpendingKey, String> {
         Self::SpendingKey::try_from(wc)
     }
 }
@@ -609,7 +609,7 @@ impl DomainWalletExt for OrchardDomain {
         &mut transaction.orchard_notes
     }
     fn ua_from_contained_receiver<'a>(
-        unified_spend_capability: &'a WalletCapability,
+        unified_spend_capability: &'a Keystore,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_capability
@@ -617,17 +617,17 @@ impl DomainWalletExt for OrchardDomain {
             .iter()
             .find(|unified_address| unified_address.orchard() == Some(receiver))
     }
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+    fn wc_to_fvk(wc: &Keystore) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+    fn wc_to_ivk(wc: &Keystore) -> Result<Self::IncomingViewingKey, String> {
         Self::IncomingViewingKey::try_from(wc)
     }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+    fn wc_to_ovk(wc: &Keystore) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
 
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+    fn wc_to_sk(wc: &Keystore) -> Result<Self::SpendingKey, String> {
         Self::SpendingKey::try_from(wc)
     }
 }
@@ -900,12 +900,12 @@ impl ReadableWriteable<()> for orchard::keys::FullViewingKey {
     }
 }
 
-impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sapling_crypto::Note {
+impl ReadableWriteable<(sapling_crypto::Diversifier, &Keystore)> for sapling_crypto::Note {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
-        (diversifier, wallet_capability): (sapling_crypto::Diversifier, &WalletCapability),
+        (diversifier, wallet_capability): (sapling_crypto::Diversifier, &Keystore),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
@@ -930,12 +930,12 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
     }
 }
 
-impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
+impl ReadableWriteable<(orchard::keys::Diversifier, &Keystore)> for orchard::note::Note {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
-        (diversifier, wallet_capability): (orchard::keys::Diversifier, &WalletCapability),
+        (diversifier, wallet_capability): (orchard::keys::Diversifier, &Keystore),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
@@ -977,7 +977,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
 
 impl<T>
     ReadableWriteable<(
-        &WalletCapability,
+        &Keystore,
         Option<
             &mut Vec<(
                 IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
@@ -993,7 +993,7 @@ where
     fn read<R: Read>(
         mut reader: R,
         (wallet_capability, inc_wit_vec): (
-            &WalletCapability,
+            &Keystore,
             Option<
                 &mut Vec<(
                     IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,

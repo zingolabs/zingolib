@@ -519,7 +519,7 @@ impl LightClient {
 
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self.wallet.wallet_capability().addresses().iter() {
+        for address in self.wallet.keystore().addresses().iter() {
             let encoded_ua = address.encode(&self.config.chain);
             let transparent = address
                 .transparent()
@@ -798,8 +798,8 @@ impl LightClient {
 
         let new_address = self
             .wallet
-            .wallet_capability()
-            .new_address(desired_receivers)?;
+            .keystore()
+            .new_address(desired_receivers, &self.config)?;
 
         // self.save_internal_rust().await?;
 
@@ -954,8 +954,8 @@ impl LightClient {
             ));
         }
 
-        let addr = address
-            .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
+        let addr =
+            address.unwrap_or(self.wallet.keystore().addresses()[0].encode(&self.config.chain));
 
         let receiver = self
             .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
@@ -1296,7 +1296,7 @@ impl LightClient {
                 let lc1 = lci.clone();
 
                 let h1 = tokio::spawn(async move {
-                    let key = lc1.wallet.wallet_capability();
+                    let key = lc1.wallet.keystore();
                     let transaction_metadata_set = lc1
                         .wallet
                         .transaction_context
@@ -1548,7 +1548,7 @@ impl LightClient {
         // Local state necessary for a transaction fetch
         let transaction_context = TransactionContext::new(
             &self.config,
-            self.wallet.wallet_capability(),
+            self.wallet.keystore(),
             self.wallet.transactions(),
         );
         let (
@@ -1572,7 +1572,7 @@ impl LightClient {
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(
             Arc::new(self.config.clone()),
-            self.wallet.wallet_capability(),
+            self.wallet.keystore(),
             self.wallet.transactions(),
         );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
@@ -1615,18 +1615,16 @@ impl LightClient {
         };
 
         // 1. Fetch the transparent txns only after reorgs are done.
-        let taddr_transactions_handle = FetchTaddrTransactions::new(
-            self.wallet.wallet_capability(),
-            Arc::new(self.config.clone()),
-        )
-        .start(
-            start_block,
-            earliest_block,
-            taddr_fetcher_transmitter,
-            fetch_taddr_transactions_transmitter,
-            self.config.chain,
-        )
-        .await;
+        let taddr_transactions_handle =
+            FetchTaddrTransactions::new(self.wallet.keystore(), Arc::new(self.config.clone()))
+                .start(
+                    start_block,
+                    earliest_block,
+                    taddr_fetcher_transmitter,
+                    fetch_taddr_transactions_transmitter,
+                    self.config.chain,
+                )
+                .await;
 
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
@@ -1969,7 +1967,7 @@ impl LightClient {
                         if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
+                            let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.keystore());
                             let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -2012,7 +2010,7 @@ impl LightClient {
                         if !all_notes && orch_note_metadata.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
+                            let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.keystore());
                             let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -2069,7 +2067,7 @@ impl LightClient {
                                 "value"              => utxo.value,
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
-                                "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
+                                "address"            => self.wallet.keystore().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                                 "spent_at_height"    => utxo.spent_at_height,
                                 "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
                                 "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),

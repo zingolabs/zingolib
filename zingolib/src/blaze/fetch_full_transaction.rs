@@ -3,7 +3,7 @@ use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
         data::OutgoingTxData,
-        keys::{address_from_pubkeyhash, unified::WalletCapability},
+        keys::{address_from_pubkeyhash, keystore::Keystore},
         notes::ShieldedNoteInterface,
         traits::{
             self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
@@ -44,14 +44,15 @@ use zingoconfig::ZingoConfig;
 #[derive(Clone)]
 pub struct TransactionContext {
     pub config: ZingoConfig,
-    pub(crate) key: Arc<WalletCapability>,
+    // pub(crate) key: Arc<WalletCapability>,
+    pub(crate) key: Arc<Keystore>,
     pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
-        key: Arc<WalletCapability>,
+        key: Arc<Keystore>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {

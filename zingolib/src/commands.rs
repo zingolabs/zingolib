@@ -116,12 +116,12 @@ impl Command for WalletKindCommand {
             if lightclient.do_seed_phrase().await.is_ok() {
                 object! {"kind" => "Seeded"}.pretty(4)
             } else {
-                let capability = lightclient.wallet.wallet_capability();
+                let capability = lightclient.wallet.keystore();
                 object! {
                     "kind" => "Loaded from key",
-                    "transparent" => capability.transparent.kind_str(),
-                    "sapling" => capability.sapling.kind_str(),
-                    "orchard" => capability.orchard.kind_str(),
+                    "transparent" => capability.transparent_kind_str(),
+                    "sapling" => capability.sapling_kind_str(),
+                    "orchard" => capability.orchard_kind_str(),
                 }
                 .pretty(4)
             }

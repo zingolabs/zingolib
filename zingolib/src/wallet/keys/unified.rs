@@ -68,11 +68,12 @@ pub struct WalletCapability {
     >,
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
-    transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
-    addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
+    pub(crate) transparent_child_keys:
+        append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
+    pub(crate) addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
-    addresses_write_lock: AtomicBool,
+    pub(crate) addresses_write_lock: AtomicBool,
 }
 impl Default for WalletCapability {
     fn default() -> Self {
@@ -724,16 +725,19 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
 ) {
     use super::address_from_pubkeyhash;
 
-    let wc = lightclient.wallet.wallet_capability();
+    let wc = lightclient.wallet.keystore();
     // 2. Get an incoming transaction to a t address
-    let (sk, pk) = match &wc.transparent {
+    let (sk, pk) = match &wc.transparent_capability() {
         Capability::None => (None, None),
         Capability::View(ext_pk) => {
             let child_ext_pk = ext_pk.derive_public_key(KeyIndex::Normal(0)).ok();
             (None, child_ext_pk.map(|x| x.public_key))
         }
         Capability::Spend(_) => {
-            let sk = wc.transparent_child_keys[0].1;
+            let sk = wc
+                .transparent_child_keys()
+                .expect("Transparent keys spendable")[0]
+                .1;
             let secp = secp256k1::Secp256k1::new();
             let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
             (Some(sk), Some(pk))

@@ -1,5 +1,5 @@
 use crate::wallet::keys::address_from_pubkeyhash;
-use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::keys::keystore::Keystore;
 use zcash_client_backend::proto::service::RawTransaction;
 
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use zcash_primitives::transaction::Transaction;
 use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {
-    wc: Arc<WalletCapability>,
+    wc: Arc<Keystore>,
     config: Arc<ZingoConfig>,
 }
 
@@ -27,7 +27,7 @@ pub type FetchTaddrRequest = (Vec<String>, u64, u64);
 pub type FetchTaddrResponse = Result<RawTransaction, String>;
 
 impl FetchTaddrTransactions {
-    pub fn new(wc: Arc<WalletCapability>, config: Arc<ZingoConfig>) -> Self {
+    pub fn new(wc: Arc<Keystore>, config: Arc<ZingoConfig>) -> Self {
         Self { wc, config }
     }
 

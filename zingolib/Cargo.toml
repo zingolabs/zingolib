@@ -14,6 +14,15 @@ test-features = ["zingo-testvectors"]
 default = ["embed_params"]
 embed_params = []
 darkside_tests = []
+hsm-compat = ["zcash-hsmbuilder"]
+ledger-support = [
+    "hsm-compat",
+    "ledger-zcash",
+    "ledger-transport-hid",
+    "ledger-transport",
+    "zx-bip44",
+    "bytemuck",
+]
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
@@ -28,9 +37,17 @@ tower = { workspace = true }
 prost = { workspace = true }
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
-incrementalmerkletree = { workspace = true, features = ["test-dependencies", "legacy-api"] }
+incrementalmerkletree = { workspace = true, features = [
+    "test-dependencies",
+    "legacy-api",
+] }
 zcash_address = { workspace = true }
-zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
+zcash_client_backend = { workspace = true, features = [
+    "unstable",
+    "transparent-inputs",
+    "unstable-serialization",
+    "unstable-spanning-tree",
+] }
 zcash_encoding = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
@@ -46,7 +63,7 @@ bytes = "0.4"
 rand = "0.8.5"
 hyper-rustls = { version = "0.23", features = ["http2"] }
 serde_json = "1.0.82"
-tokio =  { version = "1.24.2", features = ["full"] }
+tokio = { version = "1.24.2", features = ["full"] }
 tokio-stream = "0.1.6"
 tokio-rustls = "0.23.3"
 reqwest = { version = "0.11", features = ["json"] }
@@ -80,7 +97,24 @@ indoc = "2.0.1"
 derive_more = "0.99.17"
 either = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
+zcash-hsmbuilder = { git = "https://github.com/Zondax/ledger-zcash-rs", rev = "324a0851113df4ea77457b5711392beabd021407", default-features = false, features = [
+    "zecwallet-compat",
+], optional = true }
+# ledger-zcash = { git = "https://github.com/Zondax/ledger-zcash-rs", rev = "324a0851113df4ea77457b5711392beabd021407", default-features = false, features = [
+#     "zecwallet-compat",
+# ], optional = true }
+ledger-zcash = { git = "https://github.com/Zondax/ledger-zcash-rs", branch = "feat/zingolib", default-features = false, features = [
+    "zecwallet-compat",
+], optional = true }
+ledger-transport-hid = { version = "0.9", optional = true }
+ledger-transport = { version = "0.9.0", optional = true }
+zx-bip44 = { version = "0.1.0", optional = true }
+bytemuck = { version = "1.9.1", optional = true }
+cfg-if = "1.0.0"
+
+
 sapling-crypto.workspace = true
+thiserror = "1.0.57"
 
 [dev-dependencies]
 portpicker = "0.1.0"

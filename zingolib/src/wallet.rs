@@ -1,8 +1,10 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
-use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
-use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::{
+    data::{SpendableSaplingNote, TransactionRecord},
+    notes::ShieldedNoteInterface,
+};
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -51,7 +53,8 @@ use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
-use self::keys::unified::{Capability, WalletCapability};
+use self::keys::keystore::Keystore;
+use self::keys::unified::Capability;
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
 use self::utils::get_price;
@@ -199,13 +202,17 @@ pub enum WalletBase {
     Ufvk(String),
     /// Unified spending key
     Usk(Vec<u8>),
+    #[cfg(feature = "ledger-support")]
+    Ledger,
 }
+
 impl WalletBase {
     pub fn from_string(base: String) -> WalletBase {
-        if (&base[0..5]) == "uview" {
-            WalletBase::Ufvk(base)
-        } else {
-            WalletBase::MnemonicPhrase(base)
+        match base {
+            _ if &base[0..5] == "uview" => WalletBase::Ufvk(base.clone()),
+            #[cfg(feature = "ledger-support")]
+            _ if &base[0..5] == "ledger" => WalletBase::Ledger,
+            _ => WalletBase::MnemonicPhrase(base),
         }
     }
 }
@@ -337,7 +344,7 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = SaplingIvk::try_from(&*self.wallet_capability())?;
+        let sapling_ivk = SaplingIvk::try_from(&*self.keystore())?;
 
         if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
@@ -353,7 +360,7 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let wc = self.wallet_capability();
+        let wc = self.keystore();
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
         let mut candidate_notes = transaction_metadata_set
@@ -596,35 +603,40 @@ impl LightWallet {
                 return Self::new(config, WalletBase::MnemonicAndIndex(mnemonic, 0), height);
             }
             WalletBase::MnemonicAndIndex(mnemonic, position) => {
-                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, position)
+                let wc = Keystore::new_from_phrase(&config, &mnemonic, position)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
                 (wc, Some((mnemonic, position)))
             }
             WalletBase::Ufvk(ufvk_encoded) => {
-                let wc = WalletCapability::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
+                let wc = Keystore::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
                     Error::new(ErrorKind::InvalidData, format!("Error parsing UFVK: {}", e))
                 })?;
                 (wc, None)
             }
             WalletBase::Usk(unified_spending_key) => {
-                let wc = WalletCapability::new_from_usk(unified_spending_key.as_slice()).map_err(
-                    |e| {
-                        Error::new(
-                            ErrorKind::InvalidData,
-                            format!("Error parsing unified spending key: {}", e),
-                        )
-                    },
-                )?;
+                let wc = Keystore::new_from_usk(unified_spending_key.as_slice()).map_err(|e| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Error parsing unified spending key: {}", e),
+                    )
+                })?;
+                (wc, None)
+            }
+
+            #[cfg(feature = "ledger-support")]
+            WalletBase::Ledger => {
+                let wc = Keystore::new_ledger()?;
                 (wc, None)
             }
         };
 
-        if let Err(e) = wc.new_address(wc.can_view()) {
+        if let Err(e) = wc.new_address(wc.can_view(), &config) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("could not create initial address: {e}"),
             ));
-        };
+        }
+
         let transaction_metadata_set = if wc.can_spend_from_all_pools() {
             Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees()))
         } else {
@@ -647,7 +659,7 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &zingoconfig::ChainType,
         note: &D::WalletNote,
-        wallet_capability: &WalletCapability,
+        wallet_capability: &Keystore,
     ) -> String
     where
         <D as Domain>::Recipient: Recipient,
@@ -683,7 +695,11 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let wallet_capability = WalletCapability::read(&mut reader, ())?;
+        // This method returns on success keystore holding an in memory wallet capability.
+        let keystore = Keystore::read(&mut reader, ())?;
+        let wallet_capability = keystore.wc().ok_or(io::Error::other(
+            "Failed to access in-memory wallet capability. This operation requires wallet data that supports direct file reading, which is not available in the current wallet configuration.",
+        ))?;
         info!("Keys in this wallet:");
         match &wallet_capability.orchard {
             Capability::None => (),
@@ -709,9 +725,9 @@ impl LightWallet {
         }
 
         let mut transactions = if external_version <= 14 {
-            TransactionMetadataSet::read_old(&mut reader, &wallet_capability)
+            TransactionMetadataSet::read_old(&mut reader, &keystore)
         } else {
-            TransactionMetadataSet::read(&mut reader, &wallet_capability)
+            TransactionMetadataSet::read(&mut reader, &keystore)
         }?;
         let txids = transactions
             .current
@@ -773,7 +789,7 @@ impl LightWallet {
 
         let transaction_context = TransactionContext::new(
             config,
-            Arc::new(wallet_capability),
+            Arc::new(keystore),
             Arc::new(RwLock::new(transactions)),
         );
 
@@ -944,7 +960,7 @@ impl LightWallet {
         self.reset_send_progress().await;
 
         // Sanity check that this is a spending wallet.  Why isn't this done earlier?
-        if !self.wallet_capability().can_spend_from_all_pools() {
+        if !self.keystore().can_spend_from_all_pools() {
             // Creating transactions in context of all possible combinations
             // of wallet capabilities requires a rigorous case study
             // and can have undesired effects if not implemented properly.
@@ -1014,7 +1030,7 @@ impl LightWallet {
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
         let address_to_sk = self
-            .wallet_capability()
+            .keystore()
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
@@ -1099,9 +1115,8 @@ impl LightWallet {
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk =
-            sapling_crypto::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
-        let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
+            sapling_crypto::keys::OutgoingViewingKey::try_from(&*self.keystore()).unwrap();
+        let orchard_ovk = orchard::keys::OutgoingViewingKey::try_from(&*self.keystore()).unwrap();
 
         let mut total_shielded_receivers = 0u32;
         for (recipient_address, value, memo) in receivers {
@@ -1176,12 +1191,11 @@ impl LightWallet {
                 [0; 511]
             }
         };
-        let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
+        let orchard_ovk = orchard::keys::OutgoingViewingKey::try_from(&*self.keystore()).unwrap();
         *total_shielded_receivers += 1;
         if let Err(e) = tx_builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
-            *self.wallet_capability().addresses()[0].orchard().unwrap(),
+            *self.keystore().addresses()[0].orchard().unwrap(),
             u64::try_from(selected_value).expect("u64 representable")
                 - u64::try_from(target_amount).expect("u64 representable"),
             // Here we store the uas we sent to in the memo field.
@@ -1518,7 +1532,7 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
+        let fvk = D::wc_to_fvk(&self.keystore()).ok()?;
         let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
@@ -1563,7 +1577,7 @@ impl LightWallet {
     }
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        if let Capability::Spend(_) = self.wallet_capability().orchard {
+        if self.keystore().can_spend_orchard() {
             self.verified_balance::<OrchardDomain>(target_addr).await
         } else {
             None
@@ -1571,7 +1585,7 @@ impl LightWallet {
     }
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        if let Capability::Spend(_) = self.wallet_capability().sapling {
+        if self.keystore().can_spend_sapling() {
             self.verified_balance::<SaplingDomain>(target_addr).await
         } else {
             None
@@ -1579,7 +1593,7 @@ impl LightWallet {
     }
 
     pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
-        if self.wallet_capability().transparent.can_view() {
+        if self.keystore().can_view_transparent() {
             Some(
                 self.get_utxos()
                     .await
@@ -1656,7 +1670,7 @@ impl LightWallet {
         self.verified_balance::<SaplingDomain>(target_addr).await
     }
 
-    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
+    pub fn keystore(&self) -> Arc<Keystore> {
         self.transaction_context.key.clone()
     }
 

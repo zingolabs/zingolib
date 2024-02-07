@@ -6,7 +6,7 @@ use std::{
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
+use crate::wallet::{data::TransactionRecord, keys::keystore::Keystore, WitnessTrees};
 
 use super::TransactionMetadataSet;
 impl TransactionMetadataSet {
@@ -14,10 +14,7 @@ impl TransactionMetadataSet {
         22
     }
 
-    pub fn read_old<R: Read>(
-        mut reader: R,
-        wallet_capability: &WalletCapability,
-    ) -> io::Result<Self> {
+    pub fn read_old<R: Read>(mut reader: R, wallet_capability: &Keystore) -> io::Result<Self> {
         // Note, witness_trees will be Some(x) if the wallet has spend capability
         // so this check is a very un-ergonomic way of checking if the wallet
         // can spend.
@@ -63,7 +60,7 @@ impl TransactionMetadataSet {
         })
     }
 
-    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, wallet_capability: &Keystore) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             return Err(io::Error::new(

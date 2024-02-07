@@ -32,7 +32,7 @@ use zingolib::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
             extended_transparent::ExtendedPrivKey,
-            unified::{Capability, WalletCapability},
+            unified::{Capability, Keystore},
         },
         LightWallet, Pool,
     },
@@ -72,7 +72,7 @@ fn check_expected_balance_with_fvks(
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
     balance: &PoolBalances,
-    watch_wc: &WalletCapability,
+    watch_wc: &Keystore,
     fvks: &[&Fvk],
     ovk: &Fvk,
     svk: &Fvk,
@@ -511,9 +511,8 @@ mod fast {
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
         let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
-        let wc = wallet.wallet_capability();
+            Keystore::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1).unwrap();
+        let wc = wallet.keystore();
 
         // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
         // so we have to compare each component instead
@@ -579,9 +578,8 @@ mod fast {
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
         let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
-        let wc = wallet.wallet_capability();
+            Keystore::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1).unwrap();
+        let wc = wallet.keystore();
 
         // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
         // so we have to compare each component instead
@@ -661,9 +659,8 @@ mod fast {
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
         let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
-        let wc = wallet.wallet_capability();
+            Keystore::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1).unwrap();
+        let wc = wallet.keystore();
 
         let Capability::Spend(orchard_sk) = &wc.orchard else {
             panic!("Expected Orchard Spending Key");
@@ -1131,7 +1128,7 @@ mod slow {
         check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
         // Extract viewing keys
-        let wallet_capability = original_recipient.wallet.wallet_capability().clone();
+        let wallet_capability = original_recipient.wallet.keystore().clone();
         let [o_fvk, s_fvk, t_fvk] =
             zingo_testutils::build_fvks_from_wallet_capability(&wallet_capability);
         let fvks_sets = vec![
@@ -1149,7 +1146,7 @@ mod slow {
             log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
             let watch_client = build_fvk_client(fvks, &zingo_config).await;
-            let watch_wc = watch_client.wallet.wallet_capability();
+            let watch_wc = watch_client.wallet.keystore();
             // assert empty wallet before rescan
             let balance = watch_client.do_balance().await;
             check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
@@ -2004,7 +2001,7 @@ mod slow {
             addresses[0]["receivers"]["sapling"],
             encode_payment_address(
                 recipient.config().chain.hrp_sapling_payment_address(),
-                recipient.wallet.wallet_capability().addresses()[0]
+                recipient.wallet.keystore().addresses()[0]
                     .sapling()
                     .unwrap()
             ),
@@ -2022,8 +2019,7 @@ mod slow {
             assert_eq!(faucet_sent_transaction["amount"].as_u64().unwrap(), value);
             assert_eq!(
                 faucet_sent_transaction["address"],
-                recipient.wallet.wallet_capability().addresses()[0]
-                    .encode(&recipient.config().chain)
+                recipient.wallet.keystore().addresses()[0].encode(&recipient.config().chain)
             );
             assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 4);
         } else {
