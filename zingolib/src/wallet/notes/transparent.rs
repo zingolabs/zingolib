@@ -37,8 +37,24 @@ impl NoteInterface for TransparentNote {
 }
 
 impl TransparentNote {
-    pub fn serialized_version() -> u64 {
-        4
+    pub fn new(
+        address: String,
+        txid: TxId,
+        output_index: u64,
+        script: Vec<u8>,
+        value: u64,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+    ) -> Self {
+        Self {
+            address,
+            txid,
+            output_index,
+            script,
+            value,
+            spent,
+            unconfirmed_spent,
+        }
     }
 
     pub fn to_outpoint(&self) -> OutPoint {
@@ -46,6 +62,9 @@ impl TransparentNote {
     }
 
     // write + read
+    pub fn serialized_version() -> u64 {
+        4
+    }
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u64::<byteorder::LittleEndian>(Self::serialized_version())?;
 
