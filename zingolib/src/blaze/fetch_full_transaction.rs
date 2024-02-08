@@ -117,6 +117,8 @@ impl TransactionContext {
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
+        // the assumption is either we already decrypted a compact output and filled in some data
+        // or transparent something
         if self
             .transaction_metadata_set
             .read()
