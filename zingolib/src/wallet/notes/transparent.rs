@@ -45,6 +45,37 @@ impl TransparentNote {
         OutPoint::new(*self.txid.as_ref(), self.output_index as u32)
     }
 
+    // write + read
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u64::<byteorder::LittleEndian>(Self::serialized_version())?;
+
+        writer.write_u32::<byteorder::LittleEndian>(self.address.as_bytes().len() as u32)?;
+        writer.write_all(self.address.as_bytes())?;
+
+        writer.write_all(self.txid.as_ref())?;
+
+        writer.write_u64::<byteorder::LittleEndian>(self.output_index)?;
+        writer.write_u64::<byteorder::LittleEndian>(self.value)?;
+        writer.write_i32::<byteorder::LittleEndian>(0)?;
+
+        let (spent, spent_at_height) = if let Some(spent_tuple) = self.spent {
+            (Some(spent_tuple.0), Some(spent_tuple.1 as i32))
+        } else {
+            (None, None)
+        };
+
+        zcash_encoding::Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
+
+        zcash_encoding::Optional::write(&mut writer, spent, |w, transaction_id| {
+            w.write_all(transaction_id.as_ref())
+        })?;
+
+        zcash_encoding::Optional::write(&mut writer, spent_at_height, |w, s| {
+            w.write_i32::<byteorder::LittleEndian>(s)
+        })?;
+
+        Ok(())
+    }
     pub fn read<R: std::io::Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u64::<byteorder::LittleEndian>()?;
 
@@ -113,36 +144,5 @@ impl TransparentNote {
             spent: spent_tuple,
             unconfirmed_spent: None,
         })
-    }
-
-    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
-        writer.write_u64::<byteorder::LittleEndian>(Self::serialized_version())?;
-
-        writer.write_u32::<byteorder::LittleEndian>(self.address.as_bytes().len() as u32)?;
-        writer.write_all(self.address.as_bytes())?;
-
-        writer.write_all(self.txid.as_ref())?;
-
-        writer.write_u64::<byteorder::LittleEndian>(self.output_index)?;
-        writer.write_u64::<byteorder::LittleEndian>(self.value)?;
-        writer.write_i32::<byteorder::LittleEndian>(0)?;
-
-        let (spent, spent_at_height) = if let Some(spent_tuple) = self.spent {
-            (Some(spent_tuple.0), Some(spent_tuple.1 as i32))
-        } else {
-            (None, None)
-        };
-
-        zcash_encoding::Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
-
-        zcash_encoding::Optional::write(&mut writer, spent, |w, transaction_id| {
-            w.write_all(transaction_id.as_ref())
-        })?;
-
-        zcash_encoding::Optional::write(&mut writer, spent_at_height, |w, s| {
-            w.write_i32::<byteorder::LittleEndian>(s)
-        })?;
-
-        Ok(())
     }
 }
