@@ -2071,8 +2071,8 @@ impl LightClient {
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
                                 "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
-                                "spent_at_height"    => utxo.spent_at_height,
-                                "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
+                                "spent"              => utxo.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent_at_height"    => utxo.spent.map(|(_, h)| h),
                                 "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             })
                         }

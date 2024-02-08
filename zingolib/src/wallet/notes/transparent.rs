@@ -4,6 +4,10 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
+use super::{
+    NoteInterface,
+};
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransparentNote {
     pub address: String,
@@ -12,12 +16,26 @@ pub struct TransparentNote {
     pub script: Vec<u8>,
     pub value: u64,
 
-    pub spent_at_height: Option<i32>,
-    pub spent: Option<TxId>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
+    pub spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
 
     // If this utxo was spent in a send, but has not yet been confirmed.
     // Contains the txid and height at which the Tx was broadcast
     pub unconfirmed_spent: Option<(TxId, u32)>,
+}
+
+impl NoteInterface for TransparentNote {
+    fn spent(&self) -> &Option<(TxId, u32)> {
+        &self.spent
+    }
+    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.spent
+    }
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
 }
 
 impl TransparentNote {
@@ -78,14 +96,23 @@ impl TransparentNote {
             None
         };
 
+        let spent_tuple: Option<(TxId, u32)> = if let Some(txid) = spent {
+            if let Some(height) = spent_at_height {
+                Some((txid, height as u32))
+            } else {
+                Some((txid, 0))
+            }
+        } else {
+            None
+        };
+
         Ok(TransparentNote {
             address,
             txid: transaction_id,
             output_index,
             script,
             value,
-            spent_at_height,
-            spent,
+            spent: spent_tuple,
             unconfirmed_spent: None,
         })
     }
@@ -102,13 +129,19 @@ impl TransparentNote {
         writer.write_u64::<byteorder::LittleEndian>(self.value)?;
         writer.write_i32::<byteorder::LittleEndian>(0)?;
 
+        let (spent, spent_at_height) = if let Some(spent_tuple) = self.spent {
+            (Some(spent_tuple.0), Some(spent_tuple.1 as i32))
+        } else {
+            (None, None)
+        };
+
         zcash_encoding::Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
 
-        zcash_encoding::Optional::write(&mut writer, self.spent, |w, transaction_id| {
+        zcash_encoding::Optional::write(&mut writer, spent, |w, transaction_id| {
             w.write_all(transaction_id.as_ref())
         })?;
 
-        zcash_encoding::Optional::write(&mut writer, self.spent_at_height, |w, s| {
+        zcash_encoding::Optional::write(&mut writer, spent_at_height, |w, s| {
             w.write_i32::<byteorder::LittleEndian>(s)
         })?;
 
