@@ -1,19 +1,13 @@
 use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::{Hashable, Position};
+use incrementalmerkletree::Position;
 use zcash_primitives::{
     memo::Memo,
-    merkle_tree::HashSer,
     transaction::{components::OutPoint, TxId},
 };
 
-use super::{
-    data::TransactionRecord,
-    keys::unified::WalletCapability,
-    traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
-    Pool,
-};
+use super::{data::TransactionRecord, Pool};
 
 pub mod interface;
 pub use interface::ShieldedNoteInterface;
