@@ -34,9 +34,8 @@ impl TransactionMetadataSet {
                 .transparent_notes
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
+                    if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap().0) {
                         utxo.spent = None;
-                        utxo.spent_at_height = None;
                     }
 
                     if utxo.unconfirmed_spent.is_some()
@@ -326,9 +325,7 @@ impl TransactionMetadataSet {
             {
                 if spending_tx_status.is_confirmed() {
                     // Mark this utxo as spent
-                    spent_utxo.spent = Some(source_txid);
-                    spent_utxo.spent_at_height =
-                        Some(u32::from(spending_tx_status.get_height()) as i32);
+                    spent_utxo.spent = Some((source_txid, spending_tx_status.get_height().into()));
                     spent_utxo.unconfirmed_spent = None;
                 } else {
                     spent_utxo.unconfirmed_spent =
@@ -379,7 +376,6 @@ impl TransactionMetadataSet {
                     output_index: output_num as u64,
                     script: vout.script_pubkey.0.clone(),
                     value: u64::from(vout.value),
-                    spent_at_height: None,
                     spent: None,
                     unconfirmed_spent: None,
                 });

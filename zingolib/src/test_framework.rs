@@ -17,8 +17,7 @@ pub struct TransparentNoteBuilder {
     output_index: Option<u64>,
     script: Option<Vec<u8>>,
     value: Option<u64>,
-    spent_at_height: Option<Option<i32>>,
-    spent: Option<Option<TxId>>,
+    spent: Option<Option<(TxId, u32)>>,
     unconfirmed_spent: Option<Option<(TxId, u32)>>,
 }
 #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
@@ -32,8 +31,7 @@ impl TransparentNoteBuilder {
     build_method!(output_index, u64);
     build_method!(script, Vec<u8>);
     build_method!(value, u64);
-    build_method!(spent_at_height, Option<i32>); //  TODO:  WHY IS THIS AN i32?!
-    build_method!(spent, Option<TxId>);
+    build_method!(spent, Option<(TxId, u32)>);
     build_method!(unconfirmed_spent, Option<(TxId, u32)>);
 
     // Build method
@@ -44,7 +42,6 @@ impl TransparentNoteBuilder {
             output_index: self.output_index.unwrap(),
             script: self.script.unwrap(),
             value: self.value.unwrap(),
-            spent_at_height: self.spent_at_height.unwrap(),
             spent: self.spent.unwrap(),
             unconfirmed_spent: self.unconfirmed_spent.unwrap(),
         }
@@ -59,7 +56,6 @@ impl Default for TransparentNoteBuilder {
             output_index: Some(0),
             script: Some(vec![]),
             value: Some(0),
-            spent_at_height: Some(None),
             spent: Some(None),
             unconfirmed_spent: Some(None),
         }
