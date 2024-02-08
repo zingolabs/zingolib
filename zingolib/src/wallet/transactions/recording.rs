@@ -34,8 +34,8 @@ impl TransactionMetadataSet {
                 .transparent_notes
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap().0) {
-                        utxo.spent = None;
+                    if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
+                        *utxo.spent_mut() = None;
                     }
 
                     if utxo.unconfirmed_spent.is_some()
@@ -325,7 +325,8 @@ impl TransactionMetadataSet {
             {
                 if spending_tx_status.is_confirmed() {
                     // Mark this utxo as spent
-                    spent_utxo.spent = Some((source_txid, spending_tx_status.get_height().into()));
+                    *spent_utxo.spent_mut() =
+                        Some((source_txid, spending_tx_status.get_height().into()));
                     spent_utxo.unconfirmed_spent = None;
                 } else {
                     spent_utxo.unconfirmed_spent =
