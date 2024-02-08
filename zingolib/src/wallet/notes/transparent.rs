@@ -2,11 +2,7 @@ use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
-use zcash_primitives::{
-    transaction::{components::OutPoint, TxId},
-};
-
-
+use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransparentNote {
