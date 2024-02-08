@@ -36,15 +36,15 @@ impl TransparentNoteBuilder {
 
     // Build method
     pub fn build(self) -> TransparentNote {
-        TransparentNote {
-            address: self.address.unwrap(),
-            txid: self.txid.unwrap(),
-            output_index: self.output_index.unwrap(),
-            script: self.script.unwrap(),
-            value: self.value.unwrap(),
-            spent: self.spent.unwrap(),
-            unconfirmed_spent: self.unconfirmed_spent.unwrap(),
-        }
+        TransparentNote::new(
+            self.address.unwrap(),
+            self.txid.unwrap(),
+            self.output_index.unwrap(),
+            self.script.unwrap(),
+            self.value.unwrap(),
+            self.spent.unwrap(),
+            self.unconfirmed_spent.unwrap(),
+        )
     }
 }
 

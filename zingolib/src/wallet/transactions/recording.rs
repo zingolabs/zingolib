@@ -369,17 +369,17 @@ impl TransactionMetadataSet {
         {
             // If it already exists, it is likely an mempool tx, so update the height
         } else {
-            transaction_metadata
-                .transparent_notes
-                .push(crate::wallet::notes::TransparentNote {
-                    address: taddr,
+            transaction_metadata.transparent_notes.push(
+                crate::wallet::notes::TransparentNote::new(
+                    taddr,
                     txid,
-                    output_index: output_num as u64,
-                    script: vout.script_pubkey.0.clone(),
-                    value: u64::from(vout.value),
-                    spent: None,
-                    unconfirmed_spent: None,
-                });
+                    output_num as u64,
+                    vout.script_pubkey.0.clone(),
+                    u64::from(vout.value),
+                    None,
+                    None,
+                ),
+            );
         }
     }
 
