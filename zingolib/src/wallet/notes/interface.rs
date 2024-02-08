@@ -1,12 +1,5 @@
-
-
-
 use incrementalmerkletree::{Hashable, Position};
-use zcash_primitives::{
-    memo::Memo,
-    merkle_tree::HashSer,
-    transaction::{TxId},
-};
+use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 
 use super::super::{
     data::TransactionRecord,
@@ -15,9 +8,19 @@ use super::super::{
     Pool,
 };
 
+pub trait NoteInterface: Sized {
+    fn spent(&self) -> &Option<(TxId, u32)>;
+    fn is_spent(&self) -> bool {
+        Self::spent(self).is_some()
+    }
+    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn pending_spent(&self) -> &Option<(TxId, u32)>;
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+}
+
 ///   All zingolib::wallet::traits::Notes are NoteInterface
 ///   NoteInterface provides...
-pub trait ShieldedNoteInterface: Sized {
+pub trait ShieldedNoteInterface: NoteInterface + Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
     type Note: PartialEq
@@ -44,9 +47,6 @@ pub trait ShieldedNoteInterface: Sized {
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
     fn is_change_mut(&mut self) -> &mut bool;
-    fn is_spent(&self) -> bool {
-        Self::spent(self).is_some()
-    }
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
@@ -56,14 +56,10 @@ pub trait ShieldedNoteInterface: Sized {
     fn pending_receipt(&self) -> bool {
         self.nullifier().is_none()
     }
-    fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pool() -> Pool;
-    fn spent(&self) -> &Option<(TxId, u32)>;
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self>;
     fn transaction_metadata_notes_mut(wallet_transaction: &mut TransactionRecord)
         -> &mut Vec<Self>;
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
         Self::value_from_note(self.note())

@@ -14,6 +14,7 @@ use crate::{
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
+        notes::NoteInterface,
         notes::ShieldedNoteInterface,
         now,
         utils::get_price,

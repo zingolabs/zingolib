@@ -3,7 +3,7 @@ use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
     super::{data::TransactionRecord, Pool},
-    ShieldedNoteInterface,
+    NoteInterface, ShieldedNoteInterface,
 };
 
 pub struct SaplingNote {
@@ -48,6 +48,21 @@ impl std::fmt::Debug for SaplingNote {
             .field("memo", &self.memo)
             .field("is_change", &self.is_change)
             .finish_non_exhaustive()
+    }
+}
+
+impl NoteInterface for SaplingNote {
+    fn spent(&self) -> &Option<(TxId, u32)> {
+        &self.spent
+    }
+    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.spent
+    }
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
     }
 }
 
@@ -127,14 +142,6 @@ impl ShieldedNoteInterface for SaplingNote {
         Pool::Sapling
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent
-    }
-
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent
-    }
-
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {
         &wallet_transaction.sapling_notes
     }
@@ -143,14 +150,6 @@ impl ShieldedNoteInterface for SaplingNote {
         wallet_transaction: &mut TransactionRecord,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.sapling_notes
-    }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
     }
 
     fn value_from_note(note: &Self::Note) -> u64 {
