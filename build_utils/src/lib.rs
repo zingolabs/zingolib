@@ -7,7 +7,7 @@ pub fn git_description() {
         .output()
         .expect("Failed to execute git command");
     let output = Command::new("git")
-        .args(["describe", "--dirty"])
+        .args(["describe", "--dirty", "--always", "--long"])
         .output()
         .expect("Failed to execute git command");
 
