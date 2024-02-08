@@ -1,13 +1,10 @@
-use std::io::Write;
-
-use byteorder::{ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::Position;
-use zcash_primitives::{
-    memo::Memo,
-    transaction::{components::OutPoint, TxId},
-};
+use zcash_primitives::{memo::Memo, transaction::TxId};
 
-use super::super::{data::TransactionRecord, Pool};
+use super::{
+    super::{data::TransactionRecord, Pool},
+    ShieldedNoteInterface,
+};
 
 pub struct SaplingNote {
     pub diversifier: sapling_crypto::Diversifier,
@@ -20,7 +17,7 @@ pub struct SaplingNote {
     // The note's index in its containing transaction
     pub(crate) output_index: Option<u32>,
 
-    pub(super) nullifier: Option<sapling_crypto::Nullifier>,
+    pub nullifier: Option<sapling_crypto::Nullifier>,
 
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
 
