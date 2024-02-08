@@ -1,13 +1,12 @@
 use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::Position;
+
 use zcash_primitives::{
-    memo::Memo,
     transaction::{components::OutPoint, TxId},
 };
 
-use super::super::{data::TransactionRecord, Pool};
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransparentNote {

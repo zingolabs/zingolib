@@ -1,10 +1,10 @@
-use std::io::Write;
 
-use byteorder::{ReadBytesExt, WriteBytesExt};
+
+
 use incrementalmerkletree::Position;
 use zcash_primitives::{
     memo::Memo,
-    transaction::{components::OutPoint, TxId},
+    transaction::{TxId},
 };
 
 use super::{data::TransactionRecord, Pool};
