@@ -3,7 +3,7 @@ use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
     super::{data::TransactionRecord, Pool},
-    ShieldedNoteInterface,
+    NoteInterface, ShieldedNoteInterface,
 };
 
 #[derive(Debug)]
@@ -30,6 +30,21 @@ pub struct OrchardNote {
 
     // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
     pub have_spending_key: bool,
+}
+
+impl NoteInterface for OrchardNote {
+    fn spent(&self) -> &Option<(TxId, u32)> {
+        &self.spent
+    }
+    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.spent
+    }
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
 }
 
 impl ShieldedNoteInterface for OrchardNote {
@@ -107,14 +122,6 @@ impl ShieldedNoteInterface for OrchardNote {
         Pool::Orchard
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent
-    }
-
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent
-    }
-
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {
         &wallet_transaction.orchard_notes
     }
@@ -123,14 +130,6 @@ impl ShieldedNoteInterface for OrchardNote {
         wallet_transaction: &mut TransactionRecord,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
-    }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
     }
 
     fn value_from_note(note: &Self::Note) -> u64 {

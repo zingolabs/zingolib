@@ -2,6 +2,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
+use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
 use bip0039::Mnemonic;
