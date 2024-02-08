@@ -14,7 +14,7 @@ pub struct TransparentNote {
     pub script: Vec<u8>,
     pub value: u64,
 
-    pub spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
+    spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
 
     // If this utxo was spent in a send, but has not yet been confirmed.
     // Contains the txid and height at which the Tx was broadcast
