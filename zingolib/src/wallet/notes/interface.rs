@@ -1,11 +1,11 @@
-use std::io::Write;
 
-use byteorder::{ReadBytesExt, WriteBytesExt};
+
+
 use incrementalmerkletree::{Hashable, Position};
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::HashSer,
-    transaction::{components::OutPoint, TxId},
+    transaction::{TxId},
 };
 
 use super::super::{
