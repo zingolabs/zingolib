@@ -4,6 +4,7 @@
 //! This process is called: `trial_decryption`.
 
 use crate::error::ZingoLibResult;
+
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,

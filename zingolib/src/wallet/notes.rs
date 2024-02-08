@@ -1,9 +1,5 @@
-
-
-
-
-
 pub mod interface;
+pub use interface::NoteInterface;
 pub use interface::ShieldedNoteInterface;
 pub mod transparent;
 pub use transparent::TransparentNote;
