@@ -497,7 +497,7 @@ impl LightWallet {
                 transaction
                     .transparent_notes
                     .iter()
-                    .filter(|utxo| utxo.spent.is_none())
+                    .filter(|utxo| !utxo.is_spent())
             })
             .cloned()
             .collect::<Vec<notes::TransparentNote>>()
@@ -863,7 +863,7 @@ impl LightWallet {
                         .get_utxos()
                         .await
                         .iter()
-                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && !utxo.is_spent())
                         .cloned()
                         .collect::<Vec<_>>();
                     all_transparent_value_in_wallet =

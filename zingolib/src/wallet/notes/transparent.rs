@@ -4,9 +4,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
-use super::{
-    NoteInterface,
-};
+use super::NoteInterface;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransparentNote {
