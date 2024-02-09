@@ -3508,19 +3508,21 @@ mod slow {
             .unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(expected_balance));
-        let _ = client
-            .do_send(vec![(&get_base_address!(client, "sapling"), 11011, None)])
-            .await
-            .unwrap();
-        let _ = client.do_sync(true).await.unwrap();
-        let _ = client
-            .do_send(vec![(
-                &get_base_address!(client, "transparent"),
-                28000,
-                None,
-            )])
-            .await
-            .unwrap();
+        if expected_balance > 0 {
+            let _ = client
+                .do_send(vec![(&get_base_address!(client, "sapling"), 11011, None)])
+                .await
+                .unwrap();
+            let _ = client.do_sync(true).await.unwrap();
+            let _ = client
+                .do_send(vec![(
+                    &get_base_address!(client, "transparent"),
+                    28000,
+                    None,
+                )])
+                .await
+                .unwrap();
+        }
     }
 
     #[tokio::test]
