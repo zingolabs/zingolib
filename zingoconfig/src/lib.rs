@@ -123,7 +123,7 @@ impl ZingoConfigBuilder {
     /// use http::Uri;
     /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
     /// ```
-    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &Self {
+    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &mut Self {
         self.lightwalletd_uri = Some(lightwalletd_uri);
         self
     }
