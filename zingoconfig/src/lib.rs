@@ -133,7 +133,7 @@ impl ZingoConfigBuilder {
     /// use zingoconfig::ChainType::Testnet;
     /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
     /// ```
-    pub fn set_chain(&mut self, chain: ChainType) -> &Self {
+    pub fn set_chain(&mut self, chain: ChainType) -> &mut Self {
         self.chain = chain;
         self
     }
