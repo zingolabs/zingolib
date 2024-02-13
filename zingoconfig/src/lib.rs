@@ -116,28 +116,32 @@ pub struct ZingoConfig {
     pub logfile_name: PathBuf,
 }
 impl ZingoConfigBuilder {
-    /// the proxy server we download blockchain information from
+    /// Set the URI of the proxy server we download blockchain information from.
     /// # Examples
     /// ```
     /// use zingoconfig::ZingoConfigBuilder;
     /// use http::Uri;
     /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
     /// ```
-    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &mut Self {
+    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &Self {
         self.lightwalletd_uri = Some(lightwalletd_uri);
         self
     }
+    /// Set the chain the consuming client will interact with.
+    /// See <https://github.com/bitcoin/bips/blob/master/bip-0087.mediawiki#coin-type>
+    /// for chain types.
+    /// Note "chain type" is not a formal standard.
     /// # Examples
     /// ```
     /// use zingoconfig::ZingoConfigBuilder;
     /// use zingoconfig::ChainType::Testnet;
     /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
     /// ```
-    pub fn set_chain(&mut self, chain: ChainType) -> &mut Self {
+    pub fn set_chain(&mut self, chain: ChainType) -> &Self {
         self.chain = chain;
         self
     }
-    /// the proxy server we download blockchain information from
+    /// Set the wallet directory where client transaction data will be stored in a wallet.
     /// # Examples
     /// ```
     /// use zingoconfig::ZingoConfigBuilder;
@@ -146,7 +150,7 @@ impl ZingoConfigBuilder {
     /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
     /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
     /// ```
-    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &mut Self {
+    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &Self {
         self.wallet_dir = Some(dir);
         self
     }
@@ -389,6 +393,10 @@ impl ZingoConfig {
         log_path.into_boxed_path()
     }
 
+    /// Coin Types are specified in public registries to disambiguate coin variants
+    /// so that HD wallets can manage multiple currencies.
+    ///  <https://github.com/satoshilabs/slips/blob/master/slip-0044.md>
+    ///  ZEC is registered as 133 (0x80000085) for MainNet and 1 (0x80000001) for TestNet (all coins)
     pub fn get_coin_type(&self) -> u32 {
         self.chain.coin_type()
     }
