@@ -146,7 +146,7 @@ impl ZingoConfigBuilder {
     /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
     /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
     /// ```
-    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &Self {
+    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &mut Self {
         self.wallet_dir = Some(dir);
         self
     }
