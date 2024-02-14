@@ -1,8 +1,7 @@
-use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Read, Write},
-    sync::atomic::AtomicBool,
+    sync::{atomic, atomic::AtomicBool},
 };
 
 use append_only_vec::AppendOnlyVec;
@@ -12,11 +11,15 @@ use orchard::keys::Scope;
 
 use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
-use zcash_client_backend::address::UnifiedAddress;
-use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    keys::{Era, UnifiedSpendingKey},
+};
 use zcash_encoding::Vector;
-use zcash_primitives::zip32::AccountId;
-use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
+use zcash_primitives::{
+    legacy::TransparentAddress,
+    zip32::{AccountId, DiversifierIndex},
+};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;

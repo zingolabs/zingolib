@@ -1,5 +1,4 @@
-use std::error::Error;
-use std::fmt;
+use std::{error::Error, fmt};
 
 use zcash_primitives::transaction::TxId;
 
@@ -22,6 +21,10 @@ pub enum ZingoLibError {
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
+
+pub enum ZingoInputSourceError {
+    NonZeroAccountId,
+}
 
 impl ZingoLibError {
     pub fn handle<T>(self) -> ZingoLibResult<T> {

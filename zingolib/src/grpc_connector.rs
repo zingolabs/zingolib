@@ -1,27 +1,30 @@
 use std::sync::Arc;
 
-use futures::future::join_all;
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 
 use http_body::combinators::UnsyncBoxBody;
 use hyper::{client::HttpConnector, Uri};
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
-use tokio_rustls::rustls::{ClientConfig, RootCertStore};
-use tonic::Request;
-use tonic::Status;
-use tower::{util::BoxCloneService, ServiceExt};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
-use zcash_client_backend::proto::service::{
-    BlockId, BlockRange, ChainSpec, Empty, LightdInfo, RawTransaction,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+use tokio::{
+    sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
+    task::JoinHandle,
 };
-use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters};
-use zcash_primitives::transaction::{Transaction, TxId};
+use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+use tonic::{Request, Status};
+use tower::{util::BoxCloneService, ServiceExt};
+use zcash_client_backend::proto::{
+    compact_formats::CompactBlock,
+    service::{
+        compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec, Empty,
+        LightdInfo, RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
+    },
+};
+use zcash_primitives::{
+    consensus::{BlockHeight, BranchId, Parameters},
+    transaction::{Transaction, TxId},
+};
 
 type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,

@@ -1,9 +1,8 @@
 use std::fs::File;
 
-use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::PathBuf;
-use std::process::Child;
+use std::{io::Read, process::Child};
 
 ///  To manage the state associated a "regtest" run this type:
 ///   * sets up paths to config and log directories

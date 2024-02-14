@@ -1,8 +1,7 @@
 use incrementalmerkletree::witness::IncrementalWitness;
 use zcash_primitives::transaction::TxId;
 
-use crate::error::ZingoLibError;
-use crate::wallet::notes;
+use crate::{error::ZingoLibError, wallet::notes};
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},

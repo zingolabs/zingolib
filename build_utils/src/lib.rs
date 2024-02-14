@@ -1,5 +1,4 @@
-use std::io::Write;
-use std::{env, fs::File, path::Path, process::Command};
+use std::{env, fs::File, io::Write, path::Path, process::Command};
 
 pub fn git_description() {
     let _fetch = Command::new("git")

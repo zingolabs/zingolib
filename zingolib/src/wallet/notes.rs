@@ -43,6 +43,9 @@ pub trait ShieldedNoteInterface: Sized {
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
+    fn is_pending_spent(&self) -> bool {
+        Self::pending_spent(self).is_some()
+    }
     fn is_change_mut(&mut self) -> &mut bool;
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
@@ -56,14 +59,20 @@ pub trait ShieldedNoteInterface: Sized {
     fn pending_receipt(&self) -> bool {
         self.nullifier().is_none()
     }
+    fn spendable(&self) -> bool {
+        !self.is_spent() && !self.is_pending_spent() && !self.pending_receipt() && 
+            //This check is currently meaningless
+            self.have_spending_key()
+    }
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn pool() -> Pool;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note;
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self>;
     fn transaction_metadata_notes_mut(wallet_transaction: &mut TransactionRecord)
         -> &mut Vec<Self>;
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
         Self::value_from_note(self.note())
@@ -239,10 +248,6 @@ impl ShieldedNoteInterface for SaplingNote {
         &self.diversifier
     }
 
-    fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier> {
-        &mut self.nullifier
-    }
-
     fn from_parts(
         diversifier: sapling_crypto::Diversifier,
         note: sapling_crypto::Note,
@@ -301,6 +306,22 @@ impl ShieldedNoteInterface for SaplingNote {
         self.nullifier
     }
 
+    fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier> {
+        &mut self.nullifier
+    }
+
+    fn output_index(&self) -> &Option<u32> {
+        &self.output_index
+    }
+
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
+
     fn pool() -> Pool {
         Pool::Sapling
     }
@@ -313,6 +334,10 @@ impl ShieldedNoteInterface for SaplingNote {
         &mut self.spent
     }
 
+    fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note {
+        zcash_client_backend::wallet::Note::Sapling(self.note().clone())
+    }
+
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {
         &wallet_transaction.sapling_notes
     }
@@ -321,14 +346,6 @@ impl ShieldedNoteInterface for SaplingNote {
         wallet_transaction: &mut TransactionRecord,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.sapling_notes
-    }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
     }
 
     fn value_from_note(note: &Self::Note) -> u64 {
@@ -341,10 +358,6 @@ impl ShieldedNoteInterface for SaplingNote {
 
     fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
-    }
-
-    fn output_index(&self) -> &Option<u32> {
-        &self.output_index
     }
 }
 
@@ -384,10 +397,6 @@ impl ShieldedNoteInterface for OrchardNote {
         &self.diversifier
     }
 
-    fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier> {
-        &mut self.nullifier
-    }
-
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
@@ -421,10 +430,10 @@ impl ShieldedNoteInterface for OrchardNote {
     fn have_spending_key(&self) -> bool {
         self.have_spending_key
     }
+
     fn is_change(&self) -> bool {
         self.is_change
     }
-
     fn is_change_mut(&mut self) -> &mut bool {
         &mut self.is_change
     }
@@ -445,6 +454,22 @@ impl ShieldedNoteInterface for OrchardNote {
         self.nullifier
     }
 
+    fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier> {
+        &mut self.nullifier
+    }
+
+    fn output_index(&self) -> &Option<u32> {
+        &self.output_index
+    }
+
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
+
     fn pool() -> Pool {
         Pool::Orchard
     }
@@ -457,6 +482,10 @@ impl ShieldedNoteInterface for OrchardNote {
         &mut self.spent
     }
 
+    fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note {
+        zcash_client_backend::wallet::Note::Orchard(self.note().clone())
+    }
+
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {
         &wallet_transaction.orchard_notes
     }
@@ -466,26 +495,14 @@ impl ShieldedNoteInterface for OrchardNote {
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
     }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
-    }
-
     fn value_from_note(note: &Self::Note) -> u64 {
         note.value().inner()
     }
-
     fn witnessed_position(&self) -> &Option<Position> {
         &self.witnessed_position
     }
+
     fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
-    }
-    fn output_index(&self) -> &Option<u32> {
-        &self.output_index
     }
 }

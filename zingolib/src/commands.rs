@@ -1,12 +1,11 @@
-use crate::wallet::keys::is_shielded_address;
-use crate::wallet::{MemoDownloadOption, Pool};
-use crate::{lightclient::LightClient, wallet::utils};
+use crate::{
+    lightclient::LightClient,
+    wallet::{keys::is_shielded_address, utils, MemoDownloadOption, Pool},
+};
 use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::str::FromStr;
+use std::{collections::HashMap, convert::TryInto, str::FromStr};
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::Address;

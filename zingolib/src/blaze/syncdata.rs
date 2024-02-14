@@ -5,8 +5,7 @@ use tokio::sync::RwLock;
 use zcash_client_backend::proto::service::TreeState;
 
 use super::{block_management_reorg_detection::BlockManagementData, sync_status::BatchSyncStatus};
-use crate::wallet::data::BlockData;
-use crate::wallet::WalletOptions;
+use crate::wallet::{data::BlockData, WalletOptions};
 use zingoconfig::ZingoConfig;
 
 pub struct BlazeSyncData {

@@ -9,8 +9,9 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
-            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionRecord,
+            finsight,
+            summaries::{ValueTransfer, ValueTransferKind},
+            OutgoingTxData, TransactionRecord,
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
