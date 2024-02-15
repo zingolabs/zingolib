@@ -12,7 +12,7 @@ pub struct ZingoLedger {
     pub witness_trees: Option<WitnessTrees>,
 }
 
-pub mod backend_traits;
+pub mod backend_walletread;
 pub mod get;
 pub mod read_write;
 pub mod recording;
