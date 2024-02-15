@@ -13,6 +13,7 @@ pub struct ZingoLedger {
 }
 
 pub mod backend_walletread;
+pub mod backend_walletwrite;
 pub mod get;
 pub mod read_write;
 pub mod recording;
