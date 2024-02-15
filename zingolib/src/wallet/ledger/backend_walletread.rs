@@ -15,7 +15,7 @@ impl WalletRead for ZingoLedger {
 
     fn block_metadata(
         &self,
-        height: zcash_primitives::consensus::BlockHeight,
+        _height: zcash_primitives::consensus::BlockHeight,
     ) -> Result<Option<zcash_client_backend::data_api::BlockMetadata>, Self::Error> {
         todo!()
     }
@@ -40,7 +40,7 @@ impl WalletRead for ZingoLedger {
 
     fn get_target_and_anchor_heights(
         &self,
-        min_confirmations: std::num::NonZeroU32,
+        _min_confirmations: std::num::NonZeroU32,
     ) -> Result<
         Option<(
             zcash_primitives::consensus::BlockHeight,
@@ -59,7 +59,7 @@ impl WalletRead for ZingoLedger {
 
     fn get_block_hash(
         &self,
-        block_height: zcash_primitives::consensus::BlockHeight,
+        _block_height: zcash_primitives::consensus::BlockHeight,
     ) -> Result<Option<zcash_primitives::block::BlockHash>, Self::Error> {
         todo!()
     }
@@ -78,7 +78,7 @@ impl WalletRead for ZingoLedger {
 
     fn get_tx_height(
         &self,
-        txid: zcash_primitives::transaction::TxId,
+        _txid: zcash_primitives::transaction::TxId,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         todo!()
     }
@@ -91,14 +91,14 @@ impl WalletRead for ZingoLedger {
 
     fn get_account_birthday(
         &self,
-        account: zcash_primitives::zip32::AccountId,
+        _account: zcash_primitives::zip32::AccountId,
     ) -> Result<zcash_primitives::consensus::BlockHeight, Self::Error> {
         todo!()
     }
 
     fn get_current_address(
         &self,
-        account: zcash_primitives::zip32::AccountId,
+        _account: zcash_primitives::zip32::AccountId,
     ) -> Result<Option<zcash_client_backend::address::UnifiedAddress>, Self::Error> {
         todo!()
     }
@@ -114,35 +114,35 @@ impl WalletRead for ZingoLedger {
 
     fn get_account_for_ufvk(
         &self,
-        ufvk: &UnifiedFullViewingKey,
+        _ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<zcash_primitives::zip32::AccountId>, Self::Error> {
         todo!()
     }
 
     fn get_wallet_summary(
         &self,
-        min_confirmations: u32,
+        _min_confirmations: u32,
     ) -> Result<Option<zcash_client_backend::data_api::WalletSummary>, Self::Error> {
         todo!()
     }
 
     fn get_memo(
         &self,
-        note_id: zcash_client_backend::wallet::NoteId,
+        _note_id: zcash_client_backend::wallet::NoteId,
     ) -> Result<Option<zcash_primitives::memo::Memo>, Self::Error> {
         todo!()
     }
 
     fn get_transaction(
         &self,
-        txid: zcash_primitives::transaction::TxId,
+        _txid: zcash_primitives::transaction::TxId,
     ) -> Result<zcash_primitives::transaction::Transaction, Self::Error> {
         todo!()
     }
 
     fn get_sapling_nullifiers(
         &self,
-        query: zcash_client_backend::data_api::NullifierQuery,
+        _query: zcash_client_backend::data_api::NullifierQuery,
     ) -> Result<
         Vec<(
             zcash_primitives::zip32::AccountId,
@@ -155,7 +155,7 @@ impl WalletRead for ZingoLedger {
 
     fn get_transparent_receivers(
         &self,
-        account: zcash_primitives::zip32::AccountId,
+        _account: zcash_primitives::zip32::AccountId,
     ) -> Result<
         std::collections::HashMap<
             zcash_primitives::legacy::TransparentAddress,
@@ -168,8 +168,8 @@ impl WalletRead for ZingoLedger {
 
     fn get_transparent_balances(
         &self,
-        account: zcash_primitives::zip32::AccountId,
-        max_height: zcash_primitives::consensus::BlockHeight,
+        _account: zcash_primitives::zip32::AccountId,
+        _max_height: zcash_primitives::consensus::BlockHeight,
     ) -> Result<
         std::collections::HashMap<
             zcash_primitives::legacy::TransparentAddress,
