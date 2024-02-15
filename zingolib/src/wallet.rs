@@ -58,18 +58,18 @@ use self::traits::{DomainWalletExt, SpendableNote};
 use self::utils::get_price;
 use self::{
     data::{BlockData, WalletZecPriceInfo},
+    ledger::TransactionMetadataSet,
     message::Message,
-    transactions::TransactionMetadataSet,
 };
 use zingoconfig::ZingoConfig;
 
 pub mod data;
 pub mod keys;
+pub mod ledger;
 pub(crate) mod message;
 pub mod notes;
 pub mod traits;
 pub mod transaction_record;
-pub(crate) mod transactions;
 pub mod utils;
 
 pub fn now() -> u64 {

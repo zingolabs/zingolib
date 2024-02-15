@@ -9,8 +9,8 @@ use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
+    ledger::TransactionMetadataSet,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    transactions::TransactionMetadataSet,
     utils::txid_from_slice,
     MemoDownloadOption,
 };

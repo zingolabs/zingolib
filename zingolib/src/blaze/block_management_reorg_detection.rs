@@ -3,9 +3,9 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
+        ledger::TransactionMetadataSet,
         notes::ShieldedNoteInterface,
         traits::DomainWalletExt,
-        transactions::TransactionMetadataSet,
     },
 };
 use incrementalmerkletree::frontier::CommitmentTree;

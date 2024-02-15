@@ -4,12 +4,12 @@ use crate::{
     wallet::{
         data::OutgoingTxData,
         keys::{address_from_pubkeyhash, unified::WalletCapability},
+        ledger::TransactionMetadataSet,
         notes::ShieldedNoteInterface,
         traits::{
             self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
             ShieldedOutputExt as _, Spend as _, ToBytes as _,
         },
-        transactions::TransactionMetadataSet,
     },
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
