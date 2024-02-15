@@ -460,13 +460,14 @@ impl LightWallet {
     /// Determines the target height for a transaction, and the offset from which to
     /// select anchors, based on the current synchronised block chain.
     async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
-        match {
+        let range = {
             let blocks = self.blocks.read().await;
             (
                 blocks.last().map(|block| block.height as u32),
                 blocks.first().map(|block| block.height as u32),
             )
-        } {
+        };
+        match range {
             (Some(min_height), Some(max_height)) => {
                 let target_height = max_height + 1;
 
