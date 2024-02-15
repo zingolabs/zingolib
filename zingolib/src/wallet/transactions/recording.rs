@@ -16,6 +16,7 @@ use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
         data::{OutgoingTxData, PoolNullifier, TransactionRecord},
+        notes::NoteInterface,
         notes::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},
     },
@@ -33,9 +34,8 @@ impl TransactionMetadataSet {
                 .transparent_notes
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
-                        utxo.spent = None;
-                        utxo.spent_at_height = None;
+                    if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
+                        *utxo.spent_mut() = None;
                     }
 
                     if utxo.unconfirmed_spent.is_some()
@@ -325,9 +325,8 @@ impl TransactionMetadataSet {
             {
                 if spending_tx_status.is_confirmed() {
                     // Mark this utxo as spent
-                    spent_utxo.spent = Some(source_txid);
-                    spent_utxo.spent_at_height =
-                        Some(u32::from(spending_tx_status.get_height()) as i32);
+                    *spent_utxo.spent_mut() =
+                        Some((source_txid, spending_tx_status.get_height().into()));
                     spent_utxo.unconfirmed_spent = None;
                 } else {
                     spent_utxo.unconfirmed_spent =
@@ -370,18 +369,17 @@ impl TransactionMetadataSet {
         {
             // If it already exists, it is likely an mempool tx, so update the height
         } else {
-            transaction_metadata
-                .transparent_notes
-                .push(crate::wallet::notes::TransparentNote {
-                    address: taddr,
+            transaction_metadata.transparent_notes.push(
+                crate::wallet::notes::TransparentNote::new(
+                    taddr,
                     txid,
-                    output_index: output_num as u64,
-                    script: vout.script_pubkey.0.clone(),
-                    value: u64::from(vout.value),
-                    spent_at_height: None,
-                    spent: None,
-                    unconfirmed_spent: None,
-                });
+                    output_num as u64,
+                    vout.script_pubkey.0.clone(),
+                    u64::from(vout.value),
+                    None,
+                    None,
+                ),
+            );
         }
     }
 
