@@ -1,0 +1,186 @@
+use zcash_client_backend::data_api::WalletRead;
+use zcash_client_backend::keys::UnifiedFullViewingKey;
+
+use super::ZingoLedger;
+use crate::error::ZingoLibError;
+
+impl WalletRead for ZingoLedger {
+    type Error = ZingoLibError;
+
+    fn chain_height(
+        &self,
+    ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn block_metadata(
+        &self,
+        height: zcash_primitives::consensus::BlockHeight,
+    ) -> Result<Option<zcash_client_backend::data_api::BlockMetadata>, Self::Error> {
+        todo!()
+    }
+
+    fn block_fully_scanned(
+        &self,
+    ) -> Result<Option<zcash_client_backend::data_api::BlockMetadata>, Self::Error> {
+        todo!()
+    }
+
+    fn block_max_scanned(
+        &self,
+    ) -> Result<Option<zcash_client_backend::data_api::BlockMetadata>, Self::Error> {
+        todo!()
+    }
+
+    fn suggest_scan_ranges(
+        &self,
+    ) -> Result<Vec<zcash_client_backend::data_api::scanning::ScanRange>, Self::Error> {
+        todo!()
+    }
+
+    fn get_target_and_anchor_heights(
+        &self,
+        min_confirmations: std::num::NonZeroU32,
+    ) -> Result<
+        Option<(
+            zcash_primitives::consensus::BlockHeight,
+            zcash_primitives::consensus::BlockHeight,
+        )>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_min_unspent_height(
+        &self,
+    ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
+        todo!()
+    }
+
+    fn get_block_hash(
+        &self,
+        block_height: zcash_primitives::consensus::BlockHeight,
+    ) -> Result<Option<zcash_primitives::block::BlockHash>, Self::Error> {
+        todo!()
+    }
+
+    fn get_max_height_hash(
+        &self,
+    ) -> Result<
+        Option<(
+            zcash_primitives::consensus::BlockHeight,
+            zcash_primitives::block::BlockHash,
+        )>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_tx_height(
+        &self,
+        txid: zcash_primitives::transaction::TxId,
+    ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
+        todo!()
+    }
+
+    fn get_wallet_birthday(
+        &self,
+    ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
+        todo!()
+    }
+
+    fn get_account_birthday(
+        &self,
+        account: zcash_primitives::zip32::AccountId,
+    ) -> Result<zcash_primitives::consensus::BlockHeight, Self::Error> {
+        todo!()
+    }
+
+    fn get_current_address(
+        &self,
+        account: zcash_primitives::zip32::AccountId,
+    ) -> Result<Option<zcash_client_backend::address::UnifiedAddress>, Self::Error> {
+        todo!()
+    }
+
+    fn get_unified_full_viewing_keys(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<zcash_primitives::zip32::AccountId, UnifiedFullViewingKey>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_account_for_ufvk(
+        &self,
+        ufvk: &UnifiedFullViewingKey,
+    ) -> Result<Option<zcash_primitives::zip32::AccountId>, Self::Error> {
+        todo!()
+    }
+
+    fn get_wallet_summary(
+        &self,
+        min_confirmations: u32,
+    ) -> Result<Option<zcash_client_backend::data_api::WalletSummary>, Self::Error> {
+        todo!()
+    }
+
+    fn get_memo(
+        &self,
+        note_id: zcash_client_backend::wallet::NoteId,
+    ) -> Result<Option<zcash_primitives::memo::Memo>, Self::Error> {
+        todo!()
+    }
+
+    fn get_transaction(
+        &self,
+        txid: zcash_primitives::transaction::TxId,
+    ) -> Result<zcash_primitives::transaction::Transaction, Self::Error> {
+        todo!()
+    }
+
+    fn get_sapling_nullifiers(
+        &self,
+        query: zcash_client_backend::data_api::NullifierQuery,
+    ) -> Result<
+        Vec<(
+            zcash_primitives::zip32::AccountId,
+            sapling_crypto::Nullifier,
+        )>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_transparent_receivers(
+        &self,
+        account: zcash_primitives::zip32::AccountId,
+    ) -> Result<
+        std::collections::HashMap<
+            zcash_primitives::legacy::TransparentAddress,
+            zcash_client_backend::address::AddressMetadata,
+        >,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_transparent_balances(
+        &self,
+        account: zcash_primitives::zip32::AccountId,
+        max_height: zcash_primitives::consensus::BlockHeight,
+    ) -> Result<
+        std::collections::HashMap<
+            zcash_primitives::legacy::TransparentAddress,
+            zcash_primitives::transaction::components::Amount,
+        >,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_account_ids(&self) -> Result<Vec<zcash_primitives::zip32::AccountId>, Self::Error> {
+        todo!()
+    }
+}

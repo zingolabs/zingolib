@@ -4,7 +4,7 @@ use crate::{
     wallet::{
         data::OutgoingTxData,
         keys::{address_from_pubkeyhash, unified::WalletCapability},
-        ledger::TransactionMetadataSet,
+        ledger::ZingoLedger,
         notes::ShieldedNoteInterface,
         traits::{
             self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
@@ -45,14 +45,14 @@ use zingoconfig::ZingoConfig;
 pub struct TransactionContext {
     pub config: ZingoConfig,
     pub(crate) key: Arc<WalletCapability>,
-    pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    pub transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
     ) -> Self {
         Self {
             config: config.clone(),
