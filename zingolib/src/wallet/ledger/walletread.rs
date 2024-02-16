@@ -1,5 +1,4 @@
-use zcash_client_backend::data_api::WalletRead;
-use zcash_client_backend::keys::UnifiedFullViewingKey;
+use zcash_client_backend::{data_api::WalletRead, keys::UnifiedFullViewingKey};
 
 use super::ZingoLedger;
 use crate::error::ZingoLibError;

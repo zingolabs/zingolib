@@ -1,6 +1,5 @@
 use secrecy::SecretVec;
-use zcash_client_backend::data_api::WalletWrite;
-use zcash_client_backend::keys::UnifiedSpendingKey;
+use zcash_client_backend::{data_api::WalletWrite, keys::UnifiedSpendingKey};
 
 use super::ZingoLedger;
 
