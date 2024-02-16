@@ -27,9 +27,9 @@ impl InputSource for ZingoLedger {
 
     fn get_spendable_note(
         &self,
-        txid: &zcash_primitives::transaction::TxId,
-        protocol: zcash_client_backend::ShieldedProtocol,
-        index: u32,
+        _txid: &zcash_primitives::transaction::TxId,
+        _protocol: zcash_client_backend::ShieldedProtocol,
+        _index: u32,
     ) -> Result<
         Option<
             zcash_client_backend::wallet::ReceivedNote<
@@ -44,11 +44,11 @@ impl InputSource for ZingoLedger {
 
     fn select_spendable_notes(
         &self,
-        account: zcash_primitives::zip32::AccountId,
-        target_value: zcash_primitives::transaction::components::Amount,
-        sources: &[zcash_client_backend::ShieldedProtocol],
-        anchor_height: zcash_primitives::consensus::BlockHeight,
-        exclude: &[Self::NoteRef],
+        _account: zcash_primitives::zip32::AccountId,
+        _target_value: zcash_primitives::transaction::components::Amount,
+        _sources: &[zcash_client_backend::ShieldedProtocol],
+        _anchor_height: zcash_primitives::consensus::BlockHeight,
+        _exclude: &[Self::NoteRef],
     ) -> Result<
         Vec<
             zcash_client_backend::wallet::ReceivedNote<
