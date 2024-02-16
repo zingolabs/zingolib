@@ -36,7 +36,7 @@ impl TransparentNoteBuilder {
 
     // Build method
     pub fn build(self) -> TransparentNote {
-        TransparentNote::new(
+        TransparentNote::from_parts(
             self.address.unwrap(),
             self.txid.unwrap(),
             self.output_index.unwrap(),
