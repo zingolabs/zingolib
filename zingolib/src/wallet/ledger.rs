@@ -12,11 +12,11 @@ pub struct ZingoLedger {
     pub witness_trees: Option<WitnessTrees>,
 }
 
-pub mod backend_walletread;
-pub mod backend_walletwrite;
 pub mod get;
-pub mod read_write;
 pub mod recording;
+pub mod serial_read_write;
+pub mod walletread;
+pub mod walletwrite;
 
 impl ZingoLedger {
     pub(crate) fn new_with_witness_trees() -> ZingoLedger {
