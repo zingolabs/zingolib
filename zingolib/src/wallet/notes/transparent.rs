@@ -37,7 +37,7 @@ impl NoteInterface for TransparentNote {
 }
 
 impl TransparentNote {
-    pub fn new(
+    pub fn from_parts(
         address: String,
         txid: TxId,
         output_index: u64,
