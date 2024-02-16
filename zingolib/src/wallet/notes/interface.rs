@@ -18,8 +18,7 @@ pub trait NoteInterface: Sized {
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 }
 
-///   All zingolib::wallet::traits::Notes are NoteInterface
-///   NoteInterface provides...
+///   ShieldedNotes are either part of a Sapling or Orchard Pool
 pub trait ShieldedNoteInterface: NoteInterface + Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
