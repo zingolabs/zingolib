@@ -280,7 +280,7 @@ impl LightWallet {
             LightWallet::get_legacy_frontiers(trees);
         if let Some(ref mut trees) = self
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .write()
             .await
             .witness_trees
@@ -329,11 +329,7 @@ impl LightWallet {
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         self.blocks.write().await.clear();
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .clear();
+        self.transaction_context.arc_ledger.write().await.clear();
     }
 
     ///TODO: Make this work for orchard too
@@ -355,9 +351,9 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         let wc = self.wallet_capability();
-        let tranmds_lth = self.transactions();
-        let transaction_metadata_set = tranmds_lth.read().await;
-        let mut candidate_notes = transaction_metadata_set
+        let arc_ledger = self.transactions();
+        let ledger = arc_ledger.read().await;
+        let mut candidate_notes = ledger
             .current
             .iter()
             .flat_map(|(transaction_id, transaction)| {
@@ -409,7 +405,7 @@ impl LightWallet {
         // Find the first transaction
         let earliest_block = self
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .current
@@ -488,7 +484,7 @@ impl LightWallet {
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
     pub async fn get_utxos(&self) -> Vec<notes::TransparentNote> {
         self.transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .current
@@ -627,13 +623,12 @@ impl LightWallet {
                 format!("could not create initial address: {e}"),
             ));
         };
-        let transaction_metadata_set = if wc.can_spend_from_all_pools() {
+        let arc_ledger = if wc.can_spend_from_all_pools() {
             Arc::new(RwLock::new(ZingoLedger::new_with_witness_trees()))
         } else {
             Arc::new(RwLock::new(ZingoLedger::new_treeless()))
         };
-        let transaction_context =
-            TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
+        let transaction_context = TransactionContext::new(&config, Arc::new(wc), arc_ledger);
         Ok(Self {
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
@@ -1347,11 +1342,7 @@ impl LightWallet {
         //  * target amount
         //  * selection policy
         //  * recipient list
-        let txmds_readlock = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
+        let txmds_readlock = self.transaction_context.arc_ledger.read().await;
         let witness_trees = txmds_readlock
             .witness_trees
             .as_ref()
@@ -1534,7 +1525,7 @@ impl LightWallet {
         };
         Some(
             self.transaction_context
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .current
@@ -1599,7 +1590,7 @@ impl LightWallet {
     }
 
     pub fn transactions(&self) -> Arc<RwLock<ZingoLedger>> {
-        self.transaction_context.transaction_metadata_set.clone()
+        self.transaction_context.arc_ledger.clone()
     }
 
     async fn unverified_balance<D: DomainWalletExt>(
@@ -1672,7 +1663,7 @@ impl LightWallet {
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
         self.transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .write()
             .await
             .write(&mut writer)
@@ -1719,11 +1710,7 @@ impl LightWallet {
     }
     pub async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
         let last_synced_height = self.last_synced_height().await;
-        let mut txmds_writelock = self
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
+        let mut txmds_writelock = self.transaction_context.arc_ledger.write().await;
         if let Some(ref mut trees) = txmds_writelock.witness_trees {
             trees
                 .witness_tree_sapling
@@ -1739,7 +1726,7 @@ impl LightWallet {
 
     pub async fn has_any_empty_commitment_trees(&self) -> bool {
         self.transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .witness_trees

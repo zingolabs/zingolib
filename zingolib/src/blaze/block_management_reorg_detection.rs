@@ -320,7 +320,7 @@ impl BlockManagementData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<ZingoLedger>>,
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
         let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
@@ -329,10 +329,7 @@ impl BlockManagementData {
         }
 
         // Remove all wallet transactions at the height
-        transaction_metadata_set
-            .write()
-            .await
-            .remove_txns_at_height(reorg_height);
+        arc_ledger.write().await.remove_txns_at_height(reorg_height);
     }
 
     /// Ingest the incoming blocks, handle any reorgs, then populate the block data
@@ -340,7 +337,7 @@ impl BlockManagementData {
         &self,
         start_block: u64,
         end_block: u64,
-        transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<ZingoLedger>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<Option<u64>, String>>,
@@ -354,7 +351,7 @@ impl BlockManagementData {
         // pass them on for further processing.
         let h0: JoinHandle<Result<Option<u64>, String>> = tokio::spawn(
             reorg_managment_thread_data
-                .handle_reorgs_populate_data_inner(transaction_metadata_set, reorg_transmitter),
+                .handle_reorgs_populate_data_inner(arc_ledger, reorg_transmitter),
         );
 
         // Handle: Final
@@ -586,7 +583,7 @@ struct BlockManagementThreadData {
 impl BlockManagementThreadData {
     async fn handle_reorgs_populate_data_inner(
         mut self,
-        transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<ZingoLedger>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> Result<Option<u64>, String> {
         // Temporary holding place for blocks while we process them.
@@ -629,7 +626,7 @@ impl BlockManagementThreadData {
                     BlockManagementData::invalidate_block(
                         reorg_height,
                         self.existing_blocks.clone(),
-                        transaction_metadata_set.clone(),
+                        arc_ledger.clone(),
                     )
                     .await;
                     last_block_expecting = reorg_height;

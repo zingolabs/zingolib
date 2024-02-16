@@ -45,19 +45,19 @@ use zingoconfig::ZingoConfig;
 pub struct TransactionContext {
     pub config: ZingoConfig,
     pub(crate) key: Arc<WalletCapability>,
-    pub transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+    pub arc_ledger: Arc<RwLock<ZingoLedger>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<ZingoLedger>>,
     ) -> Self {
         Self {
             config: config.clone(),
             key,
-            transaction_metadata_set,
+            arc_ledger,
         }
     }
 
@@ -120,7 +120,7 @@ impl TransactionContext {
         // the assumption is either we already decrypted a compact output and filled in some data
         // or transparent something
         if self
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .total_funds_spent_in(&transaction.txid())
@@ -160,14 +160,14 @@ impl TransactionContext {
             // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this transaction as change.
             // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
             // so we'll do it again here.
-            self.transaction_metadata_set
+            self.arc_ledger
                 .write()
                 .await
                 .check_notes_mark_change(&transaction.txid());
         }
 
         if !outgoing_metadatas.is_empty() {
-            self.transaction_metadata_set
+            self.arc_ledger
                 .write()
                 .await
                 .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
@@ -178,7 +178,7 @@ impl TransactionContext {
 
         // Update price if available
         if price.is_some() {
-            self.transaction_metadata_set
+            self.arc_ledger
                 .write()
                 .await
                 .set_price(&transaction.txid(), price);
@@ -193,12 +193,8 @@ impl TransactionContext {
             match parsed_zingo_memo {
                 ParsedMemo::Version0 { uas } => {
                     for ua in uas {
-                        if let Some(transaction) = self
-                            .transaction_metadata_set
-                            .write()
-                            .await
-                            .current
-                            .get_mut(&txid)
+                        if let Some(transaction) =
+                            self.arc_ledger.write().await.current.get_mut(&txid)
                         {
                             if !transaction.outgoing_tx_data.is_empty() {
                                 let outgoing_potential_receivers = [
@@ -253,17 +249,14 @@ impl TransactionContext {
                     let output_taddr = address_from_pubkeyhash(&self.config, taddr);
                     if taddrs_set.contains(&output_taddr) {
                         // This is our address. Add this as an output to the txid
-                        self.transaction_metadata_set
-                            .write()
-                            .await
-                            .add_new_taddr_output(
-                                transaction.txid(),
-                                output_taddr.clone(),
-                                status,
-                                block_time as u64,
-                                vout,
-                                n as u32,
-                            );
+                        self.arc_ledger.write().await.add_new_taddr_output(
+                            transaction.txid(),
+                            output_taddr.clone(),
+                            status,
+                            block_time as u64,
+                            vout,
+                            n as u32,
+                        );
                     }
                 }
             }
@@ -276,7 +269,7 @@ impl TransactionContext {
         let mut spent_utxos = vec![];
 
         {
-            let current = &self.transaction_metadata_set.read().await.current;
+            let current = &self.arc_ledger.read().await.current;
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vin in t_bundle.vin.iter() {
                     // Find the prev txid that was spent
@@ -307,17 +300,19 @@ impl TransactionContext {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            self.transaction_metadata_set
-                .write()
-                .await
-                .mark_txid_utxo_spent(prev_transaction_id, prev_n, transaction_id, status);
+            self.arc_ledger.write().await.mark_txid_utxo_spent(
+                prev_transaction_id,
+                prev_n,
+                transaction_id,
+                status,
+            );
         }
 
         // If this transaction spent value, add the spent amount to the TxID
         if total_transparent_value_spent > 0 {
             *is_outgoing_transaction = true;
 
-            self.transaction_metadata_set.write().await.add_taddr_spent(
+            self.arc_ledger.write().await.add_taddr_spent(
                 transaction.txid(),
                 status,
                 block_time as u64,
@@ -392,7 +387,7 @@ impl TransactionContext {
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if status.is_broadcast() {
             let unspent_nullifiers = self
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .get_nullifier_value_txid_outputindex_of_unspent_notes::<D>();
@@ -404,18 +399,14 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
-                    let _ = self
-                        .transaction_metadata_set
-                        .write()
-                        .await
-                        .found_spent_nullifier(
-                            transaction.txid(),
-                            status,
-                            block_time,
-                            (*nf).into(),
-                            *transaction_id,
-                            *output_index,
-                        );
+                    let _ = self.arc_ledger.write().await.found_spent_nullifier(
+                        transaction.txid(),
+                        status,
+                        block_time,
+                        (*nf).into(),
+                        *transaction_id,
+                        *output_index,
+                    );
                 }
             }
         }
@@ -453,17 +444,14 @@ impl TransactionContext {
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
             if let Some(height) = status.get_broadcast_height() {
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .add_pending_note::<D>(
-                        transaction.txid(),
-                        height,
-                        block_time as u64,
-                        note.clone(),
-                        to,
-                        output_index,
-                    );
+                self.arc_ledger.write().await.add_pending_note::<D>(
+                    transaction.txid(),
+                    height,
+                    block_time as u64,
+                    note.clone(),
+                    to,
+                    output_index,
+                );
             }
             let memo = memo_bytes
                 .clone()
@@ -480,7 +468,7 @@ impl TransactionContext {
                     }
                 }
             }
-            self.transaction_metadata_set
+            self.arc_ledger
                 .write()
                 .await
                 .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);

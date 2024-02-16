@@ -395,10 +395,8 @@ pub trait Nullifier:
 }
 
 impl Nullifier for sapling_crypto::Nullifier {
-    fn get_nullifiers_spent_in_transaction(
-        transaction_metadata_set: &TransactionRecord,
-    ) -> &Vec<Self> {
-        &transaction_metadata_set.spent_sapling_nullifiers
+    fn get_nullifiers_spent_in_transaction(transaction_record: &TransactionRecord) -> &Vec<Self> {
+        &transaction_record.spent_sapling_nullifiers
     }
 }
 

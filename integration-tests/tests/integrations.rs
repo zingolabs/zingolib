@@ -752,7 +752,7 @@ mod slow {
         assert!(recipient
             .wallet
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .witness_trees
@@ -785,7 +785,7 @@ mod slow {
         assert!(recipient
             .wallet
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .witness_trees
@@ -799,7 +799,7 @@ mod slow {
             &recipient
                 .wallet
                 .transaction_context
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .witness_trees
@@ -828,7 +828,7 @@ mod slow {
         assert!(recipient
             .wallet
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .witness_trees
@@ -861,7 +861,7 @@ mod slow {
             &recipient
                 .wallet
                 .transaction_context
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .witness_trees
@@ -872,7 +872,7 @@ mod slow {
         assert!(!recipient
             .wallet
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .witness_trees
@@ -2099,7 +2099,7 @@ mod slow {
             faucet
                 .wallet
                 .transaction_context
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .witness_trees
@@ -2110,7 +2110,7 @@ mod slow {
             recipient
                 .wallet
                 .transaction_context
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .witness_trees
@@ -2448,7 +2448,7 @@ mod slow {
             &recipient
                 .wallet
                 .transaction_context
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .witness_trees
@@ -2563,12 +2563,7 @@ mod slow {
             .unwrap());
         assert_eq!(notes["pending_orchard_notes"].len(), 0);
         assert_eq!(transactions.len(), 2);
-        let read_lock = recipient
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
+        let read_lock = recipient.wallet.transaction_context.arc_ledger.read().await;
         let wallet_trees = read_lock.witness_trees.as_ref().unwrap();
         let last_leaf = wallet_trees
             .witness_tree_orchard
@@ -3271,7 +3266,7 @@ mod slow {
         let witness_before = recipient
             .wallet
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .witness_trees
@@ -3282,7 +3277,7 @@ mod slow {
                 recipient
                     .wallet
                     .transaction_context
-                    .transaction_metadata_set
+                    .arc_ledger
                     .read()
                     .await
                     .current
@@ -3311,7 +3306,7 @@ mod slow {
         let witness_after = recipient
             .wallet
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .witness_trees
@@ -3322,7 +3317,7 @@ mod slow {
                 recipient
                     .wallet
                     .transaction_context
-                    .transaction_metadata_set
+                    .arc_ledger
                     .read()
                     .await
                     .current
@@ -3427,7 +3422,7 @@ mod slow {
             &recipient
                 .wallet
                 .transaction_context
-                .transaction_metadata_set
+                .arc_ledger
                 .read()
                 .await
                 .current

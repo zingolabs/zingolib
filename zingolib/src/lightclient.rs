@@ -756,7 +756,7 @@ impl LightClient {
         for (txid, transaction_md) in self
             .wallet
             .transaction_context
-            .transaction_metadata_set
+            .arc_ledger
             .read()
             .await
             .current
@@ -1298,11 +1298,7 @@ impl LightClient {
 
                 let h1 = tokio::spawn(async move {
                     let key = lc1.wallet.wallet_capability();
-                    let transaction_metadata_set = lc1
-                        .wallet
-                        .transaction_context
-                        .transaction_metadata_set
-                        .clone();
+                    let arc_ledger = lc1.wallet.transaction_context.arc_ledger.clone();
                     let price = lc1.wallet.price.clone();
 
                     while let Some(rtransaction) = mempool_receiver.recv().await {
@@ -1319,18 +1315,14 @@ impl LightClient {
                                 rtransaction.height as u32,
                             ));
 
-                            TransactionContext::new(
-                                &config,
-                                key.clone(),
-                                transaction_metadata_set.clone(),
-                            )
-                            .scan_full_tx(
-                                &transaction,
-                                status,
-                                now() as u32,
-                                get_price(now(), &price),
-                            )
-                            .await;
+                            TransactionContext::new(&config, key.clone(), arc_ledger.clone())
+                                .scan_full_tx(
+                                    &transaction,
+                                    status,
+                                    now() as u32,
+                                    get_price(now(), &price),
+                                )
+                                .await;
                         }
                     }
                 });
@@ -1415,10 +1407,7 @@ impl LightClient {
             BlockManagementData::invalidate_block(
                 last_synced_height,
                 self.wallet.blocks.clone(),
-                self.wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .clone(),
+                self.wallet.transaction_context.arc_ledger.clone(),
             )
             .await;
         }
@@ -1453,10 +1442,7 @@ impl LightClient {
                 BlockManagementData::invalidate_block(
                     self.wallet.last_synced_height().await,
                     self.wallet.blocks.clone(),
-                    self.wallet
-                        .transaction_context
-                        .transaction_metadata_set
-                        .clone(),
+                    self.wallet.transaction_context.arc_ledger.clone(),
                 )
                 .await;
             }
@@ -1964,7 +1950,7 @@ impl LightClient {
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         // Collect Sapling notes
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.arc_ledger.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
                         if !all_notes && note_metadata.spent.is_some() {
@@ -2007,7 +1993,7 @@ impl LightClient {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.arc_ledger.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
                         if !all_notes && orch_note_metadata.is_spent() {
@@ -2050,7 +2036,7 @@ impl LightClient {
         let mut pending_transparent_notes: Vec<JsonValue> = vec![];
         let mut spent_transparent_notes: Vec<JsonValue> = vec![];
 
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.arc_ledger.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     wtx.transparent_notes.iter().filter_map(move |utxo|
                         if !all_notes && utxo.is_spent() {

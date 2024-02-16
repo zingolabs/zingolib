@@ -41,7 +41,7 @@ use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,
-    transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+    arc_ledger: Arc<RwLock<ZingoLedger>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -49,12 +49,12 @@ impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
         wc: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<ZingoLedger>>,
     ) -> Self {
         Self {
             config,
             wc,
-            transaction_metadata_set,
+            arc_ledger,
         }
     }
 
@@ -82,7 +82,7 @@ impl TrialDecryptions {
         let (transmitter, mut receiver) = unbounded_channel::<CompactBlock>();
 
         let wc = self.wc.clone();
-        let transaction_metadata_set = self.transaction_metadata_set.clone();
+        let arc_ledger = self.arc_ledger.clone();
 
         let config = self.config.clone();
         let management_thread_handle = tokio::spawn(async move {
@@ -103,7 +103,7 @@ impl TrialDecryptions {
                 bsync_data,
                 sapling_ivk,
                 orchard_ivk,
-                transaction_metadata_set,
+                arc_ledger,
                 transaction_size_filter,
                 detected_transaction_id_sender,
                 full_transaction_fetcher,
@@ -130,7 +130,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: Option<SaplingIvk>,
         orchard_ivk: Option<OrchardIvk>,
-        transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<ZingoLedger>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -184,7 +184,7 @@ impl TrialDecryptions {
                         &config,
                         &wc,
                         &bsync_data,
-                        &transaction_metadata_set,
+                        &arc_ledger,
                         &detected_transaction_id_sender,
                         &workers,
                         &mut sapling_notes_to_mark_position_in_tx,
@@ -204,7 +204,7 @@ impl TrialDecryptions {
                         &config,
                         &wc,
                         &bsync_data,
-                        &transaction_metadata_set,
+                        &arc_ledger,
                         &detected_transaction_id_sender,
                         &workers,
                         &mut orchard_notes_to_mark_position_in_tx,
@@ -237,7 +237,7 @@ impl TrialDecryptions {
         while let Some(r) = workers.next().await {
             r.map_err(|e| e.to_string())??;
         }
-        let mut txmds_writelock = transaction_metadata_set.write().await;
+        let mut txmds_writelock = arc_ledger.write().await;
         update_witnesses::<SaplingDomain>(
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
@@ -263,7 +263,7 @@ impl TrialDecryptions {
         config: &zingoconfig::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
-        transaction_metadata_set: &Arc<RwLock<ZingoLedger>>,
+        arc_ledger: &Arc<RwLock<ZingoLedger>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -304,7 +304,7 @@ impl TrialDecryptions {
 
                     let wc = wc.clone();
                     let bsync_data = bsync_data.clone();
-                    let transaction_metadata_set = transaction_metadata_set.clone();
+                    let arc_ledger = arc_ledger.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let timestamp = compact_block.time as u64;
                     let config = config.clone();
@@ -340,7 +340,7 @@ impl TrialDecryptions {
                         );
 
                         let status = ConfirmationStatus::Confirmed(height);
-                        transaction_metadata_set.write().await.add_new_note::<D>(
+                        arc_ledger.write().await.add_new_note::<D>(
                             transaction_id,
                             status,
                             timestamp,

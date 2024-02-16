@@ -107,7 +107,7 @@ impl LightClient {
         // Create a list of TransactionItems from wallet transactions
         let mut consumer_ui_notes = self
             .wallet
-            .transaction_context.transaction_metadata_set
+            .transaction_context.arc_ledger
             .read()
             .await
             .current

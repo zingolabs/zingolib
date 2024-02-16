@@ -25,13 +25,13 @@ use super::syncdata::BlazeSyncData;
 /// If No, then:
 ///    - Update the witness for this note
 pub struct UpdateNotes {
-    transaction_metadata_set: Arc<RwLock<ZingoLedger>>,
+    arc_ledger: Arc<RwLock<ZingoLedger>>,
 }
 
 impl UpdateNotes {
     pub fn new(wallet_txns: Arc<RwLock<ZingoLedger>>) -> Self {
         Self {
-            transaction_metadata_set: wallet_txns,
+            arc_ledger: wallet_txns,
         }
     }
 
@@ -52,7 +52,7 @@ impl UpdateNotes {
             unbounded_channel::<(TxId, PoolNullifier, BlockHeight, Option<u32>, bool)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
-        let wallet_transactions = self.transaction_metadata_set.clone();
+        let wallet_transactions = self.arc_ledger.clone();
         let transmitter_existing = transmitter.clone();
 
         let (blocks_done_transmitter, blocks_done_receiver) = oneshot::channel::<u64>();
@@ -84,7 +84,7 @@ impl UpdateNotes {
             Ok(())
         });
 
-        let wallet_transactions = self.transaction_metadata_set.clone();
+        let wallet_transactions = self.arc_ledger.clone();
         let h1 = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
 
