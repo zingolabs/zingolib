@@ -162,13 +162,33 @@ impl TransactionRecord {
             .iter()
             .fold(0, |running_total, tx_data| tx_data.value + running_total)
     }
-
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
         [
             self.get_transparent_value_spent(),
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
+    }
+    pub fn get_received_sapling_note(
+        &self,
+        index: u32,
+    ) -> Option<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    {
+        let note = SaplingDomain::to_notes_vec(self)
+            .iter()
+            .find(|note| *note.output_index() == Some(index));
+        note.and_then(|note| {
+            note.witnessed_position().map(|pos| {
+                zcash_client_backend::wallet::ReceivedNote::from_parts(
+                    (),
+                    self.txid,
+                    index as u16,
+                    note.to_zcb_note(),
+                    orchard::keys::Scope::External,
+                    pos,
+                )
+            })
+        })
     }
 }
 // read/write
