@@ -16,8 +16,6 @@ pub mod get;
 pub mod inputsource;
 pub mod recording;
 pub mod serial_read_write;
-pub mod walletread;
-pub mod walletwrite;
 
 impl ZingoLedger {
     pub(crate) fn new_with_witness_trees() -> ZingoLedger {
