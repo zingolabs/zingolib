@@ -38,6 +38,8 @@ impl ZingoLedger {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use zcash_client_backend::{
         address::Address,
         data_api::wallet::input_selection::GreedyInputSelector,
@@ -74,13 +76,15 @@ mod tests {
             DustOutputPolicy::default(),
         );
 
-        // propose_transfer(
-        //     wallet_db,
-        //     params,
-        //     spend_from_account,
-        //     &input_selector,
-        //     request,
-        //     min_confirmations,
-        // )
+        let min_confirmations = NonZeroU32::new_unchecked(10);
+        todo!();
+        zcash_client_backend::data_api::wallet::propose_transfer(
+            wallet_db,
+            params,
+            spend_from_account,
+            &input_selector,
+            request,
+            min_confirmations,
+        );
     }
 }
