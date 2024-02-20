@@ -31,9 +31,10 @@ impl InputSource for ZingoLedger {
             .map(|transaction_record| match protocol {
                 zcash_client_backend::ShieldedProtocol::Sapling => {
                     transaction_record.get_received_sapling_note(index)
-                } // zcash_client_backend::ShieldedProtocol::Orchard => {
-                  //     todo!()
-                  // }
+                }
+                zcash_client_backend::ShieldedProtocol::Orchard => {
+                    transaction_record.get_received_orchard_note(index)
+                }
             })
             .flatten())
     }
@@ -78,7 +79,8 @@ impl InputSource for ZingoLedger {
         &self,
         _outpoint: &zcash_primitives::transaction::components::OutPoint,
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        Ok(None)
+        todo!()
+        // Ok(None)
     }
 
     fn get_unspent_transparent_outputs(
@@ -87,7 +89,8 @@ impl InputSource for ZingoLedger {
         _max_height: zcash_primitives::consensus::BlockHeight,
         _exclude: &[zcash_primitives::transaction::components::OutPoint],
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        Ok(vec![])
+        todo!()
+        // Ok(vec![])
     }
 }
 
