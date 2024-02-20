@@ -52,6 +52,8 @@ mod tests {
     };
     use zingoconfig::ChainType;
 
+    use crate::error::ZingoLibError;
+
     use super::ZingoLedger;
 
     #[test]
@@ -77,12 +79,22 @@ mod tests {
             DustOutputPolicy::default(),
         );
 
-        let min_confirmations = NonZeroU32::new_unchecked(10);
-        todo!();
-        zcash_client_backend::data_api::wallet::propose_transfer(
-            wallet_db,
-            params,
-            spend_from_account,
+        let min_confirmations = NonZeroU32::new(10).unwrap();
+
+        let mut ledger = ZingoLedger::new_treeless();
+
+        zcash_client_backend::data_api::wallet::propose_transfer::<
+            ZingoLedger,
+            ChainType,
+            GreedyInputSelector<
+                ZingoLedger,
+                zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
+            >,
+            ZingoLibError,
+        >(
+            &mut ledger,
+            &ChainType::Testnet,
+            zcash_primitives::zip32::AccountId::ZERO,
             &input_selector,
             request,
             min_confirmations,
