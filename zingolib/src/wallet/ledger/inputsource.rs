@@ -1,5 +1,5 @@
-use orchard::note_encryption::OrchardDomain;
-use sapling_crypto::note_encryption::SaplingDomain;
+
+
 use zcash_client_backend::data_api::InputSource;
 
 use crate::error::ZingoLibError;
@@ -41,11 +41,11 @@ impl InputSource for ZingoLedger {
 
     fn select_spendable_notes(
         &self,
-        account: zcash_primitives::zip32::AccountId,
-        target_value: zcash_primitives::transaction::components::Amount,
-        sources: &[zcash_client_backend::ShieldedProtocol],
-        anchor_height: zcash_primitives::consensus::BlockHeight,
-        exclude: &[Self::NoteRef],
+        _account: zcash_primitives::zip32::AccountId,
+        _target_value: zcash_primitives::transaction::components::Amount,
+        _sources: &[zcash_client_backend::ShieldedProtocol],
+        _anchor_height: zcash_primitives::consensus::BlockHeight,
+        _exclude: &[Self::NoteRef],
     ) -> Result<
         Vec<
             zcash_client_backend::wallet::ReceivedNote<

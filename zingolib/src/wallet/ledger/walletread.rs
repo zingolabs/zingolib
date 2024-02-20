@@ -185,7 +185,7 @@ impl WalletRead for ZingoLedger {
 
     fn get_orchard_nullifiers(
         &self,
-        query: zcash_client_backend::data_api::NullifierQuery,
+        _query: zcash_client_backend::data_api::NullifierQuery,
     ) -> Result<Vec<(zcash_primitives::zip32::AccountId, orchard::note::Nullifier)>, Self::Error>
     {
         todo!()
