@@ -19,6 +19,7 @@ pub enum ZingoLibError {
     NoSuchNullifierInTx(TxId),
     MissingOutputIndex(TxId),
     CouldNotDecodeMemo(std::io::Error),
+    EmptyWallet,
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -102,6 +103,7 @@ impl std::fmt::Display for ZingoLibError {
                 f,
                 "{txid} is missing output_index for note, cannot mark change"
             ),
+            EmptyWallet => write!(f,"cannot send because wallet is empty"),
         }
     }
 }

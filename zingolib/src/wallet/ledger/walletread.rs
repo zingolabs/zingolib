@@ -47,7 +47,11 @@ impl WalletRead for ZingoLedger {
         )>,
         Self::Error,
     > {
-        todo!()
+        self.current
+            .iter()
+            .filter_map(|(_, tr)| tr.status.get_confirmed_height())
+            .max_by(|a, b| a.cmp(&b))
+            .map_or_else(|| Ok(None), |max_height| Ok(Some((max_height, max_height))))
     }
 
     fn get_min_unspent_height(
