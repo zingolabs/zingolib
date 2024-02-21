@@ -55,6 +55,7 @@ mod tests {
     use crate::error::ZingoLibError;
 
     use super::ZingoLedger;
+    use zcash_client_backend::data_api::WalletRead;
 
     #[test]
     fn test_propose_transfer() {
@@ -82,8 +83,15 @@ mod tests {
         let min_confirmations = NonZeroU32::new(10).unwrap();
 
         let mut ledger = ZingoLedger::new_treeless();
+        assert_eq!(
+            ledger
+                .get_target_and_anchor_heights(min_confirmations)
+                .unwrap(),
+            None
+        );
+        // ledger.add_new_note(, , , , , , , , )
 
-        zcash_client_backend::data_api::wallet::propose_transfer::<
+        let _ = zcash_client_backend::data_api::wallet::propose_transfer::<
             ZingoLedger,
             ChainType,
             GreedyInputSelector<
@@ -98,6 +106,7 @@ mod tests {
             &input_selector,
             request,
             min_confirmations,
-        );
+        )
+        .unwrap();
     }
 }

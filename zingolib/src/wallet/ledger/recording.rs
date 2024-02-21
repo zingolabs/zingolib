@@ -425,6 +425,7 @@ impl ZingoLedger {
         }
     }
 
+    /// After Decrypting a compact block, call this function to store it in the ZingoLedger.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
