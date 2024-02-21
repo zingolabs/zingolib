@@ -123,7 +123,7 @@ impl ZingoConfigBuilder {
     /// use http::Uri;
     /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
     /// ```
-    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &Self {
+    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &mut Self {
         self.lightwalletd_uri = Some(lightwalletd_uri);
         self
     }
@@ -137,7 +137,7 @@ impl ZingoConfigBuilder {
     /// use zingoconfig::ChainType::Testnet;
     /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
     /// ```
-    pub fn set_chain(&mut self, chain: ChainType) -> &Self {
+    pub fn set_chain(&mut self, chain: ChainType) -> &mut Self {
         self.chain = chain;
         self
     }
@@ -150,7 +150,7 @@ impl ZingoConfigBuilder {
     /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
     /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
     /// ```
-    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &Self {
+    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &mut Self {
         self.wallet_dir = Some(dir);
         self
     }
