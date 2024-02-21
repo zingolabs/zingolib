@@ -445,6 +445,7 @@ impl ZingoLedger {
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
+        // construct a zingolib ShieldedNoteInterface around the lrz note
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
             note.clone(),
