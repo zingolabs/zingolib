@@ -2,6 +2,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
+use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
 use bip0039::Mnemonic;
@@ -496,7 +497,7 @@ impl LightWallet {
                 transaction
                     .transparent_notes
                     .iter()
-                    .filter(|utxo| utxo.spent.is_none())
+                    .filter(|utxo| !utxo.is_spent())
             })
             .cloned()
             .collect::<Vec<notes::TransparentNote>>()
@@ -862,7 +863,7 @@ impl LightWallet {
                         .get_utxos()
                         .await
                         .iter()
-                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && !utxo.is_spent())
                         .cloned()
                         .collect::<Vec<_>>();
                     all_transparent_value_in_wallet =

@@ -14,6 +14,7 @@ use crate::{
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
+        notes::NoteInterface,
         notes::ShieldedNoteInterface,
         now,
         utils::get_price,
@@ -628,7 +629,7 @@ impl LightClient {
 
                 tx.transparent_notes
                     .iter()
-                    .filter(|n| n.spent.is_none() && n.unconfirmed_spent.is_none())
+                    .filter(|n| !n.is_spent() && n.unconfirmed_spent.is_none())
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
@@ -2052,7 +2053,7 @@ impl LightClient {
         self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     wtx.transparent_notes.iter().filter_map(move |utxo|
-                        if !all_notes && utxo.spent.is_some() {
+                        if !all_notes && utxo.is_spent() {
                             None
                         } else {
                             let created_block:u32 = wtx.status.get_height().into();
@@ -2070,8 +2071,8 @@ impl LightClient {
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
                                 "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
-                                "spent_at_height"    => utxo.spent_at_height,
-                                "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
+                                "spent"              => utxo.spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent_at_height"    => utxo.spent().map(|(_, h)| h),
                                 "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             })
                         }

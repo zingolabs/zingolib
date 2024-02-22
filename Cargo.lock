@@ -1423,6 +1423,7 @@ version = "0.2.0"
 dependencies = [
  "bip0039",
  "hex 0.3.2",
+ "http",
  "itertools 0.10.5",
  "json",
  "log",
