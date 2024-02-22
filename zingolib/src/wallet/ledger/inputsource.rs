@@ -1,8 +1,7 @@
+use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
+use zcash_primitives::zip32::AccountId;
 
-
-use zcash_client_backend::data_api::InputSource;
-
-use crate::error::ZingoLibError;
+use crate::{error::ZingoLibError, wallet::notes::NoteInterface};
 
 use super::ZingoLedger;
 
@@ -41,9 +40,9 @@ impl InputSource for ZingoLedger {
 
     fn select_spendable_notes(
         &self,
-        _account: zcash_primitives::zip32::AccountId,
+        account: zcash_primitives::zip32::AccountId,
         _target_value: zcash_primitives::transaction::components::Amount,
-        _sources: &[zcash_client_backend::ShieldedProtocol],
+        sources: &[zcash_client_backend::ShieldedProtocol],
         _anchor_height: zcash_primitives::consensus::BlockHeight,
         _exclude: &[Self::NoteRef],
     ) -> Result<
@@ -55,23 +54,19 @@ impl InputSource for ZingoLedger {
         >,
         Self::Error,
     > {
-        // if account != AccountId::ZERO {
-        //     return Err(ZingoInputSourceError::NonZeroAccountId);
-        // }
-        // if sources.contains(&ShieldedProtocol::Sapling)
-        // //TODO: Genericize
-        // {
-        //     let noteset = self
-        //         .metadata
-        //         .current
-        //         .values()
-        //         .flat_map(|transaction_record| {
-        //             transaction_record
-        //                 .sapling_notes
-        //                 .iter()
-        //                 .filter(|sapnote| sapnote.spendable())
-        //         });
-        // }
+        if account != AccountId::ZERO {
+            return Err(ZingoLibError::InvalidAccountId);
+        }
+        if sources.contains(&ShieldedProtocol::Sapling)
+        //TODO: Genericize
+        {
+            let noteset = self.current.values().flat_map(|transaction_record| {
+                transaction_record
+                    .sapling_notes
+                    .iter()
+                    .filter(|sapnote| sapnote.is_spent_or_pending_spent())
+            });
+        }
         todo!()
     }
 

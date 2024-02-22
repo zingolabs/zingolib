@@ -11,7 +11,10 @@ use super::super::{
 pub trait NoteInterface: Sized {
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn is_spent(&self) -> bool {
-        Self::spent(self).is_some()
+        self.spent().is_some()
+    }
+    fn is_spent_or_pending_spent(&self) -> bool {
+        self.spent().is_some() || self.pending_spent().is_some()
     }
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
