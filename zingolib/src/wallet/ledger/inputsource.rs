@@ -1,3 +1,5 @@
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::zip32::AccountId;
 
@@ -29,10 +31,10 @@ impl InputSource for ZingoLedger {
         Ok(transaction
             .map(|transaction_record| match protocol {
                 zcash_client_backend::ShieldedProtocol::Sapling => {
-                    transaction_record.get_received_sapling_note(index)
+                    transaction_record.get_received_note::<SaplingDomain>(index)
                 }
                 zcash_client_backend::ShieldedProtocol::Orchard => {
-                    transaction_record.get_received_orchard_note(index)
+                    transaction_record.get_received_note::<OrchardDomain>(index)
                 }
             })
             .flatten())

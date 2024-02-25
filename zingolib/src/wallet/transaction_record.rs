@@ -169,12 +169,16 @@ impl TransactionRecord {
             self.total_orchard_value_spent,
         ]
     }
-    pub fn get_received_sapling_note(
+    pub fn get_received_note<D>(
         &self,
         index: u32,
     ) -> Option<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    where
+        D: DomainWalletExt + Sized,
+        D::Note: PartialEq + Clone,
+        D::Recipient: Recipient,
     {
-        let note = SaplingDomain::to_notes_vec(self)
+        let note = D::to_notes_vec(self)
             .iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
@@ -185,27 +189,6 @@ impl TransactionRecord {
                     index as u16,
                     note.to_zcb_note(),
                     orchard::keys::Scope::External, // not sure how this field matters or if/when it needs to change to sapling variant
-                    pos,
-                )
-            })
-        })
-    }
-    pub fn get_received_orchard_note(
-        &self,
-        index: u32,
-    ) -> Option<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
-    {
-        let note = OrchardDomain::to_notes_vec(self)
-            .iter()
-            .find(|note| *note.output_index() == Some(index));
-        note.and_then(|note| {
-            note.witnessed_position().map(|pos| {
-                zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    (),
-                    self.txid,
-                    index as u16,
-                    note.to_zcb_note(),
-                    orchard::keys::Scope::External,
                     pos,
                 )
             })
