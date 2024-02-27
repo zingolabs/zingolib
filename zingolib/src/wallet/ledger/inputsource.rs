@@ -59,20 +59,15 @@ impl InputSource for ZingoLedger {
         if account != AccountId::ZERO {
             return Err(ZingoLibError::InvalidAccountId);
         }
-        if sources.contains(&ShieldedProtocol::Sapling)
-        //TODO: Genericize
-        {
-            let noteset: Vec<
-                Vec<
-                    zcash_client_backend::wallet::ReceivedNote<
-                        Self::NoteRef,
-                        zcash_client_backend::wallet::Note,
-                    >,
-                >,
-            > = self
-                .current
-                .values()
-                .map(|transaction_record| {
+        let mut noteset: Vec<
+            zcash_client_backend::wallet::ReceivedNote<
+                Self::NoteRef,
+                zcash_client_backend::wallet::Note,
+            >,
+        > = Vec::new();
+        for transaction_record in self.current.values() {
+            if sources.contains(&ShieldedProtocol::Sapling) {
+                noteset.extend(
                     transaction_record
                         .sapling_notes
                         .iter()
@@ -82,11 +77,15 @@ impl InputSource for ZingoLedger {
                                 .get_received_note::<SaplingDomain>(sapnote.output_index.unwrap())
                                 .expect("tmy")
                         })
-                        .collect()
-                })
-                .collect();
-            dbg!(noteset);
-        } else {
+                        .collect::<Vec<
+                            zcash_client_backend::wallet::ReceivedNote<
+                                Self::NoteRef,
+                                zcash_client_backend::wallet::Note,
+                            >,
+                        >>(),
+                );
+            }
+            dbg!(&noteset);
         }
         Err(ZingoLibError::UnknownError)
     }
