@@ -131,6 +131,7 @@ mod tests {
             position,
         );
 
+        dbg!("proposing transfer");
         let _ = zcash_client_backend::data_api::wallet::propose_transfer::<
             ZingoLedger,
             ChainType,

@@ -62,14 +62,33 @@ impl InputSource for ZingoLedger {
         if sources.contains(&ShieldedProtocol::Sapling)
         //TODO: Genericize
         {
-            let noteset = self.current.values().flat_map(|transaction_record| {
-                transaction_record
-                    .sapling_notes
-                    .iter()
-                    .filter(|sapnote| sapnote.is_spent_or_pending_spent())
-            });
+            let noteset: Vec<
+                Vec<
+                    zcash_client_backend::wallet::ReceivedNote<
+                        Self::NoteRef,
+                        zcash_client_backend::wallet::Note,
+                    >,
+                >,
+            > = self
+                .current
+                .values()
+                .map(|transaction_record| {
+                    transaction_record
+                        .sapling_notes
+                        .iter()
+                        .filter(|sapnote| !sapnote.is_spent_or_pending_spent())
+                        .map(|sapnote| {
+                            transaction_record
+                                .get_received_note::<SaplingDomain>(sapnote.output_index.unwrap())
+                                .expect("tmy")
+                        })
+                        .collect()
+                })
+                .collect();
+            dbg!(noteset);
+        } else {
         }
-        todo!()
+        Err(ZingoLibError::UnknownError)
     }
 
     fn get_unspent_transparent_output(
