@@ -67,20 +67,6 @@ mod tests {
 
     #[test]
     fn test_propose_transfer() {
-        let amount = NonNegativeAmount::const_from_u64(20000);
-        let recipient_address =
-            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
-        let request = zip321::TransactionRequest::new(vec![Payment {
-            recipient_address,
-            amount,
-            memo: None,
-            label: None,
-            message: None,
-            other_params: vec![],
-        }])
-        .expect(
-            "It should not be possible for this to violate ZIP 321 request construction invariants.",);
-
         let change_strategy = SingleOutputChangeStrategy::new(StandardFeeRule::Zip317, None);
         let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
             change_strategy,
@@ -130,6 +116,20 @@ mod tests {
             0,
             position,
         );
+
+        let request_amount = NonNegativeAmount::const_from_u64(20000);
+        let recipient_address =
+            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
+        let request = zip321::TransactionRequest::new(vec![Payment {
+            recipient_address,
+            amount: request_amount,
+            memo: None,
+            label: None,
+            message: None,
+            other_params: vec![],
+        }])
+        .expect(
+            "It should not be possible for this to violate ZIP 321 request construction invariants.",);
 
         dbg!("proposing transfer");
         let transfer = zcash_client_backend::data_api::wallet::propose_transfer::<
