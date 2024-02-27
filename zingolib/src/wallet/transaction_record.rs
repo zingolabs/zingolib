@@ -194,15 +194,20 @@ impl TransactionRecord {
             })
         })
     }
-    pub fn select_unspent_sapling_notes(
+    fn convert_unspent_pool_notes<D>(
         &self,
+        notes: &Vec<impl ShieldedNoteInterface>,
     ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    where
+        D: DomainWalletExt + Sized,
+        D::Note: PartialEq + Clone,
+        D::Recipient: Recipient,
     {
-        self.sapling_notes
+        notes
             .iter()
-            .filter(|sapnote| !sapnote.is_spent_or_pending_spent())
-            .map(|sapnote| {
-                self.get_received_note::<SaplingDomain>(sapnote.output_index.unwrap())
+            .filter(|note| !note.is_spent_or_pending_spent())
+            .map(|note| {
+                self.get_received_note::<D>(note.output_index().unwrap())
                     .expect("tmy")
             })
             .collect::<Vec<
@@ -212,23 +217,17 @@ impl TransactionRecord {
                 >,
             >>()
     }
+    pub fn select_unspent_sapling_notes(
+        &self,
+    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    {
+        self.convert_unspent_pool_notes::<SaplingDomain>(&self.sapling_notes)
+    }
     pub fn select_unspent_orchard_notes(
         &self,
     ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
     {
-        self.orchard_notes
-            .iter()
-            .filter(|orcnote| !orcnote.is_spent_or_pending_spent())
-            .map(|orcnote| {
-                self.get_received_note::<OrchardDomain>(orcnote.output_index.unwrap())
-                    .expect("tmy")
-            })
-            .collect::<Vec<
-                zcash_client_backend::wallet::ReceivedNote<
-                    (), // should be Nullifier
-                    zcash_client_backend::wallet::Note,
-                >,
-            >>()
+        self.convert_unspent_pool_notes::<OrchardDomain>(&self.orchard_notes)
     }
 }
 // read/write
