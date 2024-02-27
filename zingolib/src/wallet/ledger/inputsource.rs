@@ -3,7 +3,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::zip32::AccountId;
 
-use crate::{error::ZingoLibError, wallet::notes::NoteInterface};
+use crate::{error::ZingoLibError};
 
 use super::ZingoLedger;
 
