@@ -10,7 +10,7 @@ use super::ZingoLedger;
 impl InputSource for ZingoLedger {
     type Error = ZingoLibError;
 
-    // We can always change this later if we decide we need it
+    // This should be a nullifier
     type NoteRef = ();
 
     fn get_spendable_note(
@@ -67,27 +67,13 @@ impl InputSource for ZingoLedger {
         > = Vec::new();
         for transaction_record in self.current.values() {
             if sources.contains(&ShieldedProtocol::Sapling) {
-                noteset.extend(
-                    transaction_record
-                        .sapling_notes
-                        .iter()
-                        .filter(|sapnote| !sapnote.is_spent_or_pending_spent())
-                        .map(|sapnote| {
-                            transaction_record
-                                .get_received_note::<SaplingDomain>(sapnote.output_index.unwrap())
-                                .expect("tmy")
-                        })
-                        .collect::<Vec<
-                            zcash_client_backend::wallet::ReceivedNote<
-                                Self::NoteRef,
-                                zcash_client_backend::wallet::Note,
-                            >,
-                        >>(),
-                );
+                noteset.extend(transaction_record.select_unspent_sapling_notes());
             }
-            dbg!(&noteset);
+            if sources.contains(&ShieldedProtocol::Orchard) {
+                noteset.extend(transaction_record.select_unspent_orchard_notes());
+            }
         }
-        Err(ZingoLibError::UnknownError)
+        Ok(noteset)
     }
 
     fn get_unspent_transparent_output(

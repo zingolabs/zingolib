@@ -194,6 +194,42 @@ impl TransactionRecord {
             })
         })
     }
+    pub fn select_unspent_sapling_notes(
+        &self,
+    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    {
+        self.sapling_notes
+            .iter()
+            .filter(|sapnote| !sapnote.is_spent_or_pending_spent())
+            .map(|sapnote| {
+                self.get_received_note::<SaplingDomain>(sapnote.output_index.unwrap())
+                    .expect("tmy")
+            })
+            .collect::<Vec<
+                zcash_client_backend::wallet::ReceivedNote<
+                    (),
+                    zcash_client_backend::wallet::Note,
+                >,
+            >>()
+    }
+    pub fn select_unspent_orchard_notes(
+        &self,
+    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    {
+        self.orchard_notes
+            .iter()
+            .filter(|orcnote| !orcnote.is_spent_or_pending_spent())
+            .map(|orcnote| {
+                self.get_received_note::<OrchardDomain>(orcnote.output_index.unwrap())
+                    .expect("tmy")
+            })
+            .collect::<Vec<
+                zcash_client_backend::wallet::ReceivedNote<
+                    (), // should be Nullifier
+                    zcash_client_backend::wallet::Note,
+                >,
+            >>()
+    }
 }
 // read/write
 impl TransactionRecord {

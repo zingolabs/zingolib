@@ -132,7 +132,7 @@ mod tests {
         );
 
         dbg!("proposing transfer");
-        let _ = zcash_client_backend::data_api::wallet::propose_transfer::<
+        let transfer = zcash_client_backend::data_api::wallet::propose_transfer::<
             ZingoLedger,
             ChainType,
             GreedyInputSelector<
@@ -149,5 +149,6 @@ mod tests {
             min_confirmations,
         )
         .unwrap();
+        dbg!(transfer);
     }
 }

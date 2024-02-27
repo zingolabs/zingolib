@@ -146,7 +146,6 @@ impl ShieldedNoteInterface for OrchardNote {
         &self.output_index
     }
     fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note {
-        // zcash_client_backend::wallet::Note::Orchard(self.note().clone())
-        todo!()
+        zcash_client_backend::wallet::Note::Orchard(self.note().clone())
     }
 }
