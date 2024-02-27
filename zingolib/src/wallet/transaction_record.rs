@@ -194,16 +194,15 @@ impl TransactionRecord {
             })
         })
     }
-    fn convert_unspent_pool_notes<D>(
+    pub fn select_unspent_domain_notes<D>(
         &self,
-        notes: &Vec<impl ShieldedNoteInterface>,
     ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
     where
         D: DomainWalletExt + Sized,
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        notes
+        D::to_notes_vec(self)
             .iter()
             .filter(|note| !note.is_spent_or_pending_spent())
             .map(|note| {
@@ -216,18 +215,6 @@ impl TransactionRecord {
                     zcash_client_backend::wallet::Note,
                 >,
             >>()
-    }
-    pub fn select_unspent_sapling_notes(
-        &self,
-    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
-    {
-        self.convert_unspent_pool_notes::<SaplingDomain>(&self.sapling_notes)
-    }
-    pub fn select_unspent_orchard_notes(
-        &self,
-    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
-    {
-        self.convert_unspent_pool_notes::<OrchardDomain>(&self.orchard_notes)
     }
 }
 // read/write

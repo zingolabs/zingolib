@@ -67,10 +67,10 @@ impl InputSource for ZingoLedger {
         > = Vec::new();
         for transaction_record in self.current.values() {
             if sources.contains(&ShieldedProtocol::Sapling) {
-                noteset.extend(transaction_record.select_unspent_sapling_notes());
+                noteset.extend(transaction_record.select_unspent_domain_notes::<SaplingDomain>());
             }
             if sources.contains(&ShieldedProtocol::Orchard) {
-                noteset.extend(transaction_record.select_unspent_orchard_notes());
+                noteset.extend(transaction_record.select_unspent_domain_notes::<OrchardDomain>());
             }
         }
         Ok(noteset)
