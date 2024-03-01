@@ -132,7 +132,7 @@ mod tests {
             "It should not be possible for this to violate ZIP 321 request construction invariants.",);
 
         dbg!("proposing transfer");
-        let transfer = zcash_client_backend::data_api::wallet::propose_transfer::<
+        let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
             ZingoLedger,
             ChainType,
             GreedyInputSelector<
@@ -149,6 +149,6 @@ mod tests {
             min_confirmations,
         )
         .unwrap();
-        dbg!(transfer);
+        dbg!(proposal);
     }
 }

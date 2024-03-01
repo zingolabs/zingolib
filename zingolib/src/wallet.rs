@@ -1254,7 +1254,8 @@ impl LightWallet {
             let earmark_total_plus_default_fee =
                 total_earmarked_for_recipients + u64::from(proposed_fee);
             // Select notes as a fn of target amount
-            (
+
+            let proposal = (
                 orchard_notes,
                 sapling_notes,
                 utxos,
