@@ -337,7 +337,27 @@ impl LightWallet {
                 request,
                 min_confirmations,
             )
-            .map_err(|e| dbg!(e).to_string())?;
+            .map_err(|e| e.to_string())?;
+
+            let steps = proposal.steps();
+            if steps.len() != 1 {
+                Err("multi-step proposals not supported")?
+            }
+            let step = steps.head;
+
+            let (build_result, account, outputs, utxos_spent) = calculate_proposed_transaction(
+                wallet_db,
+                params,
+                spend_prover,
+                output_prover,
+                usk,
+                ovk_policy,
+                fee_rule,
+                min_target_height,
+                prior_step_results,
+                step,
+            )?;
+
             let _proposal = (
                 orchard_notes,
                 sapling_notes,
@@ -409,7 +429,7 @@ impl LightWallet {
                 break;
             }
         }
-        Ok((tx_builder, total_shielded_receivers))
+        Ok((tx_builder, 0))
     }
 
     async fn create_tx_builder(
