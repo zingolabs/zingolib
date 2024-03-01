@@ -10,7 +10,7 @@ use super::ZingoLedger;
 impl InputSource for ZingoLedger {
     type Error = ZingoLibError;
 
-    // This should be a nullifier
+    // TODO pick a real type for this. perhaps PoolNullifier
     type NoteRef = u32;
 
     fn get_spendable_note(

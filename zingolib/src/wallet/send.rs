@@ -295,7 +295,8 @@ impl LightWallet {
             let request = TransactionRequest::new(payments).map_err(|e| e.to_string())?;
 
             let arc_ledger = self.transactions();
-            let ledger = arc_ledger.read().await;
+            //TODO this should be a read-only lock, because this operation should not write.
+            let mut ledger = arc_ledger.write().await;
 
             let change_strategy =
                 zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
