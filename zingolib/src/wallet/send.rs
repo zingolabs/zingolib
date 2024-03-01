@@ -55,6 +55,62 @@ pub struct SendProgress {
 }
 
 impl LightWallet {
+    // Get the current sending status.
+    pub async fn get_send_progress(&self) -> SendProgress {
+        self.send_progress.read().await.clone()
+    }
+
+    pub async fn send_to_addresses<F, Fut, P: SpendProver + OutputProver>(
+        &self,
+        sapling_prover: P,
+        policy: NoteSelectionPolicy,
+        receivers: Receivers,
+        submission_height: BlockHeight,
+        broadcast_fn: F,
+    ) -> Result<(String, Vec<u8>), String>
+    where
+        F: Fn(Box<[u8]>) -> Fut,
+        Fut: Future<Output = Result<String, String>>,
+    {
+        // Reset the progress to start. Any errors will get recorded here
+        self.reset_send_progress().await;
+
+        // Sanity check that this is a spending wallet.  Why isn't this done earlier?
+        if !self.wallet_capability().can_spend_from_all_pools() {
+            // Creating transactions in context of all possible combinations
+            // of wallet capabilities requires a rigorous case study
+            // and can have undesired effects if not implemented properly.
+            //
+            // Thus we forbid spending for wallets without complete spending capability for now
+            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
+        }
+        // Create the transaction
+        let start_time = now();
+        let build_result = self
+            .create_publication_ready_transaction(
+                submission_height,
+                start_time,
+                receivers,
+                policy,
+                sapling_prover,
+            )
+            .await?;
+
+        // Call the internal function
+        match self
+            .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
+            .await
+        {
+            Ok((transaction_id, raw_transaction)) => {
+                self.set_send_success(transaction_id.clone()).await;
+                Ok((transaction_id, raw_transaction))
+            }
+            Err(e) => {
+                self.set_send_error(e.to_string()).await;
+                Err(e)
+            }
+        }
+    }
     // Reset the send progress status to blank
     async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
@@ -63,106 +119,94 @@ impl LightWallet {
         // Discard the old value, since we are replacing it
         let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
     }
-    // Get the current sending status.
-    pub async fn get_send_progress(&self) -> SendProgress {
-        self.send_progress.read().await.clone()
-    }
 
-    async fn select_notes_and_utxos(
+    async fn create_publication_ready_transaction<P: SpendProver + OutputProver>(
         &self,
-        target_amount: Amount,
-        policy: &NoteSelectionPolicy,
-    ) -> Result<
-        (
-            Vec<SpendableOrchardNote>,
-            Vec<SpendableSaplingNote>,
-            Vec<notes::TransparentNote>,
-            u64,
-        ),
-        u64,
-    > {
-        let mut all_transparent_value_in_wallet = Amount::zero();
-        let mut utxos = Vec::new(); //utxo stands for Unspent Transaction Output
-        let mut sapling_value_selected = Amount::zero();
-        let mut sapling_notes = Vec::new();
-        let mut orchard_value_selected = Amount::zero();
-        let mut orchard_notes = Vec::new();
-        // Correctness of this loop depends on:
-        //    * uniqueness
-        for pool in policy {
-            match pool {
-                // Transparent: This opportunistic shielding sweeps all transparent value leaking identifying information to
-                // a funder of the wallet's transparent value. We should change this.
-                Pool::Transparent => {
-                    utxos = self
-                        .get_utxos()
-                        .await
-                        .iter()
-                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && !utxo.is_spent())
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    all_transparent_value_in_wallet =
-                        utxos.iter().fold(Amount::zero(), |prev, utxo| {
-                            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-                        });
-                }
-                Pool::Sapling => {
-                    let sapling_candidates = self
-                        .get_all_domain_specific_notes::<SaplingDomain>()
-                        .await
-                        .into_iter()
-                        .filter(|note| note.spend_key().is_some())
-                        .collect();
-                    (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
-                        SaplingDomain,
-                    >(
-                        sapling_candidates,
-                        (target_amount - orchard_value_selected - all_transparent_value_in_wallet)
-                            .unwrap(),
-                    );
-                }
-                Pool::Orchard => {
-                    let orchard_candidates = self
-                        .get_all_domain_specific_notes::<OrchardDomain>()
-                        .await
-                        .into_iter()
-                        .filter(|note| note.spend_key().is_some())
-                        .collect();
-                    (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
-                        OrchardDomain,
-                    >(
-                        orchard_candidates,
-                        (target_amount - all_transparent_value_in_wallet - sapling_value_selected)
-                            .unwrap(),
-                    );
-                }
+        submission_height: BlockHeight,
+        start_time: u64,
+        receivers: Receivers,
+        policy: NoteSelectionPolicy,
+        sapling_prover: P,
+        // We only care about the transaction...but it can now only be aquired by reference
+        // from the build result, so we need to return the whole thing
+    ) -> Result<BuildResult, String> {
+        // Start building transaction with spends and outputs set by:
+        //  * target amount
+        //  * selection policy
+        //  * recipient list
+        let txmds_readlock = self.transaction_context.arc_ledger.read().await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
+        let (tx_builder, total_shielded_receivers) = match self
+            .create_and_populate_tx_builder(
+                submission_height,
+                witness_trees,
+                start_time,
+                receivers,
+                policy,
+            )
+            .await
+        {
+            Ok(tx_builder) => tx_builder,
+            Err(s) => {
+                return Err(s);
             }
-            // Check how much we've selected
-            if (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
-                .unwrap()
-                >= target_amount
-            {
-                return Ok((
-                    orchard_notes,
-                    sapling_notes,
-                    utxos,
-                    u64::try_from(
-                        (all_transparent_value_in_wallet
-                            + sapling_value_selected
-                            + orchard_value_selected)
-                            .unwrap(),
-                    )
-                    .expect("u64 representable."),
-                ));
+        };
+
+        drop(txmds_readlock);
+        // The builder now has the correct set of inputs and outputs
+
+        // Set up a channel to receive updates on the progress of building the transaction.
+        // This progress monitor, the channel monitoring it, and the types necessary for its
+        // construction are unnecessary for sending.
+        let (transmitter, receiver) = channel::<Progress>();
+        let progress = self.send_progress.clone();
+
+        // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
+        let (transmitter2, mut receiver2) = tokio::sync::mpsc::unbounded_channel();
+        std::thread::spawn(move || {
+            while let Ok(r) = receiver.recv() {
+                transmitter2.send(r.cur()).unwrap();
             }
+        });
+
+        let progress_handle = tokio::spawn(async move {
+            while let Some(r) = receiver2.recv().await {
+                info!("{}: Progress: {r}", now() - start_time);
+                progress.write().await.progress = r;
+            }
+
+            progress.write().await.is_send_in_progress = false;
+        });
+
+        {
+            let mut p = self.send_progress.write().await;
+            p.is_send_in_progress = true;
+            p.progress = 0;
+            p.total = total_shielded_receivers;
         }
 
-        // If we can't select enough, then we need to return empty handed
-        Err(u64::try_from(
-            (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
-                .unwrap(),
-        )
-        .expect("u64 representable"))
+        info!("{}: Building transaction", now() - start_time);
+
+        let tx_builder = tx_builder.with_progress_notifier(transmitter);
+        let build_result = match tx_builder.build(
+            OsRng,
+            &sapling_prover,
+            &sapling_prover,
+            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
+        ) {
+            Ok(res) => res,
+            Err(e) => {
+                let e = format!("Error creating transaction: {:?}", e);
+                error!("{}", e);
+                self.send_progress.write().await.is_send_in_progress = false;
+                return Err(e);
+            }
+        };
+        progress_handle.await.unwrap();
+        Ok(build_result)
     }
 
     async fn create_and_populate_tx_builder(
@@ -302,58 +346,6 @@ impl LightWallet {
         Ok((tx_builder, total_shielded_receivers))
     }
 
-    pub async fn send_to_addresses<F, Fut, P: SpendProver + OutputProver>(
-        &self,
-        sapling_prover: P,
-        policy: NoteSelectionPolicy,
-        receivers: Receivers,
-        submission_height: BlockHeight,
-        broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
-    {
-        // Reset the progress to start. Any errors will get recorded here
-        self.reset_send_progress().await;
-
-        // Sanity check that this is a spending wallet.  Why isn't this done earlier?
-        if !self.wallet_capability().can_spend_from_all_pools() {
-            // Creating transactions in context of all possible combinations
-            // of wallet capabilities requires a rigorous case study
-            // and can have undesired effects if not implemented properly.
-            //
-            // Thus we forbid spending for wallets without complete spending capability for now
-            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
-        }
-        // Create the transaction
-        let start_time = now();
-        let build_result = self
-            .create_publication_ready_transaction(
-                submission_height,
-                start_time,
-                receivers,
-                policy,
-                sapling_prover,
-            )
-            .await?;
-
-        // Call the internal function
-        match self
-            .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
-            .await
-        {
-            Ok((transaction_id, raw_transaction)) => {
-                self.set_send_success(transaction_id.clone()).await;
-                Ok((transaction_id, raw_transaction))
-            }
-            Err(e) => {
-                self.set_send_error(e.to_string()).await;
-                Err(e)
-            }
-        }
-    }
-
     async fn create_tx_builder(
         &self,
         submission_height: BlockHeight,
@@ -374,6 +366,208 @@ impl LightWallet {
                 orchard_anchor: Some(orchard_anchor),
             },
         ))
+    }
+
+    fn add_consumer_specified_outputs_to_builder<'a>(
+        &'a self,
+        mut tx_builder: TxBuilder<'a>,
+        receivers: Receivers,
+    ) -> Result<(u32, TxBuilder<'_>), String> {
+        // Convert address (str) to RecipientAddress and value to Amount
+
+        // We'll use the first ovk to encrypt outgoing transactions
+        let sapling_ovk =
+            sapling_crypto::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
+        let orchard_ovk =
+            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
+
+        let mut total_shielded_receivers = 0u32;
+        for (recipient_address, value, memo) in receivers {
+            // Compute memo if it exists
+            let validated_memo = match memo {
+                None => MemoBytes::from(Memo::Empty),
+                Some(s) => s,
+            };
+
+            if let Err(e) = match recipient_address {
+                address::Address::Transparent(to) => tx_builder
+                    .add_transparent_output(&to, value)
+                    .map_err(transaction::builder::Error::TransparentBuild),
+                address::Address::Sapling(to) => {
+                    total_shielded_receivers += 1;
+                    tx_builder.add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
+                }
+                address::Address::Unified(ua) => {
+                    if let Some(orchard_addr) = ua.orchard() {
+                        total_shielded_receivers += 1;
+                        tx_builder.add_orchard_output::<FixedFeeRule>(
+                            Some(orchard_ovk.clone()),
+                            *orchard_addr,
+                            u64::from(value),
+                            validated_memo,
+                        )
+                    } else if let Some(sapling_addr) = ua.sapling() {
+                        total_shielded_receivers += 1;
+                        tx_builder.add_sapling_output(
+                            Some(sapling_ovk),
+                            *sapling_addr,
+                            value,
+                            validated_memo,
+                        )
+                    } else {
+                        return Err("Received UA with no Orchard or Sapling receiver".to_string());
+                    }
+                }
+            } {
+                let e = format!("Error adding output: {:?}", e);
+                error!("{}", e);
+                return Err(e);
+            }
+        }
+        Ok((total_shielded_receivers, tx_builder))
+    }
+
+    async fn select_notes_and_utxos(
+        &self,
+        target_amount: Amount,
+        policy: &NoteSelectionPolicy,
+    ) -> Result<
+        (
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<notes::TransparentNote>,
+            u64,
+        ),
+        u64,
+    > {
+        let mut all_transparent_value_in_wallet = Amount::zero();
+        let mut utxos = Vec::new(); //utxo stands for Unspent Transaction Output
+        let mut sapling_value_selected = Amount::zero();
+        let mut sapling_notes = Vec::new();
+        let mut orchard_value_selected = Amount::zero();
+        let mut orchard_notes = Vec::new();
+        // Correctness of this loop depends on:
+        //    * uniqueness
+        for pool in policy {
+            match pool {
+                // Transparent: This opportunistic shielding sweeps all transparent value leaking identifying information to
+                // a funder of the wallet's transparent value. We should change this.
+                Pool::Transparent => {
+                    utxos = self
+                        .get_utxos()
+                        .await
+                        .iter()
+                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && !utxo.is_spent())
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    all_transparent_value_in_wallet =
+                        utxos.iter().fold(Amount::zero(), |prev, utxo| {
+                            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+                        });
+                }
+                Pool::Sapling => {
+                    let sapling_candidates = self
+                        .get_all_domain_specific_notes::<SaplingDomain>()
+                        .await
+                        .into_iter()
+                        .filter(|note| note.spend_key().is_some())
+                        .collect();
+                    (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
+                        SaplingDomain,
+                    >(
+                        sapling_candidates,
+                        (target_amount - orchard_value_selected - all_transparent_value_in_wallet)
+                            .unwrap(),
+                    );
+                }
+                Pool::Orchard => {
+                    let orchard_candidates = self
+                        .get_all_domain_specific_notes::<OrchardDomain>()
+                        .await
+                        .into_iter()
+                        .filter(|note| note.spend_key().is_some())
+                        .collect();
+                    (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
+                        OrchardDomain,
+                    >(
+                        orchard_candidates,
+                        (target_amount - all_transparent_value_in_wallet - sapling_value_selected)
+                            .unwrap(),
+                    );
+                }
+            }
+            // Check how much we've selected
+            if (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
+                .unwrap()
+                >= target_amount
+            {
+                return Ok((
+                    orchard_notes,
+                    sapling_notes,
+                    utxos,
+                    u64::try_from(
+                        (all_transparent_value_in_wallet
+                            + sapling_value_selected
+                            + orchard_value_selected)
+                            .unwrap(),
+                    )
+                    .expect("u64 representable."),
+                ));
+            }
+        }
+
+        // If we can't select enough, then we need to return empty handed
+        Err(u64::try_from(
+            (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
+                .unwrap(),
+        )
+        .expect("u64 representable"))
+    }
+
+    fn add_change_output_to_builder<'a>(
+        &self,
+        mut tx_builder: TxBuilder<'a>,
+        target_amount: Amount,
+        selected_value: Amount,
+        total_shielded_receivers: &mut u32,
+        receivers: &Receivers,
+    ) -> Result<TxBuilder<'a>, String> {
+        let destination_uas = receivers
+            .iter()
+            .filter_map(|receiver| match receiver.0 {
+                address::Address::Sapling(_) => None,
+                address::Address::Transparent(_) => None,
+                address::Address::Unified(ref ua) => Some(ua.clone()),
+            })
+            .collect::<Vec<_>>();
+        let uas_bytes = match create_wallet_internal_memo_version_0(destination_uas.as_slice()) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(
+                    "Could not write uas to memo field: {e}\n\
+        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
+        The correct address was sent to."
+                );
+                [0; 511]
+            }
+        };
+        let orchard_ovk =
+            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
+        *total_shielded_receivers += 1;
+        if let Err(e) = tx_builder.add_orchard_output::<FixedFeeRule>(
+            Some(orchard_ovk.clone()),
+            *self.wallet_capability().addresses()[0].orchard().unwrap(),
+            u64::try_from(selected_value).expect("u64 representable")
+                - u64::try_from(target_amount).expect("u64 representable"),
+            // Here we store the uas we sent to in the memo field.
+            // These are used to recover the full UA we sent to.
+            MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
+        ) {
+            let e = format!("Error adding change output: {:?}", e);
+            error!("{}", e);
+            return Err(e);
+        };
+        Ok(tx_builder)
     }
 
     async fn add_spends_to_builder<'a>(
@@ -464,199 +658,10 @@ impl LightWallet {
         }
         Ok(tx_builder)
     }
-    fn add_consumer_specified_outputs_to_builder<'a>(
-        &'a self,
-        mut tx_builder: TxBuilder<'a>,
-        receivers: Receivers,
-    ) -> Result<(u32, TxBuilder<'_>), String> {
-        // Convert address (str) to RecipientAddress and value to Amount
 
-        // We'll use the first ovk to encrypt outgoing transactions
-        let sapling_ovk =
-            sapling_crypto::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
-        let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
-
-        let mut total_shielded_receivers = 0u32;
-        for (recipient_address, value, memo) in receivers {
-            // Compute memo if it exists
-            let validated_memo = match memo {
-                None => MemoBytes::from(Memo::Empty),
-                Some(s) => s,
-            };
-
-            if let Err(e) = match recipient_address {
-                address::Address::Transparent(to) => tx_builder
-                    .add_transparent_output(&to, value)
-                    .map_err(transaction::builder::Error::TransparentBuild),
-                address::Address::Sapling(to) => {
-                    total_shielded_receivers += 1;
-                    tx_builder.add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
-                }
-                address::Address::Unified(ua) => {
-                    if let Some(orchard_addr) = ua.orchard() {
-                        total_shielded_receivers += 1;
-                        tx_builder.add_orchard_output::<FixedFeeRule>(
-                            Some(orchard_ovk.clone()),
-                            *orchard_addr,
-                            u64::from(value),
-                            validated_memo,
-                        )
-                    } else if let Some(sapling_addr) = ua.sapling() {
-                        total_shielded_receivers += 1;
-                        tx_builder.add_sapling_output(
-                            Some(sapling_ovk),
-                            *sapling_addr,
-                            value,
-                            validated_memo,
-                        )
-                    } else {
-                        return Err("Received UA with no Orchard or Sapling receiver".to_string());
-                    }
-                }
-            } {
-                let e = format!("Error adding output: {:?}", e);
-                error!("{}", e);
-                return Err(e);
-            }
-        }
-        Ok((total_shielded_receivers, tx_builder))
-    }
-
-    fn add_change_output_to_builder<'a>(
-        &self,
-        mut tx_builder: TxBuilder<'a>,
-        target_amount: Amount,
-        selected_value: Amount,
-        total_shielded_receivers: &mut u32,
-        receivers: &Receivers,
-    ) -> Result<TxBuilder<'a>, String> {
-        let destination_uas = receivers
-            .iter()
-            .filter_map(|receiver| match receiver.0 {
-                address::Address::Sapling(_) => None,
-                address::Address::Transparent(_) => None,
-                address::Address::Unified(ref ua) => Some(ua.clone()),
-            })
-            .collect::<Vec<_>>();
-        let uas_bytes = match create_wallet_internal_memo_version_0(destination_uas.as_slice()) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                log::error!(
-                    "Could not write uas to memo field: {e}\n\
-        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
-        The correct address was sent to."
-                );
-                [0; 511]
-            }
-        };
-        let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
-        *total_shielded_receivers += 1;
-        if let Err(e) = tx_builder.add_orchard_output::<FixedFeeRule>(
-            Some(orchard_ovk.clone()),
-            *self.wallet_capability().addresses()[0].orchard().unwrap(),
-            u64::try_from(selected_value).expect("u64 representable")
-                - u64::try_from(target_amount).expect("u64 representable"),
-            // Here we store the uas we sent to in the memo field.
-            // These are used to recover the full UA we sent to.
-            MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
-        ) {
-            let e = format!("Error adding change output: {:?}", e);
-            error!("{}", e);
-            return Err(e);
-        };
-        Ok(tx_builder)
-    }
-
-    async fn create_publication_ready_transaction<P: SpendProver + OutputProver>(
-        &self,
-        submission_height: BlockHeight,
-        start_time: u64,
-        receivers: Receivers,
-        policy: NoteSelectionPolicy,
-        sapling_prover: P,
-        // We only care about the transaction...but it can now only be aquired by reference
-        // from the build result, so we need to return the whole thing
-    ) -> Result<BuildResult, String> {
-        // Start building transaction with spends and outputs set by:
-        //  * target amount
-        //  * selection policy
-        //  * recipient list
-        let txmds_readlock = self.transaction_context.arc_ledger.read().await;
-        let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
-        let (tx_builder, total_shielded_receivers) = match self
-            .create_and_populate_tx_builder(
-                submission_height,
-                witness_trees,
-                start_time,
-                receivers,
-                policy,
-            )
-            .await
-        {
-            Ok(tx_builder) => tx_builder,
-            Err(s) => {
-                return Err(s);
-            }
-        };
-
-        drop(txmds_readlock);
-        // The builder now has the correct set of inputs and outputs
-
-        // Set up a channel to receive updates on the progress of building the transaction.
-        // This progress monitor, the channel monitoring it, and the types necessary for its
-        // construction are unnecessary for sending.
-        let (transmitter, receiver) = channel::<Progress>();
-        let progress = self.send_progress.clone();
-
-        // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
-        let (transmitter2, mut receiver2) = tokio::sync::mpsc::unbounded_channel();
-        std::thread::spawn(move || {
-            while let Ok(r) = receiver.recv() {
-                transmitter2.send(r.cur()).unwrap();
-            }
-        });
-
-        let progress_handle = tokio::spawn(async move {
-            while let Some(r) = receiver2.recv().await {
-                info!("{}: Progress: {r}", now() - start_time);
-                progress.write().await.progress = r;
-            }
-
-            progress.write().await.is_send_in_progress = false;
-        });
-
-        {
-            let mut p = self.send_progress.write().await;
-            p.is_send_in_progress = true;
-            p.progress = 0;
-            p.total = total_shielded_receivers;
-        }
-
-        info!("{}: Building transaction", now() - start_time);
-
-        let tx_builder = tx_builder.with_progress_notifier(transmitter);
-        let build_result = match tx_builder.build(
-            OsRng,
-            &sapling_prover,
-            &sapling_prover,
-            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
-        ) {
-            Ok(res) => res,
-            Err(e) => {
-                let e = format!("Error creating transaction: {:?}", e);
-                error!("{}", e);
-                self.send_progress.write().await.is_send_in_progress = false;
-                return Err(e);
-            }
-        };
-        progress_handle.await.unwrap();
-        Ok(build_result)
-    }
+    /// This function takes a already-calculated transaction and does 2 steps with it:
+    /// broadcasts it
+    /// records it to the internal ledger
     async fn send_to_addresses_inner<F, Fut>(
         &self,
         transaction: &Transaction,
