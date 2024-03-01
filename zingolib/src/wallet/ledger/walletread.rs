@@ -5,6 +5,7 @@ use crate::error::ZingoLibError;
 
 impl WalletRead for ZingoLedger {
     type Error = ZingoLibError;
+    type AccountId = zcash_primitives::zip32::AccountId;
 
     fn chain_height(
         &self,
@@ -128,7 +129,8 @@ impl WalletRead for ZingoLedger {
     fn get_wallet_summary(
         &self,
         _min_confirmations: u32,
-    ) -> Result<Option<zcash_client_backend::data_api::WalletSummary>, Self::Error> {
+    ) -> Result<Option<zcash_client_backend::data_api::WalletSummary<Self::AccountId>>, Self::Error>
+    {
         todo!()
     }
 
@@ -165,7 +167,7 @@ impl WalletRead for ZingoLedger {
     ) -> Result<
         std::collections::HashMap<
             zcash_primitives::legacy::TransparentAddress,
-            zcash_client_backend::address::AddressMetadata,
+            Option<zcash_client_backend::wallet::TransparentAddressMetadata>,
         >,
         Self::Error,
     > {

@@ -25,7 +25,7 @@ use std::convert::Infallible;
 use std::num::NonZeroU32;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::{address, zip321};
+use zcash_client_backend::{address, zip321, ShieldedProtocol};
 
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
@@ -302,6 +302,7 @@ impl LightWallet {
                 zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
                     zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
                     None,
+                    ShieldedProtocol::Orchard,
                 );
             let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
                 change_strategy,

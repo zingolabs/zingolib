@@ -9,6 +9,7 @@ use super::ZingoLedger;
 
 impl InputSource for ZingoLedger {
     type Error = ZingoLibError;
+    type AccountId = zcash_primitives::zip32::AccountId;
 
     // TODO pick a real type for this. perhaps PoolNullifier
     type NoteRef = u32;

@@ -52,6 +52,7 @@ mod tests {
         data_api::wallet::input_selection::GreedyInputSelector,
         fees::{self, ChangeStrategy, DustOutputPolicy},
         zip321::{self, Payment},
+        ShieldedProtocol,
     };
     use zcash_primitives::{
         consensus::BlockHeight,
@@ -70,6 +71,7 @@ mod tests {
         let change_strategy = zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
             None,
+            ShieldedProtocol::Orchard,
         );
         let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
             change_strategy,
