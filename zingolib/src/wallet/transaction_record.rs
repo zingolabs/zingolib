@@ -172,7 +172,7 @@ impl TransactionRecord {
     pub fn get_received_note<D>(
         &self,
         index: u32,
-    ) -> Option<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    ) -> Option<zcash_client_backend::wallet::ReceivedNote<u32, zcash_client_backend::wallet::Note>>
     where
         D: DomainWalletExt + Sized,
         D::Note: PartialEq + Clone,
@@ -184,7 +184,7 @@ impl TransactionRecord {
         note.and_then(|note| {
             note.witnessed_position().map(|pos| {
                 zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    (),
+                    0,
                     self.txid,
                     index as u16,
                     note.to_zcb_note(),
@@ -196,7 +196,7 @@ impl TransactionRecord {
     }
     pub fn select_unspent_domain_notes<D>(
         &self,
-    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<(), zcash_client_backend::wallet::Note>>
+    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<u32, zcash_client_backend::wallet::Note>>
     where
         D: DomainWalletExt + Sized,
         D::Note: PartialEq + Clone,
@@ -211,7 +211,7 @@ impl TransactionRecord {
             })
             .collect::<Vec<
                 zcash_client_backend::wallet::ReceivedNote<
-                    (),
+                    u32,
                     zcash_client_backend::wallet::Note,
                 >,
             >>()

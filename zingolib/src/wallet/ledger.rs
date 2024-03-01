@@ -60,7 +60,7 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingoconfig::ChainType;
 
-    use crate::error::ZingoLibError;
+    use crate::{error::ZingoLibError, wallet::data::PoolNullifier};
 
     use super::ZingoLedger;
     use zcash_client_backend::data_api::WalletRead;

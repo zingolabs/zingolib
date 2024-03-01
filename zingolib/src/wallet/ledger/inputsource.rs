@@ -3,7 +3,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::zip32::AccountId;
 
-use crate::error::ZingoLibError;
+use crate::{error::ZingoLibError, wallet::data::PoolNullifier};
 
 use super::ZingoLedger;
 
@@ -11,7 +11,7 @@ impl InputSource for ZingoLedger {
     type Error = ZingoLibError;
 
     // This should be a nullifier
-    type NoteRef = ();
+    type NoteRef = u32;
 
     fn get_spendable_note(
         &self,
