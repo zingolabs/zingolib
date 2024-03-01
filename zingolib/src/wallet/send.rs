@@ -1,9 +1,5 @@
-
-use crate::wallet::data::{SpendableSaplingNote};
+use crate::wallet::data::SpendableSaplingNote;
 use crate::wallet::notes::NoteInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
-
-
 
 use futures::Future;
 
@@ -18,16 +14,10 @@ use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
 
-
 use std::convert::Infallible;
-use std::{
-    io::{Read, Write},
-    sync::{mpsc::channel},
-};
+use std::sync::mpsc::channel;
 
 use zcash_client_backend::address;
-
-
 
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
@@ -46,7 +36,6 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
-
 
 use super::utils::get_price;
 use super::{
