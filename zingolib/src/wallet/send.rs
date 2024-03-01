@@ -1,36 +1,34 @@
-use crate::blaze::fetch_full_transaction::TransactionContext;
-use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
+
+use crate::wallet::data::{SpendableSaplingNote};
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
-use bip0039::Mnemonic;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
+
 use futures::Future;
-use json::JsonValue;
-use log::{error, info, warn};
-use orchard::keys::SpendingKey as OrchardSpendingKey;
+
+use log::{error, info};
+
 use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
+
 use rand::rngs::OsRng;
-use rand::Rng;
+
 use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
-use sapling_crypto::SaplingIvk;
+
 use shardtree::error::{QueryError, ShardTreeError};
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
+
+
 use std::convert::Infallible;
 use std::{
-    cmp,
-    io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, mpsc::channel, Arc},
-    time::SystemTime,
+    io::{Read, Write},
+    sync::{mpsc::channel},
 };
-use tokio::sync::RwLock;
+
 use zcash_client_backend::address;
-use zcash_client_backend::proto::service::TreeState;
-use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::Domain;
+
+
+
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
@@ -48,7 +46,7 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
+
 
 use super::utils::get_price;
 use super::{
@@ -241,7 +239,7 @@ impl LightWallet {
                 total_earmarked_for_recipients + u64::from(proposed_fee);
             // Select notes as a fn of target amount
 
-            let proposal = (
+            let _proposal = (
                 orchard_notes,
                 sapling_notes,
                 utxos,

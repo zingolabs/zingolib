@@ -1,13 +1,13 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
-use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
+use crate::wallet::data::{TransactionRecord};
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use futures::Future;
+
 use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
@@ -16,16 +16,16 @@ use orchard::tree::MerkleHashOrchard;
 use rand::rngs::OsRng;
 use rand::Rng;
 use sapling_crypto::note_encryption::SaplingDomain;
-use sapling_crypto::prover::{OutputProver, SpendProver};
+
 use sapling_crypto::SaplingIvk;
-use shardtree::error::{QueryError, ShardTreeError};
+use shardtree::error::{ShardTreeError};
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
     cmp,
     io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, mpsc::channel, Arc},
+    sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
 };
 use tokio::sync::RwLock;
@@ -34,30 +34,28 @@ use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction::builder::{BuildResult, Progress};
+
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
-use zcash_primitives::transaction::{self, Transaction};
+
+use zcash_primitives::transaction::{self};
 use zcash_primitives::{
     consensus::BlockHeight,
-    legacy::Script,
     memo::Memo,
     transaction::{
         builder::Builder,
-        components::{Amount, OutPoint, TxOut},
-        fees::zip317::MINIMUM_FEE,
+        components::{Amount},
     },
 };
-use zingo_memo::create_wallet_internal_memo_version_0;
+
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::ZingoConfig;
 
-use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+use self::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
 pub use self::send::SendProgress;
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
-use self::utils::get_price;
+
 use self::{
     data::{BlockData, WalletZecPriceInfo},
     ledger::ZingoLedger,
