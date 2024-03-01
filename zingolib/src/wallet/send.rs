@@ -1,4 +1,6 @@
+use crate::error::ZingoLibError;
 use crate::wallet::data::SpendableSaplingNote;
+use crate::wallet::ledger::ZingoLedger;
 use crate::wallet::notes::NoteInterface;
 
 use futures::Future;
@@ -13,11 +15,17 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
+use zcash_client_backend::data_api::wallet::input_selection::{
+    GreedyInputSelector, GreedyInputSelectorError,
+};
+use zcash_client_backend::zip321::{Payment, TransactionRequest};
+use zingoconfig::ChainType;
 
 use std::convert::Infallible;
+use std::num::NonZeroU32;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::address;
+use zcash_client_backend::{address, zip321};
 
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
@@ -272,6 +280,62 @@ impl LightWallet {
                 total_earmarked_for_recipients + u64::from(proposed_fee);
             // Select notes as a fn of target amount
 
+            let mut payments = vec![];
+            for out in receivers.clone() {
+                payments.push(Payment {
+                    recipient_address: out.0,
+                    amount: out.1,
+                    memo: out.2,
+                    label: None,
+                    message: None,
+                    other_params: vec![],
+                });
+            }
+
+            let request = TransactionRequest::new(payments).map_err(|e| e.to_string())?;
+
+            let arc_ledger = self.transactions();
+            let ledger = arc_ledger.read().await;
+
+            let change_strategy =
+                zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
+                    zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
+                    None,
+                );
+            let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
+                change_strategy,
+                zcash_client_backend::fees::DustOutputPolicy::default(),
+            );
+            let min_confirmations = NonZeroU32::new(10).unwrap();
+
+            // let mut liberror = ZingoLibError::UnknownError;
+            // println!("{}", liberror);
+            // let mut balerror =
+            //     zcash_primitives::transaction::components::amount::BalanceError::Underflow;
+            // let mut feeerror =
+            //     zcash_primitives::transaction::fees::zip317::FeeError::Balance(balerror);
+            // println!("{}", balerror);
+            // let mut selerror = GreedyInputSelectorError::Balance(balerror);
+            // println!("{}", selerror);
+            // println!("{}", ());
+
+            let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
+                ZingoLedger,
+                ChainType,
+                GreedyInputSelector<
+                    ZingoLedger,
+                    zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
+                >,
+                ZingoLibError,
+            >(
+                &mut ledger,
+                &ChainType::Testnet,
+                zcash_primitives::zip32::AccountId::ZERO,
+                &input_selector,
+                request,
+                min_confirmations,
+            )
+            .map_err(|e| dbg!(e).to_string())?;
             let _proposal = (
                 orchard_notes,
                 sapling_notes,

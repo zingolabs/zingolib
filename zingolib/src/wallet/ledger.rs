@@ -50,12 +50,12 @@ mod tests {
     use zcash_client_backend::{
         address::Address,
         data_api::wallet::input_selection::GreedyInputSelector,
-        fees::{self, standard::SingleOutputChangeStrategy, ChangeStrategy, DustOutputPolicy},
+        fees::{self, ChangeStrategy, DustOutputPolicy},
         zip321::{self, Payment},
     };
     use zcash_primitives::{
         consensus::BlockHeight,
-        transaction::{components::amount::NonNegativeAmount, fees::StandardFeeRule, TxId},
+        transaction::{components::amount::NonNegativeAmount, TxId},
     };
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingoconfig::ChainType;
@@ -67,7 +67,10 @@ mod tests {
 
     #[test]
     fn test_propose_transfer() {
-        let change_strategy = SingleOutputChangeStrategy::new(StandardFeeRule::Zip317, None);
+        let change_strategy = zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
+            None,
+        );
         let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
             change_strategy,
             DustOutputPolicy::default(),
