@@ -162,7 +162,7 @@ impl WalletCapability {
         }
     }
 
-    pub(crate) fn ufvk(&self) -> Result<Ufvk, zcash_address::unified::ParseError> {
+    pub fn ufvk(&self) -> Result<Ufvk, zcash_address::unified::ParseError> {
         let o_fvk = Fvk::Orchard(
             orchard::keys::FullViewingKey::try_from(self)
                 .unwrap()
