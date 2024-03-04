@@ -157,224 +157,146 @@ impl LightWallet {
 
         let fee_rule = &Zip317FeeRule::standard(); // Start building tx
         let mut total_shielded_receivers;
-        let mut orchard_notes;
-        let mut sapling_notes;
-        let mut utxos;
         let mut tx_builder;
         let mut proposed_fee = MINIMUM_FEE;
-        let mut total_value_covered_by_selected;
         let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_earmarked_for_recipients,
             receivers.len()
         );
-        loop {
-            tx_builder = match self
-                .create_tx_builder(submission_height, witness_trees)
-                .await
-            {
-                Err(ShardTreeError::Query(QueryError::NotContained(addr))) => Err(format!(
-                    "could not create anchor, missing address {addr:?}. \
+        tx_builder = match self
+            .create_tx_builder(submission_height, witness_trees)
+            .await
+        {
+            Err(ShardTreeError::Query(QueryError::NotContained(addr))) => Err(format!(
+                "could not create anchor, missing address {addr:?}. \
                     If you are fully synced, you may need to rescan to proceed"
-                )),
-                Err(ShardTreeError::Query(QueryError::CheckpointPruned)) => {
-                    let blocks = self.blocks.read().await.len();
-                    let offset = self.transaction_context.config.reorg_buffer_offset;
-                    Err(format!(
-                        "The reorg buffer offset has been set to {} \
+            )),
+            Err(ShardTreeError::Query(QueryError::CheckpointPruned)) => {
+                let blocks = self.blocks.read().await.len();
+                let offset = self.transaction_context.config.reorg_buffer_offset;
+                Err(format!(
+                    "The reorg buffer offset has been set to {} \
                         but there are only {} blocks in the wallet. \
                         Please sync at least {} more blocks before trying again",
-                        offset,
-                        blocks,
-                        offset + 1 - blocks as u32
-                    ))
-                }
-                Err(ShardTreeError::Query(QueryError::TreeIncomplete(addrs))) => Err(format!(
-                    "could not create anchor, missing addresses {addrs:?}. \
-                    If you are fully synced, you may need to rescan to proceed"
-                )),
-                Err(ShardTreeError::Insert(_)) => unreachable!(),
-                Err(ShardTreeError::Storage(_infallible)) => unreachable!(),
-                Ok(v) => Ok(v),
-            }?;
-
-            // Select notes to cover the target value
-            info!("{}: Adding outputs", now() - start_time);
-            (total_shielded_receivers, tx_builder) = self
-                .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
-                .expect("To add outputs");
-
-            let earmark_total_plus_default_fee =
-                total_earmarked_for_recipients + u64::from(proposed_fee);
-            // todo Select notes as a fn of target amount NEW create_and_populate v
-
-            let mut payments = vec![];
-            for out in receivers.clone() {
-                payments.push(Payment {
-                    recipient_address: out.0,
-                    amount: out.1,
-                    memo: out.2,
-                    label: None,
-                    message: None,
-                    other_params: vec![],
-                });
+                    offset,
+                    blocks,
+                    offset + 1 - blocks as u32
+                ))
             }
+            Err(ShardTreeError::Query(QueryError::TreeIncomplete(addrs))) => Err(format!(
+                "could not create anchor, missing addresses {addrs:?}. \
+                    If you are fully synced, you may need to rescan to proceed"
+            )),
+            Err(ShardTreeError::Insert(_)) => unreachable!(),
+            Err(ShardTreeError::Storage(_infallible)) => unreachable!(),
+            Ok(v) => Ok(v),
+        }?;
 
-            let request = TransactionRequest::new(payments).map_err(|e| e.to_string())?;
+        // Select notes to cover the target value
+        info!("{}: Adding outputs", now() - start_time);
+        (total_shielded_receivers, tx_builder) = self
+            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
+            .expect("To add outputs");
 
-            let arc_ledger = self.transactions();
-            //TODO this should be a read-only lock, because this operation should not write.
-            let mut write_ledger = arc_ledger.write().await;
-            let mut ledger = write_ledger.deref();
-            let change_strategy =
-                zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
-                    zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
-                    None,
-                    ShieldedProtocol::Orchard,
-                );
-            let input_selector = GreedyInputSelector::<&ZingoLedger, _>::new(
-                change_strategy,
-                zcash_client_backend::fees::DustOutputPolicy::default(),
-            );
-            let min_confirmations = NonZeroU32::new(10).unwrap();
+        let earmark_total_plus_default_fee =
+            total_earmarked_for_recipients + u64::from(proposed_fee);
+        // todo Select notes as a fn of target amount NEW create_and_populate v
 
-            // let mut liberror = ZingoLibError::UnknownError;
-            // println!("{}", liberror);
-            // let mut balerror =
-            //     zcash_primitives::transaction::components::amount::BalanceError::Underflow;
-            // let mut feeerror =
-            //     zcash_primitives::transaction::fees::zip317::FeeError::Balance(balerror);
-            // println!("{}", balerror);
-            // let mut selerror = GreedyInputSelectorError::Balance(balerror);
-            // println!("{}", selerror);
-            // println!("{}", ());
+        let mut payments = vec![];
+        for out in receivers.clone() {
+            payments.push(Payment {
+                recipient_address: out.0,
+                amount: out.1,
+                memo: out.2,
+                label: None,
+                message: None,
+                other_params: vec![],
+            });
+        }
 
-            let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
+        let request = TransactionRequest::new(payments).map_err(|e| e.to_string())?;
+
+        let arc_ledger = self.transactions();
+        //TODO this should be a read-only lock, because this operation should not write.
+        let mut write_ledger = arc_ledger.write().await;
+        let mut ledger = write_ledger.deref();
+        let change_strategy = zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
+            None,
+            ShieldedProtocol::Orchard,
+        );
+        let input_selector = GreedyInputSelector::<&ZingoLedger, _>::new(
+            change_strategy,
+            zcash_client_backend::fees::DustOutputPolicy::default(),
+        );
+        let min_confirmations = NonZeroU32::new(10).unwrap();
+
+        // let mut liberror = ZingoLibError::UnknownError;
+        // println!("{}", liberror);
+        // let mut balerror =
+        //     zcash_primitives::transaction::components::amount::BalanceError::Underflow;
+        // let mut feeerror =
+        //     zcash_primitives::transaction::fees::zip317::FeeError::Balance(balerror);
+        // println!("{}", balerror);
+        // let mut selerror = GreedyInputSelectorError::Balance(balerror);
+        // println!("{}", selerror);
+        // println!("{}", ());
+
+        let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
+            &ZingoLedger,
+            ChainType,
+            GreedyInputSelector<
+                &ZingoLedger,
+                zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
+            >,
+            ZingoLibError,
+        >(
+            &mut ledger,
+            &ChainType::Mainnet,
+            zcash_primitives::zip32::AccountId::ZERO,
+            &input_selector,
+            request,
+            min_confirmations,
+        )
+        .map_err(|e| e.to_string())?;
+
+        let steps = proposal.steps();
+        if steps.len() != 1 {
+            Err("multi-step proposals not supported")?
+        }
+        let step = &steps.head;
+        let mut empty_step_results = Vec::with_capacity(1);
+
+        let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
+        let seed = mnemonic.entropy();
+        let account_id = AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(&ChainType::Mainnet, seed, account_id)
+            .expect("should be able to create a unified spend key");
+
+        let (build_result, account, outputs, utxos_spent) =
+            zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
                 &ZingoLedger,
                 ChainType,
-                GreedyInputSelector<
-                    &ZingoLedger,
-                    zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
-                >,
-                ZingoLibError,
+                Infallible,
+                Zip317FeeRule,
+                u32, // note ref
             >(
                 &mut ledger,
                 &ChainType::Mainnet,
-                zcash_primitives::zip32::AccountId::ZERO,
-                &input_selector,
-                request,
-                min_confirmations,
+                &sapling_prover,
+                &sapling_prover,
+                &usk,
+                OvkPolicy::Sender,
+                fee_rule,
+                submission_height,
+                &empty_step_results,
+                step,
             )
-            .map_err(|e| e.to_string())?;
+            .unwrap(); //todo do not unwrap
 
-            let steps = proposal.steps();
-            if steps.len() != 1 {
-                Err("multi-step proposals not supported")?
-            }
-            let step = &steps.head;
-            let mut empty_step_results = Vec::with_capacity(1);
-
-            let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
-            let seed = mnemonic.entropy();
-            let account_id = AccountId::ZERO;
-            let usk = UnifiedSpendingKey::from_seed(&ChainType::Mainnet, seed, account_id)
-                .expect("should be able to create a unified spend key");
-
-            let (build_result, account, outputs, utxos_spent) =
-                zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
-                    &ZingoLedger,
-                    ChainType,
-                    Infallible,
-                    Zip317FeeRule,
-                    u32, // note ref
-                >(
-                    &mut ledger,
-                    &ChainType::Mainnet,
-                    &sapling_prover,
-                    &sapling_prover,
-                    &usk,
-                    OvkPolicy::Sender,
-                    fee_rule,
-                    submission_height,
-                    &empty_step_results,
-                    step,
-                )
-                .unwrap(); //todo do not unwrap
-
-            // old create_and_populate v
-
-            let _proposal = (
-                orchard_notes,
-                sapling_notes,
-                utxos,
-                total_value_covered_by_selected,
-            ) = match self
-                .select_notes_and_utxos(
-                    Amount::from_u64(earmark_total_plus_default_fee)
-                        .expect("Valid amount, from u64."),
-                    &policy,
-                )
-                .await
-            {
-                Ok(notes) => notes,
-                Err(insufficient_amount) => {
-                    let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                insufficient_amount, earmark_total_plus_default_fee, self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-                    error!("{}", e);
-                    return Err(e);
-                }
-            };
-
-            info!("Selected notes worth {}", total_value_covered_by_selected);
-
-            info!(
-                "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
-                now() - start_time,
-                &sapling_notes.len(),
-                &orchard_notes.len(),
-                &utxos.len()
-            );
-
-            let temp_tx_builder = match self.add_change_output_to_builder(
-                tx_builder,
-                Amount::from_u64(earmark_total_plus_default_fee).expect("valid value of u64"),
-                Amount::from_u64(total_value_covered_by_selected).unwrap(),
-                &mut total_shielded_receivers,
-                &receivers,
-            ) {
-                Ok(txb) => txb,
-                Err(r) => {
-                    return Err(r);
-                }
-            };
-            info!("{}: selecting notes", now() - start_time);
-            tx_builder = match self
-                .add_spends_to_builder(
-                    temp_tx_builder,
-                    witness_trees,
-                    &orchard_notes,
-                    &sapling_notes,
-                    &utxos,
-                )
-                .await
-            {
-                Ok(tx_builder) => tx_builder,
-
-                Err(s) => {
-                    return Err(s);
-                }
-            };
-            proposed_fee = tx_builder.get_fee(fee_rule).unwrap();
-            if u64::from(proposed_fee) + total_earmarked_for_recipients
-                <= total_value_covered_by_selected
-            {
-                break;
-            }
-        }
+        // old create_and_populate v
         let total_shielded_receivers = 0;
         // end create_and_populate_tx_builder
 
