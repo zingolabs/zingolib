@@ -18,7 +18,10 @@ use shardtree::error::{QueryError, ShardTreeError};
 use zcash_client_backend::data_api::wallet::input_selection::{
     GreedyInputSelector, GreedyInputSelectorError,
 };
+use zcash_client_backend::keys::UnifiedSpendingKey;
+use zcash_client_backend::wallet::OvkPolicy;
 use zcash_client_backend::zip321::{Payment, TransactionRequest};
+use zcash_primitives::zip32::AccountId;
 use zingoconfig::ChainType;
 
 use std::convert::Infallible;
@@ -32,6 +35,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
+use zcash_primitives::transaction::fees::zip317::FeeRule as Zip317FeeRule;
 use zcash_primitives::transaction::{self, Transaction};
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -151,8 +155,7 @@ impl LightWallet {
 
         // start create_and_populate_tx_builder
 
-        let fee_rule =
-            &zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE); // Start building tx
+        let fee_rule = &Zip317FeeRule::standard(); // Start building tx
         let mut total_shielded_receivers;
         let mut orchard_notes;
         let mut sapling_notes;
@@ -272,16 +275,28 @@ impl LightWallet {
             let step = &steps.head;
             let mut empty_step_results = Vec::with_capacity(1);
 
+            let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
+            let seed = mnemonic.entropy();
+            let account_id = AccountId::ZERO;
+            let usk = UnifiedSpendingKey::from_seed(&ChainType::Mainnet, seed, account_id)
+                .expect("should be able to create a unified spend key");
+
             let (build_result, account, outputs, utxos_spent) =
-                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
+                    &ZingoLedger,
+                    ChainType,
+                    Infallible,
+                    Zip317FeeRule,
+                    u32, // note ref
+                >(
                     &mut ledger,
                     &ChainType::Mainnet,
                     &sapling_prover,
                     &sapling_prover,
-                    usk,
-                    ovk_policy,
+                    &usk,
+                    OvkPolicy::Sender,
                     fee_rule,
-                    min_target_height,
+                    submission_height,
                     &empty_step_results,
                     step,
                 )
@@ -361,7 +376,7 @@ impl LightWallet {
             }
         }
         let total_shielded_receivers = 0;
-        // start create_and_populate_tx_builder
+        // end create_and_populate_tx_builder
 
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
