@@ -184,7 +184,7 @@ impl LightWallet {
             ZingoLibError,
         >(
             &mut ledger,
-            &ChainType::Mainnet,
+            &self.transaction_context.config.chain,
             zcash_primitives::zip32::AccountId::ZERO,
             &input_selector,
             request,
@@ -214,7 +214,7 @@ impl LightWallet {
                 u32, // note ref
             >(
                 &mut ledger,
-                &ChainType::Mainnet,
+                &self.transaction_context.config.chain,
                 &sapling_prover,
                 &sapling_prover,
                 &usk,
