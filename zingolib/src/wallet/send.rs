@@ -147,86 +147,10 @@ impl LightWallet {
         let witness_trees = txmds_readlock
             .witness_trees
             .as_ref()
-            .expect("If we have spend capability we have trees");
-        let (tx_builder, total_shielded_receivers) = match self
-            .create_and_populate_tx_builder(
-                submission_height,
-                witness_trees,
-                start_time,
-                receivers,
-                policy,
-            )
-            .await
-        {
-            Ok(tx_builder) => tx_builder,
-            Err(s) => {
-                return Err(s);
-            }
-        };
 
-        drop(txmds_readlock);
-        // The builder now has the correct set of inputs and outputs
-
-        // Set up a channel to receive updates on the progress of building the transaction.
-        // This progress monitor, the channel monitoring it, and the types necessary for its
-        // construction are unnecessary for sending.
-        let (transmitter, receiver) = channel::<Progress>();
-        let progress = self.send_progress.clone();
-
-        // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
-        let (transmitter2, mut receiver2) = tokio::sync::mpsc::unbounded_channel();
-        std::thread::spawn(move || {
-            while let Ok(r) = receiver.recv() {
-                transmitter2.send(r.cur()).unwrap();
-            }
-        });
-
-        let progress_handle = tokio::spawn(async move {
-            while let Some(r) = receiver2.recv().await {
-                info!("{}: Progress: {r}", now() - start_time);
-                progress.write().await.progress = r;
-            }
-
-            progress.write().await.is_send_in_progress = false;
-        });
-
-        {
-            let mut p = self.send_progress.write().await;
-            p.is_send_in_progress = true;
-            p.progress = 0;
-            p.total = total_shielded_receivers;
-        }
-
-        info!("{}: Building transaction", now() - start_time);
-
-        let tx_builder = tx_builder.with_progress_notifier(transmitter);
-        let build_result = match tx_builder.build(
-            OsRng,
-            &sapling_prover,
-            &sapling_prover,
-            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
-        ) {
-            Ok(res) => res,
-            Err(e) => {
-                let e = format!("Error creating transaction: {:?}", e);
-                error!("{}", e);
-                self.send_progress.write().await.is_send_in_progress = false;
-                return Err(e);
-            }
-        };
-        progress_handle.await.unwrap();
-        Ok(build_result)
-    }
-
-    async fn create_and_populate_tx_builder(
-        &self,
-        submission_height: BlockHeight,
-        witness_trees: &WitnessTrees,
-        start_time: u64,
-        receivers: Receivers,
-        policy: NoteSelectionPolicy,
-    ) -> Result<(TxBuilder<'_>, u32), String> {
-        let fee_rule =
+        // start create_and_populate_tx_builder
+        
+         let fee_rule =
             &zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE); // Start building tx
         let mut total_shielded_receivers;
         let mut orchard_notes;
@@ -346,19 +270,20 @@ impl LightWallet {
             }
             let step = &steps.head;
 
-            // let (build_result, account, outputs, utxos_spent) =
-            //     zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-            //         &mut ledger,
-            //         &ChainType::Mainnet,
-            //         spend_prover,
-            //         output_prover,
-            //         usk,
-            //         ovk_policy,
-            //         fee_rule,
-            //         min_target_height,
-            //         prior_step_results,
-            //         step,
-            //     )?;
+            let (build_result, account, outputs, utxos_spent) =
+                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                    &mut ledger,
+                    &ChainType::Mainnet,
+                    &sapling_prover,
+                    &sapling_prover,
+                    usk,
+                    ovk_policy,
+                    fee_rule,
+                    min_target_height,
+                    prior_step_results,
+                    step,
+                )
+                .unwrap(); //todo do not unwrap
 
             let _proposal = (
                 orchard_notes,
@@ -432,6 +357,76 @@ impl LightWallet {
             }
         }
         Ok((tx_builder, 0))
+            .expect("If we have spend capability we have trees");
+        let (tx_builder, total_shielded_receivers) = match self
+            .build_tx(
+                submission_height,
+                witness_trees,
+                start_time,
+                receivers,
+                policy,
+                sapling_prover.clone(),
+            )
+            .await
+        {
+            Ok(tx_builder) => tx_builder,
+            Err(s) => {
+                return Err(s);
+            }
+        };
+
+        drop(txmds_readlock);
+        // The builder now has the correct set of inputs and outputs
+
+        // Set up a channel to receive updates on the progress of building the transaction.
+        // This progress monitor, the channel monitoring it, and the types necessary for its
+        // construction are unnecessary for sending.
+        let (transmitter, receiver) = channel::<Progress>();
+        let progress = self.send_progress.clone();
+
+        // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
+        let (transmitter2, mut receiver2) = tokio::sync::mpsc::unbounded_channel();
+        std::thread::spawn(move || {
+            while let Ok(r) = receiver.recv() {
+                transmitter2.send(r.cur()).unwrap();
+            }
+        });
+
+        let progress_handle = tokio::spawn(async move {
+            while let Some(r) = receiver2.recv().await {
+                info!("{}: Progress: {r}", now() - start_time);
+                progress.write().await.progress = r;
+            }
+
+            progress.write().await.is_send_in_progress = false;
+        });
+
+        {
+            let mut p = self.send_progress.write().await;
+            p.is_send_in_progress = true;
+            p.progress = 0;
+            p.total = total_shielded_receivers;
+        }
+
+        info!("{}: Building transaction", now() - start_time);
+
+        let tx_builder = tx_builder.with_progress_notifier(transmitter);
+        let build_result = match tx_builder.build(
+            OsRng,
+            &sapling_prover,
+            &sapling_prover,
+            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
+        ) {
+            Ok(res) => res,
+            Err(e) => {
+                let e = format!("Error creating transaction: {:?}", e);
+                error!("{}", e);
+                self.send_progress.write().await.is_send_in_progress = false;
+                return Err(e);
+            }
+        };
+        progress_handle.await.unwrap();
+        Ok(build_result)
     }
 
     async fn create_tx_builder(
