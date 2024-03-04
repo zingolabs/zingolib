@@ -51,7 +51,7 @@ mod tests {
     use zcash_client_backend::{
         address::Address,
         data_api::wallet::input_selection::GreedyInputSelector,
-        fees::{self, ChangeStrategy, DustOutputPolicy},
+        fees::{DustOutputPolicy},
         zip321::{self, Payment},
         ShieldedProtocol,
     };
@@ -62,10 +62,10 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingoconfig::ChainType;
 
-    use crate::{error::ZingoLibError, wallet::data::PoolNullifier};
+    use crate::{error::ZingoLibError};
 
     use super::ZingoLedger;
-    use zcash_client_backend::data_api::WalletRead;
+    
 
     #[test]
     fn test_propose_transfer() {
