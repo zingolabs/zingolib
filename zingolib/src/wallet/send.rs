@@ -23,6 +23,7 @@ use zingoconfig::ChainType;
 
 use std::convert::Infallible;
 use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::sync::mpsc::channel;
 
 use zcash_client_backend::{address, zip321, ShieldedProtocol};
@@ -296,15 +297,15 @@ impl LightWallet {
 
             let arc_ledger = self.transactions();
             //TODO this should be a read-only lock, because this operation should not write.
-            let mut ledger = arc_ledger.write().await;
-
+            let mut write_ledger = arc_ledger.write().await;
+            let mut ledger = write_ledger.deref();
             let change_strategy =
                 zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
                     zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
                     None,
                     ShieldedProtocol::Orchard,
                 );
-            let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
+            let input_selector = GreedyInputSelector::<&ZingoLedger, _>::new(
                 change_strategy,
                 zcash_client_backend::fees::DustOutputPolicy::default(),
             );
@@ -322,16 +323,16 @@ impl LightWallet {
             // println!("{}", ());
 
             let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
-                ZingoLedger,
+                &ZingoLedger,
                 ChainType,
                 GreedyInputSelector<
-                    ZingoLedger,
+                    &ZingoLedger,
                     zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
                 >,
                 ZingoLibError,
             >(
                 &mut ledger,
-                &ChainType::Testnet,
+                &ChainType::Mainnet,
                 zcash_primitives::zip32::AccountId::ZERO,
                 &input_selector,
                 request,
@@ -343,20 +344,21 @@ impl LightWallet {
             if steps.len() != 1 {
                 Err("multi-step proposals not supported")?
             }
-            let step = steps.head;
+            let step = &steps.head;
 
-            let (build_result, account, outputs, utxos_spent) = calculate_proposed_transaction(
-                wallet_db,
-                params,
-                spend_prover,
-                output_prover,
-                usk,
-                ovk_policy,
-                fee_rule,
-                min_target_height,
-                prior_step_results,
-                step,
-            )?;
+            // let (build_result, account, outputs, utxos_spent) =
+            //     zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+            //         &mut ledger,
+            //         &ChainType::Mainnet,
+            //         spend_prover,
+            //         output_prover,
+            //         usk,
+            //         ovk_policy,
+            //         fee_rule,
+            //         min_target_height,
+            //         prior_step_results,
+            //         step,
+            //     )?;
 
             let _proposal = (
                 orchard_notes,

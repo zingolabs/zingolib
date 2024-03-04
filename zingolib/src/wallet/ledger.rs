@@ -16,6 +16,7 @@ pub mod get;
 pub mod inputsource;
 pub mod recording;
 pub mod serial_read_write;
+pub mod walletcommitmenttrees;
 pub mod walletread;
 
 impl ZingoLedger {

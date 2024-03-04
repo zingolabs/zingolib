@@ -7,7 +7,7 @@ use crate::{error::ZingoLibError, wallet::data::PoolNullifier};
 
 use super::ZingoLedger;
 
-impl InputSource for ZingoLedger {
+impl InputSource for &ZingoLedger {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
 
