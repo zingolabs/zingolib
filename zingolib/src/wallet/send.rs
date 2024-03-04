@@ -16,7 +16,7 @@ use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, GreedyInputSelectorError,
+    GreedyInputSelector,
 };
 use zcash_client_backend::keys::UnifiedSpendingKey;
 use zcash_client_backend::wallet::OvkPolicy;
@@ -29,7 +29,7 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::{address, zip321, ShieldedProtocol};
+use zcash_client_backend::{address, ShieldedProtocol};
 
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
@@ -138,7 +138,7 @@ impl LightWallet {
         submission_height: BlockHeight,
         start_time: u64,
         receivers: Receivers,
-        policy: NoteSelectionPolicy,
+        _policy: NoteSelectionPolicy,
         sapling_prover: P,
         // We only care about the transaction...but it can now only be aquired by reference
         // from the build result, so we need to return the whole thing
@@ -156,9 +156,9 @@ impl LightWallet {
         // start create_and_populate_tx_builder
 
         let fee_rule = &Zip317FeeRule::standard(); // Start building tx
-        let mut total_shielded_receivers;
+        let total_shielded_receivers;
         let mut tx_builder;
-        let mut proposed_fee = MINIMUM_FEE;
+        let proposed_fee = MINIMUM_FEE;
         let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
@@ -200,7 +200,7 @@ impl LightWallet {
             .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
             .expect("To add outputs");
 
-        let earmark_total_plus_default_fee =
+        let _earmark_total_plus_default_fee =
             total_earmarked_for_recipients + u64::from(proposed_fee);
         // todo Select notes as a fn of target amount NEW create_and_populate v
 
@@ -220,7 +220,7 @@ impl LightWallet {
 
         let arc_ledger = self.transactions();
         //TODO this should be a read-only lock, because this operation should not write.
-        let mut write_ledger = arc_ledger.write().await;
+        let write_ledger = arc_ledger.write().await;
         let mut ledger = write_ledger.deref();
         let change_strategy = zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
@@ -267,7 +267,7 @@ impl LightWallet {
             Err("multi-step proposals not supported")?
         }
         let step = &steps.head;
-        let mut empty_step_results = Vec::with_capacity(1);
+        let empty_step_results = Vec::with_capacity(1);
 
         let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
         let seed = mnemonic.entropy();
@@ -275,7 +275,7 @@ impl LightWallet {
         let usk = UnifiedSpendingKey::from_seed(&ChainType::Mainnet, seed, account_id)
             .expect("should be able to create a unified spend key");
 
-        let (build_result, account, outputs, utxos_spent) =
+        let (_build_result, _account, _outputs, _utxos_spent) =
             zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
                 &ZingoLedger,
                 ChainType,
