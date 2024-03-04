@@ -9,12 +9,12 @@ use log::{error, info};
 
 use orchard::note_encryption::OrchardDomain;
 
-use rand::rngs::OsRng;
+
 
 use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
-use shardtree::error::{QueryError, ShardTreeError};
+use shardtree::error::{ShardTreeError};
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::keys::UnifiedSpendingKey;
 use zcash_client_backend::wallet::OvkPolicy;
@@ -42,7 +42,6 @@ use zcash_primitives::{
     transaction::{
         builder::Builder,
         components::{Amount, OutPoint, TxOut},
-        fees::zip317::MINIMUM_FEE,
     },
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
@@ -146,7 +145,7 @@ impl LightWallet {
         //  * selection policy
         //  * recipient list
         let txmds_readlock = self.transaction_context.arc_ledger.read().await;
-        let witness_trees = txmds_readlock
+        let _witness_trees = txmds_readlock
             .witness_trees
             .as_ref()
             .expect("If we have spend capability we have trees");
@@ -258,7 +257,7 @@ impl LightWallet {
         // Set up a channel to receive updates on the progress of building the transaction.
         // This progress monitor, the channel monitoring it, and the types necessary for its
         // construction are unnecessary for sending.
-        let (transmitter, receiver) = channel::<Progress>();
+        let (_transmitter, receiver) = channel::<Progress>();
         let progress = self.send_progress.clone();
 
         // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
