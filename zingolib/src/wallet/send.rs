@@ -147,10 +147,11 @@ impl LightWallet {
         let witness_trees = txmds_readlock
             .witness_trees
             .as_ref()
+            .expect("If we have spend capability we have trees");
 
         // start create_and_populate_tx_builder
-        
-         let fee_rule =
+
+        let fee_rule =
             &zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE); // Start building tx
         let mut total_shielded_receivers;
         let mut orchard_notes;
@@ -203,7 +204,7 @@ impl LightWallet {
 
             let earmark_total_plus_default_fee =
                 total_earmarked_for_recipients + u64::from(proposed_fee);
-            // Select notes as a fn of target amount
+            // todo Select notes as a fn of target amount NEW create_and_populate v
 
             let mut payments = vec![];
             for out in receivers.clone() {
@@ -269,6 +270,7 @@ impl LightWallet {
                 Err("multi-step proposals not supported")?
             }
             let step = &steps.head;
+            let mut empty_step_results = Vec::with_capacity(1);
 
             let (build_result, account, outputs, utxos_spent) =
                 zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
@@ -280,10 +282,12 @@ impl LightWallet {
                     ovk_policy,
                     fee_rule,
                     min_target_height,
-                    prior_step_results,
+                    &empty_step_results,
                     step,
                 )
                 .unwrap(); //todo do not unwrap
+
+            // old create_and_populate v
 
             let _proposal = (
                 orchard_notes,
@@ -356,24 +360,8 @@ impl LightWallet {
                 break;
             }
         }
-        Ok((tx_builder, 0))
-            .expect("If we have spend capability we have trees");
-        let (tx_builder, total_shielded_receivers) = match self
-            .build_tx(
-                submission_height,
-                witness_trees,
-                start_time,
-                receivers,
-                policy,
-                sapling_prover.clone(),
-            )
-            .await
-        {
-            Ok(tx_builder) => tx_builder,
-            Err(s) => {
-                return Err(s);
-            }
-        };
+        let total_shielded_receivers = 0;
+        // start create_and_populate_tx_builder
 
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
