@@ -1,18 +1,13 @@
 use crate::error::ZingoLibError;
-use crate::wallet::data::SpendableSaplingNote;
+
 use crate::wallet::ledger::ZingoLedger;
-use crate::wallet::notes::NoteInterface;
 
 use futures::Future;
 
-use log::{error, info};
+use log::info;
 
-use orchard::note_encryption::OrchardDomain;
-
-use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
-use shardtree::error::ShardTreeError;
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::keys::UnifiedSpendingKey;
 use zcash_client_backend::wallet::OvkPolicy;
@@ -25,32 +20,18 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::{address, ShieldedProtocol};
+use zcash_client_backend::ShieldedProtocol;
 
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
+
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::fees::zip317::FeeRule as Zip317FeeRule;
-use zcash_primitives::transaction::{self, Transaction};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    legacy::Script,
-    memo::Memo,
-    transaction::{
-        builder::Builder,
-        components::{Amount, OutPoint, TxOut},
-    },
-};
-use zingo_memo::create_wallet_internal_memo_version_0;
+use zcash_primitives::transaction::Transaction;
+
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::utils::get_price;
-use super::{
-    data::{SpendableOrchardNote, WitnessTrees},
-    notes, now, LightWallet, NoteSelectionPolicy, Pool, Receivers, TxBuilder,
-};
-use crate::wallet::traits::SpendableNote;
+use super::{now, LightWallet, NoteSelectionPolicy, Receivers};
 
 #[derive(Debug, Clone)]
 pub struct SendProgress {
