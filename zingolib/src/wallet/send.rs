@@ -15,9 +15,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
-use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector,
-};
+use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::keys::UnifiedSpendingKey;
 use zcash_client_backend::wallet::OvkPolicy;
 use zcash_client_backend::zip321::{Payment, TransactionRequest};
@@ -156,53 +154,7 @@ impl LightWallet {
         // start create_and_populate_tx_builder
 
         let fee_rule = &Zip317FeeRule::standard(); // Start building tx
-        let total_shielded_receivers;
-        let mut tx_builder;
-        let proposed_fee = MINIMUM_FEE;
-        let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
-        info!(
-            "0: Creating transaction sending {} zatoshis to {} addresses",
-            total_earmarked_for_recipients,
-            receivers.len()
-        );
-        tx_builder = match self
-            .create_tx_builder(submission_height, witness_trees)
-            .await
-        {
-            Err(ShardTreeError::Query(QueryError::NotContained(addr))) => Err(format!(
-                "could not create anchor, missing address {addr:?}. \
-                    If you are fully synced, you may need to rescan to proceed"
-            )),
-            Err(ShardTreeError::Query(QueryError::CheckpointPruned)) => {
-                let blocks = self.blocks.read().await.len();
-                let offset = self.transaction_context.config.reorg_buffer_offset;
-                Err(format!(
-                    "The reorg buffer offset has been set to {} \
-                        but there are only {} blocks in the wallet. \
-                        Please sync at least {} more blocks before trying again",
-                    offset,
-                    blocks,
-                    offset + 1 - blocks as u32
-                ))
-            }
-            Err(ShardTreeError::Query(QueryError::TreeIncomplete(addrs))) => Err(format!(
-                "could not create anchor, missing addresses {addrs:?}. \
-                    If you are fully synced, you may need to rescan to proceed"
-            )),
-            Err(ShardTreeError::Insert(_)) => unreachable!(),
-            Err(ShardTreeError::Storage(_infallible)) => unreachable!(),
-            Ok(v) => Ok(v),
-        }?;
-
-        // Select notes to cover the target value
-        info!("{}: Adding outputs", now() - start_time);
-        (total_shielded_receivers, tx_builder) = self
-            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
-            .expect("To add outputs");
-
-        let _earmark_total_plus_default_fee =
-            total_earmarked_for_recipients + u64::from(proposed_fee);
-        // todo Select notes as a fn of target amount NEW create_and_populate v
+                                                   // todo Select notes as a fn of target amount NEW create_and_populate v
 
         let mut payments = vec![];
         for out in receivers.clone() {
@@ -275,7 +227,7 @@ impl LightWallet {
         let usk = UnifiedSpendingKey::from_seed(&ChainType::Mainnet, seed, account_id)
             .expect("should be able to create a unified spend key");
 
-        let (_build_result, _account, _outputs, _utxos_spent) =
+        let (build_result, _account, _outputs, _utxos_spent) =
             zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
                 &ZingoLedger,
                 ChainType,
@@ -335,21 +287,21 @@ impl LightWallet {
 
         info!("{}: Building transaction", now() - start_time);
 
-        let tx_builder = tx_builder.with_progress_notifier(transmitter);
-        let build_result = match tx_builder.build(
-            OsRng,
-            &sapling_prover,
-            &sapling_prover,
-            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
-        ) {
-            Ok(res) => res,
-            Err(e) => {
-                let e = format!("Error creating transaction: {:?}", e);
-                error!("{}", e);
-                self.send_progress.write().await.is_send_in_progress = false;
-                return Err(e);
-            }
-        };
+        // let tx_builder = tx_builder.with_progress_notifier(transmitter);
+        // let build_result = match tx_builder.build(
+        //     OsRng,
+        //     &sapling_prover,
+        //     &sapling_prover,
+        //     &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
+        // ) {
+        //     Ok(res) => res,
+        //     Err(e) => {
+        //         let e = format!("Error creating transaction: {:?}", e);
+        //         error!("{}", e);
+        //         self.send_progress.write().await.is_send_in_progress = false;
+        //         return Err(e);
+        //     }
+        // };
         progress_handle.await.unwrap();
         Ok(build_result)
     }
