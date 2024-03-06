@@ -21,6 +21,7 @@ pub enum ZingoLibError {
     CouldNotDecodeMemo(std::io::Error),
     EmptyWallet,
     InvalidAccountId,
+    MissingWitnessTrees,
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -106,6 +107,7 @@ impl std::fmt::Display for ZingoLibError {
             ),
             EmptyWallet => write!(f,"cannot send because wallet is empty"),
             InvalidAccountId => write!(f,"invalid AccountId (requires AccountId::ZERO)"),
+            MissingWitnessTrees => write!(f,"cannot calculate send: missing witness trees"),
         }
     }
 }

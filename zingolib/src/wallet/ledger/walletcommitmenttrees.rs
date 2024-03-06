@@ -1,15 +1,16 @@
-use std::convert::Infallible;
-
 use shardtree::{error::ShardTreeError, ShardTree};
 use zcash_client_backend::data_api::{
     chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
 };
 
 use super::ZingoLedger;
-use crate::wallet::data::{OrchStore, SapStore};
+use crate::{
+    error::ZingoLibError,
+    wallet::data::{OrchStore, SapStore},
+};
 
 impl WalletCommitmentTrees for &ZingoLedger {
-    type Error = Infallible;
+    type Error = ZingoLibError;
 
     type SaplingShardStore<'a> = SapStore;
 
@@ -37,7 +38,7 @@ impl WalletCommitmentTrees for &ZingoLedger {
 
     type OrchardShardStore<'a> = OrchStore;
 
-    fn with_orchard_tree_mut<F, A, E>(&mut self, _callback: F) -> Result<A, E>
+    fn with_orchard_tree_mut<F, A, E>(&mut self, callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
             &'a mut ShardTree<
@@ -48,7 +49,10 @@ impl WalletCommitmentTrees for &ZingoLedger {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        unimplemented!();
+        if let Some(witness_trees) = self.witness_trees {
+            return callback(&mut witness_trees.witness_tree_orchard);
+        }
+        Err(ShardTreeError::Storage(ZingoLibError::MissingWitnessTrees).into())
     }
 
     fn put_orchard_subtree_roots(

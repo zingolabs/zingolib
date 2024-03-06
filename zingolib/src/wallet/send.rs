@@ -207,7 +207,7 @@ impl LightWallet {
             zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
                 &ZingoLedger,
                 ChainType,
-                Infallible,
+                ZingoLibError,
                 Zip317FeeRule,
                 u32, // note ref
             >(
