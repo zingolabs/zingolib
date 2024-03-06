@@ -1,11 +1,14 @@
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{
-    data::{PoolNullifier, TransactionRecord},
-    notes::NoteInterface,
-    notes::ShieldedNoteInterface,
-    traits::{DomainWalletExt, Recipient},
+use crate::{
+    error::ZingoLibResult,
+    wallet::{
+        data::{PoolNullifier, TransactionRecord},
+        notes::NoteInterface,
+        notes::ShieldedNoteInterface,
+        traits::{DomainWalletExt, Recipient},
+    },
 };
 
 use super::ZingoLedger;
@@ -127,6 +130,13 @@ impl ZingoLedger {
                 },
             )
             .map(|v| v.0)
+    }
+
+    pub fn highest_known_block_height(&self) -> Option<BlockHeight> {
+        self.current
+            .iter()
+            .filter_map(|(_, tr)| tr.status.get_confirmed_height())
+            .max_by(|a, b| a.cmp(&b))
     }
 }
 

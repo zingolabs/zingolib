@@ -75,6 +75,7 @@ impl LightWallet {
         }
         // Create the transaction
         let start_time = now();
+        dbg!("building_pub_ready_transaction");
         let build_result = self
             .create_publication_ready_transaction(
                 submission_height,
@@ -123,16 +124,10 @@ impl LightWallet {
         //  * target amount
         //  * selection policy
         //  * recipient list
-        let txmds_readlock = self.transaction_context.arc_ledger.read().await;
-        let _witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
 
         // start create_and_populate_tx_builder
 
         let fee_rule = &Zip317FeeRule::standard(); // Start building tx
-                                                   // todo Select notes as a fn of target amount NEW create_and_populate v
 
         let mut payments = vec![];
         for out in receivers.clone() {
@@ -148,6 +143,7 @@ impl LightWallet {
 
         let request = TransactionRequest::new(payments).map_err(|e| e.to_string())?;
 
+        dbg!("getting write lock");
         let arc_ledger = self.transactions();
         //TODO this should be a read-only lock, because this operation should not write.
         let write_ledger = arc_ledger.write().await;
@@ -161,7 +157,7 @@ impl LightWallet {
             change_strategy,
             zcash_client_backend::fees::DustOutputPolicy::default(),
         );
-        let min_confirmations = NonZeroU32::new(10).unwrap();
+        let min_confirmations = NonZeroU32::new(1).unwrap();
 
         // let mut liberror = ZingoLibError::UnknownError;
         // println!("{}", liberror);
@@ -174,6 +170,7 @@ impl LightWallet {
         // println!("{}", selerror);
         // println!("{}", ());
 
+        dbg!("proposal");
         let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
             &ZingoLedger,
             ChainType,
@@ -205,6 +202,7 @@ impl LightWallet {
         let usk = UnifiedSpendingKey::from_seed(&ChainType::Mainnet, seed, account_id)
             .expect("should be able to create a unified spend key");
 
+        dbg!("calculating");
         let (build_result, _account, _outputs, _utxos_spent) =
             zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
                 &ZingoLedger,
@@ -230,7 +228,6 @@ impl LightWallet {
         let total_shielded_receivers = 0;
         // end create_and_populate_tx_builder
 
-        drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
 
         // Set up a channel to receive updates on the progress of building the transaction.
@@ -323,19 +320,6 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
-    
-
-    
-    
-    
-    
-    
-    
-
-    
-
-    
-    
 
     // #[test]
     // fn test_send_to_addresses() {

@@ -1,4 +1,5 @@
 use zcash_client_backend::{data_api::WalletRead, keys::UnifiedFullViewingKey};
+use zcash_primitives::zip32::AccountId;
 
 use super::ZingoLedger;
 use crate::error::ZingoLibError;
@@ -48,14 +49,8 @@ impl WalletRead for &ZingoLedger {
         )>,
         Self::Error,
     > {
-        self.current
-            .iter()
-            .filter_map(|(_, tr)| tr.status.get_confirmed_height())
-            .max_by(|a, b| a.cmp(&b))
-            .map_or_else(
-                || Ok(None),
-                |max_height| Ok(Some((max_height + 1, max_height - 10))),
-            )
+        // review!: in previous algorithms, we subtract MAX_REORG_HEIGHT from the second value. Why?
+        Ok(self.highest_known_block_height().map(|h| (h, h)))
     }
 
     fn get_min_unspent_height(
@@ -123,7 +118,8 @@ impl WalletRead for &ZingoLedger {
         &self,
         _ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<zcash_primitives::zip32::AccountId>, Self::Error> {
-        unimplemented!()
+        // review! why is this function called in spend?
+        Ok(Some(AccountId::ZERO))
     }
 
     fn get_wallet_summary(

@@ -659,6 +659,7 @@ pub mod scenarios {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
+        dbg!("do_sending");
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
                 faucet
@@ -673,6 +674,7 @@ pub mod scenarios {
         } else {
             None
         };
+        dbg!("done sending");
         let sapling_txid = if let Some(funds) = sapling_funds {
             Some(
                 faucet

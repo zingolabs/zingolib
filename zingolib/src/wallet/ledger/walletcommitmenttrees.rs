@@ -1,17 +1,12 @@
 use std::convert::Infallible;
 
 use shardtree::{error::ShardTreeError, ShardTree};
-use zcash_client_backend::{
-    data_api::{
-        chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT,
-        SAPLING_SHARD_HEIGHT,
-    },
+use zcash_client_backend::data_api::{
+    chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
 };
 
 use super::ZingoLedger;
-use crate::{
-    wallet::data::{OrchStore, SapStore},
-};
+use crate::wallet::data::{OrchStore, SapStore};
 
 impl WalletCommitmentTrees for &ZingoLedger {
     type Error = Infallible;

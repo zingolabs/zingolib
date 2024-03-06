@@ -629,14 +629,19 @@ mod fast {
     }
 }
 mod slow {
+    use std::env;
+
     use super::*;
 
     #[tokio::test]
     async fn zero_value_receipts() {
+        env::set_var("RUST_BACKTRACE", "1");
+        dbg!("create scenario");
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
 
         let sent_value = 0;
+        dbg!("do_sending");
         let _sent_transaction_id = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
@@ -645,6 +650,7 @@ mod slow {
             )])
             .await
             .unwrap();
+        dbg!("done_sending");
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
