@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use shardtree::{error::ShardTreeError, ShardTree};
 use zcash_client_backend::data_api::{
     chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
@@ -10,7 +12,7 @@ use crate::{
 };
 
 impl WalletCommitmentTrees for &ZingoLedger {
-    type Error = ZingoLibError;
+    type Error = Infallible;
 
     type SaplingShardStore<'a> = SapStore;
 
@@ -52,7 +54,7 @@ impl WalletCommitmentTrees for &ZingoLedger {
         if let Some(witness_trees) = self.witness_trees {
             return callback(&mut witness_trees.witness_tree_orchard);
         }
-        Err(ShardTreeError::Storage(ZingoLibError::MissingWitnessTrees).into())
+        panic!("no shard trees in wallet. infallible error!");
     }
 
     fn put_orchard_subtree_roots(
