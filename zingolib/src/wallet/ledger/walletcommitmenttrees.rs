@@ -55,7 +55,7 @@ impl WalletCommitmentTrees for ZingoLedger {
         let op_witness_trees = &mut self.witness_trees;
         let witness_trees: &mut WitnessTrees = op_witness_trees.as_mut().unwrap();
         let witness_tree_orchard = &mut witness_trees.witness_tree_orchard;
-        Ok(callback(witness_tree_orchard)?)
+        callback(witness_tree_orchard)
         // } else {
         // panic!("no shard trees in wallet. infallible error!");
         // }
