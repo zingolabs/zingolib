@@ -127,7 +127,7 @@ async fn shielded_note_marked_as_change_test() {
         }),
     );
 
-    let proxy_status =
+    let (proxy_status, _) =
         start_proxy_and_connect_lightclient(scenario.get_lightclient(0), conditional_logic);
     tokio::task::spawn(async move {
         loop {
@@ -185,5 +185,64 @@ async fn shielded_note_marked_as_change_test() {
             .filter(|vt| vt.kind == ValueTransferKind::SendToSelf)
             .count(),
         (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
+    );
+}
+#[tokio::test]
+async fn no_server_on_start_sync_of_fresh_wallet() {
+    let darkside_handler = darkside_tests::utils::DarksideHandler::new(None);
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+    darkside_tests::utils::prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
+    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let light_client = zingo_testutils::scenarios::setup::ClientBuilder::new(
+        server_id.clone(),
+        darkside_handler.darkside_dir.clone(),
+    )
+    .build_client(
+        darkside_tests::constants::DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        regtest_network,
+    )
+    .await;
+
+    let mut conditional_logic = HashMap::<
+        &'static str,
+        Box<dyn Fn(&std::sync::Arc<std::sync::atomic::AtomicBool>) + Send + Sync>,
+    >::new();
+    conditional_logic.insert(
+        "get_tree_state",
+        Box::new(|online: &std::sync::Arc<std::sync::atomic::AtomicBool>| {
+            println!("Turning off, as we received get_tree_state call");
+            online.store(false, std::sync::atomic::Ordering::Relaxed);
+        }),
+    );
+    let grpc_proxy =
+        zingo_testutils::start_proxy_and_connect_lightclient(&light_client, conditional_logic);
+    let result = light_client.do_sync(true).await.unwrap();
+
+    println!("{}", result);
+
+    assert!(result.success);
+    assert_eq!(result.latest_block, 3);
+    assert_eq!(result.total_blocks_synced, 3);
+    assert_eq!(
+        light_client.do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
     );
 }
