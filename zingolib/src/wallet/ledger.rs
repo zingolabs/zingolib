@@ -51,7 +51,7 @@ mod tests {
     use zcash_client_backend::{
         address::Address,
         data_api::wallet::input_selection::GreedyInputSelector,
-        fees::{DustOutputPolicy},
+        fees::DustOutputPolicy,
         zip321::{self, Payment},
         ShieldedProtocol,
     };
@@ -62,10 +62,9 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingoconfig::ChainType;
 
-    use crate::{error::ZingoLibError};
+    use crate::error::ZingoLibError;
 
     use super::ZingoLedger;
-    
 
     #[test]
     fn test_propose_transfer() {
@@ -74,7 +73,7 @@ mod tests {
             None,
             ShieldedProtocol::Orchard,
         );
-        let input_selector = GreedyInputSelector::<&ZingoLedger, _>::new(
+        let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
             change_strategy,
             DustOutputPolicy::default(),
         );
@@ -139,15 +138,15 @@ mod tests {
 
         dbg!("proposing transfer");
         let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
-            &ZingoLedger,
+            ZingoLedger,
             ChainType,
             GreedyInputSelector<
-                &ZingoLedger,
+                ZingoLedger,
                 zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
             >,
             ZingoLibError,
         >(
-            &mut &ledger,
+            &mut ledger,
             &ChainType::Testnet,
             zcash_primitives::zip32::AccountId::ZERO,
             &input_selector,

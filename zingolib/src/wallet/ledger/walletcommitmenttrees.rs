@@ -8,10 +8,10 @@ use zcash_client_backend::data_api::{
 use super::ZingoLedger;
 use crate::{
     error::ZingoLibError,
-    wallet::data::{OrchStore, SapStore},
+    wallet::data::{OrchStore, SapStore, WitnessTrees},
 };
 
-impl WalletCommitmentTrees for &ZingoLedger {
+impl WalletCommitmentTrees for ZingoLedger {
     type Error = Infallible;
 
     type SaplingShardStore<'a> = SapStore;
@@ -51,10 +51,14 @@ impl WalletCommitmentTrees for &ZingoLedger {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        if let Some(witness_trees) = self.witness_trees {
-            return callback(&mut witness_trees.witness_tree_orchard);
-        }
-        panic!("no shard trees in wallet. infallible error!");
+        //review! ensure spend_capable wallet and break before this case
+        let op_witness_trees = &mut self.witness_trees;
+        let witness_trees: &mut WitnessTrees = op_witness_trees.as_mut().unwrap();
+        let witness_tree_orchard = &mut witness_trees.witness_tree_orchard;
+        Ok(callback(witness_tree_orchard)?)
+        // } else {
+        // panic!("no shard trees in wallet. infallible error!");
+        // }
     }
 
     fn put_orchard_subtree_roots(

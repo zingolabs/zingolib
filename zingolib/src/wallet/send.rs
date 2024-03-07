@@ -172,10 +172,10 @@ impl LightWallet {
 
         dbg!("proposal");
         let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
-            &ZingoLedger,
+            ZingoLedger,
             ChainType,
             GreedyInputSelector<
-                &ZingoLedger,
+                ZingoLedger,
                 zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
             >,
             ZingoLibError,
@@ -205,13 +205,13 @@ impl LightWallet {
         dbg!("calculating");
         let (build_result, _account, _outputs, _utxos_spent) =
             zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
-                &ZingoLedger,
+                ZingoLedger,
                 ChainType,
                 ZingoLibError,
                 Zip317FeeRule,
                 u32, // note ref
             >(
-                &mut ledger,
+                ledger,
                 &self.transaction_context.config.chain,
                 &sapling_prover,
                 &sapling_prover,

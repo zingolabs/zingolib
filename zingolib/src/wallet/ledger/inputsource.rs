@@ -3,11 +3,11 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::zip32::AccountId;
 
-use crate::{error::ZingoLibError};
+use crate::error::ZingoLibError;
 
 use super::ZingoLedger;
 
-impl InputSource for &ZingoLedger {
+impl InputSource for ZingoLedger {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
 
