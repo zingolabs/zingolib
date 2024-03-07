@@ -145,9 +145,8 @@ impl LightWallet {
 
         dbg!("getting write lock");
         let arc_ledger = self.transactions();
-        //TODO this should be a read-only lock, because this operation should not write.
-        let write_ledger = arc_ledger.write().await;
-        let mut ledger = write_ledger.deref();
+        let mut write_ledger = arc_ledger.write().await;
+        let mut ledger = &mut write_ledger;
         let change_strategy = zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
             None,
