@@ -164,7 +164,7 @@ impl WalletCapability {
         }
     }
 
-    pub(crate) fn ufvk(&self) -> Result<Ufvk, std::string::String> {
+    pub fn ufvk(&self) -> Result<Ufvk, std::string::String> {
         let o_fvk = Fvk::Orchard(orchard::keys::FullViewingKey::try_from(self)?.to_bytes());
         let s_fvk = Fvk::Sapling(
             zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(self)?
