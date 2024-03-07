@@ -40,7 +40,7 @@ impl WalletCommitmentTrees for ZingoLedger {
 
     type OrchardShardStore<'a> = OrchStore;
 
-    fn with_orchard_tree_mut<F, A, E>(&mut self, callback: F) -> Result<A, E>
+    fn with_orchard_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
             &'a mut ShardTree<
@@ -56,9 +56,6 @@ impl WalletCommitmentTrees for ZingoLedger {
         let witness_trees: &mut WitnessTrees = op_witness_trees.as_mut().unwrap();
         let witness_tree_orchard = &mut witness_trees.witness_tree_orchard;
         callback(witness_tree_orchard)
-        // } else {
-        // panic!("no shard trees in wallet. infallible error!");
-        // }
     }
 
     fn put_orchard_subtree_roots(
