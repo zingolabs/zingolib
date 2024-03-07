@@ -164,24 +164,19 @@ impl WalletCapability {
         }
     }
 
-    pub(crate) fn ufvk(&self) -> Result<Ufvk, zcash_address::unified::ParseError> {
-        let o_fvk = Fvk::Orchard(
-            orchard::keys::FullViewingKey::try_from(self)
-                .unwrap()
-                .to_bytes(),
-        );
+    pub(crate) fn ufvk(&self) -> Result<Ufvk, std::string::String> {
+        let o_fvk = Fvk::Orchard(orchard::keys::FullViewingKey::try_from(self)?.to_bytes());
         let s_fvk = Fvk::Sapling(
-            zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(self)
-                .unwrap()
+            zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(self)?
                 .to_bytes(),
         );
         let mut t_fvk_bytes = [0u8; 65];
-        let t_ext_pk: ExtendedPubKey = self.try_into().unwrap();
+        let t_ext_pk: ExtendedPubKey = self.try_into()?;
         t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
         t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
         let t_fvk = Fvk::P2pkh(t_fvk_bytes);
         use zcash_address::unified::Encoding as _;
-        Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk])
+        Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk]).map_err(|e| e.to_string())
     }
 
     pub fn new_address(
