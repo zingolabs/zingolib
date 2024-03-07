@@ -153,7 +153,7 @@ impl LightWallet {
             None,
             ShieldedProtocol::Orchard,
         );
-        let input_selector = GreedyInputSelector::<&ZingoLedger, _>::new(
+        let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
             change_strategy,
             zcash_client_backend::fees::DustOutputPolicy::default(),
         );
@@ -211,7 +211,7 @@ impl LightWallet {
                 Zip317FeeRule,
                 u32, // note ref
             >(
-                ledger,
+                &mut ledger,
                 &self.transaction_context.config.chain,
                 &sapling_prover,
                 &sapling_prover,
