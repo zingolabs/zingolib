@@ -59,7 +59,8 @@ async fn interrupt_initial_tree_fetch() {
             };
         }),
     );
-    let (proxy_handle, proxy_status) = start_proxy_and_connect_lightclient(&light_client, cond_log);
+    let (proxy_handle, _proxy_status) =
+        start_proxy_and_connect_lightclient(&light_client, cond_log);
 
     let receiver = Arc::new(Mutex::new(receiver));
     println!("made receiver");
