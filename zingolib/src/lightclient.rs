@@ -1386,8 +1386,7 @@ impl LightClient {
                 self.get_server_uri(),
                 last_synced_height,
             )
-            .await
-            .unwrap();
+            .await?;
             self.wallet.initiate_witness_trees(trees).await;
         };
 
