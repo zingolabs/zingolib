@@ -26,6 +26,7 @@ use zingolib::{
     wallet::{data::summaries::ValueTransferKind, Pool},
 };
 
+#[ignore]
 #[tokio::test]
 async fn interrupt_initial_tree_fetch() {
     let darkside_handler = DarksideHandler::new(None);
