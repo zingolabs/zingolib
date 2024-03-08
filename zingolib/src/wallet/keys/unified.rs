@@ -171,12 +171,15 @@ impl WalletCapability {
                 .to_bytes(),
         );
         let mut t_fvk_bytes = [0u8; 65];
-        let t_ext_pk: ExtendedPubKey = self.try_into()?;
-        t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
-        t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
-        let t_fvk = Fvk::P2pkh(t_fvk_bytes);
-        use zcash_address::unified::Encoding as _;
-        Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk]).map_err(|e| e.to_string())
+        let possible_transparent_key: Result<ExtendedPubKey, String> = self.try_into();
+        if let Ok(t_ext_pk) = possible_transparent_key {
+            t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
+            t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
+            let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+            Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk]).map_err(|e| e.to_string())
+        } else {
+            Ufvk::try_from_items(vec![o_fvk, s_fvk]).map_err(|e| e.to_string())
+        }
     }
 
     pub fn new_address(
