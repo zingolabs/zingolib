@@ -324,17 +324,23 @@ impl BlockManagementData {
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) {
-        // First, pop the first block (which is the top block) in the existing_blocks.
-        let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
-        if top_wallet_block.height != reorg_height {
-            panic!("Wrong block reorg'd");
-        }
+        let mut existing_blocks_writelock = existing_blocks.write().await;
+        if existing_blocks_writelock.len() != 0 {
+            // First, pop the first block (which is the top block) in the existing_blocks.
+            let top_wallet_block = existing_blocks_writelock
+                .drain(0..1)
+                .next()
+                .expect("there to be blocks");
+            if top_wallet_block.height != reorg_height {
+                panic!("Wrong block reorg'd");
+            }
 
-        // Remove all wallet transactions at the height
-        transaction_metadata_set
-            .write()
-            .await
-            .remove_txns_at_height(reorg_height);
+            // Remove all wallet transactions at the height
+            transaction_metadata_set
+                .write()
+                .await
+                .remove_txns_at_height(reorg_height);
+        }
     }
 
     /// Ingest the incoming blocks, handle any reorgs, then populate the block data
