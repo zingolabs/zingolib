@@ -423,13 +423,13 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 
 [[package]]
 name = "bumpalo"
-version = "3.15.3"
+version = "3.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ea184aa71bb362a1157c896979544cc23974e08fd265f29ea96b59f0b4a555b"
+checksum = "7ff69b9dd49fd426c69a0db9fc04dd934cdb6645ff000864d98f7e2af8830eaa"
 
 [[package]]
 name = "byteorder"
@@ -464,9 +464,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.0.89"
+version = "1.0.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0ba8f7aaa012f30d5b2861462f6708eccd49c3c39863fe083a308035f63d723"
+checksum = "8cd6604a82acf3039f1144f54b8eb34e91ffba622051189e71b781822d5ee1f5"
 
 [[package]]
 name = "cesu8"
@@ -628,7 +628,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 dependencies = [
  "bech32",
  "bip0039",
@@ -638,7 +638,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "itertools 0.10.5",
+ "itertools",
  "json",
  "log",
  "orchard",
@@ -1385,15 +1385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2046,7 +2037,7 @@ checksum = "c55e02e35260070b6f716a2423c2ff1c3bb1642ddca6f99e1f26d06268a0e2d2"
 dependencies = [
  "bytes 1.5.0",
  "heck",
- "itertools 0.11.0",
+ "itertools",
  "log",
  "multimap",
  "once_cell",
@@ -2067,7 +2058,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efb6c9a1dd1def8e2124d17e83a20af56f1570d6c2d2bd9e266ccb768df3840e"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.52",
@@ -3969,7 +3960,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3981,7 +3972,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 dependencies = [
  "serde_json",
  "zcash_primitives",
@@ -3990,7 +3981,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 dependencies = [
  "futures",
  "http",
@@ -4016,7 +4007,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 dependencies = [
  "zcash_primitives",
  "zingoconfig",
@@ -4025,7 +4016,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 dependencies = [
  "dirs",
  "http",
@@ -4038,7 +4029,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=stable#f8c914a5894fd448d1b77556ad239c1f4f0ddad2"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#0d2d4587674add02b8d0b15eba6964e10f74d31c"
 dependencies = [
  "append-only-vec",
  "base58",
