@@ -12,19 +12,20 @@ members = [
     "zingoconfig",
     "zingo-testvectors",
     "zingo-memo",
+    "zingo-sync",
 ]
 resolver = "2"
 
 [workspace.dependencies]
 clap = "4.4"
-sapling-crypto = "0.1.0"
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_4" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_4", features = ["lightwalletd-tonic"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_4" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_4", features = ["orchard"] }
+sapling-crypto = "0.1.1"
+zcash_address = { git = "https://github.com/Oscar-Pepper/librustzcash.git", branch = "zingo_sync" }
+zcash_client_backend = { git = "https://github.com/Oscar-Pepper/librustzcash.git", branch = "zingo_sync", features = ["lightwalletd-tonic"] }
+zcash_encoding = { git = "https://github.com/Oscar-Pepper/librustzcash.git", branch = "zingo_sync" }
+zcash_keys = { git = "https://github.com/Oscar-Pepper/librustzcash.git", branch = "zingo_sync", features = ["orchard"] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_4" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_4" }
+zcash_primitives = { git = "https://github.com/Oscar-Pepper/librustzcash.git", branch = "zingo_sync" }
+zcash_proofs = { git = "https://github.com/Oscar-Pepper/librustzcash.git", branch = "zingo_sync" }
 orchard = "0.7"
 tonic-build = "0.10"
 tempdir = "0.3"
