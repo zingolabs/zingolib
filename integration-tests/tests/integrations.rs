@@ -124,6 +124,9 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
+    use zcash_address::unified::Encoding;
+    use zingolib::wallet::WalletBase;
+
     use super::*;
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
@@ -695,6 +698,16 @@ mod fast {
             assert!(addr.sapling().is_some());
             assert!(addr.transparent().is_some());
         }
+
+        let ufvk = wc.ufvk().unwrap();
+        let ufvk_string = ufvk.encode(&config.chain.to_zcash_address_network());
+        let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
+        let view_wallet =
+            LightWallet::new(config.clone(), ufvk_base, wallet.get_birthday().await).unwrap();
+        let v_wc = view_wallet.wallet_capability();
+        let vv = v_wc.ufvk().unwrap();
+        let vv_string = vv.encode(&config.chain.to_zcash_address_network());
+        assert_eq!(ufvk_string, vv_string);
 
         let client = LightClient::create_from_wallet_async(wallet, config)
             .await
