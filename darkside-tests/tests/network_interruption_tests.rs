@@ -2,24 +2,76 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
 
-use darkside_tests::utils::{
-    create_chainbuild_file, load_chainbuild_file,
-    scenarios::{DarksideScenario, DarksideSender},
+use darkside_tests::{
+    constants::DARKSIDE_SEED,
+    utils::{
+        create_chainbuild_file, load_chainbuild_file, prepare_darksidewalletd,
+        scenarios::{DarksideScenario, DarksideSender},
+        DarksideHandler,
+    },
 };
 use json::JsonValue;
 use tokio::time::sleep;
-use zingo_testutils::start_proxy_and_connect_lightclient;
+use zingo_testutils::{scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient};
+use zingoconfig::RegtestNetwork;
 use zingolib::{
     get_base_address,
     lightclient::PoolBalances,
     testvectors::seeds,
     wallet::{data::summaries::ValueTransferKind, Pool},
 };
+
+#[tokio::test]
+async fn interrupt_initial_tree_fetch() {
+    let darkside_handler = DarksideHandler::new(None);
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .await;
+    let mut cond_log =
+        HashMap::<&'static str, Box<dyn Fn(Arc<AtomicBool>) + Send + Sync + 'static>>::new();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let sender = Arc::new(Mutex::new(sender));
+    cond_log.insert(
+        "get_tree_state",
+        Box::new(move |_online| {
+            println!("acquiring lcok");
+            match sender.clone().lock() {
+                Ok(mutguard) => {
+                    println!("acquired lock");
+                    mutguard.send(()).unwrap();
+                    println!("Ending proxy");
+                }
+                Err(poisoned_thread) => panic!("{}", poisoned_thread),
+            };
+        }),
+    );
+    let (proxy_handle, proxy_status) = start_proxy_and_connect_lightclient(&light_client, cond_log);
+
+    let receiver = Arc::new(Mutex::new(receiver));
+    println!("made receiver");
+    std::thread::spawn(move || {
+        receiver.lock().unwrap().recv().unwrap();
+        proxy_handle.abort();
+        println!("aborted proxy");
+    });
+    println!("spawned abortion task");
+    let result = light_client.do_sync(true).await;
+    assert_eq!(result.unwrap_err(),"status: Unavailable, message: \"error trying to connect: tcp connect error: Connection refused (os error 111)\", details: [], metadata: MetadataMap { headers: {} }");
+}
 
 // Verifies that shielded transactions correctly mark notes as change
 // Also verifies:
@@ -104,7 +156,7 @@ async fn shielded_note_marked_as_change_test() {
 
     // setup gRPC network interrupt conditions
     let mut conditional_logic =
-        HashMap::<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>::new();
+        HashMap::<&'static str, Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>>::new();
     // conditional_logic.insert(
     //     "get_block_range",
     //     Box::new(|online: &Arc<AtomicBool>| {
@@ -114,20 +166,20 @@ async fn shielded_note_marked_as_change_test() {
     // );
     conditional_logic.insert(
         "get_tree_state",
-        Box::new(|online: &Arc<AtomicBool>| {
+        Box::new(|online: Arc<AtomicBool>| {
             println!("Turning off, as we received get_tree_state call");
             online.store(false, Ordering::Relaxed);
         }),
     );
     conditional_logic.insert(
         "get_transaction",
-        Box::new(|online: &Arc<AtomicBool>| {
+        Box::new(|online: Arc<AtomicBool>| {
             println!("Turning off, as we received get_transaction call");
             online.store(false, Ordering::Relaxed);
         }),
     );
 
-    let proxy_status =
+    let (_proxy_handle, proxy_status) =
         start_proxy_and_connect_lightclient(scenario.get_lightclient(0), conditional_logic);
     tokio::task::spawn(async move {
         loop {

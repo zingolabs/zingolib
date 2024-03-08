@@ -9,6 +9,7 @@ use std::string::String;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
@@ -1081,24 +1082,27 @@ pub mod scenarios {
 #[allow(clippy::type_complexity)]
 pub fn start_proxy_and_connect_lightclient(
     client: &LightClient,
-    conditional_operations: HashMap<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>,
-) -> Arc<AtomicBool> {
+    conditional_operations: HashMap<&'static str, Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>>,
+) -> (
+    JoinHandle<Result<(), tonic::transport::Error>>,
+    Arc<AtomicBool>,
+) {
     let proxy_online = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let proxy_port = portpicker::pick_unused_port().unwrap();
     let proxy_uri = format!("http://localhost:{proxy_port}");
-    let _proxy_handle = ProxyServer {
+    let proxy_handle = ProxyServer {
         lightwalletd_uri: client.get_server_uri(),
         online: proxy_online.clone(),
         conditional_operations,
     }
     .serve(proxy_port);
     client.set_server(proxy_uri.parse().unwrap());
-    proxy_online
+    (proxy_handle, proxy_online)
 }
 
 pub async fn check_proxy_server_works() {
     let (_regtest_manager, _cph, ref faucet) = scenarios::faucet_default().await;
-    let proxy_status = start_proxy_and_connect_lightclient(faucet, HashMap::new());
+    let (_proxy_handle, proxy_status) = start_proxy_and_connect_lightclient(faucet, HashMap::new());
     proxy_status.store(false, std::sync::atomic::Ordering::Relaxed);
     tokio::task::spawn(async move {
         sleep(Duration::from_secs(5)).await;
