@@ -33,9 +33,11 @@ pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -
             .to_bytes(),
     );
     let s_fvk = Fvk::Sapling(
-        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(wallet_capability)
-            .unwrap()
-            .to_bytes(),
+        zcash_client_backend::keys::sapling::DiversifiableFullViewingKey::try_from(
+            wallet_capability,
+        )
+        .unwrap()
+        .to_bytes(),
     );
     let mut t_fvk_bytes = [0u8; 65];
     let t_ext_pk: zingolib::wallet::keys::extended_transparent::ExtendedPubKey =
@@ -53,7 +55,9 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
         .unwrap(),
         &zcash_address::Network::Regtest,
     );
-    LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap()
+    LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0)
+        .await
+        .unwrap()
 }
 
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {

@@ -13,3 +13,4 @@ log4rs = "1.1.1"
 log = "0.4.14"
 http = "0.2.4"
 dirs = "3.0.2"
+tempdir.workspace = true

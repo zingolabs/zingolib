@@ -197,7 +197,9 @@ mod fast {
         let wallet_dir = wallet_path.parent().unwrap();
         let (wallet, config) =
             zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-        let client = LightClient::create_from_wallet(wallet, config);
+        let client = LightClient::create_from_wallet_async(wallet, config)
+            .await
+            .unwrap();
         let transactions = client.do_list_transactions().await[0].clone();
         //env_logger::init();
         let expected_consumer_ui_note = r#"{
@@ -326,7 +328,10 @@ mod fast {
                 .unwrap();
 
         // Create client based on config and wallet of faucet
-        let faucet_copy = LightClient::create_from_wallet(faucet_wallet, zingo_config.clone());
+        let faucet_copy =
+            LightClient::create_from_wallet_async(faucet_wallet, zingo_config.clone())
+                .await
+                .unwrap();
         assert_eq!(
             &faucet_copy.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
@@ -476,82 +481,7 @@ mod fast {
     }
 
     #[tokio::test]
-    async fn load_wallet_from_v26_dat_file() {
-        // We test that the LightWallet can be read from v26 .dat file
-        // Changes in version 27:
-        //   - The wallet does not have to have a mnemonic.
-        //     Absence of mnemonic is represented by an empty byte vector in v27.
-        //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
-        //   - The wallet capabilities can be restricted from spending to view-only or none.
-        //     We introduce `Capability` type represent different capability types in v27.
-        //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
-
-        // A testnet wallet initiated with
-        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
-        // --birthday 0
-        // --nosync
-        // with 3 addresses containing all receivers.
-        let data = include_bytes!("zingo-wallet-v26.dat");
-
-        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
-        let wallet = LightWallet::read_internal(&data[..], &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
-            .unwrap();
-
-        let expected_mnemonic = (
-            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-            0,
-        );
-        assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
-
-        let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
-        let wc = wallet.wallet_capability();
-
-        // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
-        // so we have to compare each component instead
-
-        // Compare Orchard
-        let Capability::Spend(orchard_sk) = &wc.orchard else {
-            panic!("Expected Orchard Spending Key");
-        };
-        assert_eq!(
-            orchard_sk.to_bytes(),
-            orchard::keys::SpendingKey::try_from(&expected_wc)
-                .unwrap()
-                .to_bytes()
-        );
-
-        // Compare Sapling
-        let Capability::Spend(sapling_sk) = &wc.sapling else {
-            panic!("Expected Sapling Spending Key");
-        };
-        assert_eq!(
-            sapling_sk,
-            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
-        );
-
-        // Compare transparent
-        let Capability::Spend(transparent_sk) = &wc.transparent else {
-            panic!("Expected transparent extended private key");
-        };
-        assert_eq!(
-            transparent_sk,
-            &ExtendedPrivKey::try_from(&expected_wc).unwrap()
-        );
-
-        assert_eq!(wc.addresses().len(), 3);
-        for addr in wc.addresses().iter() {
-            assert!(addr.orchard().is_some());
-            assert!(addr.sapling().is_some());
-            assert!(addr.transparent().is_some());
-        }
-    }
-
-    #[tokio::test]
-    async fn load_wallet_from_v28_dat_file() {
+    async fn reload_wallet_from_buffer() {
         // We test that the LightWallet can be read from v28 .dat file
         // A testnet wallet initiated with
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
@@ -561,11 +491,19 @@ mod fast {
         let data = include_bytes!("zingo-wallet-v28.dat");
 
         let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
-        let wallet = LightWallet::read_internal(&data[..], &config)
+        let mid_wallet = LightWallet::read_internal(&data[..], &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
             .unwrap();
 
+        let mid_client = LightClient::create_from_wallet_async(mid_wallet, config.clone())
+            .await
+            .unwrap();
+        let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
+        let wallet = LightWallet::read_internal(&mid_buffer[..], &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
+            .unwrap();
         let expected_mnemonic = (
             Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
             0,
@@ -577,10 +515,6 @@ mod fast {
                 .unwrap();
         let wc = wallet.wallet_capability();
 
-        // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
-        // so we have to compare each component instead
-
-        // Compare Orchard
         let Capability::Spend(orchard_sk) = &wc.orchard else {
             panic!("Expected Orchard Spending Key");
         };
@@ -591,16 +525,15 @@ mod fast {
                 .to_bytes()
         );
 
-        // Compare Sapling
         let Capability::Spend(sapling_sk) = &wc.sapling else {
             panic!("Expected Sapling Spending Key");
         };
         assert_eq!(
             sapling_sk,
-            &zcash_primitives::zip32::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+            &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc)
+                .unwrap()
         );
 
-        // Compare transparent
         let Capability::Spend(transparent_sk) = &wc.transparent else {
             panic!("Expected transparent extended private key");
         };
@@ -616,7 +549,9 @@ mod fast {
             assert!(addr.transparent().is_some());
         }
 
-        let client = LightClient::create_from_wallet(wallet, config);
+        let client = LightClient::create_from_wallet_async(wallet, config)
+            .await
+            .unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(10342837));
     }
@@ -640,7 +575,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 2_500_000_000 s: 0 t: 0);
+        check_client_balances!(faucet, o: 2_500_000_000u64 s: 0 t: 0);
     }
 
     #[tokio::test]
@@ -652,7 +587,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 2_500_000_000 t: 0);
+        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0);
     }
 
     #[tokio::test]
@@ -664,7 +599,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000);
+        check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000u64);
     }
 
     // test fails to exit when syncing pre-sapling
@@ -810,7 +745,7 @@ mod slow {
             .get(&txid)
             .unwrap()
             .orchard_notes
-            .get(0)
+            .first()
             .unwrap()
             .witnessed_position
             .unwrap();
@@ -843,7 +778,7 @@ mod slow {
             .get(&txid)
             .unwrap()
             .orchard_notes
-            .get(0)
+            .first()
             .unwrap()
             .witnessed_position
             .unwrap();
@@ -886,7 +821,7 @@ mod slow {
             .get(&txid)
             .unwrap()
             .orchard_notes
-            .get(0)
+            .first()
             .unwrap()
             .witnessed_position
             .unwrap();
@@ -917,7 +852,7 @@ mod slow {
             .get(&txid)
             .unwrap()
             .orchard_notes
-            .get(0)
+            .first()
             .unwrap()
             .witnessed_position
             .unwrap();
@@ -1211,12 +1146,12 @@ mod slow {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
+        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         faucet.do_shield(&[Pool::Sapling], None).await.unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 3_499_990_000 s: 625_010_000 t: 0);
+        check_client_balances!(faucet, o: 3_499_990_000u64 s: 625_010_000 t: 0);
     }
     #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
@@ -1709,11 +1644,11 @@ mod slow {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
+        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
-                3_499_990_000,
+                3_499_990_000u64,
                 None,
             )])
             .await
@@ -1722,7 +1657,7 @@ mod slow {
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        check_client_balances!(recipient, o: 3_499_990_000 s: 0 t: 0);
+        check_client_balances!(recipient, o: 3_499_990_000u64 s: 0 t: 0);
     }
     #[tokio::test]
     async fn send_funds_to_all_pools() {
@@ -2667,10 +2602,10 @@ mod slow {
         assert_eq!(
             wallet_trees
                 .witness_tree_orchard
-                .witness(last_leaf.unwrap(), 0)
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
                 .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
             server_orchard_shardtree
-                .witness(last_leaf.unwrap(), 0)
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
                 .unwrap()
         )
     }
@@ -2783,7 +2718,9 @@ mod slow {
         println!("setting uri");
         *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
         println!("creating lightclient");
-        let recipient = LightClient::create_from_wallet(wallet, conf);
+        let recipient = LightClient::create_from_wallet_async(wallet, conf)
+            .await
+            .unwrap();
         println!(
             "pre-sync transactions: {}",
             recipient.do_list_transactions().await.pretty(2)
@@ -3341,7 +3278,7 @@ mod slow {
             .as_ref()
             .unwrap()
             .witness_tree_orchard
-            .witness(
+            .witness_at_checkpoint_depth(
                 recipient
                     .wallet
                     .transaction_context
@@ -3352,7 +3289,7 @@ mod slow {
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
-                    .get(0)
+                    .first()
                     .unwrap()
                     .witnessed_position
                     .unwrap(),
@@ -3381,7 +3318,7 @@ mod slow {
             .as_ref()
             .unwrap()
             .witness_tree_orchard
-            .witness(
+            .witness_at_checkpoint_depth(
                 recipient
                     .wallet
                     .transaction_context
@@ -3392,7 +3329,7 @@ mod slow {
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
-                    .get(0)
+                    .first()
                     .unwrap()
                     .witnessed_position
                     .unwrap(),
@@ -3497,6 +3434,145 @@ mod slow {
         );
 
         assert_eq!(bala_sim, bala_syn);
+    }
+    async fn load_wallet_from_data_and_assert(
+        data: &[u8],
+        expected_balance: u64,
+        num_addresses: usize,
+    ) {
+        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet)
+            .set_lightwalletd_uri(
+                ("https://zcash.mysideoftheweb.com:19067")
+                    .parse::<http::Uri>()
+                    .unwrap(),
+            )
+            .create();
+        let wallet = LightWallet::read_internal(&data[..], &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
+            .unwrap();
+
+        let expected_mnemonic = (
+            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+            0,
+        );
+        assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+
+        let expected_wc =
+            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
+                .unwrap();
+        let wc = wallet.wallet_capability();
+
+        // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
+        // so we have to compare each component instead
+
+        // Compare Orchard
+        let Capability::Spend(orchard_sk) = &wc.orchard else {
+            panic!("Expected Orchard Spending Key");
+        };
+        assert_eq!(
+            orchard_sk.to_bytes(),
+            orchard::keys::SpendingKey::try_from(&expected_wc)
+                .unwrap()
+                .to_bytes()
+        );
+
+        // Compare Sapling
+        let Capability::Spend(sapling_sk) = &wc.sapling else {
+            panic!("Expected Sapling Spending Key");
+        };
+        assert_eq!(
+            sapling_sk,
+            &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc)
+                .unwrap()
+        );
+
+        // Compare transparent
+        let Capability::Spend(transparent_sk) = &wc.transparent else {
+            panic!("Expected transparent extended private key");
+        };
+        assert_eq!(
+            transparent_sk,
+            &ExtendedPrivKey::try_from(&expected_wc).unwrap()
+        );
+
+        assert_eq!(wc.addresses().len(), num_addresses);
+        for addr in wc.addresses().iter() {
+            assert!(addr.orchard().is_some());
+            assert!(addr.sapling().is_some());
+            assert!(addr.transparent().is_some());
+        }
+
+        let client = LightClient::create_from_wallet_async(wallet, config)
+            .await
+            .unwrap();
+        let balance = client.do_balance().await;
+        assert_eq!(balance.orchard_balance, Some(expected_balance));
+        if expected_balance > 0 {
+            let _ = client
+                .do_send(vec![(&get_base_address!(client, "sapling"), 11011, None)])
+                .await
+                .unwrap();
+            let _ = client.do_sync(true).await.unwrap();
+            let _ = client
+                .do_send(vec![(
+                    &get_base_address!(client, "transparent"),
+                    28000,
+                    None,
+                )])
+                .await
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn load_wallet_from_v26_dat_file() {
+        // We test that the LightWallet can be read from v26 .dat file
+        // Changes in version 27:
+        //   - The wallet does not have to have a mnemonic.
+        //     Absence of mnemonic is represented by an empty byte vector in v27.
+        //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
+        //   - The wallet capabilities can be restricted from spending to view-only or none.
+        //     We introduce `Capability` type represent different capability types in v27.
+        //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
+
+        // A testnet wallet initiated with
+        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+        // with 3 addresses containing all receivers.
+        // including orchard and sapling transactions
+        let data = include_bytes!("zingo-wallet-v26.dat");
+
+        load_wallet_from_data_and_assert(data, 0, 3).await;
+    }
+
+    #[tokio::test]
+    async fn load_wallet_from_v26_2_dat_file() {
+        // We test that the LightWallet can be read from v26 .dat file
+        // Changes in version 27:
+        //   - The wallet does not have to have a mnemonic.
+        //     Absence of mnemonic is represented by an empty byte vector in v27.
+        //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
+        //   - The wallet capabilities can be restricted from spending to view-only or none.
+        //     We introduce `Capability` type represent different capability types in v27.
+        //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
+
+        // A testnet wallet initiated with
+        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+        // with 3 addresses containing all receivers.
+        // including orchard and sapling transactions
+        let data = include_bytes!("zingo-wallet-v26-2.dat");
+
+        load_wallet_from_data_and_assert(data, 10177826, 1).await;
+    }
+
+    #[tokio::test]
+    async fn load_wallet_from_v28_dat_file() {
+        // We test that the LightWallet can be read from v28 .dat file
+        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+        // with 3 addresses containing all receivers.
+        let data = include_bytes!("zingo-wallet-v28.dat");
+
+        load_wallet_from_data_and_assert(data, 10342837, 3).await;
     }
 }
 
