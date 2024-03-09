@@ -21,4 +21,4 @@ debug = false
 
 # this is needed to build for IOS simulator
 [patch.crates-io]
-sodiumoxide = { git = "https://github.com/juanky201271/sodiumoxide", rev = "2f1b91e031199412ec631a3afd571a7df2450981"}
+sodiumoxide = { git = "https://github.com/juanky201271/sodiumoxide", rev = "81a777464ee1553c47c61ee9e3a43fda7a3135f1"}
