@@ -315,8 +315,8 @@ impl WalletCapability {
                 })
                 .map(|(taddr, key)| {
                     let hash = match taddr {
-                        TransparentAddress::PublicKey(hash) => hash,
-                        TransparentAddress::Script(hash) => hash,
+                        TransparentAddress::PublicKeyHash(hash) => hash,
+                        TransparentAddress::ScriptHash(hash) => hash,
                     };
                     (
                         hash.to_base58check(&config.base58_pubkey_address(), &[]),
@@ -433,7 +433,7 @@ impl WalletCapability {
             .iter()
             .filter_map(|address| {
                 address.transparent().and_then(|transparent_receiver| {
-                    if let zcash_primitives::legacy::TransparentAddress::PublicKey(hash) =
+                    if let zcash_primitives::legacy::TransparentAddress::PublicKeyHash(hash) =
                         transparent_receiver
                     {
                         Some(super::ToBase58Check::to_base58check(
