@@ -141,7 +141,6 @@ mod test_vectors;
 
 #[cfg(test)]
 mod tests {
-    use zcash_client_backend::address::RecipientAddress;
     use zcash_primitives::consensus::MAIN_NETWORK;
 
     use super::*;
@@ -150,8 +149,9 @@ mod tests {
     #[test]
     fn round_trip_ser_deser() {
         for test_vector in UA_TEST_VECTORS {
-            let RecipientAddress::Unified(ua) =
-                RecipientAddress::decode(&MAIN_NETWORK, test_vector.unified_addr).unwrap()
+            let zcash_keys::address::Address::Unified(ua) =
+                zcash_keys::address::Address::decode(&MAIN_NETWORK, test_vector.unified_addr)
+                    .unwrap()
             else {
                 panic!("Couldn't decode test_vector UA")
             };

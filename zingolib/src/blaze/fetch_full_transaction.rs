@@ -14,6 +14,7 @@ use crate::{
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use std::{
     collections::HashSet,
     convert::TryInto,
@@ -29,17 +30,16 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_client_backend::address::{RecipientAddress, UnifiedAddress};
+use zcash_client_backend::address::{Address, UnifiedAddress};
 use zcash_note_encryption::try_output_recovery_with_ovk;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
-    sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::ZingoConfig;
 
 #[derive(Clone)]
 pub struct TransactionContext {
@@ -103,7 +103,7 @@ impl TransactionContext {
     }
     pub(crate) async fn scan_full_tx(
         &self,
-        transaction: Transaction,
+        transaction: &Transaction,
         status: ConfirmationStatus,
         block_time: u32,
         price: Option<f64>,
@@ -117,6 +117,8 @@ impl TransactionContext {
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
+        // the assumption is either we already decrypted a compact output and filled in some data
+        // or transparent something
         if self
             .transaction_metadata_set
             .read()
@@ -129,7 +131,7 @@ impl TransactionContext {
         let mut outgoing_metadatas = vec![];
         // Execute scanning operations
         self.execute_bundlescans_internal(
-            &transaction,
+            transaction,
             status,
             block_time,
             &mut is_outgoing_transaction,
@@ -148,7 +150,7 @@ impl TransactionContext {
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
-                            value: u64::try_from(vout.value).expect("A u64 representable Amount."),
+                            value: u64::from(vout.value),
                             memo: Memo::Empty,
                             recipient_ua: None,
                         });
@@ -333,7 +335,7 @@ impl TransactionContext {
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
     ) {
-        self.scan_bundle::<SaplingDomain<ChainType>>(
+        self.scan_bundle::<SaplingDomain>(
             transaction,
             status,
             block_time,
@@ -511,17 +513,11 @@ impl TransactionContext {
                             Ok(memo) => {
                                 if self.key.addresses().iter().any(|unified_address| {
                                     [
-                                        unified_address
-                                            .transparent()
-                                            .cloned()
-                                            .map(RecipientAddress::from),
-                                        unified_address
-                                            .sapling()
-                                            .cloned()
-                                            .map(RecipientAddress::from),
+                                        unified_address.transparent().cloned().map(Address::from),
+                                        unified_address.sapling().cloned().map(Address::from),
                                         unified_address.orchard().cloned().map(
                                             |orchard_receiver| {
-                                                RecipientAddress::from(
+                                                Address::from(
                                                     UnifiedAddress::from_receivers(
                                                         Some(orchard_receiver),
                                                         None,
@@ -639,7 +635,7 @@ pub async fn start(
 
                 let status = ConfirmationStatus::Confirmed(height);
                 per_txid_iter_context
-                    .scan_full_tx(transaction, status, block_time, None)
+                    .scan_full_tx(&transaction, status, block_time, None)
                     .await;
 
                 Ok::<_, String>(())
@@ -679,7 +675,7 @@ pub async fn start(
                 .await;
             let status = ConfirmationStatus::Confirmed(height);
             transaction_context
-                .scan_full_tx(transaction, status, block_time, None)
+                .scan_full_tx(&transaction, status, block_time, None)
                 .await;
         }
 
