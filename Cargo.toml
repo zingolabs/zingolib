@@ -18,13 +18,13 @@ resolver = "2"
 [workspace.dependencies]
 clap = "4.4"
 sapling-crypto = "0.1.1"
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zip317_orchard_support" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zip317_orchard_support", features = ["lightwalletd-tonic", "orchard"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zip317_orchard_support" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zip317_orchard_support", features = ["orchard"] }
+zcash_address = { path = "/home/cupress/ZINGO/ecc_libs/librustzcashs/librustzcash/components/zcash_address" }
+zcash_client_backend = { path = "/home/cupress/ZINGO/ecc_libs/librustzcashs/librustzcash/zcash_client_backend", features = ["lightwalletd-tonic", "orchard"] }
+zcash_encoding = { path = "/home/cupress/ZINGO/ecc_libs/librustzcashs/librustzcash/components/zcash_encoding" }
+zcash_keys = { path = "/home/cupress/ZINGO/ecc_libs/librustzcashs/librustzcash/zcash_keys", features = ["orchard"] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zip317_orchard_support" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zip317_orchard_support" }
+zcash_primitives = { path = "/home/cupress/ZINGO/ecc_libs/librustzcashs/librustzcash/zcash_primitives" }
+zcash_proofs = { path = "/home/cupress/ZINGO/ecc_libs/librustzcashs/librustzcash/zcash_proofs" }
 orchard = "0.7"
 tonic-build = "0.10"
 tempdir = "0.3"

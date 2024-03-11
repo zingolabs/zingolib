@@ -158,17 +158,6 @@ impl LightWallet {
         );
         let min_confirmations = NonZeroU32::new(1).unwrap();
 
-        // let mut liberror = ZingoLibError::UnknownError;
-        // println!("{}", liberror);
-        // let mut balerror =
-        //     zcash_primitives::transaction::components::amount::BalanceError::Underflow;
-        // let mut feeerror =
-        //     zcash_primitives::transaction::fees::zip317::FeeError::Balance(balerror);
-        // println!("{}", balerror);
-        // let mut selerror = GreedyInputSelectorError::Balance(balerror);
-        // println!("{}", selerror);
-        // println!("{}", ());
-
         dbg!("proposal");
         let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
             ZingoLedger,
@@ -198,8 +187,9 @@ impl LightWallet {
         let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
         let seed = mnemonic.entropy();
         let account_id = AccountId::ZERO;
-        let usk = UnifiedSpendingKey::from_seed(&ChainType::Mainnet, seed, account_id)
-            .expect("should be able to create a unified spend key");
+        let usk =
+            UnifiedSpendingKey::from_seed(&self.transaction_context.config.chain, seed, account_id)
+                .expect("should be able to create a unified spend key");
 
         dbg!("calculating");
         let (build_result, _account, _outputs, _utxos_spent) =
@@ -221,7 +211,7 @@ impl LightWallet {
                 &empty_step_results,
                 step,
             )
-            .unwrap(); //todo do not unwrap
+            .map_err(|e| e.to_string())?;
 
         // old create_and_populate v
         let total_shielded_receivers = 0;
