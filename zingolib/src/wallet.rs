@@ -5,7 +5,6 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
-use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use json::JsonValue;
@@ -38,6 +37,7 @@ use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
 use zcash_primitives::transaction::{self, Transaction};
+use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::Script,
@@ -216,7 +216,7 @@ pub struct LightWallet {
     // will start from here.
     birthday: AtomicU64,
 
-    /// The seed for the wallet, stored as a bip0039 Mnemonic, and the account index.
+    /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     /// Can be `None` in case of wallet without spending capability
     /// or created directly from spending keys.
     mnemonic: Option<(Mnemonic, u32)>,
