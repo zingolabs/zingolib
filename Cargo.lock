@@ -845,7 +845,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -880,7 +880,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1890,9 +1890,9 @@ dependencies = [
 
 [[package]]
 name = "orchard"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92c801aeaccd19bb6916d71f25694b62d223061872900e8022221c1ad8dcad2d"
+checksum = "1fb255c3ffdccd3c84fe9ebed72aef64fdc72e6a3e4180dd411002d47abaad42"
 dependencies = [
  "aes",
  "bitvec",
@@ -2673,9 +2673,9 @@ dependencies = [
 
 [[package]]
 name = "sapling-crypto"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f5de898a7cdb7f6d9c8fb888341b6ae6e2aeae88227b7f435f1dda49ecf9e62"
+checksum = "d183012062dfdde85f7e3e758328fcf6e9846d8dd3fce35b04d0efcb6677b0e0"
 dependencies = [
  "aes",
  "bellman",
@@ -3942,19 +3942,20 @@ dependencies = [
 
 [[package]]
 name = "zcash_address"
-version = "0.3.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+version = "0.3.2"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "bech32",
  "bs58",
  "f4jumble",
  "zcash_encoding",
+ "zcash_protocol",
 ]
 
 [[package]]
 name = "zcash_client_backend"
-version = "0.10.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+version = "0.11.0"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -3988,13 +3989,14 @@ dependencies = [
  "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
+ "zcash_protocol",
  "zip32",
 ]
 
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4002,8 +4004,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_keys"
-version = "0.0.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+version = "0.1.1"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "bech32",
  "bls12_381",
@@ -4022,6 +4024,7 @@ dependencies = [
  "zcash_address",
  "zcash_encoding",
  "zcash_primitives",
+ "zcash_protocol",
  "zip32",
 ]
 
@@ -4040,8 +4043,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_primitives"
-version = "0.13.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+version = "0.14.0"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "aes",
  "bip0039",
@@ -4071,14 +4074,15 @@ dependencies = [
  "zcash_address",
  "zcash_encoding",
  "zcash_note_encryption",
+ "zcash_protocol",
  "zcash_spec",
  "zip32",
 ]
 
 [[package]]
 name = "zcash_proofs"
-version = "0.13.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc_4#dd05ba05b504294770c5d36de58ba5165c557def"
+version = "0.14.0"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4095,6 +4099,15 @@ dependencies = [
  "tracing",
  "xdg",
  "zcash_primitives",
+]
+
+[[package]]
+name = "zcash_protocol"
+version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/librustzcash.git?branch=zingo_sync#ab701118f38ae3471fd9e72ac752907828f3ecf4"
+dependencies = [
+ "document-features",
+ "memuse",
 ]
 
 [[package]]
@@ -4167,6 +4180,10 @@ dependencies = [
  "serde_json",
  "zcash_primitives",
 ]
+
+[[package]]
+name = "zingo-sync"
+version = "0.1.0"
 
 [[package]]
 name = "zingo-testutils"

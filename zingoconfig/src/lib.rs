@@ -19,7 +19,9 @@ use log4rs::{
     Config,
 };
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK},
+    consensus::{
+        BlockHeight, NetworkConstants, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK,
+    },
     constants,
 };
 
