@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
@@ -8,6 +7,7 @@ use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr, time::Duration};
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     memo::Memo,
