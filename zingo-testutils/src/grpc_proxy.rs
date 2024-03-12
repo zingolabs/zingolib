@@ -61,7 +61,7 @@ pub struct ProxyServer {
     pub lightwalletd_uri: http::Uri,
     pub online: Arc<AtomicBool>,
     #[allow(clippy::type_complexity)]
-    pub conditional_operations: HashMap<&'static str, Box<dyn Fn(&Arc<AtomicBool>) + Send + Sync>>,
+    pub conditional_operations: HashMap<&'static str, Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>>,
 }
 
 impl ProxyServer {
@@ -93,7 +93,7 @@ impl ProxyServer {
 
     fn passthrough_helper(&self, name: &str) {
         if let Some(fun) = self.conditional_operations.get(name) {
-            fun(&self.online)
+            fun(self.online.clone())
         }
     }
     pub fn new(lightwalletd_uri: http::Uri) -> Self {
