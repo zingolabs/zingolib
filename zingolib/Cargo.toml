@@ -53,7 +53,7 @@ reqwest = { version = "0.11", features = ["json"] }
 rustls-pemfile = "1.0.0"
 tower-http = { version = "0.2", features = ["add-extension"] }
 futures = { workspace = true }
-hex = "0.3"
+hex = { workspace = true }
 ring = "0.17.0"
 json = "0.12.4"
 webpki-roots = "0.21.0"
