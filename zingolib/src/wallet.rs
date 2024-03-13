@@ -28,6 +28,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
+use zcash_primitives::zip339::Mnemonic;
 
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};

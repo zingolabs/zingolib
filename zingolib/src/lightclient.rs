@@ -731,7 +731,7 @@ impl LightClient {
     }
 
     pub async fn do_info(&self) -> String {
-        match GrpcConnector::get_info(self.get_server_uri()).await {
+        match crate::grpc_connector::get_info(self.get_server_uri()).await {
             Ok(i) => {
                 let o = object! {
                     "version" => i.version,
@@ -902,7 +902,10 @@ impl LightClient {
                     receivers,
                     transaction_submission_height,
                     |transaction_bytes| {
-                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                        crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            transaction_bytes,
+                        )
                     },
                 )
                 .await
@@ -974,7 +977,10 @@ impl LightClient {
                     receiver,
                     transaction_submission_height,
                     |transaction_bytes| {
-                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                        crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            transaction_bytes,
+                        )
                     },
                 )
                 .await
@@ -1100,7 +1106,7 @@ impl LightClient {
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
-        match GrpcConnector::get_trees(self.config.get_lightwalletd_uri(), height).await {
+        match crate::grpc_connector::get_trees(self.config.get_lightwalletd_uri(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.sapling_tree.clone();
@@ -1123,7 +1129,7 @@ impl LightClient {
 
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
         Ok(BlockHeight::from_u32(
-            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri())
+            crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
                 .await?
                 .height as u32,
         ) + 1)
@@ -1338,7 +1344,7 @@ impl LightClient {
                 let h2 = tokio::spawn(async move {
                     loop {
                         //debug!("Monitoring mempool");
-                        let r = GrpcConnector::monitor_mempool(
+                        let r = crate::grpc_connector::monitor_mempool(
                             uri.clone(),
                             mempool_transmitter.clone(),
                         )
@@ -1382,16 +1388,13 @@ impl LightClient {
         if self.wallet.has_any_empty_commitment_trees().await
             && last_synced_height >= self.config.sapling_activation_height()
         {
-            let trees = crate::grpc_connector::GrpcConnector::get_trees(
-                self.get_server_uri(),
-                last_synced_height,
-            )
-            .await?;
+            let trees =
+                crate::grpc_connector::get_trees(self.get_server_uri(), last_synced_height).await?;
             self.wallet.initiate_witness_trees(trees).await;
         };
 
         let latest_blockid =
-            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
+            crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
         let latest_blockid =
             crate::wallet::data::BlockData::new_with(latest_blockid.height, &latest_blockid.hash);
@@ -1539,12 +1542,14 @@ impl LightClient {
 
         // Full Tx GRPC fetcher
         let (full_transaction_fetcher_handle, full_transaction_fetcher_transmitter) =
-            grpc_connector
-                .start_full_transaction_fetcher(self.config.chain)
-                .await;
+            crate::grpc_connector::start_full_transaction_fetcher(
+                &grpc_connector,
+                self.config.chain,
+            )
+            .await;
         // Transparent Transactions Fetcher
         let (taddr_fetcher_handle, taddr_fetcher_transmitter) =
-            grpc_connector.start_taddr_transaction_fetcher().await;
+            crate::grpc_connector::start_taddr_transaction_fetcher(&grpc_connector).await;
 
         // Local state necessary for a transaction fetch
         let transaction_context = TransactionContext::new(

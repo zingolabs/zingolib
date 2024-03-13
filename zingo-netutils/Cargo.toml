@@ -1,0 +1,23 @@
+[package]
+name = "zingo-netutils"
+version = "0.1.0"
+authors = ["zingo@zingolabs.org"]
+edition = "2021"
+
+[dependencies]
+http.workspace = true
+tokio-rustls.workspace = true
+zcash_client_backend.workspace = true
+tower.workspace = true
+hyper-rustls.workspace = true
+webpki-roots = "0.21.0"
+hyper.workspace = true
+http-body.workspace = true
+tonic.workspace = true
+prost.workspace = true
+rustls-pemfile = "1.0.0"
+
+[features]
+test = []
+
+

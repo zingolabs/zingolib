@@ -1,12 +1,9 @@
 use crate::wallet::traits::FromCommitment;
-use crate::{
-    grpc_connector::GrpcConnector,
-    wallet::{
-        data::{BlockData, PoolNullifier},
-        notes::ShieldedNoteInterface,
-        traits::DomainWalletExt,
-        transactions::TransactionMetadataSet,
-    },
+use crate::wallet::{
+    data::{BlockData, PoolNullifier},
+    notes::ShieldedNoteInterface,
+    traits::DomainWalletExt,
+    transactions::TransactionMetadataSet,
 };
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
@@ -523,7 +520,7 @@ impl BlockManagementData {
             let tree = if prev_height < activation_height {
                 frontier::CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
             } else {
-                let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
+                let tree_state = crate::grpc_connector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
                 self.unverified_treestates.write().await.push(tree_state);
                 read_commitment_tree(&tree[..]).map_err(|e| format!("{}", e))?
