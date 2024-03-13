@@ -1,12 +1,9 @@
 use crate::wallet::traits::FromCommitment;
-use crate::{
-    grpc_connector::GrpcConnector,
-    wallet::{
-        data::{BlockData, PoolNullifier},
-        notes::ShieldedNoteInterface,
-        traits::DomainWalletExt,
-        transactions::TransactionMetadataSet,
-    },
+use crate::wallet::{
+    data::{BlockData, PoolNullifier},
+    notes::ShieldedNoteInterface,
+    traits::DomainWalletExt,
+    transactions::TransactionMetadataSet,
 };
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};

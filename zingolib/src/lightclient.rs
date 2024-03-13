@@ -1388,11 +1388,8 @@ impl LightClient {
         if self.wallet.has_any_empty_commitment_trees().await
             && last_synced_height >= self.config.sapling_activation_height()
         {
-            let trees = crate::grpc_connector::GrpcConnector::get_trees(
-                self.get_server_uri(),
-                last_synced_height,
-            )
-            .await?;
+            let trees =
+                crate::grpc_connector::get_trees(self.get_server_uri(), last_synced_height).await?;
             self.wallet.initiate_witness_trees(trees).await;
         };
 
