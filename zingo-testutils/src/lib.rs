@@ -393,19 +393,22 @@ pub mod scenarios {
                     client_number,
                 }
             }
+            pub fn make_unique_data_dir(&mut self) -> PathBuf {
+                //! Each client requires a unique data_dir, we use the
+                //! client_number counter for this.
+                self.client_number += 1;
+                PathBuf::from(format!(
+                    "{}_client_{}",
+                    self.zingo_datadir.to_string_lossy(),
+                    self.client_number
+                ))
+            }
             pub fn make_unique_data_dir_and_load_config(
                 &mut self,
                 regtest_network: zingoconfig::RegtestNetwork,
             ) -> zingoconfig::ZingoConfig {
-                //! Each client requires a unique data_dir, we use the
-                //! client_number counter for this.
-                self.client_number += 1;
-                let conf_path = format!(
-                    "{}_client_{}",
-                    self.zingo_datadir.to_string_lossy(),
-                    self.client_number
-                );
-                self.create_clientconfig(PathBuf::from(conf_path), regtest_network)
+                let cp = self.make_unique_data_dir();
+                self.create_clientconfig(cp, regtest_network)
             }
             pub fn create_clientconfig(
                 &self,
@@ -437,6 +440,23 @@ pub mod scenarios {
                 .await
             }
             pub async fn build_client(
+                &mut self,
+                mnemonic_phrase: String,
+                birthday: u64,
+                overwrite: bool,
+                regtest_network: zingoconfig::RegtestNetwork,
+            ) -> LightClient {
+                let zingo_config = self.make_unique_data_dir_and_load_config(regtest_network);
+                LightClient::create_from_wallet_base_async(
+                    WalletBase::MnemonicPhrase(mnemonic_phrase),
+                    &zingo_config,
+                    birthday,
+                    overwrite,
+                )
+                .await
+                .unwrap()
+            }
+            pub async fn build_client_live(
                 &mut self,
                 mnemonic_phrase: String,
                 birthday: u64,
