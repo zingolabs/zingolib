@@ -3593,3 +3593,24 @@ mod slow {
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
+
+#[cfg(feature = "ledger-support")]
+mod ledger {
+    use zingolib::wallet::keys::ledger::LedgerWalletCapability;
+
+    use super::*;
+
+    #[test]
+    fn assert_ledger_wallet_loads() {
+        // As we're already in an async context
+        // the block_on call inside LWC::new will
+        // panic unless called in a new thread
+
+        // TODO: This fails as we're not connecting to a ledger app.
+        // Can we mock this?
+        let ledger_capability = std::thread::spawn(LedgerWalletCapability::new)
+            .join()
+            .unwrap()
+            .unwrap();
+    }
+}

@@ -249,6 +249,7 @@ impl LedgerWalletCapability {
 
             // This is deprecated. Not sure what the alternative is,
             // other than implementing it ourselves.
+            #[allow(deprecated)]
             let t_addrs = zcash_primitives::legacy::keys::pubkey_to_address(&t_pubkey);
             let ua = UnifiedAddress::from_receivers(None, None, Some(t_addrs));
 
@@ -264,7 +265,7 @@ impl LedgerWalletCapability {
                     self.addresses_write_lock
                         .swap(false, atomic::Ordering::Release);
                     return Err(
-                        "Invalid receivers requested! At least one of sapling or transparent required, orchard is not support"
+                        "Invalid receivers requested! At least one of sapling or transparent required, orchard is not supported"
                             .to_string(),
                     );
                 }

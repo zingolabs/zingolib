@@ -1011,7 +1011,6 @@ impl LightWallet {
             self.transaction_context.config.chain,
             submission_height,
             transaction::builder::BuildConfig::Standard {
-                // TODO: We probably need this
                 sapling_anchor: Some(sapling_anchor),
                 orchard_anchor: Some(orchard_anchor),
             },
