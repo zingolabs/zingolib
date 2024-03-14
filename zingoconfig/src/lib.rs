@@ -397,58 +397,37 @@ impl ZingoConfig {
     /// so that HD wallets can manage multiple currencies.
     ///  <https://github.com/satoshilabs/slips/blob/master/slip-0044.md>
     ///  ZEC is registered as 133 (0x80000085) for MainNet and 1 (0x80000001) for TestNet (all coins)
-    #[deprecated(
-        since = "2024_03_14. grace period: 30 days",
-        note = "obsolete due to `Parameter` trait methods"
-    )]
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn get_coin_type(&self) -> u32 {
         self.chain.coin_type()
     }
 
-    #[deprecated(
-        since = "2024_03_14. grace period: 30 days",
-        note = "obsolete due to `Parameter` trait methods"
-    )]
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_address(&self) -> &str {
         self.chain.hrp_sapling_payment_address()
     }
 
-    #[deprecated(
-        since = "2024_03_14. grace period: 30 days",
-        note = "obsolete due to `Parameter` trait methods"
-    )]
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_private_key(&self) -> &str {
         self.chain.hrp_sapling_extended_spending_key()
     }
 
-    #[deprecated(
-        since = "2024_03_14. grace period: 30 days",
-        note = "obsolete due to `Parameter` trait methods"
-    )]
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_viewing_key(&self) -> &str {
         self.chain.hrp_sapling_extended_full_viewing_key()
     }
 
-    #[deprecated(
-        since = "2024_03_14. grace period: 30 days",
-        note = "obsolete due to `Parameter` trait methods"
-    )]
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn base58_pubkey_address(&self) -> [u8; 2] {
         self.chain.b58_pubkey_address_prefix()
     }
 
-    #[deprecated(
-        since = "2024_03_14. grace period: 30 days",
-        note = "obsolete due to `Parameter` trait methods"
-    )]
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn base58_script_address(&self) -> [u8; 2] {
         self.chain.b58_script_address_prefix()
     }
 
-    #[deprecated(
-        since = "2024_03_14. grace period: 30 days",
-        note = "prefix not known to be used"
-    )]
+    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
             ChainType::Testnet | ChainType::Regtest(_) | ChainType::FakeMainnet => [0xEF],
