@@ -49,7 +49,7 @@ use zcash_client_backend::{
     proto::service::RawTransaction,
 };
 use zcash_primitives::{
-    consensus::{BlockHeight, BranchId, Parameters},
+    consensus::{BlockHeight, BranchId, NetworkConstants},
     memo::{Memo, MemoBytes},
     transaction::{
         components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
@@ -703,7 +703,7 @@ impl LightClient {
             Ok(m) => {
                 let memo_bytes: MemoBytes = m.memo.clone().into();
                 object! {
-                    "to" => encode_payment_address(self.config.hrp_sapling_address(), &m.to),
+                    "to" => encode_payment_address(self.config.chain.hrp_sapling_payment_address(), &m.to),
                     "memo" => LightWallet::memo_str(Some(m.memo)),
                     "memohex" => hex::encode(memo_bytes.as_slice())
                 }
@@ -713,7 +713,10 @@ impl LightClient {
     }
 
     pub fn do_encrypt_message(&self, to_address_str: String, memo: Memo) -> JsonValue {
-        let to = match decode_payment_address(self.config.hrp_sapling_address(), &to_address_str) {
+        let to = match decode_payment_address(
+            self.config.chain.hrp_sapling_payment_address(),
+            &to_address_str,
+        ) {
             Ok(to) => to,
             _ => {
                 return object! {"error" => format!("Couldn't parse {} as a z-address", to_address_str) };

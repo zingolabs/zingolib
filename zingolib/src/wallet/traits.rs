@@ -39,7 +39,7 @@ use zcash_note_encryption::{
     BatchDomain, Domain, EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
-    consensus::{sapling_zip212_enforcement, BlockHeight, NetworkUpgrade, Parameters},
+    consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
     merkle_tree::read_incremental_witness,
     transaction::{
@@ -122,7 +122,12 @@ impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
 
 impl ShieldedOutputExt<SaplingDomain> for OutputDescription<GrothProofBytes> {
     fn domain(&self, height: BlockHeight, parameters: ChainType) -> SaplingDomain {
-        SaplingDomain::new(sapling_zip212_enforcement(&parameters, height))
+        SaplingDomain::new(
+            zcash_primitives::transaction::components::sapling::zip212_enforcement(
+                &parameters,
+                height,
+            ),
+        )
     }
 
     fn out_ciphertext(&self) -> [u8; 80] {
@@ -241,7 +246,7 @@ impl Recipient for orchard::Address {
                 self.to_raw_address_bytes(),
             )])
             .expect("Could not create UA from orchard address"),
-            &chain.address_network().unwrap(),
+            &chain.network_type(),
         )
     }
 }
@@ -286,7 +291,12 @@ impl CompactOutput<SaplingDomain> for CompactSaplingOutput {
     }
 
     fn domain(&self, parameters: ChainType, height: BlockHeight) -> SaplingDomain {
-        SaplingDomain::new(sapling_zip212_enforcement(&parameters, height))
+        SaplingDomain::new(
+            zcash_primitives::transaction::components::sapling::zip212_enforcement(
+                &parameters,
+                height,
+            ),
+        )
     }
 
     fn to_compact_output_impl(&self) -> Self::CompactAction {

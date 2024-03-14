@@ -8,6 +8,7 @@ use std::{
 use append_only_vec::AppendOnlyVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
+use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
 use secp256k1::SecretKey;
@@ -319,7 +320,7 @@ impl WalletCapability {
                         TransparentAddress::ScriptHash(hash) => hash,
                     };
                     (
-                        hash.to_base58check(&config.base58_pubkey_address(), &[]),
+                        hash.to_base58check(&config.chain.b58_pubkey_address_prefix(), &[]),
                         key.1,
                     )
                 })
@@ -338,7 +339,7 @@ impl WalletCapability {
 
         let orchard_key = orchard::keys::SpendingKey::from_zip32_seed(
             seed,
-            config.get_coin_type(),
+            config.chain.coin_type(),
             AccountId::try_from(position).unwrap(),
         )
         .unwrap();
@@ -382,12 +383,12 @@ impl WalletCapability {
 
     pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, String> {
         // Decode UFVK
-        if ufvk_encoded.starts_with(config.hrp_sapling_viewing_key()) {
+        if ufvk_encoded.starts_with(config.chain.hrp_sapling_extended_full_viewing_key()) {
             return Err("Viewing keys must be imported in the unified format".to_string());
         }
         let (network, ufvk) = Ufvk::decode(&ufvk_encoded)
             .map_err(|e| format!("Error decoding unified full viewing key: {}", e))?;
-        if network != config.chain.to_zcash_address_network() {
+        if network != config.chain.network_type() {
             return Err("Given UFVK is not valid for current chain".to_string());
         }
 
@@ -438,7 +439,7 @@ impl WalletCapability {
                     {
                         Some(super::ToBase58Check::to_base58check(
                             hash.as_slice(),
-                            &config.base58_pubkey_address(),
+                            &config.chain.b58_pubkey_address_prefix(),
                             &[],
                         ))
                     } else {

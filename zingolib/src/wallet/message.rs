@@ -14,7 +14,7 @@ use zcash_note_encryption::{
     Domain, EphemeralKeyBytes, NoteEncryption, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
-    consensus::{sapling_zip212_enforcement, BlockHeight},
+    consensus::BlockHeight,
     memo::{Memo, MemoBytes},
 };
 use zingoconfig::ChainType;
@@ -188,7 +188,10 @@ impl Message {
                 epk_bytes,
                 enc_bytes,
             },
-            sapling_zip212_enforcement(&ChainType::Mainnet, BlockHeight::from_u32(1_100_000)),
+            zcash_primitives::transaction::components::sapling::zip212_enforcement(
+                &ChainType::Mainnet,
+                BlockHeight::from_u32(1_100_000),
+            ),
         ) {
             Some((_note, address, memo)) => Ok(Self::new(
                 address,

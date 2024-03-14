@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
 use zcash_encoding::Vector;
+use zcash_primitives::consensus::NetworkConstants;
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
@@ -99,7 +100,7 @@ impl ExtendedPrivKey {
             .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
             .unwrap()
             .derive_private_key(
-                KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap(),
+                KeyIndex::hardened_from_normalize_index(config.chain.coin_type()).unwrap(),
             )
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(position).unwrap())
