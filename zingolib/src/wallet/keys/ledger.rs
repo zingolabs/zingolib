@@ -9,6 +9,7 @@ use std::{
 };
 
 use append_only_vec::AppendOnlyVec;
+use hdwallet::KeyIndex;
 // use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ledger_transport::Exchange;
@@ -24,10 +25,7 @@ use secp256k1::PublicKey as SecpPublicKey;
 use zcash_address::unified::Ufvk;
 use zcash_client_backend::address::UnifiedAddress;
 // use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
-use zcash_primitives::{
-    legacy::TransparentAddress,
-    zip32::{ChildIndex, DiversifierIndex},
-};
+use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use sapling_crypto::Diversifier;
 
@@ -245,12 +243,13 @@ impl LedgerWalletCapability {
 
             let mut path_u32 = [0u32; 5];
             path.into_iter()
-                .map(|idx| idx.index())
+                .map(|idx| idx.raw_index())
                 .zip(path_u32.iter_mut())
                 .for_each(|(a, b)| *b = a);
 
             // This is deprecated. Not sure what the alternative is,
             // other than implementing it ourselves.
+            #[allow(deprecated)]
             let t_addrs = zcash_primitives::legacy::keys::pubkey_to_address(&t_pubkey);
             let ua = UnifiedAddress::from_receivers(None, None, Some(t_addrs));
 
@@ -266,7 +265,7 @@ impl LedgerWalletCapability {
                     self.addresses_write_lock
                         .swap(false, atomic::Ordering::Release);
                     return Err(
-                        "Invalid receivers requested! At least one of sapling or transparent required, orchard is not support"
+                        "Invalid receivers requested! At least one of sapling or transparent required, orchard is not supported"
                             .to_string(),
                     );
                 }
@@ -289,16 +288,13 @@ impl LedgerWalletCapability {
         todo!("Do the same for shielded address, sapling");
     }
 
-    pub const fn t_derivation_path(coin_type: u32, index: u32) -> [ChildIndex; 5] {
+    pub fn t_derivation_path(coin_type: u32, index: u32) -> [KeyIndex; 5] {
         [
-            ChildIndex::hardened(44),
-            ChildIndex::hardened(coin_type),
-            ChildIndex::hardened(0),
-            // TODO: Bellow child_index in our lib are meant to be normal
-            // not hardened, but seems zingolib fork of this library
-            // uses only hardened fields in path????
-            ChildIndex::hardened(0),
-            ChildIndex::hardened(index),
+            KeyIndex::hardened_from_normalize_index(44).expect("unreachable"),
+            KeyIndex::hardened_from_normalize_index(coin_type).expect("unreachable"),
+            KeyIndex::hardened_from_normalize_index(0).expect("unreachable"),
+            KeyIndex::from_index(0).expect("unreachable"),
+            KeyIndex::from_index(index).expect("unreachable"),
         ]
     }
 
@@ -317,13 +313,11 @@ impl LedgerWalletCapability {
             .cloned()
             .map(|path| {
                 [
-                    // TODO: last two fields should not be hardened
-                    // but this is what the zcash-primitives provides
-                    ChildIndex::hardened(path[0]),
-                    ChildIndex::hardened(path[1]),
-                    ChildIndex::hardened(path[2]),
-                    ChildIndex::hardened(path[3]),
-                    ChildIndex::hardened(path[4] + 1),
+                    KeyIndex::hardened_from_normalize_index(path[0]).expect("unreachable"),
+                    KeyIndex::hardened_from_normalize_index(path[1]).expect("unreachable"),
+                    KeyIndex::hardened_from_normalize_index(path[2]).expect("unreachable"),
+                    KeyIndex::from_index(path[3]).expect("unreachable"),
+                    KeyIndex::from_index(path[4] + 1).expect("unreachable"),
                 ]
             })
             // TODO: define how to choose a proper acount, we are using the number of
@@ -354,7 +348,7 @@ impl LedgerWalletCapability {
         }
     }
 
-    async fn get_t_pubkey(&self, path: &[ChildIndex]) -> Result<SecpPublicKey, LedgerError> {
+    async fn get_t_pubkey(&self, path: &[KeyIndex]) -> Result<SecpPublicKey, LedgerError> {
         let path = Self::path_slice_to_bip44(path)?;
         let Ok(cached) = self.transparent_addrs.read() else {
             return Err(LedgerError::InvalidPublicKey);
@@ -380,11 +374,11 @@ impl LedgerWalletCapability {
         }
     }
 
-    fn path_slice_to_bip44(path: &[ChildIndex]) -> Result<BIP44Path, LedgerError> {
+    fn path_slice_to_bip44(path: &[KeyIndex]) -> Result<BIP44Path, LedgerError> {
         let path = path
             .iter()
             .take(5)
-            .map(|child| child.index())
+            .map(|child| child.raw_index())
             .collect::<Vec<_>>();
 
         BIP44Path::from_slice(path.as_slice()).map_err(|_| LedgerError::InvalidPathLength(5))

@@ -30,10 +30,7 @@ use zingolib::{
     },
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
-        keys::{
-            extended_transparent::ExtendedPrivKey,
-            unified::{Capability, Keystore},
-        },
+        keys::{extended_transparent::ExtendedPrivKey, keystore::Keystore, unified::Capability},
         LightWallet, Pool,
     },
 };
@@ -82,6 +79,9 @@ fn check_view_capability_bounds(
     sent_t_value: Option<u64>,
     notes: &JsonValue,
 ) {
+    let Keystore::InMemory(watch_wc) = watch_wc else {
+        todo!("Do this for ledger too")
+    };
     //Orchard
     if !fvks.contains(&ovk) {
         assert!(!watch_wc.orchard.can_view());
@@ -512,7 +512,9 @@ mod fast {
 
         let expected_wc =
             Keystore::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1).unwrap();
-        let wc = wallet.keystore();
+        let Keystore::InMemory(ref wc) = *wallet.keystore() else {
+            unreachable!("Known to be InMemory due to new_from_phrase impl")
+        };
 
         // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
         // so we have to compare each component instead
@@ -579,7 +581,9 @@ mod fast {
 
         let expected_wc =
             Keystore::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1).unwrap();
-        let wc = wallet.keystore();
+        let Keystore::InMemory(ref wc) = *wallet.keystore() else {
+            unreachable!("Known to be InMemory due to new_from_phrase impl")
+        };
 
         // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
         // so we have to compare each component instead
@@ -660,7 +664,9 @@ mod fast {
 
         let expected_wc =
             Keystore::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1).unwrap();
-        let wc = wallet.keystore();
+        let Keystore::InMemory(ref wc) = *wallet.keystore() else {
+            unreachable!("Known to be InMemory due to new_from_phrase impl")
+        };
 
         let Capability::Spend(orchard_sk) = &wc.orchard else {
             panic!("Expected Orchard Spending Key");
@@ -3586,4 +3592,25 @@ mod slow {
 #[tokio::test]
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
+}
+
+#[cfg(feature = "ledger-support")]
+mod ledger {
+    use zingolib::wallet::keys::ledger::LedgerWalletCapability;
+
+    use super::*;
+
+    #[test]
+    fn assert_ledger_wallet_loads() {
+        // As we're already in an async context
+        // the block_on call inside LWC::new will
+        // panic unless called in a new thread
+
+        // TODO: This fails as we're not connecting to a ledger app.
+        // Can we mock this?
+        let ledger_capability = std::thread::spawn(LedgerWalletCapability::new)
+            .join()
+            .unwrap()
+            .unwrap();
+    }
 }

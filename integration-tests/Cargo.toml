@@ -22,3 +22,6 @@ hex = "0.3"
 itertools = "0.10.5"
 bip0039 = "0.10.1"
 serde_json = "1.0.107"
+
+[features]
+ledger-support = ["zingolib/ledger-support"]
