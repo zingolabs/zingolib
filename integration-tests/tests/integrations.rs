@@ -553,13 +553,13 @@ mod fast {
         }
 
         let ufvk = wc.ufvk().unwrap();
-        let ufvk_string = ufvk.encode(&config.chain.to_zcash_address_network());
+        let ufvk_string = ufvk.encode(&config.chain.network_type());
         let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
         let view_wallet =
             LightWallet::new(config.clone(), ufvk_base, wallet.get_birthday().await).unwrap();
         let v_wc = view_wallet.wallet_capability();
         let vv = v_wc.ufvk().unwrap();
-        let vv_string = vv.encode(&config.chain.to_zcash_address_network());
+        let vv_string = vv.encode(&config.chain.network_type());
         assert_eq!(ufvk_string, vv_string);
 
         let client = LightClient::create_from_wallet_async(wallet, config)
@@ -642,6 +642,8 @@ mod fast {
     }
 }
 mod slow {
+    use zcash_primitives::consensus::NetworkConstants;
+
     use super::*;
 
     #[tokio::test]

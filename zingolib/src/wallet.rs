@@ -21,6 +21,7 @@ use shardtree::error::ShardTreeError;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::Infallible;
+use std::ops::Add;
 use std::{
     cmp,
     io::{self, Error, ErrorKind, Read, Write},
@@ -267,8 +268,12 @@ impl LightWallet {
             if running_total >= target_amount {
                 break;
             }
-            running_total += Amount::from_u64(D::WalletNote::value_from_note(note.note()))
-                .expect("Note value overflow error");
+            running_total = running_total
+                .add(
+                    Amount::from_u64(D::WalletNote::value_from_note(note.note()))
+                        .expect("should be within the valid monetary range of zatoshis"),
+                )
+                .expect("should be within the valid monetary range of zatoshis");
             notes.push(note);
         }
 

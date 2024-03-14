@@ -10,6 +10,7 @@ use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::Address;
+use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 lazy_static! {
@@ -620,7 +621,7 @@ impl Command for ExportUfvkCommand {
             Ok(ufvk) => {
                 use zcash_address::unified::Encoding as _;
                 object! {
-                    "ufvk" => ufvk.encode(&lightclient.config().chain.to_zcash_address_network()),
+                    "ufvk" => ufvk.encode(&lightclient.config().chain.network_type()),
                     "birthday" => RT.block_on(lightclient.wallet.get_birthday())
                 }
                 .pretty(2)

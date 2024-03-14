@@ -18,9 +18,9 @@ use log4rs::{
     filter::threshold::ThresholdFilter,
     Config,
 };
-use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK},
-    constants,
+use zcash_primitives::consensus::{
+    BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters, MAIN_NETWORK,
+    TEST_NETWORK,
 };
 
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
@@ -397,30 +397,37 @@ impl ZingoConfig {
     /// so that HD wallets can manage multiple currencies.
     ///  <https://github.com/satoshilabs/slips/blob/master/slip-0044.md>
     ///  ZEC is registered as 133 (0x80000085) for MainNet and 1 (0x80000001) for TestNet (all coins)
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn get_coin_type(&self) -> u32 {
         self.chain.coin_type()
     }
 
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_address(&self) -> &str {
         self.chain.hrp_sapling_payment_address()
     }
 
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_private_key(&self) -> &str {
         self.chain.hrp_sapling_extended_spending_key()
     }
 
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_viewing_key(&self) -> &str {
         self.chain.hrp_sapling_extended_full_viewing_key()
     }
 
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn base58_pubkey_address(&self) -> [u8; 2] {
         self.chain.b58_pubkey_address_prefix()
     }
 
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn base58_script_address(&self) -> [u8; 2] {
         self.chain.b58_script_address_prefix()
     }
 
+    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
             ChainType::Testnet | ChainType::Regtest(_) | ChainType::FakeMainnet => [0xEF],
@@ -453,13 +460,6 @@ impl ChainType {
             ChainType::FakeMainnet => "uview",
         }
     }
-    pub fn to_zcash_address_network(&self) -> zcash_address::Network {
-        match self {
-            Mainnet | FakeMainnet => zcash_address::Network::Main,
-            Testnet => zcash_address::Network::Test,
-            Regtest(_) => RegtestNetwork::address_network().unwrap(),
-        }
-    }
 }
 
 impl std::fmt::Display for ChainType {
@@ -475,67 +475,24 @@ impl std::fmt::Display for ChainType {
     }
 }
 
-use ChainType::*;
 impl Parameters for ChainType {
+    fn network_type(&self) -> NetworkType {
+        use ChainType::*;
+        match self {
+            Mainnet | FakeMainnet => NetworkType::Main,
+            Testnet => NetworkType::Test,
+            Regtest(_) => NetworkType::Regtest,
+        }
+    }
+
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        use ChainType::*;
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
             Regtest(regtest_network) => regtest_network.activation_height(nu),
             FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
-    }
-
-    fn coin_type(&self) -> u32 {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::COIN_TYPE,
-            Testnet => constants::testnet::COIN_TYPE,
-            Regtest(_) => RegtestNetwork::coin_type(),
-        }
-    }
-
-    fn hrp_sapling_extended_spending_key(&self) -> &str {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest(_) => RegtestNetwork::hrp_sapling_extended_spending_key(),
-        }
-    }
-
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest(_) => RegtestNetwork::hrp_sapling_extended_full_viewing_key(),
-        }
-    }
-
-    fn hrp_sapling_payment_address(&self) -> &str {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest(_) => RegtestNetwork::hrp_sapling_payment_address(),
-        }
-    }
-
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest(_) => RegtestNetwork::b58_pubkey_address_prefix(),
-        }
-    }
-
-    fn b58_script_address_prefix(&self) -> [u8; 2] {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest(_) => RegtestNetwork::b58_script_address_prefix(),
-        }
-    }
-
-    fn address_network(&self) -> Option<zcash_address::Network> {
-        Some(self.to_zcash_address_network())
     }
 }
 
@@ -602,34 +559,6 @@ impl RegtestNetwork {
                     .get_activation_height(NetworkUpgrade::Nu5),
             ),
         }
-    }
-
-    fn coin_type() -> u32 {
-        constants::regtest::COIN_TYPE
-    }
-
-    fn address_network() -> Option<zcash_address::Network> {
-        Some(zcash_address::Network::Regtest)
-    }
-
-    fn hrp_sapling_extended_spending_key() -> &'static str {
-        constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY
-    }
-
-    fn hrp_sapling_extended_full_viewing_key() -> &'static str {
-        constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
-    }
-
-    fn hrp_sapling_payment_address() -> &'static str {
-        constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS
-    }
-
-    fn b58_pubkey_address_prefix() -> [u8; 2] {
-        constants::regtest::B58_PUBKEY_ADDRESS_PREFIX
-    }
-
-    fn b58_script_address_prefix() -> [u8; 2] {
-        constants::regtest::B58_SCRIPT_ADDRESS_PREFIX
     }
 }
 
