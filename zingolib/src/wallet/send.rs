@@ -187,9 +187,12 @@ impl LightWallet {
         let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
         let seed = mnemonic.to_seed("");
         let account_id = AccountId::ZERO;
-        let usk =
-            UnifiedSpendingKey::from_seed(&self.transaction_context.config.chain, seed, account_id)
-                .expect("should be able to create a unified spend key");
+        let usk = UnifiedSpendingKey::from_seed(
+            &self.transaction_context.config.chain,
+            &seed,
+            account_id,
+        )
+        .expect("should be able to create a unified spend key");
 
         dbg!("calculating");
         let (build_result, _account, _outputs, _utxos_spent) =
