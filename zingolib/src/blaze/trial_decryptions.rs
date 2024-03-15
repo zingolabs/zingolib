@@ -9,7 +9,7 @@ use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
-    ledger::TxMapAndMaybeTrees,
+    tmamt::TxMapAndMaybeTrees,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
     utils::txid_from_slice,
     MemoDownloadOption,

@@ -4,8 +4,8 @@ use crate::{
     wallet::{
         data::OutgoingTxData,
         keys::{address_from_pubkeyhash, unified::WalletCapability},
-        ledger::TxMapAndMaybeTrees,
         notes::ShieldedNoteInterface,
+        tmamt::TxMapAndMaybeTrees,
         traits::{
             self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
             ShieldedOutputExt as _, Spend as _, ToBytes as _,

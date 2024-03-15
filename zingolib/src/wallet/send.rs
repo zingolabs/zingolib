@@ -1,6 +1,6 @@
 use crate::error::ZingoLibError;
 
-use crate::wallet::ledger::TxMapAndMaybeTrees;
+use crate::wallet::tmamt::TxMapAndMaybeTrees;
 
 use futures::Future;
 

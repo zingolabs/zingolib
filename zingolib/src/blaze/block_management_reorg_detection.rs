@@ -3,8 +3,8 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
-        ledger::TxMapAndMaybeTrees,
         notes::ShieldedNoteInterface,
+        tmamt::TxMapAndMaybeTrees,
         traits::DomainWalletExt,
     },
 };

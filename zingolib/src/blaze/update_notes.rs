@@ -1,5 +1,5 @@
 use crate::wallet::MemoDownloadOption;
-use crate::wallet::{data::PoolNullifier, ledger::TxMapAndMaybeTrees, utils::txid_from_slice};
+use crate::wallet::{data::PoolNullifier, tmamt::TxMapAndMaybeTrees, utils::txid_from_slice};
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;

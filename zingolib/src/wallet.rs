@@ -55,16 +55,16 @@ use self::traits::{DomainWalletExt, SpendableNote};
 
 use self::{
     data::{BlockData, WalletZecPriceInfo},
-    ledger::TxMapAndMaybeTrees,
     message::Message,
+    tmamt::TxMapAndMaybeTrees,
 };
 
 pub mod data;
 pub mod keys;
-pub mod ledger;
 pub(crate) mod message;
 pub mod notes;
 pub mod send;
+pub mod tmamt;
 pub mod traits;
 pub mod transaction_record;
 pub mod utils;

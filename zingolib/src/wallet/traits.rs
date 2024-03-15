@@ -7,8 +7,8 @@ use super::{
         WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
-    ledger::TxMapAndMaybeTrees,
     notes::{OrchardNote, SaplingNote},
+    tmamt::TxMapAndMaybeTrees,
 };
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
