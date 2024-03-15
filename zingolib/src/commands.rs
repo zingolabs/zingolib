@@ -192,7 +192,6 @@ impl Command for ParseAddressCommand {
                         zingoconfig::ChainType::Mainnet => "main",
                         zingoconfig::ChainType::Testnet => "test",
                         zingoconfig::ChainType::Regtest(_) => "regtest",
-                        zingoconfig::ChainType::FakeMainnet => unreachable!(),
                     };
 
                     match recipient_address {

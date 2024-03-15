@@ -287,7 +287,6 @@ impl ZingoConfig {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
                     ChainType::Regtest(_) => zcash_data_location.push("regtest"),
                     ChainType::Mainnet => {}
-                    ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
                 };
             }
 
@@ -430,7 +429,7 @@ impl ZingoConfig {
     #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
-            ChainType::Testnet | ChainType::Regtest(_) | ChainType::FakeMainnet => [0xEF],
+            ChainType::Testnet | ChainType::Regtest(_) => [0xEF],
             ChainType::Mainnet => [0x80],
         }
     }
@@ -440,24 +439,24 @@ pub enum ChainType {
     Testnet,
     Regtest(RegtestNetwork),
     Mainnet,
-    FakeMainnet,
 }
 
 impl ChainType {
+    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn hrp_orchard_spending_key(&self) -> &str {
         match self {
             ChainType::Testnet => "secret-orchard-sk-test",
             ChainType::Regtest(_) => "secret-orchard-sk-regtest",
             ChainType::Mainnet => "secret-orchard-sk-main",
-            ChainType::FakeMainnet => "secret-orchard-sk-main",
         }
     }
+
+    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn hrp_unified_full_viewing_key(&self) -> &str {
         match self {
             ChainType::Testnet => "uviewtest",
             ChainType::Regtest(_) => "uviewregtest",
             ChainType::Mainnet => "uview",
-            ChainType::FakeMainnet => "uview",
         }
     }
 }
@@ -469,7 +468,6 @@ impl std::fmt::Display for ChainType {
             Testnet => "test",
             Regtest(_) => "regtest",
             Mainnet => "main",
-            FakeMainnet => "fakemainnet",
         };
         write!(f, "{name}")
     }
@@ -479,7 +477,7 @@ impl Parameters for ChainType {
     fn network_type(&self) -> NetworkType {
         use ChainType::*;
         match self {
-            Mainnet | FakeMainnet => NetworkType::Main,
+            Mainnet => NetworkType::Main,
             Testnet => NetworkType::Test,
             Regtest(_) => NetworkType::Regtest,
         }
@@ -491,7 +489,6 @@ impl Parameters for ChainType {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
             Regtest(regtest_network) => regtest_network.activation_height(nu),
-            FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
     }
 }
