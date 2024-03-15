@@ -1,17 +1,10 @@
 use super::syncdata::BlazeSyncData;
-use crate::{
-    wallet::{
-        transaction_context::TransactionContext,
-    },
-};
+use crate::wallet::transaction_context::TransactionContext;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 
-
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
 use tokio::{
     sync::{
@@ -21,14 +14,12 @@ use tokio::{
     task::JoinHandle,
 };
 
-
 use zcash_primitives::{
     consensus::BlockHeight,
     transaction::{Transaction, TxId},
 };
 
 use zingo_status::confirmation_status::ConfirmationStatus;
-
 
 pub async fn start(
     transaction_context: TransactionContext,
