@@ -11,28 +11,13 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-use std::{
-    collections::HashSet,
-    convert::TryInto,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-};
-use tokio::{
-    sync::{
-        mpsc::{unbounded_channel, UnboundedSender},
-        oneshot, RwLock,
-    },
-    task::JoinHandle,
-};
+use std::{collections::HashSet, convert::TryInto, sync::Arc};
+use tokio::sync::RwLock;
 use zcash_client_backend::address::{Address, UnifiedAddress};
 use zcash_note_encryption::try_output_recovery_with_ovk;
 use zcash_primitives::{
-    consensus::BlockHeight,
     memo::{Memo, MemoBytes},
     transaction::{Transaction, TxId},
 };
