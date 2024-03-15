@@ -185,7 +185,7 @@ impl LightWallet {
         let empty_step_results = Vec::with_capacity(1);
 
         let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
-        let seed = mnemonic.entropy();
+        let seed = mnemonic.to_seed("");
         let account_id = AccountId::ZERO;
         let usk =
             UnifiedSpendingKey::from_seed(&self.transaction_context.config.chain, seed, account_id)
