@@ -8,7 +8,7 @@ use super::data::{TransactionRecord, WitnessTrees};
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 // todo ZingoLedger should just be the TransactionRecord.
-pub struct ZingoLedger {
+pub struct TxMapAndMaybeTrees {
     pub current: HashMap<TxId, TransactionRecord>,
     pub witness_trees: Option<WitnessTrees>,
 }
@@ -20,14 +20,14 @@ pub mod serial_read_write;
 pub mod walletcommitmenttrees;
 pub mod walletread;
 
-impl ZingoLedger {
-    pub(crate) fn new_with_witness_trees() -> ZingoLedger {
+impl TxMapAndMaybeTrees {
+    pub(crate) fn new_with_witness_trees() -> TxMapAndMaybeTrees {
         Self {
             current: HashMap::default(),
             witness_trees: Some(WitnessTrees::default()),
         }
     }
-    pub(crate) fn new_treeless() -> ZingoLedger {
+    pub(crate) fn new_treeless() -> TxMapAndMaybeTrees {
         Self {
             current: HashMap::default(),
             witness_trees: None,
@@ -65,7 +65,7 @@ mod tests {
 
     use crate::error::ZingoLibError;
 
-    use super::ZingoLedger;
+    use super::TxMapAndMaybeTrees;
 
     #[test]
     fn test_propose_transfer() {
@@ -74,14 +74,14 @@ mod tests {
             None,
             ShieldedProtocol::Orchard,
         );
-        let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
+        let input_selector = GreedyInputSelector::<TxMapAndMaybeTrees, _>::new(
             change_strategy,
             DustOutputPolicy::default(),
         );
 
         let min_confirmations = NonZeroU32::new(10).unwrap();
 
-        let mut ledger = ZingoLedger::new_treeless();
+        let mut ledger = TxMapAndMaybeTrees::new_treeless();
         // assert_eq!(
         //     &ledger
         //         .get_target_and_anchor_heights(min_confirmations)
@@ -139,10 +139,10 @@ mod tests {
 
         dbg!("proposing transfer");
         let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
-            ZingoLedger,
+            TxMapAndMaybeTrees,
             ChainType,
             GreedyInputSelector<
-                ZingoLedger,
+                TxMapAndMaybeTrees,
                 zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
             >,
             ZingoLibError,

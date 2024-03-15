@@ -1,10 +1,10 @@
 use zcash_client_backend::{data_api::WalletRead, keys::UnifiedFullViewingKey};
 use zcash_primitives::zip32::AccountId;
 
-use super::ZingoLedger;
+use super::TxMapAndMaybeTrees;
 use crate::error::ZingoLibError;
 
-impl WalletRead for ZingoLedger {
+impl WalletRead for TxMapAndMaybeTrees {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
 

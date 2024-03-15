@@ -8,8 +8,8 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
 
-use super::ZingoLedger;
-impl ZingoLedger {
+use super::TxMapAndMaybeTrees;
+impl TxMapAndMaybeTrees {
     pub fn serialized_version() -> u64 {
         22
     }
@@ -160,7 +160,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write() {
-        let mut tms = ZingoLedger {
+        let mut tms = TxMapAndMaybeTrees {
             current: HashMap::new(), // Populate with test data as necessary
             witness_trees: Some(WitnessTrees::default()), // Adjust as needed
         };

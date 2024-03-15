@@ -7,7 +7,7 @@ use super::{
         WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
-    ledger::ZingoLedger,
+    ledger::TxMapAndMaybeTrees,
     notes::{OrchardNote, SaplingNote},
 };
 use crate::wallet::notes::NoteInterface;
@@ -438,7 +438,7 @@ where
             .sum()
     }
     fn transaction_metadata_set_to_shardtree(
-        txmds: &ZingoLedger,
+        txmds: &TxMapAndMaybeTrees,
     ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees
@@ -446,7 +446,7 @@ where
             .map(|trees| Self::get_shardtree(trees))
     }
     fn transaction_metadata_set_to_shardtree_mut(
-        txmds: &mut ZingoLedger,
+        txmds: &mut TxMapAndMaybeTrees,
     ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees

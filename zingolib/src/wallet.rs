@@ -1,7 +1,7 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
-use crate::wallet::data::{TransactionRecord};
+use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
@@ -18,7 +18,7 @@ use rand::Rng;
 use sapling_crypto::note_encryption::SaplingDomain;
 
 use sapling_crypto::SaplingIvk;
-use shardtree::error::{ShardTreeError};
+use shardtree::error::ShardTreeError;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::Infallible;
@@ -41,10 +41,7 @@ use zcash_primitives::transaction::{self};
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
-    transaction::{
-        builder::Builder,
-        components::{Amount},
-    },
+    transaction::{builder::Builder, components::Amount},
 };
 
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -58,7 +55,7 @@ use self::traits::{DomainWalletExt, SpendableNote};
 
 use self::{
     data::{BlockData, WalletZecPriceInfo},
-    ledger::ZingoLedger,
+    ledger::TxMapAndMaybeTrees,
     message::Message,
 };
 
@@ -609,9 +606,9 @@ impl LightWallet {
             ));
         };
         let arc_ledger = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(ZingoLedger::new_with_witness_trees()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees()))
         } else {
-            Arc::new(RwLock::new(ZingoLedger::new_treeless()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless()))
         };
         let transaction_context = TransactionContext::new(&config, Arc::new(wc), arc_ledger);
         Ok(Self {
@@ -691,9 +688,9 @@ impl LightWallet {
         }
 
         let mut transactions = if external_version <= 14 {
-            ZingoLedger::read_old(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read_old(&mut reader, &wallet_capability)
         } else {
-            ZingoLedger::read(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
         }?;
         let txids = transactions
             .current
@@ -944,7 +941,7 @@ impl LightWallet {
         }
     }
 
-    pub fn transactions(&self) -> Arc<RwLock<ZingoLedger>> {
+    pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
         self.transaction_context.arc_ledger.clone()
     }
 

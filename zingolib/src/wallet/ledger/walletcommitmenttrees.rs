@@ -5,13 +5,13 @@ use zcash_client_backend::data_api::{
     chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
 };
 
-use super::ZingoLedger;
+use super::TxMapAndMaybeTrees;
 use crate::{
     error::ZingoLibError,
     wallet::data::{OrchStore, SapStore, WitnessTrees},
 };
 
-impl WalletCommitmentTrees for ZingoLedger {
+impl WalletCommitmentTrees for TxMapAndMaybeTrees {
     type Error = Infallible;
 
     type SaplingShardStore<'a> = SapStore;

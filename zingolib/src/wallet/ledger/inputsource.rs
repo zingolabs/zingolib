@@ -5,9 +5,9 @@ use zcash_primitives::zip32::AccountId;
 
 use crate::error::ZingoLibError;
 
-use super::ZingoLedger;
+use super::TxMapAndMaybeTrees;
 
-impl InputSource for ZingoLedger {
+impl InputSource for TxMapAndMaybeTrees {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
 

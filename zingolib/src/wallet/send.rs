@@ -1,6 +1,6 @@
 use crate::error::ZingoLibError;
 
-use crate::wallet::ledger::ZingoLedger;
+use crate::wallet::ledger::TxMapAndMaybeTrees;
 
 use futures::Future;
 
@@ -152,7 +152,7 @@ impl LightWallet {
             None,
             ShieldedProtocol::Orchard,
         );
-        let input_selector = GreedyInputSelector::<ZingoLedger, _>::new(
+        let input_selector = GreedyInputSelector::<TxMapAndMaybeTrees, _>::new(
             change_strategy,
             zcash_client_backend::fees::DustOutputPolicy::default(),
         );
@@ -160,10 +160,10 @@ impl LightWallet {
 
         dbg!("proposal");
         let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
-            ZingoLedger,
+            TxMapAndMaybeTrees,
             ChainType,
             GreedyInputSelector<
-                ZingoLedger,
+                TxMapAndMaybeTrees,
                 zcash_client_backend::fees::standard::SingleOutputChangeStrategy,
             >,
             ZingoLibError,
@@ -197,7 +197,7 @@ impl LightWallet {
         dbg!("calculating");
         let (build_result, _account, _outputs, _utxos_spent) =
             zcash_client_backend::data_api::wallet::calculate_proposed_transaction::<
-                ZingoLedger,
+                TxMapAndMaybeTrees,
                 ChainType,
                 ZingoLibError,
                 Zip317FeeRule,

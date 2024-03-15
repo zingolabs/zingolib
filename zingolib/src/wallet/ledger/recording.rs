@@ -22,8 +22,8 @@ use crate::{
     },
 };
 
-use super::ZingoLedger;
-impl ZingoLedger {
+use super::TxMapAndMaybeTrees;
+impl TxMapAndMaybeTrees {
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.current.remove(txid);
@@ -511,7 +511,7 @@ impl ZingoLedger {
 }
 
 // shardtree
-impl ZingoLedger {
+impl TxMapAndMaybeTrees {
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(

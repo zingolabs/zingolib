@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
-        ledger::ZingoLedger,
+        ledger::TxMapAndMaybeTrees,
         notes::ShieldedNoteInterface,
         traits::DomainWalletExt,
     },
@@ -320,7 +320,7 @@ impl BlockManagementData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        arc_ledger: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
         let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
@@ -337,7 +337,7 @@ impl BlockManagementData {
         &self,
         start_block: u64,
         end_block: u64,
-        arc_ledger: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<TxMapAndMaybeTrees>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<Option<u64>, String>>,
@@ -583,7 +583,7 @@ struct BlockManagementThreadData {
 impl BlockManagementThreadData {
     async fn handle_reorgs_populate_data_inner(
         mut self,
-        arc_ledger: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<TxMapAndMaybeTrees>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> Result<Option<u64>, String> {
         // Temporary holding place for blocks while we process them.
@@ -829,7 +829,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(ZingoLedger::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -878,7 +878,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(ZingoLedger::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -974,7 +974,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(ZingoLedger::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;

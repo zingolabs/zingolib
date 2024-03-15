@@ -9,7 +9,7 @@ use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
-    ledger::ZingoLedger,
+    ledger::TxMapAndMaybeTrees,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
     utils::txid_from_slice,
     MemoDownloadOption,
@@ -41,7 +41,7 @@ use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,
-    arc_ledger: Arc<RwLock<ZingoLedger>>,
+    arc_ledger: Arc<RwLock<TxMapAndMaybeTrees>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -49,7 +49,7 @@ impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
         wc: Arc<WalletCapability>,
-        arc_ledger: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
             config,
@@ -130,7 +130,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: Option<SaplingIvk>,
         orchard_ivk: Option<OrchardIvk>,
-        arc_ledger: Arc<RwLock<ZingoLedger>>,
+        arc_ledger: Arc<RwLock<TxMapAndMaybeTrees>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -263,7 +263,7 @@ impl TrialDecryptions {
         config: &zingoconfig::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
-        arc_ledger: &Arc<RwLock<ZingoLedger>>,
+        arc_ledger: &Arc<RwLock<TxMapAndMaybeTrees>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -418,7 +418,7 @@ fn update_witnesses<D>(
         )>,
         BlockHeight,
     )>,
-    txmds_writelock: &mut ZingoLedger,
+    txmds_writelock: &mut TxMapAndMaybeTrees,
     wc: &Arc<WalletCapability>,
 ) -> ZingoLibResult<()>
 where
