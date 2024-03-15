@@ -1,9 +1,9 @@
 use crate::{
     blaze::{
         block_management_reorg_detection::BlockManagementData,
-        fetch_compact_blocks::FetchCompactBlocks, fetch_full_transaction::TransactionContext,
-        fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
+        fetch_compact_blocks::FetchCompactBlocks, fetch_taddr_transactions::FetchTaddrTransactions,
+        sync_status::BatchSyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
+        update_notes::UpdateNotes,
     },
     error::{ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
@@ -17,6 +17,7 @@ use crate::{
         notes::NoteInterface,
         notes::ShieldedNoteInterface,
         now,
+        transaction_context::TransactionContext,
         utils::get_price,
         LightWallet, Pool, SendProgress, WalletBase,
     },
