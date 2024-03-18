@@ -1,3 +1,4 @@
+use crate::error::ZingoLibError;
 use crate::wallet::data::SpendableSaplingNote;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::now;
@@ -15,6 +16,9 @@ use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
+use zcash_client_backend::data_api::InputSource;
+use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::zip321::{Payment, TransactionRequest};
 use zcash_primitives::zip32::AccountId;
 use zingoconfig::ChainType;
 
@@ -29,6 +33,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
+use zcash_primitives::transaction::fees::zip317::FeeRule as Zip317FeeRule;
 use zcash_primitives::transaction::{self, Transaction};
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -45,7 +50,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::data::{SpendableOrchardNote, WitnessTrees};
 
-use super::notes;
+use super::{notes, LightWallet};
 
 use super::traits::SpendableNote;
 use super::transaction_context::TransactionContext;
@@ -79,7 +84,7 @@ impl SendProgress {
 
 type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, ()>;
-impl super::LightWallet {
+impl LightWallet {
     // Reset the send progress status to blank
     async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
@@ -122,16 +127,20 @@ impl super::LightWallet {
         // Create the transaction
         let start_time = now();
 
-        let change_strategy = zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
-            None,
-            ShieldedProtocol::Orchard,
-        );
+        /////
+        let mut payments = vec![];
+        for out in receivers.clone() {
+            payments.push(Payment {
+                recipient_address: out.0,
+                amount: out.1,
+                memo: out.2,
+                label: None,
+                message: None,
+                other_params: vec![],
+            });
+        }
 
-        let input_selector = GreedyInputSelector::<TransactionContext, _>::new(
-            change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::default(),
-        );
+        let request = TransactionRequest::new(payments).map_err(|e| e.to_string())?;
 
         let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
         let seed = mnemonic.to_seed("");
@@ -143,21 +152,25 @@ impl super::LightWallet {
         )
         .expect("should be able to create a unified spend key");
 
-        let res = zcash_client_backend::data_api::wallet::spend::<
-            Self,
-            ChainType,
-            GreedyInputSelector<Self, _>,
-        >(
-            self,
-            self.transaction_context.config.chain,
-            sapling_prover,
-            sapling_prover,
-            &input_selector,
-            usk,
-            0,
-            0,
-            NonZeroU32::new(1),
-        );
+        // let prop = self.create_proposal(request);
+
+        // let res = zcash_client_backend::data_api::wallet::spend::<
+        //     Self,
+        //     ChainType,
+        //     GreedyInputSelector<Self, _>,
+        // >(
+        //     &mut self,
+        //     &self.transaction_context.config.chain,
+        //     sapling_prover,
+        //     sapling_prover,
+        //     &input_selector,
+        //     &usk,
+        //     0,
+        //     zcash_client_backend::wallet::OvkPolicy::Sender,
+        //     NonZeroU32::new(1),
+        // );
+
+        //////
 
         let build_result = self
             .create_publication_ready_transaction(
@@ -184,6 +197,46 @@ impl super::LightWallet {
             }
         }
     }
+
+    async fn create_proposal(
+        &mut self,
+        request: TransactionRequest,
+    ) -> Result<Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>, ZingoLibError> {
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            Zip317FeeRule::standard(),
+            None,
+            ShieldedProtocol::Orchard,
+        );
+
+        type GIS = GreedyInputSelector<
+            LightWallet,
+            zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
+        >;
+
+        let input_selector = GIS::new(
+            change_strategy,
+            zcash_client_backend::fees::DustOutputPolicy::default(),
+        );
+
+        Ok(zcash_client_backend::data_api::wallet::propose_transfer::<
+            LightWallet,
+            ChainType,
+            GreedyInputSelector<
+                Self,
+                zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
+            >,
+            ZingoLibError,
+        >(
+            self,
+            &self.transaction_context.config.chain.clone(),
+            zcash_primitives::zip32::AccountId::ZERO,
+            &input_selector,
+            request,
+            NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
+        )
+        .map_err(|e| ZingoLibError::UnknownError)?) //review! error typing
+    }
+
     async fn create_publication_ready_transaction<P: SpendProver + OutputProver>(
         &self,
         submission_height: BlockHeight,
