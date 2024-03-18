@@ -20,7 +20,7 @@ resolver = "2"
 clap = "4.4"
 sapling-crypto = "0.1.2"
 zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317" } # git tag -s $(git describe --dirty)
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317", features = ["lightwalletd-tonic"] }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317", features = ["lightwalletd-tonic", "orchard"] }
 zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317" }
 zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317", features = ["orchard"] }
 zcash_note_encryption = "0.4"
@@ -51,3 +51,9 @@ debug = false
 [profile.test]
 opt-level = 3
 debug = false
+
+[patch.crates-io]
+orchard = { git = "https://github.com/zcash/orchard", rev = "e74879dd0ad0918f4ffe0826e03905cd819981bd" }
+incrementalmerkletree = { git = "https://github.com/nuttycom/incrementalmerkletree", rev = "fa147c89c6c98a03bba745538f4e68d4eaed5146" }
+shardtree = { git = "https://github.com/nuttycom/incrementalmerkletree", rev = "fa147c89c6c98a03bba745538f4e68d4eaed5146" }
+
