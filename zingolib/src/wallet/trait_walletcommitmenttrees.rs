@@ -1,12 +1,19 @@
+use std::convert::Infallible;
+
 use shardtree::error::ShardTreeError;
 use zcash_client_backend::data_api::chain::CommitmentTreeRoot;
 use zcash_client_backend::data_api::WalletCommitmentTrees;
 
+use crate::error::ZingoLibError;
+use crate::wallet::ShardTree;
 use crate::wallet::WitnessTrees;
 
+use super::data::OrchStore;
+use super::data::SapStore;
 use super::LightWallet;
 
 impl WalletCommitmentTrees for LightWallet {
+    // review! this should be a zingolib error?
     type Error = Infallible;
 
     type SaplingShardStore<'a> = SapStore;
@@ -17,7 +24,7 @@ impl WalletCommitmentTrees for LightWallet {
             &'a mut ShardTree<
                 Self::SaplingShardStore<'a>,
                 { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
-                SAPLING_SHARD_HEIGHT,
+                { zcash_client_backend::data_api::SAPLING_SHARD_HEIGHT },
             >,
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
@@ -40,8 +47,8 @@ impl WalletCommitmentTrees for LightWallet {
         for<'a> F: FnMut(
             &'a mut ShardTree<
                 Self::OrchardShardStore<'a>,
-                { ORCHARD_SHARD_HEIGHT * 2 },
-                ORCHARD_SHARD_HEIGHT,
+                { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                { zcash_client_backend::data_api::ORCHARD_SHARD_HEIGHT },
             >,
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,

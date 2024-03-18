@@ -39,8 +39,8 @@ pub enum PoolNullifier {
     Orchard(orchard::note::Nullifier),
 }
 
-type SapStore = MemoryShardStore<Node, BlockHeight>;
-type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+pub(crate) type SapStore = MemoryShardStore<Node, BlockHeight>;
+pub(crate) type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
 #[derive(Debug)]
 pub struct WitnessTrees {
     pub witness_tree_sapling: ShardTree<SapStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,

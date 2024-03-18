@@ -177,4 +177,38 @@ impl WalletRead for LightWallet {
     ) -> Result<Vec<(Self::AccountId, sapling_crypto::Nullifier)>, Self::Error> {
         unimplemented!()
     }
+
+    fn get_transparent_receivers(
+        &self,
+        _account: Self::AccountId,
+    ) -> Result<
+        std::collections::HashMap<
+            zcash_primitives::legacy::TransparentAddress,
+            Option<zcash_client_backend::wallet::TransparentAddressMetadata>,
+        >,
+        Self::Error,
+    > {
+        Ok(std::collections::HashMap::new())
+    }
+
+    fn get_transparent_balances(
+        &self,
+        _account: Self::AccountId,
+        _max_height: zcash_primitives::consensus::BlockHeight,
+    ) -> Result<
+        std::collections::HashMap<
+            zcash_primitives::legacy::TransparentAddress,
+            zcash_primitives::transaction::components::amount::NonNegativeAmount,
+        >,
+        Self::Error,
+    > {
+        Ok(std::collections::HashMap::new())
+    }
+
+    fn get_orchard_nullifiers(
+        &self,
+        query: zcash_client_backend::data_api::NullifierQuery,
+    ) -> Result<Vec<(Self::AccountId, orchard::note::Nullifier)>, Self::Error> {
+        todo!()
+    }
 }
