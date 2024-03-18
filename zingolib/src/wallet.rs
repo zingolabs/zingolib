@@ -57,6 +57,7 @@ pub mod keys;
 pub(crate) mod message;
 pub mod notes;
 pub mod send;
+pub mod trait_inputsource;
 pub mod trait_walletcommitmenttrees;
 pub mod trait_walletread;
 pub mod trait_walletwrite;

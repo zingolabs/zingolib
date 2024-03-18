@@ -19,14 +19,14 @@ resolver = "2"
 [workspace.dependencies]
 clap = "4.4"
 sapling-crypto = "0.1.2"
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317" } # git tag -s $(git describe --dirty)
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317", features = ["lightwalletd-tonic", "orchard"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317", features = ["orchard"] }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "m18_z317_t" } # git tag -s $(git describe --dirty)
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "m18_z317_t", features = ["lightwalletd-tonic", "orchard"] }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "m18_z317_t" }
+zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", tag = "m18_z317_t", features = ["orchard"] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317" }
-zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", branch = "m18_z317" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "m18_z317_t" }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "m18_z317_t" }
+zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", tag = "m18_z317_t" }
 orchard = "0.7.1"
 tonic-build = "0.10"
 tempdir = "0.3"
