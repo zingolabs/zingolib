@@ -14,11 +14,16 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
+use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
+use zcash_primitives::zip32::AccountId;
+use zingoconfig::ChainType;
 
 use std::convert::Infallible;
+use std::num::NonZeroU32;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::address;
+use zcash_client_backend::keys::UnifiedSpendingKey;
+use zcash_client_backend::{address, ShieldedProtocol};
 
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
@@ -43,6 +48,7 @@ use super::data::{SpendableOrchardNote, WitnessTrees};
 use super::notes;
 
 use super::traits::SpendableNote;
+use super::transaction_context::TransactionContext;
 use super::utils::get_price;
 use super::Pool;
 
@@ -112,8 +118,47 @@ impl super::LightWallet {
             // Thus we forbid spending for wallets without complete spending capability for now
             return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
         }
+
         // Create the transaction
         let start_time = now();
+
+        let change_strategy = zcash_client_backend::fees::standard::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::StandardFeeRule::Zip317,
+            None,
+            ShieldedProtocol::Orchard,
+        );
+
+        let input_selector = GreedyInputSelector::<TransactionContext, _>::new(
+            change_strategy,
+            zcash_client_backend::fees::DustOutputPolicy::default(),
+        );
+
+        let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
+        let seed = mnemonic.to_seed("");
+        let account_id = AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(
+            &self.transaction_context.config.chain,
+            &seed,
+            account_id,
+        )
+        .expect("should be able to create a unified spend key");
+
+        let res = zcash_client_backend::data_api::wallet::spend::<
+            Self,
+            ChainType,
+            GreedyInputSelector<Self, _>,
+        >(
+            self,
+            self.transaction_context.config.chain,
+            sapling_prover,
+            sapling_prover,
+            &input_selector,
+            usk,
+            0,
+            0,
+            NonZeroU32::new(1),
+        );
+
         let build_result = self
             .create_publication_ready_transaction(
                 submission_height,
