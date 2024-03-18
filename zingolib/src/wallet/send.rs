@@ -100,7 +100,7 @@ impl LightWallet {
     }
 
     pub async fn send_to_addresses<F, Fut, P: SpendProver + OutputProver>(
-        &self,
+        &mut self,
         sapling_prover: P,
         policy: NoteSelectionPolicy,
         receivers: Receivers,
@@ -152,7 +152,7 @@ impl LightWallet {
         )
         .expect("should be able to create a unified spend key");
 
-        // let prop = self.create_proposal(request);
+        let prop = self.create_proposal(request);
 
         // let res = zcash_client_backend::data_api::wallet::spend::<
         //     Self,
@@ -170,6 +170,7 @@ impl LightWallet {
         //     NonZeroU32::new(1),
         // );
 
+        drop(prop);
         //////
 
         let build_result = self
@@ -198,7 +199,7 @@ impl LightWallet {
         }
     }
 
-    async fn create_proposal(
+    fn create_proposal(
         &mut self,
         request: TransactionRequest,
     ) -> Result<Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>, ZingoLibError> {
