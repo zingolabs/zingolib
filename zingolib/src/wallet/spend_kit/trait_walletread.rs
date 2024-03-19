@@ -1,8 +1,8 @@
 use zcash_client_backend::data_api::WalletRead;
 
-use super::SendKit;
+use super::SpendKit;
 
-impl WalletRead for SendKit {
+impl WalletRead for SpendKit {
     type Error;
 
     type AccountId;

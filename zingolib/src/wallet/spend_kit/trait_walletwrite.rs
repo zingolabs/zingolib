@@ -1,8 +1,8 @@
 use zcash_client_backend::data_api::WalletWrite;
 
-use super::SendKit;
+use super::SpendKit;
 
-impl WalletWrite for SendKit {
+impl WalletWrite for SpendKit {
     type UtxoRef;
 
     fn create_account(

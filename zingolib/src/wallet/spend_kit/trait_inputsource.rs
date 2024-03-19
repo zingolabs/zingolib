@@ -1,8 +1,8 @@
 use zcash_client_backend::data_api::InputSource;
 
-use super::SendKit;
+use super::SpendKit;
 
-impl InputSource for SendKit {
+impl InputSource for SpendKit {
     type Error;
 
     type AccountId;

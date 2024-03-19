@@ -58,7 +58,7 @@ pub(crate) mod message;
 pub mod notes;
 pub mod record_book;
 pub mod send;
-pub mod send_kit;
+pub mod spend_kit;
 pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
