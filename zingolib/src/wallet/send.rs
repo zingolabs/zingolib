@@ -121,6 +121,21 @@ impl super::LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
+        Err("unimplemented!".to_string())
+    }
+
+    pub async fn send_to_addresses_old<F, Fut, P: SpendProver + OutputProver>(
+        &self,
+        sapling_prover: P,
+        policy: NoteSelectionPolicy,
+        receivers: Receivers,
+        submission_height: BlockHeight,
+        broadcast_fn: F,
+    ) -> Result<(String, Vec<u8>), String>
+    where
+        F: Fn(Box<[u8]>) -> Fut,
+        Fut: Future<Output = Result<String, String>>,
+    {
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
 
