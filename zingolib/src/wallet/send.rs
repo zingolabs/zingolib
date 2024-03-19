@@ -14,6 +14,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
+use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
 
 use std::convert::Infallible;
 use std::sync::mpsc::channel;
@@ -72,6 +73,26 @@ impl SendProgress {
 }
 
 type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
+
+// review! unit test this
+pub fn build_transaction_request_from_receivers(
+    receivers: Receivers,
+) -> Result<TransactionRequest, Zip321Error> {
+    let mut payments = vec![];
+    for out in receivers.clone() {
+        payments.push(Payment {
+            recipient_address: out.0,
+            amount: out.1,
+            memo: out.2,
+            label: None,
+            message: None,
+            other_params: vec![],
+        });
+    }
+
+    TransactionRequest::new(payments)
+}
+
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, ()>;
 impl super::LightWallet {
     // Reset the send progress status to blank
