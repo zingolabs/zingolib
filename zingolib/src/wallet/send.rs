@@ -731,3 +731,45 @@ impl super::LightWallet {
         Ok((transaction_id, raw_transaction))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use zcash_client_backend::{address::Address, zip321::TransactionRequest};
+    use zcash_primitives::{
+        memo::{Memo, MemoBytes},
+        transaction::components::amount::NonNegativeAmount,
+    };
+    use zingoconfig::ChainType;
+
+    use super::{build_transaction_request_from_receivers, Receivers};
+
+    #[test]
+    fn test_build_request() {
+        let amount_1 = NonNegativeAmount::const_from_u64(20000);
+        let recipient_address_1 =
+            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
+        let memo_1 = None;
+
+        let amount_2 = NonNegativeAmount::const_from_u64(20000);
+        let recipient_address_2 =
+            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
+        let memo_2 = Some(MemoBytes::from(
+            Memo::from_str(&"the lake wavers along the beach".to_string())
+                .expect("string can memofy"),
+        ));
+
+        let rec: Receivers = vec![
+            (recipient_address_1, amount_1, memo_1),
+            (recipient_address_2, amount_2, memo_2),
+        ];
+        let request: TransactionRequest =
+            build_transaction_request_from_receivers(rec).expect("rec can requestify");
+
+        assert_eq!(
+            request.total().expect("total"),
+            (amount_1 + amount_2).expect("add")
+        );
+    }
+}
