@@ -22,7 +22,7 @@ use zcash_primitives::zip32::AccountId;
 use std::convert::Infallible;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::address;
+use zcash_client_backend::{address, proposal};
 
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::memo::MemoBytes;
@@ -134,7 +134,10 @@ impl super::LightWallet {
             .transaction_metadata_set
             .write()
             .await;
-        let mut spend_kit = self.assemble_spend_kit(&context_write_lock).await;
+        let mut spend_kit = self.assemble_spend_kit(&context_write_lock).await?;
+        let request =
+            build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
+        let proposal = spend_kit.create_proposal(request);
         Err("unimplemented!".to_string())
     }
 

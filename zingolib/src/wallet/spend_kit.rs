@@ -32,7 +32,7 @@ type GISKit<'a> = GreedyInputSelector<
 >;
 
 impl SpendKit<'_> {
-    fn create_proposal(
+    pub fn create_proposal(
         &mut self,
         request: TransactionRequest,
     ) -> Result<Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>, ZingoLibError> {
