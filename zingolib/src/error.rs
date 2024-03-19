@@ -19,6 +19,7 @@ pub enum ZingoLibError {
     NoSuchNullifierInTx(TxId),
     MissingOutputIndex(TxId),
     CouldNotDecodeMemo(std::io::Error),
+    ViewkeyCantSpend,
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -33,76 +34,69 @@ impl ZingoLibError {
 impl std::fmt::Display for ZingoLibError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ZingoLibError::*;
-        match self {
-            UnknownError => write!(
-                f,
-                "UnknownError",
-            ),
-            Error(string) => write!(
-                f,
-                "Error: {}",
-                string,
-            ),
-            NoWalletLocation => write!(
-                f,
-                "No wallet location! (compiled for native rust, wallet location expected)"
-            ),
-            MetadataUnderflow(explanation) => write!(
-                f,
-                "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
-                explanation,
-            ),
-            InternalWriteBufferError(err) => write!(
-                f,
-                "Internal save error! {} ",
-                err,
-            ),
-            WriteFileError(err) => write!(
-                f,
-                "Could not write to wallet save file. Was this erroneously attempted in mobile?, instead of native save buffer handling? Is there a permission issue? {} ",
-                err,
-            ),
-            EmptySaveBuffer => write!(
-                f,
-                "Empty save buffer. probably save_external was called before save_internal_rust. this is handled by save_external."
-            ),
-            CantReadWallet(err) => write!(
-                f,
-                "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
-                err,
-            ),
-            NoSuchTxId(txid) => write!(
-                f,
-                "Cant find TxId {}!",
-                txid,
-            ),
-            NoSuchSaplingOutputInTx(txid, output_index) => write!(
-                f,
-                "Cant find note with sapling output_index {} in TxId {}",
-                output_index,
-                txid,
-            ),
-            NoSuchOrchardOutputInTx(txid, output_index) => write!(
-                f,
-                "Cant find note with orchard output_index {} in TxId {}",
-                output_index,
-                txid,
-            ),
-            NoSuchNullifierInTx(txid) => write!(
-                f,
-                "Cant find that Nullifier in TxId {}",
-                txid,
-            ),
-            CouldNotDecodeMemo(err) => write!(
-                f,
-                "Could not decode memo. Zingo plans to support foreign memo formats soon. {}",
-                err,
-            ),
-            MissingOutputIndex(txid) => write!(
-                f,
-                "{txid} is missing output_index for note, cannot mark change"
-            ),
-        }
+        write!(
+            f,
+            "{}",
+            match self {
+                UnknownError => format!(
+                    "UnknownError"
+                ),
+                Error(string) => format!(
+                    "Error: {}",
+                    string,
+                ),
+                NoWalletLocation => format!(
+                    "No wallet location! (compiled for native rust, wallet location expected)",
+                ),
+                MetadataUnderflow(explanation) => format!(
+                    "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
+                    explanation,
+                ),
+                InternalWriteBufferError(err) => format!(
+                    "Internal save error! {} ",
+                    err,
+                ),
+                WriteFileError(err) => format!(
+                    "Could not write to wallet save file. Was this erroneously attempted in mobile?, instead of native save buffer handling? Is there a permission issue? {} ",
+                    err,
+                ),
+                EmptySaveBuffer => format!(
+                    "Empty save buffer. probably save_external was called before save_internal_rust. this is handled by save_external."
+                ),
+                CantReadWallet(err) => format!(
+                    "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
+                    err,
+                ),
+                NoSuchTxId(txid) => format!(
+                    "Cant find TxId {}!",
+                    txid,
+                ),
+                NoSuchSaplingOutputInTx(txid, output_index) => format!(
+                    "Cant find note with sapling output_index {} in TxId {}",
+                    output_index,
+                    txid,
+                ),
+                NoSuchOrchardOutputInTx(txid, output_index) => format!(
+                    "Cant find note with orchard output_index {} in TxId {}",
+                    output_index,
+                    txid,
+                ),
+                NoSuchNullifierInTx(txid) => format!(
+                    "Cant find that Nullifier in TxId {}",
+                    txid,
+                ),
+                CouldNotDecodeMemo(err) => format!(
+                    "Could not decode memo. Zingo plans to support foreign memo formats soon. {}",
+                    err,
+                ),
+                MissingOutputIndex(txid) => format!(
+                    "{txid} is missing output_index for note, cannot mark change"
+                ),
+                ViewkeyCantSpend => format!(
+                    "viewkey cannot spend",
+                ),
+            }
+        )
     }
 }
 

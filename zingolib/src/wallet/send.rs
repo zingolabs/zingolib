@@ -1,3 +1,4 @@
+use crate::error::{ZingoLibError, ZingoLibResult};
 use crate::wallet::data::SpendableSaplingNote;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::now;
@@ -14,13 +15,16 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
+use tokio::sync::RwLockWriteGuard;
 use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
+use zcash_primitives::zip32::AccountId;
 
 use std::convert::Infallible;
 use std::sync::mpsc::channel;
 
 use zcash_client_backend::address;
 
+use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
@@ -43,9 +47,13 @@ use super::data::{SpendableOrchardNote, WitnessTrees};
 
 use super::notes;
 
+use super::record_book::RecordBook;
 use super::traits::SpendableNote;
+use super::transaction_context::TransactionContext;
+use super::transactions::TMAMT;
 use super::utils::get_price;
 use super::Pool;
+use crate::wallet::spend_kit::SpendKit;
 
 #[derive(Debug, Clone)]
 pub struct SendProgress {
@@ -121,7 +129,41 @@ impl super::LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
+        let context_write_lock: RwLockWriteGuard<'_, TMAMT> = self
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        let mut spend_kit = self.assemble_spend_kit(&context_write_lock).await;
         Err("unimplemented!".to_string())
+    }
+
+    pub async fn assemble_spend_kit<'spending>(
+        &'spending self,
+        context_write_lock: &'spending RwLockWriteGuard<'spending, TMAMT>,
+    ) -> ZingoLibResult<SpendKit<'spending>> {
+        if let Some(witness_trees) = &context_write_lock.witness_trees {
+            Ok(SpendKit::<'spending> {
+                key: {
+                    let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
+                    let seed = mnemonic.to_seed("");
+                    let account_id = AccountId::ZERO;
+                    UnifiedSpendingKey::from_seed(
+                        &self.transaction_context.config.chain,
+                        &seed,
+                        account_id,
+                    )
+                    .expect("should be able to create a unified spend key")
+                },
+                params: self.transaction_context.config.chain,
+                record_book: RecordBook {
+                    all_transactions: &context_write_lock.current,
+                },
+                trees: witness_trees,
+            })
+        } else {
+            Err(ZingoLibError::ViewkeyCantSpend)
+        }
     }
 
     pub async fn send_to_addresses_old<F, Fut, P: SpendProver + OutputProver>(
