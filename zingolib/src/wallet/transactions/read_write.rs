@@ -8,8 +8,8 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
 
-use super::TransactionMetadataSet;
-impl TransactionMetadataSet {
+use super::TMAMT;
+impl TMAMT {
     pub fn serialized_version() -> u64 {
         22
     }
@@ -160,7 +160,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write() {
-        let mut tms = TransactionMetadataSet {
+        let mut tms = TMAMT {
             current: HashMap::new(), // Populate with test data as necessary
             witness_trees: Some(WitnessTrees::default()), // Adjust as needed
         };

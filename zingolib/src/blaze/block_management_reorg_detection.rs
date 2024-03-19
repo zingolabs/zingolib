@@ -3,7 +3,7 @@ use crate::wallet::{
     data::{BlockData, PoolNullifier},
     notes::ShieldedNoteInterface,
     traits::DomainWalletExt,
-    transactions::TransactionMetadataSet,
+    transactions::TMAMT,
 };
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
@@ -317,7 +317,7 @@ impl BlockManagementData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TMAMT>>,
     ) {
         let mut existing_blocks_writelock = existing_blocks.write().await;
         if existing_blocks_writelock.len() != 0 {
@@ -343,7 +343,7 @@ impl BlockManagementData {
         &self,
         start_block: u64,
         end_block: u64,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TMAMT>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<Option<u64>, String>>,
@@ -589,7 +589,7 @@ struct BlockManagementThreadData {
 impl BlockManagementThreadData {
     async fn handle_reorgs_populate_data_inner(
         mut self,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TMAMT>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> Result<Option<u64>, String> {
         // Temporary holding place for blocks while we process them.
@@ -835,7 +835,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(TMAMT::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -884,7 +884,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(TMAMT::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -980,7 +980,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(TMAMT::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;

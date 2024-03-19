@@ -8,7 +8,7 @@ use crate::{
             self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
             ShieldedOutputExt as _, Spend as _, ToBytes as _,
         },
-        transactions::TransactionMetadataSet,
+        transactions::TMAMT,
     },
 };
 use orchard::note_encryption::OrchardDomain;
@@ -29,14 +29,14 @@ use zingoconfig::ZingoConfig;
 pub struct TransactionContext {
     pub config: ZingoConfig,
     pub(crate) key: Arc<WalletCapability>,
-    pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    pub transaction_metadata_set: Arc<RwLock<TMAMT>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TMAMT>>,
     ) -> Self {
         Self {
             config: config.clone(),
