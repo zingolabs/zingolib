@@ -56,6 +56,7 @@ pub mod data;
 pub mod keys;
 pub(crate) mod message;
 pub mod notes;
+pub mod record_book;
 pub mod send;
 pub mod traits;
 pub mod transaction_context;
