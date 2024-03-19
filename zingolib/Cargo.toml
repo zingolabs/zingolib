@@ -33,6 +33,7 @@ incrementalmerkletree = { workspace = true, features = ["test-dependencies", "le
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
 zcash_encoding = { workspace = true }
+zcash_keys = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
