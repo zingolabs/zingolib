@@ -1,8 +1,9 @@
 use std::{convert::Infallible, num::NonZeroU32};
 
-use crate::error::ZingoLibError;
+use crate::error::{ZingoLibError, ZingoLibResult};
 
 use super::{data::WitnessTrees, record_book::RecordBook, transactions::TxMapAndMaybeTrees};
+use nonempty::NonEmpty;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 use zcash_client_backend::{
     data_api::{wallet::input_selection::GreedyInputSelector, InputSource},
@@ -13,7 +14,10 @@ use zcash_client_backend::{
 };
 use zcash_keys::keys::UnifiedSpendingKey;
 
-use zcash_primitives::{consensus, transaction::fees::zip317::FeeRule as Zip317FeeRule};
+use zcash_primitives::{
+    consensus,
+    transaction::{fees::zip317::FeeRule as Zip317FeeRule, TxId},
+};
 use zingoconfig::ChainType;
 
 pub mod trait_inputsource;
@@ -37,7 +41,7 @@ impl SpendKit<'_> {
     pub fn create_proposal(
         &mut self,
         request: TransactionRequest,
-    ) -> Result<Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>, ZingoLibError> {
+    ) -> ZingoLibResult<Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             Zip317FeeRule::standard(),
             None,
@@ -68,11 +72,11 @@ impl SpendKit<'_> {
         &mut self,
         sapling_prover: Prover,
         proposal: Proposal<Zip317FeeRule, u32>,
-    ) -> ()
+    ) -> ZingoLibResult<NonEmpty<TxId>>
     where
         Prover: SpendProver + OutputProver,
     {
-        let _ = zcash_client_backend::data_api::wallet::create_proposed_transactions::<
+        zcash_client_backend::data_api::wallet::create_proposed_transactions::<
             SpendKit,
             ChainType,
             ZingoLibError,
@@ -86,6 +90,18 @@ impl SpendKit<'_> {
             &self.key.clone(),
             OvkPolicy::Sender,
             &proposal,
-        );
+        )
+        .map_err(|e| ZingoLibError::UnknownError) //review! error typing
+    }
+    pub fn create_and_spend<Prover>(
+        &mut self,
+        request: TransactionRequest,
+        sapling_prover: Prover,
+    ) -> ZingoLibResult<NonEmpty<TxId>>
+    where
+        Prover: SpendProver + OutputProver,
+    {
+        let proposal = self.create_proposal(request)?;
+        self.create_transactions(sapling_prover, proposal)
     }
 }
