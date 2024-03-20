@@ -50,7 +50,7 @@ use super::notes;
 use super::record_book::RecordBook;
 use super::traits::SpendableNote;
 use super::transaction_context::TransactionContext;
-use super::transactions::TMAMT;
+use super::transactions::TxMapAndMaybeTrees;
 use super::utils::get_price;
 use super::Pool;
 use crate::wallet::spend_kit::SpendKit;
@@ -129,7 +129,7 @@ impl super::LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        let context_write_lock: RwLockWriteGuard<'_, TMAMT> = self
+        let context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
             .transaction_context
             .transaction_metadata_set
             .write()
@@ -138,12 +138,13 @@ impl super::LightWallet {
         let request =
             build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
         let proposal = spend_kit.create_proposal(request);
+
         Err("unimplemented!".to_string())
     }
 
     pub async fn assemble_spend_kit<'spending>(
         &'spending self,
-        context_write_lock: &'spending RwLockWriteGuard<'spending, TMAMT>,
+        context_write_lock: &'spending RwLockWriteGuard<'spending, TxMapAndMaybeTrees>,
     ) -> ZingoLibResult<SpendKit<'spending>> {
         if let Some(witness_trees) = &context_write_lock.witness_trees {
             Ok(SpendKit::<'spending> {

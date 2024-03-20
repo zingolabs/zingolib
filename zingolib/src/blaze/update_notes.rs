@@ -1,5 +1,7 @@
 use crate::wallet::MemoDownloadOption;
-use crate::wallet::{data::PoolNullifier, transactions::TMAMT, utils::txid_from_slice};
+use crate::wallet::{
+    data::PoolNullifier, transactions::TxMapAndMaybeTrees, utils::txid_from_slice,
+};
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -25,11 +27,11 @@ use super::syncdata::BlazeSyncData;
 /// If No, then:
 ///    - Update the witness for this note
 pub struct UpdateNotes {
-    transaction_metadata_set: Arc<RwLock<TMAMT>>,
+    transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
 }
 
 impl UpdateNotes {
-    pub fn new(wallet_txns: Arc<RwLock<TMAMT>>) -> Self {
+    pub fn new(wallet_txns: Arc<RwLock<TxMapAndMaybeTrees>>) -> Self {
         Self {
             transaction_metadata_set: wallet_txns,
         }
