@@ -1,6 +1,8 @@
 use secrecy::SecretVec;
+use shardtree::store::ShardStore;
 use zcash_client_backend::data_api::WalletRead;
 use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_primitives::consensus::BlockHeight;
 
 use crate::error::ZingoLibError;
 
@@ -133,7 +135,22 @@ impl WalletRead for SpendKit<'_> {
         )>,
         Self::Error,
     > {
-        unimplemented!()
+        let highest_block_height = match self.trees.witness_tree_orchard.store().max_checkpoint_id()
+        {
+            Ok(height) => height,
+            // Infallible
+            Err(e) => match e {},
+        };
+
+        Ok(highest_block_height.map(|height| {
+            (
+                height + 1,
+                BlockHeight::from_u32(std::cmp::max(
+                    1,
+                    u32::from(height).saturating_sub(u32::from(min_confirmations)),
+                )),
+            )
+        }))
     }
 
     fn get_min_unspent_height(
@@ -182,5 +199,48 @@ impl WalletRead for SpendKit<'_> {
         query: zcash_client_backend::data_api::NullifierQuery,
     ) -> Result<Vec<(Self::AccountId, orchard::note::Nullifier)>, Self::Error> {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cmp::max, collections::HashMap, num::NonZeroU32};
+
+    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_primitives::zip32::AccountId;
+    use zingoconfig::ChainType;
+
+    use crate::wallet::{data::WitnessTrees, record_book::RecordBook};
+
+    use super::*;
+
+    #[test]
+    fn target_anchor_heights() {
+        for tree_height in 1..=10 {
+            let params = ChainType::Mainnet;
+            let key = UnifiedSpendingKey::from_seed(&params, &[0; 32], AccountId::ZERO).unwrap();
+            let all_transactions = &HashMap::new();
+            let record_book = RecordBook { all_transactions };
+            let tree_height = BlockHeight::from_u32(tree_height);
+            let trees = &mut WitnessTrees::default();
+            trees.add_checkpoint(tree_height);
+
+            let kit = SpendKit {
+                key,
+                params,
+                record_book,
+                trees,
+            };
+
+            let (targ_height, anc_height) = kit
+                .get_target_and_anchor_heights(NonZeroU32::new(4).unwrap())
+                .unwrap()
+                .unwrap();
+            assert_eq!(targ_height, tree_height + 1);
+            assert_eq!(
+                anc_height,
+                max(BlockHeight::from_u32(1), tree_height.saturating_sub(4))
+            )
+        }
     }
 }
