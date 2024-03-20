@@ -1,17 +1,19 @@
-use std::num::NonZeroU32;
+use std::{convert::Infallible, num::NonZeroU32};
 
 use crate::error::ZingoLibError;
 
-use super::{data::WitnessTrees, record_book::RecordBook};
+use super::{data::WitnessTrees, record_book::RecordBook, transactions::TxMapAndMaybeTrees};
+use sapling_crypto::prover::{OutputProver, SpendProver};
 use zcash_client_backend::{
     data_api::{wallet::input_selection::GreedyInputSelector, InputSource},
     proposal::Proposal,
+    wallet::OvkPolicy,
     zip321::TransactionRequest,
     ShieldedProtocol,
 };
 use zcash_keys::keys::UnifiedSpendingKey;
 
-use zcash_primitives::transaction::fees::zip317::FeeRule as Zip317FeeRule;
+use zcash_primitives::{consensus, transaction::fees::zip317::FeeRule as Zip317FeeRule};
 use zingoconfig::ChainType;
 
 pub mod trait_inputsource;
@@ -61,5 +63,29 @@ impl SpendKit<'_> {
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
         .map_err(|e| ZingoLibError::UnknownError)?) //review! error typing
+    }
+    pub fn create_transactions<Prover>(
+        &mut self,
+        sapling_prover: Prover,
+        proposal: Proposal<Zip317FeeRule, u32>,
+    ) -> ()
+    where
+        Prover: SpendProver + OutputProver,
+    {
+        let _ = zcash_client_backend::data_api::wallet::create_proposed_transactions::<
+            SpendKit,
+            ChainType,
+            ZingoLibError,
+            Zip317FeeRule,
+            u32, // note ref
+        >(
+            self,
+            &self.params.clone(),
+            &sapling_prover,
+            &sapling_prover,
+            &self.key.clone(),
+            OvkPolicy::Sender,
+            &proposal,
+        );
     }
 }

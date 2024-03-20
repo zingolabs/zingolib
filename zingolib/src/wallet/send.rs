@@ -137,8 +137,11 @@ impl super::LightWallet {
         let mut spend_kit = self.assemble_spend_kit(&context_write_lock).await?;
         let request =
             build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
-        let proposal = spend_kit.create_proposal(request);
+        let proposal = spend_kit
+            .create_proposal(request)
+            .expect("fix hthis exkpect before review!");
 
+        let _ = spend_kit.create_transactions(sapling_prover, proposal);
         Err("unimplemented!".to_string())
     }
 
