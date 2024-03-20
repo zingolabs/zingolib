@@ -156,14 +156,29 @@ impl WalletRead for SpendKit<'_> {
     fn get_min_unspent_height(
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
-        unimplemented!()
+        Ok(self
+            .record_book
+            .all_transactions
+            .values()
+            .fold(None, |height, transaction| {
+                let transaction_height = transaction.status.get_confirmed_height();
+                match (height, transaction_height) {
+                    (None, None) => None,
+                    (Some(h), None) | (None, Some(h)) => Some(h),
+                    (Some(h1), Some(h2)) => Some(std::cmp::min(h1, h2)),
+                }
+            }))
     }
 
     fn get_tx_height(
         &self,
         txid: zcash_primitives::transaction::TxId,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
-        unimplemented!()
+        Ok(self
+            .record_book
+            .all_transactions
+            .get(&txid)
+            .and_then(|transaction| transaction.status.get_confirmed_height()))
     }
 
     fn get_unified_full_viewing_keys(

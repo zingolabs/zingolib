@@ -165,7 +165,7 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
-    // this function and the placeholder is not a preferred pattern. please use match whenever possible.
+    /// this function and the placeholder is not a preferred pattern. please use match whenever possible.
     /// # Examples
     ///
     /// ```
