@@ -345,7 +345,7 @@ impl TransactionRecord {
             let zcb_note = note.to_zcb_note();
             let note_record_reference = NoteRecordReference {
                 txid,
-                sh_pr: zcb_note.protocol(),
+                shielded_protocol: zcb_note.protocol(),
                 index,
             };
             note.witnessed_position().map(|pos| {
