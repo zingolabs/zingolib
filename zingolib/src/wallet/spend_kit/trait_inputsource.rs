@@ -7,7 +7,7 @@ use crate::error::ZingoLibError;
 
 use super::SpendKit;
 
-impl InputSource for SpendKit<'_> {
+impl InputSource for SpendKit<'_, '_> {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
     type NoteRef = u32; //should this be a nullifier? or a Rho?

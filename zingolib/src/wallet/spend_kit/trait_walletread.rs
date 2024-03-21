@@ -8,7 +8,7 @@ use crate::error::ZingoLibError;
 
 use super::SpendKit;
 
-impl WalletRead for SpendKit<'_> {
+impl WalletRead for SpendKit<'_, '_> {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
     type Account = (Self::AccountId, UnifiedFullViewingKey);

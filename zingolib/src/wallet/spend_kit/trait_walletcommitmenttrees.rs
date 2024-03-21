@@ -13,13 +13,13 @@ use crate::wallet::data::SapStore;
 
 use super::SpendKit;
 
-impl WalletCommitmentTrees for SpendKit<'_> {
+impl WalletCommitmentTrees for SpendKit<'_, '_> {
     // review! could this be a zingolib error?
     type Error = Infallible;
 
     type SaplingShardStore<'a> = SapStore;
 
-    fn with_sapling_tree_mut<F, A, E>(&mut self, _callback: F) -> Result<A, E>
+    fn with_sapling_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
             &'a mut ShardTree<
@@ -30,7 +30,7 @@ impl WalletCommitmentTrees for SpendKit<'_> {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        unimplemented!();
+        callback(&mut self.trees.witness_tree_sapling)
     }
 
     fn put_sapling_subtree_roots(

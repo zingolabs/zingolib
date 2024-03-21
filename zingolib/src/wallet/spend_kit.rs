@@ -25,19 +25,19 @@ pub mod trait_walletcommitmenttrees;
 pub mod trait_walletread;
 pub mod trait_walletwrite;
 
-pub struct SpendKit<'a> {
+pub struct SpendKit<'book, 'trees> {
     pub key: UnifiedSpendingKey,
     pub params: ChainType,
-    pub record_book: RecordBook<'a>,
-    pub trees: &'a WitnessTrees,
+    pub record_book: RecordBook<'book>,
+    pub trees: &'trees mut WitnessTrees,
 }
 
-type GISKit<'a> = GreedyInputSelector<
-    SpendKit<'a>,
+type GISKit<'a, 'b> = GreedyInputSelector<
+    SpendKit<'a, 'b>,
     zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
 >;
 
-impl SpendKit<'_> {
+impl SpendKit<'_, '_> {
     pub fn create_proposal(
         &mut self,
         request: TransactionRequest,

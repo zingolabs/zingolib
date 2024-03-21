@@ -20,6 +20,7 @@ use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
 use zcash_primitives::zip32::AccountId;
 
 use std::convert::Infallible;
+use std::ops::DerefMut;
 use std::sync::mpsc::channel;
 
 use zcash_client_backend::{address, proposal};
@@ -129,12 +130,12 @@ impl super::LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        let context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
+        let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
             .transaction_context
             .transaction_metadata_set
             .write()
             .await;
-        let mut spend_kit = self.assemble_spend_kit(&context_write_lock).await?;
+        let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
         let request =
             build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
         let created_txids = spend_kit
@@ -149,12 +150,20 @@ impl super::LightWallet {
         Err("unimplemented!".to_string())
     }
 
-    pub async fn assemble_spend_kit<'spending>(
-        &'spending self,
-        context_write_lock: &'spending RwLockWriteGuard<'spending, TxMapAndMaybeTrees>,
-    ) -> ZingoLibResult<SpendKit<'spending>> {
-        if let Some(witness_trees) = &context_write_lock.witness_trees {
-            Ok(SpendKit::<'spending> {
+    pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
+        &'lock self,
+        context_write_lock: &'reflock mut RwLockWriteGuard<'lock, TxMapAndMaybeTrees>,
+    ) -> ZingoLibResult<SpendKit<'book, 'trees>>
+    where
+        'lock: 'trees + 'book,
+        'reflock: 'trees + 'book,
+    {
+        if let TxMapAndMaybeTrees {
+            witness_trees: Some(witness_trees),
+            current: all_transactions,
+        } = context_write_lock.deref_mut()
+        {
+            Ok(SpendKit::<'book, 'trees> {
                 key: {
                     let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
                     let seed = mnemonic.to_seed("");
@@ -167,9 +176,7 @@ impl super::LightWallet {
                     .expect("should be able to create a unified spend key")
                 },
                 params: self.transaction_context.config.chain,
-                record_book: RecordBook {
-                    all_transactions: &context_write_lock.current,
-                },
+                record_book: RecordBook { all_transactions },
                 trees: witness_trees,
             })
         } else {

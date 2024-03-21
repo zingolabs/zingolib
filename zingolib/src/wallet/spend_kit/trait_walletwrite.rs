@@ -4,7 +4,7 @@ use zcash_keys::keys::UnifiedSpendingKey;
 
 use super::SpendKit;
 
-impl WalletWrite for SpendKit<'_> {
+impl WalletWrite for SpendKit<'_, '_> {
     type UtxoRef = u32; // review! i dont know if this actually works as a ref.
 
     fn create_account(
