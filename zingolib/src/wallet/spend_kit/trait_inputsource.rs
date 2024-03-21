@@ -3,14 +3,14 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::zip32::AccountId;
 
-use crate::error::ZingoLibError;
+use crate::{error::ZingoLibError, wallet::record_book::NoteRecordReference};
 
 use super::SpendKit;
 
 impl InputSource for SpendKit<'_, '_> {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
-    type NoteRef = u32; //should this be a nullifier? or a Rho?
+    type NoteRef = NoteRecordReference;
 
     fn get_spendable_note(
         &self,
