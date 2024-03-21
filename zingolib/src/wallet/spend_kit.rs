@@ -2,7 +2,11 @@ use std::{convert::Infallible, num::NonZeroU32};
 
 use crate::error::{ZingoLibError, ZingoLibResult};
 
-use super::{data::WitnessTrees, record_book::RecordBook, transactions::TxMapAndMaybeTrees};
+use super::{
+    data::WitnessTrees,
+    record_book::{NoteRecordReference, RecordBook},
+    transactions::TxMapAndMaybeTrees,
+};
 use nonempty::NonEmpty;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 use zcash_client_backend::{
@@ -71,7 +75,7 @@ impl SpendKit<'_> {
     pub fn create_transactions<Prover>(
         &mut self,
         sapling_prover: Prover,
-        proposal: Proposal<Zip317FeeRule, u32>,
+        proposal: Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>,
     ) -> ZingoLibResult<NonEmpty<TxId>>
     where
         Prover: SpendProver + OutputProver,
@@ -81,7 +85,7 @@ impl SpendKit<'_> {
             ChainType,
             ZingoLibError,
             Zip317FeeRule,
-            u32, // note ref
+            <Self as InputSource>::NoteRef, // note ref
         >(
             self,
             &self.params.clone(),

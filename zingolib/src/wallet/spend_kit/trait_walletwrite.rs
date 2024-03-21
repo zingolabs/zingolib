@@ -2,10 +2,12 @@ use secrecy::SecretVec;
 use zcash_client_backend::data_api::WalletWrite;
 use zcash_keys::keys::UnifiedSpendingKey;
 
+use crate::wallet::record_book::TransparentRecordRef;
+
 use super::SpendKit;
 
 impl WalletWrite for SpendKit<'_> {
-    type UtxoRef = u32; // review! i dont know if this actually works as a ref.
+    type UtxoRef = TransparentRecordRef;
 
     fn create_account(
         &mut self,

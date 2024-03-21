@@ -1,4 +1,5 @@
 use incrementalmerkletree::witness::IncrementalWitness;
+use orchard::Note;
 use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
@@ -6,6 +7,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
+    record_book::NoteRecordReference,
     *,
 };
 
@@ -324,7 +326,12 @@ impl TransactionRecord {
     pub fn get_received_note<D>(
         &self,
         index: u32,
-    ) -> Option<zcash_client_backend::wallet::ReceivedNote<u32, zcash_client_backend::wallet::Note>>
+    ) -> Option<
+        zcash_client_backend::wallet::ReceivedNote<
+            NoteRecordReference,
+            zcash_client_backend::wallet::Note,
+        >,
+    >
     where
         D: DomainWalletExt + Sized,
         D::Note: PartialEq + Clone,
@@ -334,12 +341,19 @@ impl TransactionRecord {
             .iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
+            let txid = self.txid;
+            let zcb_note = note.to_zcb_note();
+            let note_record_reference = NoteRecordReference {
+                txid,
+                sh_pr: zcb_note.protocol(),
+                index,
+            };
             note.witnessed_position().map(|pos| {
                 zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    0,
-                    self.txid,
+                    note_record_reference,
+                    txid,
                     index as u16,
-                    note.to_zcb_note(),
+                    zcb_note,
                     orchard::keys::Scope::External, // not sure how this field matters or if/when it needs to change to sapling variant
                     pos,
                 )
@@ -348,7 +362,12 @@ impl TransactionRecord {
     }
     pub fn select_unspent_domain_notes<D>(
         &self,
-    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<u32, zcash_client_backend::wallet::Note>>
+    ) -> Vec<
+        zcash_client_backend::wallet::ReceivedNote<
+            NoteRecordReference,
+            zcash_client_backend::wallet::Note,
+        >,
+    >
     where
         D: DomainWalletExt + Sized,
         D::Note: PartialEq + Clone,
@@ -363,7 +382,7 @@ impl TransactionRecord {
             })
             .collect::<Vec<
                 zcash_client_backend::wallet::ReceivedNote<
-                    u32,
+                    NoteRecordReference,
                     zcash_client_backend::wallet::Note,
                 >,
             >>()
