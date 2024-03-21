@@ -321,6 +321,53 @@ impl TransactionRecord {
 
         Ok(())
     }
+    pub fn get_received_note<D>(
+        &self,
+        index: u32,
+    ) -> Option<zcash_client_backend::wallet::ReceivedNote<u32, zcash_client_backend::wallet::Note>>
+    where
+        D: DomainWalletExt + Sized,
+        D::Note: PartialEq + Clone,
+        D::Recipient: Recipient,
+    {
+        let note = D::to_notes_vec(self)
+            .iter()
+            .find(|note| *note.output_index() == Some(index));
+        note.and_then(|note| {
+            note.witnessed_position().map(|pos| {
+                zcash_client_backend::wallet::ReceivedNote::from_parts(
+                    0,
+                    self.txid,
+                    index as u16,
+                    note.to_zcb_note(),
+                    orchard::keys::Scope::External, // not sure how this field matters or if/when it needs to change to sapling variant
+                    pos,
+                )
+            })
+        })
+    }
+    pub fn select_unspent_domain_notes<D>(
+        &self,
+    ) -> Vec<zcash_client_backend::wallet::ReceivedNote<u32, zcash_client_backend::wallet::Note>>
+    where
+        D: DomainWalletExt + Sized,
+        D::Note: PartialEq + Clone,
+        D::Recipient: Recipient,
+    {
+        D::to_notes_vec(self)
+            .iter()
+            .filter(|note| !note.is_spent_or_pending_spent())
+            .map(|note| {
+                self.get_received_note::<D>(note.output_index().unwrap())
+                    .expect("tmy")
+            })
+            .collect::<Vec<
+                zcash_client_backend::wallet::ReceivedNote<
+                    u32,
+                    zcash_client_backend::wallet::Note,
+                >,
+            >>()
+    }
 }
 
 #[cfg(test)]

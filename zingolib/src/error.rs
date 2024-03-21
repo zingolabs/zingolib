@@ -5,7 +5,7 @@ use zcash_primitives::transaction::TxId;
 
 #[derive(Debug)]
 pub enum ZingoLibError {
-    UnknownError,
+    UnknownError, //review! know our errors
     Error(String),
     NoWalletLocation,
     MetadataUnderflow(String),

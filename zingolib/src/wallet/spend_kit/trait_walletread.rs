@@ -2,7 +2,7 @@ use secrecy::SecretVec;
 use shardtree::store::ShardStore;
 use zcash_client_backend::data_api::WalletRead;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::{consensus::BlockHeight, zip32::AccountId};
 
 use crate::error::ZingoLibError;
 
@@ -44,7 +44,7 @@ impl WalletRead for SpendKit<'_> {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        unimplemented!()
+        Ok(Some((AccountId::ZERO, ufvk.clone())))
     }
 
     fn get_current_address(
