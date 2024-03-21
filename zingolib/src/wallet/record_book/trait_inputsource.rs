@@ -55,19 +55,15 @@ impl InputSource for RecordBook<'_> {
         if account != AccountId::ZERO {
             return Err(ZingoLibError::UnknownError);
         }
-        let vals_refs: BTreeMap<u64, NoteRecordReference> = BTreeMap::new();
-        // for transaction_record in self.record_book.all_transactions.values() {
-        //     if sources.contains(&ShieldedProtocol::Sapling) {
-        //         noteset.extend(transaction_record.select_unspent_domain_notes::<SaplingDomain>());
-        //     }
-        //     match sources.contains(&ShieldedProtocol::Orchard) {
-        //         true => {
-        //             noteset
-        //                 .extend(transaction_record.select_unspent_domain_notes::<OrchardDomain>());
-        //         }
-        //         false => (),
-        //     }
-        // }
+        let mut value_ref_pairs: BTreeMap<u64, NoteRecordReference> = BTreeMap::new();
+        for transaction_record in self.all_transactions.values() {
+            if sources.contains(&ShieldedProtocol::Sapling) {
+                value_ref_pairs.extend(transaction_record.select_value_ref_pairs_sapling());
+            }
+            if sources.contains(&ShieldedProtocol::Orchard) {
+                value_ref_pairs.extend(transaction_record.select_value_ref_pairs_orchard());
+            }
+        }
         let mut noteset: Vec<
             zcash_client_backend::wallet::ReceivedNote<
                 Self::NoteRef,
