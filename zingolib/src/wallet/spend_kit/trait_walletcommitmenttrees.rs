@@ -1,15 +1,15 @@
 use std::convert::Infallible;
 
+use incrementalmerkletree::Address;
 use shardtree::error::ShardTreeError;
-use zcash_client_backend::data_api::chain::CommitmentTreeRoot;
-use zcash_client_backend::data_api::WalletCommitmentTrees;
+use zcash_client_backend::data_api::{
+    chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
+};
 
-use crate::error::ZingoLibError;
-use crate::wallet::ShardTree;
-use crate::wallet::WitnessTrees;
-
-use crate::wallet::data::OrchStore;
-use crate::wallet::data::SapStore;
+use crate::wallet::{
+    data::{OrchStore, SapStore},
+    ShardTree,
+};
 
 use super::SpendKit;
 
@@ -35,10 +35,18 @@ impl WalletCommitmentTrees for SpendKit<'_, '_> {
 
     fn put_sapling_subtree_roots(
         &mut self,
-        _start_index: u64,
-        _roots: &[CommitmentTreeRoot<sapling_crypto::Node>],
+        start_index: u64,
+        roots: &[CommitmentTreeRoot<sapling_crypto::Node>],
     ) -> Result<(), ShardTreeError<Self::Error>> {
-        unimplemented!();
+        self.with_sapling_tree_mut(|t| {
+            for (root, i) in roots.iter().zip(0u64..) {
+                let root_addr = Address::from_parts(SAPLING_SHARD_HEIGHT.into(), start_index + i);
+                t.insert(root_addr, *root.root_hash())?;
+            }
+            Ok::<_, ShardTreeError<Self::Error>>(())
+        })?;
+
+        Ok(())
     }
 
     type OrchardShardStore<'a> = OrchStore;
@@ -54,19 +62,22 @@ impl WalletCommitmentTrees for SpendKit<'_, '_> {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        unimplemented!();
-        // //review! ensure spend_capable wallet and break before this case
-        // let op_witness_trees = &mut self.witness_trees;
-        // let witness_trees: &mut WitnessTrees = op_witness_trees.as_mut().unwrap();
-        // let witness_tree_orchard = &mut witness_trees.witness_tree_orchard;
-        // callback(witness_tree_orchard)
+        callback(&mut self.trees.witness_tree_orchard)
     }
 
     fn put_orchard_subtree_roots(
         &mut self,
-        _start_index: u64,
-        _roots: &[CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>],
+        start_index: u64,
+        roots: &[CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>],
     ) -> Result<(), ShardTreeError<Self::Error>> {
-        unimplemented!();
+        self.with_orchard_tree_mut(|t| {
+            for (root, i) in roots.iter().zip(0u64..) {
+                let root_addr = Address::from_parts(ORCHARD_SHARD_HEIGHT.into(), start_index + i);
+                t.insert(root_addr, *root.root_hash())?;
+            }
+            Ok::<_, ShardTreeError<Self::Error>>(())
+        })?;
+
+        Ok(())
     }
 }
