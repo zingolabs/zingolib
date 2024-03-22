@@ -58,7 +58,7 @@ impl WalletWrite for SpendKit<'_, '_> {
         &mut self,
         sent_tx: &zcash_client_backend::data_api::SentTransaction<Self::AccountId>,
     ) -> Result<(), Self::Error> {
-        unimplemented!()
+        self.record_book.push_local_transaction(sent_tx.tx())
     }
 
     fn truncate_to_height(

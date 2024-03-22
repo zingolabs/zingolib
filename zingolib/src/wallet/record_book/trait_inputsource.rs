@@ -61,11 +61,15 @@ impl InputSource for RecordBook<'_> {
             ));
         }
         let mut value_ref_pairs: BTreeMap<u64, NoteRecordReference> = BTreeMap::new();
-        for transaction_record in self.all_transactions.values().filter(|transaction_record| {
-            transaction_record
-                .status
-                .is_confirmed_before_or_at(&anchor_height)
-        }) {
+        for transaction_record in self
+            .remote_transactions
+            .values()
+            .filter(|transaction_record| {
+                transaction_record
+                    .status
+                    .is_confirmed_before_or_at(&anchor_height)
+            })
+        {
             if sources.contains(&ShieldedProtocol::Sapling) {
                 value_ref_pairs.extend(
                     transaction_record

@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::ShieldedProtocol;
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::transaction::{Transaction, TxId};
 
-use crate::error::ZingoLibError;
+use crate::error::{ZingoLibError, ZingoLibResult};
 
 use super::transaction_record::TransactionRecord;
 
@@ -22,10 +22,42 @@ pub struct TransparentRecordRef {
 }
 
 pub struct RecordBook<'a> {
-    pub all_transactions: &'a HashMap<TxId, TransactionRecord>,
+    remote_transactions: &'a HashMap<TxId, TransactionRecord>,
+    local_raw_transactions: Vec<Vec<u8>>,
 }
 
-impl RecordBook<'_> {
+impl<'a> RecordBook<'a> {
+    #[cfg(test)]
+    pub fn new_empty() -> Self {
+        let empty_map: HashMap<TxId, TransactionRecord> = HashMap::new();
+        let empty_map_ref = Box::leak(Box::new(empty_map)); // Leak the empty hashmap to ensure its lifetime
+        Self {
+            remote_transactions: empty_map_ref,
+            local_raw_transactions: Vec::new(),
+        }
+    }
+    pub fn new_from_remote_txid_hashmap<'b>(
+        remote_transactions: &'b HashMap<TxId, TransactionRecord>,
+    ) -> Self
+    where
+        'b: 'a, // Ensure 'b outlives 'a
+    {
+        Self {
+            remote_transactions,
+            local_raw_transactions: Vec::new(),
+        }
+    }
+    pub fn push_local_transaction(&mut self, transaction: &Transaction) -> ZingoLibResult<()> {
+        let mut raw_tx = vec![];
+        transaction
+            .write(&mut raw_tx)
+            .map_err(|e| ZingoLibError::Error(e.to_string()))?;
+        self.local_raw_transactions.push(raw_tx);
+        Ok(())
+    }
+    pub fn get_remote_txid_hashmap(&self) -> &HashMap<TxId, TransactionRecord> {
+        self.remote_transactions
+    }
     pub fn get_spendable_note_from_reference(
         &self,
         note_record_reference: NoteRecordReference,
@@ -35,7 +67,7 @@ impl RecordBook<'_> {
             zcash_client_backend::wallet::Note,
         >,
     > {
-        let transaction = self.all_transactions.get(&note_record_reference.txid);
+        let transaction = self.remote_transactions.get(&note_record_reference.txid);
         transaction
             .map(
                 |transaction_record| match note_record_reference.shielded_protocol {

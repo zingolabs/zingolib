@@ -158,7 +158,7 @@ impl WalletRead for SpendKit<'_, '_> {
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         Ok(self
             .record_book
-            .all_transactions
+            .get_remote_txid_hashmap()
             .values()
             .fold(None, |height, transaction| {
                 let transaction_height = transaction.status.get_confirmed_height();
@@ -176,7 +176,7 @@ impl WalletRead for SpendKit<'_, '_> {
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         Ok(self
             .record_book
-            .all_transactions
+            .get_remote_txid_hashmap()
             .get(&txid)
             .and_then(|transaction| transaction.status.get_confirmed_height()))
     }
@@ -234,8 +234,7 @@ mod tests {
         for tree_height in 1..=10 {
             let params = ChainType::Mainnet;
             let key = UnifiedSpendingKey::from_seed(&params, &[0; 32], AccountId::ZERO).unwrap();
-            let all_transactions = &HashMap::new();
-            let record_book = RecordBook { all_transactions };
+            let record_book = RecordBook::new_empty();
             let tree_height = BlockHeight::from_u32(tree_height);
             let trees = &mut WitnessTrees::default();
             trees.add_checkpoint(tree_height);
