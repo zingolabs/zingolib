@@ -140,7 +140,7 @@ impl super::LightWallet {
             build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
         let _calculated_txids = spend_kit
             .propose_and_calculate(request, sapling_prover)
-            .expect("fix hthis exkpect before review!");
+            .map_err(|e| e.to_string())?;
 
         let calculated_transactions = spend_kit.get_calculated_transactions()?;
         // instead of dropping and running old scan_full_tx, we could just implement scan_full_tx on the new Spend_Kit.
@@ -155,10 +155,11 @@ impl super::LightWallet {
                 submission_height,
                 broadcast_fn.clone(),
             )
-            .await;
+            .await
+            .map_err(|e| e)?;
         }
 
-        Err("unimplemented!".to_string())
+        Ok(("next: replace results!".to_string(), vec![]))
     }
 
     pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
