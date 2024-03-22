@@ -359,32 +359,33 @@ impl TransactionRecord {
             })
         })
     }
-    pub fn select_unspent_domain_notes<D>(
-        &self,
-    ) -> Vec<
-        zcash_client_backend::wallet::ReceivedNote<
-            NoteRecordReference,
-            zcash_client_backend::wallet::Note,
-        >,
-    >
-    where
-        D: DomainWalletExt + Sized,
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
-        D::to_notes_vec(self)
-            .iter()
-            .filter(|note| !note.is_spent_or_pending_spent())
-            .map(|note| {
-                self.get_received_note::<D>(note.output_index().unwrap())
-                    .expect("tmy")
-            })
-            .collect::<Vec<
-                zcash_client_backend::wallet::ReceivedNote<
-                    NoteRecordReference,
-                    zcash_client_backend::wallet::Note,
-                >,
-            >>()
+    pub fn select_value_ref_pairs_sapling(&self) -> Vec<(u64, NoteRecordReference)> {
+        let mut value_ref_pairs = Vec::new();
+        SaplingDomain::to_notes_vec(self).iter().for_each(|note| {
+            if let Some(index) = note.output_index {
+                let note_record_reference = NoteRecordReference {
+                    txid: self.txid,
+                    shielded_protocol: zcash_client_backend::ShieldedProtocol::Sapling,
+                    index,
+                };
+                value_ref_pairs.push((note.value(), note_record_reference));
+            }
+        });
+        value_ref_pairs
+    }
+    pub fn select_value_ref_pairs_orchard(&self) -> Vec<(u64, NoteRecordReference)> {
+        let mut value_ref_pairs = Vec::new();
+        OrchardDomain::to_notes_vec(self).iter().for_each(|note| {
+            if let Some(index) = note.output_index {
+                let note_record_reference = NoteRecordReference {
+                    txid: self.txid,
+                    shielded_protocol: zcash_client_backend::ShieldedProtocol::Orchard,
+                    index,
+                };
+                value_ref_pairs.push((note.value(), note_record_reference));
+            }
+        });
+        value_ref_pairs
     }
 }
 
