@@ -10,12 +10,12 @@ use crate::{
     wallet::transaction_record,
 };
 
-use super::{NoteRecordReference, RecordBook};
+use super::{NoteRecordIdentifier, RecordBook};
 
 impl InputSource for RecordBook<'_> {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
-    type NoteRef = NoteRecordReference;
+    type NoteRef = NoteRecordIdentifier;
 
     fn get_spendable_note(
         &self,
@@ -31,12 +31,12 @@ impl InputSource for RecordBook<'_> {
         >,
         Self::Error,
     > {
-        let note_record_reference: <Self as InputSource>::NoteRef = NoteRecordReference {
+        let note_record_reference: <Self as InputSource>::NoteRef = NoteRecordIdentifier {
             txid: *txid,
             shielded_protocol: protocol,
             index,
         };
-        Ok(self.get_spendable_note_from_reference(note_record_reference))
+        Ok(self.get_spendable_note_from_identifier(note_record_reference))
     }
 
     fn select_spendable_notes(
@@ -60,7 +60,7 @@ impl InputSource for RecordBook<'_> {
                 "we don't use non-zero accounts (yet?)".to_string(),
             ));
         }
-        let mut value_ref_pairs: BTreeMap<u64, NoteRecordReference> = BTreeMap::new();
+        let mut value_ref_pairs: BTreeMap<u64, NoteRecordIdentifier> = BTreeMap::new();
         for transaction_record in self
             .remote_transactions
             .values()
@@ -98,7 +98,7 @@ impl InputSource for RecordBook<'_> {
             |rolling_target, (val, noteref)| match rolling_target {
                 Some(targ) => {
                     noteset.push(
-                        self.get_spendable_note_from_reference(noteref)
+                        self.get_spendable_note_from_identifier(noteref)
                             .ok_or(ZingoLibError::Error("missing note".to_string()))?,
                     );
                     Ok(targ
@@ -113,6 +113,10 @@ impl InputSource for RecordBook<'_> {
                 missing_value.into_u64()
             )));
         };
+        // let noteset = value_ref_pairs
+        //     .into_iter()
+        //     .map(|(_, identifier)| self.get_spendable_note_from_identifier((identifier)))
+        //     .collect();
         Ok(noteset) //review! this is incorrect because it selects more notes than needed if they're
                     // in the same transaction, and has no rhyme or reason for what notes it selects
     }

@@ -10,7 +10,7 @@ use crate::error::{ZingoLibError, ZingoLibResult};
 use super::transaction_record::TransactionRecord;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct NoteRecordReference {
+pub struct NoteRecordIdentifier {
     pub txid: TxId,
     pub shielded_protocol: ShieldedProtocol,
     pub index: u32,
@@ -58,12 +58,12 @@ impl<'a> RecordBook<'a> {
     pub fn get_remote_txid_hashmap(&self) -> &HashMap<TxId, TransactionRecord> {
         self.remote_transactions
     }
-    pub fn get_spendable_note_from_reference(
+    pub fn get_spendable_note_from_identifier(
         &self,
-        note_record_reference: NoteRecordReference,
+        note_record_reference: NoteRecordIdentifier,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            NoteRecordReference,
+            NoteRecordIdentifier,
             zcash_client_backend::wallet::Note,
         >,
     > {

@@ -4,7 +4,7 @@ use crate::error::{ZingoLibError, ZingoLibResult};
 
 use super::{
     data::WitnessTrees,
-    record_book::{NoteRecordReference, RecordBook},
+    record_book::{NoteRecordIdentifier, RecordBook},
     transactions::TxMapAndMaybeTrees,
 };
 use nonempty::NonEmpty;

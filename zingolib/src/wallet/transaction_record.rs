@@ -6,7 +6,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
-    record_book::NoteRecordReference,
+    record_book::NoteRecordIdentifier,
     *,
 };
 
@@ -327,7 +327,7 @@ impl TransactionRecord {
         index: u32,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            NoteRecordReference,
+            NoteRecordIdentifier,
             zcash_client_backend::wallet::Note,
         >,
     >
@@ -342,7 +342,7 @@ impl TransactionRecord {
         note.and_then(|note| {
             let txid = self.txid;
             let zcb_note = note.to_zcb_note();
-            let note_record_reference = NoteRecordReference {
+            let note_record_reference = NoteRecordIdentifier {
                 txid,
                 shielded_protocol: zcb_note.protocol(),
                 index,
@@ -359,11 +359,11 @@ impl TransactionRecord {
             })
         })
     }
-    pub fn select_value_ref_pairs_sapling(&self) -> Vec<(u64, NoteRecordReference)> {
+    pub fn select_value_ref_pairs_sapling(&self) -> Vec<(u64, NoteRecordIdentifier)> {
         let mut value_ref_pairs = Vec::new();
         SaplingDomain::to_notes_vec(self).iter().for_each(|note| {
             if let Some(index) = note.output_index {
-                let note_record_reference = NoteRecordReference {
+                let note_record_reference = NoteRecordIdentifier {
                     txid: self.txid,
                     shielded_protocol: zcash_client_backend::ShieldedProtocol::Sapling,
                     index,
@@ -373,11 +373,11 @@ impl TransactionRecord {
         });
         value_ref_pairs
     }
-    pub fn select_value_ref_pairs_orchard(&self) -> Vec<(u64, NoteRecordReference)> {
+    pub fn select_value_ref_pairs_orchard(&self) -> Vec<(u64, NoteRecordIdentifier)> {
         let mut value_ref_pairs = Vec::new();
         OrchardDomain::to_notes_vec(self).iter().for_each(|note| {
             if let Some(index) = note.output_index {
-                let note_record_reference = NoteRecordReference {
+                let note_record_reference = NoteRecordIdentifier {
                     txid: self.txid,
                     shielded_protocol: zcash_client_backend::ShieldedProtocol::Orchard,
                     index,
