@@ -2244,11 +2244,10 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 }
 
 #[cfg(test)]
-#[cfg(feature = "test-features")]
 mod tests {
     use tokio::runtime::Runtime;
     use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingoconfig::{ChainType, ZingoConfig};
+    use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
@@ -2261,7 +2260,8 @@ mod tests {
             .expect("This path is available.");
 
         let wallet_name = data_dir.join("zingo-wallet.dat");
-        let config = ZingoConfig::build(ChainType::FakeMainnet)
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let config = ZingoConfig::build(ChainType::Regtest(regtest_network))
             .set_wallet_dir(data_dir)
             .create();
         let lc = LightClient::create_from_wallet_base(
@@ -2296,12 +2296,12 @@ mod tests {
         Runtime::new().unwrap().block_on(async move {
             let addresses = lc.do_addresses().await;
             assert_eq!(
-                "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
                     .to_string(),
                 addresses[0]["receivers"]["sapling"]
             );
             assert_eq!(
-                "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui",
+                "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
                 addresses[0]["receivers"]["transparent"]
             );
         });
