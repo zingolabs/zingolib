@@ -353,7 +353,7 @@ impl TransactionRecord {
                     txid,
                     index as u16,
                     zcb_note,
-                    orchard::keys::Scope::External, // not sure how this field matters or if/when it needs to change to sapling variant
+                    orchard::keys::Scope::External, // not sure how this field matters or if/when it needs to change to sapling variant. review!
                     pos,
                 )
             })

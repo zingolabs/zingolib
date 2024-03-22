@@ -87,36 +87,36 @@ impl InputSource for RecordBook<'_> {
                 );
             }
         }
-        let mut noteset: Vec<
-            zcash_client_backend::wallet::ReceivedNote<
-                Self::NoteRef,
-                zcash_client_backend::wallet::Note,
-            >,
-        > = Vec::new();
-        if let Some(missing_value) = value_ref_pairs.into_iter().rev(/*biggest first*/).try_fold(
-            Some(target_value),
-            |rolling_target, (val, noteref)| match rolling_target {
-                Some(targ) => {
-                    noteset.push(
-                        self.get_spendable_note_from_identifier(noteref)
-                            .ok_or(ZingoLibError::Error("missing note".to_string()))?,
-                    );
-                    Ok(targ
-                        - NonNegativeAmount::from_u64(val)
-                            .map_err(|e| ZingoLibError::Error(e.to_string()))?)
-                }
-                None => Ok(None),
-            },
-        )? {
-            return ZingoLibResult::Err(ZingoLibError::Error(format!(
-                "Insufficient sendable balance, need {} more zats",
-                missing_value.into_u64()
-            )));
-        };
-        // let noteset = value_ref_pairs
-        //     .into_iter()
-        //     .map(|(_, identifier)| self.get_spendable_note_from_identifier((identifier)))
-        //     .collect();
+        // let mut noteset: Vec<
+        //     zcash_client_backend::wallet::ReceivedNote<
+        //         Self::NoteRef,
+        //         zcash_client_backend::wallet::Note,
+        //     >,
+        // > = Vec::new();
+        // if let Some(missing_value) = value_ref_pairs.into_iter().rev(/*biggest first*/).try_fold(
+        //     Some(target_value),
+        //     |rolling_target, (val, noteref)| match rolling_target {
+        //         Some(targ) => {
+        //             noteset.push(
+        //                 self.get_spendable_note_from_identifier(noteref)
+        //                     .ok_or(ZingoLibError::Error("missing note".to_string()))?,
+        //             );
+        //             Ok(targ
+        //                 - NonNegativeAmount::from_u64(val)
+        //                     .map_err(|e| ZingoLibError::Error(e.to_string()))?)
+        //         }
+        //         None => Ok(None),
+        //     },
+        // )? {
+        //     return ZingoLibResult::Err(ZingoLibError::Error(format!(
+        //         "Insufficient sendable balance, need {} more zats",
+        //         missing_value.into_u64()
+        //     )));
+        // };
+        let noteset = value_ref_pairs
+            .into_iter()
+            .filter_map(|(_, identifier)| self.get_spendable_note_from_identifier(identifier))
+            .collect();
         Ok(noteset) //review! this is incorrect because it selects more notes than needed if they're
                     // in the same transaction, and has no rhyme or reason for what notes it selects
     }
