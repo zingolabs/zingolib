@@ -87,7 +87,7 @@ impl<'a> RecordBook<'a> {
         let mut transactions = vec![];
         for raw_tx in &self.local_raw_transactions {
             transactions.push(
-                Transaction::read(&raw_tx[..], zcash_primitives::consensus::BranchId::Canopy)
+                Transaction::read(&raw_tx[..], zcash_primitives::consensus::BranchId::Nu5)
                     .map_err(|e| ZingoLibError::CalculatedTransactionDecode(e.to_string()))?,
             );
         }
