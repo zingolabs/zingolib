@@ -1109,8 +1109,16 @@ mod slow {
             )
         );
 
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+        );
         let sapling_enough_for_fee = 10_100;
         faucet.do_sync(false).await.unwrap();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+        );
         let _sent_transaction_id = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "sapling"),
