@@ -142,7 +142,14 @@ impl super::LightWallet {
             .propose_and_calculate(request, sapling_prover)
             .expect("fix hthis exkpect before review!");
 
-        for calculated_transaction in spend_kit.get_calculated_transactions()? {
+        let calculated_transactions = spend_kit.get_calculated_transactions()?;
+        // instead of dropping and running old scan_full_tx, we could just implement scan_full_tx on the new Spend_Kit.
+        drop(spend_kit);
+        drop(context_write_lock);
+
+        for (transaction_number, calculated_transaction) in
+            calculated_transactions.into_iter().enumerate()
+        {
             self.send_to_addresses_inner(
                 &calculated_transaction,
                 submission_height,
@@ -220,7 +227,9 @@ impl super::LightWallet {
         let mut raw_transaction = vec![];
         transaction.write(&mut raw_transaction).unwrap();
 
+        dbg!("broadcasting");
         let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
+        dbg!("broadcasted");
 
         // Add this transaction to the mempool structure
         {
