@@ -228,9 +228,7 @@ impl super::LightWallet {
         let mut raw_transaction = vec![];
         transaction.write(&mut raw_transaction).unwrap();
 
-        dbg!("broadcasting");
         let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
-        dbg!("broadcasted");
 
         // Add this transaction to the mempool structure
         {
