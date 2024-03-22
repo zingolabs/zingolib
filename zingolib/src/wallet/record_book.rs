@@ -83,6 +83,16 @@ impl<'a> RecordBook<'a> {
             )
             .flatten()
     }
+    pub fn get_local_transactions(&self) -> ZingoLibResult<Vec<Transaction>> {
+        let mut transactions = vec![];
+        for raw_tx in &self.local_raw_transactions {
+            transactions.push(
+                Transaction::read(&raw_tx[..], zcash_primitives::consensus::BranchId::Canopy)
+                    .map_err(|e| ZingoLibError::Error(e.to_string()))?,
+            );
+        }
+        Ok(transactions)
+    }
 }
 
 pub mod trait_inputsource;

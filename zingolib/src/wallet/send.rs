@@ -139,7 +139,7 @@ impl super::LightWallet {
         let request =
             build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
         let created_txids = spend_kit
-            .create_and_spend(request, sapling_prover)
+            .propose_and_calculate(request, sapling_prover)
             .expect("fix hthis exkpect before review!");
 
         // let created_raw_transactions = spend_kit.get_broadcast_txids(created_txids);

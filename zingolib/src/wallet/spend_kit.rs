@@ -20,7 +20,7 @@ use zcash_keys::keys::UnifiedSpendingKey;
 
 use zcash_primitives::{
     consensus,
-    transaction::{fees::zip317::FeeRule as Zip317FeeRule, TxId},
+    transaction::{fees::zip317::FeeRule as Zip317FeeRule, Transaction, TxId},
 };
 use zingoconfig::ChainType;
 
@@ -72,7 +72,7 @@ impl SpendKit<'_, '_> {
         )
         .map_err(|e| ZingoLibError::Error(format!("{e:?}")))?) //review! error typing
     }
-    pub fn create_transactions<Prover>(
+    pub fn calculate_transactions<Prover>(
         &mut self,
         sapling_prover: Prover,
         proposal: Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>,
@@ -97,7 +97,7 @@ impl SpendKit<'_, '_> {
         )
         .map_err(|e| ZingoLibError::Error(format!("{e:?}"))) //review! error typing
     }
-    pub fn create_and_spend<Prover>(
+    pub fn propose_and_calculate<Prover>(
         &mut self,
         request: TransactionRequest,
         sapling_prover: Prover,
@@ -106,6 +106,9 @@ impl SpendKit<'_, '_> {
         Prover: SpendProver + OutputProver,
     {
         let proposal = self.create_proposal(request)?;
-        self.create_transactions(sapling_prover, proposal)
+        self.calculate_transactions(sapling_prover, proposal)
+    }
+    pub fn get_calculated_transactions(&self) -> ZingoLibResult<Vec<Transaction>> {
+        self.record_book.get_local_transactions()
     }
 }
