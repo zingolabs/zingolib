@@ -127,7 +127,7 @@ impl super::LightWallet {
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
     where
-        F: Fn(Box<[u8]>) -> Fut,
+        F: Fn(Box<[u8]>) -> Fut + Clone,
         Fut: Future<Output = Result<String, String>>,
     {
         let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
@@ -138,14 +138,18 @@ impl super::LightWallet {
         let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
         let request =
             build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
-        let created_txids = spend_kit
+        let _calculated_txids = spend_kit
             .propose_and_calculate(request, sapling_prover)
             .expect("fix hthis exkpect before review!");
 
-        // let created_raw_transactions = spend_kit.get_broadcast_txids(created_txids);
-        // for crt in created_raw_transactions {
-        //     broadcast_fn(crt);
-        // }
+        for calculated_transaction in spend_kit.get_calculated_transactions()? {
+            self.send_to_addresses_inner(
+                &calculated_transaction,
+                submission_height,
+                broadcast_fn.clone(),
+            )
+            .await;
+        }
 
         Err("unimplemented!".to_string())
     }
