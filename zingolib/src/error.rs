@@ -5,8 +5,7 @@ use zcash_primitives::transaction::TxId;
 
 #[derive(Debug)]
 pub enum ZingoLibError {
-    UnknownError, //review! know our errors
-    Error(String),
+    Error(String), //review! know our errors
     NoWalletLocation,
     MetadataUnderflow(String),
     InternalWriteBufferError(std::io::Error),
@@ -38,9 +37,6 @@ impl std::fmt::Display for ZingoLibError {
             f,
             "{}",
             match self {
-                UnknownError => format!(
-                    "UnknownError"
-                ),
                 Error(string) => format!(
                     "Error: {}",
                     string,

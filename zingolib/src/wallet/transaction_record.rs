@@ -1,5 +1,4 @@
 use incrementalmerkletree::witness::IncrementalWitness;
-use orchard::Note;
 use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
-use zcash_primitives::zip32::AccountId;
+use zcash_primitives::{transaction::components::amount::NonNegativeAmount, zip32::AccountId};
 
 use crate::error::ZingoLibError;
 
@@ -53,27 +53,46 @@ impl InputSource for RecordBook<'_> {
         Self::Error,
     > {
         if account != AccountId::ZERO {
-            return Err(ZingoLibError::UnknownError);
+            return Err(ZingoLibError::Error(
+                "we don't use non-zero accounts (yet?)".to_string(),
+            ));
         }
         let vals_refs: BTreeMap<u64, NoteRecordReference> = BTreeMap::new();
-        // for transaction_record in self.record_book.all_transactions.values() {
-        //     if sources.contains(&ShieldedProtocol::Sapling) {
-        //         noteset.extend(transaction_record.select_unspent_domain_notes::<SaplingDomain>());
-        //     }
-        //     match sources.contains(&ShieldedProtocol::Orchard) {
-        //         true => {
-        //             noteset
-        //                 .extend(transaction_record.select_unspent_domain_notes::<OrchardDomain>());
-        //         }
-        //         false => (),
-        //     }
-        // }
         let mut noteset: Vec<
             zcash_client_backend::wallet::ReceivedNote<
                 Self::NoteRef,
                 zcash_client_backend::wallet::Note,
             >,
         > = Vec::new();
-        Ok(noteset) //review! this is incorrect because it selects ALL the unspent notes, not just enough for the target value.
+        let mut value_selected = NonNegativeAmount::ZERO;
+        for transaction_record in self.all_transactions.values() {
+            if sources.contains(&ShieldedProtocol::Sapling) {
+                noteset.extend(transaction_record.select_unspent_domain_notes::<SaplingDomain>());
+                value_selected = (value_selected
+                    + NonNegativeAmount::from_u64(transaction_record.total_sapling_value_spent)
+                        .map_err(|e| ZingoLibError::Error("Balance overflow".to_string()))?)
+                .ok_or(ZingoLibError::Error("Balance overflow".to_string()))?;
+            }
+            match sources.contains(&ShieldedProtocol::Orchard) {
+                true => {
+                    noteset
+                        .extend(transaction_record.select_unspent_domain_notes::<OrchardDomain>());
+                    value_selected = (value_selected
+                        + NonNegativeAmount::from_u64(
+                            transaction_record.total_orchard_value_spent,
+                        )
+                        .map_err(|e| ZingoLibError::Error("Balance overflow".to_string()))?)
+                    .ok_or(ZingoLibError::Error("Balance overflow".to_string()))?;
+                }
+                false => (),
+            }
+            //review! select notes in some sort of sane, non-arbitrary order, instead of
+            //adding all notes from a random? transaction and the stopping if we have enough
+            if value_selected >= target_value {
+                break;
+            }
+        }
+        Ok(noteset) //review! this is incorrect because it selects more notes than needed if they're
+                    // in the same transaction, and has no rhyme or reason for what notes it selects
     }
 }

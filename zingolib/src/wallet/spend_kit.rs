@@ -70,7 +70,7 @@ impl SpendKit<'_, '_> {
             request,
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
-        .map_err(|e| ZingoLibError::UnknownError)?) //review! error typing
+        .map_err(|e| ZingoLibError::Error(format!("{e:?}")))?) //review! error typing
     }
     pub fn create_transactions<Prover>(
         &mut self,
@@ -95,7 +95,7 @@ impl SpendKit<'_, '_> {
             OvkPolicy::Sender,
             &proposal,
         )
-        .map_err(|e| ZingoLibError::UnknownError) //review! error typing
+        .map_err(|e| ZingoLibError::Error(format!("{e:?}"))) //review! error typing
     }
     pub fn create_and_spend<Prover>(
         &mut self,

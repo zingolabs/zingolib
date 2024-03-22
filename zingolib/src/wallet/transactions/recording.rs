@@ -290,7 +290,8 @@ impl TxMapAndMaybeTrees {
                 ZingoLibError::NoSuchTxId(spending_txid).handle()?
             }
         } else {
-            ZingoLibError::UnknownError.handle()?
+            //review! what does this mean?
+            ZingoLibError::Error("".to_string()).handle()?
         }) // todO add special error variant
     }
 
