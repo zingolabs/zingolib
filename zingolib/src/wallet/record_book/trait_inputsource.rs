@@ -5,7 +5,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::zip32::AccountId;
 
-use crate::error::ZingoLibError;
+use crate::{error::ZingoLibError, wallet::transaction_record};
 
 use super::{NoteRecordReference, RecordBook};
 
@@ -56,12 +56,26 @@ impl InputSource for RecordBook<'_> {
             return Err(ZingoLibError::UnknownError);
         }
         let mut value_ref_pairs: BTreeMap<u64, NoteRecordReference> = BTreeMap::new();
-        for transaction_record in self.all_transactions.values() {
+        for transaction_record in self.all_transactions.values().filter(|transaction_record| {
+            transaction_record
+                .status
+                .is_confirmed_before_or_at(&anchor_height)
+        }) {
             if sources.contains(&ShieldedProtocol::Sapling) {
-                value_ref_pairs.extend(transaction_record.select_value_ref_pairs_sapling());
+                value_ref_pairs.extend(
+                    transaction_record
+                        .select_value_ref_pairs_sapling()
+                        .into_iter()
+                        .filter(|value_ref_pair| !exclude.contains(&value_ref_pair.1)),
+                );
             }
             if sources.contains(&ShieldedProtocol::Orchard) {
-                value_ref_pairs.extend(transaction_record.select_value_ref_pairs_orchard());
+                value_ref_pairs.extend(
+                    transaction_record
+                        .select_value_ref_pairs_orchard()
+                        .into_iter()
+                        .filter(|value_ref_pair| !exclude.contains(&value_ref_pair.1)),
+                );
             }
         }
         let mut noteset: Vec<
