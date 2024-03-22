@@ -290,9 +290,9 @@ impl TxMapAndMaybeTrees {
                 ZingoLibError::NoSuchTxId(spending_txid).handle()?
             }
         } else {
-            //review! what does this mean?
-            ZingoLibError::Error("".to_string()).handle()?
-        }) // todO add special error variant
+            //impossible
+            ZingoLibError::Error("note status is indeterminate".to_string()).handle()?
+        }) // todo add special error variant
     }
 
     pub fn add_taddr_spent(

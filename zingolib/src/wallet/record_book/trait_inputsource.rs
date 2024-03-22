@@ -108,10 +108,7 @@ impl InputSource for RecordBook<'_> {
                 None => Ok(None),
             },
         )? {
-            return ZingoLibResult::Err(ZingoLibError::Error(format!(
-                "Insufficient sendable balance, need {} more zats",
-                missing_value.into_u64()
-            )));
+            return ZingoLibResult::Err(ZingoLibError::FundShortfall(missing_value.into_u64()));
         };
         // let noteset = value_ref_pairs
         //     .into_iter()

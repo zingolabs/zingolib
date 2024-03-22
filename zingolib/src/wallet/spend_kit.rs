@@ -70,7 +70,8 @@ impl SpendKit<'_, '_> {
             request,
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
-        .map_err(|e| ZingoLibError::Error(format!("{e:?}")))?) //review! error typing
+        .map_err(|e| ZingoLibError::ProposeTransaction(format!("{e:?}")))?)
+        //review! error typing
     }
     pub fn calculate_transactions<Prover>(
         &mut self,
@@ -95,7 +96,8 @@ impl SpendKit<'_, '_> {
             OvkPolicy::Sender,
             &proposal,
         )
-        .map_err(|e| ZingoLibError::Error(format!("{e:?}"))) //review! error typing
+        .map_err(|e| ZingoLibError::CalculateTransaction(format!("{e:?}")))
+        //review! error typing
     }
     pub fn propose_and_calculate<Prover>(
         &mut self,

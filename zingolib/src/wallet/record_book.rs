@@ -51,7 +51,7 @@ impl<'a> RecordBook<'a> {
         let mut raw_tx = vec![];
         transaction
             .write(&mut raw_tx)
-            .map_err(|e| ZingoLibError::Error(e.to_string()))?;
+            .map_err(|e| ZingoLibError::CalculatedTransactionEncode(e.to_string()))?;
         self.local_raw_transactions.push(raw_tx);
         Ok(())
     }
@@ -88,7 +88,7 @@ impl<'a> RecordBook<'a> {
         for raw_tx in &self.local_raw_transactions {
             transactions.push(
                 Transaction::read(&raw_tx[..], zcash_primitives::consensus::BranchId::Canopy)
-                    .map_err(|e| ZingoLibError::Error(e.to_string()))?,
+                    .map_err(|e| ZingoLibError::CalculatedTransactionDecode(e.to_string()))?,
             );
         }
         Ok(transactions)

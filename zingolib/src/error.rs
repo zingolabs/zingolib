@@ -8,8 +8,8 @@ pub enum ZingoLibError {
     Error(String), //review! know our errors
     NoWalletLocation,
     MetadataUnderflow(String),
-    InternalWriteBufferError(std::io::Error),
-    WriteFileError(std::io::Error),
+    InternalWriteBuffer(std::io::Error),
+    WriteFile(std::io::Error),
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
     NoSuchTxId(TxId),
@@ -19,6 +19,11 @@ pub enum ZingoLibError {
     MissingOutputIndex(TxId),
     CouldNotDecodeMemo(std::io::Error),
     ViewkeyCantSpend,
+    ProposeTransaction(String),
+    CalculateTransaction(String),
+    CalculatedTransactionEncode(String),
+    CalculatedTransactionDecode(String),
+    FundShortfall(u64),
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -48,11 +53,11 @@ impl std::fmt::Display for ZingoLibError {
                     "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
                     explanation,
                 ),
-                InternalWriteBufferError(err) => format!(
+                InternalWriteBuffer(err) => format!(
                     "Internal save error! {} ",
                     err,
                 ),
-                WriteFileError(err) => format!(
+                WriteFile(err) => format!(
                     "Could not write to wallet save file. Was this erroneously attempted in mobile?, instead of native save buffer handling? Is there a permission issue? {} ",
                     err,
                 ),
@@ -90,6 +95,26 @@ impl std::fmt::Display for ZingoLibError {
                 ),
                 ViewkeyCantSpend => format!(
                     "viewkey cannot spend",
+                ),
+                ProposeTransaction(string) => format!(
+                    "error in propose transaction: {}",
+                    string,
+                ),
+                CalculateTransaction(string) => format!(
+                    "error while calculating transaction: {}",
+                    string,
+                ),
+                CalculatedTransactionEncode(string) => format!(
+                    "error while encoding newly created transaction {}", 
+                    string,
+                ),
+                CalculatedTransactionDecode(string) => format!(
+                    "error while decoding newly created transaction {}",
+                    string,
+                ),
+                FundShortfall(shortfall) => format!(
+                    "Insufficient sendable balance, need {} more zats",
+                    shortfall,
                 ),
             }
         )
