@@ -573,8 +573,6 @@ pub mod finsight {
     }
 }
 pub mod summaries {
-    use std::collections::HashMap;
-
     use json::{object, JsonValue};
     use zcash_primitives::transaction::TxId;
 
