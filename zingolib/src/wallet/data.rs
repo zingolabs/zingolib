@@ -697,8 +697,6 @@ pub mod summaries {
             }
         }
     }
-
-    pub struct TransactionIndex(HashMap<zcash_primitives::transaction::TxId, ValueTransfer>);
 }
 
 pub use crate::wallet::transaction_record::TransactionRecord;
