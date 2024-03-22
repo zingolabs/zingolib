@@ -2295,12 +2295,12 @@ mod tests {
         Runtime::new().unwrap().block_on(async move {
             let addresses = lc.do_addresses().await;
             assert_eq!(
-                "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
                     .to_string(),
                 addresses[0]["receivers"]["sapling"]
             );
             assert_eq!(
-                "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui",
+                "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
                 addresses[0]["receivers"]["transparent"]
             );
         });
