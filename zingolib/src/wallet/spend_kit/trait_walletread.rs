@@ -142,9 +142,11 @@ impl WalletRead for SpendKit<'_, '_> {
             Err(e) => match e {},
         };
 
-        Ok(highest_block_height.map(|height| {
+        let target_height = highest_block_height.map(|height| height + 1);
+
+        Ok(target_height.map(|height| {
             (
-                height + 1,
+                height,
                 BlockHeight::from_u32(std::cmp::max(
                     1,
                     u32::from(height).saturating_sub(u32::from(min_confirmations)),
