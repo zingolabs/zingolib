@@ -50,7 +50,7 @@ impl SpendKit<'_, '_> {
             Zip317FeeRule::standard(),
             None,
             ShieldedProtocol::Orchard,
-        );
+        ); // review consider change strategy!
 
         let input_selector = GISKit::new(
             change_strategy,
