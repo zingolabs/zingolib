@@ -1,29 +1,39 @@
 use std::error::Error;
 use std::fmt;
 
+use zcash_client_backend::zip321::Zip321Error;
 use zcash_primitives::transaction::TxId;
 
 #[derive(Debug)]
 pub enum ZingoLibError {
     Error(String), //review! know our errors
+
+    // client startup errors
     NoWalletLocation,
     MetadataUnderflow(String),
     InternalWriteBuffer(std::io::Error),
     WriteFile(std::io::Error),
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
+
+    // record corruption errors
     NoSuchTxId(TxId),
     NoSuchSaplingOutputInTx(TxId, u32),
     NoSuchOrchardOutputInTx(TxId, u32),
     NoSuchNullifierInTx(TxId),
     MissingOutputIndex(TxId),
     CouldNotDecodeMemo(std::io::Error),
+
+    // spending errors
     ViewkeyCantSpend,
+    RequestConstruction(Zip321Error),
     ProposeTransaction(String),
     CalculateTransaction(String),
     CalculatedTransactionEncode(String),
     CalculatedTransactionDecode(String),
     FundShortfall(u64),
+    Broadcast(String),
+    PartialBroadcast(u64, String),
 }
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
@@ -40,10 +50,10 @@ impl std::fmt::Display for ZingoLibError {
         use ZingoLibError::*;
         write!(
             f,
-            "{}",
+            "Error: {}",
             match self {
                 Error(string) => format!(
-                    "Error: {}",
+                    "unknown error: {}",
                     string,
                 ),
                 NoWalletLocation => format!(
@@ -93,28 +103,42 @@ impl std::fmt::Display for ZingoLibError {
                 MissingOutputIndex(txid) => format!(
                     "{txid} is missing output_index for note, cannot mark change"
                 ),
+                
                 ViewkeyCantSpend => format!(
                     "viewkey cannot spend",
                 ),
+                RequestConstruction(err) => format!(
+                    "transaction request {}",
+                    err
+                ),
                 ProposeTransaction(string) => format!(
-                    "error in propose transaction: {}",
+                    "propose transaction: {}",
                     string,
                 ),
                 CalculateTransaction(string) => format!(
-                    "error while calculating transaction: {}",
+                    "calculating transaction: {}",
                     string,
                 ),
                 CalculatedTransactionEncode(string) => format!(
-                    "error while encoding newly created transaction {}", 
+                    "encoding newly created transaction {}", 
                     string,
                 ),
                 CalculatedTransactionDecode(string) => format!(
-                    "error while decoding newly created transaction {}",
+                    "decoding newly created transaction {}",
                     string,
                 ),
                 FundShortfall(shortfall) => format!(
                     "Insufficient sendable balance, need {} more zats",
                     shortfall,
+                ),
+                Broadcast(string) => format!(
+                    "Broadcast failed! {}",
+                    string,
+                ),
+                PartialBroadcast(num, string) => format!(
+                    "Broadcast {} of multistep transaction failed! {}",
+                    num,
+                    string,
                 ),
             }
         )

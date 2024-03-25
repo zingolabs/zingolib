@@ -915,7 +915,7 @@ impl LightClient {
                 .await
         };
 
-        result.map(|(transaction_id, _)| transaction_id)
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
@@ -990,7 +990,7 @@ impl LightClient {
                 .await
         };
 
-        result.map(|(transaction_id, _)| transaction_id)
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {

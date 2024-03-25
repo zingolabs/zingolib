@@ -83,7 +83,6 @@ impl SendProgress {
 
 type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
 
-// review! unit test this
 pub fn build_transaction_request_from_receivers(
     receivers: Receivers,
 ) -> Result<TransactionRequest, Zip321Error> {
@@ -125,7 +124,7 @@ impl super::LightWallet {
         receivers: Receivers,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> ZingoLibResult<String>
     where
         F: Fn(Box<[u8]>) -> Fut + Clone,
         Fut: Future<Output = Result<String, String>>,
@@ -136,11 +135,9 @@ impl super::LightWallet {
             .write()
             .await;
         let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
-        let request =
-            build_transaction_request_from_receivers(receivers).map_err(|e| e.to_string())?;
-        let _calculated_txids = spend_kit
-            .propose_and_calculate(request, sapling_prover)
-            .map_err(|e| e.to_string())?;
+        let request = build_transaction_request_from_receivers(receivers)
+            .map_err(|e| ZingoLibError::RequestConstruction(e))?;
+        let _calculated_txids = spend_kit.propose_and_calculate(request, sapling_prover)?;
 
         let calculated_transactions = spend_kit.get_calculated_transactions()?;
         // instead of dropping and running old scan_full_tx, we could just implement scan_full_tx on the new Spend_Kit.
@@ -159,7 +156,7 @@ impl super::LightWallet {
             .map_err(|e| e)?;
         }
 
-        Ok(("next: replace results!".to_string(), vec![]))
+        Ok("all transactions broadcast!".to_string())
     }
 
     pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
@@ -201,7 +198,7 @@ impl super::LightWallet {
         transaction: &Transaction,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> ZingoLibResult<(String, Vec<u8>)>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -214,7 +211,9 @@ impl super::LightWallet {
         let mut raw_transaction = vec![];
         transaction.write(&mut raw_transaction).unwrap();
 
-        let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
+        let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice())
+            .await
+            .map_err(|e| ZingoLibError::Broadcast(e))?;
 
         // Add this transaction to the mempool structure
         {
