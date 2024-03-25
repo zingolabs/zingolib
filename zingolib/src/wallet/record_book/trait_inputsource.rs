@@ -115,6 +115,7 @@ impl InputSource for RecordBook<'_> {
         //     .filter_map(|(_, identifier)| self.get_spendable_note_from_identifier(identifier))
         //     .collect();
         Ok(noteset) //review! this is incorrect because it selects more notes than needed if they're
-                    // in the same transaction, and has no rhyme or reason for what notes it selects
+                    // in the same transaction, and has no rhyme or reason for what notes it selects -av
+                    // fv inspected the flow of where these things go. i think we can add as much dust as we want but only a few notes. this change policy is probably cause of some of our bugs.
     }
 }
