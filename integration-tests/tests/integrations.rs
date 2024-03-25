@@ -1083,6 +1083,13 @@ mod slow {
             scenarios::faucet_recipient_default().await;
 
         let sapling_dust = 100;
+        println!(
+            "scenario initial
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
         let _sent_transaction_id = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "sapling"),
@@ -1092,14 +1099,24 @@ mod slow {
             .await
             .unwrap();
 
+        println!(
+            "sent to recipient
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
 
+        println!(
+            "synced recipient
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
         assert_eq!(
             recipient.do_shield(&[Pool::Sapling], None).await,
             Err(
@@ -1110,14 +1127,21 @@ mod slow {
         );
 
         println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+            "recipient cant shield
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
         );
+
         let sapling_enough_for_fee = 10_100;
         faucet.do_sync(false).await.unwrap();
         println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+            "faucet synced
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
         );
         let _sent_transaction_id = faucet
             .do_send(vec![(
@@ -1127,15 +1151,36 @@ mod slow {
             )])
             .await
             .unwrap();
+        println!(
+            "faucet send to recipient again
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
+        println!(
+            "recipient syncked again
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
         recipient
             .do_shield(&[Pool::Sapling, Pool::Transparent], None)
             .await
             .unwrap();
 
+        println!(
+            "recipient can successfully shield
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
         // The exact same thing again, but with pre-existing orchard funds
         // already in the shielding wallet
         faucet.do_sync(false).await.unwrap();
@@ -1155,11 +1200,6 @@ mod slow {
             .do_shield(&[Pool::Sapling, Pool::Transparent], None)
             .await
             .unwrap();
-
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
     }
     #[tokio::test]
     async fn shield_heartwood_sapling_funds() {
