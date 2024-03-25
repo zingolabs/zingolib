@@ -50,7 +50,7 @@ impl std::fmt::Display for ZingoLibError {
         use ZingoLibError::*;
         write!(
             f,
-            "Error: {}",
+            "ZingoLibError: {}",
             match self {
                 Error(string) => format!(
                     "unknown error: {}",
