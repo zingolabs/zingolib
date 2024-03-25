@@ -36,7 +36,7 @@ impl InputSource for RecordBook<'_> {
             shielded_protocol: protocol,
             index,
         };
-        Ok(self.get_spendable_note_from_identifier(note_record_reference))
+        Ok(self.get_received_note_from_identifier(note_record_reference))
     }
 
     fn select_spendable_notes(
@@ -98,7 +98,7 @@ impl InputSource for RecordBook<'_> {
             |rolling_target, (val, noteref)| match rolling_target {
                 Some(targ) => {
                     noteset.push(
-                        self.get_spendable_note_from_identifier(noteref)
+                        self.get_received_note_from_identifier(noteref)
                             .ok_or(ZingoLibError::Error("missing note".to_string()))?,
                     );
                     Ok(targ

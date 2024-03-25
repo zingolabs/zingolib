@@ -58,7 +58,7 @@ impl<'a> RecordBook<'a> {
     pub fn get_remote_txid_hashmap(&self) -> &HashMap<TxId, TransactionRecord> {
         self.remote_transactions
     }
-    pub fn get_spendable_note_from_identifier(
+    pub fn get_received_note_from_identifier(
         &self,
         note_record_reference: NoteRecordIdentifier,
     ) -> Option<
