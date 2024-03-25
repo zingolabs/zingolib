@@ -73,7 +73,7 @@ impl InputSource for RecordBook<'_> {
             if sources.contains(&ShieldedProtocol::Sapling) {
                 value_ref_pairs.extend(
                     transaction_record
-                        .select_value_ref_pairs_sapling()
+                        .select_unspent_value_ref_pairs_sapling()
                         .into_iter()
                         .filter(|value_ref_pair| !exclude.contains(&value_ref_pair.1)),
                 );
@@ -81,7 +81,7 @@ impl InputSource for RecordBook<'_> {
             if sources.contains(&ShieldedProtocol::Orchard) {
                 value_ref_pairs.extend(
                     transaction_record
-                        .select_value_ref_pairs_orchard()
+                        .select_unspent_value_ref_pairs_orchard()
                         .into_iter()
                         .filter(|value_ref_pair| !exclude.contains(&value_ref_pair.1)),
                 );
