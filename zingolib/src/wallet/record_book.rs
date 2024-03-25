@@ -16,6 +16,16 @@ pub struct NoteRecordIdentifier {
     pub index: u32,
 }
 
+impl std::fmt::Display for NoteRecordIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "txid {}, {:?}, index {}",
+            self.txid, self.shielded_protocol, self.index,
+        )
+    }
+}
+
 pub struct TransparentRecordRef {
     txid: TxId,
     index: u32,

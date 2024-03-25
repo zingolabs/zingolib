@@ -70,7 +70,7 @@ impl SpendKit<'_, '_> {
             request,
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
-        .map_err(|e| ZingoLibError::ProposeTransaction(format!("{e:?}")))?)
+        .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?)
         //review! error typing
     }
     pub fn calculate_transactions<Prover>(
