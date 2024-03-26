@@ -73,7 +73,7 @@ impl SpendKit<'_, '_> {
         .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?)
         //review! error typing
     }
-    pub fn calculate_transactions<Prover>(
+    pub fn create_transactions<Prover>(
         &mut self,
         sapling_prover: Prover,
         proposal: Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>,
@@ -98,19 +98,5 @@ impl SpendKit<'_, '_> {
         )
         .map_err(|e| ZingoLibError::CalculateTransaction(format!("{e:?}")))
         //review! error typing
-    }
-    pub fn propose_and_calculate<Prover>(
-        &mut self,
-        request: TransactionRequest,
-        sapling_prover: Prover,
-    ) -> ZingoLibResult<NonEmpty<TxId>>
-    where
-        Prover: SpendProver + OutputProver,
-    {
-        let proposal = self.create_proposal(request)?;
-        self.calculate_transactions(sapling_prover, proposal)
-    }
-    pub fn get_calculated_transactions(&self) -> ZingoLibResult<Vec<Transaction>> {
-        self.record_book.get_local_transactions()
     }
 }

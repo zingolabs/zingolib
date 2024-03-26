@@ -69,6 +69,10 @@ impl<'a> RefRecordBook<'a> {
         self.local_sending_transactions.push(raw_tx);
         Ok(())
     }
+    pub fn clear_local_transaction(&mut self) -> ZingoLibResult<()> {
+        self.local_sending_transactions.clear();
+        Ok(())
+    }
     pub fn get_remote_txid_hashmap(&self) -> &HashMap<TxId, TransactionRecord> {
         self.remote_transactions
     }
@@ -96,17 +100,6 @@ impl<'a> RefRecordBook<'a> {
                 },
             )
             .flatten()
-    }
-    pub fn get_local_transactions(&self) -> ZingoLibResult<Vec<Transaction>> {
-        //deprecated
-        let mut transactions = vec![];
-        // for raw_tx in &self.local_sending_transactions {
-        //     transactions.push(
-        //         Transaction::read(&raw_tx[..], zcash_primitives::consensus::BranchId::Nu5)
-        //             .map_err(|e| ZingoLibError::CalculatedTransactionDecode(e.to_string()))?,
-        //     );
-        // }
-        Ok(transactions)
     }
 }
 

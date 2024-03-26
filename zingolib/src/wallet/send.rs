@@ -119,28 +119,25 @@ impl super::LightWallet {
         self.send_progress.read().await.clone()
     }
 
-    pub async fn propose_to_addresses<F, Fut, P: SpendProver + OutputProver>(
+    pub async fn propose_to_addresses<P: SpendProver + OutputProver>(
         &self,
+        sapling_prover: P,
         request: TransactionRequest,
-    ) -> ZingoLibResult<Proposal<FeeRule, NoteRecordIdentifier>>
-    where
-        F: Fn(Box<[u8]>) -> Fut + Clone,
-        Fut: Future<Output = Result<String, String>>,
-    {
+    ) -> ZingoLibResult<Proposal<FeeRule, NoteRecordIdentifier>> {
         let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
             .transaction_context
             .transaction_metadata_set
             .write()
             .await;
         let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
-        spend_kit.create_proposal(request)
+        let extra_proposal = spend_kit.create_proposal(request.clone())?;
+        let proposal = spend_kit.create_proposal(request)?;
+        spend_kit.create_transactions(sapling_prover, proposal)?;
+        Ok(extra_proposal)
     }
 
-    pub async fn send_to_addresses<F, Fut, P: SpendProver + OutputProver>(
+    pub async fn send_to_addresses<F, Fut>(
         &self,
-        sapling_prover: P,
-        policy: NoteSelectionPolicy, //review! deprecate argument?
-        request: TransactionRequest,
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> ZingoLibResult<String>
@@ -148,37 +145,47 @@ impl super::LightWallet {
         F: Fn(Box<[u8]>) -> Fut + Clone,
         Fut: Future<Output = Result<String, String>>,
     {
-        let calculated_transactions = self.calculate_transactions(sapling_prover, request).await?;
-
-        for (transaction_number, calculated_transaction) in
-            calculated_transactions.into_iter().enumerate()
+        // review! what does this do? is it necessary? why does it seem wrong?
         {
-            self.send_to_addresses_inner(
-                &calculated_transaction,
-                submission_height,
-                broadcast_fn.clone(),
-            )
-            .await
-            .map_err(|e| e)?;
+            self.send_progress.write().await.is_send_in_progress = false;
         }
-
-        Ok("all transactions broadcast!".to_string())
-    }
-
-    pub async fn calculate_transactions<P: SpendProver + OutputProver>(
-        &self,
-        sapling_prover: P,
-        request: TransactionRequest,
-    ) -> ZingoLibResult<Vec<Transaction>> {
-        let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
+        // send each transaction in the proposition.
+        let lock = self
             .transaction_context
             .transaction_metadata_set
             .write()
             .await;
-        let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
-        let _calculated_txids = spend_kit.propose_and_calculate(request, sapling_prover)?;
+        if let Some(spending_data) = &lock.spending_data {
+            for (transaction_number, sending_raw) in
+                spending_data.outgoing_send_step_data.iter().enumerate()
+            {
+                let transaction_id = broadcast_fn(sending_raw.clone().into_boxed_slice())
+                    .await
+                    .map_err(|e| ZingoLibError::Broadcast(e))?;
 
-        spend_kit.get_calculated_transactions()
+                // Add this transaction to the mempool structure
+                {
+                    let sending_full_tx = Transaction::read(
+                        &sending_raw[..],
+                        zcash_primitives::consensus::BranchId::Nu5,
+                    )
+                    .map_err(|e| ZingoLibError::CalculatedTransactionDecode(e.to_string()))?;
+                    let price = self.price.read().await.clone();
+
+                    let status = ConfirmationStatus::Broadcast(submission_height);
+                    self.transaction_context
+                        .scan_full_tx(
+                            &sending_full_tx,
+                            status,
+                            now() as u32,
+                            get_price(now(), &price),
+                        )
+                        .await;
+                }
+            }
+        }
+
+        Ok("all transactions broadcast!".to_string())
     }
 
     pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(

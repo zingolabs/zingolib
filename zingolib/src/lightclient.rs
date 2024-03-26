@@ -880,8 +880,7 @@ impl LightClient {
             .collect()
     }
 
-    //TODO: Add migrate_sapling_to_orchard argument
-    pub async fn do_send(
+    pub async fn do_propose(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<String, String> {
@@ -893,32 +892,39 @@ impl LightClient {
         debug!("Creating transaction");
 
         let result = {
+            // review! is this necessary?
             let _lock = self.sync_lock.lock().await;
-            // I am not clear on how long this operation may take, but it's
-            // clearly unnecessary in a send that doesn't include sapling
-            // TODO: Remove from sends that don't include Sapling
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
             let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
-                    // spend from transparent.
-                    request,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
+                .propose_to_addresses(sapling_prover, request)
                 .await
         };
 
-        result.map_err(|e| e.to_string())
+        // result.map_err(|e| e.to_string())
+        Ok("todo".to_string())
+    }
+
+    pub async fn do_send(&self) -> Result<String, String> {
+        let transaction_submission_height = self.get_submission_height().await?;
+        // First, get the consensus branch ID
+        debug!("Creating transaction");
+
+        let result = {
+            self.wallet
+                .send_to_addresses(transaction_submission_height, |transaction_bytes| {
+                    crate::grpc_connector::send_transaction(
+                        self.get_server_uri(),
+                        transaction_bytes,
+                    )
+                })
+                .await
+        };
+
+        // result.map_err(|e| e.to_string())
+        Ok("todo".to_string())
     }
 
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
@@ -934,66 +940,67 @@ impl LightClient {
         pools_to_shield: &[Pool],
         address: Option<String>,
     ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
-                                          // as a fn of the transactions structure.
-        let tbal = self
-            .wallet
-            .tbalance(None)
-            .await
-            .expect("to receive a balance");
-        let sapling_bal = self
-            .wallet
-            .spendable_sapling_balance(None)
-            .await
-            .unwrap_or(0);
+        //     let transaction_submission_height = self.get_submission_height().await?;
+        //     let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
+        //                                       // as a fn of the transactions structure.
+        //     let tbal = self
+        //         .wallet
+        //         .tbalance(None)
+        //         .await
+        //         .expect("to receive a balance");
+        //     let sapling_bal = self
+        //         .wallet
+        //         .spendable_sapling_balance(None)
+        //         .await
+        //         .unwrap_or(0);
 
-        // Make sure there is a balance, and it is greater than the amount
-        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
-            tbal
-        } else {
-            0
-        } + if pools_to_shield.contains(&Pool::Sapling) {
-            sapling_bal
-        } else {
-            0
-        };
-        if balance_to_shield <= fee {
-            return Err(format!(
-                "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                balance_to_shield, fee
-            ));
-        }
+        //     // Make sure there is a balance, and it is greater than the amount
+        //     let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
+        //         tbal
+        //     } else {
+        //         0
+        //     } + if pools_to_shield.contains(&Pool::Sapling) {
+        //         sapling_bal
+        //     } else {
+        //         0
+        //     };
+        //     if balance_to_shield <= fee {
+        //         return Err(format!(
+        //             "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
+        //             balance_to_shield, fee
+        //         ));
+        //     }
 
-        let addr = address
-            .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
+        //     let addr = address
+        //         .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
-        let receiver = self.map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])?;
-        let request = build_transaction_request_from_receivers(receiver)
-            .map_err(|e| ZingoLibError::RequestConstruction(e).to_string())?;
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+        //     let receiver = self.map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])?;
+        //     let request = build_transaction_request_from_receivers(receiver)
+        //         .map_err(|e| ZingoLibError::RequestConstruction(e).to_string())?;
+        //     let result = {
+        //         let _lock = self.sync_lock.lock().await;
+        //         let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        //         let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    pools_to_shield.to_vec(),
-                    request,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
+        //         self.wallet
+        //             .send_to_addresses(
+        //                 sapling_prover,
+        //                 pools_to_shield.to_vec(),
+        //                 request,
+        //                 transaction_submission_height,
+        //                 |transaction_bytes| {
+        //                     crate::grpc_connector::send_transaction(
+        //                         self.get_server_uri(),
+        //                         transaction_bytes,
+        //                     )
+        //                 },
+        //             )
+        //             .await
+        //     };
 
-        result.map_err(|e| e.to_string())
+        //     result.map_err(|e| e.to_string())
+        Ok("todo".to_string())
     }
 
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {

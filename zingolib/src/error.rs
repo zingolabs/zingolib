@@ -28,6 +28,7 @@ pub enum ZingoLibError {
     ViewkeyCantSpend,
     RequestConstruction(Zip321Error),
     ProposeTransaction(String),
+    MissingProposal,
     CalculateTransaction(String),
     CalculatedTransactionEncode(String),
     CalculatedTransactionDecode(String),
@@ -114,6 +115,9 @@ impl std::fmt::Display for ZingoLibError {
                 ProposeTransaction(string) => format!(
                     "propose transaction: {}",
                     string,
+                ),
+                MissingProposal => format!(
+                    "proposal missing. must propose transaction before sending.",
                 ),
                 CalculateTransaction(string) => format!(
                     "calculating transaction: {}",

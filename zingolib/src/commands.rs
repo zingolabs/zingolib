@@ -913,7 +913,7 @@ impl Command for SendCommand {
                 return e;
             }
 
-            match lightclient.do_send(tos).await {
+            match lightclient.do_send().await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
