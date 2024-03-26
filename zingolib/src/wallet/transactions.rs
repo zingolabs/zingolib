@@ -8,21 +8,18 @@ use super::{
     record_book::NoteRecordIdentifier,
 };
 
-pub struct SendingTransaction {
-    pub proposal: Proposal<FeeRule, NoteRecordIdentifier>,
-    pub data: Vec<Vec<u8>>,
-}
-
+/// data that the spending wallet has, but viewkey wallet does not.
 pub struct SpendingData {
     pub witness_trees: WitnessTrees,
-    pub single_outgoing_transactions: Option<SendingTransaction>,
+    /// only one outgoing send can be proposed at once. the first vec contains steps, the second vec is raw bytes.
+    pub outgoing_send_step_data: Vec<Vec<u8>>,
 }
 
 impl SpendingData {
     pub fn default() -> Self {
         SpendingData {
             witness_trees: WitnessTrees::default(),
-            single_outgoing_transactions: None,
+            outgoing_send_step_data: Vec::new(),
         }
     }
     pub fn load_with_option_witness_trees(
@@ -30,7 +27,7 @@ impl SpendingData {
     ) -> Option<Self> {
         option_witness_trees.map(|witness_trees| SpendingData {
             witness_trees,
-            single_outgoing_transactions: None,
+            outgoing_send_step_data: Vec::new(),
         })
     }
     pub fn clear(&mut self) {
