@@ -835,7 +835,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_spending())),
                 reorg_transmitter,
             )
             .await;
@@ -884,7 +884,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_spending())),
                 reorg_transmitter,
             )
             .await;
@@ -980,7 +980,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_spending())),
                 reorg_transmitter,
             )
             .await;

@@ -98,14 +98,16 @@ impl TxMapAndMaybeTrees {
             })
             .collect::<Vec<_>>();
         self.remove_txids(txids_to_remove);
-        if let Some(ref mut t) = self.witness_trees {
-            t.witness_tree_sapling
+        if let Some(ref mut t) = self.spending_data {
+            t.witness_trees
+                .witness_tree_sapling
                 .truncate_removing_checkpoint(&(reorg_height - 1))
                 .expect("Infallible");
-            t.witness_tree_orchard
+            t.witness_trees
+                .witness_tree_orchard
                 .truncate_removing_checkpoint(&(reorg_height - 1))
                 .expect("Infallible");
-            t.add_checkpoint(reorg_height - 1);
+            t.witness_trees.add_checkpoint(reorg_height - 1);
         }
     }
 
