@@ -10,7 +10,7 @@ use super::{
 
 pub struct SendingTransaction {
     pub proposal: Proposal<FeeRule, NoteRecordIdentifier>,
-    pub data: Vec<u8>,
+    pub data: Vec<Vec<u8>>,
 }
 
 pub struct SpendingData {
