@@ -15,14 +15,14 @@ pub struct SendingTransaction {
 
 pub struct SpendingData {
     pub witness_trees: WitnessTrees,
-    pub sending_transactions: Vec<SendingTransaction>,
+    pub single_outgoing_transactions: Option<SendingTransaction>,
 }
 
 impl SpendingData {
     pub fn default() -> Self {
         SpendingData {
             witness_trees: WitnessTrees::default(),
-            sending_transactions: Vec::new(),
+            single_outgoing_transactions: None,
         }
     }
     pub fn load_with_option_witness_trees(
@@ -30,7 +30,7 @@ impl SpendingData {
     ) -> Option<Self> {
         option_witness_trees.map(|witness_trees| SpendingData {
             witness_trees,
-            sending_transactions: Vec::new(),
+            single_outgoing_transactions: None,
         })
     }
     pub fn clear(&mut self) {
