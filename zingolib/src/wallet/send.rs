@@ -224,41 +224,6 @@ impl super::LightWallet {
             Err(ZingoLibError::ViewkeyCantSpend)
         }
     }
-
-    async fn send_to_addresses_inner<F, Fut>(
-        &self,
-        transaction: &Transaction,
-        submission_height: BlockHeight,
-        broadcast_fn: F,
-    ) -> ZingoLibResult<(String, Vec<u8>)>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
-    {
-        {
-            self.send_progress.write().await.is_send_in_progress = false;
-        }
-
-        // Create the transaction bytes
-        let mut raw_transaction = vec![];
-        transaction.write(&mut raw_transaction).unwrap();
-
-        let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice())
-            .await
-            .map_err(|e| ZingoLibError::Broadcast(e))?;
-
-        // Add this transaction to the mempool structure
-        {
-            let price = self.price.read().await.clone();
-
-            let status = ConfirmationStatus::Broadcast(submission_height);
-            self.transaction_context
-                .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
-                .await;
-        }
-
-        Ok((transaction_id, raw_transaction))
-    }
 }
 
 #[cfg(test)]
