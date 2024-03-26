@@ -153,20 +153,9 @@ impl super::LightWallet {
         F: Fn(Box<[u8]>) -> Fut + Clone,
         Fut: Future<Output = Result<String, String>>,
     {
-        let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
-        let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
-        let request = build_transaction_request_from_receivers(receivers)
-            .map_err(|e| ZingoLibError::RequestConstruction(e))?;
-        let _calculated_txids = spend_kit.propose_and_calculate(request, sapling_prover)?;
-
-        let calculated_transactions = spend_kit.get_calculated_transactions()?;
-        // instead of dropping and running old scan_full_tx, we could just implement scan_full_tx on the new Spend_Kit.
-        drop(spend_kit);
-        drop(context_write_lock);
+        let calculated_transactions = self
+            .calculate_transactions(sapling_prover, receivers)
+            .await?;
 
         for (transaction_number, calculated_transaction) in
             calculated_transactions.into_iter().enumerate()
@@ -181,6 +170,24 @@ impl super::LightWallet {
         }
 
         Ok("all transactions broadcast!".to_string())
+    }
+
+    pub async fn calculate_transactions<P: SpendProver + OutputProver>(
+        &self,
+        sapling_prover: P,
+        receivers: Receivers,
+    ) -> ZingoLibResult<Vec<Transaction>> {
+        let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
+        let request = build_transaction_request_from_receivers(receivers)
+            .map_err(|e| ZingoLibError::RequestConstruction(e))?;
+        let _calculated_txids = spend_kit.propose_and_calculate(request, sapling_prover)?;
+
+        spend_kit.get_calculated_transactions()
     }
 
     pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
