@@ -16,7 +16,9 @@ use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
 use tokio::sync::RwLockWriteGuard;
+use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
+use zcash_primitives::transaction::fees::zip317::FeeRule;
 use zcash_primitives::zip32::AccountId;
 
 use std::convert::Infallible;
@@ -48,7 +50,7 @@ use super::data::{SpendableOrchardNote, WitnessTrees};
 
 use super::notes;
 
-use super::record_book::RecordBook;
+use super::record_book::{NoteRecordIdentifier, RecordBook};
 use super::traits::SpendableNote;
 use super::transaction_context::TransactionContext;
 use super::transactions::TxMapAndMaybeTrees;
@@ -117,10 +119,32 @@ impl super::LightWallet {
         self.send_progress.read().await.clone()
     }
 
+    pub async fn propose_to_addresses<F, Fut, P: SpendProver + OutputProver>(
+        &self,
+        sapling_prover: P,
+        receivers: Receivers,
+        submission_height: BlockHeight,
+        broadcast_fn: F,
+    ) -> ZingoLibResult<Proposal<FeeRule, NoteRecordIdentifier>>
+    where
+        F: Fn(Box<[u8]>) -> Fut + Clone,
+        Fut: Future<Output = Result<String, String>>,
+    {
+        let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
+        let request = build_transaction_request_from_receivers(receivers)
+            .map_err(|e| ZingoLibError::RequestConstruction(e))?;
+        spend_kit.create_proposal(request)
+    }
+
     pub async fn send_to_addresses<F, Fut, P: SpendProver + OutputProver>(
         &self,
         sapling_prover: P,
-        policy: NoteSelectionPolicy,
+        policy: NoteSelectionPolicy, //review! deprecate argument?
         receivers: Receivers,
         submission_height: BlockHeight,
         broadcast_fn: F,
