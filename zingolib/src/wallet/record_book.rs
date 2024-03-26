@@ -33,6 +33,7 @@ pub struct TransparentRecordRef {
 
 pub struct RefRecordBook<'a> {
     remote_transactions: &'a HashMap<TxId, TransactionRecord>,
+    // review! how do we actually recognize this as canon when selecting?
     local_raw_transactions: Vec<Vec<u8>>,
 }
 
