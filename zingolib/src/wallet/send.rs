@@ -121,10 +121,7 @@ impl super::LightWallet {
 
     pub async fn propose_to_addresses<F, Fut, P: SpendProver + OutputProver>(
         &self,
-        sapling_prover: P,
-        receivers: Receivers,
-        submission_height: BlockHeight,
-        broadcast_fn: F,
+        request: TransactionRequest,
     ) -> ZingoLibResult<Proposal<FeeRule, NoteRecordIdentifier>>
     where
         F: Fn(Box<[u8]>) -> Fut + Clone,
@@ -136,8 +133,6 @@ impl super::LightWallet {
             .write()
             .await;
         let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
-        let request = build_transaction_request_from_receivers(receivers)
-            .map_err(|e| ZingoLibError::RequestConstruction(e))?;
         spend_kit.create_proposal(request)
     }
 
@@ -145,7 +140,7 @@ impl super::LightWallet {
         &self,
         sapling_prover: P,
         policy: NoteSelectionPolicy, //review! deprecate argument?
-        receivers: Receivers,
+        request: TransactionRequest,
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> ZingoLibResult<String>
@@ -153,9 +148,7 @@ impl super::LightWallet {
         F: Fn(Box<[u8]>) -> Fut + Clone,
         Fut: Future<Output = Result<String, String>>,
     {
-        let calculated_transactions = self
-            .calculate_transactions(sapling_prover, receivers)
-            .await?;
+        let calculated_transactions = self.calculate_transactions(sapling_prover, request).await?;
 
         for (transaction_number, calculated_transaction) in
             calculated_transactions.into_iter().enumerate()
@@ -175,7 +168,7 @@ impl super::LightWallet {
     pub async fn calculate_transactions<P: SpendProver + OutputProver>(
         &self,
         sapling_prover: P,
-        receivers: Receivers,
+        request: TransactionRequest,
     ) -> ZingoLibResult<Vec<Transaction>> {
         let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
             .transaction_context
@@ -183,8 +176,6 @@ impl super::LightWallet {
             .write()
             .await;
         let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
-        let request = build_transaction_request_from_receivers(receivers)
-            .map_err(|e| ZingoLibError::RequestConstruction(e))?;
         let _calculated_txids = spend_kit.propose_and_calculate(request, sapling_prover)?;
 
         spend_kit.get_calculated_transactions()
