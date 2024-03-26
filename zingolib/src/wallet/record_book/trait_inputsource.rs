@@ -10,9 +10,9 @@ use crate::{
     wallet::transaction_record,
 };
 
-use super::{NoteRecordIdentifier, RecordBook};
+use super::{NoteRecordIdentifier, RefRecordBook};
 
-impl InputSource for RecordBook<'_> {
+impl InputSource for RefRecordBook<'_> {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
     type NoteRef = NoteRecordIdentifier;

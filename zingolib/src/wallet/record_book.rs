@@ -31,12 +31,12 @@ pub struct TransparentRecordRef {
     index: u32,
 }
 
-pub struct RecordBook<'a> {
+pub struct RefRecordBook<'a> {
     remote_transactions: &'a HashMap<TxId, TransactionRecord>,
     local_raw_transactions: Vec<Vec<u8>>,
 }
 
-impl<'a> RecordBook<'a> {
+impl<'a> RefRecordBook<'a> {
     #[cfg(test)]
     pub fn new_empty() -> Self {
         let empty_map: HashMap<TxId, TransactionRecord> = HashMap::new();

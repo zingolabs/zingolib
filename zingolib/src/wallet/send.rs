@@ -50,7 +50,7 @@ use super::data::{SpendableOrchardNote, WitnessTrees};
 
 use super::notes;
 
-use super::record_book::{NoteRecordIdentifier, RecordBook};
+use super::record_book::{NoteRecordIdentifier, RefRecordBook};
 use super::traits::SpendableNote;
 use super::transaction_context::TransactionContext;
 use super::transactions::TxMapAndMaybeTrees;
@@ -207,7 +207,7 @@ impl super::LightWallet {
                     .expect("should be able to create a unified spend key")
                 },
                 params: self.transaction_context.config.chain,
-                record_book: RecordBook::new_from_remote_txid_hashmap(all_remote_transactions),
+                record_book: RefRecordBook::new_from_remote_txid_hashmap(all_remote_transactions),
                 trees: witness_trees,
             })
         } else {

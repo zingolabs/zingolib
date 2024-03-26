@@ -9,7 +9,7 @@ use super::data::{TransactionRecord, WitnessTrees};
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TxMapAndMaybeTrees {
-    pub current: HashMap<TxId, TransactionRecord>,
+    pub current: HashMap<TxId, TransactionRecord>, //soon to be superceded to RecordBook, which will inherit any methods from this struct.
     pub witness_trees: Option<WitnessTrees>,
 }
 

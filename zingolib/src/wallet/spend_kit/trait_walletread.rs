@@ -227,7 +227,7 @@ mod tests {
     use zcash_primitives::zip32::AccountId;
     use zingoconfig::ChainType;
 
-    use crate::wallet::{data::WitnessTrees, record_book::RecordBook};
+    use crate::wallet::{data::WitnessTrees, record_book::RefRecordBook};
 
     use super::*;
 
@@ -236,7 +236,7 @@ mod tests {
         for tree_height in 1..=10 {
             let params = ChainType::Mainnet;
             let key = UnifiedSpendingKey::from_seed(&params, &[0; 32], AccountId::ZERO).unwrap();
-            let record_book = RecordBook::new_empty();
+            let record_book = RefRecordBook::new_empty();
             let tree_height = BlockHeight::from_u32(tree_height);
             let trees = &mut WitnessTrees::default();
             trees.add_checkpoint(tree_height);

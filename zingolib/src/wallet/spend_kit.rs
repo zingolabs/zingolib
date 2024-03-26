@@ -4,7 +4,7 @@ use crate::error::{ZingoLibError, ZingoLibResult};
 
 use super::{
     data::WitnessTrees,
-    record_book::{NoteRecordIdentifier, RecordBook},
+    record_book::{NoteRecordIdentifier, RefRecordBook},
     transactions::TxMapAndMaybeTrees,
 };
 use nonempty::NonEmpty;
@@ -32,7 +32,7 @@ pub mod trait_walletwrite;
 pub struct SpendKit<'book, 'trees> {
     pub key: UnifiedSpendingKey,
     pub params: ChainType,
-    pub record_book: RecordBook<'book>,
+    pub record_book: RefRecordBook<'book>,
     pub trees: &'trees mut WitnessTrees,
 }
 
