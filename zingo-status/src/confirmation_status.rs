@@ -99,6 +99,44 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+    /// To return true, the status must be confirmed earlier than specified height.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed_before(&8.into()), false);
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed_before(&10.into()), false);
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_confirmed_before(&12.into()), true);
+    /// ```
+    pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
+        match self {
+            Self::Confirmed(self_height) => self_height <= comparison_height,
+            _ => false,
+        }
+    }
+    /// To return true, the status must have broadcast at or later than specified height.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert_eq!(status.is_broadcast_after_or_at(&8.into()), false);
+    ///
+    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// assert_eq!(status.is_broadcast_after_or_at(&10.into()), true);
+    ///
+    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// assert_eq!(status.is_broadcast_after_or_at(&12.into()), false);
+    /// ```
     pub fn is_broadcast_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
             Self::Broadcast(self_height) => self_height >= comparison_height,
@@ -165,7 +203,7 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
-    // this function and the placeholder is not a preferred pattern. please use match whenever possible.
+    /// this function and the placeholder is not a preferred pattern. please use match whenever possible.
     /// # Examples
     ///
     /// ```

@@ -1,6 +1,5 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
@@ -48,7 +47,8 @@ use self::traits::{DomainWalletExt, SpendableNote};
 use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
-    transactions::TransactionMetadataSet,
+    transaction_context::TransactionContext,
+    transactions::TxMapAndMaybeTrees,
 };
 use zingoconfig::ZingoConfig;
 
@@ -56,8 +56,11 @@ pub mod data;
 pub mod keys;
 pub(crate) mod message;
 pub mod notes;
+pub mod record_book;
 pub mod send;
+pub mod spend_kit;
 pub mod traits;
+pub mod transaction_context;
 pub mod transaction_record;
 pub(crate) mod transactions;
 pub mod utils;
@@ -593,9 +596,9 @@ impl LightWallet {
             ));
         };
         let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees()))
         } else {
-            Arc::new(RwLock::new(TransactionMetadataSet::new_treeless()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless()))
         };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
@@ -676,9 +679,9 @@ impl LightWallet {
         }
 
         let mut transactions = if external_version <= 14 {
-            TransactionMetadataSet::read_old(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read_old(&mut reader, &wallet_capability)
         } else {
-            TransactionMetadataSet::read(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
         }?;
         let txids = transactions
             .current
@@ -929,7 +932,7 @@ impl LightWallet {
         }
     }
 
-    pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
+    pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
         self.transaction_context.transaction_metadata_set.clone()
     }
 

@@ -167,4 +167,8 @@ impl ShieldedNoteInterface for SaplingNote {
     fn output_index(&self) -> &Option<u32> {
         &self.output_index
     }
+
+    fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note {
+        zcash_client_backend::wallet::Note::Sapling(self.note().clone())
+    }
 }

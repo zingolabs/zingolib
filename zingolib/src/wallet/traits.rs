@@ -8,7 +8,7 @@ use super::{
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    transactions::TransactionMetadataSet,
+    transactions::TxMapAndMaybeTrees,
 };
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
@@ -314,9 +314,7 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
     }
 
     fn domain(&self, _parameters: ChainType, _heightt: BlockHeight) -> OrchardDomain {
-        OrchardDomain::for_nullifier(
-            orchard::note::Nullifier::from_bytes(slice_to_array(&self.nullifier)).unwrap(),
-        )
+        OrchardDomain::for_compact_action(&self.to_compact_output_impl())
     }
 
     fn to_compact_output_impl(&self) -> Self::CompactAction {
@@ -450,7 +448,7 @@ where
             .sum()
     }
     fn transaction_metadata_set_to_shardtree(
-        txmds: &TransactionMetadataSet,
+        txmds: &TxMapAndMaybeTrees,
     ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees
@@ -458,7 +456,7 @@ where
             .map(|trees| Self::get_shardtree(trees))
     }
     fn transaction_metadata_set_to_shardtree_mut(
-        txmds: &mut TransactionMetadataSet,
+        txmds: &mut TxMapAndMaybeTrees,
     ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees
@@ -952,14 +950,14 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         let value = reader.read_u64::<LittleEndian>()?;
         let mut nullifier_bytes = [0; 32];
         reader.read_exact(&mut nullifier_bytes)?;
-        let nullifier = Option::from(orchard::note::Nullifier::from_bytes(&nullifier_bytes))
+        let rho = Option::from(orchard::note::Rho::from_bytes(&nullifier_bytes))
             .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Bad Nullifier"))?;
 
         let mut random_seed_bytes = [0; 32];
         reader.read_exact(&mut random_seed_bytes)?;
         let random_seed = Option::from(orchard::note::RandomSeed::from_bytes(
             random_seed_bytes,
-            &nullifier,
+            &rho,
         ))
         .ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -971,7 +969,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         Option::from(orchard::note::Note::from_parts(
             fvk.address(diversifier, orchard::keys::Scope::External),
             orchard::value::NoteValue::from_raw(value),
-            nullifier,
+            rho,
             random_seed,
         ))
         .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))

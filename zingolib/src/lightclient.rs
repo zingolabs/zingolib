@@ -1,9 +1,9 @@
 use crate::{
     blaze::{
         block_management_reorg_detection::BlockManagementData,
-        fetch_compact_blocks::FetchCompactBlocks, fetch_full_transaction::TransactionContext,
-        fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
+        fetch_compact_blocks::FetchCompactBlocks, fetch_taddr_transactions::FetchTaddrTransactions,
+        sync_status::BatchSyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
+        update_notes::UpdateNotes,
     },
     error::{ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
@@ -17,6 +17,8 @@ use crate::{
         notes::NoteInterface,
         notes::ShieldedNoteInterface,
         now,
+        send::build_transaction_request_from_receivers,
+        transaction_context::TransactionContext,
         utils::get_price,
         LightWallet, Pool, SendProgress, WalletBase,
     },
@@ -385,7 +387,7 @@ impl LightClient {
         self.wallet
             .write(&mut buffer)
             .await
-            .map_err(ZingoLibError::InternalWriteBufferError)?;
+            .map_err(ZingoLibError::InternalWriteBuffer)?;
         *self.save_buffer.buffer.write().await = buffer;
         Ok(())
     }
@@ -403,7 +405,7 @@ impl LightClient {
             let read_buffer = self.save_buffer.buffer.read().await;
             if !read_buffer.is_empty() {
                 LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
-                    .map_err(ZingoLibError::WriteFileError)?;
+                    .map_err(ZingoLibError::WriteFile)?;
                 Ok(true)
             } else {
                 ZingoLibError::EmptySaveBuffer.handle()
@@ -884,6 +886,8 @@ impl LightClient {
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<String, String> {
         let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
+        let request = build_transaction_request_from_receivers(receivers)
+            .map_err(|e| ZingoLibError::RequestConstruction(e).to_string())?;
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the consensus branch ID
         debug!("Creating transaction");
@@ -902,7 +906,7 @@ impl LightClient {
                     sapling_prover,
                     vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
                     // spend from transparent.
-                    receivers,
+                    request,
                     transaction_submission_height,
                     |transaction_bytes| {
                         crate::grpc_connector::send_transaction(
@@ -914,7 +918,7 @@ impl LightClient {
                 .await
         };
 
-        result.map(|(transaction_id, _)| transaction_id)
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
@@ -964,9 +968,9 @@ impl LightClient {
         let addr = address
             .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
-        let receiver = self
-            .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
-            .expect("To build shield receiver.");
+        let receiver = self.map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])?;
+        let request = build_transaction_request_from_receivers(receiver)
+            .map_err(|e| ZingoLibError::RequestConstruction(e).to_string())?;
         let result = {
             let _lock = self.sync_lock.lock().await;
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
@@ -977,7 +981,7 @@ impl LightClient {
                 .send_to_addresses(
                     sapling_prover,
                     pools_to_shield.to_vec(),
-                    receiver,
+                    request,
                     transaction_submission_height,
                     |transaction_bytes| {
                         crate::grpc_connector::send_transaction(
@@ -989,7 +993,7 @@ impl LightClient {
                 .await
         };
 
-        result.map(|(transaction_id, _)| transaction_id)
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {

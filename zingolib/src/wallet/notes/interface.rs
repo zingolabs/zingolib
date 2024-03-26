@@ -13,6 +13,9 @@ pub trait NoteInterface: Sized {
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
     }
+    fn is_spent_or_pending_spent(&self) -> bool {
+        self.spent().is_some() || self.pending_spent().is_some()
+    }
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
@@ -66,4 +69,5 @@ pub trait ShieldedNoteInterface: NoteInterface + Sized {
     fn value_from_note(note: &Self::Note) -> u64;
     fn witnessed_position(&self) -> &Option<Position>;
     fn witnessed_position_mut(&mut self) -> &mut Option<Position>;
+    fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note;
 }

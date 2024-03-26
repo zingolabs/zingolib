@@ -139,10 +139,16 @@ impl ShieldedNoteInterface for OrchardNote {
     fn witnessed_position(&self) -> &Option<Position> {
         &self.witnessed_position
     }
+
     fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
     }
+
     fn output_index(&self) -> &Option<u32> {
         &self.output_index
+    }
+
+    fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note {
+        zcash_client_backend::wallet::Note::Orchard(self.note().clone())
     }
 }

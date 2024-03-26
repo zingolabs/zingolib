@@ -8,9 +8,9 @@ use crate::wallet::{
     traits::{DomainWalletExt, Recipient},
 };
 
-use super::TransactionMetadataSet;
+use super::TxMapAndMaybeTrees;
 
-impl TransactionMetadataSet {
+impl TxMapAndMaybeTrees {
     pub fn get_notes_for_updating(
         &self,
         before_block: u64,
@@ -132,7 +132,7 @@ impl TransactionMetadataSet {
 
 #[test]
 fn test_get_some_txid_from_highest_wallet_block() {
-    let mut tms = TransactionMetadataSet::new_treeless();
+    let mut tms = TxMapAndMaybeTrees::new_treeless();
     assert_eq!(tms.get_some_txid_from_highest_wallet_block(), None);
     let txid_bytes_1 = [0u8; 32];
     let txid_bytes_2 = [1u8; 32];
@@ -175,7 +175,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
 }
 
 #[cfg(feature = "lightclient-deprecated")]
-impl TransactionMetadataSet {
+impl TxMapAndMaybeTrees {
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
         match self
             .current

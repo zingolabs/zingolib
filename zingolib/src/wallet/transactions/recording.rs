@@ -22,8 +22,8 @@ use crate::{
     },
 };
 
-use super::TransactionMetadataSet;
-impl TransactionMetadataSet {
+use super::TxMapAndMaybeTrees;
+impl TxMapAndMaybeTrees {
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.current.remove(txid);
@@ -290,8 +290,9 @@ impl TransactionMetadataSet {
                 ZingoLibError::NoSuchTxId(spending_txid).handle()?
             }
         } else {
-            ZingoLibError::UnknownError.handle()?
-        }) // todO add special error variant
+            //impossible
+            ZingoLibError::Error("note status is indeterminate".to_string()).handle()?
+        }) // todo add special error variant
     }
 
     pub fn add_taddr_spent(
@@ -509,7 +510,7 @@ impl TransactionMetadataSet {
 }
 
 // shardtree
-impl TransactionMetadataSet {
+impl TxMapAndMaybeTrees {
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(

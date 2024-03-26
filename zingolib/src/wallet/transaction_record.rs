@@ -6,6 +6,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
+    record_book::NoteRecordIdentifier,
     *,
 };
 
@@ -320,6 +321,75 @@ impl TransactionRecord {
         })?;
 
         Ok(())
+    }
+    pub fn get_received_note<D>(
+        &self,
+        index: u32,
+    ) -> Option<
+        zcash_client_backend::wallet::ReceivedNote<
+            NoteRecordIdentifier,
+            zcash_client_backend::wallet::Note,
+        >,
+    >
+    where
+        D: DomainWalletExt + Sized,
+        D::Note: PartialEq + Clone,
+        D::Recipient: Recipient,
+    {
+        let note = D::to_notes_vec(self)
+            .iter()
+            .find(|note| *note.output_index() == Some(index));
+        note.and_then(|note| {
+            let txid = self.txid;
+            let zcb_note = note.to_zcb_note();
+            let note_record_reference = NoteRecordIdentifier {
+                txid,
+                shielded_protocol: zcb_note.protocol(),
+                index,
+            };
+            note.witnessed_position().map(|pos| {
+                zcash_client_backend::wallet::ReceivedNote::from_parts(
+                    note_record_reference,
+                    txid,
+                    index as u16,
+                    zcb_note,
+                    zip32::Scope::External,
+                    pos,
+                )
+            })
+        })
+    }
+    pub fn select_unspent_value_ref_pairs_sapling(&self) -> Vec<(u64, NoteRecordIdentifier)> {
+        let mut value_ref_pairs = Vec::new();
+        SaplingDomain::to_notes_vec(self).iter().for_each(|note| {
+            if !note.is_spent_or_pending_spent() {
+                if let Some(index) = note.output_index {
+                    let note_record_reference = NoteRecordIdentifier {
+                        txid: self.txid,
+                        shielded_protocol: zcash_client_backend::ShieldedProtocol::Sapling,
+                        index,
+                    };
+                    value_ref_pairs.push((note.value(), note_record_reference));
+                }
+            }
+        });
+        value_ref_pairs
+    }
+    pub fn select_unspent_value_ref_pairs_orchard(&self) -> Vec<(u64, NoteRecordIdentifier)> {
+        let mut value_ref_pairs = Vec::new();
+        OrchardDomain::to_notes_vec(self).iter().for_each(|note| {
+            if !note.is_spent_or_pending_spent() {
+                if let Some(index) = note.output_index {
+                    let note_record_reference = NoteRecordIdentifier {
+                        txid: self.txid,
+                        shielded_protocol: zcash_client_backend::ShieldedProtocol::Orchard,
+                        index,
+                    };
+                    value_ref_pairs.push((note.value(), note_record_reference));
+                }
+            }
+        });
+        value_ref_pairs
     }
 }
 
