@@ -1,12 +1,10 @@
-use std::{num::NonZeroU32};
+use std::num::NonZeroU32;
 
 use crate::error::{ZingoLibError, ZingoLibResult};
 
-use super::{
-    data::WitnessTrees,
-    record_book::{RefRecordBook},
-    transactions::{Proposa},
-};
+use self::errors::CreateTransactionsError;
+
+use super::{data::WitnessTrees, record_book::RefRecordBook, transactions::Proposa};
 use nonempty::NonEmpty;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 use zcash_client_backend::{
@@ -18,15 +16,15 @@ use zcash_client_backend::{
 };
 use zcash_keys::keys::UnifiedSpendingKey;
 
-use zcash_primitives::{
-    transaction::{fees::zip317::FeeRule as Zip317FeeRule, TxId},
-};
+use zcash_primitives::transaction::{fees::zip317::FeeRule as Zip317FeeRule, TxId};
 use zingoconfig::ChainType;
 
 pub mod trait_inputsource;
 pub mod trait_walletcommitmenttrees;
 pub mod trait_walletread;
 pub mod trait_walletwrite;
+
+pub mod errors;
 
 pub struct SpendKit<'book, 'trees> {
     pub key: UnifiedSpendingKey,
@@ -59,9 +57,7 @@ impl SpendKit<'_, '_> {
             zcash_client_backend::fees::DustOutputPolicy::default(),
         );
 
-        // review! discard old sends here!
-
-        zcash_client_backend::data_api::wallet::propose_transfer::<
+        let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
             SpendKit,
             ChainType,
             GISKit,
@@ -74,33 +70,41 @@ impl SpendKit<'_, '_> {
             request,
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
-        .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))
+        .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?;
+
+        *self.latest_proposal = Some(proposal.clone());
+        Ok(proposal)
         //review! error typing
     }
     pub fn create_transactions<Prover>(
         &mut self,
         sapling_prover: Prover,
-        proposal: Proposal<Zip317FeeRule, <Self as InputSource>::NoteRef>,
-    ) -> ZingoLibResult<NonEmpty<TxId>>
+    ) -> Result<&Vec<Vec<u8>>, CreateTransactionsError>
     where
         Prover: SpendProver + OutputProver,
     {
-        zcash_client_backend::data_api::wallet::create_proposed_transactions::<
-            SpendKit,
-            ChainType,
-            ZingoLibError,
-            Zip317FeeRule,
-            <Self as InputSource>::NoteRef, // note ref
-        >(
-            self,
-            &self.params.clone(),
-            &sapling_prover,
-            &sapling_prover,
-            &self.key.clone(),
-            OvkPolicy::Sender,
-            &proposal,
-        )
-        .map_err(|e| ZingoLibError::CalculateTransaction(format!("{e:?}")))
+        if let Some(proposal) = self.latest_proposal.clone() {
+            let _txids = zcash_client_backend::data_api::wallet::create_proposed_transactions::<
+                SpendKit,
+                ChainType,
+                ZingoLibError,
+                Zip317FeeRule,
+                <Self as InputSource>::NoteRef, // note ref
+            >(
+                self,
+                &self.params.clone(),
+                &sapling_prover,
+                &sapling_prover,
+                &self.key.clone(),
+                OvkPolicy::Sender,
+                &proposal,
+            )
+            .map_err(|e| CreateTransactionsError::CreateTransactions(e))?;
+
+            Ok(&self.local_sending_transactions)
+        } else {
+            Err(CreateTransactionsError::NoProposal)
+        }
         //review! error typing
     }
 }

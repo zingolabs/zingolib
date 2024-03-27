@@ -23,12 +23,12 @@ use zcash_primitives::memo::MemoBytes;
 
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_primitives::{consensus::BlockHeight, transaction::builder::Builder};
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use self::errors::SendToAddressesError;
+use self::errors::SendProposedTransferError;
 
 use super::record_book::RefRecordBook;
 
@@ -123,7 +123,7 @@ impl super::LightWallet {
         submission_height: BlockHeight,
         broadcast_fn: F,
         sapling_prover: P,
-    ) -> Result<Vec<TxId>, SendToAddressesError>
+    ) -> Result<Vec<TxId>, SendProposedTransferError>
     where
         F: Fn(Box<[u8]>) -> Fut + Clone,
         Fut: Future<Output = Result<String, String>>,
@@ -135,24 +135,15 @@ impl super::LightWallet {
             .transaction_metadata_set
             .write()
             .await;
-        let proposal = if let Some(ref spending_data) = context_write_lock.spending_data {
-            spending_data.latest_proposal.clone()
-        } else {
-            None // replace with zingolib error return
-                 // return ZingoLibError::ViewkeyCantSpend
-        };
+
         let mut spend_kit = self
             .assemble_spend_kit(&mut context_write_lock)
             .await
-            .unwrap(); // replace unwrap with zingolib error
-        let sending_txids = if let Some(proposal) = proposal {
-            spend_kit
-                .create_transactions(sapling_prover, proposal)
-                .unwrap()
-            // replace unwrap with zingolib error
-        } else {
-            return Err(SendToAddressesError::NoProposal);
-        };
+            .map_err(|e| SendProposedTransferError::AssembleSpendKit(e))?;
+
+        let raw_txs_to_send = spend_kit
+            .create_transactions(sapling_prover)
+            .map_err(|e| SendProposedTransferError::CreateTransactions(e))?;
 
         // review! what does this do? is it necessary? why does it seem wrong?
         {
@@ -161,36 +152,40 @@ impl super::LightWallet {
 
         // send each transaction in the proposition.
         let mut sent_txids = vec![];
-        for txid in sending_txids {
-            let transaction = spend_kit.get_transaction(txid).unwrap();
-            let mut raw_tx = vec![];
-            transaction.write(&mut raw_tx).unwrap();
-            // .map_err(|e| ZingoLibError::CalculatedTransactionEncode(e.to_string()))?;
-
+        for (index, raw_tx) in raw_txs_to_send.iter().enumerate() {
             // broadcast the raw transaction to the lightserver
             match broadcast_fn(raw_tx.clone().into_boxed_slice()).await {
-                Ok(_) => sent_txids.push(txid),
+                Ok(_) => {
+                    //decode the sent transaction and record it
+                    let full_tx_to_send =
+                        Transaction::read(&raw_tx[..], zcash_primitives::consensus::BranchId::Nu5)
+                            .map_err(|e| SendProposedTransferError::Decode(e.to_string()))?;
+
+                    // and add the sent transaction as a pending (Broadcast) record.
+                    let price = self.price.read().await.clone();
+                    let status = ConfirmationStatus::Broadcast(submission_height);
+                    self.transaction_context
+                        .scan_full_tx(
+                            &full_tx_to_send,
+                            status,
+                            now() as u32,
+                            get_price(now(), &price),
+                        )
+                        .await;
+
+                    // return the new txid
+                    sent_txids.push(full_tx_to_send.txid());
+                }
                 Err(e) => {
                     return Err(if sent_txids.is_empty() {
-                        SendToAddressesError::NoBroadcast(e)
+                        SendProposedTransferError::NoBroadcast(e)
                     } else {
-                        SendToAddressesError::PartialBroadcast(sent_txids, e)
+                        SendProposedTransferError::PartialBroadcast(sent_txids, e)
                     })
                 }
-            };
-
-            let price = self.price.read().await.clone();
-            let status = ConfirmationStatus::Broadcast(submission_height);
-            // and add the sent transaction as a pending (Broadcast) record.
-            self.transaction_context
-                .scan_full_tx(&transaction, status, now() as u32, get_price(now(), &price))
-                .await;
+            }
         }
-        if sent_txids.is_empty() {
-            Err(SendToAddressesError::NoProposal)
-        } else {
-            Ok(sent_txids)
-        }
+        Ok(Vec::new())
     }
 
     pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
