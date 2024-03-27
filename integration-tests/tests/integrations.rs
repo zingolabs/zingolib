@@ -3672,9 +3672,7 @@ mod basic_transactions {
             .await
             .unwrap();
         let txids = client1.do_send_proposal().await.unwrap();
-        // client1
-        //     .check_chain_matched_proposal(proposal, txids, 0)
-        //     .await;
+        client1.check_chain_matched_proposal(proposal, txids).await;
     }
 
     #[tokio::test]

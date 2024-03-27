@@ -20,8 +20,8 @@ impl LightClient {
         &self,
         proposal: Proposa,
         txids: Vec<TxId>,
-        total_balance_before: &mut u64,
-    ) -> ZingoLibResult<()> {
+        // total_balance_before: &mut u64,
+    ) {
         let tmamt = self
             .wallet
             .transaction_context
@@ -42,7 +42,7 @@ impl LightClient {
             assert!(created_transaction.is_outgoing_transaction());
             let transaction_balance = created_transaction.net_spent();
             assert_eq!(transaction_balance, step.balance().total().into_u64());
-            *total_balance_before -= transaction_balance;
+            // *total_balance_before -= transaction_balance;
 
             // we could maybe check that all input transparents are spent
             // if let Some(transparent_inputs) = step.transparent_inputs() {
@@ -105,7 +105,5 @@ impl LightClient {
 
         // balance = tmamt.get_total_balance();
         // assexrt_eq!(x
-
-        Ok(())
     }
 }
