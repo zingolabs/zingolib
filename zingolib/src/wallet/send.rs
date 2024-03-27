@@ -155,16 +155,16 @@ impl super::LightWallet {
             .transaction_metadata_set
             .write()
             .await;
-        let mut spend_kit = self
-            .assemble_spend_kit(&mut context_write_lock)
-            .await
-            .unwrap(); // replace unwrap with zingolib error
-        let proposal = if let Some(spending_data) = context_write_lock.spending_data {
-            spending_data.proposal
+        let proposal = if let Some(ref spending_data) = context_write_lock.spending_data {
+            spending_data.proposal.clone()
         } else {
             None // replace with zingolib error return
                  // return ZingoLibError::ViewkeyCantSpend
         };
+        let mut spend_kit = self
+            .assemble_spend_kit(&mut context_write_lock)
+            .await
+            .unwrap(); // replace unwrap with zingolib error
         let sending_txids = if let Some(proposal) = proposal {
             spend_kit
                 .create_transactions(sapling_prover, proposal)
