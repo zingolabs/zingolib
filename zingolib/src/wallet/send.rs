@@ -32,7 +32,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
-use zcash_primitives::transaction::{self, Transaction};
+use zcash_primitives::transaction::{self, Transaction, TxId};
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::Script,
@@ -45,6 +45,8 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
+
+use self::errors::SendToAddressesError;
 
 use super::data::{SpendableOrchardNote, WitnessTrees};
 
@@ -142,7 +144,7 @@ impl super::LightWallet {
         &self,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> ZingoLibResult<String>
+    ) -> Result<Vec<TxId>, SendToAddressesError>
     where
         F: Fn(Box<[u8]>) -> Fut + Clone,
         Fut: Future<Output = Result<String, String>>,
@@ -151,43 +153,56 @@ impl super::LightWallet {
         {
             self.send_progress.write().await.is_send_in_progress = false;
         }
-        // send each transaction in the proposition.
+        // unlock the records. as we translate a newly created raw transaction into a transaction record, broadcast it.
         let lock = self
             .transaction_context
             .transaction_metadata_set
             .write()
             .await;
         if let Some(spending_data) = &lock.spending_data {
-            for (transaction_number, sending_raw) in
-                spending_data.outgoing_send_step_data.iter().enumerate()
-            {
-                let transaction_id = broadcast_fn(sending_raw.clone().into_boxed_slice())
-                    .await
-                    .map_err(|e| ZingoLibError::Broadcast(e))?;
+            let mut sent_txids = Vec::new();
+            // send each transaction in the proposition.
+            for sending_raw in spending_data.outgoing_send_step_data.iter() {
+                // broadcast the raw transaction to the lightserver
+                match broadcast_fn(sending_raw.clone().into_boxed_slice()).await {
+                    Ok(_txid_string) => (),
+                    Err(e) => {
+                        return Err(if sent_txids.len() == 0 {
+                            SendToAddressesError::NoBroadcast(e)
+                        } else {
+                            SendToAddressesError::PartialBroadcast(sent_txids, e)
+                        })
+                    }
+                };
 
-                // Add this transaction to the mempool structure
-                {
-                    let sending_full_tx = Transaction::read(
-                        &sending_raw[..],
-                        zcash_primitives::consensus::BranchId::Nu5,
+                // read the raw transaction
+                let sending_full_tx =
+                    Transaction::read(&sending_raw[..], zcash_primitives::consensus::BranchId::Nu5)
+                        .map_err(|e| SendToAddressesError::Decode(e.to_string()))?;
+
+                // add the sent txid to list
+                sent_txids.push(sending_full_tx.txid());
+
+                let price = self.price.read().await.clone();
+                let status = ConfirmationStatus::Broadcast(submission_height);
+                // and add the sent transaction as a pending (Broadcast) record.
+                self.transaction_context
+                    .scan_full_tx(
+                        &sending_full_tx,
+                        status,
+                        now() as u32,
+                        get_price(now(), &price),
                     )
-                    .map_err(|e| ZingoLibError::CalculatedTransactionDecode(e.to_string()))?;
-                    let price = self.price.read().await.clone();
-
-                    let status = ConfirmationStatus::Broadcast(submission_height);
-                    self.transaction_context
-                        .scan_full_tx(
-                            &sending_full_tx,
-                            status,
-                            now() as u32,
-                            get_price(now(), &price),
-                        )
-                        .await;
-                }
+                    .await;
             }
+            if sent_txids.len() == 0 {
+                Err(SendToAddressesError::NoProposal)
+            } else {
+                Ok(sent_txids)
+            }
+        } else {
+            Err(SendToAddressesError::NoSpendCapability)
         }
-
-        Ok("all transactions broadcast!".to_string())
     }
 
     pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
@@ -227,6 +242,8 @@ impl super::LightWallet {
         }
     }
 }
+
+pub mod errors;
 
 #[cfg(test)]
 mod tests {
