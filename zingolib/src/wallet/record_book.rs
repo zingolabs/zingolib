@@ -1,11 +1,11 @@
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap};
 
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::ShieldedProtocol;
-use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_primitives::transaction::{TxId};
 
-use crate::error::{ZingoLibError, ZingoLibResult};
+
 
 use super::transaction_record::TransactionRecord;
 
@@ -70,8 +70,7 @@ impl<'a> RefRecordBook<'a> {
     > {
         let transaction = self.remote_transactions.get(&note_record_reference.txid);
         transaction
-            .map(
-                |transaction_record| match note_record_reference.shielded_protocol {
+            .and_then(|transaction_record| match note_record_reference.shielded_protocol {
                     zcash_client_backend::ShieldedProtocol::Sapling => {
                         transaction_record
                             .get_received_note::<SaplingDomain>(note_record_reference.index)
@@ -80,9 +79,7 @@ impl<'a> RefRecordBook<'a> {
                         transaction_record
                             .get_received_note::<OrchardDomain>(note_record_reference.index)
                     }
-                },
-            )
-            .flatten()
+                })
     }
 }
 

@@ -38,11 +38,11 @@ impl LightClient {
                 .current
                 .get(&created_txid)
                 .expect("new txid is in record");
-            assert_eq!(created_transaction.status.is_confirmed(), true);
-            assert_eq!(created_transaction.is_outgoing_transaction(), true);
+            assert!(created_transaction.status.is_confirmed());
+            assert!(created_transaction.is_outgoing_transaction());
             let transaction_balance = created_transaction.net_spent();
             assert_eq!(transaction_balance, step.balance().total().into_u64());
-            *total_balance_before = *total_balance_before - transaction_balance;
+            *total_balance_before -= transaction_balance;
 
             // we could maybe check that all input transparents are spent
             // if let Some(transparent_inputs) = step.transparent_inputs() {
@@ -87,14 +87,14 @@ impl LightClient {
                         zcash_client_backend::ShieldedProtocol::Sapling => {
                             for note in transaction_funded.sapling_notes.iter() {
                                 if note.output_index().unwrap() == identifier.index {
-                                    assert_eq!(note.is_spent(), true);
+                                    assert!(note.is_spent());
                                 }
                             }
                         }
                         zcash_client_backend::ShieldedProtocol::Orchard => {
                             for note in transaction_funded.orchard_notes.iter() {
                                 if note.output_index().unwrap() == identifier.index {
-                                    assert_eq!(note.is_spent(), true);
+                                    assert!(note.is_spent());
                                 }
                             }
                         }

@@ -845,11 +845,7 @@ impl Command for ProposeCommand {
                                     amt,
                                     j["memo"].as_str().map(|s| s.to_string()),
                                 )),
-                                None => Err(format!(
-                                    "Not enough in wallet to pay transaction fee of TODO",
-                                    // "Not enough in wallet to pay transaction fee of {}",
-                                    // fee
-                                )),
+                                None => Err("Not enough in wallet to pay transaction fee of TODO".to_string()),
                             }
                         }
                     })

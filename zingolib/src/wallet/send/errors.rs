@@ -17,8 +17,8 @@ impl std::fmt::Display for SendToAddressesError {
             "SendToAddressesError: {}",
             match self {
                 NoSpendCapability =>
-                    format!("This wallet has no spend capability. It is a viewkey only wallet.",),
-                NoProposal => format!("No proposal! First propose a transfer.",),
+                    "This wallet has no spend capability. It is a viewkey only wallet.".to_string(),
+                NoProposal => "No proposal! First propose a transfer.".to_string(),
                 Decode(string) => format!("Cannot decode created transaction: {}", string,),
                 NoBroadcast(string) => format!("Could not broadcast transaction: {}", string,),
                 PartialBroadcast(_vec, string) =>

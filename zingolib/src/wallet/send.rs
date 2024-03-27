@@ -1,61 +1,57 @@
 use crate::error::{ZingoLibError, ZingoLibResult};
-use crate::wallet::data::SpendableSaplingNote;
-use crate::wallet::notes::NoteInterface;
+
+
 use crate::wallet::now;
 
 use futures::Future;
 
-use log::{error, info};
 
-use orchard::note_encryption::OrchardDomain;
 
-use rand::rngs::OsRng;
 
-use sapling_crypto::note_encryption::SaplingDomain;
+
+
+
+
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
-use shardtree::error::{QueryError, ShardTreeError};
+
 use tokio::sync::RwLockWriteGuard;
 use zcash_client_backend::data_api::WalletRead;
-use zcash_client_backend::proposal::Proposal;
+
 use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
-use zcash_primitives::transaction::fees::zip317::FeeRule;
+
 use zcash_primitives::zip32::AccountId;
 
-use std::convert::Infallible;
-use std::ops::DerefMut;
-use std::sync::mpsc::channel;
 
-use zcash_client_backend::{address, proposal};
+use std::ops::DerefMut;
+
+
+use zcash_client_backend::{address};
 
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction::builder::{BuildResult, Progress};
+
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
-use zcash_primitives::transaction::{self, Transaction, TxId};
+
+use zcash_primitives::transaction::{TxId};
 use zcash_primitives::{
     consensus::BlockHeight,
-    legacy::Script,
-    memo::Memo,
     transaction::{
         builder::Builder,
-        components::{Amount, OutPoint, TxOut},
-        fees::zip317::MINIMUM_FEE,
     },
 };
-use zingo_memo::create_wallet_internal_memo_version_0;
+
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::errors::SendToAddressesError;
 
-use super::data::{SpendableOrchardNote, WitnessTrees};
 
-use super::notes;
 
-use super::record_book::{NoteRecordIdentifier, RefRecordBook};
-use super::traits::SpendableNote;
-use super::transaction_context::TransactionContext;
+
+
+use super::record_book::{RefRecordBook};
+
+
 use super::transactions::{Proposa, TxMapAndMaybeTrees};
 use super::utils::get_price;
 use super::Pool;
@@ -188,7 +184,7 @@ impl super::LightWallet {
             match broadcast_fn(raw_tx.clone().into_boxed_slice()).await {
                 Ok(_) => sent_txids.push(txid),
                 Err(e) => {
-                    return Err(if sent_txids.len() == 0 {
+                    return Err(if sent_txids.is_empty() {
                         SendToAddressesError::NoBroadcast(e)
                     } else {
                         SendToAddressesError::PartialBroadcast(sent_txids, e)
@@ -203,7 +199,7 @@ impl super::LightWallet {
                 .scan_full_tx(&transaction, status, now() as u32, get_price(now(), &price))
                 .await;
         }
-        if sent_txids.len() == 0 {
+        if sent_txids.is_empty() {
             Err(SendToAddressesError::NoProposal)
         } else {
             Ok(sent_txids)
@@ -266,14 +262,14 @@ mod tests {
     fn test_build_request() {
         let amount_1 = NonNegativeAmount::const_from_u64(20000);
         let recipient_address_1 =
-            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
+            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_1 = None;
 
         let amount_2 = NonNegativeAmount::const_from_u64(20000);
         let recipient_address_2 =
-            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
+            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_2 = Some(MemoBytes::from(
-            Memo::from_str(&"the lake wavers along the beach".to_string())
+            Memo::from_str("the lake wavers along the beach")
                 .expect("string can memofy"),
         ));
 

@@ -1,64 +1,46 @@
 use crate::{
     blaze::{
-        block_management_reorg_detection::BlockManagementData,
-        fetch_compact_blocks::FetchCompactBlocks, fetch_taddr_transactions::FetchTaddrTransactions,
-        sync_status::BatchSyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-        update_notes::UpdateNotes,
+        syncdata::BlazeSyncData,
     },
     error::{ZingoLibError, ZingoLibResult},
-    grpc_connector::GrpcConnector,
     wallet::{
         data::{
-            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
             TransactionRecord,
         },
-        keys::{address_from_pubkeyhash, unified::ReceiverSelection},
+        keys::{unified::ReceiverSelection},
         message::Message,
         notes::NoteInterface,
         notes::ShieldedNoteInterface,
-        now,
-        send::build_transaction_request_from_receivers,
-        transaction_context::TransactionContext,
-        utils::get_price,
-        LightWallet, Pool, SendProgress, WalletBase,
+        LightWallet,
     },
 };
-use futures::future::join_all;
+
 use json::{array, object, JsonValue};
-use log::{debug, error, warn};
-use serde::Serialize;
+use log::{debug, error};
+
 use std::{
     cmp::{self},
-    collections::HashMap,
-    fs::{remove_file, File},
-    io::{self, BufReader, Error, ErrorKind, Read, Write},
-    path::{Path, PathBuf},
+    io::{self, Read, Write},
     sync::Arc,
-    time::Duration,
 };
 use tokio::{
-    join,
-    runtime::Runtime,
-    sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
-    task::yield_now,
-    time::sleep,
+    sync::{Mutex, RwLock},
 };
-use zcash_address::ZcashAddress;
-use zingo_status::confirmation_status::ConfirmationStatus;
+
+
 
 use zcash_client_backend::{
     encoding::{decode_payment_address, encode_payment_address},
-    proto::service::RawTransaction,
 };
 use zcash_primitives::{
-    consensus::{BlockHeight, BranchId, NetworkConstants},
+    consensus::{NetworkConstants},
     memo::{Memo, MemoBytes},
     transaction::{
-        components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+        TxId,
     },
 };
-use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::{ZingoConfig, MAX_REORG};
+
+use zingoconfig::{ZingoConfig};
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 

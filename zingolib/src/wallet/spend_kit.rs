@@ -1,11 +1,11 @@
-use std::{convert::Infallible, num::NonZeroU32};
+use std::{num::NonZeroU32};
 
 use crate::error::{ZingoLibError, ZingoLibResult};
 
 use super::{
     data::WitnessTrees,
-    record_book::{NoteRecordIdentifier, RefRecordBook},
-    transactions::{Proposa, TxMapAndMaybeTrees},
+    record_book::{RefRecordBook},
+    transactions::{Proposa},
 };
 use nonempty::NonEmpty;
 use sapling_crypto::prover::{OutputProver, SpendProver};
@@ -19,8 +19,7 @@ use zcash_client_backend::{
 use zcash_keys::keys::UnifiedSpendingKey;
 
 use zcash_primitives::{
-    consensus,
-    transaction::{fees::zip317::FeeRule as Zip317FeeRule, Transaction, TxId},
+    transaction::{fees::zip317::FeeRule as Zip317FeeRule, TxId},
 };
 use zingoconfig::ChainType;
 
@@ -62,7 +61,7 @@ impl SpendKit<'_, '_> {
 
         // review! discard old sends here!
 
-        Ok(zcash_client_backend::data_api::wallet::propose_transfer::<
+        zcash_client_backend::data_api::wallet::propose_transfer::<
             SpendKit,
             ChainType,
             GISKit,
@@ -75,7 +74,7 @@ impl SpendKit<'_, '_> {
             request,
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
-        .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?)
+        .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))
         //review! error typing
     }
     pub fn create_transactions<Prover>(

@@ -57,9 +57,7 @@ impl std::fmt::Display for ZingoLibError {
                     "unknown error: {}",
                     string,
                 ),
-                NoWalletLocation => format!(
-                    "No wallet location! (compiled for native rust, wallet location expected)",
-                ),
+                NoWalletLocation => "No wallet location! (compiled for native rust, wallet location expected)".to_string(),
                 MetadataUnderflow(explanation) => format!(
                     "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
                     explanation,
@@ -72,9 +70,7 @@ impl std::fmt::Display for ZingoLibError {
                     "Could not write to wallet save file. Was this erroneously attempted in mobile?, instead of native save buffer handling? Is there a permission issue? {} ",
                     err,
                 ),
-                EmptySaveBuffer => format!(
-                    "Empty save buffer. probably save_external was called before save_internal_rust. this is handled by save_external."
-                ),
+                EmptySaveBuffer => "Empty save buffer. probably save_external was called before save_internal_rust. this is handled by save_external.".to_string(),
                 CantReadWallet(err) => format!(
                     "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
                     err,
@@ -105,9 +101,7 @@ impl std::fmt::Display for ZingoLibError {
                     "{txid} is missing output_index for note, cannot mark change"
                 ),
                 
-                ViewkeyCantSpend => format!(
-                    "viewkey cannot spend",
-                ),
+                ViewkeyCantSpend => "viewkey cannot spend".to_string(),
                 RequestConstruction(err) => format!(
                     "transaction request {}",
                     err
@@ -116,9 +110,7 @@ impl std::fmt::Display for ZingoLibError {
                     "propose transaction: {}",
                     string,
                 ),
-                MissingProposal => format!(
-                    "proposal missing. must propose transaction before sending.",
-                ),
+                MissingProposal => "proposal missing. must propose transaction before sending.".to_string(),
                 CalculateTransaction(string) => format!(
                     "calculating transaction: {}",
                     string,

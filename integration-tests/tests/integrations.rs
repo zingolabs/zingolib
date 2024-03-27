@@ -3529,7 +3529,7 @@ mod slow {
                     .unwrap(),
             )
             .create();
-        let wallet = LightWallet::read_internal(&data[..], &config)
+        let wallet = LightWallet::read_internal(data, &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap();

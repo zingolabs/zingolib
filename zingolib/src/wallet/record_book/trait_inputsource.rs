@@ -1,13 +1,12 @@
-use std::{collections::BTreeMap, fmt::format, ops::Add};
+use std::{collections::BTreeMap};
 
-use orchard::note_encryption::OrchardDomain;
-use sapling_crypto::note_encryption::SaplingDomain;
+
+
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::{transaction::components::amount::NonNegativeAmount, zip32::AccountId};
 
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
-    wallet::transaction_record,
 };
 
 use super::{NoteRecordIdentifier, RefRecordBook};
