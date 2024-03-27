@@ -16,10 +16,11 @@ impl LightClient {
         .await
         .map_err(ZingoLibError::CantReadWallet)
     }
-    pub async fn check_chain_matched_proposal(
+    pub async fn check_chain_matches_proposal(
         &self,
         proposal: Proposa,
         txids: Vec<TxId>,
+        confirmed: bool,
         // total_balance_before: &mut u64,
     ) {
         let tmamt = self
@@ -38,7 +39,7 @@ impl LightClient {
                 .current
                 .get(&created_txid)
                 .expect("new txid is in record");
-            assert!(created_transaction.status.is_confirmed());
+            assert_eq!(created_transaction.status.is_confirmed(), confirmed);
             assert!(created_transaction.is_outgoing_transaction());
             let transaction_balance = created_transaction.net_spent();
             assert_eq!(transaction_balance, step.balance().total().into_u64());

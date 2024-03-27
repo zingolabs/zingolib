@@ -3671,8 +3671,12 @@ mod basic_transactions {
             .do_propose(vec![(&get_base_address!(client2, "sapling"), amount, memo)])
             .await
             .unwrap();
+        dbg!("proposed");
         let txids = client1.do_send_proposal().await.unwrap();
-        client1.check_chain_matched_proposal(proposal, txids).await;
+
+        client1
+            .check_chain_matches_proposal(proposal, txids, false)
+            .await;
     }
 
     #[tokio::test]

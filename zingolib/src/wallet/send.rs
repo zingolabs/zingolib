@@ -141,6 +141,7 @@ impl super::LightWallet {
             .await
             .map_err(|e| SendProposedTransferError::AssembleSpendKit(e))?;
 
+        // this causes us trouble because we cannot drop the spend kit to unlock the transaction_context until this reference is forgotten. my solution is two serial loops below -fv
         let raw_txs_to_send = spend_kit
             .create_transactions(sapling_prover)
             .map_err(|e| SendProposedTransferError::CreateTransactions(e))?;
@@ -149,43 +150,50 @@ impl super::LightWallet {
         {
             self.send_progress.write().await.is_send_in_progress = false;
         }
+        dbg!("we have the raws");
 
         // send each transaction in the proposition.
-        let mut sent_txids = vec![];
+        let mut sent_full_txs = vec![];
         for (index, raw_tx) in raw_txs_to_send.iter().enumerate() {
             // broadcast the raw transaction to the lightserver
+            dbg!("broadcasting");
             match broadcast_fn(raw_tx.clone().into_boxed_slice()).await {
                 Ok(_) => {
+                    dbg!("decoding");
                     //decode the sent transaction and record it
-                    let full_tx_to_send =
+                    let full_tx =
                         Transaction::read(&raw_tx[..], zcash_primitives::consensus::BranchId::Nu5)
                             .map_err(|e| SendProposedTransferError::Decode(e.to_string()))?;
 
-                    // and add the sent transaction as a pending (Broadcast) record.
-                    let price = self.price.read().await.clone();
-                    let status = ConfirmationStatus::Broadcast(submission_height);
-                    self.transaction_context
-                        .scan_full_tx(
-                            &full_tx_to_send,
-                            status,
-                            now() as u32,
-                            get_price(now(), &price),
-                        )
-                        .await;
-
-                    // return the new txid
-                    sent_txids.push(full_tx_to_send.txid());
+                    sent_full_txs.push(full_tx);
                 }
                 Err(e) => {
-                    return Err(if sent_txids.is_empty() {
+                    return Err(if sent_full_txs.is_empty() {
                         SendProposedTransferError::NoBroadcast(e)
                     } else {
-                        SendProposedTransferError::PartialBroadcast(sent_txids, e)
+                        SendProposedTransferError::PartialBroadcast(
+                            sent_full_txs.iter().map(|tx| tx.txid()).collect(),
+                            e,
+                        )
                     })
                 }
             }
         }
-        Ok(Vec::new())
+        drop(raw_txs_to_send);
+        drop(spend_kit);
+        drop(context_write_lock); // now we can scan again
+        for (index, full_tx) in sent_full_txs.iter().enumerate() {
+            // and add the sent transaction as a pending (Broadcast) record.
+            dbg!("pricing");
+            let price = self.price.read().await.clone();
+            let status = ConfirmationStatus::Broadcast(submission_height);
+            dbg!("scanning the new one");
+            self.transaction_context
+                .scan_full_tx(&full_tx, status, now() as u32, get_price(now(), &price))
+                .await;
+        }
+        dbg!("done send_proposed");
+        Ok(sent_full_txs.into_iter().map(|tx| tx.txid()).collect())
     }
 
     pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
