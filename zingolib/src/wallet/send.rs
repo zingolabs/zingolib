@@ -231,9 +231,9 @@ impl super::LightWallet {
                     .expect("should be able to create a unified spend key")
                 },
                 params: self.transaction_context.config.chain,
-                record_book: RefRecordBook::new_from_remote_txid_hashmap_and_spend_cell(
+                record_book: RefRecordBook::new_from_remote_txid_hashmap(
                     all_remote_transactions,
-                    &mut spending_data.outgoing_send_step_data,
+                    // &mut spending_data.outgoing_send_step_data,
                 ), //review! if there are already pending transactions, dont assemble a spend_kit
                 trees: &mut spending_data.witness_trees,
             })

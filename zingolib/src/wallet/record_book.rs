@@ -34,7 +34,7 @@ pub struct TransparentRecordRef {
 pub struct RefRecordBook<'a> {
     remote_transactions: &'a HashMap<TxId, TransactionRecord>,
     // review! how do we actually recognize this as canon when selecting?
-    local_sending_transactions: &'a mut Vec<Vec<u8>>,
+    local_sending_transactions: Vec<Vec<u8>>,
 }
 
 impl<'a> RefRecordBook<'a> {
@@ -42,23 +42,22 @@ impl<'a> RefRecordBook<'a> {
     pub fn new_empty() -> Self {
         let empty_map: HashMap<TxId, TransactionRecord> = HashMap::new();
         let empty_map_ref = Box::leak(Box::new(empty_map)); // Leak the empty hashmap to ensure its lifetime
-        let mut empty_cell: Vec<Vec<u8>> = Vec::new();
-        let empty_cell_ref = Box::leak(Box::new(empty_cell)); // Leak the empty hashmap to ensure its lifetime
         Self {
             remote_transactions: empty_map_ref,
-            local_sending_transactions: empty_cell_ref,
+            local_sending_transactions: Vec::new(),
         }
     }
-    pub fn new_from_remote_txid_hashmap_and_spend_cell<'b>(
+    pub fn new_from_remote_txid_hashmap<'b>(
         remote_transactions: &'b HashMap<TxId, TransactionRecord>,
-        local_sending_transactions: &'b mut Vec<Vec<u8>>,
+        // local_sending_transactions: &'b mut Vec<Vec<u8>>,
     ) -> Self
     where
         'b: 'a, // Ensure 'b outlives 'a
     {
         Self {
             remote_transactions,
-            local_sending_transactions,
+            local_sending_transactions: Vec::new(),
+            // local_sending_transactions,
         }
     }
     pub fn push_local_transaction(&mut self, transaction: &Transaction) -> ZingoLibResult<()> {
