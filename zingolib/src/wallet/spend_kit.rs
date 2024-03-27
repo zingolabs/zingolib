@@ -34,7 +34,7 @@ pub struct SpendKit<'book, 'trees> {
     pub params: ChainType,
     pub record_book: RefRecordBook<'book>,
     pub trees: &'trees mut WitnessTrees,
-    pub one_proposal: &'trees mut Option<Proposa>,
+    pub latest_proposal: &'trees mut Option<Proposa>,
     // review! how do we actually recognize this as canon when selecting?
     pub local_sending_transactions: Vec<Vec<u8>>,
 }

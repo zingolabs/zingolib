@@ -156,7 +156,7 @@ impl super::LightWallet {
             .write()
             .await;
         let proposal = if let Some(ref spending_data) = context_write_lock.spending_data {
-            spending_data.proposal.clone()
+            spending_data.latest_proposal.clone()
         } else {
             None // replace with zingolib error return
                  // return ZingoLibError::ViewkeyCantSpend
@@ -241,7 +241,7 @@ impl super::LightWallet {
                 params: self.transaction_context.config.chain,
                 record_book: RefRecordBook::new_from_remote_txid_hashmap(all_remote_transactions), //review! if there are already pending transactions, dont assemble a spend_kit
                 trees: &mut spending_data.witness_trees,
-                one_proposal: &mut spending_data.one_proposal,
+                latest_proposal: &mut spending_data.latest_proposal,
                 local_sending_transactions: Vec::new(),
             })
         } else {
