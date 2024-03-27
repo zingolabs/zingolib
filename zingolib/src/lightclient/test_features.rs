@@ -1,7 +1,7 @@
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::fees::zip317::FeeRule;
 
-use crate::wallet::record_book::NoteRecordIdentifier;
+use crate::wallet::{record_book::NoteRecordIdentifier, transactions::Proposa};
 
 use super::*;
 
@@ -18,7 +18,7 @@ impl LightClient {
     }
     pub async fn check_chain_matched_proposal(
         &self,
-        proposal: Proposal<FeeRule, NoteRecordIdentifier>,
+        proposal: Proposa,
         txids: Vec<TxId>,
         total_balance_before: &mut u64,
     ) -> ZingoLibResult<()> {
