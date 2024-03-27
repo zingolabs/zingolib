@@ -5,6 +5,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
 
+#[derive(Debug)]
 pub enum DoProposeError {
     RequestConstruction(Zip321Error),
     Proposing(ZingoLibError),
@@ -28,6 +29,7 @@ impl From<DoProposeError> for String {
     }
 }
 
+#[derive(Debug)]
 pub enum SendToAddressesError {
     NoSpendCapability,
     NoProposal,

@@ -910,7 +910,7 @@ impl Command for ProposeCommand {
                 return e;
             }
 
-            match lightclient.do_propose(tos).await {
+            match lightclient.do_send(tos).await {
                 Ok(transaction_id) => {
                     object! { "todo" => "todo" }
                 }
@@ -1051,7 +1051,7 @@ impl Command for SendCommand {
                 return e;
             }
 
-            match lightclient.do_propose(tos).await {
+            match lightclient.do_send(tos).await {
                 Ok(transaction_id) => {
                     object! { "todo" => "todo" }
                 }

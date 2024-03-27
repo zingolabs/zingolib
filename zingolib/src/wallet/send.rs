@@ -247,28 +247,27 @@ mod tests {
 
     #[test]
     fn test_build_request() {
-        let amount_1 = NonNegativeAmount::const_from_u64(20000);
-        let recipient_address_1 =
-            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
+        let amount_1 = 20000;
+        let recipient_address_1 = "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05";
         let memo_1 = None;
 
-        let amount_2 = NonNegativeAmount::const_from_u64(20000);
-        let recipient_address_2 =
-            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
+        let amount_2 = 20000;
+        let recipient_address_2 = "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05";
         let memo_2 = Some(MemoBytes::from(
             Memo::from_str("the lake wavers along the beach").expect("string can memofy"),
         ));
 
-        let rec: Receivers = vec![
+        let receivers = vec![
             (recipient_address_1, amount_1, memo_1),
             (recipient_address_2, amount_2, memo_2),
         ];
         let request: TransactionRequest =
-            build_transaction_request_from_tuples(rec).expect("rec can requestify");
+            build_transaction_request_from_tuples(ChainType::Testnet, receivers)
+                .expect("rec can requestify");
 
         assert_eq!(
-            request.total().expect("total"),
-            (amount_1 + amount_2).expect("add")
+            request.total().expect("total").into_u64(),
+            amount_1 + amount_2
         );
     }
 }
