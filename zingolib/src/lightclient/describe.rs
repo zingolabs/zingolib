@@ -398,4 +398,199 @@ impl LightClient {
             .unwrap()
             .block_on(async move { self.do_seed_phrase().await })
     }
+    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
+        let summaries = self.do_list_txsummaries().await;
+        let mut memobytes_by_address = HashMap::new();
+        for summary in summaries {
+            use ValueTransferKind::*;
+            match summary.kind {
+                Sent { to_address, .. } => {
+                    let address = to_address.encode();
+                    let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
+                    memobytes_by_address
+                        .entry(address)
+                        .and_modify(|e| *e += bytes)
+                        .or_insert(bytes);
+                }
+                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
+            }
+        }
+        finsight::TotalMemoBytesToAddress(memobytes_by_address)
+    }
+
+    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_number_sends = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let number_sends = values_sent_to_addresses.0[key].len() as u64;
+            by_address_number_sends.insert(key.clone(), number_sends);
+        }
+        finsight::TotalSendsToAddress(by_address_number_sends)
+    }
+
+    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_total = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let sum = values_sent_to_addresses.0[key].iter().sum();
+            by_address_total.insert(key.clone(), sum);
+        }
+        finsight::TotalValueToAddress(by_address_total)
+    }
+
+    pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
+        json::JsonValue::from(self.wallet.last_synced_height().await)
+    }
+    pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
+        self.config.lightwalletd_uri.read().unwrap()
+    }
+
+    pub fn get_server_uri(&self) -> http::Uri {
+        self.config.get_lightwalletd_uri()
+    }
+
+    pub(super) async fn get_submission_height(&self) -> Result<BlockHeight, String> {
+        Ok(BlockHeight::from_u32(
+            crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
+                .await?
+                .height as u32,
+        ) + 1)
+    }
+    fn tx_summary_matcher(
+        summaries: &mut Vec<ValueTransfer>,
+        txid: TxId,
+        transaction_md: &TransactionRecord,
+    ) {
+        let (block_height, datetime, price, unconfirmed) = (
+            transaction_md.status.get_height(),
+            transaction_md.datetime,
+            transaction_md.price,
+            !transaction_md.status.is_confirmed(),
+        );
+        match (
+            transaction_md.is_outgoing_transaction(),
+            transaction_md.is_incoming_transaction(),
+        ) {
+            // This transaction is entirely composed of what we consider
+            // to be 'change'. We just make a Fee transfer and move on
+            (false, false) => (),
+            // All received funds were change, this is a normal send
+            (true, false) => {
+                for OutgoingTxData {
+                    to_address,
+                    value,
+                    memo,
+                    recipient_ua,
+                } in &transaction_md.outgoing_tx_data
+                {
+                    if let Ok(to_address) =
+                        ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
+                    {
+                        let memos = if let Memo::Text(textmemo) = memo {
+                            vec![textmemo.clone()]
+                        } else {
+                            vec![]
+                        };
+                        summaries.push(ValueTransfer {
+                            block_height,
+                            datetime,
+                            kind: ValueTransferKind::Sent {
+                                to_address,
+                                amount: *value,
+                            },
+                            memos,
+                            price,
+                            txid,
+                            unconfirmed,
+                        });
+                    }
+                }
+            }
+            // No funds spent, this is a normal receipt
+            (false, true) => {
+                for received_transparent in transaction_md.transparent_notes.iter() {
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Received {
+                            pool: Pool::Transparent,
+                            amount: received_transparent.value,
+                        },
+                        memos: vec![],
+                        price,
+                        txid,
+                        unconfirmed,
+                    });
+                }
+                for received_sapling in transaction_md.sapling_notes.iter() {
+                    let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
+                        vec![textmemo.clone()]
+                    } else {
+                        vec![]
+                    };
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Received {
+                            pool: Pool::Sapling,
+                            amount: received_sapling.value(),
+                        },
+                        memos,
+                        price,
+                        txid,
+                        unconfirmed,
+                    });
+                }
+                for received_orchard in transaction_md.orchard_notes.iter() {
+                    let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
+                        vec![textmemo.clone()]
+                    } else {
+                        vec![]
+                    };
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Received {
+                            pool: Pool::Orchard,
+                            amount: received_orchard.value(),
+                        },
+                        memos,
+                        price,
+                        txid,
+                        unconfirmed,
+                    });
+                }
+            }
+            // We spent funds, and received funds as non-change. This is most likely a send-to-self,
+            // TODO: Figure out what kind of special-case handling we want for these
+            (true, true) => {
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::SendToSelf,
+                    memos: transaction_md
+                        .sapling_notes
+                        .iter()
+                        .filter_map(|sapling_note| sapling_note.memo.clone())
+                        .chain(
+                            transaction_md
+                                .orchard_notes
+                                .iter()
+                                .filter_map(|orchard_note| orchard_note.memo.clone()),
+                        )
+                        .filter_map(|memo| {
+                            if let Memo::Text(text_memo) = memo {
+                                Some(text_memo)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    price,
+                    txid,
+                    unconfirmed,
+                });
+            }
+        };
+    }
 }
