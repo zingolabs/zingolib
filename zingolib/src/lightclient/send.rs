@@ -1,29 +1,13 @@
 use crate::{
-    error::{ZingoLibError},
-    wallet::{
-        send::build_transaction_request_from_receivers, Pool, SendProgress,
-    },
+    error::ZingoLibError,
+    wallet::{send::build_transaction_request_from_receivers, Pool, SendProgress},
 };
 
 use json::{object, JsonValue};
-use log::{error};
+use log::error;
 
-use std::{
-    io::{Read},
-};
-
-
-
-
-
-use zcash_primitives::{
-    memo::{MemoBytes},
-    transaction::{
-        components::amount::NonNegativeAmount,
-    },
-};
+use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 use zcash_proofs::prover::LocalTxProver;
-
 
 use super::LightClient;
 

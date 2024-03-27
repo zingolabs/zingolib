@@ -1,3 +1,5 @@
+use std::cmp;
+
 use super::*;
 use zcash_note_encryption::Domain;
 

@@ -1,46 +1,26 @@
 use crate::{
-    blaze::{
-        syncdata::BlazeSyncData,
-    },
+    blaze::syncdata::BlazeSyncData,
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
-        data::{
-            TransactionRecord,
-        },
-        keys::{unified::ReceiverSelection},
-        message::Message,
-        notes::NoteInterface,
-        notes::ShieldedNoteInterface,
-        LightWallet,
+        data::TransactionRecord, keys::unified::ReceiverSelection, message::Message,
+        notes::NoteInterface, notes::ShieldedNoteInterface, LightWallet,
     },
 };
 
 use json::{array, object, JsonValue};
 use log::{debug, error};
 
-use std::{
-    cmp::{self},
-    io::{self, Read, Write},
-    sync::Arc,
-};
-use tokio::{
-    sync::{Mutex, RwLock},
-};
+use std::{io, sync::Arc};
+use tokio::sync::{Mutex, RwLock};
 
-
-
-use zcash_client_backend::{
-    encoding::{decode_payment_address, encode_payment_address},
-};
+use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
-    consensus::{NetworkConstants},
+    consensus::NetworkConstants,
     memo::{Memo, MemoBytes},
-    transaction::{
-        TxId,
-    },
+    transaction::TxId,
 };
 
-use zingoconfig::{ZingoConfig};
+use zingoconfig::ZingoConfig;
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 

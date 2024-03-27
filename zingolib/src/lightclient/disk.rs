@@ -1,13 +1,8 @@
 use crate::{
-    blaze::{
-        syncdata::BlazeSyncData,
-    },
+    blaze::syncdata::BlazeSyncData,
     error::{ZingoLibError, ZingoLibResult},
-    wallet::{
-        LightWallet, WalletBase,
-    },
+    wallet::{LightWallet, WalletBase},
 };
-
 
 use log::{debug, error};
 
@@ -22,12 +17,7 @@ use tokio::{
     sync::{Mutex, RwLock},
 };
 
-
-
-
-
-
-use zingoconfig::{ZingoConfig};
+use zingoconfig::ZingoConfig;
 
 use super::LightClient;
 

@@ -1,11 +1,11 @@
 use crate::{
-    error::{ZingoLibError},
+    error::ZingoLibError,
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
             TransactionRecord,
         },
-        keys::{address_from_pubkeyhash},
+        keys::address_from_pubkeyhash,
         notes::NoteInterface,
         notes::ShieldedNoteInterface,
         LightWallet, Pool,
@@ -15,28 +15,16 @@ use crate::{
 use json::{object, JsonValue};
 
 use serde::Serialize;
-use std::{
-    collections::HashMap,
-    io::{Read},
-};
-use tokio::{
-    runtime::Runtime,
-};
+use std::collections::HashMap;
+use tokio::runtime::Runtime;
 use zcash_address::ZcashAddress;
 
-
-use zcash_client_backend::{
-    encoding::{encode_payment_address},
-};
+use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants},
-    memo::{Memo},
-    transaction::{
-        TxId,
-    },
+    memo::Memo,
+    transaction::TxId,
 };
-
-
 
 use super::LightClient;
 
