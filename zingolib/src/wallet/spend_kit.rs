@@ -57,6 +57,8 @@ impl SpendKit<'_, '_> {
             zcash_client_backend::fees::DustOutputPolicy::default(),
         );
 
+        // review! discard old sends here!
+
         Ok(zcash_client_backend::data_api::wallet::propose_transfer::<
             SpendKit,
             ChainType,
