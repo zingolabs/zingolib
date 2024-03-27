@@ -133,30 +133,33 @@ impl LightClient {
         let result = {
             // review! is this necessary?
             let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .propose_to_addresses(sapling_prover, request)
-                .await
+            self.wallet.propose_transfer(request).await
         };
+
+        // add proposal to lightclient
 
         // result.map_err(|e| e.to_string())
         Ok("todo".to_string())
     }
 
     pub async fn do_send(&self) -> Result<String, String> {
+        let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let transaction_submission_height = self.get_submission_height().await?;
 
         let result = {
             self.wallet
-                .send_to_addresses(transaction_submission_height, |transaction_bytes| {
-                    crate::grpc_connector::send_transaction(
-                        self.get_server_uri(),
-                        transaction_bytes,
-                    )
-                })
+                .send_proposed_transfer(
+                    transaction_submission_height,
+                    |transaction_bytes| {
+                        crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            transaction_bytes,
+                        )
+                    },
+                    sapling_prover,
+                )
                 .await
         };
 

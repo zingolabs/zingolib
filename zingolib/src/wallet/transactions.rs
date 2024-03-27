@@ -11,15 +11,15 @@ use super::{
 /// data that the spending wallet has, but viewkey wallet does not.
 pub struct SpendingData {
     pub witness_trees: WitnessTrees,
-    /// only one outgoing send can be proposed at once. the first vec contains steps, the second vec is raw bytes.
-    pub outgoing_send_step_data: Vec<Vec<u8>>,
+    /// only one outgoing send can be proposed at once.
+    pub proposal: Option<Proposal<FeeRule, NoteRecordIdentifier>>,
 }
 
 impl SpendingData {
     pub fn default() -> Self {
         SpendingData {
             witness_trees: WitnessTrees::default(),
-            outgoing_send_step_data: Vec::new(),
+            proposal: None,
         }
     }
     pub fn load_with_option_witness_trees(
@@ -27,7 +27,7 @@ impl SpendingData {
     ) -> Option<Self> {
         option_witness_trees.map(|witness_trees| SpendingData {
             witness_trees,
-            outgoing_send_step_data: Vec::new(),
+            proposal: None,
         })
     }
     pub fn clear(&mut self) {
