@@ -912,10 +912,10 @@ impl Command for ProposeCommand {
 
             match lightclient.do_send(tos).await {
                 Ok(transaction_id) => {
-                    object! { "todo" => "todo" }
+                    object! { "txid" => transaction_id }
                 }
                 Err(e) => {
-                    object! { "todo" => "todo" }
+                    object! { "error" => e }
                 }
             }
             .pretty(2)
@@ -1053,10 +1053,10 @@ impl Command for SendCommand {
 
             match lightclient.do_send(tos).await {
                 Ok(transaction_id) => {
-                    object! { "todo" => "todo" }
+                    object! { "txid" => transaction_id }
                 }
                 Err(e) => {
-                    object! { "todo" => "todo" }
+                    object! { "error" => e }
                 }
             }
             .pretty(2)
