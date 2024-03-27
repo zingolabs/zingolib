@@ -10,7 +10,10 @@ use crate::{
 use json::{object, JsonValue};
 use log::error;
 
-use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
+use zcash_primitives::{
+    memo::MemoBytes,
+    transaction::{components::amount::NonNegativeAmount, TxId},
+};
 use zcash_proofs::prover::LocalTxProver;
 
 use super::LightClient;
@@ -91,28 +94,24 @@ impl LightClient {
             .map_err(|e| DoProposeError::Proposing(e))
     }
 
-    pub async fn do_send_proposal(&self) -> Result<String, String> {
+    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
         let (sapling_output, sapling_spend) = self.read_sapling_params()?;
         let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let transaction_submission_height = self.get_submission_height().await?;
 
-        let _result = {
-            self.wallet
-                .send_proposed_transfer(
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                    sapling_prover,
-                )
-                .await
-        };
-
-        // result.map_err(|e| e.to_string())
-        Ok("todo".to_string())
+        self.wallet
+            .send_proposed_transfer(
+                transaction_submission_height,
+                |transaction_bytes| {
+                    crate::grpc_connector::send_transaction(
+                        self.get_server_uri(),
+                        transaction_bytes,
+                    )
+                },
+                sapling_prover,
+            )
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn do_send(
@@ -122,7 +121,7 @@ impl LightClient {
         self.do_propose(address_amount_memo_tuples)
             .await
             .map_err(|e| e.to_string())?;
-        self.do_send_proposal().await
+        self.do_send_proposal().await.map(|ok| "todo".to_string())
     }
 
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
