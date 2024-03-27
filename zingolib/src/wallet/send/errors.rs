@@ -1,6 +1,32 @@
 use std::fmt;
 
+use zcash_client_backend::zip321::Zip321Error;
 use zcash_primitives::transaction::TxId;
+
+use crate::error::ZingoLibError;
+
+pub enum DoProposeError {
+    RequestConstruction(Zip321Error),
+    Proposing(ZingoLibError),
+}
+impl std::fmt::Display for DoProposeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use DoProposeError::*;
+        write!(
+            f,
+            "DoPropose failed: {}",
+            match self {
+                RequestConstruction(err) => format!("Could not parse transaction request {}", err,),
+                Proposing(err) => format!("Could not create proposal {}", err,),
+            }
+        )
+    }
+}
+impl From<DoProposeError> for String {
+    fn from(value: DoProposeError) -> Self {
+        format!("{value}")
+    }
+}
 
 pub enum SendToAddressesError {
     NoSpendCapability,

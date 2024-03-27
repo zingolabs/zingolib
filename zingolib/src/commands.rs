@@ -845,7 +845,8 @@ impl Command for ProposeCommand {
                                     amt,
                                     j["memo"].as_str().map(|s| s.to_string()),
                                 )),
-                                None => Err("Not enough in wallet to pay transaction fee of TODO".to_string()),
+                                None => Err("Not enough in wallet to pay transaction fee of TODO"
+                                    .to_string()),
                             }
                         }
                     })
@@ -1055,7 +1056,7 @@ impl Command for SendCommand {
                     object! { "txid" => transaction_id }
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    object! { "error" => e.to_string() }
                 }
             }
             .pretty(2)

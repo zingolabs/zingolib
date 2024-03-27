@@ -1,6 +1,10 @@
 use crate::{
     error::ZingoLibError,
-    wallet::{send::build_transaction_request_from_receivers, Pool, SendProgress},
+    wallet::{
+        send::{build_transaction_request_from_tuples, errors::DoProposeError},
+        transactions::Proposa,
+        Pool, SendProgress,
+    },
 };
 
 use json::{object, JsonValue};
@@ -74,22 +78,17 @@ impl LightClient {
     pub async fn do_propose(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<String, String> {
-        let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
-        let request = build_transaction_request_from_receivers(receivers)
-            .map_err(|e| ZingoLibError::RequestConstruction(e).to_string())?;
+    ) -> Result<Proposa, DoProposeError> {
+        let request =
+            build_transaction_request_from_tuples(self.config.chain, address_amount_memo_tuples)
+                .map_err(|e| DoProposeError::RequestConstruction(e))?;
 
-        let _result = {
-            // review! is this necessary?
-            let _lock = self.sync_lock.lock().await;
+        let _lock = self.sync_lock.lock().await;
 
-            self.wallet.propose_transfer(request).await
-        };
-
-        // add proposal to lightclient
-
-        // result.map_err(|e| e.to_string())
-        Ok("todo".to_string())
+        self.wallet
+            .propose_transfer(request)
+            .await
+            .map_err(|e| DoProposeError::Proposing(e))
     }
 
     pub async fn do_send(&self) -> Result<String, String> {

@@ -11,6 +11,7 @@ use zcash_client_backend::data_api::WalletRead;
 
 use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
 
+use zcash_primitives::consensus::Parameters;
 use zcash_primitives::zip32::AccountId;
 
 use std::ops::DerefMut;
@@ -63,15 +64,22 @@ impl SendProgress {
 
 type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
 
-pub fn build_transaction_request_from_receivers(
-    receivers: Receivers,
+pub fn build_transaction_request_from_tuples<Params: Parameters>(
+    params: Params,
+    destination_amount_opt_memo_s: Vec<(&str, u64, Option<MemoBytes>)>,
 ) -> Result<TransactionRequest, Zip321Error> {
     let mut payments = vec![];
-    for out in receivers.clone() {
+    for dam in destination_amount_opt_memo_s {
+        let address = zcash_client_backend::address::Address::decode(&params, dam.0).ok_or(
+            Zip321Error::ParseError(format!("Invalid recipient address: '{}'", dam.0)),
+        )?;
+
+        let value = NonNegativeAmount::from_u64(dam.1).unwrap();
+
         payments.push(Payment {
-            recipient_address: out.0,
-            amount: out.1,
-            memo: out.2,
+            recipient_address: address,
+            amount: value,
+            memo: dam.2,
             label: None,
             message: None,
             other_params: vec![],
@@ -235,7 +243,7 @@ mod tests {
     };
     use zingoconfig::ChainType;
 
-    use super::{build_transaction_request_from_receivers, Receivers};
+    use super::{build_transaction_request_from_tuples, Receivers};
 
     #[test]
     fn test_build_request() {
@@ -256,7 +264,7 @@ mod tests {
             (recipient_address_2, amount_2, memo_2),
         ];
         let request: TransactionRequest =
-            build_transaction_request_from_receivers(rec).expect("rec can requestify");
+            build_transaction_request_from_tuples(rec).expect("rec can requestify");
 
         assert_eq!(
             request.total().expect("total"),
