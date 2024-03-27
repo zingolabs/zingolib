@@ -108,6 +108,7 @@ pub mod disk;
 pub mod send;
 pub mod sync;
 
+pub use describe::PoolBalances;
 use disk::ZingoSaveBuffer;
 
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types

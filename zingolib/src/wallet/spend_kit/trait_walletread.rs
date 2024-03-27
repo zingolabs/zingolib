@@ -239,6 +239,8 @@ mod tests {
             let record_book = RefRecordBook::new_empty();
             let tree_height = BlockHeight::from_u32(tree_height);
             let trees = &mut WitnessTrees::default();
+            let latest_proposal = &mut None;
+            let local_sending_transactions = Vec::new();
             trees.add_checkpoint(tree_height);
 
             let kit = SpendKit {
@@ -246,6 +248,8 @@ mod tests {
                 params,
                 record_book,
                 trees,
+                latest_proposal,
+                local_sending_transactions,
             };
 
             let (targ_height, anc_height) = kit
