@@ -121,7 +121,7 @@ pub async fn send_value_between_clients_and_sync(
         &recipient.do_addresses().await[0]["address"]
     );
     let txid = sender
-        .do_send(vec![(
+        .do_propose(vec![(
             &zingolib::get_base_address!(recipient, address_type),
             value,
             None,
@@ -663,7 +663,7 @@ pub mod scenarios {
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
                 faucet
-                    .do_send(vec![(
+                    .do_propose(vec![(
                         &get_base_address!(recipient, "unified"),
                         funds,
                         None,
@@ -677,7 +677,7 @@ pub mod scenarios {
         let sapling_txid = if let Some(funds) = sapling_funds {
             Some(
                 faucet
-                    .do_send(vec![(
+                    .do_propose(vec![(
                         &get_base_address!(recipient, "sapling"),
                         funds,
                         None,
@@ -691,7 +691,7 @@ pub mod scenarios {
         let transparent_txid = if let Some(funds) = transparent_funds {
             Some(
                 faucet
-                    .do_send(vec![(
+                    .do_propose(vec![(
                         &get_base_address!(recipient, "transparent"),
                         funds,
                         None,
@@ -814,7 +814,7 @@ pub mod scenarios {
             .await;
         faucet.do_sync(false).await.unwrap();
         faucet
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "unified"),
                 value,
                 None,
@@ -855,7 +855,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet
         faucet
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "unified"),
                 value,
                 None,
@@ -867,7 +867,7 @@ pub mod scenarios {
             .unwrap();
         // send to a faucet
         recipient
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(faucet, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -879,7 +879,7 @@ pub mod scenarios {
             .unwrap();
         // send to self sapling
         recipient
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "sapling"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -920,7 +920,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet to orchard
         faucet
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "unified"),
                 value.checked_div(2).unwrap(),
                 None,
@@ -932,7 +932,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet to sapling
         faucet
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "sapling"),
                 value.checked_div(4).unwrap(),
                 None,
@@ -944,7 +944,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet to transparent
         faucet
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "transparent"),
                 value.checked_div(4).unwrap(),
                 None,
@@ -956,7 +956,7 @@ pub mod scenarios {
             .unwrap();
         // send to a faucet
         recipient
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(faucet, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -968,7 +968,7 @@ pub mod scenarios {
             .unwrap();
         // send to self orchard
         recipient
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -980,7 +980,7 @@ pub mod scenarios {
             .unwrap();
         // send to self sapling
         recipient
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "sapling"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -992,7 +992,7 @@ pub mod scenarios {
             .unwrap();
         // send to self transparent
         recipient
-            .do_send(vec![(
+            .do_propose(vec![(
                 &get_base_address!(recipient, "transparent"),
                 value.checked_div(10).unwrap(),
                 None,
