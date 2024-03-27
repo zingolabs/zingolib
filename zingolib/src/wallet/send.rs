@@ -119,6 +119,7 @@ impl super::LightWallet {
         self.send_progress.read().await.clone()
     }
 
+    /// Propose a transfer, calculate fees, and hold the outgoing transactions. (1, except in the z->tt case where there will be 2.). If a previous transfer was proposed but not sent, it will be overwritten in the buffer.
     pub async fn propose_to_addresses<P: SpendProver + OutputProver>(
         &self,
         sapling_prover: P,
