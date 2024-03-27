@@ -6,22 +6,13 @@ use crate::{
         update_notes::UpdateNotes,
     },
     grpc_connector::GrpcConnector,
-    wallet::{
-        now,
-        transaction_context::TransactionContext,
-        utils::get_price,
-    },
+    wallet::{now, transaction_context::TransactionContext, utils::get_price},
 };
 use futures::future::join_all;
 use json::{object, JsonValue};
 use log::{debug, warn};
 
-use std::{
-    cmp::{self},
-    io::{Read, Write},
-    sync::Arc,
-    time::Duration,
-};
+use std::{cmp, sync::Arc, time::Duration};
 use tokio::{
     join,
     runtime::Runtime,
@@ -32,17 +23,13 @@ use tokio::{
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use zcash_client_backend::{
-    proto::service::RawTransaction,
-};
+use zcash_client_backend::proto::service::RawTransaction;
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId},
-    transaction::{
-        Transaction,
-    },
+    transaction::Transaction,
 };
 
-use zingoconfig::{MAX_REORG};
+use zingoconfig::MAX_REORG;
 
 use super::LightClient;
 

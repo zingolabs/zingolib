@@ -1,19 +1,10 @@
 use crate::error::{ZingoLibError, ZingoLibResult};
 
-
 use crate::wallet::now;
 
 use futures::Future;
 
-
-
-
-
-
-
-
 use sapling_crypto::prover::{OutputProver, SpendProver};
-
 
 use tokio::sync::RwLockWriteGuard;
 use zcash_client_backend::data_api::WalletRead;
@@ -22,35 +13,23 @@ use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
 
 use zcash_primitives::zip32::AccountId;
 
-
 use std::ops::DerefMut;
 
-
-use zcash_client_backend::{address};
+use zcash_client_backend::address;
 
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::memo::MemoBytes;
 
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
-use zcash_primitives::transaction::{TxId};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    transaction::{
-        builder::Builder,
-    },
-};
+use zcash_primitives::transaction::TxId;
+use zcash_primitives::{consensus::BlockHeight, transaction::builder::Builder};
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::errors::SendToAddressesError;
 
-
-
-
-
-use super::record_book::{RefRecordBook};
-
+use super::record_book::RefRecordBook;
 
 use super::transactions::{Proposa, TxMapAndMaybeTrees};
 use super::utils::get_price;
@@ -269,8 +248,7 @@ mod tests {
         let recipient_address_2 =
             Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_2 = Some(MemoBytes::from(
-            Memo::from_str("the lake wavers along the beach")
-                .expect("string can memofy"),
+            Memo::from_str("the lake wavers along the beach").expect("string can memofy"),
         ));
 
         let rec: Receivers = vec![
