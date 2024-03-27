@@ -5,7 +5,7 @@ use crate::error::{ZingoLibError, ZingoLibResult};
 use super::{
     data::WitnessTrees,
     record_book::{NoteRecordIdentifier, RefRecordBook},
-    transactions::TxMapAndMaybeTrees,
+    transactions::{Proposa, TxMapAndMaybeTrees},
 };
 use nonempty::NonEmpty;
 use sapling_crypto::prover::{OutputProver, SpendProver};
@@ -34,6 +34,9 @@ pub struct SpendKit<'book, 'trees> {
     pub params: ChainType,
     pub record_book: RefRecordBook<'book>,
     pub trees: &'trees mut WitnessTrees,
+    pub one_proposal: &'trees mut Option<Proposa>,
+    // review! how do we actually recognize this as canon when selecting?
+    pub local_sending_transactions: Vec<Vec<u8>>,
 }
 
 type GISKit<'a, 'b> = GreedyInputSelector<

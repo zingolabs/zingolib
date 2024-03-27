@@ -2,7 +2,7 @@ use secrecy::SecretVec;
 use zcash_client_backend::data_api::WalletWrite;
 use zcash_keys::keys::UnifiedSpendingKey;
 
-use crate::wallet::record_book::TransparentRecordRef;
+use crate::{error::ZingoLibError, wallet::record_book::TransparentRecordRef};
 
 use super::SpendKit;
 
@@ -58,7 +58,13 @@ impl WalletWrite for SpendKit<'_, '_> {
         &mut self,
         sent_tx: &zcash_client_backend::data_api::SentTransaction<Self::AccountId>,
     ) -> Result<(), Self::Error> {
-        self.record_book.push_local_transaction(sent_tx.tx())
+        let mut raw_tx = vec![];
+        sent_tx
+            .tx()
+            .write(&mut raw_tx)
+            .map_err(|e| ZingoLibError::CalculatedTransactionEncode(e.to_string()))?;
+        self.local_sending_transactions.push(raw_tx);
+        Ok(())
     }
 
     fn truncate_to_height(

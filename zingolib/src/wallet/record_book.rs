@@ -33,8 +33,6 @@ pub struct TransparentRecordRef {
 
 pub struct RefRecordBook<'a> {
     remote_transactions: &'a HashMap<TxId, TransactionRecord>,
-    // review! how do we actually recognize this as canon when selecting?
-    local_sending_transactions: Vec<Vec<u8>>,
 }
 
 impl<'a> RefRecordBook<'a> {
@@ -44,7 +42,6 @@ impl<'a> RefRecordBook<'a> {
         let empty_map_ref = Box::leak(Box::new(empty_map)); // Leak the empty hashmap to ensure its lifetime
         Self {
             remote_transactions: empty_map_ref,
-            local_sending_transactions: Vec::new(),
         }
     }
     pub fn new_from_remote_txid_hashmap<'b>(
@@ -56,21 +53,8 @@ impl<'a> RefRecordBook<'a> {
     {
         Self {
             remote_transactions,
-            local_sending_transactions: Vec::new(),
             // local_sending_transactions,
         }
-    }
-    pub fn push_local_transaction(&mut self, transaction: &Transaction) -> ZingoLibResult<()> {
-        let mut raw_tx = vec![];
-        transaction
-            .write(&mut raw_tx)
-            .map_err(|e| ZingoLibError::CalculatedTransactionEncode(e.to_string()))?;
-        self.local_sending_transactions.push(raw_tx);
-        Ok(())
-    }
-    pub fn clear_local_transaction(&mut self) -> ZingoLibResult<()> {
-        self.local_sending_transactions.clear();
-        Ok(())
     }
     pub fn get_remote_txid_hashmap(&self) -> &HashMap<TxId, TransactionRecord> {
         self.remote_transactions
