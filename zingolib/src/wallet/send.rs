@@ -123,7 +123,7 @@ impl super::LightWallet {
     }
 
     /// Propose a transfer, calculate fees, and hold the proposal in memory. (1, except in the z->tt case where there will be 2.). If a previous transfer was proposed but not sent, it will be overwritten in the buffer.
-    pub async fn propose_transfer<P: SpendProver + OutputProver>(
+    pub async fn propose_transfer(
         &self,
         request: TransactionRequest,
     ) -> ZingoLibResult<Proposal<FeeRule, NoteRecordIdentifier>> {
@@ -170,10 +170,9 @@ impl super::LightWallet {
                 .create_transactions(sapling_prover, proposal)
                 .unwrap()
             // replace unwrap with zingolib error
+        } else {
+            return Err(SendToAddressesError::NoProposal);
         };
-        // else {
-        //     // return ZingoLibError::MissingProposal;
-        // }
 
         // review! what does this do? is it necessary? why does it seem wrong?
         {
@@ -181,12 +180,16 @@ impl super::LightWallet {
         }
 
         // send each transaction in the proposition.
+        let mut sent_txids = vec![];
         for txid in sending_txids {
-            let raw_tx = spend_kit.get_transaction(txid);
+            let transaction = spend_kit.get_transaction(txid).unwrap();
+            let mut raw_tx = vec![];
+            transaction.write(&mut raw_tx).unwrap();
+            // .map_err(|e| ZingoLibError::CalculatedTransactionEncode(e.to_string()))?;
 
             // broadcast the raw transaction to the lightserver
-            match broadcast_fn(sending_raw.clone().into_boxed_slice()).await {
-                Ok(_txid_string) => (),
+            match broadcast_fn(raw_tx.clone().into_boxed_slice()).await {
+                Ok(_) => sent_txids.push(txid),
                 Err(e) => {
                     return Err(if sent_txids.len() == 0 {
                         SendToAddressesError::NoBroadcast(e)
@@ -196,24 +199,11 @@ impl super::LightWallet {
                 }
             };
 
-            // read the raw transaction
-            let sending_full_tx =
-                Transaction::read(&sending_raw[..], zcash_primitives::consensus::BranchId::Nu5)
-                    .map_err(|e| SendToAddressesError::Decode(e.to_string()))?;
-
-            // add the sent txid to list
-            sent_txids.push(sending_full_tx.txid());
-
             let price = self.price.read().await.clone();
             let status = ConfirmationStatus::Broadcast(submission_height);
             // and add the sent transaction as a pending (Broadcast) record.
             self.transaction_context
-                .scan_full_tx(
-                    &sending_full_tx,
-                    status,
-                    now() as u32,
-                    get_price(now(), &price),
-                )
+                .scan_full_tx(&transaction, status, now() as u32, get_price(now(), &price))
                 .await;
         }
         if sent_txids.len() == 0 {
