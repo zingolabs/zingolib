@@ -785,6 +785,146 @@ impl Command for DecryptMessageCommand {
     }
 }
 
+struct ProposeCommand {}
+impl Command for ProposeCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Propose a transfer of ZEC to the given address(es)
+            Usage:
+            propose <address> <amount in zatoshis> "optional_memo"
+            OR
+            propose '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'
+
+            NOTE: The fee required to send this transaction will be added to the proposal.
+            Example:
+            propose ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Propose a transfer of ZEC to the given address(es)"
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        // Parse the args. There are two argument types.
+        // 1 - A set of 2(+1 optional) arguments for a single address proposal representing address, value, memo?
+        // 2 - A single argument in the form of a JSON string that is "[{address: address, value: value, memo: memo},...]"
+        if args.is_empty() || args.len() > 3 {
+            return self.help().to_string();
+        }
+
+        RT.block_on(async move {
+            // Check for a single argument that can be parsed as JSON
+            let send_args = if args.len() == 1 {
+                let arg_list = args[0];
+
+                let json_args = match json::parse(arg_list) {
+                    Ok(j) => j,
+                    Err(e) => {
+                        let es = format!("Couldn't understand JSON: {}", e);
+                        return format!("{}\n{}", es, self.help());
+                    }
+                };
+
+                if !json_args.is_array() {
+                    return format!("Couldn't parse argument as array\n{}", self.help());
+                }
+
+                let maybe_send_args = json_args
+                    .members()
+                    .map(|j| {
+                        if !j.has_key("address") || !j.has_key("amount") {
+                            Err("Need 'address' and 'amount'\n".to_string())
+                        } else {
+                            let amount = Some(j["amount"].as_u64().unwrap());
+
+                            match amount {
+                                Some(amt) => Ok((
+                                    j["address"].as_str().unwrap().to_string(),
+                                    amt,
+                                    j["memo"].as_str().map(|s| s.to_string()),
+                                )),
+                                None => Err(format!(
+                                    "Not enough in wallet to pay transaction fee of {}",
+                                    fee
+                                )),
+                            }
+                        }
+                    })
+                    .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
+
+                match maybe_send_args {
+                    Ok(a) => a.clone(),
+                    Err(s) => {
+                        return format!("Error: {}\n{}", s, self.help());
+                    }
+                }
+            } else if args.len() == 2 || args.len() == 3 {
+                let address = args[0].to_string();
+
+                // Make sure we can parse the amount
+                let value = match args[1].parse::<u64>() {
+                    Ok(amt) => amt,
+                    Err(e) => return format!("Couldn't parse amount: {}", e),
+                };
+
+                let memo = if args.len() == 3 {
+                    Some(args[2].to_string())
+                } else {
+                    None
+                };
+
+                // Memo has to be None if not sending to a shielded address
+                if memo.is_some() && !is_shielded_address(&address, &lightclient.config) {
+                    return format!("Can't send a memo to the non-shielded address {}", address);
+                }
+
+                vec![(args[0].to_string(), value, memo)]
+            } else {
+                return self.help().to_string();
+            };
+
+            // Convert to the right format.
+            let mut error = None;
+            let tos = send_args
+                .iter()
+                .map(|(a, v, m)| {
+                    (
+                        a.as_str(),
+                        *v,
+                        match m {
+                            // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
+                            // interpret it as a hex
+                            Some(s) => match utils::interpret_memo_string(s.clone()) {
+                                Ok(m) => Some(m),
+                                Err(e) => {
+                                    error = Some(format!("Couldn't interpret memo: {}", e));
+                                    None
+                                }
+                            },
+                            None => None,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            if let Some(e) = error {
+                return e;
+            }
+
+            match lightclient.do_propose(tos).await {
+                Ok(transaction_id) => {
+                    object! { "txid" => transaction_id }
+                }
+                Err(e) => {
+                    object! { "error" => e }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
 struct SendCommand {}
 impl Command for SendCommand {
     fn help(&self) -> &'static str {
@@ -913,7 +1053,7 @@ impl Command for SendCommand {
                 return e;
             }
 
-            match lightclient.do_send().await {
+            match lightclient.do_propose(tos).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
