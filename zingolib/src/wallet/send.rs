@@ -137,6 +137,7 @@ impl super::LightWallet {
         Ok(extra_proposal)
     }
 
+    /// Broadcast the most recently proposed transfer.
     pub async fn send_to_addresses<F, Fut>(
         &self,
         submission_height: BlockHeight,
