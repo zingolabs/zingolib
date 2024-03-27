@@ -1099,7 +1099,7 @@ mod slow {
             serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
         );
-        let _sent_transaction_id = faucet
+        let proposal = faucet
             .do_propose(vec![(
                 &get_base_address!(recipient, "sapling"),
                 sapling_dust,
