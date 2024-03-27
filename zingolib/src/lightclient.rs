@@ -887,9 +887,6 @@ impl LightClient {
         let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
         let request = build_transaction_request_from_receivers(receivers)
             .map_err(|e| ZingoLibError::RequestConstruction(e).to_string())?;
-        let transaction_submission_height = self.get_submission_height().await?;
-        // First, get the consensus branch ID
-        debug!("Creating transaction");
 
         let result = {
             // review! is this necessary?
@@ -909,8 +906,6 @@ impl LightClient {
 
     pub async fn do_send(&self) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        // First, get the consensus branch ID
-        debug!("Creating transaction");
 
         let result = {
             self.wallet
