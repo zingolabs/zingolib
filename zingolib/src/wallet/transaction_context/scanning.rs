@@ -427,7 +427,7 @@ impl TransactionContext {
         )
         .await;
 
-        for (_domain, output) in domain_tagged_outputs {
+        for (_domain, output) in domain_tagged_outputs.iter() {
             outgoing_metadatas.extend(
                 match try_output_recovery_with_ovk::<
                     D,
@@ -503,12 +503,19 @@ impl TransactionContext {
 
         // now we have decrypted everything about the transaction except anything to do with the internal incoming viewing key. in the intercompatibility case, we may want to check the internal incoming viewing key for sapling. in the present case, i am going to write fast code that doesnt involve rewriting this entire module. the goal is to get incoming change compatibility with zip317 -fv
         if scan_internal_scope_if_outgoing && *is_outgoing_transaction {
-            let (Ok(external_incoming_viewing_key), Ok(external_outgoing_viewing_key)) = (
-                D::wc_to_external_incoming_viewing_key(&self.key),
-                D::wc_to_external_outgoing_viewing_key(&self.key),
-            ) else {
-                // skip scanning if wallet has not viewing capability
-                return;
+            if let Ok(internal_incoming_viewing_key) =
+                D::wc_to_external_incoming_viewing_key(&self.key)
+            {
+                decrypt_and_record_incoming_transactions::<D>(
+                    internal_incoming_viewing_key,
+                    &domain_tagged_outputs,
+                    transaction,
+                    status,
+                    block_time,
+                    self,
+                    arbitrary_memos_with_txids,
+                )
+                .await;
             };
         }
     }
