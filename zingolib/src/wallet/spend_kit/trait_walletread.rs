@@ -221,13 +221,13 @@ impl WalletRead for SpendKit<'_, '_> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cmp::max, num::NonZeroU32};
+    use std::{cmp::max, num::NonZeroU32, sync::Arc};
 
-    use zcash_keys::keys::UnifiedSpendingKey;
-    use zcash_primitives::zip32::AccountId;
-    use zingoconfig::ChainType;
+    use zingoconfig::{ChainType, ZingoConfig};
 
-    use crate::wallet::{data::WitnessTrees, record_book::RefRecordBook};
+    use crate::wallet::{
+        data::WitnessTrees, keys::unified::WalletCapability, record_book::RefRecordBook,
+    };
 
     use super::*;
 
@@ -235,7 +235,6 @@ mod tests {
     fn target_anchor_heights() {
         for tree_height in 1..=10 {
             let params = ChainType::Mainnet;
-            let key = UnifiedSpendingKey::from_seed(&params, &[0; 32], AccountId::ZERO).unwrap();
             let record_book = RefRecordBook::new_empty();
             let tree_height = BlockHeight::from_u32(tree_height);
             let trees = &mut WitnessTrees::default();
@@ -244,7 +243,11 @@ mod tests {
             trees.add_checkpoint(tree_height);
 
             let kit = SpendKit {
-                key,
+                spend_cap: Arc::new(WalletCapability::new_from_seed(
+                    &ZingoConfig::build(params).create(),
+                    &[0; 64],
+                    0,
+                )),
                 params,
                 record_book,
                 trees,

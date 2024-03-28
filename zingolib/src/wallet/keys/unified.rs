@@ -6,16 +6,16 @@ use std::{
 };
 
 use append_only_vec::AppendOnlyVec;
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
-use zcash_primitives::consensus::{NetworkConstants, Parameters};
+use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
 use secp256k1::SecretKey;
-use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
+use zcash_address::unified::{Container, Encoding, Fvk, Typecode, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
-use zcash_encoding::Vector;
+use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 use zingoconfig::ZingoConfig;
@@ -95,6 +95,48 @@ pub struct ReceiverSelection {
     pub transparent: bool,
 }
 
+impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
+    type Error = io::Error;
+
+    fn try_from(value: &WalletCapability) -> Result<Self, Self::Error> {
+        let transparent = &value.transparent;
+        let sapling = &value.sapling;
+        let orchard = &value.orchard;
+        match (transparent, sapling, orchard) {
+            (Capability::Spend(tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
+                let mut key_bytes = Vec::new();
+                // orchard Era usk
+                //key_bytes.write_u32::<LittleEndian>(BranchId::Nu5.into());
+
+                let okey_bytes = okey.to_bytes();
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::Orchard) as usize);
+                CompactSize::write(&mut key_bytes, okey_bytes.len());
+                //key_bytes.write(okey_bytes);
+
+                let skey_bytes = skey.to_bytes();
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::Sapling) as usize);
+                CompactSize::write(&mut key_bytes, skey_bytes.len());
+                // key_bytes.write(&skey_bytes);
+
+                let mut tkey_bytes = Vec::new();
+                tkey_bytes.write(tkey.private_key.as_ref());
+                tkey_bytes.write(&tkey.chain_code);
+
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::P2pkh) as usize);
+                CompactSize::write(&mut key_bytes, tkey_bytes.len());
+                // key_bytes.write(&tkey_bytes);
+
+                UnifiedSpendingKey::from_bytes(Era::Orchard, &key_bytes).map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidInput, format!("bad usk: {e}"))
+                })
+            }
+            _otherwise => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "don't have spend keys",
+            )),
+        }
+    }
+}
 impl ReadableWriteable<()> for ReceiverSelection {
     const VERSION: u8 = 1;
 

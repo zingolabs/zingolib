@@ -207,16 +207,11 @@ impl super::LightWallet {
         } = context_write_lock.deref_mut()
         {
             Ok(SpendKit::<'book, 'trees> {
-                key: {
+                spend_cap: {
                     let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
                     let seed = mnemonic.to_seed("");
                     let account_id = AccountId::ZERO;
-                    UnifiedSpendingKey::from_seed(
-                        &self.transaction_context.config.chain,
-                        &seed,
-                        account_id,
-                    )
-                    .expect("should be able to create a unified spend key")
+                    self.wallet_capability()
                 },
                 params: self.transaction_context.config.chain,
                 record_book: RefRecordBook::new_from_remote_txid_hashmap(all_remote_transactions), //review! if there are already pending transactions, dont assemble a spend_kit
