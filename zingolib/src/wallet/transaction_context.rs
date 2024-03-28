@@ -46,4 +46,5 @@ impl TransactionContext {
     }
 }
 
+/// only contains code for scanning full transactions. most of our data is gleaned from compact transactions, scanned differently
 pub mod scanning;

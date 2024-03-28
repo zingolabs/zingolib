@@ -410,7 +410,7 @@ impl TransactionContext {
             return;
         };
 
-        create_and_record_incoming_transactions::<D>(
+        decrypt_and_record_incoming_transactions::<D>(
             ivk,
             &domain_tagged_outputs,
             transaction,
@@ -418,7 +418,8 @@ impl TransactionContext {
             block_time,
             self,
             arbitrary_memos_with_txids,
-        );
+        )
+        .await;
 
         for (_domain, output) in domain_tagged_outputs {
             outgoing_metadatas.extend(
@@ -496,7 +497,7 @@ impl TransactionContext {
     }
 }
 
-pub async fn create_and_record_incoming_transactions<D>(
+pub async fn decrypt_and_record_incoming_transactions<D>(
     incoming_viewing_key: <D as Domain>::IncomingViewingKey,
     domain_tagged_outputs: &Vec<(D, <<D as DomainWalletExt>::Bundle as Bundle<D>>::Output)>,
     transaction: &Transaction,
