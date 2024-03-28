@@ -3661,8 +3661,8 @@ mod basic_transactions {
     use zingolib::{get_base_address, lightclient::LightClient};
 
     async fn standard_send(
-        client1: LightClient,
-        client2: LightClient,
+        client1: &LightClient,
+        client2: &LightClient,
         amount: u64,
         // pool: String,
         memo: Option<MemoBytes>,
@@ -3683,16 +3683,17 @@ mod basic_transactions {
     async fn through_node_standard_send() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        standard_send(faucet, recipient, 100, None).await;
 
-        // let sapling_dust = 100;
-        // println!(
-        //     "scenario initial
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
+        let sapling_dust = 5;
+        println!(
+            "scenario initial
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
+        standard_send(&faucet, &recipient, sapling_dust, None).await;
+
         // let proposal = faucet
         //     .do_send(vec![(
         //         &get_base_address!(recipient, "sapling"),
@@ -3702,24 +3703,24 @@ mod basic_transactions {
         //     .await
         //     .unwrap();
 
-        // println!(
-        //     "sent to recipient
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-        // zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-        //     .await
-        //     .unwrap();
+        println!(
+            "sent to recipient
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
 
-        // println!(
-        //     "synced recipient
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
+        println!(
+            "synced recipient
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
         // assert_eq!(
         //     recipient.do_shield(&[Pool::Sapling], None).await,
         //     Err(
