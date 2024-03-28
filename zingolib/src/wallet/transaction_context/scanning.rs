@@ -5,18 +5,18 @@ use crate::{
         keys::{address_from_pubkeyhash, unified::WalletCapability},
         notes::ShieldedNoteInterface,
         traits::{
-            self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
-            ShieldedOutputExt as _, Spend as _, ToBytes as _,
+            self as zingo_traits, Bundle, DomainWalletExt, Recipient as _, ShieldedOutputExt as _,
+            Spend as _, ToBytes as _,
         },
         transactions::TxMapAndMaybeTrees,
     },
 };
-use orchard::note_encryption::OrchardDomain;
+use orchard::{keys::IncomingViewingKey, note_encryption::OrchardDomain};
 use sapling_crypto::note_encryption::SaplingDomain;
 use std::{collections::HashSet, convert::TryInto, sync::Arc};
 use tokio::sync::RwLock;
 use zcash_client_backend::address::{Address, UnifiedAddress};
-use zcash_note_encryption::try_output_recovery_with_ovk;
+use zcash_note_encryption::{try_output_recovery_with_ovk, Domain};
 use zcash_primitives::{
     memo::{Memo, MemoBytes},
     transaction::{Transaction, TxId},
@@ -25,7 +25,9 @@ use zingo_memo::{parse_zingo_memo, ParsedMemo};
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::ZingoConfig;
 
-impl super::TransactionContext {
+use super::TransactionContext;
+
+impl TransactionContext {
     #[allow(clippy::too_many_arguments)]
     async fn execute_bundlescans_internal(
         &self,
@@ -408,49 +410,16 @@ impl super::TransactionContext {
             return;
         };
 
-        let decrypt_attempts =
-            zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
-                .into_iter()
-                .enumerate();
-        for (output_index, decrypt_attempt) in decrypt_attempts {
-            let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
-                Some(plaintext) => plaintext,
-                _ => continue,
-            };
-            let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-            if let Some(height) = status.get_broadcast_height() {
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .add_pending_note::<D>(
-                        transaction.txid(),
-                        height,
-                        block_time as u64,
-                        note.clone(),
-                        to,
-                        output_index,
-                    );
-            }
-            let memo = memo_bytes
-                .clone()
-                .try_into()
-                .unwrap_or(Memo::Future(memo_bytes));
-            if let Memo::Arbitrary(ref wallet_internal_data) = memo {
-                match parse_zingo_memo(*wallet_internal_data.as_ref()) {
-                    Ok(parsed_zingo_memo) => {
-                        arbitrary_memos_with_txids.push((parsed_zingo_memo, transaction.txid()));
-                    }
-                    Err(e) => {
-                        let _memo_error: ZingoLibResult<()> =
-                            ZingoLibError::CouldNotDecodeMemo(e).handle();
-                    }
-                }
-            }
-            self.transaction_metadata_set
-                .write()
-                .await
-                .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
-        }
+        create_and_record_incoming_transactions::<D>(
+            ivk,
+            &domain_tagged_outputs,
+            transaction,
+            status,
+            block_time,
+            self,
+            arbitrary_memos_with_txids,
+        );
+
         for (_domain, output) in domain_tagged_outputs {
             outgoing_metadatas.extend(
                 match try_output_recovery_with_ovk::<
@@ -524,5 +493,69 @@ impl super::TransactionContext {
                 },
             );
         }
+    }
+}
+
+pub async fn create_and_record_incoming_transactions<D>(
+    incoming_viewing_key: <D as Domain>::IncomingViewingKey,
+    domain_tagged_outputs: &Vec<(D, <<D as DomainWalletExt>::Bundle as Bundle<D>>::Output)>,
+    transaction: &Transaction,
+    status: ConfirmationStatus,
+    block_time: u32,
+    records: &TransactionContext,
+    arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
+) where
+    D: DomainWalletExt,
+    D::Note: Clone + PartialEq,
+    D::OutgoingViewingKey: std::fmt::Debug,
+    D::Recipient: zingo_traits::Recipient,
+    D::Memo: zingo_traits::ToBytes<512>,
+{
+    let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
+        &[incoming_viewing_key],
+        &domain_tagged_outputs,
+    )
+    .into_iter()
+    .enumerate();
+    for (output_index, decrypt_attempt) in decrypt_attempts {
+        let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
+            Some(plaintext) => plaintext,
+            _ => continue,
+        };
+        let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
+        if let Some(height) = status.get_broadcast_height() {
+            records
+                .transaction_metadata_set
+                .write()
+                .await
+                .add_pending_note::<D>(
+                    transaction.txid(),
+                    height,
+                    block_time as u64,
+                    note.clone(),
+                    to,
+                    output_index,
+                );
+        }
+        let memo = memo_bytes
+            .clone()
+            .try_into()
+            .unwrap_or(Memo::Future(memo_bytes));
+        if let Memo::Arbitrary(ref wallet_internal_data) = memo {
+            match parse_zingo_memo(*wallet_internal_data.as_ref()) {
+                Ok(parsed_zingo_memo) => {
+                    arbitrary_memos_with_txids.push((parsed_zingo_memo, transaction.txid()));
+                }
+                Err(e) => {
+                    let _memo_error: ZingoLibResult<()> =
+                        ZingoLibError::CouldNotDecodeMemo(e).handle();
+                }
+            }
+        }
+        records
+            .transaction_metadata_set
+            .write()
+            .await
+            .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
     }
 }
