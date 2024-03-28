@@ -92,7 +92,6 @@ impl TransactionContext {
         block_time: u32,
         price: Option<f64>,
     ) {
-        dbg!("beginning scan_full_tx");
         // Set up data structures to record scan results
         let mut txid_indexed_zingo_memos = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
@@ -115,7 +114,6 @@ impl TransactionContext {
         }
         let mut outgoing_metadatas = vec![];
         // Execute scanning operations
-        dbg!("beginning bundlescan_internal");
         self.execute_bundlescans_internal(
             transaction,
             status,
@@ -127,7 +125,6 @@ impl TransactionContext {
         )
         .await;
 
-        dbg!("bundlescanned_internal");
         // Post process scan results
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
