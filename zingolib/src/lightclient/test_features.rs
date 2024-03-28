@@ -42,7 +42,7 @@ impl LightClient {
         let steps = proposal.steps();
         assert_eq!(txids.len(), steps.len());
         for (index, step) in proposal.steps().iter().enumerate() {
-            let created_txid = txids[index];
+            let created_txid = dbg!(txids[index]);
             //check that the new transaction has the properties
             let created_transaction = tmamt
                 .current
@@ -50,7 +50,7 @@ impl LightClient {
                 .expect("new txid is in record");
             assert_eq!(created_transaction.status.is_confirmed(), confirmed);
             assert!(created_transaction.is_outgoing_transaction());
-            let transaction_balance = created_transaction.net_spent();
+            let transaction_balance = dbg!(created_transaction.net_spent());
             // assert_eq!(transaction_balance, step_net_spent(&step).unwrap());
             // *total_balance_before -= transaction_balance;
 

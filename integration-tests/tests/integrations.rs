@@ -3680,53 +3680,81 @@ mod basic_transactions {
             scenarios::faucet_recipient_default().await;
 
         let sapling_dust = 5;
-        println!(
-            "scenario initial
-            faucet: {}
-            recipient: {}",
-            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        );
-        let proposal = faucet
+        let mut proposal = faucet
             .do_propose(vec![(
                 &get_base_address!(recipient, "sapling"),
-                sapling_dust,
+                200000,
                 None,
             )])
             .await
             .unwrap();
-        let txids = faucet.do_send_proposal().await.unwrap();
+        let mut txids = faucet.do_send_proposal().await.unwrap();
 
-        faucet
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        println!(
+            "synced recipient
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
+
+        proposal = recipient
+            .do_propose(vec![(&get_base_address!(faucet, "sapling"), 1, None)])
+            .await
+            .unwrap();
+        txids = recipient.do_send_proposal().await.unwrap();
+
+        println!(
+            "sent recipient
+            faucet: {}
+            recipient: {}",
+            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        );
+
+        recipient
             .check_chain_matches_proposal(proposal.clone(), txids.clone(), false)
             .await;
-        // standard_send(&faucet, &recipient, sapling_dust, None).await;
-
-        println!(
-            "sent to recipient
-            faucet: {}
-            recipient: {}",
-            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        );
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 0)
-            .await
-            .unwrap();
-
-        faucet
+        recipient
             .check_chain_matches_proposal(proposal, txids, true)
             .await;
-
         println!(
-            "synced both
+            "synced recipient
             faucet: {}
             recipient: {}",
             serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
         );
+
+        // faucet
+        //     .check_chain_matches_proposal(proposal.clone(), txids.clone(), false)
+        //     .await;
+        // standard_send(&faucet, &recipient, sapling_dust, None).await;
+
+        // println!(
+        //     "sent to recipient
+        //     faucet: {}
+        //     recipient: {}",
+        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        // );
+        // zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        //     .await
+        //     .unwrap();
+        // println!(
+        //     "scenario initial
+        //     faucet: {}
+        //     recipient: {}",
+        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
+        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        // );
         // assert_eq!(
         //     recipient.do_shield(&[Pool::Sapling], None).await,
         //     Err(
