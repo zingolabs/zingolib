@@ -3692,16 +3692,21 @@ mod basic_transactions {
             serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
         );
-        standard_send(&faucet, &recipient, sapling_dust, None).await;
+        let proposal = faucet
+            .do_propose(vec![(
+                &get_base_address!(recipient, "sapling"),
+                sapling_dust,
+                None,
+            )])
+            .await
+            .unwrap();
+        dbg!("proposed");
+        let txids = faucet.do_send_proposal().await.unwrap();
 
-        // let proposal = faucet
-        //     .do_send(vec![(
-        //         &get_base_address!(recipient, "sapling"),
-        //         sapling_dust,
-        //         None,
-        //     )])
-        //     .await
-        //     .unwrap();
+        faucet
+            .check_chain_matches_proposal(proposal.clone(), txids.clone(), false)
+            .await;
+        // standard_send(&faucet, &recipient, sapling_dust, None).await;
 
         println!(
             "sent to recipient
@@ -3713,6 +3718,10 @@ mod basic_transactions {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
+
+        faucet
+            .check_chain_matches_proposal(proposal, txids, true)
+            .await;
 
         println!(
             "synced recipient
