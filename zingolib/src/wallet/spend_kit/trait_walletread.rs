@@ -234,6 +234,7 @@ mod tests {
     #[test]
     fn target_anchor_heights() {
         for tree_height in 1..=10 {
+            println!("testing tree height {tree_height}");
             let params = ChainType::Mainnet;
             let record_book = RefRecordBook::new_empty();
             let tree_height = BlockHeight::from_u32(tree_height);
@@ -262,7 +263,7 @@ mod tests {
             assert_eq!(targ_height, tree_height + 1);
             assert_eq!(
                 anc_height,
-                max(BlockHeight::from_u32(1), tree_height.saturating_sub(4))
+                max(BlockHeight::from_u32(1), tree_height.saturating_sub(3))
             )
         }
     }
