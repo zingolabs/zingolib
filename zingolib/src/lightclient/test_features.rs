@@ -1,9 +1,17 @@
-use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::proposal::{Proposal, Step};
 use zcash_primitives::transaction::fees::zip317::FeeRule;
 
 use crate::wallet::{record_book::NoteRecordIdentifier, transactions::Proposa};
 
 use super::*;
+
+pub fn step_net_spent(
+    step: &Step<NoteRecordIdentifier>,
+) -> Result<u64, zcash_primitives::transaction::components::amount::BalanceError> {
+    let fee = step.balance().fee_required().into_u64();
+    let sent = step.transaction_request().total()?;
+    Ok(fee + sent.into_u64())
+}
 
 impl LightClient {
     pub async fn new_client_from_save_buffer(&self) -> ZingoLibResult<Self> {
@@ -42,7 +50,7 @@ impl LightClient {
             assert_eq!(created_transaction.status.is_confirmed(), confirmed);
             assert!(created_transaction.is_outgoing_transaction());
             let transaction_balance = created_transaction.net_spent();
-            assert_eq!(transaction_balance, step.balance().total().into_u64());
+            assert_eq!(transaction_balance, step_net_spent(&step).unwrap());
             // *total_balance_before -= transaction_balance;
 
             // we could maybe check that all input transparents are spent
