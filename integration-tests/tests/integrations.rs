@@ -3695,7 +3695,6 @@ mod basic_transactions {
             )])
             .await
             .unwrap();
-        dbg!("proposed");
         let txids = faucet.do_send_proposal().await.unwrap();
 
         faucet
@@ -3713,13 +3712,16 @@ mod basic_transactions {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 0)
+            .await
+            .unwrap();
 
         faucet
             .check_chain_matches_proposal(proposal, txids, true)
             .await;
 
         println!(
-            "synced recipient
+            "synced both
             faucet: {}
             recipient: {}",
             serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
