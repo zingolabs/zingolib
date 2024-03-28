@@ -80,7 +80,7 @@ impl SpendKit<'_, '_> {
         )
         .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?;
 
-        *self.latest_proposal = Some(proposal.clone());
+        *self.latest_proposal = Some(Proposa::Transfer(proposal.clone()));
         Ok(proposal)
         //review! error typing
     }
@@ -92,25 +92,52 @@ impl SpendKit<'_, '_> {
         Prover: SpendProver + OutputProver,
     {
         if let Some(proposal) = self.latest_proposal.clone() {
-            let _txids = zcash_client_backend::data_api::wallet::create_proposed_transactions::<
-                SpendKit,
-                ChainType,
-                ZingoLibError,
-                Zip317FeeRule,
-                <Self as InputSource>::NoteRef, // note ref
-            >(
-                self,
-                &self.params.clone(),
-                &sapling_prover,
-                &sapling_prover,
-                &UnifiedSpendingKey::try_from(self.spend_cap.as_ref())
-                    .map_err(|e| CreateTransactionsError::CannotSpend(e.to_string()))?,
-                OvkPolicy::Sender,
-                &proposal,
-            )
-            .map_err(|e| ZingoLibError::CalculateTransaction(format!("{e:?}")));
+            match proposal {
+                Proposa::Transfer(prop) => {
+                    let _txids =
+                        zcash_client_backend::data_api::wallet::create_proposed_transactions::<
+                            SpendKit,
+                            ChainType,
+                            ZingoLibError,
+                            Zip317FeeRule,
+                            <Self as InputSource>::NoteRef, // note ref
+                        >(
+                            self,
+                            &self.params.clone(),
+                            &sapling_prover,
+                            &sapling_prover,
+                            &UnifiedSpendingKey::try_from(self.spend_cap.as_ref())
+                                .map_err(|e| CreateTransactionsError::CannotSpend(e.to_string()))?,
+                            OvkPolicy::Sender,
+                            &prop,
+                        )
+                        .map_err(|e| ZingoLibError::CalculateTransaction(format!("{e:?}")));
 
-            Ok(&self.local_sending_transactions)
+                    Ok(&self.local_sending_transactions)
+                }
+                Proposa::Shield(prop) => {
+                    let _txids =
+                        zcash_client_backend::data_api::wallet::create_proposed_transactions::<
+                            SpendKit,
+                            ChainType,
+                            ZingoLibError,
+                            Zip317FeeRule,
+                            Infallible,
+                        >(
+                            self,
+                            &self.params.clone(),
+                            &sapling_prover,
+                            &sapling_prover,
+                            &UnifiedSpendingKey::try_from(self.spend_cap.as_ref())
+                                .map_err(|e| CreateTransactionsError::CannotSpend(e.to_string()))?,
+                            OvkPolicy::Sender,
+                            &prop,
+                        )
+                        .map_err(|e| ZingoLibError::CalculateTransaction(format!("{e:?}")));
+
+                    Ok(&self.local_sending_transactions)
+                }
+            }
         } else {
             Err(CreateTransactionsError::NoProposal)
         }
@@ -152,7 +179,7 @@ impl SpendKit<'_, '_> {
         )
         .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?;
 
-        //        *self.latest_proposal = Some(proposed_shield.clone());
+        *self.latest_proposal = Some(Proposa::Shield(proposed_shield.clone()));
         Ok(proposed_shield)
     }
 }

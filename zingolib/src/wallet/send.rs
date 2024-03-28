@@ -32,7 +32,7 @@ use self::errors::SendProposedTransferError;
 
 use super::record_book::RefRecordBook;
 
-use super::transactions::{Proposa, TxMapAndMaybeTrees};
+use super::transactions::{Proposa, TransferProposal, TxMapAndMaybeTrees};
 use super::utils::get_price;
 use super::Pool;
 use crate::wallet::spend_kit::SpendKit;
@@ -106,7 +106,10 @@ impl super::LightWallet {
     }
 
     /// Propose a transfer, calculate fees, and hold the proposal in memory. (1, except in the z->tt case where there will be 2.). If a previous transfer was proposed but not sent, it will be overwritten in the buffer.
-    pub async fn propose_transfer(&self, request: TransactionRequest) -> ZingoLibResult<Proposa> {
+    pub async fn propose_transfer(
+        &self,
+        request: TransactionRequest,
+    ) -> ZingoLibResult<TransferProposal> {
         let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
             .transaction_context
             .transaction_metadata_set

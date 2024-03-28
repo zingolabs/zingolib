@@ -24,9 +24,9 @@ impl LightClient {
         .await
         .map_err(ZingoLibError::CantReadWallet)
     }
-    pub async fn check_chain_matches_proposal(
+    pub async fn check_chain_matches_proposal<T, U>(
         &self,
-        proposal: Proposa,
+        proposal: Proposal<T, U>,
         txids: Vec<TxId>,
         confirmed: bool,
         // total_balance_before: &mut u64,

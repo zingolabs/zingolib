@@ -2,7 +2,7 @@ use crate::{
     error::ZingoLibError,
     wallet::{
         send::{build_transaction_request_from_tuples, errors::DoProposeError},
-        transactions::{Proposa, TxMapAndMaybeTrees},
+        transactions::{Proposa, TransferProposal, TxMapAndMaybeTrees},
         Pool, SendProgress,
     },
 };
@@ -82,7 +82,7 @@ impl LightClient {
     pub async fn do_propose(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<Proposa, DoProposeError> {
+    ) -> Result<TransferProposal, DoProposeError> {
         let request =
             build_transaction_request_from_tuples(self.config.chain, address_amount_memo_tuples)
                 .map_err(|e| DoProposeError::RequestConstruction(e))?;
