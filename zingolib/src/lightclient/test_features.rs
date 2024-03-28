@@ -31,6 +31,7 @@ impl LightClient {
         confirmed: bool,
         // total_balance_before: &mut u64,
     ) {
+        // we will be using dbg! for now instead of assert to gain more info
         let tmamt = self
             .wallet
             .transaction_context
