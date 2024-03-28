@@ -408,9 +408,10 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        let (Ok(external_incoming_viewing_key), Ok(external_outgoing_viewing_key)) =
-            (D::wc_to_ivk(&self.key), D::wc_to_ovk(&self.key))
-        else {
+        let (Ok(external_incoming_viewing_key), Ok(external_outgoing_viewing_key)) = (
+            D::wc_to_external_incoming_viewing_key(&self.key),
+            D::wc_to_external_outgoing_viewing_key(&self.key),
+        ) else {
             // skip scanning if wallet has not viewing capability
             return;
         };
@@ -502,9 +503,10 @@ impl TransactionContext {
 
         // now we have decrypted everything about the transaction except anything to do with the internal incoming viewing key. in the intercompatibility case, we may want to check the internal incoming viewing key for sapling. in the present case, i am going to write fast code that doesnt involve rewriting this entire module. the goal is to get incoming change compatibility with zip317 -fv
         if scan_internal_scope_if_outgoing && *is_outgoing_transaction {
-            let (Ok(external_incoming_viewing_key), Ok(external_outgoing_viewing_key)) =
-                (D::wc_to_ivk(&self.key), D::wc_to_ovk(&self.key))
-            else {
+            let (Ok(external_incoming_viewing_key), Ok(external_outgoing_viewing_key)) = (
+                D::wc_to_external_incoming_viewing_key(&self.key),
+                D::wc_to_external_outgoing_viewing_key(&self.key),
+            ) else {
                 // skip scanning if wallet has not viewing capability
                 return;
             };

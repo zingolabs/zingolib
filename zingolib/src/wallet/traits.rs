@@ -482,8 +482,12 @@ where
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
+    fn wc_to_external_incoming_viewing_key(
+        wc: &WalletCapability,
+    ) -> Result<Self::IncomingViewingKey, String>;
+    fn wc_to_external_outgoing_viewing_key(
+        wc: &WalletCapability,
+    ) -> Result<Self::OutgoingViewingKey, String>;
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
 }
 
@@ -552,10 +556,14 @@ impl DomainWalletExt for SaplingDomain {
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+    fn wc_to_external_incoming_viewing_key(
+        wc: &WalletCapability,
+    ) -> Result<Self::IncomingViewingKey, String> {
         Self::IncomingViewingKey::try_from(wc)
     }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+    fn wc_to_external_outgoing_viewing_key(
+        wc: &WalletCapability,
+    ) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
 
@@ -629,10 +637,14 @@ impl DomainWalletExt for OrchardDomain {
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+    fn wc_to_external_incoming_viewing_key(
+        wc: &WalletCapability,
+    ) -> Result<Self::IncomingViewingKey, String> {
         Self::IncomingViewingKey::try_from(wc)
     }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+    fn wc_to_external_outgoing_viewing_key(
+        wc: &WalletCapability,
+    ) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
 
