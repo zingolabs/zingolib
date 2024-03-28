@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
+use zcash_primitives::transaction::TxId;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 
@@ -115,12 +116,12 @@ pub async fn send_value_between_clients_and_sync(
     recipient: &LightClient,
     value: u64,
     address_type: &str,
-) -> Result<String, String> {
+) -> Result<Vec<TxId>, String> {
     debug!(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
     );
-    let txid = sender
+    let txids = sender
         .do_send(vec![(
             &zingolib::get_base_address!(recipient, address_type),
             value,
@@ -130,7 +131,7 @@ pub async fn send_value_between_clients_and_sync(
         .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
     recipient.do_sync(false).await?;
-    Ok(txid)
+    Ok(txids)
 }
 
 // This function increases the chain height reliably (with polling) but
@@ -248,6 +249,7 @@ pub mod scenarios {
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::increase_height_and_wait_for_client;
+    use zcash_primitives::transaction::TxId;
     use zingolib::testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
@@ -651,16 +653,16 @@ pub mod scenarios {
         ChildProcessHandler,
         LightClient,
         LightClient,
-        Option<String>,
-        Option<String>,
-        Option<String>,
+        Option<Vec<TxId>>,
+        Option<Vec<TxId>>,
+        Option<Vec<TxId>>,
     ) {
         let (regtest_manager, child_process_handler, faucet, recipient) =
             faucet_recipient(mine_to_pool, regtest_network).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let orchard_txid = if let Some(funds) = orchard_funds {
+        let orchard_txids = if let Some(funds) = orchard_funds {
             Some(
                 faucet
                     .do_send(vec![(
@@ -674,7 +676,7 @@ pub mod scenarios {
         } else {
             None
         };
-        let sapling_txid = if let Some(funds) = sapling_funds {
+        let sapling_txids = if let Some(funds) = sapling_funds {
             Some(
                 faucet
                     .do_send(vec![(
@@ -688,7 +690,7 @@ pub mod scenarios {
         } else {
             None
         };
-        let transparent_txid = if let Some(funds) = transparent_funds {
+        let transparent_txids = if let Some(funds) = transparent_funds {
             Some(
                 faucet
                     .do_send(vec![(
@@ -711,9 +713,9 @@ pub mod scenarios {
             child_process_handler,
             faucet,
             recipient,
-            orchard_txid,
-            sapling_txid,
-            transparent_txid,
+            orchard_txids,
+            sapling_txids,
+            transparent_txids,
         )
     }
     pub async fn faucet_funded_recipient_default(
@@ -723,7 +725,7 @@ pub mod scenarios {
         ChildProcessHandler,
         LightClient,
         LightClient,
-        String,
+        Vec<TxId>,
     ) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let (
@@ -731,9 +733,9 @@ pub mod scenarios {
             cph,
             faucet,
             recipient,
-            orchard_txid,
-            _sapling_txid,
-            _transparent_txid,
+            orchard_txids,
+            _sapling_txids,
+            _transparent_txids,
         ) = faucet_funded_recipient(
             Some(orchard_funds),
             None,
@@ -747,7 +749,7 @@ pub mod scenarios {
             cph,
             faucet,
             recipient,
-            orchard_txid.unwrap(),
+            orchard_txids.unwrap(),
         )
     }
 

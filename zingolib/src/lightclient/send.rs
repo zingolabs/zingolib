@@ -117,11 +117,11 @@ impl LightClient {
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<String, String> {
+    ) -> Result<Vec<TxId>, String> {
         self.do_propose(address_amount_memo_tuples)
             .await
             .map_err(|e| e.to_string())?;
-        self.do_send_proposal().await.map(|ok| "todo".to_string())
+        self.do_send_proposal().await
     }
 
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {

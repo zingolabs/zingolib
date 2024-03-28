@@ -140,7 +140,7 @@ async fn sent_transaction_reorged_into_mempool() {
             transparent_balance: Some(0)
         }
     );
-    let txid = light_client
+    let txids = light_client
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             10_000,
@@ -148,7 +148,9 @@ async fn sent_transaction_reorged_into_mempool() {
         )])
         .await
         .unwrap();
-    println!("{}", txid);
+    txids.iter().for_each(|txid| {
+        println!("{}", txid.to_string());
+    });
     recipient.do_sync(false).await.unwrap();
     println!("{}", recipient.do_list_transactions().await.pretty(2));
 
