@@ -137,7 +137,7 @@ impl LightClient {
         &self,
         _pools_to_shield: &[Pool],
         _address: Option<String>,
-    ) -> Result<String, String> {
+    ) -> Result<Vec<TxId>, String> {
         let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
             .wallet
             .transaction_context
@@ -149,6 +149,8 @@ impl LightClient {
             .assemble_spend_kit(&mut context_write_lock)
             .await?;
 
-        Ok("todo".to_string())
+        spend_kit.propose_shielding()?;
+        std::mem::drop(spend_kit);
+        self.do_send_proposal().await
     }
 }
