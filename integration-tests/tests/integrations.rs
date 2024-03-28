@@ -3715,7 +3715,7 @@ mod basic_transactions {
             serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
         );
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
 
