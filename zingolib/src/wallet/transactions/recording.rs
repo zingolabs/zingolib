@@ -170,6 +170,13 @@ impl TxMapAndMaybeTrees {
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
+    // Can be triggered in multiple ways
+    // -- spent nullifier checking
+    // -- we create a transaction where we spend a nullifier
+    // This has multiple functions.
+    // -- mark spent notes as being spent
+    // -- trigger change calculations
+    // deprecating the latter into a function of scan_full_transaction that runs conditionally on outgoing transactions
     #[allow(clippy::too_many_arguments)]
     pub fn found_spent_nullifier(
         &mut self,
