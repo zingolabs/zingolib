@@ -789,7 +789,7 @@ struct ProposeCommand {}
 impl Command for ProposeCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Propose a transfer of ZEC to the given address(es)
+            Propose a transfer of ZEC to the given address(es) prior to sending.
             Usage:
             propose <address> <amount in zatoshis> "optional_memo"
             OR
@@ -803,7 +803,7 @@ impl Command for ProposeCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Propose a transfer of ZEC to the given address(es)"
+        "Propose a transfer of ZEC to the given address(es) prior to sending"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -910,12 +910,13 @@ impl Command for ProposeCommand {
                 return e;
             }
 
-            match lightclient.do_send(tos).await {
-                Ok(transaction_id) => {
-                    object! { "txid" => transaction_id }
+            match lightclient.do_propose(tos).await {
+                Ok(proposal) => {
+                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required()))}
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    object! { "error" => "todo" }
+                    // object! { "error" => e }
                 }
             }
             .pretty(2)
@@ -927,21 +928,24 @@ struct SendCommand {}
 impl Command for SendCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Send ZEC to a given address(es)
+            Create and broadcast a proposed transfer of ZEC. See `propose` for more information on creating a proposal.
             Usage:
-            send <address> <amount in zatoshis> "optional_memo"
+            propose <address> <amount in zatoshis> "optional_memo"
+            send
             OR
-            send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'
+            propose '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'
+            send
 
-            NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
+            NOTE: The fee required to send this transaction will be displayed during proposal and is additionally deducted from your balance.
             Example:
-            send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+            propose ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+            send
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Send ZEC to the given address"
+        "Create and broadcast a proposed transfer of ZEC. See `propose` for more information on creating a proposal."
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -953,107 +957,9 @@ impl Command for SendCommand {
         }
 
         RT.block_on(async move {
-            // Check for a single argument that can be parsed as JSON
-            let send_args = if args.len() == 1 {
-                let arg_list = args[0];
-
-                let json_args = match json::parse(arg_list) {
-                    Ok(j) => j,
-                    Err(e) => {
-                        let es = format!("Couldn't understand JSON: {}", e);
-                        return format!("{}\n{}", es, self.help());
-                    }
-                };
-
-                if !json_args.is_array() {
-                    return format!("Couldn't parse argument as array\n{}", self.help());
-                }
-
-                let fee = u64::from(MINIMUM_FEE);
-                let maybe_send_args = json_args
-                    .members()
-                    .map(|j| {
-                        if !j.has_key("address") || !j.has_key("amount") {
-                            Err("Need 'address' and 'amount'\n".to_string())
-                        } else {
-                            let amount = Some(j["amount"].as_u64().unwrap());
-
-                            match amount {
-                                Some(amt) => Ok((
-                                    j["address"].as_str().unwrap().to_string(),
-                                    amt,
-                                    j["memo"].as_str().map(|s| s.to_string()),
-                                )),
-                                None => Err(format!(
-                                    "Not enough in wallet to pay transaction fee of {}",
-                                    fee
-                                )),
-                            }
-                        }
-                    })
-                    .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
-
-                match maybe_send_args {
-                    Ok(a) => a.clone(),
-                    Err(s) => {
-                        return format!("Error: {}\n{}", s, self.help());
-                    }
-                }
-            } else if args.len() == 2 || args.len() == 3 {
-                let address = args[0].to_string();
-
-                // Make sure we can parse the amount
-                let value = match args[1].parse::<u64>() {
-                    Ok(amt) => amt,
-                    Err(e) => return format!("Couldn't parse amount: {}", e),
-                };
-
-                let memo = if args.len() == 3 {
-                    Some(args[2].to_string())
-                } else {
-                    None
-                };
-
-                // Memo has to be None if not sending to a shielded address
-                if memo.is_some() && !is_shielded_address(&address, &lightclient.config) {
-                    return format!("Can't send a memo to the non-shielded address {}", address);
-                }
-
-                vec![(args[0].to_string(), value, memo)]
-            } else {
-                return self.help().to_string();
-            };
-
-            // Convert to the right format.
-            let mut error = None;
-            let tos = send_args
-                .iter()
-                .map(|(a, v, m)| {
-                    (
-                        a.as_str(),
-                        *v,
-                        match m {
-                            // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
-                            // interpret it as a hex
-                            Some(s) => match utils::interpret_memo_string(s.clone()) {
-                                Ok(m) => Some(m),
-                                Err(e) => {
-                                    error = Some(format!("Couldn't interpret memo: {}", e));
-                                    None
-                                }
-                            },
-                            None => None,
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
-            if let Some(e) = error {
-                return e;
-            }
-
-            match lightclient.do_send(tos).await {
-                Ok(transaction_id) => {
-                    object! { "txid" => transaction_id }
+            match lightclient.do_send_proposal().await {
+                Ok(txids) => {
+                    object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
                 }
                 Err(e) => {
                     object! { "error" => e }
@@ -1629,6 +1535,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
+        ("propose", Box::new(ProposeCommand {})),
         ("send", Box::new(SendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(DeprecatedNoCommand {})),

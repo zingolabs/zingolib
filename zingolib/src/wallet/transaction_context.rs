@@ -124,6 +124,7 @@ impl TransactionContext {
             &taddrs_set,
         )
         .await;
+
         // Post process scan results
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
