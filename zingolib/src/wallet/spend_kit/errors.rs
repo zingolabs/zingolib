@@ -5,6 +5,7 @@ use crate::error::ZingoLibError;
 #[derive(Debug)]
 pub enum CreateTransactionsError {
     NoProposal,
+    CannotSpend(String),
     CreateTransactions(
         zcash_client_backend::data_api::error::Error<
             ZingoLibError,
@@ -24,6 +25,7 @@ impl std::fmt::Display for CreateTransactionsError {
                 NoProposal => "No proposal! First propose a transfer.".to_string(),
                 CreateTransactions(string) =>
                     format!("Could not calculate transaction: {}", string,),
+                CannotSpend(e) => format!("no spend key: {e}, could not sign"),
             }
         )
     }
