@@ -668,8 +668,8 @@ impl Command for ShieldCommand {
         };
         RT.block_on(async move {
             match lightclient.do_shield(pools_to_shield, address).await {
-                Ok(transaction_id) => {
-                    object! { "txid" => transaction_id }
+                Ok(transaction_ids) => {
+                    object! { "txid" => transaction_ids.first().map(ToString::to_string).unwrap_or_else(|| "shield reported success but something went wrong, no txid".to_string()) }
                 }
                 Err(e) => {
                     object! { "error" => e }

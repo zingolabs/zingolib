@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::Infallible};
 
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::{fees::zip317::FeeRule, TxId};
@@ -8,7 +8,13 @@ use super::{
     record_book::NoteRecordIdentifier,
 };
 
-pub type Proposa = Proposal<FeeRule, NoteRecordIdentifier>;
+pub type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
+pub type ShieldProposal = Proposal<FeeRule, Infallible>;
+#[derive(Clone)]
+pub enum Proposa {
+    Transfer(TransferProposal),
+    Shield(ShieldProposal),
+}
 
 /// data that the spending wallet has, but viewkey wallet does not.
 pub struct SpendingData {

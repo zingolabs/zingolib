@@ -2,7 +2,7 @@ use crate::{
     error::ZingoLibError,
     wallet::{
         send::{build_transaction_request_from_tuples, errors::DoProposeError},
-        transactions::{Proposa, TxMapAndMaybeTrees},
+        transactions::{Proposa, TransferProposal, TxMapAndMaybeTrees},
         Pool, SendProgress,
     },
 };
@@ -82,7 +82,7 @@ impl LightClient {
     pub async fn do_propose(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<Proposa, DoProposeError> {
+    ) -> Result<TransferProposal, DoProposeError> {
         let request =
             build_transaction_request_from_tuples(self.config.chain, address_amount_memo_tuples)
                 .map_err(|e| DoProposeError::RequestConstruction(e))?;
@@ -137,7 +137,7 @@ impl LightClient {
         &self,
         _pools_to_shield: &[Pool],
         _address: Option<String>,
-    ) -> Result<String, String> {
+    ) -> Result<Vec<TxId>, String> {
         let mut context_write_lock: RwLockWriteGuard<'_, TxMapAndMaybeTrees> = self
             .wallet
             .transaction_context
@@ -149,6 +149,8 @@ impl LightClient {
             .assemble_spend_kit(&mut context_write_lock)
             .await?;
 
-        Ok("todo".to_string())
+        spend_kit.propose_shielding()?;
+        std::mem::drop(spend_kit);
+        self.do_send_proposal().await
     }
 }
