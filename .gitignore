@@ -9,6 +9,7 @@ docker-ci/lightwalletd
 target
 wallets/*
 zingocli/regtest/logs/
+zingocli/regtest/data/
 zingocli/regtest/zingo-wallet.dat
 zingocli/target
 zingocli/tests/data/basic_zcashd.conf
