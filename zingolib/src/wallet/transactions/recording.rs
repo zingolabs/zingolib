@@ -579,7 +579,7 @@ impl TxMapAndMaybeTrees {
         txid: TxId,
         output_index: Option<u32>,
         position: Position,
-        fvk: &D::Fvk,
+        fvk: &D::FullViewingKey,
     ) -> ZingoLibResult<()>
     where
         <D as Domain>::Note: PartialEq + Clone,

@@ -310,7 +310,7 @@ impl TrialDecryptions {
                     let config = config.clone();
 
                     workers.push(tokio::spawn(async move {
-                        let Ok(fvk) = D::wc_to_fvk(&wc) else {
+                        let Ok(fvk) = D::wc_to_full_viewing_key(&wc) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };
@@ -442,7 +442,7 @@ where
                         transaction_id,
                         Some(output_index),
                         position + i as u64,
-                        &D::wc_to_fvk(wc).unwrap(),
+                        &D::wc_to_full_viewing_key(wc).unwrap(),
                     )?;
                 }
                 nodes_retention.push((node, retention));

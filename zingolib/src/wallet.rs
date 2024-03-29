@@ -625,7 +625,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::wc_to_fvk(wallet_capability).expect("to get fvk from wc")
+        D::wc_to_full_viewing_key(wallet_capability).expect("to get fvk from wc")
             .diversified_address(*note.diversifier())
             .and_then(|address| {
                 D::ua_from_contained_receiver(wallet_capability, &address)
@@ -856,7 +856,7 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
+        let fvk = D::wc_to_full_viewing_key(&self.wallet_capability()).ok()?;
         let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
