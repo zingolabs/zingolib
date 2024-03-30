@@ -117,7 +117,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Confirmed(self_height) => self_height <= comparison_height,
+            Self::Confirmed(self_height) => self_height < comparison_height,
             _ => false,
         }
     }
