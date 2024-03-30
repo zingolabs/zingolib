@@ -1,6 +1,5 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
@@ -48,6 +47,7 @@ use self::traits::{DomainWalletExt, SpendableNote};
 use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
+    transaction_context::TransactionContext,
     transactions::TransactionMetadataSet,
 };
 use zingoconfig::ZingoConfig;
@@ -58,6 +58,7 @@ pub(crate) mod message;
 pub mod notes;
 pub mod send;
 pub mod traits;
+pub mod transaction_context;
 pub mod transaction_record;
 pub(crate) mod transactions;
 pub mod utils;
