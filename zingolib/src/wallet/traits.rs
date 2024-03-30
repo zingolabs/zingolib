@@ -429,7 +429,8 @@ where
 
     type FullViewingKey: Clone
         + Send
-        + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>;
+        + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
+        + for<'a> TryFrom<&'a WalletCapability>;
 
     type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
