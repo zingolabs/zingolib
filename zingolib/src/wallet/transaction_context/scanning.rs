@@ -24,6 +24,7 @@ use zcash_primitives::{
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::ZingoConfig;
+use zip32::Scope::Internal;
 
 use super::TransactionContext;
 
@@ -409,7 +410,7 @@ impl TransactionContext {
                 .collect::<Vec<_>>();
 
         let (Ok(external_incoming_viewing_key), Ok(external_outgoing_viewing_key)) = (
-            D::wc_to_external_incoming_viewing_key(&self.key),
+            D::wc_scope_to_incoming_viewing_key(&self.key, zip32::Scope::External),
             D::wc_to_external_outgoing_viewing_key(&self.key),
         ) else {
             // skip scanning if wallet has not viewing capability
@@ -504,7 +505,7 @@ impl TransactionContext {
         // now we have decrypted everything about the transaction except anything to do with the internal incoming viewing key. in the intercompatibility case, we may want to check the internal incoming viewing key for sapling. in the present case, i am going to write fast code that doesnt involve rewriting this entire module. the goal is to get incoming change compatibility with zip317 -fv
         if scan_internal_scope_if_outgoing && *is_outgoing_transaction {
             if let Ok(internal_incoming_viewing_key) =
-                D::wc_to_external_incoming_viewing_key(&self.key)
+                D::wc_scope_to_incoming_viewing_key(&self.key, Internal)
             {
                 decrypt_and_record_incoming_transactions::<D>(
                     internal_incoming_viewing_key,

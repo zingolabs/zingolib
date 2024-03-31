@@ -497,12 +497,13 @@ where
     // ) -> <Self as Domain>::IncomingViewingKey {
     //     <Self as Domain>::IncomingViewingKey::new(&full_viewing_key.to_ivk(scope))
     // }
-    fn wc_to_external_incoming_viewing_key(
+    fn wc_scope_to_incoming_viewing_key(
         wc: &WalletCapability,
+        scope: zip32::Scope,
     ) -> Result<Self::IncomingViewingKey, String> {
         Ok(Self::full_viewing_key_scope_to_incoming_viewing_key(
             Self::wc_to_full_viewing_key(wc)?,
-            zip32::Scope::External,
+            scope,
         ))
     }
     fn wc_to_external_outgoing_viewing_key(
