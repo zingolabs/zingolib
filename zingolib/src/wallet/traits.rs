@@ -499,7 +499,12 @@ where
     // }
     fn wc_to_external_incoming_viewing_key(
         wc: &WalletCapability,
-    ) -> Result<Self::IncomingViewingKey, String>;
+    ) -> Result<Self::IncomingViewingKey, String> {
+        Ok(Self::full_viewing_key_scope_to_incoming_viewing_key(
+            Self::wc_to_full_viewing_key(wc)?,
+            zip32::Scope::External,
+        ))
+    }
     fn wc_to_external_outgoing_viewing_key(
         wc: &WalletCapability,
     ) -> Result<Self::OutgoingViewingKey, String>;
@@ -576,14 +581,6 @@ impl DomainWalletExt for SaplingDomain {
         scope: zip32::Scope,
     ) -> <Self as Domain>::IncomingViewingKey {
         <Self as Domain>::IncomingViewingKey::new(&full_viewing_key.to_ivk(scope))
-    }
-    fn wc_to_external_incoming_viewing_key(
-        wc: &WalletCapability,
-    ) -> Result<Self::IncomingViewingKey, String> {
-        Ok(Self::full_viewing_key_scope_to_incoming_viewing_key(
-            Self::wc_to_full_viewing_key(wc)?,
-            zip32::Scope::External,
-        ))
     }
     fn wc_to_external_outgoing_viewing_key(
         wc: &WalletCapability,
@@ -666,14 +663,6 @@ impl DomainWalletExt for OrchardDomain {
         scope: zip32::Scope,
     ) -> <Self as Domain>::IncomingViewingKey {
         <Self as Domain>::IncomingViewingKey::new(&full_viewing_key.to_ivk(scope))
-    }
-    fn wc_to_external_incoming_viewing_key(
-        wc: &WalletCapability,
-    ) -> Result<Self::IncomingViewingKey, String> {
-        Ok(Self::full_viewing_key_scope_to_incoming_viewing_key(
-            Self::wc_to_full_viewing_key(wc)?,
-            zip32::Scope::External,
-        ))
     }
     fn wc_to_external_outgoing_viewing_key(
         wc: &WalletCapability,
