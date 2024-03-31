@@ -32,9 +32,11 @@ impl ConfirmationStatus {
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
     /// assert_eq!(status.is_broadcast(), true);
+    /// assert_eq!(status.is_confirmed(), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_broadcast(), false);
+    /// assert_eq!(status.is_confirmed(), true);
     /// ```
     pub fn is_broadcast(&self) -> bool {
         matches!(self, Self::Broadcast(_))
@@ -48,9 +50,11 @@ impl ConfirmationStatus {
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
     /// assert_eq!(status.is_confirmed(), false);
+    /// assert_eq!(status.is_broadcast(), true);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_confirmed(), true);
+    /// assert_eq!(status.is_broadcast(), false);
     /// ```
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
@@ -63,13 +67,13 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_after_or_at(&8.into()), true);
+    /// assert_eq!(status.is_confirmed_after_or_at(&9.into()), true);
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
     /// assert_eq!(status.is_confirmed_after_or_at(&10.into()), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_after_or_at(&12.into()), false);
+    /// assert_eq!(status.is_confirmed_after_or_at(&11.into()), false);
     /// ```
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
@@ -85,13 +89,13 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before_or_at(&8.into()), false);
+    /// assert_eq!(status.is_confirmed_before_or_at(&9.into()), false);
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
     /// assert_eq!(status.is_confirmed_before_or_at(&10.into()), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before_or_at(&12.into()), true);
+    /// assert_eq!(status.is_confirmed_before_or_at(&11.into()), true);
     /// ```
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
@@ -109,13 +113,13 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&8.into()), false);
+    /// assert_eq!(status.is_confirmed_before(&9.into()), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_confirmed_before(&10.into()), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&12.into()), true);
+    /// assert_eq!(status.is_confirmed_before(&11.into()), true);
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
@@ -131,13 +135,13 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_broadcast_after_or_at(&8.into()), false);
+    /// assert_eq!(status.is_broadcast_after_or_at(&9.into()), false);
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
     /// assert_eq!(status.is_broadcast_after_or_at(&10.into()), true);
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
-    /// assert_eq!(status.is_broadcast_after_or_at(&12.into()), false);
+    /// assert_eq!(status.is_broadcast_after_or_at(&11.into()), false);
     /// ```
     pub fn is_broadcast_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
@@ -153,10 +157,10 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(16.into());
-    /// assert_eq!(status.is_broadcast_before(&14.into()), false);
+    /// assert_eq!(status.is_broadcast_before(&15.into()), false);
     ///
     /// let status = ConfirmationStatus::Broadcast(12.into());
-    /// assert_eq!(status.is_broadcast_before(&14.into()), true);
+    /// assert_eq!(status.is_broadcast_before(&13.into()), true);
     ///
     /// let status = ConfirmationStatus::Broadcast(14.into());
     /// assert_eq!(status.is_broadcast_before(&14.into()), false);
@@ -205,7 +209,6 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
-    /// this function and the placeholder is not a preferred pattern. please use match whenever possible.
     /// # Examples
     ///
     /// ```
