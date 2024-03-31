@@ -580,7 +580,10 @@ impl DomainWalletExt for SaplingDomain {
     fn wc_to_external_incoming_viewing_key(
         wc: &WalletCapability,
     ) -> Result<Self::IncomingViewingKey, String> {
-        Self::IncomingViewingKey::try_from(wc)
+        Ok(Self::full_viewing_key_scope_to_incoming_viewing_key(
+            Self::wc_to_full_viewing_key(wc)?,
+            zip32::Scope::External,
+        ))
     }
     fn wc_to_external_outgoing_viewing_key(
         wc: &WalletCapability,
