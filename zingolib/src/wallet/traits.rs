@@ -487,6 +487,10 @@ where
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn wc_to_full_viewing_key(wc: &WalletCapability) -> Result<Self::FullViewingKey, String>;
+    fn full_viewing_key_scope_to_incoming_viewing_key(
+        full_viewing_key: Self::FullViewingKey,
+        scope: zip32::Scope,
+    ) -> <Self as Domain>::IncomingViewingKey;
     fn wc_to_external_incoming_viewing_key(
         wc: &WalletCapability,
     ) -> Result<Self::IncomingViewingKey, String>;
@@ -560,6 +564,12 @@ impl DomainWalletExt for SaplingDomain {
     }
     fn wc_to_full_viewing_key(wc: &WalletCapability) -> Result<Self::FullViewingKey, String> {
         Self::FullViewingKey::try_from(wc)
+    }
+    fn full_viewing_key_scope_to_incoming_viewing_key(
+        full_viewing_key: Self::FullViewingKey,
+        scope: zip32::Scope,
+    ) -> <Self as Domain>::IncomingViewingKey {
+        <Self as Domain>::IncomingViewingKey::new(&full_viewing_key.to_ivk(scope))
     }
     fn wc_to_external_incoming_viewing_key(
         wc: &WalletCapability,
