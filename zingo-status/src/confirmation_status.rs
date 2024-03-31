@@ -107,17 +107,17 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&8.into()), false);
+    /// assert_eq!(status.is_confirmed_before(&8.into()), false, "1");
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&10.into()), false);
+    /// assert_eq!(status.is_confirmed_before(&10.into()), false, "2");
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&12.into()), true);
+    /// assert_eq!(status.is_confirmed_before(&12.into()), true, "3");
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Confirmed(self_height) => self_height <= comparison_height,
+            Self::Confirmed(self_height) => self_height < comparison_height,
             _ => false,
         }
     }
