@@ -20,6 +20,16 @@ jobs:
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
 
+  run-doc-tests:
+    name: ensure doc tests are run, (and any other tests implied)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Run doc tests
+        run: |
+          cd zingo-status/src && cargo test
   test:
     uses: ./.github/workflows/test.yaml
     with:
