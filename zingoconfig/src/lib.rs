@@ -23,6 +23,7 @@ use zcash_primitives::{
     constants,
 };
 
+pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
 pub const MAX_REORG: usize = 100;
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
