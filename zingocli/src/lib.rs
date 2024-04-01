@@ -263,6 +263,7 @@ fn short_circuit_on_help(params: Vec<String>) {
     std::process::exit(0x0100);
 }
 use std::string::String;
+#[allow(dead_code)]
 #[derive(Debug)]
 enum TemplateFillError {
     BirthdaylessSeed(String),
@@ -313,8 +314,7 @@ impl ConfigTemplate {
             );
             return Err(TemplateFillError::BirthdaylessSeed(
                 "This should be the block height where the wallet was created.\
-If you don't remember the block height, you can pass '--birthday 0'\
-to scan from the start of the blockchain."
+If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain."
                     .to_string(),
             ));
         }
@@ -525,6 +525,6 @@ pub fn run_cli() {
     };
     match ConfigTemplate::fill(build_clap_app()) {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
-        Err(e) => eprintln!("Error filling config template: {e:?}"),
+        Err(e) => eprintln!("Error filling config template: {:#?}", e),
     }
 }
