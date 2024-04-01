@@ -523,6 +523,8 @@ pub fn run_cli() {
     if let Err(e) = LightClient::init_logging() {
         eprintln!("Could not initialize logging: {e}")
     };
-    let cli_config = ConfigTemplate::fill(build_clap_app()).unwrap();
-    dispatch_command_or_start_interactive(&cli_config);
+    match ConfigTemplate::fill(build_clap_app()) {
+        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
+        Err(e) => eprintln!("Error filling config template: {e:?}"),
+    }
 }
