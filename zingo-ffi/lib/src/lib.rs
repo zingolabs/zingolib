@@ -242,3 +242,6 @@ pub fn get_latest_block_server(server_uri: String) -> String {
     }
 }
 
+pub fn get_developer_donation_address() -> String {
+    zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string()
+}
