@@ -263,7 +263,6 @@ fn short_circuit_on_help(params: Vec<String>) {
     std::process::exit(0x0100);
 }
 use std::string::String;
-#[allow(dead_code)]
 #[derive(Debug)]
 enum TemplateFillError {
     BirthdaylessSeed(String),
