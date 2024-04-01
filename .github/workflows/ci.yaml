@@ -21,15 +21,27 @@ jobs:
         run: ./utils/trailing-whitespace.sh reject
 
   run-doc-tests:
-    name: ensure doc tests are run, (and any other tests implied)
+    name: Run doc tests
     runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install protoc
+        run: sudo apt-get install protobuf-compiler
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Run doc tests
-        run: |
-          cd zingo-status/src && cargo test
+        run: cargo test --doc
+
   test:
     uses: ./.github/workflows/test.yaml
     with:
