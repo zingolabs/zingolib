@@ -273,6 +273,19 @@ enum TemplateFillError {
     RegtestAndChainSpecified(String),
 }
 
+impl TemplateFillError {
+    pub fn inner(&self) -> String {
+        match self {
+            TemplateFillError::BirthdaylessSeed(e) => e.clone(),
+            TemplateFillError::InvalidBirthday(e) => e.clone(),
+            TemplateFillError::MalformedServerURL(e) => e.clone(),
+            TemplateFillError::ChildLaunchError(_) => "".to_string(),
+            TemplateFillError::InvalidChain(e) => e.clone(),
+            TemplateFillError::RegtestAndChainSpecified(e) => e.clone(),
+        }
+    }
+}
+
 impl From<regtest::LaunchChildProcessError> for TemplateFillError {
     fn from(underlyingerror: regtest::LaunchChildProcessError) -> Self {
         Self::ChildLaunchError(underlyingerror)
@@ -525,6 +538,6 @@ pub fn run_cli() {
     };
     match ConfigTemplate::fill(build_clap_app()) {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
-        Err(e) => eprintln!("Error filling config template: {e:?}"),
+        Err(e) => eprintln!("Error filling config template: {:?}", e.inner()),
     }
 }
