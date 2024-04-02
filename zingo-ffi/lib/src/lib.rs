@@ -1,5 +1,11 @@
+uniffi::include_scaffolding!("rustlib");
+
 #[macro_use]
 extern crate lazy_static;
+extern crate android_logger;
+
+use android_logger::{Config, FilterBuilder};
+use log::Level;
 
 use base64::{decode, encode};
 use std::cell::RefCell;
@@ -53,6 +59,21 @@ fn construct_uri_load_config(
 
     Ok((config, lightwalletd_uri))
 }
+
+// this is only for Android
+#[cfg(target_os = "android")]
+pub fn init_logging() -> String {
+
+    android_logger::init_once(
+      Config::default().with_min_level(Level::Trace).with_filter(
+          FilterBuilder::new()
+              .parse("debug,hello::crate=zingolib")
+              .build(),
+      ),
+    );
+  
+    "OK".to_string()
+}  
 
 pub fn init_new(
     server_uri: String,
@@ -224,7 +245,6 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn unconnected_client_framework() {
-        // Use test in RustFFITest.kt as template
         let server = "http://10.0.2.2:20000".to_string();
         let datadir = "testdata".to_string();
         let chain_hint = "main".to_string();
