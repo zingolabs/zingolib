@@ -189,7 +189,7 @@ dependencies = [
  "bitflags 1.3.2",
  "bytes 1.6.0",
  "futures-util",
- "http",
+ "http 0.2.12",
  "http-body",
  "hyper",
  "itoa",
@@ -215,7 +215,7 @@ dependencies = [
  "async-trait",
  "bytes 1.6.0",
  "futures-util",
- "http",
+ "http 0.2.12",
  "http-body",
  "mime",
  "rustversion",
@@ -654,7 +654,7 @@ dependencies = [
  "env_logger",
  "futures-util",
  "hex",
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "itertools 0.10.5",
@@ -1119,7 +1119,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http",
+ "http 0.2.12",
  "indexmap 2.2.6",
  "slab",
  "tokio",
@@ -1240,13 +1240,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "http"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
+dependencies = [
+ "bytes 1.6.0",
+ "fnv",
+ "itoa",
+]
+
+[[package]]
 name = "http-body"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ceab25649e9960c0311ea418d17bee82c0dcec1bd053b5f9a66e265a693bed2"
 dependencies = [
  "bytes 1.6.0",
- "http",
+ "http 0.2.12",
  "pin-project-lite",
 ]
 
@@ -1285,7 +1296,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http",
+ "http 0.2.12",
  "http-body",
  "httparse",
  "httpdate",
@@ -1304,7 +1315,7 @@ version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1788965e61b367cd03a62950836d5cd41560c3577d90e40e0819373194d1661c"
 dependencies = [
- "http",
+ "http 0.2.12",
  "hyper",
  "log",
  "rustls 0.20.9",
@@ -1423,7 +1434,7 @@ name = "integration-tests"
 version = "0.2.0"
 dependencies = [
  "hex",
- "http",
+ "http 1.1.0",
  "itertools 0.10.5",
  "json",
  "log",
@@ -2418,7 +2429,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http",
+ "http 0.2.12",
  "http-body",
  "hyper",
  "hyper-tls",
@@ -3250,7 +3261,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes 1.6.0",
  "h2",
- "http",
+ "http 0.2.12",
  "http-body",
  "hyper",
  "hyper-timeout",
@@ -3313,7 +3324,7 @@ dependencies = [
  "bytes 1.6.0",
  "futures-core",
  "futures-util",
- "http",
+ "http 0.2.12",
  "http-body",
  "http-range-header",
  "pin-project-lite",
@@ -4123,7 +4134,7 @@ version = "0.2.0"
 dependencies = [
  "clap",
  "futures",
- "http",
+ "http 1.1.0",
  "hyper-rustls",
  "json",
  "log",
@@ -4155,7 +4166,7 @@ dependencies = [
 name = "zingo-netutils"
 version = "0.1.0"
 dependencies = [
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "hyper-rustls",
@@ -4181,7 +4192,7 @@ name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
+ "http 1.1.0",
  "incrementalmerkletree",
  "json",
  "log",
@@ -4215,7 +4226,7 @@ name = "zingoconfig"
 version = "0.1.0"
 dependencies = [
  "dirs",
- "http",
+ "http 1.1.0",
  "log",
  "log4rs",
  "tempdir",
@@ -4242,7 +4253,7 @@ dependencies = [
  "futures",
  "group",
  "hex",
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "hyper-rustls",
