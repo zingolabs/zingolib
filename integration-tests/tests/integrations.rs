@@ -3651,26 +3651,31 @@ mod slow {
 }
 
 mod basic_transactions {
+    use std::future::Future;
+
     use zcash_primitives::memo::MemoBytes;
     use zingo_testutils::scenarios;
     use zingolib::{get_base_address, lightclient::LightClient};
 
-    async fn standard_send(
-        client1: &LightClient,
-        client2: &LightClient,
-        amount: u64,
-        // pool: String,
-        memo: Option<MemoBytes>,
-    ) {
-        let proposal = client1
-            .do_propose(vec![(&get_base_address!(client2, "sapling"), amount, memo)])
-            .await
-            .unwrap();
-        dbg!("proposed");
-        let txids = client1.do_send_proposal().await.unwrap();
+    async fn standard_send_sync_check<F, Fut>(
+        client: &LightClient,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+        chain_update_function: F,
+    ) where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let proposal = client.do_propose(address_amount_memo_tuples).await.unwrap();
+        let txids = client.do_send_proposal().await.unwrap();
 
-        client1
-            .check_chain_matches_proposal(proposal, txids, false)
+        client
+            .check_chain_matches_proposal(proposal.clone(), txids.clone(), false)
+            .await;
+
+        chain_update_function().await;
+
+        client
+            .check_chain_matches_proposal(proposal, txids, true)
             .await;
     }
 
@@ -3680,164 +3685,16 @@ mod basic_transactions {
             scenarios::faucet_recipient_default().await;
 
         let sapling_dust = 5;
-        let mut proposal = faucet
-            .do_propose(vec![(
-                &get_base_address!(recipient, "sapling"),
-                200000,
-                None,
-            )])
-            .await
-            .unwrap();
-        let mut txids = faucet.do_send_proposal().await.unwrap();
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-
-        println!(
-            "synced recipient
-            faucet: {}
-            recipient: {}",
-            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        );
-
-        proposal = recipient
-            .do_propose(vec![(&get_base_address!(faucet, "sapling"), 1, None)])
-            .await
-            .unwrap();
-        txids = recipient.do_send_proposal().await.unwrap();
-
-        println!(
-            "sent recipient
-            faucet: {}
-            recipient: {}",
-            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        );
-
-        recipient
-            .check_chain_matches_proposal(proposal.clone(), txids.clone(), false)
-            .await;
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        recipient
-            .check_chain_matches_proposal(proposal, txids, true)
-            .await;
-        println!(
-            "synced recipient
-            faucet: {}
-            recipient: {}",
-            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        );
-
-        // faucet
-        //     .check_chain_matches_proposal(proposal.clone(), txids.clone(), false)
-        //     .await;
-        // standard_send(&faucet, &recipient, sapling_dust, None).await;
-
-        // println!(
-        //     "sent to recipient
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-        // zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        //     .await
-        //     .unwrap();
-        // println!(
-        //     "scenario initial
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-        // assert_eq!(
-        //     recipient.do_shield(&[Pool::Sapling], None).await,
-        //     Err(
-        //         "Not enough transparent/sapling balance to shield. Have 100 zats, \
-        // need more than 10000 zats to cover tx fee"
-        //             .to_string()
-        //     )
-        // );
-
-        // println!(
-        //     "recipient cant shield
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-
-        // let sapling_enough_for_fee = 10_100;
-        // faucet.do_sync(false).await.unwrap();
-        // println!(
-        //     "faucet synced
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-        // let _sent_transaction_id = faucet
-        //     .do_send(vec![(
-        //         &get_base_address!(recipient, "sapling"),
-        //         sapling_enough_for_fee,
-        //         None,
-        //     )])
-        //     .await
-        //     .unwrap();
-        // println!(
-        //     "faucet send to recipient again
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-
-        // zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-        //     .await
-        //     .unwrap();
-        // println!(
-        //     "recipient syncked again
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-        // recipient
-        //     .do_shield(&[Pool::Sapling, Pool::Transparent], None)
-        //     .await
-        //     .unwrap();
-
-        // println!(
-        //     "recipient can successfully shield
-        //     faucet: {}
-        //     recipient: {}",
-        //     serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        //     serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
-        // );
-        // // The exact same thing again, but with pre-existing orchard funds
-        // // already in the shielding wallet
-        // faucet.do_sync(false).await.unwrap();
-        // let _sent_transaction_id = faucet
-        //     .do_send(vec![(
-        //         &get_base_address!(recipient, "sapling"),
-        //         sapling_enough_for_fee,
-        //         None,
-        //     )])
-        //     .await
-        //     .unwrap();
-
-        // zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-        //     .await
-        //     .unwrap();
-        // recipient
-        //     .do_shield(&[Pool::Sapling, Pool::Transparent], None)
-        //     .await
-        //     .unwrap();
+        standard_send_sync_check(
+            &faucet,
+            vec![(&get_base_address!(recipient, "sapling"), 200000, None)],
+            || async {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+                    .await
+                    .unwrap();
+            },
+        )
+        .await;
     }
 }
 
