@@ -952,7 +952,7 @@ impl Command for SendCommand {
         // Parse the args. There are two argument types.
         // 1 - A set of 2(+1 optional) arguments for a single address send representing address, value, memo?
         // 2 - A single argument in the form of a JSON string that is "[{address: address, value: value, memo: memo},...]"
-        if args.is_empty() || args.len() > 3 {
+        if !args.is_empty() {
             return self.help().to_string();
         }
 
