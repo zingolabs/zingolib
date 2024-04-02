@@ -4,6 +4,10 @@ version = "1.0.1"
 authors = ["Zingolabs <zingo@zingolabs.com>"]
 edition = "2021"
 
+[features]
+ci = []
+regchest = []
+
 [dependencies]
 zingolib = { workspace = true }
 zingoconfig = { workspace = true }
