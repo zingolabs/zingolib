@@ -4,10 +4,6 @@ version = "1.0.1"
 authors = ["Zingolabs <zingo@zingolabs.com>"]
 edition = "2021"
 
-[features]
-ci = []
-regchest = []
-
 [dependencies]
 zingolib = { workspace = true }
 zingoconfig = { workspace = true }
@@ -22,13 +18,7 @@ uniffi = { workspace = true, features = ["cli"] }
 uniffi_build = { version = "0.27.0", features = [ "builtin-bindgen" ] }
 
 [dev-dependencies]
-tokio =  { version = "1.24.2", features = ["full"] }
-zingo-testutils = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "stable" }
-darkside-tests = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "stable" }
-json = "0.12.4"
-env_logger = "0.10.0"
-zingomobile_utils = { path = "../zingomobile_utils" }
-regchest_utils = { git="https://github.com/zingolabs/zingo-regchest", default-features=true, branch = "dev" }
+tokio = "1.32.0"
 
 [lib]
 # `rlib` for ios.
