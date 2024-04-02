@@ -75,6 +75,11 @@ pub enum LaunchChildProcessError {
         stderr: String,
     },
 }
+impl From<LaunchChildProcessError> for String {
+    fn from(underlyingerror: LaunchChildProcessError) -> Self {
+        format!("LaunchChildProcessError from {:?}", underlyingerror)
+    }
+}
 pub fn launch_lightwalletd(
     logsdir: PathBuf,
     confsdir: PathBuf,
