@@ -262,23 +262,7 @@ fn short_circuit_on_help(params: Vec<String>) {
     }
     std::process::exit(0x0100);
 }
-use std::string::String;
-#[allow(dead_code)]
-#[derive(Debug)]
-enum TemplateFillError {
-    BirthdaylessSeed(String),
-    InvalidBirthday(String),
-    MalformedServerURL(String),
-    ChildLaunchError(regtest::LaunchChildProcessError),
-    InvalidChain(String),
-    RegtestAndChainSpecified(String),
-}
 
-impl From<regtest::LaunchChildProcessError> for TemplateFillError {
-    fn from(underlyingerror: regtest::LaunchChildProcessError) -> Self {
-        Self::ChildLaunchError(underlyingerror)
-    }
-}
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: <https://crates.io/crates/clap>
 ///  * behave correctly as a function of each parameter that may have been passed
@@ -288,7 +272,7 @@ impl From<regtest::LaunchChildProcessError> for TemplateFillError {
 ///    is specified, then the system should execute only logic necessary to support that command,
 ///    in other words "help" the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
-    fn fill(matches: clap::ArgMatches) -> Result<Self, TemplateFillError> {
+    fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
@@ -312,26 +296,23 @@ impl ConfigTemplate {
             eprintln!(
                 "Please specify the wallet birthday (eg. '--birthday 600000') to restore a wallet. (If you want to load the entire blockchain instead, you can use birthday 0. /this would require extensive time and computational resources)"
             );
-            return Err(TemplateFillError::BirthdaylessSeed(
+            return Err(
                 "This should be the block height where the wallet was created.\
-If you don't remember the block height, you can pass '--birthday 0'\
-to scan from the start of the blockchain."
+If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain."
                     .to_string(),
-            ));
+            );
         }
         let from = from.map(|seed| seed.to_string());
         if matches.contains_id("chain") && is_regtest {
-            return Err(TemplateFillError::RegtestAndChainSpecified(
-                "regtest mode incompatible with custom chain selection".to_string(),
-            ));
+            return Err("regtest mode incompatible with custom chain selection".to_string());
         }
         let birthday = match maybe_birthday.unwrap_or("0".to_string()).parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
-                return Err(TemplateFillError::InvalidBirthday(format!(
+                return Err(format!(
                     "Couldn't parse birthday. This should be a block number. Error={}",
                     e
-                )));
+                ));
             }
         };
 
@@ -365,7 +346,7 @@ to scan from the start of the blockchain."
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
                 "regtest" => ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
-                _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
+                _ => return Err(chain.clone()),
             }
         } else if is_regtest {
             ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active())
@@ -375,9 +356,9 @@ to scan from the start of the blockchain."
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            return Err(TemplateFillError::MalformedServerURL(format!(
+            return Err(format!(
                 "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
-                server )));
+                server ));
         }
 
         let sync = !matches.get_flag("nosync");
@@ -524,6 +505,8 @@ pub fn run_cli() {
     if let Err(e) = LightClient::init_logging() {
         eprintln!("Could not initialize logging: {e}")
     };
-    let cli_config = ConfigTemplate::fill(build_clap_app()).unwrap();
-    dispatch_command_or_start_interactive(&cli_config);
+    match ConfigTemplate::fill(build_clap_app()) {
+        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
+        Err(e) => eprintln!("Error filling config template: {:?}", e),
+    }
 }
