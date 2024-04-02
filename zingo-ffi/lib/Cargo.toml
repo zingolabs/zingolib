@@ -11,7 +11,7 @@ http = "0.2.4"
 lazy_static = "1.4.0"
 base64 = "0.11.0"
 android_logger = "0.11"
-log = { workspace = true }
+log = "0.4.8"
 uniffi = { workspace = true, features = ["cli"] }
 
 [build-dependencies]
@@ -21,7 +21,8 @@ uniffi_build = { version = "0.27.0", features = [ "builtin-bindgen" ] }
 tokio = "1.32.0"
 
 [lib]
-crate-type = ["cdylib"]
+# `rlib` for ios.
+crate-type = ["cdylib", "rlib"]
 name = "rustlib"
 
 [[bin]]

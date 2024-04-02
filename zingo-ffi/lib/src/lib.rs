@@ -4,7 +4,9 @@ uniffi::include_scaffolding!("rustlib");
 extern crate lazy_static;
 extern crate android_logger;
 
+#[cfg(target_os = "android")]
 use android_logger::{Config, FilterBuilder};
+#[cfg(target_os = "android")]
 use log::Level;
 
 use base64::{decode, encode};
@@ -60,10 +62,9 @@ fn construct_uri_load_config(
     Ok((config, lightwalletd_uri))
 }
 
-// this is only for Android
-#[cfg(target_os = "android")]
 pub fn init_logging() -> String {
-
+    // this is only for Android
+    #[cfg(target_os = "android")]
     android_logger::init_once(
       Config::default().with_min_level(Level::Trace).with_filter(
           FilterBuilder::new()
