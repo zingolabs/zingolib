@@ -29,8 +29,6 @@ use zcash_primitives::{
 
 use super::LightClient;
 
-static LOG_INIT: std::sync::Once = std::sync::Once::new();
-
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct AccountBackupInfo {
     #[serde(rename = "seed")]

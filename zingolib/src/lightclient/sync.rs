@@ -33,8 +33,6 @@ use zingoconfig::MAX_REORG;
 
 use super::LightClient;
 
-static LOG_INIT: std::sync::Once = std::sync::Once::new();
-
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
     pub success: bool,
