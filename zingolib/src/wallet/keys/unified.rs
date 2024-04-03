@@ -6,9 +6,9 @@ use std::{
 };
 
 use append_only_vec::AppendOnlyVec;
-use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
+use zcash_primitives::zip339::Mnemonic;
 
 use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};

@@ -189,7 +189,7 @@ dependencies = [
  "bitflags 1.3.2",
  "bytes 1.6.0",
  "futures-util",
- "http 0.2.12",
+ "http",
  "http-body",
  "hyper",
  "itoa",
@@ -215,7 +215,7 @@ dependencies = [
  "async-trait",
  "bytes 1.6.0",
  "futures-util",
- "http 0.2.12",
+ "http",
  "http-body",
  "mime",
  "rustversion",
@@ -651,11 +651,10 @@ name = "darkside-tests"
 version = "0.1.0"
 dependencies = [
  "bech32",
- "bip0039",
  "env_logger",
  "futures-util",
  "hex 0.3.2",
- "http 1.1.0",
+ "http",
  "http-body",
  "hyper",
  "itertools 0.10.5",
@@ -1100,7 +1099,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http 0.2.12",
+ "http",
  "indexmap 2.2.6",
  "slab",
  "tokio",
@@ -1227,24 +1226,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "http"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
-dependencies = [
- "bytes 1.6.0",
- "fnv",
- "itoa",
-]
-
-[[package]]
 name = "http-body"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ceab25649e9960c0311ea418d17bee82c0dcec1bd053b5f9a66e265a693bed2"
 dependencies = [
  "bytes 1.6.0",
- "http 0.2.12",
+ "http",
  "pin-project-lite",
 ]
 
@@ -1283,7 +1271,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 0.2.12",
+ "http",
  "http-body",
  "httparse",
  "httpdate",
@@ -1302,7 +1290,7 @@ version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1788965e61b367cd03a62950836d5cd41560c3577d90e40e0819373194d1661c"
 dependencies = [
- "http 0.2.12",
+ "http",
  "hyper",
  "log",
  "rustls 0.20.9",
@@ -1420,7 +1408,6 @@ dependencies = [
 name = "integration-tests"
 version = "0.2.0"
 dependencies = [
- "bip0039",
  "hex 0.3.2",
  "itertools 0.10.5",
  "json",
@@ -2419,7 +2406,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 0.2.12",
+ "http",
  "http-body",
  "hyper",
  "hyper-tls",
@@ -2950,9 +2937,9 @@ checksum = "9e08d8363704e6c71fc928674353e6b7c23dcea9d82d7012c8faf2a3a025f8d0"
 
 [[package]]
 name = "strsim"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ee073c9e4cd00e28217186dbe12796d692868f432bf2e97ee73bed0c56dfa01"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "subtle"
@@ -3228,7 +3215,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes 1.6.0",
  "h2",
- "http 0.2.12",
+ "http",
  "http-body",
  "hyper",
  "hyper-timeout",
@@ -3291,7 +3278,7 @@ dependencies = [
  "bytes 1.6.0",
  "futures-core",
  "futures-util",
- "http 0.2.12",
+ "http",
  "http-body",
  "http-range-header",
  "pin-project-lite",
@@ -4036,7 +4023,7 @@ version = "0.2.0"
 dependencies = [
  "clap",
  "futures",
- "http 1.1.0",
+ "http",
  "hyper-rustls",
  "json",
  "log",
@@ -4076,7 +4063,7 @@ name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http 1.1.0",
+ "http",
  "incrementalmerkletree",
  "json",
  "log",
@@ -4109,7 +4096,7 @@ name = "zingoconfig"
 version = "0.1.0"
 dependencies = [
  "dirs",
- "http 1.1.0",
+ "http",
  "log",
  "log4rs",
  "zcash_address",
@@ -4124,7 +4111,6 @@ dependencies = [
  "base58",
  "base64 0.13.1",
  "bech32",
- "bip0039",
  "bls12_381",
  "build_utils",
  "byteorder",
@@ -4136,7 +4122,7 @@ dependencies = [
  "futures",
  "group",
  "hex 0.3.2",
- "http 1.1.0",
+ "http",
  "http-body",
  "hyper",
  "hyper-rustls",
