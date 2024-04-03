@@ -57,11 +57,9 @@ use zcash_primitives::{
     },
 };
 use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::{ZingoConfig, MAX_REORG};
+use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
-
-const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
 
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
@@ -601,7 +599,7 @@ impl LightClient {
                             change += value;
                             change_note_count += 1;
                         } else if incoming {
-                            if value > MARGINAL_FEE {
+                            if value > margin_fee() {
                                 useful_value += value;
                                 inbound_note_count_nodust += 1;
                             } else {
@@ -619,7 +617,7 @@ impl LightClient {
                             change += value;
                             change_note_count += 1;
                         } else if incoming {
-                            if value > MARGINAL_FEE {
+                            if value > margin_fee() {
                                 useful_value += value;
                                 inbound_note_count_nodust += 1;
                             } else {
@@ -634,7 +632,7 @@ impl LightClient {
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
-                            if n.value > MARGINAL_FEE {
+                            if n.value > margin_fee() {
                                 utxo_value += n.value;
                                 inbound_utxo_count_nodust += 1;
                             } else {
@@ -644,15 +642,15 @@ impl LightClient {
                     });
 
                 // The fee field only tracks mature income and change.
-                balances.minimum_fees += change_note_count * MARGINAL_FEE;
+                balances.minimum_fees += change_note_count * margin_fee();
                 if mature {
-                    balances.minimum_fees += inbound_note_count_nodust * MARGINAL_FEE;
+                    balances.minimum_fees += inbound_note_count_nodust * margin_fee();
                 }
 
                 // If auto-shielding, UTXOs are considered immature and do not fall into any of the buckets that
                 // the fee balance covers.
                 if !auto_shielding {
-                    balances.minimum_fees += inbound_utxo_count_nodust * MARGINAL_FEE;
+                    balances.minimum_fees += inbound_utxo_count_nodust * margin_fee();
                 }
 
                 if auto_shielding {
@@ -686,7 +684,7 @@ impl LightClient {
         // Add the minimum fee for the receiving note,
         // but only if there exists notes to spend in the buckets that are covered by the minimum_fee.
         if balances.minimum_fees > 0 {
-            balances.minimum_fees += MARGINAL_FEE; // The receiving note.
+            balances.minimum_fees += margin_fee(); // The receiving note.
         }
 
         Ok(balances)
