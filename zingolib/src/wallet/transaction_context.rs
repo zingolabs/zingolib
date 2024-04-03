@@ -44,7 +44,9 @@ impl TransactionContext {
             transaction_metadata_set,
         }
     }
+}
 
+impl TransactionContext {
     #[allow(clippy::too_many_arguments)]
     async fn execute_bundlescans_internal(
         &self,
