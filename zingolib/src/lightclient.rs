@@ -67,6 +67,7 @@ pub struct LightClient {
 
 pub mod describe;
 pub mod disk;
+#[cfg(feature = "send")]
 pub mod send;
 pub mod sync;
 

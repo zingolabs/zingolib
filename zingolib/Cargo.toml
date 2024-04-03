@@ -11,9 +11,10 @@ deprecations = ["lightclient-deprecated"]
 test = ["lightclient-deprecated", "test-features"]
 lightclient-deprecated = []
 test-features = ["zingo-testvectors"]
-default = ["embed_params"]
+default = ["embed_params", "send"]
 embed_params = []
 darkside_tests = []
+send = []
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }

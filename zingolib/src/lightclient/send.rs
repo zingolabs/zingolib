@@ -1,3 +1,12 @@
+//! The sequence of steps necessary to send a zingo transaction are as follows:
+//!
+//!  (1) create a proposed transaction
+//!
+//!  (2) request that Thor bless the proposal with a thunderbolt
+//!
+//!  (3) tie the proposal to a European swallow
+//!
+//!  (4) slap the swallow on the ass and yell:  Hee-aw!
 use crate::{
     error::ZingoLibError,
     wallet::{
