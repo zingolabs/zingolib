@@ -209,12 +209,6 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
-<<<<<<< HEAD
-    /// this function and the placeholder is not a preferred pattern. please use match whenever possible.
-||||||| merged common ancestors
-    // this function and the placeholder is not a preferred pattern. please use match whenever possible.
-=======
->>>>>>> update_bip_to_zip
     /// # Examples
     ///
     /// ```
