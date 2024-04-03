@@ -20,5 +20,5 @@ rustls-pemfile = "1.0.0"
 tokio =  { version = "1.24.2", features = ["full"] }
 tokio-stream = "0.1.6"
 tokio-rustls = { workspace = true }
-webpki-roots = "0.21.0"
+webpki-roots.workspace = true
 json = "0.12.4"

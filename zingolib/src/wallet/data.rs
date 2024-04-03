@@ -573,8 +573,6 @@ pub mod finsight {
     }
 }
 pub mod summaries {
-    use std::collections::HashMap;
-
     use json::{object, JsonValue};
     use zcash_primitives::transaction::TxId;
 
@@ -697,8 +695,6 @@ pub mod summaries {
             }
         }
     }
-
-    pub struct TransactionIndex(HashMap<zcash_primitives::transaction::TxId, ValueTransfer>);
 }
 
 pub use crate::wallet::transaction_record::TransactionRecord;

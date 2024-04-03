@@ -35,8 +35,6 @@ use super::LightClient;
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
-const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
-
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
     pub success: bool,

@@ -11,9 +11,10 @@ deprecations = ["lightclient-deprecated"]
 test = ["lightclient-deprecated", "test-features"]
 lightclient-deprecated = []
 test-features = ["zingo-testvectors"]
-default = ["embed_params"]
+default = ["embed_params", "send"]
 embed_params = []
 darkside_tests = []
+send = []
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
@@ -44,7 +45,7 @@ hyper-rustls = { workspace = true }
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
 
 log = "0.4.14"
-http = "0.2.4"
+http.workspace = true
 log4rs = "1.1.1"
 base64 = "0.13.0"
 bytes = "0.4"
@@ -58,6 +59,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 ring = "0.17.0"
 json = "0.12.4"
+webpki-roots.workspace = true
 lazy_static = "1.4.0"
 secp256k1 = "=0.26.0"
 ripemd160 = "0.9.1"

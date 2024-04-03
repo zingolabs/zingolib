@@ -75,6 +75,11 @@ pub enum LaunchChildProcessError {
         stderr: String,
     },
 }
+impl From<LaunchChildProcessError> for String {
+    fn from(underlyingerror: LaunchChildProcessError) -> Self {
+        format!("LaunchChildProcessError from {:?}", underlyingerror)
+    }
+}
 pub fn launch_lightwalletd(
     logsdir: PathBuf,
     confsdir: PathBuf,
@@ -175,11 +180,22 @@ pub fn launch_lightwalletd(
     }
     lightwalletd_child
 }
+fn write_zcash_conf(location: &PathBuf) {
+    // This is the only data we need to supply *to* the zcashd, the other files are created by zcashd and lightwalletd
+    use std::io::Write;
+    let conf_bytes: &'static [u8] = include_bytes!("../regtest/conf/zcash.conf");
+    File::create(location)
+        .unwrap()
+        .write_all(conf_bytes)
+        .unwrap();
+}
 impl RegtestManager {
     pub fn new(rootpathname: PathBuf) -> Self {
         let regtest_dir = rootpathname;
         let confs_dir = regtest_dir.join("conf");
+        let zcashd_config = confs_dir.join("zcash.conf");
         std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
+        write_zcash_conf(&zcashd_config);
         let bin_dir = super::paths::get_bin_dir();
         std::fs::create_dir_all(&bin_dir).expect("Couldn't create dir.");
         let cli_bin = bin_dir.join("zcash-cli");
@@ -190,7 +206,6 @@ impl RegtestManager {
         let zcashd_logs_dir = logs_dir.join("zcashd");
         std::fs::create_dir_all(&zcashd_logs_dir).expect("Couldn't create dir.");
         let zcashd_stdout_log = zcashd_logs_dir.join("stdout.log");
-        let zcashd_config = confs_dir.join("zcash.conf");
         let lightwalletd_config = confs_dir.join("lightwalletd.yml");
         let lightwalletd_logs_dir = logs_dir.join("lightwalletd");
         std::fs::create_dir_all(&lightwalletd_logs_dir).expect("Couldn't create dir.");

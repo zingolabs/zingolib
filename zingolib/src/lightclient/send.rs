@@ -1,3 +1,12 @@
+//! The sequence of steps necessary to send a zingo transaction are as follows:
+//!
+//!  (1) create a proposed transaction
+//!
+//!  (2) request that Thor bless the proposal with a thunderbolt
+//!
+//!  (3) tie the proposal to a European swallow
+//!
+//!  (4) slap the swallow on the ass and yell:  Hee-aw!
 use crate::{
     error::ZingoLibError,
     wallet::{
@@ -20,8 +29,6 @@ use zcash_proofs::prover::LocalTxProver;
 use super::LightClient;
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
-
-const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
 
 #[derive(Debug, Clone)]
 pub struct LightWalletSendProgress {

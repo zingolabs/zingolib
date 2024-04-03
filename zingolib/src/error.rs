@@ -100,7 +100,7 @@ impl std::fmt::Display for ZingoLibError {
                 MissingOutputIndex(txid) => format!(
                     "{txid} is missing output_index for note, cannot mark change"
                 ),
-                
+
                 ViewkeyCantSpend => "viewkey cannot spend".to_string(),
                 RequestConstruction(err) => format!(
                     "transaction request {}",
@@ -116,7 +116,7 @@ impl std::fmt::Display for ZingoLibError {
                     string,
                 ),
                 CalculatedTransactionEncode(string) => format!(
-                    "encoding newly created transaction {}", 
+                    "encoding newly created transaction {}",
                     string,
                 ),
                 CalculatedTransactionDecode(string) => format!(

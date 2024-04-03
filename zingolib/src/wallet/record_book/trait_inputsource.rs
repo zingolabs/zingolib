@@ -1,13 +1,9 @@
-use std::{collections::BTreeMap};
-
-
+use std::collections::BTreeMap;
 
 use zcash_client_backend::{data_api::InputSource, ShieldedProtocol};
 use zcash_primitives::{transaction::components::amount::NonNegativeAmount, zip32::AccountId};
 
-use crate::{
-    error::{ZingoLibError, ZingoLibResult},
-};
+use crate::error::{ZingoLibError, ZingoLibResult};
 
 use super::{NoteRecordIdentifier, RefRecordBook};
 
