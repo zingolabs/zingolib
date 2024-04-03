@@ -23,8 +23,6 @@ use super::LightClient;
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
-const MARGINAL_FEE: u64 = 5_000; // From ZIP-317
-
 pub(super) struct ZingoSaveBuffer {
     pub buffer: Arc<RwLock<Vec<u8>>>,
 }
