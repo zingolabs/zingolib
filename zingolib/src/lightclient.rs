@@ -1,9 +1,7 @@
 use crate::{
     blaze::syncdata::BlazeSyncData,
-    error::{ZingoLibError, ZingoLibResult},
     wallet::{
-        data::TransactionRecord, keys::unified::ReceiverSelection, message::Message,
-        notes::NoteInterface, notes::ShieldedNoteInterface, LightWallet,
+        keys::unified::ReceiverSelection, message::Message, notes::ShieldedNoteInterface, LightWallet,
     },
 };
 
@@ -17,7 +15,6 @@ use zcash_client_backend::encoding::{decode_payment_address, encode_payment_addr
 use zcash_primitives::{
     consensus::NetworkConstants,
     memo::{Memo, MemoBytes},
-    transaction::TxId,
 };
 
 use zingoconfig::ZingoConfig;

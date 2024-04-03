@@ -1,15 +1,14 @@
 use crate::{
-    error::ZingoLibError,
     wallet::{Pool, SendProgress},
 };
 
 use json::{object, JsonValue};
 use log::error;
 
-use tokio::sync::RwLockWriteGuard;
+
 use zcash_primitives::{
     memo::MemoBytes,
-    transaction::{components::amount::NonNegativeAmount, TxId},
+    transaction::{components::amount::NonNegativeAmount},
 };
 use zcash_proofs::prover::LocalTxProver;
 
