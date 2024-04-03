@@ -9,8 +9,6 @@ use zcash_proofs::prover::LocalTxProver;
 use super::LightClient;
 use crate::grpc_connector;
 
-static LOG_INIT: std::sync::Once = std::sync::Once::new();
-
 #[derive(Debug, Clone)]
 pub struct LightWalletSendProgress {
     pub progress: SendProgress,

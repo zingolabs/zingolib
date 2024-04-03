@@ -1,5 +1,7 @@
 use std::cmp;
 
+use crate::wallet::transaction_record::TransactionRecord;
+
 use super::*;
 use zcash_note_encryption::Domain;
 

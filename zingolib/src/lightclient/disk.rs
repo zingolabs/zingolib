@@ -21,8 +21,6 @@ use zingoconfig::ZingoConfig;
 
 use super::LightClient;
 
-static LOG_INIT: std::sync::Once = std::sync::Once::new();
-
 pub(super) struct ZingoSaveBuffer {
     pub buffer: Arc<RwLock<Vec<u8>>>,
 }
