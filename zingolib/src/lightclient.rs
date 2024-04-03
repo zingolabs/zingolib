@@ -1,7 +1,8 @@
 use crate::{
     blaze::syncdata::BlazeSyncData,
     wallet::{
-        keys::unified::ReceiverSelection, message::Message, notes::ShieldedNoteInterface, LightWallet,
+        keys::unified::ReceiverSelection, message::Message, notes::ShieldedNoteInterface,
+        LightWallet,
     },
 };
 

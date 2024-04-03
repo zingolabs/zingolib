@@ -1,15 +1,9 @@
-use crate::{
-    wallet::{Pool, SendProgress},
-};
+use crate::wallet::{Pool, SendProgress};
 
 use json::{object, JsonValue};
 use log::error;
 
-
-use zcash_primitives::{
-    memo::MemoBytes,
-    transaction::{components::amount::NonNegativeAmount},
-};
+use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 use zcash_proofs::prover::LocalTxProver;
 
 use super::LightClient;
