@@ -4,7 +4,6 @@ use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::wallet::data::{SpendableSaplingNote, TransactionRecord};
 use crate::wallet::notes::ShieldedNoteInterface;
 
-use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use json::JsonValue;
@@ -36,6 +35,7 @@ use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
 use zcash_primitives::transaction::{self, Transaction};
+use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::Script,

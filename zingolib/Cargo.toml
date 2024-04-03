@@ -39,7 +39,7 @@ zcash_proofs = { workspace = true }
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
 
 log = "0.4.14"
-http = "0.2.4"
+http.workspace = true
 log4rs = "1.1.1"
 base64 = "0.13.0"
 bytes = "0.4"
@@ -63,7 +63,6 @@ ripemd160 = "0.9.1"
 sha2 = "0.9.5"
 base58 = "0.1.0"
 bech32 = "0.9.0"
-bip0039 = "0.10.1"
 sodiumoxide = "0.2.5"
 byteorder = "1"
 pairing = "0.23"
