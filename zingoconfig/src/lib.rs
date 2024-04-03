@@ -37,7 +37,7 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
 
-pub fn MARGINAL_AS_U64() -> u64 {
+pub fn margin_fee() -> u64 {
     zcash_primitives::transaction::fees::zip317::MARGINAL_FEE.into_u64()
 }
 pub fn load_clientconfig(
