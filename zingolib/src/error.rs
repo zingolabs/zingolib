@@ -9,8 +9,8 @@ pub enum ZingoLibError {
     Error(String),
     NoWalletLocation,
     MetadataUnderflow(String),
-    InternalWriteBufferError(std::io::Error),
-    WriteFileError(std::io::Error),
+    InternalWriteBuffer(std::io::Error),
+    WriteFile(std::io::Error),
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
     NoSuchTxId(TxId),
@@ -52,12 +52,12 @@ impl std::fmt::Display for ZingoLibError {
                 "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
                 explanation,
             ),
-            InternalWriteBufferError(err) => write!(
+            InternalWriteBuffer(err) => write!(
                 f,
                 "Internal save error! {} ",
                 err,
             ),
-            WriteFileError(err) => write!(
+            WriteFile(err) => write!(
                 f,
                 "Could not write to wallet save file. Was this erroneously attempted in mobile?, instead of native save buffer handling? Is there a permission issue? {} ",
                 err,
