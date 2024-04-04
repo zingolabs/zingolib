@@ -182,7 +182,7 @@ impl Message {
         // really apply, since this note is not spendable anyway, so the rseed and the note itself
         // are not usable.
         match try_sapling_note_decryption(
-            &ivk,
+            ivk,
             &Unspendable {
                 cmu_bytes,
                 epk_bytes,
