@@ -453,7 +453,7 @@ pub mod decrypt_transaction {
             let (ivk, ovk) = (fvk.derive_ivk::<External>(), fvk.derive_ovk::<External>());
 
             let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
-                &[ivk.inner().clone()],
+                &[ivk.ivk],
                 &domain_tagged_outputs,
             )
             .into_iter()
@@ -505,7 +505,7 @@ pub mod decrypt_transaction {
                         <FnGenBundle<D> as zingo_traits::Bundle<D>>::Output,
                     >(
                         &output.domain(status.get_height(), self.config.chain),
-                        ovk.inner(),
+                        &ovk.ovk,
                         &output,
                         &output.value_commitment(),
                         &output.out_ciphertext(),

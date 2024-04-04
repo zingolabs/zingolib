@@ -313,7 +313,7 @@ impl LightWallet {
         let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?
             .derive_ivk::<keys::unified::External>();
 
-        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.inner()) {
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
             return Ok(msg);
         }
