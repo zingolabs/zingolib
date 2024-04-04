@@ -432,7 +432,8 @@ where
     type Fvk: Clone
         + Send
         + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
-        + for<'a> TryFrom<&'a WalletCapability>;
+        + for<'a> TryFrom<&'a WalletCapability>
+        + super::keys::unified::Fvk<Self>;
 
     type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;

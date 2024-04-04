@@ -596,13 +596,16 @@ impl ReadableWriteable<()> for WalletCapability {
     }
 }
 
+/// The external, default scope for deriving an fvk's component viewing keys
 pub struct External;
+
+/// The internal scope, used for change only
 pub struct Internal;
 
 mod scope {
     use super::*;
     use zcash_primitives::zip32::Scope as ScopeEnum;
-    pub(super) trait Scope {
+    pub trait Scope {
         fn scope() -> ScopeEnum;
     }
 
@@ -628,8 +631,8 @@ impl<D, Scope> Ivk<D, Scope>
 where
     D: zcash_note_encryption::Domain,
 {
-    pub(crate) fn inner(&self) -> D::IncomingViewingKey {
-        self.ivk
+    pub(crate) fn inner(&self) -> &D::IncomingViewingKey {
+        &self.ivk
     }
 }
 pub struct Ovk<D, Scope>
@@ -638,6 +641,14 @@ where
 {
     ovk: D::OutgoingViewingKey,
     __scope: PhantomData<Scope>,
+}
+impl<D, Scope> Ovk<D, Scope>
+where
+    D: zcash_note_encryption::Domain,
+{
+    pub(crate) fn inner(&self) -> &D::OutgoingViewingKey {
+        &self.ovk
+    }
 }
 
 impl TryFrom<&WalletCapability> for super::extended_transparent::ExtendedPrivKey {

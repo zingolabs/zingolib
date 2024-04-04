@@ -7,7 +7,7 @@ use sapling_crypto::{
     note::ExtractedNoteCommitment,
     note_encryption::{try_sapling_note_decryption, PreparedIncomingViewingKey, SaplingDomain},
     value::NoteValue,
-    PaymentAddress, Rseed, SaplingIvk,
+    PaymentAddress, Rseed,
 };
 use std::io::{self, ErrorKind, Read};
 use zcash_note_encryption::{
@@ -104,7 +104,7 @@ impl Message {
         Ok(data)
     }
 
-    pub fn decrypt(data: &[u8], ivk: &SaplingIvk) -> io::Result<Message> {
+    pub fn decrypt(data: &[u8], ivk: &PreparedIncomingViewingKey) -> io::Result<Message> {
         if data.len() != 1 + Message::magic_word().len() + 32 + 32 + ENC_CIPHERTEXT_SIZE {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
@@ -182,7 +182,7 @@ impl Message {
         // really apply, since this note is not spendable anyway, so the rseed and the note itself
         // are not usable.
         match try_sapling_note_decryption(
-            &PreparedIncomingViewingKey::new(ivk),
+            &ivk,
             &Unspendable {
                 cmu_bytes,
                 epk_bytes,
@@ -215,7 +215,11 @@ pub mod tests {
 
     use super::*;
 
-    fn get_random_zaddr() -> (ExtendedSpendingKey, SaplingIvk, PaymentAddress) {
+    fn get_random_zaddr() -> (
+        ExtendedSpendingKey,
+        PreparedIncomingViewingKey,
+        PaymentAddress,
+    ) {
         let mut rng = OsRng;
         let mut seed = [0u8; 32];
         rng.fill(&mut seed);
@@ -225,7 +229,11 @@ pub mod tests {
         let fvk = dfvk;
         let (_, addr) = fvk.default_address();
 
-        (extsk, fvk.fvk().vk.ivk(), addr)
+        (
+            extsk,
+            PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
+            addr,
+        )
     }
 
     #[test]

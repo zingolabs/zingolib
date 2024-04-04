@@ -16,7 +16,6 @@ use rand::Rng;
 use sapling_crypto::note_encryption::SaplingDomain;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
-use sapling_crypto::SaplingIvk;
 use shardtree::error::ShardTreeError;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
@@ -311,10 +310,10 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk =
-            DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?.derive_ivk();
+        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?
+            .derive_ivk::<keys::unified::External>();
 
-        if let Ok(msg) = Message::decrypt(&enc, sapling_ivk.inner().) {
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.inner()) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
             return Ok(msg);
         }
