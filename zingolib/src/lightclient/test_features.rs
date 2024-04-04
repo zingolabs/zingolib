@@ -1,3 +1,5 @@
+use crate::error::ZingoLibError;
+
 use super::*;
 
 impl LightClient {
