@@ -5,7 +5,7 @@
 
 use crate::error::ZingoLibResult;
 
-use crate::wallet::keys::unified::Fvk as _;
+use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
@@ -132,8 +132,8 @@ impl TrialDecryptions {
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<WalletCapability>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        sapling_ivk: Option<SaplingIvk>,
-        orchard_ivk: Option<OrchardIvk>,
+        sapling_ivk: Option<Ivk<SaplingDomain, External>>,
+        orchard_ivk: Option<Ivk<OrchardDomain, External>>,
         transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
