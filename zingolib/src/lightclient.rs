@@ -383,16 +383,70 @@ pub mod instantiation {
 
 /// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 pub mod save {
-    use log::error;
+
+    use futures::future::join_all;
+    use json::{array, object, JsonValue};
+    use log::{debug, error, warn};
+    use serde::Serialize;
     use std::{
+        cmp::{self},
+        collections::HashMap,
         fs::{remove_file, File},
-        io::Write,
-        path::Path,
+        io::{self, BufReader, Error, ErrorKind, Read, Write},
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::Duration,
     };
-    use tokio::runtime::Runtime;
+    use tokio::{
+        join,
+        runtime::Runtime,
+        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
+        task::yield_now,
+        time::sleep,
+    };
+    use zcash_address::ZcashAddress;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use zcash_client_backend::{
+        encoding::{decode_payment_address, encode_payment_address},
+        proto::service::RawTransaction,
+    };
+    use zcash_primitives::{
+        consensus::{BlockHeight, BranchId, NetworkConstants},
+        memo::{Memo, MemoBytes},
+        transaction::{
+            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+        },
+    };
+    use zcash_proofs::prover::LocalTxProver;
+    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
 
     use super::LightClient;
-    use crate::error::{ZingoLibError, ZingoLibResult};
+    use crate::{
+        blaze::{
+            block_management_reorg_detection::BlockManagementData,
+            fetch_compact_blocks::FetchCompactBlocks,
+            fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
+            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
+            update_notes::UpdateNotes,
+        },
+        error::{ZingoLibError, ZingoLibResult},
+        grpc_connector::GrpcConnector,
+        wallet::{
+            data::{
+                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+                TransactionRecord,
+            },
+            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
+            message::Message,
+            notes::NoteInterface,
+            notes::ShieldedNoteInterface,
+            now,
+            transaction_context::TransactionContext,
+            utils::get_price,
+            LightWallet, Pool, SendProgress,
+        },
+    };
 
     impl LightClient {
         //        SAVE METHODS
@@ -463,6 +517,21 @@ pub mod save {
                 .map_err(String::from)
         }
 
+        pub(super) fn write_file_if_not_exists(
+            dir: &Path,
+            name: &str,
+            bytes: &[u8],
+        ) -> io::Result<()> {
+            let mut file_path = dir.to_path_buf();
+            file_path.push(name);
+            if !file_path.exists() {
+                let mut file = File::create(&file_path)?;
+                file.write_all(bytes)?;
+            }
+
+            Ok(())
+        }
+
         /// Only relevant in non-mobile, this function removes the save file.
         // TodO: can we shred it?
         pub async fn do_delete(&self) -> Result<(), String> {
@@ -485,6 +554,29 @@ pub mod save {
                 error!("{}", err);
                 log::debug!("File does not exist, nothing to delete.");
                 Err(err)
+            }
+        }
+
+        /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
+        /// ZingoConfig specifies both a wallet file and a directory containing it.
+        /// This function returns a PathBuf, the absolute path of the wallet file typically named zingo-wallet.dat
+        pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoLibError> {
+            if let Some(mut loc) = self.config.wallet_dir.clone() {
+                loc.push(self.config.wallet_name.clone());
+                Ok(loc)
+            } else {
+                Err(ZingoLibError::NoWalletLocation)
+            }
+        }
+
+        /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
+        /// ZingoConfig specifies both a wallet file and a directory containing it.
+        /// This function returns a PathBuf, the absolute path of a directory which typically contains a wallet.dat file
+        pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoLibError> {
+            if let Some(loc) = self.config.wallet_dir.clone() {
+                Ok(loc)
+            } else {
+                Err(ZingoLibError::NoWalletLocation)
             }
         }
     }
@@ -1200,6 +1292,43 @@ pub mod describe {
 
             res
         }
+        async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
+            let summaries = self.do_list_txsummaries().await;
+            let mut amount_by_address = HashMap::new();
+            for summary in summaries {
+                use ValueTransferKind::*;
+                match summary.kind {
+                    Sent { amount, to_address } => {
+                        let address = to_address.encode();
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            amount_by_address.entry(address.clone())
+                        {
+                            e.insert(vec![amount]);
+                        } else {
+                            amount_by_address
+                                .get_mut(&address)
+                                .expect("a vec of u64")
+                                .push(amount);
+                        };
+                    }
+                    Fee { amount } => {
+                        let fee_key = "fee".to_string();
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            amount_by_address.entry(fee_key.clone())
+                        {
+                            e.insert(vec![amount]);
+                        } else {
+                            amount_by_address
+                                .get_mut(&fee_key)
+                                .expect("a vec of u64.")
+                                .push(amount);
+                        };
+                    }
+                    SendToSelf { .. } | Received { .. } => (),
+                }
+            }
+            finsight::ValuesSentToAddress(amount_by_address)
+        }
     }
 }
 
@@ -1842,6 +1971,22 @@ pub mod sync {
                 total_blocks_synced: start_block - end_block + 1,
             })
         }
+        pub async fn do_rescan(&self) -> Result<SyncResult, String> {
+            debug!("Rescan starting");
+
+            self.clear_state().await;
+
+            // Then, do a sync, which will force a full rescan from the initial state
+            let response = self.do_sync(true).await;
+
+            if response.is_ok() {
+                // self.save_internal_rust().await?;
+            }
+
+            debug!("Rescan finished");
+
+            response
+        }
     }
 }
 
@@ -1883,7 +2028,7 @@ pub mod send {
     use zcash_proofs::prover::LocalTxProver;
     use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
 
-    use super::LightClient;
+    use super::{LightClient, LightWalletSendProgress};
     use crate::{
         blaze::{
             block_management_reorg_detection::BlockManagementData,
@@ -1910,17 +2055,168 @@ pub mod send {
         },
     };
 
-    impl LightClient {}
-}
-impl LightClient {
-    async fn get_submission_height(&self) -> Result<BlockHeight, String> {
-        Ok(BlockHeight::from_u32(
-            crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
-                .await?
-                .height as u32,
-        ) + 1)
-    }
+    impl LightClient {
+        async fn get_submission_height(&self) -> Result<BlockHeight, String> {
+            Ok(BlockHeight::from_u32(
+                crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
+                    .await?
+                    .height as u32,
+            ) + 1)
+        }
+        fn map_tos_to_receivers(
+            &self,
+            tos: Vec<(&str, u64, Option<MemoBytes>)>,
+        ) -> Result<
+            Vec<(
+                zcash_client_backend::address::Address,
+                NonNegativeAmount,
+                Option<MemoBytes>,
+            )>,
+            String,
+        > {
+            if tos.is_empty() {
+                return Err("Need at least one destination address".to_string());
+            }
+            tos.iter()
+                .map(|to| {
+                    let ra = match zcash_client_backend::address::Address::decode(
+                        &self.config.chain,
+                        to.0,
+                    ) {
+                        Some(to) => to,
+                        None => {
+                            let e = format!("Invalid recipient address: '{}'", to.0);
+                            error!("{}", e);
+                            return Err(e);
+                        }
+                    };
 
+                    let value = NonNegativeAmount::from_u64(to.1).unwrap();
+
+                    Ok((ra, value, to.2.clone()))
+                })
+                .collect()
+        }
+
+        //TODO: Add migrate_sapling_to_orchard argument
+        pub async fn do_send(
+            &self,
+            address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+        ) -> Result<String, String> {
+            let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
+            let transaction_submission_height = self.get_submission_height().await?;
+            // First, get the consensus branch ID
+            debug!("Creating transaction");
+
+            let result = {
+                let _lock = self.sync_lock.lock().await;
+                // I am not clear on how long this operation may take, but it's
+                // clearly unnecessary in a send that doesn't include sapling
+                // TODO: Remove from sends that don't include Sapling
+                let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+
+                let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
+                self.wallet
+                    .send_to_addresses(
+                        sapling_prover,
+                        vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
+                        // spend from transparent.
+                        receivers,
+                        transaction_submission_height,
+                        |transaction_bytes| {
+                            crate::grpc_connector::send_transaction(
+                                self.get_server_uri(),
+                                transaction_bytes,
+                            )
+                        },
+                    )
+                    .await
+            };
+
+            result.map(|(transaction_id, _)| transaction_id)
+        }
+
+        pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
+            let progress = self.wallet.get_send_progress().await;
+            Ok(LightWalletSendProgress {
+                progress: progress.clone(),
+                interrupt_sync: *self.interrupt_sync.read().await,
+            })
+        }
+
+        pub async fn do_shield(
+            &self,
+            pools_to_shield: &[Pool],
+            address: Option<String>,
+        ) -> Result<String, String> {
+            let transaction_submission_height = self.get_submission_height().await?;
+            let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
+                                              // as a fn of the transactions structure.
+            let tbal = self
+                .wallet
+                .tbalance(None)
+                .await
+                .expect("to receive a balance");
+            let sapling_bal = self
+                .wallet
+                .spendable_sapling_balance(None)
+                .await
+                .unwrap_or(0);
+
+            // Make sure there is a balance, and it is greater than the amount
+            let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
+                tbal
+            } else {
+                0
+            } + if pools_to_shield.contains(&Pool::Sapling) {
+                sapling_bal
+            } else {
+                0
+            };
+            if balance_to_shield <= fee {
+                return Err(format!(
+                    "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
+                    balance_to_shield, fee
+                ));
+            }
+
+            let addr = address.unwrap_or(
+                self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain),
+            );
+
+            let receiver = self
+                .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
+                .expect("To build shield receiver.");
+            let result = {
+                let _lock = self.sync_lock.lock().await;
+                let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+
+                let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
+                self.wallet
+                    .send_to_addresses(
+                        sapling_prover,
+                        pools_to_shield.to_vec(),
+                        receiver,
+                        transaction_submission_height,
+                        |transaction_bytes| {
+                            crate::grpc_connector::send_transaction(
+                                self.get_server_uri(),
+                                transaction_bytes,
+                            )
+                        },
+                    )
+                    .await
+            };
+
+            result.map(|(transaction_id, _)| transaction_id)
+        }
+    }
+}
+
+// other functions
+impl LightClient {
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
@@ -1994,172 +2290,6 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
-    pub async fn do_rescan(&self) -> Result<SyncResult, String> {
-        debug!("Rescan starting");
-
-        self.clear_state().await;
-
-        // Then, do a sync, which will force a full rescan from the initial state
-        let response = self.do_sync(true).await;
-
-        if response.is_ok() {
-            // self.save_internal_rust().await?;
-        }
-
-        debug!("Rescan finished");
-
-        response
-    }
-
-    fn map_tos_to_receivers(
-        &self,
-        tos: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<
-        Vec<(
-            zcash_client_backend::address::Address,
-            NonNegativeAmount,
-            Option<MemoBytes>,
-        )>,
-        String,
-    > {
-        if tos.is_empty() {
-            return Err("Need at least one destination address".to_string());
-        }
-        tos.iter()
-            .map(|to| {
-                let ra = match zcash_client_backend::address::Address::decode(
-                    &self.config.chain,
-                    to.0,
-                ) {
-                    Some(to) => to,
-                    None => {
-                        let e = format!("Invalid recipient address: '{}'", to.0);
-                        error!("{}", e);
-                        return Err(e);
-                    }
-                };
-
-                let value = NonNegativeAmount::from_u64(to.1).unwrap();
-
-                Ok((ra, value, to.2.clone()))
-            })
-            .collect()
-    }
-
-    //TODO: Add migrate_sapling_to_orchard argument
-    pub async fn do_send(
-        &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<String, String> {
-        let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
-        let transaction_submission_height = self.get_submission_height().await?;
-        // First, get the consensus branch ID
-        debug!("Creating transaction");
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            // I am not clear on how long this operation may take, but it's
-            // clearly unnecessary in a send that doesn't include sapling
-            // TODO: Remove from sends that don't include Sapling
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
-
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
-                    // spend from transparent.
-                    receivers,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
-    pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
-        let progress = self.wallet.get_send_progress().await;
-        Ok(LightWalletSendProgress {
-            progress: progress.clone(),
-            interrupt_sync: *self.interrupt_sync.read().await,
-        })
-    }
-
-    pub async fn do_shield(
-        &self,
-        pools_to_shield: &[Pool],
-        address: Option<String>,
-    ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
-                                          // as a fn of the transactions structure.
-        let tbal = self
-            .wallet
-            .tbalance(None)
-            .await
-            .expect("to receive a balance");
-        let sapling_bal = self
-            .wallet
-            .spendable_sapling_balance(None)
-            .await
-            .unwrap_or(0);
-
-        // Make sure there is a balance, and it is greater than the amount
-        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
-            tbal
-        } else {
-            0
-        } + if pools_to_shield.contains(&Pool::Sapling) {
-            sapling_bal
-        } else {
-            0
-        };
-        if balance_to_shield <= fee {
-            return Err(format!(
-                "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                balance_to_shield, fee
-            ));
-        }
-
-        let addr = address
-            .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
-
-        let receiver = self
-            .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
-            .expect("To build shield receiver.");
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
-
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    pools_to_shield.to_vec(),
-                    receiver,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
     #[cfg(not(feature = "embed_params"))]
     fn read_sapling_params(&self) -> Result<(vec<u8>, vec<u8>), String> {
         let path = self
@@ -2281,78 +2411,6 @@ impl LightClient {
             }
         }
     }
-    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let summaries = self.do_list_txsummaries().await;
-        let mut amount_by_address = HashMap::new();
-        for summary in summaries {
-            use ValueTransferKind::*;
-            match summary.kind {
-                Sent { amount, to_address } => {
-                    let address = to_address.encode();
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        amount_by_address.entry(address.clone())
-                    {
-                        e.insert(vec![amount]);
-                    } else {
-                        amount_by_address
-                            .get_mut(&address)
-                            .expect("a vec of u64")
-                            .push(amount);
-                    };
-                }
-                Fee { amount } => {
-                    let fee_key = "fee".to_string();
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        amount_by_address.entry(fee_key.clone())
-                    {
-                        e.insert(vec![amount]);
-                    } else {
-                        amount_by_address
-                            .get_mut(&fee_key)
-                            .expect("a vec of u64.")
-                            .push(amount);
-                    };
-                }
-                SendToSelf { .. } | Received { .. } => (),
-            }
-        }
-        finsight::ValuesSentToAddress(amount_by_address)
-    }
-
-    fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
-        let mut file_path = dir.to_path_buf();
-        file_path.push(name);
-        if !file_path.exists() {
-            let mut file = File::create(&file_path)?;
-            file.write_all(bytes)?;
-        }
-
-        Ok(())
-    }
-
-    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
-    /// ZingoConfig specifies both a wallet file and a directory containing it.
-    /// This function returns a PathBuf, the absolute path of the wallet file typically named zingo-wallet.dat
-    pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoLibError> {
-        if let Some(mut loc) = self.config.wallet_dir.clone() {
-            loc.push(self.config.wallet_name.clone());
-            Ok(loc)
-        } else {
-            Err(ZingoLibError::NoWalletLocation)
-        }
-    }
-
-    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
-    /// ZingoConfig specifies both a wallet file and a directory containing it.
-    /// This function returns a PathBuf, the absolute path of a directory which typically contains a wallet.dat file
-    pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoLibError> {
-        if let Some(loc) = self.config.wallet_dir.clone() {
-            Ok(loc)
-        } else {
-            Err(ZingoLibError::NoWalletLocation)
-        }
-    }
-
     fn unspent_pending_spent(
         &self,
         note: JsonValue,
