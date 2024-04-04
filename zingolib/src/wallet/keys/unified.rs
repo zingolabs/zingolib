@@ -627,6 +627,10 @@ where
     pub ivk: D::IncomingViewingKey,
     __scope: PhantomData<Scope>,
 }
+
+/// This is of questionable utility, but internally-scoped ovks
+/// exist, and so we represent them at the type level despite
+/// having no current use for them
 pub struct Ovk<D, Scope>
 where
     D: zcash_note_encryption::Domain,
