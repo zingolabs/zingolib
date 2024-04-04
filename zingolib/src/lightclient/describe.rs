@@ -1,5 +1,7 @@
 /// These functions can be called by consumer to learn about the LightClient.
 use json::{object, JsonValue};
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
@@ -50,14 +52,22 @@ impl LightClient {
 
     pub async fn do_balance(&self) -> PoolBalances {
         PoolBalances {
-            sapling_balance: self.wallet.maybe_verified_sapling_balance(None).await,
-            verified_sapling_balance: self.wallet.verified_sapling_balance(None).await,
+            sapling_balance: self
+                .wallet
+                .shielded_balance::<SaplingDomain>(None, &[])
+                .await,
+            verified_sapling_balance: self.wallet.verified_balance::<SaplingDomain>(None).await,
             spendable_sapling_balance: self.wallet.spendable_sapling_balance(None).await,
-            unverified_sapling_balance: self.wallet.unverified_sapling_balance(None).await,
-            orchard_balance: self.wallet.maybe_verified_orchard_balance(None).await,
-            verified_orchard_balance: self.wallet.verified_orchard_balance(None).await,
+            unverified_sapling_balance: self.wallet.unverified_balance::<SaplingDomain>(None).await,
+
+            orchard_balance: self
+                .wallet
+                .shielded_balance::<OrchardDomain>(None, &[])
+                .await,
+            verified_orchard_balance: self.wallet.verified_balance::<OrchardDomain>(None).await,
             spendable_orchard_balance: self.wallet.spendable_orchard_balance(None).await,
-            unverified_orchard_balance: self.wallet.unverified_orchard_balance(None).await,
+            unverified_orchard_balance: self.wallet.unverified_balance::<OrchardDomain>(None).await,
+
             transparent_balance: self.wallet.tbalance(None).await,
         }
     }

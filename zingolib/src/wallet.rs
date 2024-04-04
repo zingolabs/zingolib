@@ -844,7 +844,7 @@ impl LightWallet {
     }
 
     #[allow(clippy::type_complexity)]
-    async fn shielded_balance<D>(
+    pub async fn shielded_balance<D>(
         &self,
         target_addr: Option<String>,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
@@ -936,7 +936,7 @@ impl LightWallet {
         self.transaction_context.transaction_metadata_set.clone()
     }
 
-    async fn unverified_balance<D: DomainWalletExt>(
+    pub async fn unverified_balance<D: DomainWalletExt>(
         &self,
         target_addr: Option<String>,
     ) -> Option<u64>
@@ -966,7 +966,10 @@ impl LightWallet {
         self.unverified_balance::<SaplingDomain>(target_addr).await
     }
 
-    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> Option<u64>
+    pub async fn verified_balance<D: DomainWalletExt>(
+        &self,
+        target_addr: Option<String>,
+    ) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
