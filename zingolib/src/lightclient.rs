@@ -5,7 +5,7 @@ use crate::{
         sync_status::BatchSyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
         update_notes::UpdateNotes,
     },
-    error::{ZingoLibError, ZingoLibResult},
+    error::ZingoLibError,
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -29,7 +29,7 @@ use serde::Serialize;
 use std::{
     cmp::{self},
     collections::HashMap,
-    fs::{remove_file, File},
+    fs::File,
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
@@ -394,15 +394,12 @@ pub mod instantiation {
 /// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 pub mod save {
     use log::error;
-    use std::fs::{remove_file, File};
-    use std::{io::Write, path::Path};
-    use tokio::{
-        join,
-        runtime::Runtime,
-        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
-        task::yield_now,
-        time::sleep,
+    use std::{
+        fs::{remove_file, File},
+        io::Write,
+        path::Path,
     };
+    use tokio::runtime::Runtime;
 
     use super::LightClient;
     use crate::error::{ZingoLibError, ZingoLibResult};
