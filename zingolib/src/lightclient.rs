@@ -494,7 +494,7 @@ pub mod save {
 }
 
 /// the counterpart to mod save, these functions find a LightWallet and convert it to a LightClient using methods in instantiation.
-mod read {
+pub mod read {
     use log::debug;
     use std::{
         fs::File,
