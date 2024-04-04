@@ -394,6 +394,15 @@ pub mod instantiation {
 /// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 pub mod save {
     use crate::error::{ZingoLibError, ZingoLibResult};
+    use std::{
+        cmp::{self},
+        collections::HashMap,
+        fs::{remove_file, File},
+        io::{self, BufReader, Error, ErrorKind, Read, Write},
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::Duration,
+    };
 
     use log::error;
 
@@ -444,16 +453,16 @@ pub mod save {
                 }
             }
         }
+
+        fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
+            let mut file = File::create(path)?;
+            file.write_all(buffer)?;
+            Ok(())
+        }
     }
 }
 
 impl LightClient {
-    fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
-        let mut file = File::create(path)?;
-        file.write_all(buffer)?;
-        Ok(())
-    }
-
     pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
         // self.save_internal_rust().await?;
         let read_buffer = self.save_buffer.buffer.read().await;
