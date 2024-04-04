@@ -15,7 +15,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use sapling_crypto::note_encryption::SaplingDomain;
 
-use sapling_crypto::SaplingIvk;
+use sapling_crypto::zip32::DiversifiableFullViewingKey;
 use shardtree::error::ShardTreeError;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
@@ -40,6 +40,7 @@ use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::componen
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use self::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+use self::keys::unified::Fvk as _;
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, SpendableNote};
@@ -309,9 +310,10 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = SaplingIvk::try_from(&*self.wallet_capability())?;
+        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?
+            .derive_ivk::<keys::unified::External>();
 
-        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
             return Ok(msg);
         }

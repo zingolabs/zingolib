@@ -40,7 +40,10 @@ pub mod decrypt_transaction {
         error::{ZingoLibError, ZingoLibResult},
         wallet::{
             data::OutgoingTxData,
-            keys::address_from_pubkeyhash,
+            keys::{
+                address_from_pubkeyhash,
+                unified::{External, Fvk},
+            },
             notes::ShieldedNoteInterface,
             traits::{
                 self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
@@ -390,6 +393,7 @@ pub mod decrypt_transaction {
             D::OutgoingViewingKey: std::fmt::Debug,
             D::Recipient: zingo_traits::Recipient,
             D::Memo: zingo_traits::ToBytes<512>,
+            D::IncomingViewingKey: Clone,
         {
             type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
@@ -442,15 +446,18 @@ pub mod decrypt_transaction {
                     })
                     .collect::<Vec<_>>();
 
-            let (Ok(ivk), Ok(ovk)) = (D::wc_to_ivk(&self.key), D::wc_to_ovk(&self.key)) else {
+            let Ok(fvk) = D::wc_to_fvk(&self.key) else {
                 // skip scanning if wallet has not viewing capability
                 return;
             };
+            let (ivk, ovk) = (fvk.derive_ivk::<External>(), fvk.derive_ovk::<External>());
 
-            let decrypt_attempts =
-                zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
-                    .into_iter()
-                    .enumerate();
+            let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
+                &[ivk.ivk],
+                &domain_tagged_outputs,
+            )
+            .into_iter()
+            .enumerate();
             for (output_index, decrypt_attempt) in decrypt_attempts {
                 let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                     Some(plaintext) => plaintext,
@@ -498,7 +505,7 @@ pub mod decrypt_transaction {
                         <FnGenBundle<D> as zingo_traits::Bundle<D>>::Output,
                     >(
                         &output.domain(status.get_height(), self.config.chain),
-                        &ovk,
+                        &ovk.ovk,
                         &output,
                         &output.value_commitment(),
                         &output.out_ciphertext(),

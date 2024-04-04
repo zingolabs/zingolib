@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
@@ -7,12 +8,13 @@ use std::{
 
 use append_only_vec::AppendOnlyVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use orchard::keys::Scope;
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
 use secp256k1::SecretKey;
-use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
+use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::Vector;
@@ -20,7 +22,7 @@ use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
 use super::{
     extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
@@ -164,8 +166,10 @@ impl WalletCapability {
     }
 
     pub fn ufvk(&self) -> Result<Ufvk, std::string::String> {
-        let o_fvk = Fvk::Orchard(orchard::keys::FullViewingKey::try_from(self)?.to_bytes());
-        let s_fvk = Fvk::Sapling(
+        use zcash_address::unified::Fvk as UfvkComponent;
+        let o_fvk =
+            UfvkComponent::Orchard(orchard::keys::FullViewingKey::try_from(self)?.to_bytes());
+        let s_fvk = UfvkComponent::Sapling(
             sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?.to_bytes(),
         );
         let mut t_fvk_bytes = [0u8; 65];
@@ -173,7 +177,7 @@ impl WalletCapability {
         if let Ok(t_ext_pk) = possible_transparent_key {
             t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
             t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
-            let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+            let t_fvk = UfvkComponent::P2pkh(t_fvk_bytes);
             Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk]).map_err(|e| e.to_string())
         } else {
             Ufvk::try_from_items(vec![o_fvk, s_fvk]).map_err(|e| e.to_string())
@@ -206,7 +210,7 @@ impl WalletCapability {
                     return Err(e);
                 }
             };
-            Some(fvk.address_at(self.addresses.len(), Scope::External))
+            Some(fvk.address_at(self.addresses.len(), orchard::keys::Scope::External))
         } else {
             None
         };
@@ -395,14 +399,15 @@ impl WalletCapability {
         // Initialize an instance with no capabilities.
         let mut wc = WalletCapability::default();
         for fvk in ufvk.items() {
+            use zcash_address::unified::Fvk as UfvkComponent;
             match fvk {
-                Fvk::Orchard(key_bytes) => {
+                UfvkComponent::Orchard(key_bytes) => {
                     wc.orchard = Capability::View(
                         orchard::keys::FullViewingKey::from_bytes(&key_bytes)
                             .ok_or("Orchard FVK deserialization failed")?,
                     );
                 }
-                Fvk::Sapling(key_bytes) => {
+                UfvkComponent::Sapling(key_bytes) => {
                     wc.sapling = Capability::View(
                         sapling_crypto::zip32::DiversifiableFullViewingKey::read(
                             &key_bytes[..],
@@ -411,14 +416,14 @@ impl WalletCapability {
                         .map_err(|e| e.to_string())?,
                     );
                 }
-                Fvk::P2pkh(key_bytes) => {
+                UfvkComponent::P2pkh(key_bytes) => {
                     wc.transparent = Capability::View(ExtendedPubKey {
                         chain_code: key_bytes[0..32].to_vec(),
                         public_key: secp256k1::PublicKey::from_slice(&key_bytes[32..65])
                             .map_err(|e| e.to_string())?,
                     });
                 }
-                Fvk::Unknown { typecode, data: _ } => {
+                UfvkComponent::Unknown { typecode, data: _ } => {
                     log::info!(
                         "Unknown receiver of type {} found in Unified Viewing Key",
                         typecode
@@ -591,6 +596,49 @@ impl ReadableWriteable<()> for WalletCapability {
     }
 }
 
+/// The external, default scope for deriving an fvk's component viewing keys
+pub struct External;
+
+/// The internal scope, used for change only
+pub struct Internal;
+
+mod scope {
+    use super::*;
+    use zcash_primitives::zip32::Scope as ScopeEnum;
+    pub trait Scope {
+        fn scope() -> ScopeEnum;
+    }
+
+    impl Scope for External {
+        fn scope() -> ScopeEnum {
+            ScopeEnum::External
+        }
+    }
+    impl Scope for Internal {
+        fn scope() -> ScopeEnum {
+            ScopeEnum::Internal
+        }
+    }
+}
+pub struct Ivk<D, Scope>
+where
+    D: zcash_note_encryption::Domain,
+{
+    pub ivk: D::IncomingViewingKey,
+    __scope: PhantomData<Scope>,
+}
+
+/// This is of questionable utility, but internally-scoped ovks
+/// exist, and so we represent them at the type level despite
+/// having no current use for them
+pub struct Ovk<D, Scope>
+where
+    D: zcash_note_encryption::Domain,
+{
+    pub ovk: D::OutgoingViewingKey,
+    __scope: PhantomData<Scope>,
+}
+
 impl TryFrom<&WalletCapability> for super::extended_transparent::ExtendedPrivKey {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
@@ -663,36 +711,44 @@ impl TryFrom<&WalletCapability> for sapling_crypto::zip32::DiversifiableFullView
     }
 }
 
-impl TryFrom<&WalletCapability> for sapling_crypto::note_encryption::PreparedIncomingViewingKey {
-    type Error = String;
+pub trait Fvk<D: DomainWalletExt>
+where
+    <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+    <D as zcash_note_encryption::Domain>::Recipient: Recipient,
+{
+    fn derive_ivk<S: scope::Scope>(&self) -> Ivk<D, S>;
+    fn derive_ovk<S: scope::Scope>(&self) -> Ovk<D, S>;
+}
 
-    fn try_from(value: &WalletCapability) -> Result<Self, Self::Error> {
-        sapling_crypto::SaplingIvk::try_from(value)
-            .map(|k| sapling_crypto::note_encryption::PreparedIncomingViewingKey::new(&k))
+impl Fvk<OrchardDomain> for orchard::keys::FullViewingKey {
+    fn derive_ivk<S: scope::Scope>(&self) -> Ivk<OrchardDomain, S> {
+        Ivk {
+            ivk: orchard::keys::PreparedIncomingViewingKey::new(&self.to_ivk(S::scope())),
+            __scope: PhantomData,
+        }
+    }
+
+    fn derive_ovk<S: scope::Scope>(&self) -> Ovk<OrchardDomain, S> {
+        Ovk {
+            ovk: self.to_ovk(S::scope()),
+            __scope: PhantomData,
+        }
     }
 }
 
-impl TryFrom<&WalletCapability> for orchard::keys::IncomingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
-        let fvk: orchard::keys::FullViewingKey = wc.try_into()?;
-        Ok(fvk.to_ivk(Scope::External))
+impl Fvk<SaplingDomain> for sapling_crypto::zip32::DiversifiableFullViewingKey {
+    fn derive_ivk<S: scope::Scope>(&self) -> Ivk<SaplingDomain, S> {
+        Ivk {
+            ivk: sapling_crypto::keys::PreparedIncomingViewingKey::new(&self.to_ivk(S::scope())),
+            __scope: PhantomData,
+        }
     }
-}
 
-impl TryFrom<&WalletCapability> for orchard::keys::PreparedIncomingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
-        orchard::keys::IncomingViewingKey::try_from(wc)
-            .map(|k| orchard::keys::PreparedIncomingViewingKey::new(&k))
-    }
-}
-
-impl TryFrom<&WalletCapability> for sapling_crypto::SaplingIvk {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
-        let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey = wc.try_into()?;
-        Ok(fvk.fvk().vk.ivk())
+    fn derive_ovk<S: scope::Scope>(&self) -> Ovk<SaplingDomain, S> {
+        Ovk {
+            ovk: self.to_ovk(S::scope()),
+            __scope: PhantomData,
+        }
     }
 }
 
@@ -700,7 +756,7 @@ impl TryFrom<&WalletCapability> for orchard::keys::OutgoingViewingKey {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
         let fvk: orchard::keys::FullViewingKey = wc.try_into()?;
-        Ok(fvk.to_ovk(Scope::External))
+        Ok(fvk.to_ovk(orchard::keys::Scope::External))
     }
 }
 

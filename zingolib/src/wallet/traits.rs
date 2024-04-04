@@ -429,7 +429,11 @@ where
     const NU: NetworkUpgrade;
     const NAME: &'static str;
 
-    type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>;
+    type Fvk: Clone
+        + Send
+        + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
+        + for<'a> TryFrom<&'a WalletCapability>
+        + super::keys::unified::Fvk<Self>;
 
     type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
@@ -484,8 +488,6 @@ where
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
 }
 
@@ -553,12 +555,6 @@ impl DomainWalletExt for SaplingDomain {
     }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
-    }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
-        Self::IncomingViewingKey::try_from(wc)
-    }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
-        Self::OutgoingViewingKey::try_from(wc)
     }
 
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
@@ -630,12 +626,6 @@ impl DomainWalletExt for OrchardDomain {
     }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
-    }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
-        Self::IncomingViewingKey::try_from(wc)
-    }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
-        Self::OutgoingViewingKey::try_from(wc)
     }
 
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
