@@ -5,7 +5,7 @@ use crate::{
         sync_status::BatchSyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
         update_notes::UpdateNotes,
     },
-    error::{ZingoLibError, ZingoLibResult},
+    error::{ZingoLibError},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -397,11 +397,7 @@ pub mod save {
 
     use log::error;
     use tokio::{
-        join,
         runtime::Runtime,
-        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
-        task::yield_now,
-        time::sleep,
     };
 
     use super::LightClient;
