@@ -393,20 +393,19 @@ pub mod instantiation {
 
 /// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 pub mod save {
-    use crate::error::{ZingoLibError, ZingoLibResult};
-    use std::{
-        cmp::{self},
-        collections::HashMap,
-        fs::{remove_file, File},
-        io::{self, BufReader, Error, ErrorKind, Read, Write},
-        path::{Path, PathBuf},
-        sync::Arc,
-        time::Duration,
-    };
+    use std::{fs::File, io::Write, path::Path};
 
     use log::error;
+    use tokio::{
+        join,
+        runtime::Runtime,
+        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
+        task::yield_now,
+        time::sleep,
+    };
 
     use super::LightClient;
+    use crate::error::{ZingoLibError, ZingoLibResult};
 
     impl LightClient {
         //        SAVE METHODS
@@ -459,28 +458,27 @@ pub mod save {
             file.write_all(buffer)?;
             Ok(())
         }
+
+        async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
+            let read_buffer = self.save_buffer.buffer.read().await;
+            if !read_buffer.is_empty() {
+                Ok(read_buffer.clone())
+            } else {
+                ZingoLibError::EmptySaveBuffer.handle()
+            }
+        }
+
+        /// This function is the sole correct way to ask LightClient to save.
+        pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
+            Runtime::new()
+                .unwrap()
+                .block_on(async move { self.export_save_buffer_async().await })
+                .map_err(String::from)
+        }
     }
 }
 
 impl LightClient {
-    pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
-        // self.save_internal_rust().await?;
-        let read_buffer = self.save_buffer.buffer.read().await;
-        if !read_buffer.is_empty() {
-            Ok(read_buffer.clone())
-        } else {
-            ZingoLibError::EmptySaveBuffer.handle()
-        }
-    }
-
-    /// This function is the sole correct way to ask LightClient to save.
-    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.export_save_buffer_async().await })
-            .map_err(String::from)
-    }
-
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
     /// zingo-mobile.
