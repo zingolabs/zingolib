@@ -26,6 +26,15 @@ impl TransactionContext {
     }
 }
 
+/// These functions are responsible for receiving a full Transaction and storing it, with a few major caveats.
+///  The first layer is CompactTransaction. see fn trial_decrypt_domain_specific_outputs
+///  in some cases, including send, read memos, discover outgoing transaction (mark change / scan for internal change), additional information and processing are required
+/// some of the steps in scan_full_tx are similar to or repeat steps in trial_ddso
+/// however, scan full tx is more limited than trial_ddso.
+/// scan_full_tx has no access to a transmitter. So it is incapable of **sending a request on a transmitter for another task to fetch a witnessed position**.
+/// unlike a viewkey wallet, a spendkey wallet MUST pass reread the block to find a witnessed position to pass to add_new_note. scan_full_tx cannot do this.
+/// thus, scan_full_tx is incomplete and skips some steps on the assumption that they will be covered elsewhere. Notably, add_note is not called inside scan_full_tx.
+/// (A viewkey wallet, on the other hand, doesnt need witness and could maybe get away with only calling scan_full_tx)
 pub mod decrypt_transaction {
     use crate::{
         error::{ZingoLibError, ZingoLibResult},
