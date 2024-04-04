@@ -1,22 +1,22 @@
-use crate::wallet::{keys::unified::WalletCapability, transactions::TransactionMetadataSet};
-
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use zingoconfig::ZingoConfig;
 
+use crate::wallet::{keys::unified::WalletCapability, transactions::TxMapAndMaybeTrees};
+
 #[derive(Clone)]
 pub struct TransactionContext {
     pub config: ZingoConfig,
     pub(crate) key: Arc<WalletCapability>,
-    pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
             config: config.clone(),

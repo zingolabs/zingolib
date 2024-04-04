@@ -48,7 +48,7 @@ use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    transactions::TransactionMetadataSet,
+    transactions::TxMapAndMaybeTrees,
 };
 use zingoconfig::ZingoConfig;
 
@@ -594,9 +594,9 @@ impl LightWallet {
             ));
         };
         let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees()))
         } else {
-            Arc::new(RwLock::new(TransactionMetadataSet::new_treeless()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless()))
         };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
@@ -677,9 +677,9 @@ impl LightWallet {
         }
 
         let mut transactions = if external_version <= 14 {
-            TransactionMetadataSet::read_old(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read_old(&mut reader, &wallet_capability)
         } else {
-            TransactionMetadataSet::read(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
         }?;
         let txids = transactions
             .current
@@ -930,7 +930,7 @@ impl LightWallet {
         }
     }
 
-    pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
+    pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
         self.transaction_context.transaction_metadata_set.clone()
     }
 
