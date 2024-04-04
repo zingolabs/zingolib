@@ -11,7 +11,7 @@ use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    transactions::TransactionMetadataSet,
+    transactions::TxMapAndMaybeTrees,
     utils::txid_from_slice,
     MemoDownloadOption,
 };
@@ -41,7 +41,7 @@ use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,
-    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -49,7 +49,7 @@ impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
         wc: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
             config,
@@ -132,19 +132,9 @@ impl TrialDecryptions {
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<WalletCapability>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        sapling_ivk: Option<
-            crate::wallet::keys::unified::Ivk<
-                SaplingDomain,
-                crate::wallet::keys::unified::External,
-            >,
-        >,
-        orchard_ivk: Option<
-            crate::wallet::keys::unified::Ivk<
-                OrchardDomain,
-                crate::wallet::keys::unified::External,
-            >,
-        >,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        sapling_ivk: Option<SaplingIvk>,
+        orchard_ivk: Option<OrchardIvk>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -277,7 +267,7 @@ impl TrialDecryptions {
         config: &zingoconfig::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -432,7 +422,7 @@ fn update_witnesses<D>(
         )>,
         BlockHeight,
     )>,
-    txmds_writelock: &mut TransactionMetadataSet,
+    txmds_writelock: &mut TxMapAndMaybeTrees,
     wc: &Arc<WalletCapability>,
 ) -> ZingoLibResult<()>
 where
