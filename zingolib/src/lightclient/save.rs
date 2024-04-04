@@ -1,3 +1,4 @@
+/// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 use log::error;
 
 use std::{

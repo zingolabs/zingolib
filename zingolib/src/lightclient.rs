@@ -344,13 +344,10 @@ pub mod instantiation {
     }
 }
 
-/// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 pub mod save;
 
-/// the counterpart to mod save, these functions find a LightWallet and convert it to a LightClient using methods in instantiation.
-mod read;
+pub mod read;
 
-/// These functions can be called by consumer to learn about the LightClient.
 pub mod describe;
 
 pub mod sync;

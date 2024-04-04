@@ -1,3 +1,4 @@
+/// These functions can be called by consumer to learn about the LightClient.
 use json::{object, JsonValue};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
