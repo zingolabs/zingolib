@@ -428,7 +428,7 @@ pub mod save {
             Ok(())
         }
 
-        /// If possible, write to disk.
+        /// If possible, write to disk. todo conditionally compile this function
         async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<bool> {
             #[cfg(any(target_os = "ios", target_os = "android"))]
             // on mobile platforms, saving from this buffer will be handled by the native layer
@@ -500,54 +500,123 @@ pub mod save {
     }
 }
 
+/// the counterpart to mod save, these functions find a LightWallet and convert it to a LightClient using methods in instantiation.
+mod read {
+    use crate::{
+        blaze::{
+            block_management_reorg_detection::BlockManagementData,
+            fetch_compact_blocks::FetchCompactBlocks,
+            fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
+            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
+            update_notes::UpdateNotes,
+        },
+        grpc_connector::GrpcConnector,
+        wallet::{
+            data::{
+                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+                TransactionRecord,
+            },
+            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
+            message::Message,
+            notes::NoteInterface,
+            notes::ShieldedNoteInterface,
+            now,
+            transaction_context::TransactionContext,
+            utils::get_price,
+            LightWallet, Pool, SendProgress,
+        },
+    };
+    use futures::future::join_all;
+    use json::{array, object, JsonValue};
+    use log::{debug, error, warn};
+    use serde::Serialize;
+    use std::{
+        cmp::{self},
+        collections::HashMap,
+        fs::File,
+        io::{self, BufReader, Error, ErrorKind, Read, Write},
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::Duration,
+    };
+    use tokio::{
+        join,
+        runtime::Runtime,
+        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
+        task::yield_now,
+        time::sleep,
+    };
+    use zcash_address::ZcashAddress;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use zcash_client_backend::{
+        encoding::{decode_payment_address, encode_payment_address},
+        proto::service::RawTransaction,
+    };
+    use zcash_primitives::{
+        consensus::{BlockHeight, BranchId, NetworkConstants},
+        memo::{Memo, MemoBytes},
+        transaction::{
+            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+        },
+    };
+    use zcash_proofs::prover::LocalTxProver;
+    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
+
+    use super::LightClient;
+    use crate::error::{ZingoLibError, ZingoLibResult};
+
+    impl LightClient {
+        pub async fn read_wallet_from_buffer_async<R: Read>(
+            config: &ZingoConfig,
+            mut reader: R,
+        ) -> io::Result<Self> {
+            let wallet = LightWallet::read_internal(&mut reader, config).await?;
+
+            let lc = LightClient::create_from_wallet_async(wallet, config.clone()).await?;
+
+            debug!(
+                "Read wallet with birthday {}",
+                lc.wallet.get_birthday().await
+            );
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+
+            Ok(lc)
+        }
+
+        /// This constructor depends on a wallet that's read from a buffer.
+        /// It is used internally by read_from_disk, and directly called by
+        /// zingo-mobile.
+        pub fn read_wallet_from_buffer_runtime<R: Read>(
+            config: &ZingoConfig,
+            reader: R,
+        ) -> io::Result<Self> {
+            Runtime::new()
+                .unwrap()
+                .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
+        }
+
+        pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
+            let wallet_path = if config.wallet_path_exists() {
+                config.get_wallet_path()
+            } else {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!(
+                        "Cannot read wallet. No file at {}",
+                        config.get_wallet_path().display()
+                    ),
+                ));
+            };
+            LightClient::read_wallet_from_buffer_runtime(
+                config,
+                BufReader::new(File::open(wallet_path)?),
+            )
+        }
+    }
+}
+
 impl LightClient {
-    /// This constructor depends on a wallet that's read from a buffer.
-    /// It is used internally by read_from_disk, and directly called by
-    /// zingo-mobile.
-    pub fn read_wallet_from_buffer_runtime<R: Read>(
-        config: &ZingoConfig,
-        reader: R,
-    ) -> io::Result<Self> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
-    }
-
-    pub async fn read_wallet_from_buffer_async<R: Read>(
-        config: &ZingoConfig,
-        mut reader: R,
-    ) -> io::Result<Self> {
-        let wallet = LightWallet::read_internal(&mut reader, config).await?;
-
-        let lc = LightClient::create_from_wallet_async(wallet, config.clone()).await?;
-
-        debug!(
-            "Read wallet with birthday {}",
-            lc.wallet.get_birthday().await
-        );
-        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-
-        Ok(lc)
-    }
-
-    pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
-        let wallet_path = if config.wallet_path_exists() {
-            config.get_wallet_path()
-        } else {
-            return Err(Error::new(
-                ErrorKind::NotFound,
-                format!(
-                    "Cannot read wallet. No file at {}",
-                    config.get_wallet_path().display()
-                ),
-            ));
-        };
-        LightClient::read_wallet_from_buffer_runtime(
-            config,
-            BufReader::new(File::open(wallet_path)?),
-        )
-    }
-
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
