@@ -1,56 +1,20 @@
-use futures::future::join_all;
 use json::{array, object, JsonValue};
-use log::{debug, error, warn};
+use log::{debug, error};
 use serde::Serialize;
-use std::{
-    cmp::{self},
-    collections::HashMap,
-    fs::File,
-    io::{self, Write},
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{
-    join,
-    runtime::Runtime,
-    sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
-    task::yield_now,
-    time::sleep,
-};
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
 
-use zcash_client_backend::{
-    encoding::{decode_payment_address, encode_payment_address},
-    proto::service::RawTransaction,
-};
+use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
-    consensus::{BlockHeight, BranchId, NetworkConstants},
+    consensus::NetworkConstants,
     memo::{Memo, MemoBytes},
-    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction},
 };
-use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::{ZingoConfig, MAX_REORG};
 
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingoconfig::ZingoConfig;
 
 use crate::{
-    blaze::{
-        block_management_reorg_detection::BlockManagementData,
-        fetch_compact_blocks::FetchCompactBlocks, fetch_taddr_transactions::FetchTaddrTransactions,
-        sync_status::BatchSyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-        update_notes::UpdateNotes,
-    },
-    error::ZingoLibError,
-    grpc_connector::GrpcConnector,
-    wallet::{
-        data::{finsight, summaries::ValueTransferKind},
-        keys::unified::ReceiverSelection,
-        message::Message,
-        now,
-        transaction_context::TransactionContext,
-        utils::get_price,
-        LightWallet, Pool, SendProgress,
-    },
+    blaze::syncdata::BlazeSyncData,
+    wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -384,69 +348,17 @@ pub mod instantiation {
 /// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 pub mod save {
 
-    use futures::future::join_all;
-    use json::{array, object, JsonValue};
-    use log::{debug, error, warn};
-    use serde::Serialize;
-    use std::{
-        cmp::{self},
-        collections::HashMap,
-        fs::{remove_file, File},
-        io::{self, BufReader, Error, ErrorKind, Read, Write},
-        path::{Path, PathBuf},
-        sync::Arc,
-        time::Duration,
-    };
-    use tokio::{
-        join,
-        runtime::Runtime,
-        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
-        task::yield_now,
-        time::sleep,
-    };
-    use zcash_address::ZcashAddress;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use log::error;
 
-    use zcash_client_backend::{
-        encoding::{decode_payment_address, encode_payment_address},
-        proto::service::RawTransaction,
+    use std::{
+        fs::{remove_file, File},
+        io::{self, Write},
+        path::{Path, PathBuf},
     };
-    use zcash_primitives::{
-        consensus::{BlockHeight, BranchId, NetworkConstants},
-        memo::{Memo, MemoBytes},
-        transaction::{
-            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
-        },
-    };
-    use zcash_proofs::prover::LocalTxProver;
-    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
+    use tokio::runtime::Runtime;
 
     use super::LightClient;
-    use crate::{
-        blaze::{
-            block_management_reorg_detection::BlockManagementData,
-            fetch_compact_blocks::FetchCompactBlocks,
-            fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-            update_notes::UpdateNotes,
-        },
-        error::{ZingoLibError, ZingoLibResult},
-        grpc_connector::GrpcConnector,
-        wallet::{
-            data::{
-                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-                TransactionRecord,
-            },
-            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
-            message::Message,
-            notes::NoteInterface,
-            notes::ShieldedNoteInterface,
-            now,
-            transaction_context::TransactionContext,
-            utils::get_price,
-            LightWallet, Pool, SendProgress,
-        },
-    };
+    use crate::error::{ZingoLibError, ZingoLibResult};
 
     impl LightClient {
         //        SAVE METHODS
@@ -1334,41 +1246,32 @@ pub mod describe {
 
 pub mod sync {
     use futures::future::join_all;
-    use json::{array, object, JsonValue};
+
     use log::{debug, error, warn};
-    use serde::Serialize;
+
     use std::{
         cmp::{self},
-        collections::HashMap,
-        fs::File,
-        io::{self, BufReader, Error, ErrorKind, Read, Write},
-        path::{Path, PathBuf},
+        io::{self},
         sync::Arc,
         time::Duration,
     };
     use tokio::{
         join,
         runtime::Runtime,
-        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
+        sync::{mpsc::unbounded_channel, oneshot},
         task::yield_now,
         time::sleep,
     };
-    use zcash_address::ZcashAddress;
+
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use zcash_client_backend::{
-        encoding::{decode_payment_address, encode_payment_address},
-        proto::service::RawTransaction,
-    };
+    use zcash_client_backend::proto::service::RawTransaction;
     use zcash_primitives::{
-        consensus::{BlockHeight, BranchId, NetworkConstants},
-        memo::{Memo, MemoBytes},
-        transaction::{
-            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
-        },
+        consensus::{BlockHeight, BranchId},
+        transaction::Transaction,
     };
-    use zcash_proofs::prover::LocalTxProver;
-    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
+
+    use zingoconfig::MAX_REORG;
 
     static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
@@ -1379,25 +1282,10 @@ pub mod sync {
             block_management_reorg_detection::BlockManagementData,
             fetch_compact_blocks::FetchCompactBlocks,
             fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-            update_notes::UpdateNotes,
+            trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
         },
-        error::{ZingoLibError, ZingoLibResult},
         grpc_connector::GrpcConnector,
-        wallet::{
-            data::{
-                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-                TransactionRecord,
-            },
-            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
-            message::Message,
-            notes::NoteInterface,
-            notes::ShieldedNoteInterface,
-            now,
-            transaction_context::TransactionContext,
-            utils::get_price,
-            LightWallet, Pool, SendProgress,
-        },
+        wallet::{now, transaction_context::TransactionContext, utils::get_price},
     };
 
     impl LightClient {
@@ -1991,69 +1879,17 @@ pub mod sync {
 }
 
 pub mod send {
-    use futures::future::join_all;
-    use json::{array, object, JsonValue};
-    use log::{debug, error, warn};
-    use serde::Serialize;
-    use std::{
-        cmp::{self},
-        collections::HashMap,
-        fs::File,
-        io::{self, BufReader, Error, ErrorKind, Read, Write},
-        path::{Path, PathBuf},
-        sync::Arc,
-        time::Duration,
-    };
-    use tokio::{
-        join,
-        runtime::Runtime,
-        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
-        task::yield_now,
-        time::sleep,
-    };
-    use zcash_address::ZcashAddress;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use log::{debug, error};
 
-    use zcash_client_backend::{
-        encoding::{decode_payment_address, encode_payment_address},
-        proto::service::RawTransaction,
-    };
     use zcash_primitives::{
-        consensus::{BlockHeight, BranchId, NetworkConstants},
-        memo::{Memo, MemoBytes},
-        transaction::{
-            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
-        },
+        consensus::BlockHeight,
+        memo::MemoBytes,
+        transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
     };
     use zcash_proofs::prover::LocalTxProver;
-    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
 
     use super::{LightClient, LightWalletSendProgress};
-    use crate::{
-        blaze::{
-            block_management_reorg_detection::BlockManagementData,
-            fetch_compact_blocks::FetchCompactBlocks,
-            fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-            update_notes::UpdateNotes,
-        },
-        error::{ZingoLibError, ZingoLibResult},
-        grpc_connector::GrpcConnector,
-        wallet::{
-            data::{
-                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-                TransactionRecord,
-            },
-            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
-            message::Message,
-            notes::NoteInterface,
-            notes::ShieldedNoteInterface,
-            now,
-            transaction_context::TransactionContext,
-            utils::get_price,
-            LightWallet, Pool, SendProgress,
-        },
-    };
+    use crate::wallet::Pool;
 
     impl LightClient {
         async fn get_submission_height(&self) -> Result<BlockHeight, String> {
