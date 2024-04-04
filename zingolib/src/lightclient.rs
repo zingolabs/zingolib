@@ -30,7 +30,7 @@ use std::{
     cmp::{self},
     collections::HashMap,
     fs::File,
-    io::{self, BufReader, Error, ErrorKind, Read, Write},
+    io::{self, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -253,13 +253,7 @@ pub struct LightClient {
 ///  overly broad and vague definition!
 
 pub mod instantiation {
-    use crate::{
-        blaze::syncdata::BlazeSyncData,
-        wallet::{LightWallet, WalletBase},
-    };
-
     use log::debug;
-
     use std::{
         io::{self, Error, ErrorKind},
         sync::Arc,
@@ -272,6 +266,10 @@ pub mod instantiation {
     use zingoconfig::ZingoConfig;
 
     use super::{LightClient, ZingoSaveBuffer};
+    use crate::{
+        blaze::syncdata::BlazeSyncData,
+        wallet::{LightWallet, WalletBase},
+    };
 
     impl LightClient {
         /// this is the standard initializer for a LightClient.
@@ -502,69 +500,17 @@ pub mod save {
 
 /// the counterpart to mod save, these functions find a LightWallet and convert it to a LightClient using methods in instantiation.
 mod read {
-    use crate::{
-        blaze::{
-            block_management_reorg_detection::BlockManagementData,
-            fetch_compact_blocks::FetchCompactBlocks,
-            fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-            update_notes::UpdateNotes,
-        },
-        grpc_connector::GrpcConnector,
-        wallet::{
-            data::{
-                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-                TransactionRecord,
-            },
-            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
-            message::Message,
-            notes::NoteInterface,
-            notes::ShieldedNoteInterface,
-            now,
-            transaction_context::TransactionContext,
-            utils::get_price,
-            LightWallet, Pool, SendProgress,
-        },
-    };
-    use futures::future::join_all;
-    use json::{array, object, JsonValue};
-    use log::{debug, error, warn};
-    use serde::Serialize;
+    use log::debug;
     use std::{
-        cmp::{self},
-        collections::HashMap,
         fs::File,
-        io::{self, BufReader, Error, ErrorKind, Read, Write},
-        path::{Path, PathBuf},
-        sync::Arc,
-        time::Duration,
+        io::{self, BufReader, Error, ErrorKind, Read},
     };
-    use tokio::{
-        join,
-        runtime::Runtime,
-        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
-        task::yield_now,
-        time::sleep,
-    };
-    use zcash_address::ZcashAddress;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use tokio::runtime::Runtime;
 
-    use zcash_client_backend::{
-        encoding::{decode_payment_address, encode_payment_address},
-        proto::service::RawTransaction,
-    };
-    use zcash_primitives::{
-        consensus::{BlockHeight, BranchId, NetworkConstants},
-        memo::{Memo, MemoBytes},
-        transaction::{
-            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
-        },
-    };
-    use zcash_proofs::prover::LocalTxProver;
-    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
+    use zingoconfig::ZingoConfig;
 
     use super::LightClient;
-    use crate::error::{ZingoLibError, ZingoLibResult};
+    use crate::wallet::LightWallet;
 
     impl LightClient {
         pub async fn read_wallet_from_buffer_async<R: Read>(
