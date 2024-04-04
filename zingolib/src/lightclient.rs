@@ -251,122 +251,193 @@ pub struct LightClient {
 
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
 ///  overly broad and vague definition!
-impl LightClient {
-    /// this is the standard initializer for a LightClient.
-    // toDo rework ZingoConfig.
-    pub async fn create_from_wallet_async(
-        wallet: LightWallet,
-        config: ZingoConfig,
-    ) -> io::Result<Self> {
-        let mut buffer: Vec<u8> = vec![];
-        wallet.write(&mut buffer).await?;
-        Ok(LightClient {
-            wallet,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-            save_buffer: ZingoSaveBuffer::new(buffer),
-        })
-    }
-    /// The wallet this fn associates with the lightclient is specifically derived from
-    /// a spend authority.
-    /// this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
-    pub fn create_from_wallet_base(
-        wallet_base: WalletBase,
-        config: &ZingoConfig,
-        birthday: u64,
-        overwrite: bool,
-    ) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            LightClient::create_from_wallet_base_async(wallet_base, config, birthday, overwrite)
-                .await
-        })
-    }
-    /// The wallet this fn associates with the lightclient is specifically derived from
-    /// a spend authority.
-    pub async fn create_from_wallet_base_async(
-        wallet_base: WalletBase,
-        config: &ZingoConfig,
-        birthday: u64,
-        overwrite: bool,
-    ) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if !overwrite && config.wallet_path_exists() {
-                return Err(Error::new(
+
+pub mod instantiation {
+
+    use crate::{
+        blaze::{
+            block_management_reorg_detection::BlockManagementData,
+            fetch_compact_blocks::FetchCompactBlocks,
+            fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
+            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
+            update_notes::UpdateNotes,
+        },
+        error::{ZingoLibError, ZingoLibResult},
+        grpc_connector::GrpcConnector,
+        wallet::{
+            data::{
+                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+                TransactionRecord,
+            },
+            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
+            message::Message,
+            notes::NoteInterface,
+            notes::ShieldedNoteInterface,
+            now,
+            transaction_context::TransactionContext,
+            utils::get_price,
+            LightWallet, Pool, SendProgress, WalletBase,
+        },
+    };
+    use futures::future::join_all;
+    use json::{array, object, JsonValue};
+    use log::{debug, error, warn};
+    use serde::Serialize;
+    use std::{
+        cmp::{self},
+        collections::HashMap,
+        fs::{remove_file, File},
+        io::{self, BufReader, Error, ErrorKind, Read, Write},
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::Duration,
+    };
+    use tokio::{
+        join,
+        runtime::Runtime,
+        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
+        task::yield_now,
+        time::sleep,
+    };
+    use zcash_address::ZcashAddress;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use zcash_client_backend::{
+        encoding::{decode_payment_address, encode_payment_address},
+        proto::service::RawTransaction,
+    };
+    use zcash_primitives::{
+        consensus::{BlockHeight, BranchId, NetworkConstants},
+        memo::{Memo, MemoBytes},
+        transaction::{
+            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+        },
+    };
+    use zcash_proofs::prover::LocalTxProver;
+    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
+
+    use super::{LightClient, ZingoSaveBuffer};
+
+    static LOG_INIT: std::sync::Once = std::sync::Once::new();
+    impl LightClient {
+        /// this is the standard initializer for a LightClient.
+        // toDo rework ZingoConfig.
+        pub async fn create_from_wallet_async(
+            wallet: LightWallet,
+            config: ZingoConfig,
+        ) -> io::Result<Self> {
+            let mut buffer: Vec<u8> = vec![];
+            wallet.write(&mut buffer).await?;
+            Ok(LightClient {
+                wallet,
+                config: config.clone(),
+                mempool_monitor: std::sync::RwLock::new(None),
+                sync_lock: Mutex::new(()),
+                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                interrupt_sync: Arc::new(RwLock::new(false)),
+                save_buffer: ZingoSaveBuffer::new(buffer),
+            })
+        }
+        /// The wallet this fn associates with the lightclient is specifically derived from
+        /// a spend authority.
+        /// this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
+        pub fn create_from_wallet_base(
+            wallet_base: WalletBase,
+            config: &ZingoConfig,
+            birthday: u64,
+            overwrite: bool,
+        ) -> io::Result<Self> {
+            Runtime::new().unwrap().block_on(async move {
+                LightClient::create_from_wallet_base_async(wallet_base, config, birthday, overwrite)
+                    .await
+            })
+        }
+        /// The wallet this fn associates with the lightclient is specifically derived from
+        /// a spend authority.
+        pub async fn create_from_wallet_base_async(
+            wallet_base: WalletBase,
+            config: &ZingoConfig,
+            birthday: u64,
+            overwrite: bool,
+        ) -> io::Result<Self> {
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                if !overwrite && config.wallet_path_exists() {
+                    return Err(Error::new(
                     ErrorKind::AlreadyExists,
                     format!(
                         "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
                         config.get_wallet_path().as_os_str()
                     ),
                 ));
+                }
             }
-        }
-        let lightclient = LightClient::create_from_wallet_async(
-            LightWallet::new(config.clone(), wallet_base, birthday)?,
-            config.clone(),
-        )
-        .await?;
+            let lightclient = LightClient::create_from_wallet_async(
+                LightWallet::new(config.clone(), wallet_base, birthday)?,
+                config.clone(),
+            )
+            .await?;
 
-        lightclient.set_wallet_initial_state(birthday).await;
-        lightclient
-            .save_internal_rust()
-            .await
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-
-        debug!("Created new wallet!");
-
-        Ok(lightclient)
-    }
-    pub async fn create_unconnected(
-        config: &ZingoConfig,
-        wallet_base: WalletBase,
-        height: u64,
-    ) -> io::Result<Self> {
-        let lightclient = LightClient::create_from_wallet_async(
-            LightWallet::new(config.clone(), wallet_base, height)?,
-            config.clone(),
-        )
-        .await?;
-        Ok(lightclient)
-    }
-
-    fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            let l =
-                LightClient::create_unconnected(config, WalletBase::FreshEntropy, height).await?;
-            l.set_wallet_initial_state(height).await;
-
-            debug!("Created new wallet with a new seed!");
-            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-
-            // Save
-            l.save_internal_rust()
+            lightclient.set_wallet_initial_state(birthday).await;
+            lightclient
+                .save_internal_rust()
                 .await
-                .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+                .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
-            Ok(l)
-        })
-    }
+            debug!("Created new wallet!");
 
-    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
-    /// already exists on disk
-    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if config.wallet_path_exists() {
-                return Err(Error::new(
-                    ErrorKind::AlreadyExists,
-                    "Cannot create a new wallet from seed, because a wallet already exists",
-                ));
-            }
+            Ok(lightclient)
+        }
+        pub async fn create_unconnected(
+            config: &ZingoConfig,
+            wallet_base: WalletBase,
+            height: u64,
+        ) -> io::Result<Self> {
+            let lightclient = LightClient::create_from_wallet_async(
+                LightWallet::new(config.clone(), wallet_base, height)?,
+                config.clone(),
+            )
+            .await?;
+            Ok(lightclient)
         }
 
-        Self::create_with_new_wallet(config, latest_block)
-    }
+        fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
+            Runtime::new().unwrap().block_on(async move {
+                let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
+                    .await?;
+                l.set_wallet_initial_state(height).await;
 
+                debug!("Created new wallet with a new seed!");
+                debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+
+                // Save
+                l.save_internal_rust()
+                    .await
+                    .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+
+                Ok(l)
+            })
+        }
+
+        /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
+        /// already exists on disk
+        pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                if config.wallet_path_exists() {
+                    return Err(Error::new(
+                        ErrorKind::AlreadyExists,
+                        "Cannot create a new wallet from seed, because a wallet already exists",
+                    ));
+                }
+            }
+
+            Self::create_with_new_wallet(config, latest_block)
+        }
+    }
+}
+
+impl LightClient {
     //        SAVE METHODS
 
     async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
