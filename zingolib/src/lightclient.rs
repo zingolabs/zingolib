@@ -1845,6 +1845,73 @@ pub mod sync {
     }
 }
 
+pub mod send {
+    use futures::future::join_all;
+    use json::{array, object, JsonValue};
+    use log::{debug, error, warn};
+    use serde::Serialize;
+    use std::{
+        cmp::{self},
+        collections::HashMap,
+        fs::File,
+        io::{self, BufReader, Error, ErrorKind, Read, Write},
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::Duration,
+    };
+    use tokio::{
+        join,
+        runtime::Runtime,
+        sync::{mpsc::unbounded_channel, oneshot, Mutex, RwLock},
+        task::yield_now,
+        time::sleep,
+    };
+    use zcash_address::ZcashAddress;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use zcash_client_backend::{
+        encoding::{decode_payment_address, encode_payment_address},
+        proto::service::RawTransaction,
+    };
+    use zcash_primitives::{
+        consensus::{BlockHeight, BranchId, NetworkConstants},
+        memo::{Memo, MemoBytes},
+        transaction::{
+            components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+        },
+    };
+    use zcash_proofs::prover::LocalTxProver;
+    use zingoconfig::{margin_fee, ZingoConfig, MAX_REORG};
+
+    use super::LightClient;
+    use crate::{
+        blaze::{
+            block_management_reorg_detection::BlockManagementData,
+            fetch_compact_blocks::FetchCompactBlocks,
+            fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
+            syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
+            update_notes::UpdateNotes,
+        },
+        error::{ZingoLibError, ZingoLibResult},
+        grpc_connector::GrpcConnector,
+        wallet::{
+            data::{
+                finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+                TransactionRecord,
+            },
+            keys::{address_from_pubkeyhash, unified::ReceiverSelection},
+            message::Message,
+            notes::NoteInterface,
+            notes::ShieldedNoteInterface,
+            now,
+            transaction_context::TransactionContext,
+            utils::get_price,
+            LightWallet, Pool, SendProgress,
+        },
+    };
+
+    impl LightClient {}
+}
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
         Ok(BlockHeight::from_u32(
