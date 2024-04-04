@@ -402,6 +402,7 @@ pub mod save {
     impl LightClient {
         //        SAVE METHODS
 
+        /// Called internally at sync checkpoints to save state. Should not be called midway through sync.
         pub(super) async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
             match self.save_internal_buffer().await {
                 Ok(()) => self.rust_write_save_buffer_to_file().await,
@@ -422,6 +423,7 @@ pub mod save {
             Ok(())
         }
 
+        /// If possible, write to disk.
         async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<bool> {
             #[cfg(any(target_os = "ios", target_os = "android"))]
             // on mobile platforms, saving from this buffer will be handled by the native layer
