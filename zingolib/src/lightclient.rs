@@ -205,8 +205,7 @@ pub struct LightClient {
     save_buffer: ZingoSaveBuffer,
 }
 
-///  This is the omnibus interface to the library, we are currently in the process of refining this types
-///  overly broad and vague definition!
+///  This is the omnibus interface to the library, we are currently in the process of refining this typez broad definition!
 
 pub mod instantiation {
     use log::debug;
