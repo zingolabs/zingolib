@@ -448,7 +448,7 @@ pub mod save {
             Ok(())
         }
 
-        async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
+        pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
             let read_buffer = self.save_buffer.buffer.read().await;
             if !read_buffer.is_empty() {
                 Ok(read_buffer.clone())
