@@ -11,7 +11,7 @@ pub(super) fn parse_send_args(
 ) -> Result<Vec<(String, u64, Option<MemoBytes>)>, CommandError> {
     // Check for a single argument that can be parsed as JSON
     let send_args = if args.len() == 1 {
-        let json_args = json::parse(args[0]).map_err(CommandError::FailedJsonParsing)?;
+        let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;
 
         if !json_args.is_array() {
             return Err(CommandError::UnexpectedType(json_args.to_string()));
@@ -32,9 +32,15 @@ pub(super) fn parse_send_args(
                         "address not a Str!".to_string(),
                     ))?
                     .to_string();
-                let amount = j["amount"].as_u64().ok_or(CommandError::UnexpectedType(
-                    "amount not a u64!".to_string(),
-                ))?;
+                let amount = if !j["amount"].is_number() {
+                    return Err(CommandError::UnexpectedType(
+                        "amount is not a json::number::Number".to_string(),
+                    ));
+                } else {
+                    j["amount"].as_u64().ok_or(CommandError::UnexpectedType(
+                        "amount not a u64!".to_string(),
+                    ))?
+                };
                 let memo = if let Some(m) = j["memo"].as_str().map(|s| s.to_string()) {
                     Some(
                         wallet::utils::interpret_memo_string(m)
@@ -52,7 +58,7 @@ pub(super) fn parse_send_args(
         let amount = args[1]
             .trim()
             .parse::<u64>()
-            .map_err(CommandError::FailedIntParsing)?;
+            .map_err(CommandError::ParseIntFromString)?;
         let memo = if args.len() == 3 {
             Some(
                 wallet::utils::interpret_memo_string(args[2].to_string())
@@ -123,7 +129,7 @@ mod tests {
                 let args = [r#"testaddress{{"#];
                 let result = parse_send_args(&args);
                 match result {
-                    Err(CommandError::FailedJsonParsing(e)) => match e {
+                    Err(CommandError::ArgsNotJson(e)) => match e {
                         json::Error::UnexpectedCharacter { ch, line, column } => {
                             assert_eq!(ch, 'e');
                             assert_eq!(line, 1);
@@ -179,7 +185,7 @@ mod tests {
                 let result = parse_send_args(&args);
                 match result {
                     Err(CommandError::UnexpectedType(e)) => {
-                        assert_eq!(e, "amount not a u64!".to_string())
+                        assert_eq!(e, "amount is not a json::number::Number".to_string())
                     }
                     _ => panic!(),
                 };
@@ -216,7 +222,7 @@ mod tests {
                 let result = parse_send_args(&args);
                 dbg!(&result);
                 match result {
-                    Err(CommandError::FailedIntParsing(e)) => {
+                    Err(CommandError::ParseIntFromString(e)) => {
                         assert_eq!(
                             "invalid digit found in string".to_string(),
                             format!("{}", e)

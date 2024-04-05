@@ -2,8 +2,8 @@ use std::fmt;
 
 #[derive(Debug)]
 pub(crate) enum CommandError {
-    FailedJsonParsing(json::Error),
-    FailedIntParsing(std::num::ParseIntError),
+    ArgsNotJson(json::Error),
+    ParseIntFromString(std::num::ParseIntError),
     UnexpectedType(String),
     MissingKey(String),
     InvalidArguments,
@@ -16,8 +16,8 @@ impl fmt::Display for CommandError {
         use CommandError::*;
 
         match self {
-            FailedJsonParsing(e) => write!(f, "failed to parse argument. {}", e),
-            FailedIntParsing(e) => write!(f, "failed to parse argument. {}", e),
+            ArgsNotJson(e) => write!(f, "failed to parse argument. {}", e),
+            ParseIntFromString(e) => write!(f, "failed to parse argument. {}", e),
             UnexpectedType(e) => write!(f, "arguments cannot be parsed to expected type. {}", e),
             MissingKey(key) => write!(f, "json array is missing \"{}\" key.", key),
             InvalidArguments => write!(f, "arguments given are invalid."),
