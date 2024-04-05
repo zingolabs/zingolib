@@ -311,7 +311,6 @@ impl TransactionContext {
             is_outgoing_transaction,
             outgoing_metadatas,
             arbitrary_memos_with_txids,
-            false,
         )
         .await
     }
@@ -332,7 +331,6 @@ impl TransactionContext {
             is_outgoing_transaction,
             outgoing_metadatas,
             arbitrary_memos_with_txids,
-            true,
         )
         .await;
     }
@@ -351,7 +349,6 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
-        scan_internal_scope_if_outgoing: bool,
     ) where
         D: zingo_traits::DomainWalletExt,
         D::Note: Clone + PartialEq,
@@ -500,24 +497,6 @@ impl TransactionContext {
                     None => None,
                 },
             );
-        }
-
-        // now we have decrypted everything about the transaction except anything to do with the internal incoming viewing key. in the intercompatibility case, we may want to check the internal incoming viewing key for sapling. in the present case, i am going to write fast code that doesnt involve rewriting this entire module. the goal is to get incoming change compatibility with zip317 -fv
-        if scan_internal_scope_if_outgoing && *is_outgoing_transaction {
-            if let Ok(internal_incoming_viewing_key) =
-                D::wc_scope_to_incoming_viewing_key(&self.key, Internal)
-            {
-                decrypt_and_record_incoming_transactions::<D>(
-                    internal_incoming_viewing_key,
-                    &domain_tagged_outputs,
-                    transaction,
-                    status,
-                    block_time,
-                    self,
-                    arbitrary_memos_with_txids,
-                )
-                .await;
-            };
         }
     }
 }
