@@ -1,3 +1,4 @@
+/// This mod contains pieces of the impl LightWallet that are only necessary for spend-capable wallets, such as witness tracking.
 use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;

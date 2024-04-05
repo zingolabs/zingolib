@@ -67,13 +67,10 @@ pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
 
-/// This mod contains pieces of the impl LightWallet that are only necessary for spend-capable wallets, such as witness tracking.
 pub mod spend_wallet;
 
-/// This mod contains pieces of the impl LightWallet that are invoked during a send.
 pub mod send;
 
-/// This mod contains write and read functionality of impl LightWallet
 pub mod disk;
 
 pub(crate) use send::SendProgress;

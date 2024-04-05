@@ -1,3 +1,4 @@
+/// This mod contains write and read functionality of impl LightWallet
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use json::JsonValue;
