@@ -186,6 +186,29 @@ mod tests {
             };
         }
         #[test]
+        fn invalid_memo() {
+            let arg_contents =
+                "[{\"address\": \"testaddress\", \"amount\": 123, \"memo\": \"testmemo\"}]";
+            let long_513_byte_memo = &"a".repeat(513);
+            let long_memo_args =
+                arg_contents.replace("\"testmemo\"", &format!("\"{}\"", long_513_byte_memo));
+            let args = [long_memo_args.as_str()];
+
+            let result = parse_send_args(&args);
+            match result {
+                Err(CommandError::InvalidMemo(e)) => {
+                    assert_eq!(
+                        e,
+                        format!(
+                            "Error creating output. Memo '\"{}\"' is too long",
+                            long_513_byte_memo.to_string()
+                        )
+                    )
+                }
+                _ => panic!(),
+            };
+        }
+        #[test]
         fn wrong_number_of_args() {
             let args = ["testaddress", "123", "3", "4"];
             let result = parse_send_args(&args);
