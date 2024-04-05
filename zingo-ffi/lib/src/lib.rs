@@ -29,7 +29,7 @@ fn lock_client_return_seed(lightclient: LightClient) -> String {
 
     LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
-    execute("seed".to_string(), "".to_string())
+    execute_command("seed".to_string(), "".to_string())
 }
 
 fn construct_uri_load_config(
@@ -206,7 +206,7 @@ pub fn save_to_b64() -> String {
     }
 }
 
-pub fn execute(cmd: String, args_list: String) -> String {
+pub fn execute_command(cmd: String, args_list: String) -> String {
     let resp: String;
     {
         let lightclient: Arc<LightClient>;
@@ -231,7 +231,7 @@ pub fn execute(cmd: String, args_list: String) -> String {
     resp
 }
 
-pub fn get_latest_block(server_uri: String) -> String {
+pub fn get_latest_block_server(server_uri: String) -> String {
     let lightwalletd_uri: http::Uri = server_uri.parse().expect("To be able to represent a Uri.");
     match zingolib::get_latest_block_height(lightwalletd_uri).map_err(|e| format! {"Error: {e}"}) {
         Ok(height) => height.to_string(),

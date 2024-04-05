@@ -2,7 +2,7 @@
 members = [
     "lib",
     "android",
-    "ios",
+#    "ios",
     "zingomobile_utils"
 ]
 resolver = "2"
@@ -11,7 +11,6 @@ resolver = "2"
 zingolib = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "stable" }
 zingoconfig = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "stable" }
 uniffi = { version = "0.27.0" }
-rustlib = { path = "./lib" }
 
 [profile.release]
 debug = false

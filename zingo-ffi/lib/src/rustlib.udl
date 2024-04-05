@@ -1,6 +1,6 @@
 namespace rustlib {
   string init_logging();
-  string execute(string cmd, string args);
+  string execute_command(string cmd, string args);
   string init_new(
       string serveruri,
       string datadir,
@@ -35,5 +35,5 @@ namespace rustlib {
   );
 
   string save_to_b64();
-  string get_latest_block(string serveruri);
+  string get_latest_block_server(string serveruri);
 };

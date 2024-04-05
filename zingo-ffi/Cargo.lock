@@ -2683,13 +2683,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustios"
-version = "1.0.1"
-dependencies = [
- "rustlib",
-]
-
-[[package]]
 name = "rustix"
 version = "0.38.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"

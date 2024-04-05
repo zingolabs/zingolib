@@ -21,8 +21,7 @@ uniffi_build = { version = "0.27.0", features = [ "builtin-bindgen" ] }
 tokio = "1.32.0"
 
 [lib]
-# `rlib` for ios.
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "staticlib"]
 name = "rustlib"
 
 [[bin]]
