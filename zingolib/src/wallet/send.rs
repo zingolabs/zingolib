@@ -47,7 +47,7 @@ use super::data::{SpendableOrchardNote, WitnessTrees};
 use super::notes::ShieldedNoteInterface;
 use super::{notes, traits, LightWallet};
 
-use super::traits::{DomainWalletExt, SpendableNote};
+use super::traits::{DomainWalletExt, Recipient, SpendableNote};
 use super::utils::get_price;
 use super::Pool;
 
@@ -499,6 +499,38 @@ impl LightWallet {
             }
         }
         Ok((total_shielded_receivers, tx_builder))
+    }
+
+    async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
+    where
+        D: DomainWalletExt,
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        let wc = self.wallet_capability();
+        let tranmds_lth = self.transactions();
+        let transaction_metadata_set = tranmds_lth.read().await;
+        let mut candidate_notes = transaction_metadata_set
+            .current
+            .iter()
+            .flat_map(|(transaction_id, transaction)| {
+                D::WalletNote::transaction_metadata_notes(transaction)
+                    .iter()
+                    .map(move |note| (*transaction_id, note))
+            })
+            .filter_map(
+                |(transaction_id, note): (transaction::TxId, &D::WalletNote)| -> Option <D::SpendableNoteAT> {
+                        // Get the spending key for the selected fvk, if we have it
+                        let extsk = D::wc_to_sk(&wc);
+                        SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
+                }
+            )
+            .collect::<Vec<D::SpendableNoteAT>>();
+        candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
+            D::WalletNote::value_from_note(spendable_note_2.note())
+                .cmp(&D::WalletNote::value_from_note(spendable_note_1.note()))
+        });
+        candidate_notes
     }
 
     async fn select_notes_and_utxos(

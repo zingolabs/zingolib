@@ -260,139 +260,12 @@ impl LightWallet {
         Err("No message matched".to_string())
     }
 
-    async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
-    where
-        D: DomainWalletExt,
-        <D as Domain>::Recipient: traits::Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        let wc = self.wallet_capability();
-        let tranmds_lth = self.transactions();
-        let transaction_metadata_set = tranmds_lth.read().await;
-        let mut candidate_notes = transaction_metadata_set
-            .current
-            .iter()
-            .flat_map(|(transaction_id, transaction)| {
-                D::WalletNote::transaction_metadata_notes(transaction)
-                    .iter()
-                    .map(move |note| (*transaction_id, note))
-            })
-            .filter_map(
-                |(transaction_id, note): (transaction::TxId, &D::WalletNote)| -> Option <D::SpendableNoteAT> {
-                        // Get the spending key for the selected fvk, if we have it
-                        let extsk = D::wc_to_sk(&wc);
-                        SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
-                }
-            )
-            .collect::<Vec<D::SpendableNoteAT>>();
-        candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
-            D::WalletNote::value_from_note(spendable_note_2.note())
-                .cmp(&D::WalletNote::value_from_note(spendable_note_1.note()))
-        });
-        candidate_notes
-    }
-
-    /// Get the height of the anchor block
-    pub async fn get_anchor_height(&self) -> u32 {
-        match self.get_target_height_and_anchor_offset().await {
-            Some((height, anchor_offset)) => height - anchor_offset as u32 - 1,
-            None => 0,
-        }
-    }
-
-    pub async fn get_birthday(&self) -> u64 {
-        let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
-        if birthday == 0 {
-            self.get_first_transaction_block().await
-        } else {
-            cmp::min(self.get_first_transaction_block().await, birthday)
-        }
-    }
-
-    /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
-    pub async fn get_blocks(&self) -> Vec<BlockData> {
-        self.blocks.read().await.iter().cloned().collect()
-    }
-
-    // Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
-    // If there are no transactions, then the actual birthday (which is recorder at wallet creation) is returned
-    // If no birthday was recorded, return the sapling activation height
-    pub async fn get_first_transaction_block(&self) -> u64 {
-        // Find the first transaction
-        let earliest_block = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .values()
-            .map(|wtx| u64::from(wtx.status.get_height()))
-            .min();
-
-        let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
-        earliest_block // Returns optional, so if there's no transactions, it'll get the activation height
-            .unwrap_or(cmp::max(
-                birthday,
-                self.transaction_context.config.sapling_activation_height(),
-            ))
-    }
-
-    // Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_utxos(&self) -> Vec<notes::TransparentNote> {
-        self.transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .values()
-            .flat_map(|transaction| {
-                transaction
-                    .transparent_notes
-                    .iter()
-                    .filter(|utxo| !utxo.is_spent())
-            })
-            .cloned()
-            .collect::<Vec<notes::TransparentNote>>()
-    }
-
-    pub async fn last_synced_hash(&self) -> String {
-        self.blocks
-            .read()
-            .await
-            .first()
-            .map(|block| block.hash())
-            .unwrap_or_default()
-    }
-
-    /// TODO: How do we know that 'sapling_activation_height - 1' is only returned
-    /// when it should be?  When should it be?
-    pub async fn last_synced_height(&self) -> u64 {
-        self.blocks
-            .read()
-            .await
-            .first()
-            .map(|block| block.height)
-            .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
-    }
-
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
-        self.shielded_balance::<OrchardDomain>(addr, &[]).await
-    }
-
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
-        self.shielded_balance::<SaplingDomain>(addr, &[]).await
-    }
-
     pub fn memo_str(memo: Option<Memo>) -> Option<String> {
         match memo {
             Some(Memo::Text(m)) => Some(m.to_string()),
             Some(Memo::Arbitrary(_)) => Some("Wallet-internal memo".to_string()),
             _ => None,
         }
-    }
-
-    pub fn mnemonic(&self) -> Option<&(Mnemonic, u32)> {
-        self.mnemonic.as_ref()
     }
 
     pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
@@ -498,24 +371,6 @@ impl LightWallet {
         })
     }
 
-    pub(crate) fn note_address<D: DomainWalletExt>(
-        network: &zingoconfig::ChainType,
-        note: &D::WalletNote,
-        wallet_capability: &WalletCapability,
-    ) -> String
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        D::wc_to_fvk(wallet_capability).expect("to get fvk from wc")
-            .diversified_address(*note.diversifier())
-            .and_then(|address| {
-                D::ua_from_contained_receiver(wallet_capability, &address)
-                    .map(|ua| ua.encode(network))
-            })
-            .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
-    }
-
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
         let mut blocks = self.blocks.write().await;
         blocks.clear();
@@ -562,143 +417,318 @@ impl LightWallet {
         p.is_send_in_progress = false;
         p.last_transaction_id = Some(transaction_id);
     }
+}
 
-    #[allow(clippy::type_complexity)]
-    pub async fn shielded_balance<D>(
-        &self,
-        target_addr: Option<String>,
-        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
-    ) -> Option<u64>
-    where
-        D: DomainWalletExt,
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
-    {
-        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
-        let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
-            Some(addr) => {
-                use self::traits::Recipient as _;
-                let diversified_address =
-                    &fvk.diversified_address(*notedata.diversifier()).unwrap();
-                *addr
-                    == diversified_address
-                        .b32encode_for_network(&self.transaction_context.config.chain)
+pub mod describe {
+    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
+    use json::JsonValue;
+    use log::{error, info, warn};
+    use orchard::keys::SpendingKey as OrchardSpendingKey;
+    use orchard::note_encryption::OrchardDomain;
+    use orchard::tree::MerkleHashOrchard;
+    use rand::rngs::OsRng;
+    use rand::Rng;
+    use sapling_crypto::note_encryption::SaplingDomain;
+
+    use sapling_crypto::zip32::DiversifiableFullViewingKey;
+    use shardtree::error::ShardTreeError;
+    use shardtree::store::memory::MemoryShardStore;
+    use shardtree::ShardTree;
+    use std::convert::Infallible;
+    use std::ops::Add;
+    use std::{
+        cmp,
+        io::{self, Error, ErrorKind, Read, Write},
+        sync::{atomic::AtomicU64, Arc},
+        time::SystemTime,
+    };
+    use tokio::sync::RwLock;
+    use zcash_primitives::zip339::Mnemonic;
+
+    use zcash_client_backend::proto::service::TreeState;
+    use zcash_encoding::{Optional, Vector};
+    use zcash_note_encryption::Domain;
+
+    use zcash_primitives::transaction::{self};
+    use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::components::Amount};
+
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingoconfig::ZingoConfig;
+
+    use crate::wallet::data::TransactionRecord;
+    use crate::wallet::notes::NoteInterface;
+    use crate::wallet::notes::ShieldedNoteInterface;
+
+    use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
+
+    use super::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+    use super::keys::unified::Fvk as _;
+    use super::keys::unified::{Capability, WalletCapability};
+    use super::notes::TransparentNote;
+    use super::traits::Recipient;
+    use super::traits::{DomainWalletExt, SpendableNote};
+
+    use super::{
+        data::{BlockData, WalletZecPriceInfo},
+        message::Message,
+        transaction_context::TransactionContext,
+        transactions::TxMapAndMaybeTrees,
+    };
+
+    use super::LightWallet;
+    impl LightWallet {
+        #[allow(clippy::type_complexity)]
+        pub async fn shielded_balance<D>(
+            &self,
+            target_addr: Option<String>,
+            filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
+        ) -> Option<u64>
+        where
+            D: DomainWalletExt,
+            <D as Domain>::Note: PartialEq + Clone,
+            <D as Domain>::Recipient: Recipient,
+        {
+            let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
+            let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref()
+            {
+                Some(addr) => {
+                    let diversified_address =
+                        &fvk.diversified_address(*notedata.diversifier()).unwrap();
+                    *addr
+                        == diversified_address
+                            .b32encode_for_network(&self.transaction_context.config.chain)
+                }
+                None => true, // If the addr is none, then get all addrs.
+            };
+            Some(
+                self.transaction_context
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .current
+                    .values()
+                    .map(|transaction| {
+                        let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
+                            D::WalletNote::transaction_metadata_notes(transaction)
+                                .iter()
+                                .filter(filter_notes_by_target_addr),
+                        );
+                        // All filters in iterator are applied, by this loop
+                        for filtering_fn in filters {
+                            filtered_notes = Box::new(
+                                filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)),
+                            )
+                        }
+                        filtered_notes
+                            .map(|notedata| {
+                                if notedata.spent().is_none() && notedata.pending_spent().is_none()
+                                {
+                                    <D::WalletNote as ShieldedNoteInterface>::value(notedata)
+                                } else {
+                                    0
+                                }
+                            })
+                            .sum::<u64>()
+                    })
+                    .sum::<u64>(),
+            )
+        }
+
+        pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+            if let Capability::Spend(_) = self.wallet_capability().orchard {
+                self.verified_balance::<OrchardDomain>(target_addr).await
+            } else {
+                None
             }
-            None => true, // If the addr is none, then get all addrs.
-        };
-        Some(
+        }
+
+        pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+            if let Capability::Spend(_) = self.wallet_capability().sapling {
+                self.verified_balance::<SaplingDomain>(target_addr).await
+            } else {
+                None
+            }
+        }
+
+        pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
+            if self.wallet_capability().transparent.can_view() {
+                Some(
+                    self.get_utxos()
+                        .await
+                        .iter()
+                        .filter(|utxo| match addr.as_ref() {
+                            Some(a) => utxo.address == *a,
+                            None => true,
+                        })
+                        .map(|utxo| utxo.value)
+                        .sum::<u64>(),
+                )
+            } else {
+                None
+            }
+        }
+
+        pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
+            self.transaction_context.transaction_metadata_set.clone()
+        }
+
+        pub async fn unverified_balance<D: DomainWalletExt>(
+            &self,
+            target_addr: Option<String>,
+        ) -> Option<u64>
+        where
+            <D as Domain>::Recipient: Recipient,
+            <D as Domain>::Note: PartialEq + Clone,
+        {
+            let anchor_height = self.get_anchor_height().await;
+            #[allow(clippy::type_complexity)]
+            let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
+                &[Box::new(|nnmd, transaction| {
+                    !transaction
+                        .status
+                        .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
+                        || nnmd.pending_receipt()
+                })];
+            self.shielded_balance::<D>(target_addr, filters).await
+        }
+
+        pub async fn verified_balance<D: DomainWalletExt>(
+            &self,
+            target_addr: Option<String>,
+        ) -> Option<u64>
+        where
+            <D as Domain>::Recipient: Recipient,
+            <D as Domain>::Note: PartialEq + Clone,
+        {
+            let anchor_height = self.get_anchor_height().await;
+            #[allow(clippy::type_complexity)]
+            let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
+                Box::new(|_, transaction| {
+                    transaction
+                        .status
+                        .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
+                }),
+                Box::new(|nnmd, _| !nnmd.pending_receipt()),
+            ];
+            self.shielded_balance::<D>(target_addr, filters).await
+        }
+
+        pub fn wallet_capability(&self) -> Arc<WalletCapability> {
+            self.transaction_context.key.clone()
+        }
+
+        pub(crate) fn note_address<D: DomainWalletExt>(
+            network: &zingoconfig::ChainType,
+            note: &D::WalletNote,
+            wallet_capability: &WalletCapability,
+        ) -> String
+        where
+            <D as Domain>::Recipient: Recipient,
+            <D as Domain>::Note: PartialEq + Clone,
+        {
+            D::wc_to_fvk(wallet_capability).expect("to get fvk from wc")
+            .diversified_address(*note.diversifier())
+            .and_then(|address| {
+                D::ua_from_contained_receiver(wallet_capability, &address)
+                    .map(|ua| ua.encode(network))
+            })
+            .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
+        }
+        pub fn mnemonic(&self) -> Option<&(Mnemonic, u32)> {
+            self.mnemonic.as_ref()
+        }
+
+        /// Get the height of the anchor block
+        pub async fn get_anchor_height(&self) -> u32 {
+            match self.get_target_height_and_anchor_offset().await {
+                Some((height, anchor_offset)) => height - anchor_offset as u32 - 1,
+                None => 0,
+            }
+        }
+
+        pub async fn get_birthday(&self) -> u64 {
+            let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
+            if birthday == 0 {
+                self.get_first_transaction_block().await
+            } else {
+                cmp::min(self.get_first_transaction_block().await, birthday)
+            }
+        }
+
+        /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
+        pub async fn get_blocks(&self) -> Vec<BlockData> {
+            self.blocks.read().await.iter().cloned().collect()
+        }
+
+        // Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
+        // If there are no transactions, then the actual birthday (which is recorder at wallet creation) is returned
+        // If no birthday was recorded, return the sapling activation height
+        pub async fn get_first_transaction_block(&self) -> u64 {
+            // Find the first transaction
+            let earliest_block = self
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .values()
+                .map(|wtx| u64::from(wtx.status.get_height()))
+                .min();
+
+            let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
+            earliest_block // Returns optional, so if there's no transactions, it'll get the activation height
+                .unwrap_or(cmp::max(
+                    birthday,
+                    self.transaction_context.config.sapling_activation_height(),
+                ))
+        }
+
+        // Get all (unspent) utxos. Unconfirmed spent utxos are included
+        pub async fn get_utxos(&self) -> Vec<TransparentNote> {
             self.transaction_context
                 .transaction_metadata_set
                 .read()
                 .await
                 .current
                 .values()
-                .map(|transaction| {
-                    let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
-                        D::WalletNote::transaction_metadata_notes(transaction)
-                            .iter()
-                            .filter(filter_notes_by_target_addr),
-                    );
-                    // All filters in iterator are applied, by this loop
-                    for filtering_fn in filters {
-                        filtered_notes =
-                            Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
-                    }
-                    filtered_notes
-                        .map(|notedata| {
-                            if notedata.spent().is_none() && notedata.pending_spent().is_none() {
-                                <D::WalletNote as ShieldedNoteInterface>::value(notedata)
-                            } else {
-                                0
-                            }
-                        })
-                        .sum::<u64>()
+                .flat_map(|transaction| {
+                    transaction
+                        .transparent_notes
+                        .iter()
+                        .filter(|utxo| !utxo.is_spent())
                 })
-                .sum::<u64>(),
-        )
-    }
-
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        if let Capability::Spend(_) = self.wallet_capability().orchard {
-            self.verified_balance::<OrchardDomain>(target_addr).await
-        } else {
-            None
+                .cloned()
+                .collect::<Vec<TransparentNote>>()
         }
-    }
 
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        if let Capability::Spend(_) = self.wallet_capability().sapling {
-            self.verified_balance::<SaplingDomain>(target_addr).await
-        } else {
-            None
+        pub async fn last_synced_hash(&self) -> String {
+            self.blocks
+                .read()
+                .await
+                .first()
+                .map(|block| block.hash())
+                .unwrap_or_default()
         }
-    }
 
-    pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
-        if self.wallet_capability().transparent.can_view() {
-            Some(
-                self.get_utxos()
-                    .await
-                    .iter()
-                    .filter(|utxo| match addr.as_ref() {
-                        Some(a) => utxo.address == *a,
-                        None => true,
-                    })
-                    .map(|utxo| utxo.value)
-                    .sum::<u64>(),
-            )
-        } else {
-            None
+        /// TODO: How do we know that 'sapling_activation_height - 1' is only returned
+        /// when it should be?  When should it be?
+        pub async fn last_synced_height(&self) -> u64 {
+            self.blocks
+                .read()
+                .await
+                .first()
+                .map(|block| block.height)
+                .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
         }
-    }
 
-    pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
-        self.transaction_context.transaction_metadata_set.clone()
-    }
+        pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
+            self.shielded_balance::<OrchardDomain>(addr, &[]).await
+        }
 
-    pub async fn unverified_balance<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
-            &[Box::new(|nnmd, transaction| {
-                !transaction
-                    .status
-                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
-                    || nnmd.pending_receipt()
-            })];
-        self.shielded_balance::<D>(target_addr, filters).await
-    }
-
-    pub async fn verified_balance<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| {
-                transaction
-                    .status
-                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
-            }),
-            Box::new(|nnmd, _| !nnmd.pending_receipt()),
-        ];
-        self.shielded_balance::<D>(target_addr, filters).await
-    }
-
-    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
-        self.transaction_context.key.clone()
+        pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
+            self.shielded_balance::<SaplingDomain>(addr, &[]).await
+        }
     }
 }
 
