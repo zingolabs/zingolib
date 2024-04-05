@@ -41,7 +41,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::data::{SpendableOrchardNote, WitnessTrees};
 
-use super::notes;
+use super::{notes, LightWallet};
 
 use super::traits::SpendableNote;
 use super::utils::get_price;
@@ -94,7 +94,7 @@ pub fn build_transaction_request_from_receivers(
 }
 
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, ()>;
-impl super::LightWallet {
+impl LightWallet {
     // Reset the send progress status to blank
     async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
