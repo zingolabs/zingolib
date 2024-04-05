@@ -642,6 +642,7 @@ mod fast {
     }
 }
 mod slow {
+    use orchard::note_encryption::OrchardDomain;
     use zcash_primitives::consensus::NetworkConstants;
 
     use super::*;
@@ -1359,7 +1360,10 @@ mod slow {
             Some(expected_funds)
         );
         assert_eq!(
-            recipient.wallet.verified_orchard_balance(None).await,
+            recipient
+                .wallet
+                .verified_balance::<OrchardDomain>(None)
+                .await,
             Some(0)
         );
 

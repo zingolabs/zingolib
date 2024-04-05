@@ -844,7 +844,7 @@ impl LightWallet {
     }
 
     #[allow(clippy::type_complexity)]
-    async fn shielded_balance<D>(
+    pub async fn shielded_balance<D>(
         &self,
         target_addr: Option<String>,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
@@ -936,7 +936,7 @@ impl LightWallet {
         self.transaction_context.transaction_metadata_set.clone()
     }
 
-    async fn unverified_balance<D: DomainWalletExt>(
+    pub async fn unverified_balance<D: DomainWalletExt>(
         &self,
         target_addr: Option<String>,
     ) -> Option<u64>
@@ -956,17 +956,10 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.unverified_balance::<OrchardDomain>(target_addr).await
-    }
-
-    /// The following functions use a filter/map functional approach to
-    /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.unverified_balance::<SaplingDomain>(target_addr).await
-    }
-
-    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> Option<u64>
+    pub async fn verified_balance<D: DomainWalletExt>(
+        &self,
+        target_addr: Option<String>,
+    ) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -982,14 +975,6 @@ impl LightWallet {
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
         ];
         self.shielded_balance::<D>(target_addr, filters).await
-    }
-
-    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.verified_balance::<OrchardDomain>(target_addr).await
-    }
-
-    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.verified_balance::<SaplingDomain>(target_addr).await
     }
 
     pub fn wallet_capability(&self) -> Arc<WalletCapability> {
