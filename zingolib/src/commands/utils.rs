@@ -75,7 +75,7 @@ mod tests {
     use crate::wallet;
 
     #[test]
-    fn parse_send_args() {
+    fn parse_send_args_test() {
         let address = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let value_str = "100000";
         let value = 100_000;
@@ -112,9 +112,7 @@ mod tests {
             ]
         );
     }
-}
-#[cfg(test)]
-mod tests {
+
     use super::*;
     mod fail_parse_send_args {
         use super::*;
@@ -265,20 +263,21 @@ mod tests {
                 };
             }
         }
-    }
 
-    #[test]
-    fn successful_parse_send_args_single_json() {
-        let args = ["[{\"address\": \"testaddress\", \"amount\": 123, \"memo\": \"testmemo\"}]"];
-        let parsed = parse_send_args(&args).unwrap();
-        // Assuming you have a way to construct MemoBytes from a string for this example
-        assert_eq!(
-            parsed,
-            vec![(
-                "testaddress".to_string(),
-                123,
-                Some(MemoBytes::from_bytes(&"testmemo".as_bytes()).unwrap())
-            )]
-        );
+        #[test]
+        fn successful_parse_send_args_single_json() {
+            let args =
+                ["[{\"address\": \"testaddress\", \"amount\": 123, \"memo\": \"testmemo\"}]"];
+            let parsed = parse_send_args(&args).unwrap();
+            // Assuming you have a way to construct MemoBytes from a string for this example
+            assert_eq!(
+                parsed,
+                vec![(
+                    "testaddress".to_string(),
+                    123,
+                    Some(MemoBytes::from_bytes(&"testmemo".as_bytes()).unwrap())
+                )]
+            );
+        }
     }
 }
