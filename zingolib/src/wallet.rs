@@ -977,14 +977,6 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.verified_balance::<OrchardDomain>(target_addr).await
-    }
-
-    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.verified_balance::<SaplingDomain>(target_addr).await
-    }
-
     pub fn wallet_capability(&self) -> Arc<WalletCapability> {
         self.transaction_context.key.clone()
     }
