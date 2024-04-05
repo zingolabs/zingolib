@@ -229,6 +229,7 @@ mod tests {
             }
             #[test]
             fn three_args_wrong_amount_show_trim_requirement() {
+                // Note the " " character after the 1.  The parser can handle by trimming, is that correct?
                 let args = ["testaddress", "1 ", "whatever"];
                 let result = parse_send_args(&args);
                 dbg!(&result);
@@ -243,6 +244,25 @@ mod tests {
                 let result = parse_send_args(&args);
                 dbg!(&result);
                 assert!(matches!(result, Err(CommandError::InvalidArguments)));
+            }
+            #[test]
+            fn invalid_memo() {
+                let long_513_byte_memo = &"a".repeat(513);
+                let args = ["testaddress", "123", long_513_byte_memo];
+
+                let result = parse_send_args(&args);
+                match result {
+                    Err(CommandError::InvalidMemo(e)) => {
+                        assert_eq!(
+                            e,
+                            format!(
+                                "Error creating output. Memo '\"{}\"' is too long",
+                                long_513_byte_memo.to_string()
+                            )
+                        )
+                    }
+                    _ => panic!(),
+                };
             }
         }
     }
