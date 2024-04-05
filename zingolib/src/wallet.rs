@@ -1,9 +1,5 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use crate::wallet::data::TransactionRecord;
-use crate::wallet::notes::NoteInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
-
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use json::JsonValue;
@@ -38,6 +34,11 @@ use zcash_primitives::transaction::{self};
 use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::components::Amount};
 
 use zingo_status::confirmation_status::ConfirmationStatus;
+use zingoconfig::ZingoConfig;
+
+use crate::wallet::data::TransactionRecord;
+use crate::wallet::notes::NoteInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
 
 use self::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::Fvk as _;
@@ -51,7 +52,6 @@ use self::{
     transaction_context::TransactionContext,
     transactions::TxMapAndMaybeTrees,
 };
-use zingoconfig::ZingoConfig;
 
 pub mod data;
 pub mod keys;
