@@ -3597,6 +3597,53 @@ mod slow {
     }
 }
 
+mod basic_transactions {
+    use zingo_testutils::scenarios;
+    use zingolib::get_base_address;
+
+    #[tokio::test]
+    async fn send_and_sync_with_multiple_notes_no_panic() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+
+        let recipient_addr_ua = get_base_address!(recipient, "unified");
+        let faucet_addr_ua = get_base_address!(faucet, "unified");
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 2)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+
+        for _ in 0..2 {
+            faucet
+                .do_send(vec![(recipient_addr_ua.as_str(), 40_000, None)])
+                .await
+                .unwrap();
+        }
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+
+        recipient
+            .do_send(vec![(faucet_addr_ua.as_str(), 50_000, None)])
+            .await
+            .unwrap();
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+    }
+}
+
 #[tokio::test]
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
