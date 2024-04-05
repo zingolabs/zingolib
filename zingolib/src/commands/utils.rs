@@ -10,7 +10,7 @@ pub(super) fn parse_send_args(
         let json_args = json::parse(args[0]).map_err(CommandError::FailedJsonParsing)?;
 
         if !json_args.is_array() {
-            return Err(CommandError::IncorrectType);
+            return Err(CommandError::UnexpectedType);
         }
 
         json_args
@@ -24,9 +24,9 @@ pub(super) fn parse_send_args(
 
                 let address = j["address"]
                     .as_str()
-                    .ok_or(CommandError::IncorrectType)?
+                    .ok_or(CommandError::UnexpectedType)?
                     .to_string();
-                let amount = j["amount"].as_u64().ok_or(CommandError::IncorrectType)?;
+                let amount = j["amount"].as_u64().ok_or(CommandError::UnexpectedType)?;
                 let memo = if let Some(m) = j["memo"].as_str().map(|s| s.to_string()) {
                     Some(
                         wallet::utils::interpret_memo_string(m)

@@ -796,7 +796,7 @@ impl Command for SendCommand {
         indoc! {r#"
             Send ZEC to a given address(es)
             Usage:
-            send <address> <amount in zatoshis> "<optional_memo>"
+            send <address> <amount in zatoshis> "<optional memo>"
             OR
             send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
 
@@ -814,7 +814,7 @@ impl Command for SendCommand {
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         // Parse the args. There are two argument types.
         // 1 - A set of 2(+1 optional) arguments for a single address send representing address, amount, memo?
-        // 2 - A single argument in the form of a JSON string that is "[{address: address, value: value, memo: memo}, ...]"
+        // 2 - A single argument in the form of a JSON string that is '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
         let send_inputs = match utils::parse_send_args(args) {
             Ok(args) => args,
             Err(e) => {
@@ -824,10 +824,6 @@ impl Command for SendCommand {
                 )
             }
         };
-        let send_inputs_ref = send_inputs
-            .iter()
-            .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-            .collect();
         for send in &send_inputs {
             let address = &send.0;
             let memo = &send.2;
@@ -839,7 +835,15 @@ impl Command for SendCommand {
             }
         }
         RT.block_on(async move {
-            match lightclient.do_send(send_inputs_ref).await {
+            match lightclient
+                .do_send(
+                    send_inputs
+                        .iter()
+                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
+                        .collect(),
+                )
+                .await
+            {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
