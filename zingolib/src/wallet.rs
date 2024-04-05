@@ -220,32 +220,6 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
-    fn add_notes_to_total<D: DomainWalletExt>(
-        candidates: Vec<D::SpendableNoteAT>,
-        target_amount: Amount,
-    ) -> (Vec<D::SpendableNoteAT>, Amount)
-    where
-        D::Note: PartialEq + Clone,
-        D::Recipient: traits::Recipient,
-    {
-        let mut notes = Vec::new();
-        let mut running_total = Amount::zero();
-        for note in candidates {
-            if running_total >= target_amount {
-                break;
-            }
-            running_total = running_total
-                .add(
-                    Amount::from_u64(D::WalletNote::value_from_note(note.note()))
-                        .expect("should be within the valid monetary range of zatoshis"),
-                )
-                .expect("should be within the valid monetary range of zatoshis");
-            notes.push(note);
-        }
-
-        (notes, running_total)
-    }
-
     // This function will likely be used if/when we reimplement key import
     #[allow(dead_code)]
     fn adjust_wallet_birthday(&self, new_birthday: u64) {

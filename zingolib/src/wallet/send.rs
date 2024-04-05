@@ -15,8 +15,10 @@ use sapling_crypto::prover::{OutputProver, SpendProver};
 
 use shardtree::error::{QueryError, ShardTreeError};
 use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
+use zcash_note_encryption::Domain;
 
 use std::convert::Infallible;
+use std::ops::Add;
 use std::sync::mpsc::channel;
 
 use zcash_client_backend::address;
@@ -41,9 +43,10 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::data::{SpendableOrchardNote, WitnessTrees};
 
-use super::{notes, LightWallet};
+use super::notes::ShieldedNoteInterface;
+use super::{notes, traits, LightWallet};
 
-use super::traits::SpendableNote;
+use super::traits::{DomainWalletExt, SpendableNote};
 use super::utils::get_price;
 use super::Pool;
 
@@ -91,6 +94,34 @@ pub fn build_transaction_request_from_receivers(
     }
 
     TransactionRequest::new(payments)
+}
+
+fn add_notes_to_total<D: DomainWalletExt>(
+    candidates: Vec<D::SpendableNoteAT>,
+    target_amount: Amount,
+) -> (Vec<D::SpendableNoteAT>, Amount)
+where
+    D::Note: PartialEq + Clone,
+    D::Recipient: traits::Recipient,
+{
+    let mut notes = Vec::new();
+    let mut running_total = Amount::zero();
+    for note in candidates {
+        if running_total >= target_amount {
+            break;
+        }
+        running_total = running_total
+            .add(
+                Amount::from_u64(<D as DomainWalletExt>::WalletNote::value_from_note(
+                    note.note(),
+                ))
+                .expect("should be within the valid monetary range of zatoshis"),
+            )
+            .expect("should be within the valid monetary range of zatoshis");
+        notes.push(note);
+    }
+
+    (notes, running_total)
 }
 
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, ()>;
@@ -514,9 +545,7 @@ impl LightWallet {
                         .into_iter()
                         .filter(|note| note.spend_key().is_some())
                         .collect();
-                    (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
-                        SaplingDomain,
-                    >(
+                    (sapling_notes, sapling_value_selected) = add_notes_to_total::<SaplingDomain>(
                         sapling_candidates,
                         (target_amount - orchard_value_selected - all_transparent_value_in_wallet)
                             .unwrap(),
@@ -529,9 +558,7 @@ impl LightWallet {
                         .into_iter()
                         .filter(|note| note.spend_key().is_some())
                         .collect();
-                    (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
-                        OrchardDomain,
-                    >(
+                    (orchard_notes, orchard_value_selected) = add_notes_to_total::<OrchardDomain>(
                         orchard_candidates,
                         (target_amount - all_transparent_value_in_wallet - sapling_value_selected)
                             .unwrap(),
