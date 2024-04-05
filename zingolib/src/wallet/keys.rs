@@ -11,7 +11,7 @@ use zcash_client_backend::address;
 use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
 };
-use zingoconfig::ZingoConfig;
+use zingoconfig::{ChainType, ZingoConfig};
 
 pub mod extended_transparent;
 pub mod unified;
@@ -81,10 +81,17 @@ pub fn get_zaddr_from_bip39seed(
     (extsk, fvk, address)
 }
 
-pub fn is_shielded_address(addr: &str, config: &ZingoConfig) -> bool {
+pub fn is_shielded_address(addr: &str, chain: &ChainType) -> bool {
     matches!(
-        address::Address::decode(&config.chain, addr),
+        address::Address::decode(chain, addr),
         Some(address::Address::Sapling(_)) | Some(address::Address::Unified(_))
+    )
+}
+
+pub fn is_transparent_address(addr: &str, chain: &ChainType) -> bool {
+    matches!(
+        address::Address::decode(chain, addr),
+        Some(address::Address::Transparent(_))
     )
 }
 
