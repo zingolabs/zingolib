@@ -57,12 +57,14 @@ pub mod data;
 pub mod keys;
 pub(crate) mod message;
 pub mod notes;
-pub mod send;
 pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub(crate) mod transactions;
 pub mod utils;
+
+//these mods contain parts of the impl LightWallet
+pub mod send;
 
 pub(crate) use send::SendProgress;
 
