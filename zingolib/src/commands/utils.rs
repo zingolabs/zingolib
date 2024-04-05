@@ -117,10 +117,10 @@ mod tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    mod failures {
+    mod fail_parse_send_args {
         use super::*;
         #[test]
-        fn parse_send_args_failed_json_parsing() {
+        fn failed_json_parsing() {
             let args = [r#"testaddress{{"#];
             let result = parse_send_args(&args);
             match result {
@@ -136,7 +136,7 @@ mod tests {
             };
         }
         #[test]
-        fn parse_send_args_unexpected_type() {
+        fn single_arg_not_an_array_unexpected_type() {
             let args = ["1"];
             let result = parse_send_args(&args);
             match result {
@@ -144,9 +144,49 @@ mod tests {
                 _ => panic!(),
             };
         }
-
         #[test]
-        fn parse_send_args_failure() {
+        fn no_address_missing_key() {
+            let args = ["[{\"amount\": 123, \"memo\": \"testmemo\"}]"];
+            let result = parse_send_args(&args);
+            match result {
+                Err(CommandError::MissingKey(e)) => assert_eq!(e, "address".to_string()),
+                _ => panic!(),
+            };
+        }
+        #[test]
+        fn no_amount_missing_key() {
+            let args = ["[{\"address\": \"testaddress\", \"memo\": \"testmemo\"}]"];
+            let result = parse_send_args(&args);
+            match result {
+                Err(CommandError::MissingKey(e)) => assert_eq!(e, "amount".to_string()),
+                _ => panic!(),
+            };
+        }
+        #[test]
+        fn non_string_address() {
+            let args = ["[{\"address\": 1, \"amount\": 123, \"memo\": \"testmemo\"}]"];
+            let result = parse_send_args(&args);
+            match result {
+                Err(CommandError::UnexpectedType(e)) => {
+                    assert_eq!(e, "address not a Str!".to_string())
+                }
+                _ => panic!(),
+            };
+        }
+        #[test]
+        fn non_u64_amount() {
+            let args =
+                ["[{\"address\": \"testaddress\", \"amount\": \"Oscar Pepper\", \"memo\": \"testmemo\"}]"];
+            let result = parse_send_args(&args);
+            match result {
+                Err(CommandError::UnexpectedType(e)) => {
+                    assert_eq!(e, "amount not a u64!".to_string())
+                }
+                _ => panic!(),
+            };
+        }
+        #[test]
+        fn wrong_number_of_args() {
             let args = ["testaddress", "123", "3", "4"];
             let result = parse_send_args(&args);
             dbg!(&result);
