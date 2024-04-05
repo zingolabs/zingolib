@@ -14,7 +14,7 @@ pub(super) fn parse_send_args(
         let json_args = json::parse(args[0]).map_err(CommandError::FailedJsonParsing)?;
 
         if !json_args.is_array() {
-            return Err(CommandError::UnexpectedType);
+            return Err(CommandError::UnexpectedType(json_args.to_string()));
         }
 
         json_args
@@ -28,9 +28,13 @@ pub(super) fn parse_send_args(
 
                 let address = j["address"]
                     .as_str()
-                    .ok_or(CommandError::UnexpectedType)?
+                    .ok_or(CommandError::UnexpectedType(
+                        "address not a Str!".to_string(),
+                    ))?
                     .to_string();
-                let amount = j["amount"].as_u64().ok_or(CommandError::UnexpectedType)?;
+                let amount = j["amount"].as_u64().ok_or(CommandError::UnexpectedType(
+                    "amount not a u64!".to_string(),
+                ))?;
                 let memo = if let Some(m) = j["memo"].as_str().map(|s| s.to_string()) {
                     Some(
                         wallet::utils::interpret_memo_string(m)
@@ -45,9 +49,11 @@ pub(super) fn parse_send_args(
             .collect::<Result<Vec<(String, u64, Option<MemoBytes>)>, CommandError>>()
     } else if args.len() == 2 || args.len() == 3 {
         let address = args[0].to_string();
+        dbg!(&address);
         let amount = args[1]
             .parse::<u64>()
             .map_err(CommandError::FailedIntParsing)?;
+        dbg!(&amount);
         let memo = if args.len() == 3 {
             Some(
                 wallet::utils::interpret_memo_string(args[2].to_string())
@@ -114,7 +120,7 @@ mod tests {
     mod failures {
         use super::*;
         #[test]
-        fn test_parse_send_args_failed_json_parsing() {
+        fn parse_send_args_failed_json_parsing() {
             let args = [r#"testaddress{{"#];
             let result = parse_send_args(&args);
             match result {
@@ -130,24 +136,17 @@ mod tests {
             };
         }
         #[test]
-        fn test_parse_send_args_unexpected_type() {
-            let args = [r#"testaddress{{"#];
+        fn parse_send_args_unexpected_type() {
+            let args = ["1"];
             let result = parse_send_args(&args);
             match result {
-                Err(CommandError::FailedJsonParsing(e)) => match e {
-                    json::Error::UnexpectedCharacter { ch, line, column } => {
-                        assert_eq!(ch, 'e');
-                        assert_eq!(line, 1);
-                        assert_eq!(column, 2);
-                    }
-                    _ => panic!(),
-                },
+                Err(CommandError::UnexpectedType(e)) => assert_eq!(e, "1".to_string()),
                 _ => panic!(),
             };
         }
 
         #[test]
-        fn test_parse_send_args_failure() {
+        fn parse_send_args_failure() {
             let args = ["testaddress", "123", "3", "4"];
             let result = parse_send_args(&args);
             dbg!(&result);
@@ -156,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn test_successful_parse_send_args_single_json() {
+    fn successful_parse_send_args_single_json() {
         let args = ["[{\"address\": \"testaddress\", \"amount\": 123, \"memo\": \"testmemo\"}]"];
         let parsed = parse_send_args(&args).unwrap();
         // Assuming you have a way to construct MemoBytes from a string for this example

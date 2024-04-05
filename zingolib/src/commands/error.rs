@@ -4,7 +4,7 @@ use std::fmt;
 pub(crate) enum CommandError {
     FailedJsonParsing(json::Error),
     FailedIntParsing(std::num::ParseIntError),
-    UnexpectedType,
+    UnexpectedType(String),
     MissingKey(String),
     InvalidArguments,
     IncompatibleMemo,
@@ -18,7 +18,7 @@ impl fmt::Display for CommandError {
         match self {
             FailedJsonParsing(e) => write!(f, "failed to parse argument. {}", e),
             FailedIntParsing(e) => write!(f, "failed to parse argument. {}", e),
-            UnexpectedType => write!(f, "arguments cannot be parsed to expected type."),
+            UnexpectedType(e) => write!(f, "arguments cannot be parsed to expected type. {}", e),
             MissingKey(key) => write!(f, "json array is missing \"{}\" key.", key),
             InvalidArguments => write!(f, "arguments given are invalid."),
             IncompatibleMemo => {
