@@ -60,3 +60,47 @@ pub(super) fn parse_send_args(
 
     Ok(send_args)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::wallet;
+
+    #[test]
+    fn parse_send_args() {
+        let address = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let value_str = "100000";
+        let value = 100_000;
+        let memo_str = "test memo";
+        let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
+
+        // No memo
+        let send_args = &[address, value_str];
+        assert_eq!(
+            super::parse_send_args(send_args).unwrap(),
+            vec![(address.to_string(), value, None)]
+        );
+
+        // Memo
+        let send_args = &[address, value_str, memo_str];
+        assert_eq!(
+            super::parse_send_args(send_args).unwrap(),
+            vec![(address.to_string(), value, Some(memo.clone()))]
+        );
+
+        // Json
+        let json = "[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\", \"amount\":50000}, \
+            {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+            \"amount\":100000, \"memo\":\"test memo\"}]";
+        assert_eq!(
+            super::parse_send_args(&[json]).unwrap(),
+            vec![
+                (
+                    "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                    50_000,
+                    None
+                ),
+                (address.to_string(), value, Some(memo))
+            ]
+        );
+    }
+}
