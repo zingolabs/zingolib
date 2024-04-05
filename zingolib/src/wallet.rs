@@ -956,16 +956,6 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.unverified_balance::<OrchardDomain>(target_addr).await
-    }
-
-    /// The following functions use a filter/map functional approach to
-    /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        self.unverified_balance::<SaplingDomain>(target_addr).await
-    }
-
     pub async fn verified_balance<D: DomainWalletExt>(
         &self,
         target_addr: Option<String>,
