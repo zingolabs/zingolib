@@ -9,6 +9,7 @@ pub(crate) enum CommandError {
     InvalidArguments,
     IncompatibleMemo,
     InvalidMemo(String),
+    NonJsonNumberForAmount(String),
 }
 
 impl fmt::Display for CommandError {
@@ -25,6 +26,7 @@ impl fmt::Display for CommandError {
                 write!(f, "memo's cannot be sent to transparent addresses.")
             }
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
+            NonJsonNumberForAmount(e) => write!(f, "{}", e),
         }
     }
 }
