@@ -9,15 +9,12 @@ use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
 use rand::rngs::OsRng;
 use rand::Rng;
 use sapling_crypto::note_encryption::SaplingDomain;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
 use shardtree::error::ShardTreeError;
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::ops::Add;
 use std::{
@@ -106,60 +103,5 @@ impl LightWallet {
                         .unwrap()
                         .is_none()
             })
-    }
-
-    pub(super) async fn get_orchard_anchor(
-        &self,
-        tree: &ShardTree<
-            MemoryShardStore<MerkleHashOrchard, BlockHeight>,
-            COMMITMENT_TREE_LEVELS,
-            MAX_SHARD_LEVEL,
-        >,
-    ) -> Result<orchard::Anchor, ShardTreeError<Infallible>> {
-        Ok(orchard::Anchor::from(tree.root_at_checkpoint_depth(
-            self.transaction_context.config.reorg_buffer_offset as usize,
-        )?))
-    }
-    pub(super) async fn get_sapling_anchor(
-        &self,
-        tree: &ShardTree<
-            MemoryShardStore<sapling_crypto::Node, BlockHeight>,
-            COMMITMENT_TREE_LEVELS,
-            MAX_SHARD_LEVEL,
-        >,
-    ) -> Result<sapling_crypto::Anchor, ShardTreeError<Infallible>> {
-        Ok(sapling_crypto::Anchor::from(
-            tree.root_at_checkpoint_depth(
-                self.transaction_context.config.reorg_buffer_offset as usize,
-            )?,
-        ))
-    }
-
-    /// Determines the target height for a transaction, and the offset from which to
-    /// select anchors, based on the current synchronised block chain.
-    pub(super) async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
-        let range = {
-            let blocks = self.blocks.read().await;
-            (
-                blocks.last().map(|block| block.height as u32),
-                blocks.first().map(|block| block.height as u32),
-            )
-        };
-        match range {
-            (Some(min_height), Some(max_height)) => {
-                let target_height = max_height + 1;
-
-                // Select an anchor ANCHOR_OFFSET back from the target block,
-                // unless that would be before the earliest block we have.
-                let anchor_height = cmp::max(
-                    target_height
-                        .saturating_sub(self.transaction_context.config.reorg_buffer_offset),
-                    min_height,
-                );
-
-                Some((target_height, (target_height - anchor_height) as usize))
-            }
-            _ => None,
-        }
     }
 }

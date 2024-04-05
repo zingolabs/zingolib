@@ -14,10 +14,14 @@ use rand::rngs::OsRng;
 use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
+use orchard::tree::MerkleHashOrchard;
 use shardtree::error::{QueryError, ShardTreeError};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::ShardTree;
 use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
 use zcash_note_encryption::Domain;
 
+use std::cmp;
 use std::convert::Infallible;
 use std::ops::Add;
 use std::sync::mpsc::channel;
@@ -42,7 +46,8 @@ use zcash_primitives::{
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::data::{SpendableOrchardNote, WitnessTrees};
+use super::data::SpendableOrchardNote;
+use super::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 
 use super::notes::ShieldedNoteInterface;
 use super::{notes, traits, LightWallet};
@@ -127,6 +132,61 @@ where
 
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, ()>;
 impl LightWallet {
+    pub(super) async fn get_orchard_anchor(
+        &self,
+        tree: &ShardTree<
+            MemoryShardStore<MerkleHashOrchard, BlockHeight>,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
+        >,
+    ) -> Result<orchard::Anchor, ShardTreeError<Infallible>> {
+        Ok(orchard::Anchor::from(tree.root_at_checkpoint_depth(
+            self.transaction_context.config.reorg_buffer_offset as usize,
+        )?))
+    }
+    pub(super) async fn get_sapling_anchor(
+        &self,
+        tree: &ShardTree<
+            MemoryShardStore<sapling_crypto::Node, BlockHeight>,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
+        >,
+    ) -> Result<sapling_crypto::Anchor, ShardTreeError<Infallible>> {
+        Ok(sapling_crypto::Anchor::from(
+            tree.root_at_checkpoint_depth(
+                self.transaction_context.config.reorg_buffer_offset as usize,
+            )?,
+        ))
+    }
+
+    /// Determines the target height for a transaction, and the offset from which to
+    /// select anchors, based on the current synchronised block chain.
+    pub(super) async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
+        let range = {
+            let blocks = self.blocks.read().await;
+            (
+                blocks.last().map(|block| block.height as u32),
+                blocks.first().map(|block| block.height as u32),
+            )
+        };
+        match range {
+            (Some(min_height), Some(max_height)) => {
+                let target_height = max_height + 1;
+
+                // Select an anchor ANCHOR_OFFSET back from the target block,
+                // unless that would be before the earliest block we have.
+                let anchor_height = cmp::max(
+                    target_height
+                        .saturating_sub(self.transaction_context.config.reorg_buffer_offset),
+                    min_height,
+                );
+
+                Some((target_height, (target_height - anchor_height) as usize))
+            }
+            _ => None,
+        }
+    }
+
     // Reset the send progress status to blank
     async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
