@@ -3593,6 +3593,111 @@ mod slow {
     }
 }
 
+mod basic_transactions {
+    use std::future::Future;
+
+    use zcash_primitives::memo::MemoBytes;
+    use zingo_testutils::scenarios;
+    use zingolib::{get_base_address, lightclient::LightClient};
+
+    async fn standard_send_sync_check<F, Fut>(
+        client: &LightClient,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+        chain_update_function: F,
+    ) where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let proposal = todo!("client.do_propose(address_amount_memo_tuples).await.unwrap()");
+        let txids = todo!("client.do_send_proposal().await.unwrap()");
+
+        todo!(
+            "client
+            .check_chain_matches_proposal(proposal.clone(), txids.clone(), false)
+            .await"
+        );
+
+        chain_update_function().await;
+
+        todo!(
+            "client
+            .check_chain_matches_proposal(proposal, txids, true)
+            .await"
+        );
+    }
+
+    #[tokio::test]
+    async fn through_node_standard_send() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+
+        let sapling_dust = 5;
+        standard_send_sync_check(
+            &faucet,
+            vec![(&get_base_address!(recipient, "sapling"), 200000, None)],
+            || async {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+                    .await
+                    .unwrap();
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn send_and_sync_with_multiple_notes_no_panic() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+
+        let recipient_addr_ua = get_base_address!(recipient, "unified");
+        let faucet_addr_ua = get_base_address!(faucet, "unified");
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 2)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+
+        let mut address_amount_memo_tuples =
+            todo!("vec![(recipient_addr_ua.as_str(), 40_000, None)]");
+
+        for _ in 0..2 {
+            todo!(
+                "faucet
+                .do_propose(address_amount_memo_tuples.clone())
+                .await
+                .unwrap()"
+            );
+            todo!("faucet.do_send_proposal().await.unwrap()");
+        }
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+
+        address_amount_memo_tuples = todo!("vec![(faucet_addr_ua.as_str(), 50_000, None)]");
+        todo!(
+            "recipient
+            .do_propose(address_amount_memo_tuples)
+            .await
+            .unwrap()"
+        );
+
+        todo!("recipient.do_send_proposal().await.unwrap()");
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+    }
+}
+
 #[tokio::test]
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
