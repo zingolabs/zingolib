@@ -213,39 +213,9 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
-    fn get_legacy_frontiers(
-        trees: TreeState,
-    ) -> (
-        Option<incrementalmerkletree::frontier::NonEmptyFrontier<sapling_crypto::Node>>,
-        Option<incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>>,
-    ) {
-        (
-            Self::get_legacy_frontier::<SaplingDomain>(&trees),
-            Self::get_legacy_frontier::<OrchardDomain>(&trees),
-        )
-    }
-    fn get_legacy_frontier<D: DomainWalletExt>(
-        trees: &TreeState,
-    ) -> Option<
-        incrementalmerkletree::frontier::NonEmptyFrontier<
-            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
-        >,
-    >
-    where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
-    {
-        zcash_primitives::merkle_tree::read_commitment_tree::<
-            <D::WalletNote as notes::ShieldedNoteInterface>::Node,
-            &[u8],
-            COMMITMENT_TREE_LEVELS,
-        >(&hex::decode(D::get_tree(trees)).unwrap()[..])
-        .ok()
-        .and_then(|tree| tree.to_frontier().take())
-    }
     pub(crate) async fn initiate_witness_trees(&self, trees: TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
-            LightWallet::get_legacy_frontiers(trees);
+            crate::data::witness_trees::get_legacy_frontiers(trees);
         if let Some(ref mut trees) = self
             .transaction_context
             .transaction_metadata_set
