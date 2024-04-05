@@ -850,7 +850,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -885,7 +885,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1110,9 +1110,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.3.25"
+version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fbd2820c5e49886948654ab546d0688ff24530286bdcf8fca3cefb16d4618eb"
+checksum = "81fe527a889e1532da5c525686d96d4c2e74cdd345badf8dfef9f6b39dd5f5e8"
 dependencies = [
  "bytes 1.6.0",
  "fnv",
@@ -1194,9 +1194,9 @@ dependencies = [
 
 [[package]]
 name = "heck"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hermit-abi"
@@ -1462,9 +1462,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.11.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -1695,9 +1695,9 @@ dependencies = [
 
 [[package]]
 name = "multimap"
-version = "0.8.3"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
+checksum = "defc4c55412d89136f966bbb339008b474350e5e6e78d2714439c386b3137a03"
 
 [[package]]
 name = "native-tls"
@@ -2119,9 +2119,9 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "146c289cda302b98a28d40c8b3b90498d6e526dd24ac2ecea73e4e491685b94a"
+checksum = "d0f5d036824e4761737860779c906171497f6d55681139d8312388f8fe398922"
 dependencies = [
  "bytes 1.6.0",
  "prost-derive",
@@ -2129,13 +2129,13 @@ dependencies = [
 
 [[package]]
 name = "prost-build"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c55e02e35260070b6f716a2423c2ff1c3bb1642ddca6f99e1f26d06268a0e2d2"
+checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes 1.6.0",
  "heck",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -2146,17 +2146,16 @@ dependencies = [
  "regex",
  "syn 2.0.58",
  "tempfile",
- "which",
 ]
 
 [[package]]
 name = "prost-derive"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efb6c9a1dd1def8e2124d17e83a20af56f1570d6c2d2bd9e266ccb768df3840e"
+checksum = "19de2de2a00075bf566bee3bd4db014b11587e84184d3f7a791bc17f1a8e9e48"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.58",
@@ -2164,9 +2163,9 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "193898f59edcf43c26227dcd4c8427f00d99d61e95dcde58dabd49fa291d470e"
+checksum = "3235c33eb02c1f1e212abdbe34c78b264b038fb58ca612664343271e36e55ffe"
 dependencies = [
  "prost",
 ]
@@ -3914,7 +3913,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "bech32",
  "bs58",
@@ -3926,7 +3925,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.11.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -3968,7 +3967,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3977,7 +3976,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "bech32",
  "blake2b_simd",
@@ -4018,7 +4017,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.14.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "aes",
  "bip0039",
@@ -4056,7 +4055,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.14.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4078,7 +4077,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#11bcb838d5f11812ee14d21c68b7c5e571176cf4"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=m18_z317#9abc9c0e785c8743f724c08ee1b6f8ad10d9ec49"
 dependencies = [
  "document-features",
  "memuse",
