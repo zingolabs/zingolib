@@ -1,7 +1,11 @@
+#![forbid(unsafe_code)]
+//! Currently this mod contains a utility fn that's been factored out of SendCommand
+
 use crate::commands::error::CommandError;
 use crate::wallet;
 use zcash_primitives::memo::MemoBytes;
 
+/// Send args accepts two different formats for its input
 pub(super) fn parse_send_args(
     args: &[&str],
 ) -> Result<Vec<(String, u64, Option<MemoBytes>)>, CommandError> {
@@ -101,6 +105,68 @@ mod tests {
                 ),
                 (address.to_string(), value, Some(memo))
             ]
+        );
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    mod failures {
+        use super::*;
+        #[test]
+        fn test_parse_send_args_failed_json_parsing() {
+            let args = [r#"testaddress{{"#];
+            let result = parse_send_args(&args);
+            match result {
+                Err(CommandError::FailedJsonParsing(e)) => match e {
+                    json::Error::UnexpectedCharacter { ch, line, column } => {
+                        assert_eq!(ch, 'e');
+                        assert_eq!(line, 1);
+                        assert_eq!(column, 2);
+                    }
+                    _ => panic!(),
+                },
+                _ => panic!(),
+            };
+        }
+        #[test]
+        fn test_parse_send_args_unexpected_type() {
+            let args = [r#"testaddress{{"#];
+            let result = parse_send_args(&args);
+            match result {
+                Err(CommandError::FailedJsonParsing(e)) => match e {
+                    json::Error::UnexpectedCharacter { ch, line, column } => {
+                        assert_eq!(ch, 'e');
+                        assert_eq!(line, 1);
+                        assert_eq!(column, 2);
+                    }
+                    _ => panic!(),
+                },
+                _ => panic!(),
+            };
+        }
+
+        #[test]
+        fn test_parse_send_args_failure() {
+            let args = ["testaddress", "123", "3", "4"];
+            let result = parse_send_args(&args);
+            dbg!(&result);
+            assert!(matches!(result, Err(CommandError::InvalidArguments)));
+        }
+    }
+
+    #[test]
+    fn test_successful_parse_send_args_single_json() {
+        let args = ["[{\"address\": \"testaddress\", \"amount\": 123, \"memo\": \"testmemo\"}]"];
+        let parsed = parse_send_args(&args).unwrap();
+        // Assuming you have a way to construct MemoBytes from a string for this example
+        assert_eq!(
+            parsed,
+            vec![(
+                "testaddress".to_string(),
+                123,
+                Some(MemoBytes::from_bytes(&"testmemo".as_bytes()).unwrap())
+            )]
         );
     }
 }
