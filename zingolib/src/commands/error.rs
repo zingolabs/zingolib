@@ -3,6 +3,7 @@ use std::fmt;
 #[derive(Debug)]
 pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
+    SingleArgNotJsonArray(String),
     ParseIntFromString(std::num::ParseIntError),
     UnexpectedType(String),
     MissingKey(String),
@@ -27,6 +28,7 @@ impl fmt::Display for CommandError {
             }
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "{}", e),
+            SingleArgNotJsonArray(e) => write!(f, "{}", e),
         }
     }
 }

@@ -14,7 +14,7 @@ pub(super) fn parse_send_args(
         let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;
 
         if !json_args.is_array() {
-            return Err(CommandError::UnexpectedType(json_args.to_string()));
+            return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
         }
 
         json_args
@@ -145,7 +145,7 @@ mod tests {
                 let args = ["1"];
                 let result = parse_send_args(&args);
                 match result {
-                    Err(CommandError::UnexpectedType(e)) => assert_eq!(e, "1".to_string()),
+                    Err(CommandError::SingleArgNotJsonArray(e)) => assert_eq!(e, "1".to_string()),
                     _ => panic!(),
                 };
             }
