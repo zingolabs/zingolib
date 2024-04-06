@@ -1,54 +1,10 @@
-/// This mod contains pieces of the impl LightWallet that are only necessary for spend-capable wallets, such as witness tracking.
-use crate::wallet::data::TransactionRecord;
-use crate::wallet::notes::NoteInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
-
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-
-use json::JsonValue;
-use log::{error, info, warn};
-use orchard::keys::SpendingKey as OrchardSpendingKey;
-use orchard::note_encryption::OrchardDomain;
-use rand::rngs::OsRng;
-use rand::Rng;
-use sapling_crypto::note_encryption::SaplingDomain;
-
-use sapling_crypto::zip32::DiversifiableFullViewingKey;
-use shardtree::error::ShardTreeError;
-use std::convert::Infallible;
-use std::ops::Add;
-use std::{
-    cmp,
-    io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, Arc},
-    time::SystemTime,
-};
-use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
-
 use zcash_client_backend::proto::service::TreeState;
-use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::Domain;
 
-use zcash_primitives::transaction::{self};
-use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::components::Amount};
+use zcash_primitives::consensus::BlockHeight;
 
-use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
-
-use super::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
-use super::keys::unified::Fvk as _;
-use super::keys::unified::{Capability, WalletCapability};
-use super::traits::Recipient;
-use super::traits::{DomainWalletExt, SpendableNote};
+use super::traits::SpendableNote;
 
 use super::LightWallet;
-use super::{
-    data::{BlockData, WalletZecPriceInfo},
-    message::Message,
-    transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
-};
 
 impl LightWallet {
     pub(crate) async fn initiate_witness_trees(&self, trees: TreeState) {

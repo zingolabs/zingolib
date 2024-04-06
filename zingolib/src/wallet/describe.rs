@@ -1,59 +1,27 @@
-/// The describe module is to pass information toward an interface and a user.
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-
-use json::JsonValue;
-use log::{error, info, warn};
-use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
-use rand::rngs::OsRng;
-use rand::Rng;
+
 use sapling_crypto::note_encryption::SaplingDomain;
 
-use sapling_crypto::zip32::DiversifiableFullViewingKey;
-use shardtree::error::ShardTreeError;
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
-use std::convert::Infallible;
-use std::ops::Add;
-use std::{
-    cmp,
-    io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, Arc},
-    time::SystemTime,
-};
+use std::{cmp, sync::Arc};
 use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
-use zcash_client_backend::proto::service::TreeState;
-use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 
-use zcash_primitives::transaction::{self};
-use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::components::Amount};
-
-use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
+use zcash_primitives::consensus::BlockHeight;
 
 use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
-use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
+use crate::wallet::traits::Diversifiable as _;
 
-use super::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
-use super::keys::unified::Fvk as _;
 use super::keys::unified::{Capability, WalletCapability};
 use super::notes::TransparentNote;
+use super::traits::DomainWalletExt;
 use super::traits::Recipient;
-use super::traits::{DomainWalletExt, SpendableNote};
 
-use super::{
-    data::{BlockData, WalletZecPriceInfo},
-    message::Message,
-    transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
-};
+use super::{data::BlockData, transactions::TxMapAndMaybeTrees};
 
 use super::LightWallet;
 impl LightWallet {

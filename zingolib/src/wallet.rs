@@ -3,7 +3,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use json::JsonValue;
-use log::{error, info, warn};
+use log::{info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
@@ -12,11 +12,7 @@ use rand::Rng;
 use sapling_crypto::note_encryption::SaplingDomain;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
-use shardtree::error::ShardTreeError;
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
-use std::convert::Infallible;
-use std::ops::Add;
+
 use std::{
     cmp,
     io::{self, Error, ErrorKind, Read, Write},
@@ -30,23 +26,18 @@ use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 
-use zcash_primitives::transaction::{self};
-use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::components::Amount};
+use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::data::TransactionRecord;
-use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
-use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
+use crate::wallet::traits::ReadableWriteable;
 
-use self::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+use self::data::{WitnessTrees, COMMITMENT_TREE_LEVELS};
 use self::keys::unified::Fvk as _;
-use self::keys::unified::{Capability, WalletCapability};
-use self::traits::Recipient;
-use self::traits::{DomainWalletExt, SpendableNote};
+use self::keys::unified::WalletCapability;
 
 use self::{
     data::{BlockData, WalletZecPriceInfo},
@@ -66,7 +57,6 @@ pub(crate) mod transactions;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
-
 pub mod describe;
 pub mod disk;
 pub mod send;
