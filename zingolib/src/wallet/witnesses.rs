@@ -2,8 +2,6 @@ use zcash_client_backend::proto::service::TreeState;
 
 use zcash_primitives::consensus::BlockHeight;
 
-use super::traits::SpendableNote;
-
 use super::LightWallet;
 
 impl LightWallet {
