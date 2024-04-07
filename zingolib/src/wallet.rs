@@ -62,6 +62,10 @@ pub mod disk;
 pub mod send;
 pub mod witnesses;
 
+//this is a special mod because i dont have time to unsnarl the way we represent and store wallet data right now.
+// so every time we send, we summon this daemon and it collects the right data into the right place.
+pub mod spend_kit;
+
 pub(crate) use send::SendProgress;
 
 pub fn now() -> u64 {
