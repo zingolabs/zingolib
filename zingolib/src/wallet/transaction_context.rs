@@ -236,7 +236,7 @@ pub mod decrypt_transaction {
                         let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
                         let prev_n = vin.prevout.n() as u64;
 
-                        if let Some(wtx) = current.get(&prev_transaction_id) {
+                        if let Some(wtx) = current.map.get(&prev_transaction_id) {
                             // One of the tx outputs is a match
                             if let Some(spent_utxo) = wtx
                                 .transparent_notes
@@ -291,6 +291,7 @@ pub mod decrypt_transaction {
                                 .write()
                                 .await
                                 .current
+                                .map
                                 .get_mut(&txid)
                             {
                                 if !transaction.outgoing_tx_data.is_empty() {
