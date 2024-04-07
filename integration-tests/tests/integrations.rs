@@ -783,6 +783,7 @@ mod slow {
             .spending_data
             .as_ref()
             .unwrap()
+            .witness_trees
             .witness_tree_orchard
             .marked_positions()
             .unwrap()
@@ -817,6 +818,7 @@ mod slow {
             .spending_data
             .as_ref()
             .unwrap()
+            .witness_trees
             .witness_tree_orchard
             .marked_positions()
             .unwrap()
@@ -831,6 +833,7 @@ mod slow {
                 .spending_data
                 .as_ref()
                 .unwrap()
+                .witness_trees
                 .witness_tree_orchard
         );
 
@@ -861,6 +864,7 @@ mod slow {
             .spending_data
             .as_ref()
             .unwrap()
+            .witness_trees
             .witness_tree_orchard
             .marked_positions()
             .unwrap()
@@ -895,6 +899,7 @@ mod slow {
                 .spending_data
                 .as_ref()
                 .unwrap()
+                .witness_trees
                 .witness_tree_orchard
         );
         assert!(!recipient
@@ -906,6 +911,7 @@ mod slow {
             .spending_data
             .as_ref()
             .unwrap()
+            .witness_trees
             .witness_tree_orchard
             .marked_positions()
             .unwrap()
@@ -2136,6 +2142,7 @@ mod slow {
                 .spending_data
                 .as_ref()
                 .unwrap()
+                .witness_trees
                 .witness_tree_orchard
                 .max_leaf_position(0),
             recipient
@@ -2147,6 +2154,7 @@ mod slow {
                 .spending_data
                 .as_ref()
                 .unwrap()
+                .witness_trees
                 .witness_tree_orchard
                 .max_leaf_position(0)
         );
@@ -2485,6 +2493,7 @@ mod slow {
                 .spending_data
                 .as_ref()
                 .unwrap()
+                .witness_trees
                 .witness_tree_orchard
         );
 
@@ -2602,6 +2611,7 @@ mod slow {
             .await;
         let wallet_trees = read_lock.spending_data.as_ref().unwrap();
         let last_leaf = wallet_trees
+            .witness_trees
             .witness_tree_orchard
             .max_leaf_position(0)
             .unwrap();
@@ -2632,9 +2642,13 @@ mod slow {
             .unwrap();
         assert_eq!(
             wallet_trees
+                .witness_trees
                 .witness_tree_orchard
                 .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
-                .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
+                .unwrap_or_else(|_| panic!(
+                    "{:#?}",
+                    wallet_trees.witness_trees.witness_tree_orchard
+                )),
             server_orchard_shardtree
                 .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
                 .unwrap()
@@ -3308,6 +3322,7 @@ mod slow {
             .spending_data
             .as_ref()
             .unwrap()
+            .witness_trees
             .witness_tree_orchard
             .witness_at_checkpoint_depth(
                 recipient
@@ -3349,6 +3364,7 @@ mod slow {
             .spending_data
             .as_ref()
             .unwrap()
+            .witness_trees
             .witness_tree_orchard
             .witness_at_checkpoint_depth(
                 recipient
