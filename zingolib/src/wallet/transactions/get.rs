@@ -17,7 +17,8 @@ impl TxMapAndMaybeTrees {
     ) -> Vec<(TxId, PoolNullifier, Option<u32>)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
-        self.current
+        self.current.map
+
             .iter()
             .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed_before_or_at(&before_block)) // Update only confirmed notes
             .flat_map(|(txid, transaction_metadata)| {
@@ -65,6 +66,7 @@ impl TxMapAndMaybeTrees {
 
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
+            .map
             .get(txid)
             .map(TransactionRecord::total_value_spent)
             .unwrap_or(0)
@@ -84,6 +86,7 @@ impl TxMapAndMaybeTrees {
         <D as Domain>::Recipient: Recipient,
     {
         self.current
+            .map
             .iter()
             .flat_map(|(_, transaction_metadata)| {
                 D::to_notes_vec(transaction_metadata)
@@ -106,6 +109,7 @@ impl TxMapAndMaybeTrees {
     /// This returns an _arbitrary_ confirmed txid from the latest block the wallet is aware of.
     pub fn get_some_txid_from_highest_wallet_block(&self) -> Option<TxId> {
         self.current
+            .map
             .values()
             .fold(
                 None,
@@ -140,7 +144,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
     let txid_1 = TxId::from_bytes(txid_bytes_1);
     let txid_2 = TxId::from_bytes(txid_bytes_2);
     let txid_3 = TxId::from_bytes(txid_bytes_3);
-    tms.current.insert(
+    tms.current.map.insert(
         txid_1,
         TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
@@ -150,7 +154,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
             &txid_1,
         ),
     );
-    tms.current.insert(
+    tms.current.map.insert(
         txid_2,
         TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
@@ -160,7 +164,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
             &txid_2,
         ),
     );
-    tms.current.insert(
+    tms.current.map.insert(
         txid_3,
         TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
@@ -179,6 +183,7 @@ impl TxMapAndMaybeTrees {
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
         match self
             .current
+            .map
             .get(txid)
             .expect("To have the requested txid")
             .get_transaction_fee()

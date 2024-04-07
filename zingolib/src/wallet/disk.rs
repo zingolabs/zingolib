@@ -144,6 +144,7 @@ impl LightWallet {
         }?;
         let txids = transactions
             .current
+            .map
             .keys()
             .cloned()
             .collect::<Vec<transaction::TxId>>();

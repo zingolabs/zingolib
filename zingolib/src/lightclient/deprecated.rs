@@ -116,6 +116,7 @@ impl LightClient {
             .read()
             .await
             .current
+            .map
             .iter()
             .flat_map(|(txid, wallet_transaction)| {
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
