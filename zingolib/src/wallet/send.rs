@@ -115,7 +115,7 @@ impl super::LightWallet {
             .transaction_metadata_set
             .write()
             .await;
-        let mut spend_kit = self.assemble_spend_kit(&mut context_write_lock).await?;
+        let mut spend_kit = SpendKit::assemble(self, &mut context_write_lock).await?;
         let proposal = spend_kit.create_proposal(request)?;
         Ok(proposal)
     }
@@ -139,8 +139,7 @@ impl super::LightWallet {
             .write()
             .await;
 
-        let mut spend_kit = self
-            .assemble_spend_kit(&mut context_write_lock)
+        let mut spend_kit = SpendKit::assemble(self, &mut context_write_lock)
             .await
             .map_err(|e| SendProposedTransferError::AssembleSpendKit(e))?;
 
@@ -191,37 +190,6 @@ impl super::LightWallet {
                 .await;
         }
         Ok(sent_full_txs.into_iter().map(|tx| tx.txid()).collect())
-    }
-
-    pub async fn assemble_spend_kit<'lock, 'reflock, 'trees, 'book>(
-        &'lock self,
-        context_write_lock: &'reflock mut RwLockWriteGuard<'lock, TxMapAndMaybeTrees>,
-    ) -> ZingoLibResult<SpendKit<'book, 'trees>>
-    where
-        'lock: 'trees + 'book,
-        'reflock: 'trees + 'book,
-    {
-        if let TxMapAndMaybeTrees {
-            spending_data: Some(spending_data),
-            current: all_remote_transactions,
-        } = context_write_lock.deref_mut()
-        {
-            Ok(SpendKit::<'book, 'trees> {
-                spend_cap: {
-                    let (mnemonic, _) = self.mnemonic().expect("should have spend capability");
-                    let seed = mnemonic.to_seed("");
-                    let account_id = AccountId::ZERO;
-                    self.wallet_capability()
-                },
-                params: self.transaction_context.config.chain,
-                record_book: RefRecordBook::new_from_remote_txid_hashmap(all_remote_transactions), //review! if there are already pending transactions, dont assemble a spend_kit
-                trees: &mut spending_data.witness_trees,
-                latest_proposal: &mut spending_data.latest_proposal,
-                local_sending_transactions: Vec::new(),
-            })
-        } else {
-            Err(ZingoLibError::ViewkeyCantSpend)
-        }
     }
 }
 

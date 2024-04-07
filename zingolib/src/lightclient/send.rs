@@ -11,6 +11,7 @@ use crate::{
     error::ZingoLibError,
     wallet::{
         send::{build_transaction_request_from_tuples, errors::DoProposeError},
+        spend_kit::SpendKit,
         transactions::{Proposa, TransferProposal, TxMapAndMaybeTrees},
         Pool, SendProgress,
     },
@@ -151,10 +152,7 @@ impl LightClient {
             .transaction_metadata_set
             .write()
             .await;
-        let mut spend_kit = self
-            .wallet
-            .assemble_spend_kit(&mut context_write_lock)
-            .await?;
+        let mut spend_kit = SpendKit::assemble(&self.wallet, &mut context_write_lock).await?;
 
         spend_kit.propose_shielding()?;
         std::mem::drop(spend_kit);

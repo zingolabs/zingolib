@@ -1,15 +1,19 @@
-use std::{convert::Infallible, num::NonZeroU32, sync::Arc};
+use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut, sync::Arc};
 
 use crate::error::{ZingoLibError, ZingoLibResult};
 
 use self::errors::CreateTransactionsError;
 
 use super::{
-    data::WitnessTrees, keys::unified::WalletCapability, record_book::RefRecordBook,
-    transactions::Proposa,
+    data::WitnessTrees,
+    keys::unified::WalletCapability,
+    record_book::RefRecordBook,
+    transactions::{Proposa, TxMapAndMaybeTrees},
+    LightWallet,
 };
 use nonempty::NonEmpty;
 use sapling_crypto::prover::{OutputProver, SpendProver};
+use tokio::sync::RwLockWriteGuard;
 use zcash_client_backend::{
     data_api::{wallet::input_selection::GreedyInputSelector, InputSource},
     proposal::Proposal,
@@ -26,6 +30,7 @@ use zcash_primitives::{
     },
 };
 use zingoconfig::ChainType;
+use zip32::AccountId;
 
 pub mod trait_inputsource;
 pub mod trait_walletcommitmenttrees;
@@ -50,6 +55,31 @@ type GISKit<'a, 'b> = GreedyInputSelector<
 >;
 
 impl SpendKit<'_, '_> {
+    pub async fn assemble<'lock, 'reflock, 'trees, 'book>(
+        wallet: &'lock LightWallet,
+        context_write_lock: &'reflock mut RwLockWriteGuard<'lock, TxMapAndMaybeTrees>,
+    ) -> ZingoLibResult<SpendKit<'book, 'trees>>
+    where
+        'lock: 'trees + 'book,
+        'reflock: 'trees + 'book,
+    {
+        if let TxMapAndMaybeTrees {
+            spending_data: Some(spending_data),
+            current: all_remote_transactions,
+        } = context_write_lock.deref_mut()
+        {
+            Ok(SpendKit::<'book, 'trees> {
+                spend_cap: wallet.wallet_capability(),
+                params: wallet.transaction_context.config.chain,
+                record_book: RefRecordBook::new_from_remote_txid_hashmap(all_remote_transactions), //review! if there are already pending transactions, dont assemble a spend_kit
+                trees: &mut spending_data.witness_trees,
+                latest_proposal: &mut spending_data.latest_proposal,
+                local_sending_transactions: Vec::new(),
+            })
+        } else {
+            Err(ZingoLibError::ViewkeyCantSpend)
+        }
+    }
     pub fn create_proposal(
         &mut self,
         request: TransactionRequest,
