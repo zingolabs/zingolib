@@ -747,7 +747,15 @@ mod slow {
             .await
             .unwrap();
 
-        for txid_known in recipient.wallet.transactions().read().await.current.keys() {
+        for txid_known in recipient
+            .wallet
+            .transactions()
+            .read()
+            .await
+            .current
+            .map
+            .keys()
+        {
             dbg!(txid_known);
         }
 
@@ -758,6 +766,7 @@ mod slow {
             .read()
             .await
             .current
+            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -791,6 +800,7 @@ mod slow {
             .read()
             .await
             .current
+            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -834,6 +844,7 @@ mod slow {
             .read()
             .await
             .current
+            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -865,6 +876,7 @@ mod slow {
             .read()
             .await
             .current
+            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -941,7 +953,7 @@ mod slow {
         //     4.3. rescan
         //     4.4. check that notes and utxos were detected by the wallet
         //
-        // # Current watch-only mode limitations:
+        // # Current.map watch-only mode limitations:
         // - wallet will not detect funds on all transparent addresses
         //   see: https://github.com/zingolabs/zingolib/issues/245
         // - wallet will not detect funds on internal addresses
@@ -2934,7 +2946,7 @@ mod slow {
                 json::stringify_pretty(note.clone(), 4)
             );
 
-            //The first address in a wallet should always contain all three currently extant
+            //The first address in a wallet should always contain all three current.maply extant
             //receiver types.
             recipient_restored
                 .do_send(vec![(&get_base_address!(faucet, "sapling"), 4_000, None)])
@@ -3305,6 +3317,7 @@ mod slow {
                     .read()
                     .await
                     .current
+                    .map
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
@@ -3345,6 +3358,7 @@ mod slow {
                     .read()
                     .await
                     .current
+                    .map
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
@@ -3450,6 +3464,7 @@ mod slow {
                 .read()
                 .await
                 .current
+                .map
         );
 
         assert_eq!(bala_sim, bala_syn);
