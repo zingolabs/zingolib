@@ -8,7 +8,8 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
 
-use super::{TransactionRecordMap, TxMapAndMaybeTrees};
+use super::{SpendingData, TransactionRecordMap, TxMapAndMaybeTrees};
+
 impl TxMapAndMaybeTrees {
     pub fn serialized_version() -> u64 {
         22
@@ -61,7 +62,7 @@ impl TxMapAndMaybeTrees {
 
         Ok(Self {
             current: map,
-            witness_trees,
+            spending_data: SpendingData::load_with_option_witness_trees(witness_trees),
         })
     }
 
@@ -126,7 +127,7 @@ impl TxMapAndMaybeTrees {
 
         Ok(Self {
             current: TransactionRecordMap::from_map(map),
-            witness_trees,
+            spending_data: SpendingData::load_with_option_witness_trees(witness_trees),
         })
     }
 
@@ -153,7 +154,9 @@ impl TxMapAndMaybeTrees {
             })?;
         }
 
-        Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
+        Optional::write(writer, self.spending_data.as_mut(), |w, t| {
+            t.witness_trees.write(w)
+        })
     }
 }
 #[cfg(test)]
@@ -163,7 +166,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write() {
-        let mut tms = TxMapAndMaybeTrees::new_with_witness_trees();
+        let mut tms = TxMapAndMaybeTrees::new_viewing();
         let mut buffer = Cursor::new(Vec::new());
 
         // Perform the write operation

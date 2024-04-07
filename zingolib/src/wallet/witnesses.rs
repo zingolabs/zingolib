@@ -8,14 +8,16 @@ impl LightWallet {
     pub(crate) async fn initiate_witness_trees(&self, trees: TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
             crate::data::witness_trees::get_legacy_frontiers(trees);
-        if let Some(ref mut trees) = self
+        if let Some(ref mut spending_data) = self
             .transaction_context
             .transaction_metadata_set
             .write()
             .await
-            .witness_trees
+            .spending_data
         {
-            trees.insert_all_frontier_nodes(legacy_sapling_frontier, legacy_orchard_frontier)
+            spending_data
+                .witness_trees
+                .insert_all_frontier_nodes(legacy_sapling_frontier, legacy_orchard_frontier)
         };
     }
     pub async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
@@ -25,7 +27,8 @@ impl LightWallet {
             .transaction_metadata_set
             .write()
             .await;
-        if let Some(ref mut trees) = txmds_writelock.witness_trees {
+        if let Some(ref mut spending_data) = txmds_writelock.spending_data {
+            let trees = &mut spending_data.witness_trees;
             trees
                 .witness_tree_sapling
                 .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
@@ -43,15 +46,17 @@ impl LightWallet {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
+            .spending_data
             .as_ref()
-            .is_some_and(|trees| {
-                trees
+            .is_some_and(|spending_data| {
+                spending_data
+                    .witness_trees
                     .witness_tree_orchard
                     .max_leaf_position(0)
                     .unwrap()
                     .is_none()
-                    || trees
+                    || spending_data
+                        .witness_trees
                         .witness_tree_sapling
                         .max_leaf_position(0)
                         .unwrap()
