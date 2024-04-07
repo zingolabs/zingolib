@@ -98,7 +98,8 @@ impl TxMapAndMaybeTrees {
             })
             .collect::<Vec<_>>();
         self.remove_txids(txids_to_remove);
-        if let Some(ref mut t) = self.witness_trees {
+        if let Some(ref mut spending_data) = self.spending_data {
+            let t = &mut spending_data.witness_trees;
             t.witness_tree_sapling
                 .truncate_removing_checkpoint(&(reorg_height - 1))
                 .expect("Infallible");

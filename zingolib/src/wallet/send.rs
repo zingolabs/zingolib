@@ -271,14 +271,15 @@ impl LightWallet {
             .transaction_metadata_set
             .read()
             .await;
-        let witness_trees = txmds_readlock
-            .witness_trees
+        let witness_trees = &txmds_readlock
+            .spending_data
             .as_ref()
-            .expect("If we have spend capability we have trees");
+            .ok_or("No spend_capability")?
+            .witness_trees;
         let (tx_builder, total_shielded_receivers) = match self
             .create_and_populate_tx_builder(
                 submission_height,
-                witness_trees,
+                &witness_trees,
                 start_time,
                 receivers,
                 policy,
