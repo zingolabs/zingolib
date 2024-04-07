@@ -53,6 +53,7 @@ impl LightWallet {
                 .read()
                 .await
                 .current
+                .map
                 .values()
                 .map(|transaction| {
                     let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
@@ -204,7 +205,7 @@ impl LightWallet {
         }
     }
 
-    /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
+    /// Return a copy of the blocks current.maply in the wallet, needed to process possible reorgs
     pub async fn get_blocks(&self) -> Vec<BlockData> {
         self.blocks.read().await.iter().cloned().collect()
     }
@@ -220,6 +221,7 @@ impl LightWallet {
             .read()
             .await
             .current
+            .map
             .values()
             .map(|wtx| u64::from(wtx.status.get_height()))
             .min();
@@ -239,6 +241,7 @@ impl LightWallet {
             .read()
             .await
             .current
+            .map
             .values()
             .flat_map(|transaction| {
                 transaction
