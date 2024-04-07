@@ -1,19 +1,8 @@
-use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut, sync::Arc};
-
-use crate::error::{ZingoLibError, ZingoLibResult};
-
-use self::errors::CreateTransactionsError;
-
-use super::{
-    data::WitnessTrees,
-    keys::unified::WalletCapability,
-    record_book::RefRecordBook,
-    transactions::{Proposa, TxMapAndMaybeTrees},
-    LightWallet,
-};
 use nonempty::NonEmpty;
-use sapling_crypto::prover::{OutputProver, SpendProver};
+use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut, sync::Arc};
 use tokio::sync::RwLockWriteGuard;
+
+use sapling_crypto::prover::{OutputProver, SpendProver};
 use zcash_client_backend::{
     data_api::{wallet::input_selection::GreedyInputSelector, InputSource},
     proposal::Proposal,
@@ -22,15 +11,26 @@ use zcash_client_backend::{
     ShieldedProtocol,
 };
 use zcash_keys::keys::UnifiedSpendingKey;
-
 use zcash_primitives::{
     legacy::keys::pubkey_to_address,
     transaction::{
         components::amount::NonNegativeAmount, fees::zip317::FeeRule as Zip317FeeRule, TxId,
     },
 };
+
 use zingoconfig::ChainType;
 use zip32::AccountId;
+
+use crate::error::{ZingoLibError, ZingoLibResult};
+
+use self::errors::CreateTransactionsError;
+
+use super::{
+    data::WitnessTrees,
+    keys::unified::WalletCapability,
+    transactions::{TransactionRecordMap, TxMapAndMaybeTrees, ZingoProposal},
+    LightWallet,
+};
 
 pub mod trait_inputsource;
 pub mod trait_walletcommitmenttrees;
@@ -42,9 +42,9 @@ pub mod errors;
 pub struct SpendKit<'book, 'trees> {
     pub spend_cap: Arc<WalletCapability>,
     pub params: ChainType,
-    pub record_book: RefRecordBook<'book>,
+    pub record_map: &'book TransactionRecordMap,
     pub trees: &'trees mut WitnessTrees,
-    pub latest_proposal: &'trees mut Option<Proposa>,
+    pub latest_proposal: &'trees mut Option<ZingoProposal>,
     // review! how do we actually recognize this as canon when selecting?
     pub local_sending_transactions: Vec<Vec<u8>>,
 }
@@ -65,13 +65,13 @@ impl SpendKit<'_, '_> {
     {
         if let TxMapAndMaybeTrees {
             spending_data: Some(spending_data),
-            current: all_remote_transactions,
+            current,
         } = context_write_lock.deref_mut()
         {
             Ok(SpendKit::<'book, 'trees> {
                 spend_cap: wallet.wallet_capability(),
                 params: wallet.transaction_context.config.chain,
-                record_book: RefRecordBook::new_from_remote_txid_hashmap(all_remote_transactions), //review! if there are already pending transactions, dont assemble a spend_kit
+                record_map: &current,
                 trees: &mut spending_data.witness_trees,
                 latest_proposal: &mut spending_data.latest_proposal,
                 local_sending_transactions: Vec::new(),
