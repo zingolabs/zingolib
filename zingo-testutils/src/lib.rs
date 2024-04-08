@@ -243,6 +243,170 @@ pub async fn load_wallet(
     )
 }
 
+/// List all notes held by Lightclient that were created in txid.
+pub async fn tx_output_notes(client: &LightClient, txid: String) -> Vec<JsonValue> {
+    let client_notes = client.do_list_notes(true).await;
+
+    let required_txid = txid;
+
+    let mut filtered_notes: Vec<JsonValue> = Vec::new();
+
+    if let JsonValue::Object(obj) = client_notes {
+        if let Some(JsonValue::Array(unspent_sapling_notes)) = obj.get("unspent_sapling_notes") {
+            filtered_notes.extend(
+                unspent_sapling_notes
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(pending_sapling_notes)) = obj.get("pending_sapling_notes") {
+            filtered_notes.extend(
+                pending_sapling_notes
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(unspent_orchard_notes)) = obj.get("unspent_orchard_notes") {
+            filtered_notes.extend(
+                unspent_orchard_notes
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(pending_orchard_notes)) = obj.get("pending_orchard_notes") {
+            filtered_notes.extend(
+                pending_orchard_notes
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(utxos)) = obj.get("utxos") {
+            filtered_notes.extend(
+                utxos
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(pending_utxos)) = obj.get("pending_utxos") {
+            filtered_notes.extend(
+                pending_utxos
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(spent_sapling_notes)) = obj.get("spent_sapling_notes") {
+            filtered_notes.extend(
+                spent_sapling_notes
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(spent_orchard_notes)) = obj.get("spent_orchard_notes") {
+            filtered_notes.extend(
+                spent_orchard_notes
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+
+        if let Some(JsonValue::Array(spent_utxos)) = obj.get("spent_utxos") {
+            filtered_notes.extend(
+                spent_utxos
+                    .iter()
+                    .filter(|note| note["created_in_txid"] == required_txid)
+                    .cloned(),
+            );
+        }
+    }
+
+    filtered_notes
+}
+
+/// Returnes number of notes used as inputs for txid as (transparent_notes, sapling_notes, orchard_notes).
+pub async fn tx_inputs(client: &LightClient, txid: &str) -> (usize, usize, usize) {
+    let notes = client.do_list_notes(true).await;
+
+    let mut transparent_notes = 0;
+    let mut sapling_notes = 0;
+    let mut orchard_notes = 0;
+
+    if let JsonValue::Array(spent_utxos) = &notes["spent_utxos"] {
+        for utxo in spent_utxos {
+            if utxo["spent"] == txid || utxo["unconfirmed_spent"] == txid {
+                transparent_notes += 1;
+            }
+        }
+    }
+
+    if let JsonValue::Array(spent_sapling_notes) = &notes["spent_sapling_notes"] {
+        for note in spent_sapling_notes {
+            if note["spent"] == txid || note["unconfirmed_spent"] == txid {
+                sapling_notes += 1;
+            }
+        }
+    }
+
+    if let JsonValue::Array(spent_orchard_notes) = &notes["spent_orchard_notes"] {
+        for note in spent_orchard_notes {
+            if note["spent"] == txid || note["unconfirmed_spent"] == txid {
+                orchard_notes += 1;
+            }
+        }
+    }
+
+    (transparent_notes, sapling_notes, orchard_notes)
+}
+
+/// Returnes number of notes created in txid as (transparent_notes, sapling_notes, orchard_notes).
+pub async fn tx_outputs(client: &LightClient, txid: &str) -> (usize, usize, usize) {
+    let notes = client.do_list_notes(true).await;
+
+    let mut transparent_notes = 0;
+    let mut sapling_notes = 0;
+    let mut orchard_notes = 0;
+
+    if let JsonValue::Array(spent_utxos) = &notes["unspent_utxos"] {
+        for utxo in spent_utxos {
+            if utxo["created_in_txid"] == txid {
+                transparent_notes += 1;
+            }
+        }
+    }
+
+    if let JsonValue::Array(spent_sapling_notes) = &notes["unspent_sapling_notes"] {
+        for note in spent_sapling_notes {
+            if note["created_in_txid"] == txid {
+                sapling_notes += 1;
+            }
+        }
+    }
+
+    if let JsonValue::Array(spent_orchard_notes) = &notes["unspent_orchard_notes"] {
+        for note in spent_orchard_notes {
+            if note["created_in_txid"] == txid {
+                orchard_notes += 1;
+            }
+        }
+    }
+
+    (transparent_notes, sapling_notes, orchard_notes)
+}
+
 pub mod scenarios {
     //! In practice there are several common scenarios for which helpers are provided.
     //! These scenarios vary in the configuration of clients in use.  Most scenarios

@@ -3598,8 +3598,9 @@ mod slow {
 }
 
 mod basic_transactions {
+    use json::JsonValue;
     use zingo_testutils::scenarios;
-    use zingolib::get_base_address;
+    use zingolib::{get_base_address, wallet::data::summaries::ValueTransfer};
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
@@ -3641,6 +3642,90 @@ mod basic_transactions {
 
         recipient.do_sync(true).await.unwrap();
         faucet.do_sync(true).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn basic_fees() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+
+        let txid1 = faucet
+            .do_send(vec![(
+                get_base_address!(recipient, "sapling").as_str(),
+                40_000,
+                None,
+            )])
+            .await
+            .unwrap();
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        faucet.do_sync(true).await.unwrap();
+        recipient.do_sync(true).await.unwrap();
+
+        println!("Faucet Balance:\n{:#?}\n", faucet.do_balance().await);
+        println!("Recipient Balance:\n{:#?}\n", recipient.do_balance().await);
+
+        // let faucet_transactions = faucet.do_list_transactions().await;
+        // let filtered_faucet_transactions: Vec<&JsonValue> = match &faucet_transactions {
+        //     JsonValue::Array(arr) => arr
+        //         .iter()
+        //         .filter(|transaction| transaction["txid"] == txid1)
+        //         .collect(),
+        //     _ => {
+        //         panic!("Failed to filter faucet_transactions!",);
+        //     }
+        // };
+        // println!(
+        //     "Faucet Transactions:\n{:#?}\n",
+        //     filtered_faucet_transactions
+        // );
+
+        // let recipient_transactions = recipient.do_list_transactions().await;
+        // let filtered_recipient_transactions: Vec<&JsonValue> = match &recipient_transactions {
+        //     JsonValue::Array(arr) => arr
+        //         .iter()
+        //         .filter(|transaction| transaction["txid"] == txid1)
+        //         .collect(),
+        //     _ => {
+        //         panic!("Failed to filter recipient_transactions!",);
+        //     }
+        // };
+        // println!(
+        //     "Recipient Transactions\n:{:#?}\n",
+        //     filtered_recipient_transactions
+        // );
+
+        // let faucet_notes = faucet.do_list_notes(true).await;
+        // println!("Faucet Notes:\n{:?}\n", faucet_notes);
+
+        let tx_ins = zingo_testutils::tx_inputs(&faucet, txid1.as_str()).await;
+        println!("Transaction Inputs\n{:#?}\n", tx_ins);
+
+        // let recipient_notes = recipient.do_list_notes(true).await;
+        // println!("Recipient Notes\n:{:?}\n", recipient_notes);
+
+        let tx_outs = zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await;
+        println!("Transaction Outputs\n{:#?}\n", tx_outs);
+
+        // let faucet_summaries = faucet.do_list_txsummaries().await;
+        // let filtered_faucet_summaries: Vec<&ValueTransfer> = faucet_summaries
+        //     .iter()
+        //     .filter(|summary| summary.txid.to_string() == txid1)
+        //     .collect();
+        // println!("Faucet Summaries:\n{:#?}\n", filtered_faucet_summaries);
+
+        // let recipient_summaries = recipient.do_list_txsummaries().await;
+        // let filtered_recipient_summaries: Vec<&ValueTransfer> = recipient_summaries
+        //     .iter()
+        //     .filter(|summary| summary.txid.to_string() == txid1)
+        //     .collect();
+        // println!(
+        //     "Recipient Summaries:\n{:#?}\n",
+        //     filtered_recipient_summaries
+        // );
     }
 }
 
