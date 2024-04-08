@@ -1,4 +1,3 @@
-#![forbid(unsafe_code)]
 //! Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
