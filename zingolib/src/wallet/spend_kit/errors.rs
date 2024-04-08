@@ -30,3 +30,32 @@ impl std::fmt::Display for CreateTransactionsError {
         )
     }
 }
+
+#[derive(Debug)]
+pub enum AssembleSpendKitError {
+    NoSpendCapability,
+}
+impl std::fmt::Display for AssembleSpendKitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use AssembleSpendKitError::*;
+        write!(
+            f,
+            "{:#?} - {}",
+            self,
+            // the former script converts the error type to a string. the following dictionary provides explanations.
+            match self {
+                NoSpendCapability => "This is a view-only wallet.".to_string(),
+            }
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::wallet::spend_kit::errors::AssembleSpendKitError;
+
+    #[tokio::test]
+    async fn test_error_message() {
+        dbg!(format!("{}", AssembleSpendKitError::NoSpendCapability));
+    }
+}

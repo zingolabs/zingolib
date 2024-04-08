@@ -159,7 +159,7 @@ impl WalletRead for SpendKit<'_, '_> {
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         Ok(self
-            .record_book
+            .record_map
             .get_remote_txid_hashmap()
             .values()
             .fold(None, |height, transaction| {
@@ -177,7 +177,7 @@ impl WalletRead for SpendKit<'_, '_> {
         txid: zcash_primitives::transaction::TxId,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         Ok(self
-            .record_book
+            .record_map
             .get_remote_txid_hashmap()
             .get(&txid)
             .and_then(|transaction| transaction.status.get_confirmed_height()))
@@ -226,7 +226,7 @@ mod tests {
     use zingoconfig::{ChainType, ZingoConfig};
 
     use crate::wallet::{
-        data::WitnessTrees, keys::unified::WalletCapability, record_book::RefRecordBook,
+        data::WitnessTrees, keys::unified::WalletCapability, record_map::RefRecordBook,
     };
 
     use super::*;
@@ -236,7 +236,7 @@ mod tests {
         for tree_height in 1..=10 {
             println!("testing tree height {tree_height}");
             let params = ChainType::Mainnet;
-            let record_book = RefRecordBook::new_empty();
+            let record_map = RefRecordBook::new_empty();
             let tree_height = BlockHeight::from_u32(tree_height);
             let trees = &mut WitnessTrees::default();
             let latest_proposal = &mut None;
@@ -250,7 +250,7 @@ mod tests {
                     0,
                 )),
                 params,
-                record_book,
+                record_map,
                 trees,
                 latest_proposal,
                 local_sending_transactions,

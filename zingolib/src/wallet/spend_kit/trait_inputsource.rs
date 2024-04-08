@@ -1,6 +1,6 @@
 use zcash_client_backend::data_api::InputSource;
 
-use crate::{error::ZingoLibError, wallet::record_book::NoteRecordIdentifier};
+use crate::{error::ZingoLibError, wallet::notes::NoteRecordIdentifier};
 
 use super::SpendKit;
 
@@ -23,7 +23,7 @@ impl InputSource for SpendKit<'_, '_> {
         >,
         Self::Error,
     > {
-        self.record_book.get_spendable_note(txid, protocol, index)
+        self.record_map.get_spendable_note(txid, protocol, index)
     }
 
     fn select_spendable_notes(
@@ -42,7 +42,7 @@ impl InputSource for SpendKit<'_, '_> {
         >,
         Self::Error,
     > {
-        self.record_book.select_spendable_notes(
+        self.record_map.select_spendable_notes(
             account,
             target_value,
             sources,
