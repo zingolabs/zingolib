@@ -119,11 +119,13 @@ mod tests {
         );
     }
 
-    use super::*;
     mod fail_parse_send_args {
-        use super::*;
+        use zcash_primitives::memo::MemoBytes;
+
+        use crate::commands::utils::parse_send_args;
+
         mod json_array {
-            use super::*;
+            use crate::commands::{error::CommandError, utils::parse_send_args};
             #[test]
             fn failed_json_parsing() {
                 let args = [r#"testaddress{{"#];
@@ -218,7 +220,7 @@ mod tests {
             }
         }
         mod multi_string_args {
-            use super::*;
+            use crate::commands::{error::CommandError, utils::parse_send_args};
             #[test]
             fn two_args_wrong_amount() {
                 let args = ["testaddress", "foo"];
