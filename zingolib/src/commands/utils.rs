@@ -117,6 +117,13 @@ mod tests {
                 (address.to_string(), value, Some(memo))
             ]
         );
+        // Note the " " character after the 1.  The parser can handle by trimming, is that correct?
+        let args = ["testaddress", "1 ", "whatever"];
+        let result = super::parse_send_args(&args);
+        match result {
+            Ok(_) => (),
+            _ => panic!(),
+        };
     }
 
     mod fail_parse_send_args {
@@ -232,16 +239,6 @@ mod tests {
                             format!("{}", e)
                         )
                     }
-                    _ => panic!(),
-                };
-            }
-            #[test]
-            fn three_args_wrong_amount_show_trim_requirement() {
-                // Note the " " character after the 1.  The parser can handle by trimming, is that correct?
-                let args = ["testaddress", "1 ", "whatever"];
-                let result = parse_send_args(&args);
-                match result {
-                    Ok(_) => (),
                     _ => panic!(),
                 };
             }
