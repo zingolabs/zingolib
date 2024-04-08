@@ -1,6 +1,6 @@
 use secrecy::SecretVec;
 use shardtree::store::ShardStore;
-use zcash_client_backend::data_api::WalletRead;
+use zcash_client_backend::data_api::{Account, WalletRead};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{consensus::BlockHeight, zip32::AccountId};
 
@@ -8,10 +8,30 @@ use crate::error::ZingoLibError;
 
 use super::SpendKit;
 
+pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);
+
+impl Account<AccountId> for ZingoAccount {
+    fn id(&self) -> AccountId {
+        self.0
+    }
+
+    fn source(&self) -> zcash_client_backend::data_api::AccountSource {
+        todo!()
+    }
+
+    fn ufvk(&self) -> Option<&UnifiedFullViewingKey> {
+        Some(&self.1)
+    }
+
+    fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
+        todo!()
+    }
+}
+
 impl WalletRead for SpendKit<'_, '_> {
     type Error = ZingoLibError;
-    type AccountId = zcash_primitives::zip32::AccountId;
-    type Account = (Self::AccountId, UnifiedFullViewingKey);
+    type AccountId = AccountId;
+    type Account = ZingoAccount;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
         unimplemented!()
@@ -26,7 +46,7 @@ impl WalletRead for SpendKit<'_, '_> {
 
     fn get_derived_account(
         &self,
-        _seed: &zcash_keys::keys::HdSeedFingerprint,
+        _seed: &zip32::fingerprint::SeedFingerprint,
         _account_id: zcash_primitives::zip32::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
         unimplemented!()
@@ -44,7 +64,7 @@ impl WalletRead for SpendKit<'_, '_> {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        Ok(Some((AccountId::ZERO, ufvk.clone())))
+        Ok(Some(ZingoAccount(AccountId::ZERO, ufvk.clone())))
     }
 
     fn get_current_address(
@@ -160,7 +180,7 @@ impl WalletRead for SpendKit<'_, '_> {
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         Ok(self
             .record_map
-            .get_remote_txid_hashmap()
+            .map
             .values()
             .fold(None, |height, transaction| {
                 let transaction_height = transaction.status.get_confirmed_height();
@@ -178,7 +198,7 @@ impl WalletRead for SpendKit<'_, '_> {
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         Ok(self
             .record_map
-            .get_remote_txid_hashmap()
+            .map
             .get(&txid)
             .and_then(|transaction| transaction.status.get_confirmed_height()))
     }
@@ -200,7 +220,8 @@ impl WalletRead for SpendKit<'_, '_> {
     fn get_transaction(
         &self,
         _txid: zcash_primitives::transaction::TxId,
-    ) -> Result<zcash_primitives::transaction::Transaction, Self::Error> {
+    ) -> Result<std::option::Option<zcash_primitives::transaction::Transaction>, ZingoLibError>
+    {
         unimplemented!()
     }
 
@@ -217,6 +238,13 @@ impl WalletRead for SpendKit<'_, '_> {
     ) -> Result<Vec<(Self::AccountId, orchard::note::Nullifier)>, Self::Error> {
         unimplemented!()
     }
+
+    fn seed_relevance_to_derived_accounts(
+        &self,
+        seed: &SecretVec<u8>,
+    ) -> Result<zcash_client_backend::data_api::SeedRelevance<Self::AccountId>, Self::Error> {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
@@ -226,7 +254,7 @@ mod tests {
     use zingoconfig::{ChainType, ZingoConfig};
 
     use crate::wallet::{
-        data::WitnessTrees, keys::unified::WalletCapability, record_map::RefRecordBook,
+        data::WitnessTrees, keys::unified::WalletCapability, transactions::TransactionRecordMap,
     };
 
     use super::*;
@@ -236,7 +264,7 @@ mod tests {
         for tree_height in 1..=10 {
             println!("testing tree height {tree_height}");
             let params = ChainType::Mainnet;
-            let record_map = RefRecordBook::new_empty();
+            let record_map = &TransactionRecordMap::new_empty();
             let tree_height = BlockHeight::from_u32(tree_height);
             let trees = &mut WitnessTrees::default();
             let latest_proposal = &mut None;

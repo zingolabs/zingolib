@@ -11,12 +11,12 @@ pub struct TransactionRecordMap {
 }
 
 impl TransactionRecordMap {
-    fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
         Self {
             map: HashMap::new(),
         }
     }
-    fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
+    pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         Self { map }
     }
 }
