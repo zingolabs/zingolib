@@ -6,6 +6,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
+    traits::DomainWalletExt,
     *,
 };
 

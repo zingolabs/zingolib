@@ -1,3 +1,4 @@
+/// This mod contains pieces of the impl LightWallet that are invoked during a send.
 use crate::wallet::data::SpendableSaplingNote;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::now;
@@ -13,10 +14,16 @@ use rand::rngs::OsRng;
 use sapling_crypto::note_encryption::SaplingDomain;
 use sapling_crypto::prover::{OutputProver, SpendProver};
 
+use orchard::tree::MerkleHashOrchard;
 use shardtree::error::{QueryError, ShardTreeError};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::ShardTree;
 use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
+use zcash_note_encryption::Domain;
 
+use std::cmp;
 use std::convert::Infallible;
+use std::ops::Add;
 use std::sync::mpsc::channel;
 
 use zcash_client_backend::address;
@@ -39,11 +46,13 @@ use zcash_primitives::{
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::data::{SpendableOrchardNote, WitnessTrees};
+use super::data::SpendableOrchardNote;
+use super::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 
-use super::notes;
+use super::notes::ShieldedNoteInterface;
+use super::{notes, traits, LightWallet};
 
-use super::traits::SpendableNote;
+use super::traits::{DomainWalletExt, Recipient, SpendableNote};
 use super::utils::get_price;
 use super::Pool;
 
@@ -93,8 +102,91 @@ pub fn build_transaction_request_from_receivers(
     TransactionRequest::new(payments)
 }
 
+fn add_notes_to_total<D: DomainWalletExt>(
+    candidates: Vec<D::SpendableNoteAT>,
+    target_amount: Amount,
+) -> (Vec<D::SpendableNoteAT>, Amount)
+where
+    D::Note: PartialEq + Clone,
+    D::Recipient: traits::Recipient,
+{
+    let mut notes = Vec::new();
+    let mut running_total = Amount::zero();
+    for note in candidates {
+        if running_total >= target_amount {
+            break;
+        }
+        running_total = running_total
+            .add(
+                Amount::from_u64(<D as DomainWalletExt>::WalletNote::value_from_note(
+                    note.note(),
+                ))
+                .expect("should be within the valid monetary range of zatoshis"),
+            )
+            .expect("should be within the valid monetary range of zatoshis");
+        notes.push(note);
+    }
+
+    (notes, running_total)
+}
+
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, ()>;
-impl super::LightWallet {
+impl LightWallet {
+    pub(super) async fn get_orchard_anchor(
+        &self,
+        tree: &ShardTree<
+            MemoryShardStore<MerkleHashOrchard, BlockHeight>,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
+        >,
+    ) -> Result<orchard::Anchor, ShardTreeError<Infallible>> {
+        Ok(orchard::Anchor::from(tree.root_at_checkpoint_depth(
+            self.transaction_context.config.reorg_buffer_offset as usize,
+        )?))
+    }
+    pub(super) async fn get_sapling_anchor(
+        &self,
+        tree: &ShardTree<
+            MemoryShardStore<sapling_crypto::Node, BlockHeight>,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
+        >,
+    ) -> Result<sapling_crypto::Anchor, ShardTreeError<Infallible>> {
+        Ok(sapling_crypto::Anchor::from(
+            tree.root_at_checkpoint_depth(
+                self.transaction_context.config.reorg_buffer_offset as usize,
+            )?,
+        ))
+    }
+
+    /// Determines the target height for a transaction, and the offset from which to
+    /// select anchors, based on the current synchronised block chain.
+    pub(super) async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
+        let range = {
+            let blocks = self.blocks.read().await;
+            (
+                blocks.last().map(|block| block.height as u32),
+                blocks.first().map(|block| block.height as u32),
+            )
+        };
+        match range {
+            (Some(min_height), Some(max_height)) => {
+                let target_height = max_height + 1;
+
+                // Select an anchor ANCHOR_OFFSET back from the target block,
+                // unless that would be before the earliest block we have.
+                let anchor_height = cmp::max(
+                    target_height
+                        .saturating_sub(self.transaction_context.config.reorg_buffer_offset),
+                    min_height,
+                );
+
+                Some((target_height, (target_height - anchor_height) as usize))
+            }
+            _ => None,
+        }
+    }
+
     // Reset the send progress status to blank
     async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
@@ -469,6 +561,38 @@ impl super::LightWallet {
         Ok((total_shielded_receivers, tx_builder))
     }
 
+    async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
+    where
+        D: DomainWalletExt,
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        let wc = self.wallet_capability();
+        let tranmds_lth = self.transactions();
+        let transaction_metadata_set = tranmds_lth.read().await;
+        let mut candidate_notes = transaction_metadata_set
+            .current
+            .iter()
+            .flat_map(|(transaction_id, transaction)| {
+                D::WalletNote::transaction_metadata_notes(transaction)
+                    .iter()
+                    .map(move |note| (*transaction_id, note))
+            })
+            .filter_map(
+                |(transaction_id, note): (transaction::TxId, &D::WalletNote)| -> Option <D::SpendableNoteAT> {
+                        // Get the spending key for the selected fvk, if we have it
+                        let extsk = D::wc_to_sk(&wc);
+                        SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
+                }
+            )
+            .collect::<Vec<D::SpendableNoteAT>>();
+        candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
+            D::WalletNote::value_from_note(spendable_note_2.note())
+                .cmp(&D::WalletNote::value_from_note(spendable_note_1.note()))
+        });
+        candidate_notes
+    }
+
     async fn select_notes_and_utxos(
         &self,
         target_amount: Amount,
@@ -514,9 +638,7 @@ impl super::LightWallet {
                         .into_iter()
                         .filter(|note| note.spend_key().is_some())
                         .collect();
-                    (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
-                        SaplingDomain,
-                    >(
+                    (sapling_notes, sapling_value_selected) = add_notes_to_total::<SaplingDomain>(
                         sapling_candidates,
                         (target_amount - orchard_value_selected - all_transparent_value_in_wallet)
                             .unwrap(),
@@ -529,9 +651,7 @@ impl super::LightWallet {
                         .into_iter()
                         .filter(|note| note.spend_key().is_some())
                         .collect();
-                    (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
-                        OrchardDomain,
-                    >(
+                    (orchard_notes, orchard_value_selected) = add_notes_to_total::<OrchardDomain>(
                         orchard_candidates,
                         (target_amount - all_transparent_value_in_wallet - sapling_value_selected)
                             .unwrap(),
