@@ -81,7 +81,7 @@ mod tests {
     use crate::wallet;
 
     #[test]
-    fn parse_send_args_test() {
+    fn parse_send_args() {
         let address = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let value_str = "100000";
         let value = 100_000;
