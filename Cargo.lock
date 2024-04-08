@@ -411,9 +411,9 @@ version = "0.1.0"
 
 [[package]]
 name = "bumpalo"
-version = "3.15.4"
+version = "3.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ff69b9dd49fd426c69a0db9fc04dd934cdb6645ff000864d98f7e2af8830eaa"
+checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
 
 [[package]]
 name = "byteorder"
@@ -448,9 +448,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.0.91"
+version = "1.0.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd97381a8cc6493395a5afc4c691c1084b3768db713b73aa215217aa245d153"
+checksum = "2678b2e3449475e95b0aa6f9b506a28e61b3dc8996592b983695e8ebb58a8b41"
 
 [[package]]
 name = "cfg-if"
@@ -850,7 +850,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -885,7 +885,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1081,9 +1081,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.13"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06fddc2749e0528d2813f95e050e87e52c8cbbae56223b9babf73b3e53b0cc6"
+checksum = "94b22e06ecb0110981051723910cbf0b5f5e09a2062dd7663334ee79a9d1286c"
 dependencies = [
  "cfg-if",
  "libc",
@@ -3918,7 +3918,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "bech32",
  "bs58",
@@ -3930,7 +3930,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -3946,7 +3946,6 @@ dependencies = [
  "memuse",
  "nom",
  "nonempty",
- "orchard",
  "percent-encoding",
  "prost",
  "rand_core 0.6.4",
@@ -3972,7 +3971,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3981,7 +3980,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "bech32",
  "blake2b_simd",
@@ -4022,7 +4021,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "aes",
  "bip0039",
@@ -4060,7 +4059,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4082,7 +4081,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address#b1e70fdb2e00fc5620feaf8a013e2292a871029a"
 dependencies = [
  "document-features",
  "memuse",
@@ -4265,7 +4264,6 @@ dependencies = [
  "rust-embed",
  "sapling-crypto",
  "secp256k1",
- "secrecy",
  "serde",
  "serde_json",
  "sha2 0.9.9",
@@ -4285,7 +4283,6 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
@@ -4294,7 +4291,6 @@ dependencies = [
  "zingo-status",
  "zingo-testvectors",
  "zingoconfig",
- "zip32",
 ]
 
 [[package]]
