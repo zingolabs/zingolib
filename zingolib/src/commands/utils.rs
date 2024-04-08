@@ -251,7 +251,6 @@ mod tests {
             fn wrong_number_of_args() {
                 let args = ["testaddress", "123", "3", "4"];
                 let result = parse_send_args(&args);
-                dbg!(&result);
                 assert!(matches!(result, Err(CommandError::InvalidArguments)));
             }
             #[test]
