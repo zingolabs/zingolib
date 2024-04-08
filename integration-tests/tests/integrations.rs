@@ -3600,7 +3600,10 @@ mod slow {
 mod basic_transactions {
     use json::JsonValue;
     use zingo_testutils::scenarios;
-    use zingolib::{get_base_address, wallet::data::summaries::ValueTransfer};
+    use zingolib::{
+        get_base_address,
+        wallet::data::summaries::{ValueTransfer, ValueTransferKind},
+    };
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
@@ -3645,11 +3648,11 @@ mod basic_transactions {
     }
 
     #[tokio::test]
-    async fn basic_fees() {
+    async fn standard_fee() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        for _ in 0..2 {
+        for _ in 0..3 {
             faucet
                 .do_send(vec![(
                     get_base_address!(recipient, "unified").as_str(),
@@ -3722,22 +3725,42 @@ mod basic_transactions {
         let tx_outs = zingo_testutils::tx_outputs(&faucet, txid1.as_str()).await;
         println!("Transaction Outputs:\n{:#?}\n", tx_outs);
 
-        // let faucet_summaries = faucet.do_list_txsummaries().await;
-        // let filtered_faucet_summaries: Vec<&ValueTransfer> = faucet_summaries
-        //     .iter()
-        //     .filter(|summary| summary.txid.to_string() == txid1)
-        //     .collect();
-        // println!("Faucet Summaries:\n{:#?}\n", filtered_faucet_summaries);
+        let faucet_summaries = faucet.do_list_txsummaries().await;
+        let simplified_faucet_summaries: Vec<_> = faucet_summaries
+            .iter()
+            .filter(|summary| summary.txid.to_string() == txid1)
+            .map(|summary| match &summary.kind {
+                ValueTransferKind::Sent { amount, to_address } => {
+                    format!("Sent to: {}, Amount: {}", to_address, amount)
+                }
+                ValueTransferKind::Received { pool, amount } => {
+                    format!("Received in pool: {:?}, Amount: {}", pool, amount)
+                }
+                ValueTransferKind::SendToSelf => "Sent to Self".to_string(),
+                ValueTransferKind::Fee { amount } => format!("Fee, Amount: {}", amount),
+            })
+            .collect();
+        println!("Faucet Summaries:\n{:#?}\n", simplified_faucet_summaries);
 
-        // let recipient_summaries = recipient.do_list_txsummaries().await;
-        // let filtered_recipient_summaries: Vec<&ValueTransfer> = recipient_summaries
-        //     .iter()
-        //     .filter(|summary| summary.txid.to_string() == txid1)
-        //     .collect();
-        // println!(
-        //     "Recipient Summaries:\n{:#?}\n",
-        //     filtered_recipient_summaries
-        // );
+        let recipient_summaries = recipient.do_list_txsummaries().await;
+        let simplified_recipient_summaries: Vec<_> = recipient_summaries
+            .iter()
+            .filter(|summary| summary.txid.to_string() == txid1)
+            .map(|summary| match &summary.kind {
+                ValueTransferKind::Sent { amount, to_address } => {
+                    format!("Sent to: {}, Amount: {}", to_address, amount)
+                }
+                ValueTransferKind::Received { pool, amount } => {
+                    format!("Received in pool: {:?}, Amount: {}", pool, amount)
+                }
+                ValueTransferKind::SendToSelf => "Sent to Self".to_string(),
+                ValueTransferKind::Fee { amount } => format!("Fee, Amount: {}", amount),
+            })
+            .collect();
+        println!(
+            "Recipient Summaries:\n{:#?}\n",
+            simplified_recipient_summaries
+        );
     }
 }
 
