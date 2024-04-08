@@ -80,7 +80,7 @@ impl SpendKit<'_, '_> {
             Err(AssembleSpendKitError::NoSpendCapability)
         }
     }
-    // pub fn create_proposal(
+    // pub fn propose_transfer(
     //     &mut self,
     //     request: TransactionRequest,
     // ) -> ZingoLibResult<Proposal<Zip317FeeRule, NoteRecordIdentifier>> {
@@ -113,6 +113,45 @@ impl SpendKit<'_, '_> {
     //     *self.latest_proposal = Some(ZingoProposal::Transfer(proposal.clone()));
     //     Ok(proposal)
     //     //review! error typing
+    // }
+    // pub fn propose_shielding(&mut self) -> ZingoLibResult<Proposal<Zip317FeeRule, Infallible>> {
+    //     let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+    //         Zip317FeeRule::standard(),
+    //         None,
+    //         ShieldedProtocol::Orchard,
+    //     ); // review consider change strategy!
+
+    //     let secp = secp256k1::Secp256k1::new();
+    //     let input_selector = GISKit::new(
+    //         change_strategy,
+    //         zcash_client_backend::fees::DustOutputPolicy::default(),
+    //     );
+    //     let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
+    //         SpendKit,
+    //         ChainType,
+    //         GISKit,
+    //         ZingoLibError,
+    //     >(
+    //         self,
+    //         &self.params.clone(),
+    //         &input_selector,
+    //         //review! how much?? configurable?
+    //         NonNegativeAmount::const_from_u64(10_000),
+    //         &self
+    //             .spend_cap
+    //             .transparent_child_keys()
+    //             .expect("review! fix this expect")
+    //             .iter()
+    //             .map(|(_index, sk)| pubkey_to_address(&sk.public_key(&secp)))
+    //             .collect::<Vec<_>>(),
+    //         // review! do we want to require confirmations?
+    //         // make it configurable?
+    //         0,
+    //     )
+    //     .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?;
+
+    //     *self.latest_proposal = Some(ZingoProposal::Shield(proposed_shield.clone()));
+    //     Ok(proposed_shield)
     // }
     // pub fn create_transactions<Prover>(
     //     &mut self,
@@ -171,45 +210,5 @@ impl SpendKit<'_, '_> {
     //     } else {
     //         Err(CreateTransactionsError::NoProposal)
     //     }
-    // }
-
-    // pub fn propose_shielding(&mut self) -> ZingoLibResult<Proposal<Zip317FeeRule, Infallible>> {
-    //     let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-    //         Zip317FeeRule::standard(),
-    //         None,
-    //         ShieldedProtocol::Orchard,
-    //     ); // review consider change strategy!
-
-    //     let secp = secp256k1::Secp256k1::new();
-    //     let input_selector = GISKit::new(
-    //         change_strategy,
-    //         zcash_client_backend::fees::DustOutputPolicy::default(),
-    //     );
-    //     let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-    //         SpendKit,
-    //         ChainType,
-    //         GISKit,
-    //         ZingoLibError,
-    //     >(
-    //         self,
-    //         &self.params.clone(),
-    //         &input_selector,
-    //         //review! how much?? configurable?
-    //         NonNegativeAmount::const_from_u64(10_000),
-    //         &self
-    //             .spend_cap
-    //             .transparent_child_keys()
-    //             .expect("review! fix this expect")
-    //             .iter()
-    //             .map(|(_index, sk)| pubkey_to_address(&sk.public_key(&secp)))
-    //             .collect::<Vec<_>>(),
-    //         // review! do we want to require confirmations?
-    //         // make it configurable?
-    //         0,
-    //     )
-    //     .map_err(|e| ZingoLibError::ProposeTransaction(format!("{}", e)))?;
-
-    //     *self.latest_proposal = Some(ZingoProposal::Shield(proposed_shield.clone()));
-    //     Ok(proposed_shield)
     // }
 }
