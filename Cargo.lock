@@ -3946,6 +3946,7 @@ dependencies = [
  "memuse",
  "nom",
  "nonempty",
+ "orchard",
  "percent-encoding",
  "prost",
  "rand_core 0.6.4",
@@ -4264,6 +4265,7 @@ dependencies = [
  "rust-embed",
  "sapling-crypto",
  "secp256k1",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2 0.9.9",
@@ -4283,6 +4285,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
+ "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
@@ -4291,6 +4294,7 @@ dependencies = [
  "zingo-status",
  "zingo-testvectors",
  "zingoconfig",
+ "zip32",
 ]
 
 [[package]]
