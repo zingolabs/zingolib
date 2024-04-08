@@ -3649,14 +3649,16 @@ mod basic_transactions {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        let txid1 = faucet
-            .do_send(vec![(
-                get_base_address!(recipient, "sapling").as_str(),
-                40_000,
-                None,
-            )])
-            .await
-            .unwrap();
+        for _ in 0..2 {
+            faucet
+                .do_send(vec![(
+                    get_base_address!(recipient, "unified").as_str(),
+                    40_000,
+                    None,
+                )])
+                .await
+                .unwrap();
+        }
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
@@ -3665,8 +3667,8 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
-        println!("Faucet Balance:\n{:#?}\n", faucet.do_balance().await);
-        println!("Recipient Balance:\n{:#?}\n", recipient.do_balance().await);
+        // println!("Faucet Balance:\n{:#?}\n", faucet.do_balance().await);
+        // println!("Recipient Balance:\n{:#?}\n", recipient.do_balance().await);
 
         // let faucet_transactions = faucet.do_list_transactions().await;
         // let filtered_faucet_transactions: Vec<&JsonValue> = match &faucet_transactions {
@@ -3698,17 +3700,27 @@ mod basic_transactions {
         //     filtered_recipient_transactions
         // );
 
-        // let faucet_notes = faucet.do_list_notes(true).await;
-        // println!("Faucet Notes:\n{:?}\n", faucet_notes);
+        let txid1 = recipient
+            .do_send(vec![(
+                get_base_address!(faucet, "unified").as_str(),
+                40_000,
+                None,
+            )])
+            .await
+            .unwrap();
 
-        let tx_ins = zingo_testutils::tx_inputs(&faucet, txid1.as_str()).await;
-        println!("Transaction Inputs\n{:#?}\n", tx_ins);
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
 
-        // let recipient_notes = recipient.do_list_notes(true).await;
-        // println!("Recipient Notes\n:{:?}\n", recipient_notes);
+        faucet.do_sync(true).await.unwrap();
+        recipient.do_sync(true).await.unwrap();
 
-        let tx_outs = zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await;
-        println!("Transaction Outputs\n{:#?}\n", tx_outs);
+        let tx_ins = zingo_testutils::tx_inputs(&recipient, txid1.as_str()).await;
+        println!("Transaction Inputs:\n{:#?}\n", tx_ins);
+
+        let tx_outs = zingo_testutils::tx_outputs(&faucet, txid1.as_str()).await;
+        println!("Transaction Outputs:\n{:#?}\n", tx_outs);
 
         // let faucet_summaries = faucet.do_list_txsummaries().await;
         // let filtered_faucet_summaries: Vec<&ValueTransfer> = faucet_summaries
