@@ -205,7 +205,7 @@ impl LightWallet {
         }
     }
 
-    /// Return a copy of the blocks current.maply in the wallet, needed to process possible reorgs
+    /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
     pub async fn get_blocks(&self) -> Vec<BlockData> {
         self.blocks.read().await.iter().cloned().collect()
     }
