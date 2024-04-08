@@ -1,15 +1,12 @@
 use std::convert::Infallible;
 
 use incrementalmerkletree::Address;
-use shardtree::error::ShardTreeError;
+use shardtree::{error::ShardTreeError, ShardTree};
 use zcash_client_backend::data_api::{
     chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
 };
 
-use crate::wallet::{
-    data::{OrchStore, SapStore},
-    ShardTree,
-};
+use crate::wallet::data::{OrchStore, SapStore};
 
 use super::SpendKit;
 
