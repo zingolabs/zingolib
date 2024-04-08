@@ -28,7 +28,7 @@ impl fmt::Display for CommandError {
             }
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "Non Number input: {}", e),
-            SingleArgNotJsonArray(e) => write!(f, "{}", e),
+            SingleArgNotJsonArray(e) => write!(f, "argument cannot be parsed to a json array: {}", e),
         }
     }
 }
