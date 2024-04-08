@@ -274,7 +274,7 @@ impl LightWallet {
         let witness_trees = txmds_readlock
             .witness_trees
             .as_ref()
-            .expect("If we have spend capability we have trees");
+            .ok_or("No spend capability.")?;
         let (tx_builder, total_shielded_receivers) = match self
             .create_and_populate_tx_builder(
                 submission_height,

@@ -19,21 +19,21 @@ resolver = "2"
 [workspace.dependencies]
 clap = "4.4"
 sapling-crypto = "0.1.2"
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_address-0.3.2-128-g11bcb838" } # git tag -s $(git describe --dirty)
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_address-0.3.2-128-g11bcb838", features = ["lightwalletd-tonic"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_address-0.3.2-128-g11bcb838" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_address-0.3.2-128-g11bcb838", features = ["orchard"] }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address" } # git tag -s $(git describe --dirty)
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address", features = ["lightwalletd-tonic"] }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address" }
+zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address", features = ["orchard"] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_address-0.3.2-128-g11bcb838" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_address-0.3.2-128-g11bcb838" }
-zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_address-0.3.2-128-g11bcb838" }
-orchard = "0.7.1"
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address" }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address" }
+zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zcash_client_backend-0.12.1-4-gb1e70fdb_simplified_external_change_address" }
+orchard = "0.8"
 tonic-build = "0.10"
 tempdir = "0.3"
 portpicker = "0.1"
 incrementalmerkletree = { version = "0.5" }
 futures = "0.3.15"
-shardtree = "0.2"
+shardtree = "0.3"
 build_utils = { path = "./build_utils" }
 http = "0.2.4"
 hyper = { version = "0.14", features = ["full"] }
