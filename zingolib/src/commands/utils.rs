@@ -225,7 +225,6 @@ mod tests {
             fn two_args_wrong_amount() {
                 let args = ["testaddress", "foo"];
                 let result = parse_send_args(&args);
-                dbg!(&result);
                 match result {
                     Err(CommandError::ParseIntFromString(e)) => {
                         assert_eq!(
@@ -241,7 +240,6 @@ mod tests {
                 // Note the " " character after the 1.  The parser can handle by trimming, is that correct?
                 let args = ["testaddress", "1 ", "whatever"];
                 let result = parse_send_args(&args);
-                dbg!(&result);
                 match result {
                     Ok(_) => (),
                     _ => panic!(),
