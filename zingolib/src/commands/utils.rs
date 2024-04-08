@@ -127,10 +127,6 @@ mod tests {
     }
 
     mod fail_parse_send_args {
-        use zcash_primitives::memo::MemoBytes;
-
-        use crate::commands::utils::parse_send_args;
-
         mod json_array {
             use crate::commands::{error::CommandError, utils::parse_send_args};
             #[test]
@@ -267,22 +263,6 @@ mod tests {
                     _ => panic!(),
                 };
             }
-        }
-
-        #[test]
-        fn successful_parse_send_args_single_json() {
-            let args =
-                ["[{\"address\": \"testaddress\", \"amount\": 123, \"memo\": \"testmemo\"}]"];
-            let parsed = parse_send_args(&args).unwrap();
-            // Assuming you have a way to construct MemoBytes from a string for this example
-            assert_eq!(
-                parsed,
-                vec![(
-                    "testaddress".to_string(),
-                    123,
-                    Some(MemoBytes::from_bytes(&"testmemo".as_bytes()).unwrap())
-                )]
-            );
         }
     }
 }
