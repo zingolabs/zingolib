@@ -32,9 +32,10 @@ pub(super) fn parse_send_args(
                     ))?
                     .to_string();
                 let amount = if !j["amount"].is_number() {
-                    return Err(CommandError::NonJsonNumberForAmount(
-                        "amount is not a json::number::Number".to_string(),
-                    ));
+                    return Err(CommandError::NonJsonNumberForAmount(format!(
+                        "\"amount\": {}\nis not a json::number::Number",
+                        j["amount"]
+                    )));
                 } else {
                     j["amount"].as_u64().ok_or(CommandError::UnexpectedType(
                         "amount not a u64!".to_string(),
@@ -184,7 +185,10 @@ mod tests {
                 let result = parse_send_args(&args);
                 match result {
                     Err(CommandError::NonJsonNumberForAmount(e)) => {
-                        assert_eq!(e, "amount is not a json::number::Number".to_string())
+                        assert_eq!(
+                            e,
+                            "\"amount\": Oscar Pepper\nis not a json::number::Number".to_string()
+                        )
                     }
                     _ => panic!(),
                 };

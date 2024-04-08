@@ -27,7 +27,7 @@ impl fmt::Display for CommandError {
                 write!(f, "memo's cannot be sent to transparent addresses.")
             }
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
-            NonJsonNumberForAmount => write!(f,  "amount is not a json::number::Number"),
+            NonJsonNumberForAmount(e) => write!(f, "Non Number input: {}", e),
             SingleArgNotJsonArray(e) => write!(f, "{}", e),
         }
     }
