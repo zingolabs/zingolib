@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Currently this mod contains a utility fn that's been factored out of SendCommand
+//! Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
 use crate::wallet;
