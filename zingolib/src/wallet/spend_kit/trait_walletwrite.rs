@@ -2,17 +2,17 @@ use secrecy::SecretVec;
 use zcash_client_backend::data_api::WalletWrite;
 use zcash_keys::keys::UnifiedSpendingKey;
 
-use crate::{error::ZingoLibError, wallet::record_book::TransparentRecordRef};
+use crate::{error::ZingoLibError, wallet::notes::NoteRecordIdentifier};
 
 use super::SpendKit;
 
 impl WalletWrite for SpendKit<'_, '_> {
-    type UtxoRef = TransparentRecordRef;
+    type UtxoRef = NoteRecordIdentifier;
 
     fn create_account(
         &mut self,
         _seed: &SecretVec<u8>,
-        _birthday: zcash_client_backend::data_api::AccountBirthday,
+        _birthday: &zcash_client_backend::data_api::AccountBirthday,
     ) -> Result<(Self::AccountId, UnifiedSpendingKey), Self::Error> {
         unimplemented!()
     }
@@ -62,7 +62,7 @@ impl WalletWrite for SpendKit<'_, '_> {
         sent_tx
             .tx()
             .write(&mut raw_tx)
-            .map_err(|e| ZingoLibError::CalculatedTransactionEncode(e.to_string()))?;
+            .map_err(|e| ZingoLibError::Error(e.to_string()))?;
         self.local_sending_transactions.push(raw_tx);
         Ok(())
     }

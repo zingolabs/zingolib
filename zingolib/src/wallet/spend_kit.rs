@@ -34,7 +34,7 @@ use super::{
 // pub mod trait_inputsource;
 // pub mod trait_walletcommitmenttrees;
 pub mod trait_walletread;
-// pub mod trait_walletwrite;
+pub mod trait_walletwrite;
 
 pub mod errors;
 use self::errors::{AssembleSpendKitError, CreateTransactionsError};
