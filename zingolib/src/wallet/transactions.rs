@@ -1,5 +1,7 @@
 use std::{collections::HashMap, convert::Infallible};
 
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::{fees::zip317::FeeRule, TxId};
 
@@ -19,7 +21,29 @@ impl TransactionRecordMap {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         Self { map }
     }
+    pub fn get_received_note_from_identifier(
+        &self,
+        note_record_reference: NoteRecordIdentifier,
+    ) -> Option<
+        zcash_client_backend::wallet::ReceivedNote<
+            NoteRecordIdentifier,
+            zcash_client_backend::wallet::Note,
+        >,
+    > {
+        let transaction = self.map.get(&note_record_reference.txid);
+        transaction.and_then(|transaction_record| match note_record_reference.pool {
+            zcash_client_backend::PoolType::Transparent => None, // explain implication
+            zcash_client_backend::PoolType::Shielded(domain) => match domain {
+                zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
+                    .get_received_note::<SaplingDomain>(note_record_reference.index),
+                zcash_client_backend::ShieldedProtocol::Orchard => transaction_record
+                    .get_received_note::<OrchardDomain>(note_record_reference.index),
+            },
+        })
+    }
 }
+
+pub mod trait_inputsource;
 
 pub type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
 pub type ShieldProposal = Proposal<FeeRule, Infallible>;

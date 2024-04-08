@@ -16,7 +16,7 @@ impl Account<AccountId> for ZingoAccount {
     }
 
     fn source(&self) -> zcash_client_backend::data_api::AccountSource {
-        todo!()
+        unimplemented!()
     }
 
     fn ufvk(&self) -> Option<&UnifiedFullViewingKey> {
@@ -24,7 +24,7 @@ impl Account<AccountId> for ZingoAccount {
     }
 
     fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
-        todo!()
+        unimplemented!()
     }
 }
 
