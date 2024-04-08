@@ -23,8 +23,6 @@ use zip32::AccountId;
 
 use crate::error::{ZingoLibError, ZingoLibResult};
 
-use self::errors::CreateTransactionsError;
-
 use super::{
     data::WitnessTrees,
     keys::unified::WalletCapability,
@@ -39,6 +37,7 @@ use super::{
 // pub mod trait_walletwrite;
 
 pub mod errors;
+use self::errors::{AssembleSpendKitError, CreateTransactionsError};
 
 pub struct SpendKit<'book, 'trees> {
     pub spend_cap: Arc<WalletCapability>,
@@ -56,31 +55,31 @@ type GISKit<'a, 'b> = GreedyInputSelector<
 >;
 
 impl SpendKit<'_, '_> {
-    // pub async fn assemble<'lock, 'reflock, 'trees, 'book>(
-    //     wallet: &'lock LightWallet,
-    //     context_write_lock: &'reflock mut RwLockWriteGuard<'lock, TxMapAndMaybeTrees>,
-    // ) -> ZingoLibResult<SpendKit<'book, 'trees>>
-    // where
-    //     'lock: 'trees + 'book,
-    //     'reflock: 'trees + 'book,
-    // {
-    //     if let TxMapAndMaybeTrees {
-    //         spending_data: Some(spending_data),
-    //         current,
-    //     } = context_write_lock.deref_mut()
-    //     {
-    //         Ok(SpendKit::<'book, 'trees> {
-    //             spend_cap: wallet.wallet_capability(),
-    //             params: wallet.transaction_context.config.chain,
-    //             record_map: &current,
-    //             trees: &mut spending_data.witness_trees,
-    //             latest_proposal: &mut spending_data.latest_proposal,
-    //             local_sending_transactions: Vec::new(),
-    //         })
-    //     } else {
-    //         Err(ZingoLibError::ViewkeyCantSpend)
-    //     }
-    // }
+    pub async fn assemble<'lock, 'reflock, 'trees, 'book>(
+        wallet: &'lock LightWallet,
+        context_write_lock: &'reflock mut RwLockWriteGuard<'lock, TxMapAndMaybeTrees>,
+    ) -> Result<SpendKit<'book, 'trees>, AssembleSpendKitError>
+    where
+        'lock: 'trees + 'book,
+        'reflock: 'trees + 'book,
+    {
+        if let TxMapAndMaybeTrees {
+            spending_data: Some(spending_data),
+            current: record_map,
+        } = context_write_lock.deref_mut()
+        {
+            Ok(SpendKit::<'book, 'trees> {
+                spend_cap: wallet.wallet_capability(),
+                params: wallet.transaction_context.config.chain,
+                record_map,
+                trees: &mut spending_data.witness_trees,
+                latest_proposal: &mut spending_data.latest_proposal,
+                local_sending_transactions: Vec::new(),
+            })
+        } else {
+            Err(AssembleSpendKitError::NoSpendCapability)
+        }
+    }
     // pub fn create_proposal(
     //     &mut self,
     //     request: TransactionRequest,
