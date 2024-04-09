@@ -94,7 +94,10 @@ impl InputSource for TransactionRecordMap {
                 None => Ok(None),
             },
         )? {
-            return ZingoLibResult::Err(ZingoLibError::FundShortfall(missing_value.into_u64()));
+            return ZingoLibResult::Err(ZingoLibError::Error(format!(
+                "insufficient funds, short {}",
+                missing_value.into_u64()
+            )));
         };
         Ok(noteset)
     }

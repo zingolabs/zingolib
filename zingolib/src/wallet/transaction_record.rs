@@ -1,4 +1,5 @@
 use incrementalmerkletree::witness::IncrementalWitness;
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
@@ -6,7 +7,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
-    notes::NoteRecordIdentifier,
+    notes::{NoteInterface as _, NoteRecordIdentifier},
     traits::{DomainWalletExt, Recipient},
     *,
 };
@@ -109,6 +110,39 @@ impl TransactionRecord {
             ))
             .handle()
         }
+    }
+
+    pub fn select_unspent_value_ref_pairs_sapling(&self) -> Vec<(u64, NoteRecordIdentifier)> {
+        let mut value_ref_pairs = Vec::new();
+        SaplingDomain::to_notes_vec(self).iter().for_each(|note| {
+            if !note.is_spent_or_pending_spent() {
+                if let Some(index) = note.output_index {
+                    let note_record_reference = NoteRecordIdentifier {
+                        txid: self.txid,
+                        pool: PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Sapling),
+                        index,
+                    };
+                    value_ref_pairs.push((note.value(), note_record_reference));
+                }
+            }
+        });
+        value_ref_pairs
+    }
+    pub fn select_unspent_value_ref_pairs_orchard(&self) -> Vec<(u64, NoteRecordIdentifier)> {
+        let mut value_ref_pairs = Vec::new();
+        OrchardDomain::to_notes_vec(self).iter().for_each(|note| {
+            if !note.is_spent_or_pending_spent() {
+                if let Some(index) = note.output_index {
+                    let note_record_reference = NoteRecordIdentifier {
+                        txid: self.txid,
+                        pool: PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard),
+                        index,
+                    };
+                    value_ref_pairs.push((note.value(), note_record_reference));
+                }
+            }
+        });
+        value_ref_pairs
     }
 
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
