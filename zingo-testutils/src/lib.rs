@@ -2,6 +2,7 @@ pub mod interrupts;
 
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
+use std::cmp;
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -244,14 +245,14 @@ pub async fn load_wallet(
 }
 
 #[derive(Debug)]
-pub struct TxNotes {
+pub struct TxActions {
     pub transparent_tx_notes: usize,
     pub sapling_tx_notes: usize,
     pub orchard_tx_notes: usize,
 }
 
 /// Returnes number of notes used as inputs for txid as TxNotes (transparent_notes, sapling_notes, orchard_notes).
-pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
+pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxActions {
     let notes = client.do_list_notes(true).await;
 
     let mut transparent_notes = 0;
@@ -303,7 +304,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
         }
     }
 
-    TxNotes {
+    TxActions {
         transparent_tx_notes: transparent_notes,
         sapling_tx_notes: sapling_notes,
         orchard_tx_notes: orchard_notes,
@@ -311,7 +312,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
 }
 
 /// Returnes number of notes created in txid as TxNotes (transparent_notes, sapling_notes, orchard_notes).
-pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotes {
+pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
     let notes = client.do_list_notes(true).await;
 
     let mut transparent_notes = 0;
@@ -342,10 +343,43 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotes {
         }
     }
 
-    TxNotes {
+    TxActions {
         transparent_tx_notes: transparent_notes,
         sapling_tx_notes: sapling_notes,
         orchard_tx_notes: orchard_notes,
+    }
+}
+
+/// Returns total actions for txid.
+pub async fn tx_actions(
+    faucet: &LightClient,
+    recipient: Option<&LightClient>,
+    txid: &str,
+) -> TxActions {
+    let tx_ins = tx_inputs(faucet, txid).await;
+    let tx_outs = if let Some(rec) = recipient {
+        tx_outputs(rec, txid).await
+    } else {
+        TxActions {
+            transparent_tx_notes: 0,
+            sapling_tx_notes: 0,
+            orchard_tx_notes: 0,
+        }
+    };
+    let tx_change = tx_outputs(faucet, txid).await;
+
+    TxActions {
+        transparent_tx_notes: cmp::max(
+            tx_ins.transparent_tx_notes,
+            tx_outs.transparent_tx_notes + tx_change.transparent_tx_notes,
+        ),
+        sapling_tx_notes: cmp::max(
+            tx_ins.sapling_tx_notes,
+            tx_outs.sapling_tx_notes + tx_change.sapling_tx_notes,
+        ),
+        orchard_tx_notes: (tx_ins.orchard_tx_notes
+            + tx_outs.orchard_tx_notes
+            + tx_change.orchard_tx_notes),
     }
 }
 
