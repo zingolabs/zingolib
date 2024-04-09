@@ -112,7 +112,9 @@ impl TransactionRecord {
         }
     }
 
-    pub fn select_unspent_value_ref_pairs_sapling(&self) -> Vec<(u64, NoteRecordIdentifier)> {
+    pub fn select_unspent_note_noteref_pairs_sapling(
+        &self,
+    ) -> Vec<(sapling_crypto::Note, NoteRecordIdentifier)> {
         let mut value_ref_pairs = Vec::new();
         SaplingDomain::to_notes_vec(self).iter().for_each(|note| {
             if !note.is_spent_or_pending_spent() {
@@ -122,13 +124,15 @@ impl TransactionRecord {
                         pool: PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Sapling),
                         index,
                     };
-                    value_ref_pairs.push((note.value(), note_record_reference));
+                    value_ref_pairs.push((note.note, note_record_reference));
                 }
             }
         });
         value_ref_pairs
     }
-    pub fn select_unspent_value_ref_pairs_orchard(&self) -> Vec<(u64, NoteRecordIdentifier)> {
+    pub fn select_unspent_note_noteref_pairs_orchard(
+        &self,
+    ) -> Vec<(orchard::Note, NoteRecordIdentifier)> {
         let mut value_ref_pairs = Vec::new();
         OrchardDomain::to_notes_vec(self).iter().for_each(|note| {
             if !note.is_spent_or_pending_spent() {
@@ -138,7 +142,7 @@ impl TransactionRecord {
                         pool: PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard),
                         index,
                     };
-                    value_ref_pairs.push((note.value(), note_record_reference));
+                    value_ref_pairs.push((note.note, note_record_reference));
                 }
             }
         });
@@ -209,12 +213,7 @@ impl TransactionRecord {
     pub fn get_received_note<D>(
         &self,
         index: u32,
-    ) -> Option<
-        zcash_client_backend::wallet::ReceivedNote<
-            NoteRecordIdentifier,
-            zcash_client_backend::wallet::Note,
-        >,
-    >
+    ) -> Option<zcash_client_backend::wallet::ReceivedNote<NoteRecordIdentifier, <D as Domain>::Note>>
     where
         D: DomainWalletExt + Sized,
         D::Note: PartialEq + Clone,
@@ -225,10 +224,9 @@ impl TransactionRecord {
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
             let txid = self.txid;
-            let zcb_note = note.to_zcb_note();
             let note_record_reference = NoteRecordIdentifier {
                 txid,
-                pool: zcash_client_backend::PoolType::Shielded(zcb_note.protocol()),
+                pool: zcash_client_backend::PoolType::Shielded(note.to_zcb_note().protocol()),
                 index,
             };
             note.witnessed_position().map(|pos| {
@@ -236,7 +234,7 @@ impl TransactionRecord {
                     note_record_reference,
                     txid,
                     index as u16,
-                    zcb_note,
+                    note.note().clone(),
                     zip32::Scope::External,
                     pos,
                 )

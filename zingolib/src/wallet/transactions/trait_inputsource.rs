@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use zcash_client_backend::{
     data_api::{InputSource, SpendableNotes},
+    wallet::ReceivedNote,
     PoolType, ShieldedProtocol,
 };
 use zcash_primitives::{transaction::components::amount::NonNegativeAmount, zip32::AccountId};
@@ -50,45 +51,43 @@ impl InputSource for TransactionRecordMap {
                 "we don't use non-zero accounts (yet?)".to_string(),
             ));
         }
-        let mut value_ref_pairs: BTreeMap<u64, NoteRecordIdentifier> = BTreeMap::new();
+        let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, NoteRecordIdentifier)> =
+            Vec::new();
+        let mut orchard_note_noteref_pairs: Vec<(orchard::Note, NoteRecordIdentifier)> = Vec::new();
         for transaction_record in self.map.values().filter(|transaction_record| {
             transaction_record
                 .status
                 .is_confirmed_before_or_at(&anchor_height)
         }) {
             if sources.contains(&ShieldedProtocol::Sapling) {
-                value_ref_pairs.extend(
+                sapling_note_noteref_pairs.extend(
                     transaction_record
-                        .select_unspent_value_ref_pairs_sapling()
+                        .select_unspent_note_noteref_pairs_sapling()
                         .into_iter()
-                        .filter(|value_ref_pair| !exclude.contains(&value_ref_pair.1)),
+                        .filter(|note_ref_pair| !exclude.contains(&note_ref_pair.1)),
                 );
             }
             if sources.contains(&ShieldedProtocol::Orchard) {
-                value_ref_pairs.extend(
+                orchard_note_noteref_pairs.extend(
                     transaction_record
-                        .select_unspent_value_ref_pairs_orchard()
+                        .select_unspent_note_noteref_pairs_orchard()
                         .into_iter()
-                        .filter(|value_ref_pair| !exclude.contains(&value_ref_pair.1)),
+                        .filter(|note_ref_pair| !exclude.contains(&note_ref_pair.1)),
                 );
             }
         }
-        let mut noteset: Vec<
-            zcash_client_backend::wallet::ReceivedNote<
-                Self::NoteRef,
-                zcash_client_backend::wallet::Note,
-            >,
-        > = Vec::new();
-        if let Some(missing_value) = value_ref_pairs.into_iter().rev(/*biggest first*/).try_fold(
+        let mut sapling_notes =
+            Vec::<ReceivedNote<NoteRecordIdentifier, sapling_crypto::Note>>::new();
+        if let Some(missing_value) = sapling_note_noteref_pairs.into_iter().rev(/*biggest first*/).try_fold(
             Some(target_value),
-            |rolling_target, (val, noteref)| match rolling_target {
+            |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
-                    noteset.push(
-                        self.get_received_note_from_identifier(noteref)
-                            .ok_or(ZingoLibError::Error("missing note".to_string()))?,
+                    sapling_notes.push(
+                        self.map.get(&noteref.txid).map(|tr| tr.get_received_note(noteref.index)).flatten()
+                            .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
                     );
                     Ok(targ
-                        - NonNegativeAmount::from_u64(val)
+                        - NonNegativeAmount::from_u64(note.value().inner())
                             .map_err(|e| ZingoLibError::Error(e.to_string()))?)
                 }
                 None => Ok(None),
