@@ -3652,6 +3652,7 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
     }
 
+    // not a test, using to test test code!
     #[tokio::test]
     async fn standard_fee() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -3677,7 +3678,7 @@ mod basic_transactions {
 
         let txid1 = recipient
             .do_send(vec![(
-                get_base_address!(faucet, "transparent").as_str(),
+                get_base_address!(faucet, "sapling").as_str(),
                 20_000,
                 None,
             )])
@@ -3702,7 +3703,7 @@ mod basic_transactions {
 
         let tx_actions =
             zingo_testutils::tx_actions(&recipient, Some(&faucet), txid1.as_str()).await;
-        println!("Transaction Outputs:\n{:#?}", tx_actions);
+        println!("Transaction Actions:\n{:#?}", tx_actions);
 
         let faucet_summaries = faucet.do_list_txsummaries().await;
         let simplified_faucet_summaries: Vec<_> = faucet_summaries
@@ -3767,7 +3768,7 @@ mod basic_transactions {
 
         let txid = recipient
             .do_send(vec![(
-                get_base_address!(faucet, "unified").as_str(),
+                get_base_address!(faucet, "transparent").as_str(),
                 40_000,
                 None,
             )])
@@ -3826,7 +3827,7 @@ mod basic_transactions {
         recipient.do_sync(true).await.unwrap();
 
         let tx_actions = zingo_testutils::tx_actions(&recipient, None, txid.as_str()).await;
-        println!("Transaction Outputs:\n{:#?}", tx_actions);
+        println!("Transaction Actions:\n{:#?}", tx_actions);
 
         let fee_paid: u64 = recipient
             .do_list_txsummaries()
@@ -3885,7 +3886,7 @@ mod basic_transactions {
         recipient.do_sync(true).await.unwrap();
 
         let tx_actions = zingo_testutils::tx_actions(&recipient, None, txid.as_str()).await;
-        println!("Transaction Outputs:\n{:#?}", tx_actions);
+        println!("Transaction Actions:\n{:#?}", tx_actions);
 
         let fee_paid: u64 = recipient
             .do_list_txsummaries()
