@@ -467,6 +467,7 @@ impl TxMapAndMaybeTrees {
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
                     .retain(|n| n.nullifier().is_some());
             }
+            #[allow(unused_mut)]
             Some(mut n) => {
                 // An overwrite should be safe here: TODO: test that confirms this
                 *n = nd;
