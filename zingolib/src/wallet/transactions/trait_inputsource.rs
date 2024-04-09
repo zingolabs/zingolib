@@ -1,10 +1,16 @@
-use zcash_client_backend::data_api::{InputSource, SpendableNotes};
+use std::collections::BTreeMap;
 
-use crate::{error::ZingoLibError, wallet::notes::NoteRecordIdentifier};
+use zcash_client_backend::{
+    data_api::{InputSource, SpendableNotes},
+    PoolType, ShieldedProtocol,
+};
+use zcash_primitives::{transaction::components::amount::NonNegativeAmount, zip32::AccountId};
 
-use super::SpendKit;
+use crate::error::{ZingoLibError, ZingoLibResult};
 
-impl InputSource for SpendKit<'_, '_> {
+use super::{NoteRecordIdentifier, TransactionRecordMap};
+
+impl InputSource for TransactionRecordMap {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
     type NoteRef = NoteRecordIdentifier;
@@ -23,7 +29,12 @@ impl InputSource for SpendKit<'_, '_> {
         >,
         Self::Error,
     > {
-        self.record_map.get_spendable_note(txid, protocol, index)
+        let note_record_reference: <Self as InputSource>::NoteRef = NoteRecordIdentifier {
+            txid: *txid,
+            pool: PoolType::Shielded(protocol),
+            index,
+        };
+        Ok(self.get_received_note_from_identifier(note_record_reference))
     }
 
     fn select_spendable_notes(
@@ -34,12 +45,6 @@ impl InputSource for SpendKit<'_, '_> {
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<NoteRecordIdentifier>, ZingoLibError> {
-        self.record_map.select_spendable_notes(
-            account,
-            target_value,
-            sources,
-            anchor_height,
-            exclude,
-        )
+        todo!()
     }
 }

@@ -6,6 +6,8 @@ use zcash_primitives::transaction::{fees::zip317::FeeRule, TxId};
 use crate::wallet::data::{TransactionRecord, WitnessTrees};
 use crate::wallet::notes::NoteRecordIdentifier;
 
+pub mod trait_inputsource;
+
 pub type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
 pub type ShieldProposal = Proposal<FeeRule, Infallible>;
 #[derive(Clone)]
