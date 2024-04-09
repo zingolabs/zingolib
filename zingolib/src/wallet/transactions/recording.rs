@@ -357,7 +357,7 @@ impl TxMapAndMaybeTrees {
         vout: &TxOut,
         output_num: u32,
     ) {
-        // Read or create the current.map TxId
+        // Read or create the current TxId
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
