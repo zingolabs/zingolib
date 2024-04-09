@@ -53,6 +53,11 @@ impl TransactionRecordMap {
         })
     }
 }
+#[cfg(test)]
+mod test {
+    #[test]
+    fn trm_get_received_note_from_identifier() {}
+}
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
