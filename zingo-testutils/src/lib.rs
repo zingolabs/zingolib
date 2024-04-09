@@ -246,9 +246,9 @@ pub async fn load_wallet(
 
 #[derive(Debug)]
 pub struct TxActions {
-    pub transparent_tx_notes: usize,
-    pub sapling_tx_notes: usize,
-    pub orchard_tx_notes: usize,
+    pub transparent_tx_actions: usize,
+    pub sapling_tx_actions: usize,
+    pub orchard_tx_actions: usize,
 }
 
 /// Returnes number of notes used as inputs for txid as TxNotes (transparent_notes, sapling_notes, orchard_notes).
@@ -305,9 +305,9 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxActions {
     }
 
     TxActions {
-        transparent_tx_notes: transparent_notes,
-        sapling_tx_notes: sapling_notes,
-        orchard_tx_notes: orchard_notes,
+        transparent_tx_actions: transparent_notes,
+        sapling_tx_actions: sapling_notes,
+        orchard_tx_actions: orchard_notes,
     }
 }
 
@@ -344,9 +344,9 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
     }
 
     TxActions {
-        transparent_tx_notes: transparent_notes,
-        sapling_tx_notes: sapling_notes,
-        orchard_tx_notes: orchard_notes,
+        transparent_tx_actions: transparent_notes,
+        sapling_tx_actions: sapling_notes,
+        orchard_tx_actions: orchard_notes,
     }
 }
 
@@ -361,25 +361,38 @@ pub async fn tx_actions(
         tx_outputs(rec, txid).await
     } else {
         TxActions {
-            transparent_tx_notes: 0,
-            sapling_tx_notes: 0,
-            orchard_tx_notes: 0,
+            transparent_tx_actions: 0,
+            sapling_tx_actions: 0,
+            orchard_tx_actions: 0,
         }
     };
     let tx_change = tx_outputs(faucet, txid).await;
 
+    let calculated_sapling_tx_actions = cmp::max(
+        tx_ins.sapling_tx_actions,
+        tx_outs.sapling_tx_actions + tx_change.sapling_tx_actions,
+    );
+    let final_sapling_tx_actions = if calculated_sapling_tx_actions == 1 {
+        2
+    } else {
+        calculated_sapling_tx_actions
+    };
+
+    let calculated_orchard_tx_actions =
+        tx_ins.orchard_tx_actions + tx_outs.orchard_tx_actions + tx_change.orchard_tx_actions;
+    let final_orchard_tx_actions = if calculated_orchard_tx_actions == 1 {
+        2
+    } else {
+        calculated_orchard_tx_actions
+    };
+
     TxActions {
-        transparent_tx_notes: cmp::max(
-            tx_ins.transparent_tx_notes,
-            tx_outs.transparent_tx_notes + tx_change.transparent_tx_notes,
+        transparent_tx_actions: cmp::max(
+            tx_ins.transparent_tx_actions,
+            tx_outs.transparent_tx_actions + tx_change.transparent_tx_actions,
         ),
-        sapling_tx_notes: cmp::max(
-            tx_ins.sapling_tx_notes,
-            tx_outs.sapling_tx_notes + tx_change.sapling_tx_notes,
-        ),
-        orchard_tx_notes: (tx_ins.orchard_tx_notes
-            + tx_outs.orchard_tx_notes
-            + tx_change.orchard_tx_notes),
+        sapling_tx_actions: final_sapling_tx_actions,
+        orchard_tx_actions: final_orchard_tx_actions,
     }
 }
 

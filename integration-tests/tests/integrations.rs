@@ -3840,13 +3840,74 @@ mod basic_transactions {
             .unwrap_or(0);
         println!("Fee Paid: {}", fee_paid);
 
-        let expected_fee = 5000
-            * (cmp::max(
-                2,
-                tx_actions.transparent_tx_notes
-                    + tx_actions.sapling_tx_notes
-                    + tx_actions.orchard_tx_notes,
-            ));
+        let expected_fee = 10000;
+        // currently expected fee is always 10000 but will change to the following in zip317
+        // let expected_fee = 5000
+        //     * (cmp::max(
+        //         2,
+        //         tx_actions.transparent_tx_actions
+        //             + tx_actions.sapling_tx_actions
+        //             + tx_actions.orchard_tx_actions,
+        //     ));
+        println!("Expected Fee: {}", expected_fee);
+
+        assert_eq!(fee_paid, expected_fee as u64);
+
+        faucet
+            .do_send(vec![(
+                get_base_address!(recipient, "transparent").as_str(),
+                40_000,
+                None,
+            )])
+            .await
+            .unwrap();
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        faucet.do_sync(true).await.unwrap();
+        recipient.do_sync(true).await.unwrap();
+
+        let txid = recipient
+            .do_shield(
+                &[Pool::Transparent],
+                Some(get_base_address!(recipient, "sapling")),
+            )
+            .await
+            .unwrap();
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        faucet.do_sync(true).await.unwrap();
+        recipient.do_sync(true).await.unwrap();
+
+        let tx_actions = zingo_testutils::tx_actions(&recipient, None, txid.as_str()).await;
+        println!("Transaction Outputs:\n{:#?}", tx_actions);
+
+        let fee_paid: u64 = recipient
+            .do_list_txsummaries()
+            .await
+            .iter()
+            .filter(|summary| summary.txid.to_string() == txid)
+            .find_map(|summary| match &summary.kind {
+                ValueTransferKind::Fee { amount } => Some(*amount),
+                _ => None,
+            })
+            .unwrap_or(0);
+        println!("Fee Paid: {}", fee_paid);
+
+        let expected_fee = 10000;
+        // currently expected fee is always 10000 but will change to the following in zip317
+        // let expected_fee = 5000
+        //     * (cmp::max(
+        //         2,
+        //         tx_actions.transparent_tx_actions
+        //             + tx_actions.sapling_tx_actions
+        //             + tx_actions.orchard_tx_actions,
+        //     ));
         println!("Expected Fee: {}", expected_fee);
 
         assert_eq!(fee_paid, expected_fee as u64);
