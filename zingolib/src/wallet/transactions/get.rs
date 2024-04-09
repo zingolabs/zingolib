@@ -17,8 +17,7 @@ impl TxMapAndMaybeTrees {
     ) -> Vec<(TxId, PoolNullifier, Option<u32>)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
-        self.current.map
-
+        self.current
             .iter()
             .filter(|(_, transaction_metadata)| transaction_metadata.status.is_confirmed_before_or_at(&before_block)) // Update only confirmed notes
             .flat_map(|(txid, transaction_metadata)| {
@@ -66,7 +65,6 @@ impl TxMapAndMaybeTrees {
 
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
-            .map
             .get(txid)
             .map(TransactionRecord::total_value_spent)
             .unwrap_or(0)
@@ -86,7 +84,6 @@ impl TxMapAndMaybeTrees {
         <D as Domain>::Recipient: Recipient,
     {
         self.current
-            .map
             .iter()
             .flat_map(|(_, transaction_metadata)| {
                 D::to_notes_vec(transaction_metadata)

@@ -26,28 +26,25 @@ use super::TxMapAndMaybeTrees;
 impl TxMapAndMaybeTrees {
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
-            self.current.map.remove(txid);
+            self.current.remove(txid);
         }
-        self.current
-            .map
-            .values_mut()
-            .for_each(|transaction_metadata| {
-                // Update UTXOs to rollback any spent utxos
-                transaction_metadata
-                    .transparent_notes
-                    .iter_mut()
-                    .for_each(|utxo| {
-                        if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
-                            *utxo.spent_mut() = None;
-                        }
+        self.current.values_mut().for_each(|transaction_metadata| {
+            // Update UTXOs to rollback any spent utxos
+            transaction_metadata
+                .transparent_notes
+                .iter_mut()
+                .for_each(|utxo| {
+                    if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
+                        *utxo.spent_mut() = None;
+                    }
 
-                        if utxo.unconfirmed_spent.is_some()
-                            && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
-                        {
-                            utxo.unconfirmed_spent = None;
-                        }
-                    })
-            });
+                    if utxo.unconfirmed_spent.is_some()
+                        && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
+                    {
+                        utxo.unconfirmed_spent = None;
+                    }
+                })
+        });
         self.remove_domain_specific_txids::<SaplingDomain>(&txids_to_remove);
         self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
     }
@@ -57,28 +54,24 @@ impl TxMapAndMaybeTrees {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        self.current
-            .map
-            .values_mut()
-            .for_each(|transaction_metadata| {
-                // Update notes to rollback any spent notes
-                D::to_notes_vec_mut(transaction_metadata)
-                    .iter_mut()
-                    .for_each(|nd| {
-                        // Mark note as unspent if the txid being removed spent it.
-                        if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0)
-                        {
-                            *nd.spent_mut() = None;
-                        }
+        self.current.values_mut().for_each(|transaction_metadata| {
+            // Update notes to rollback any spent notes
+            D::to_notes_vec_mut(transaction_metadata)
+                .iter_mut()
+                .for_each(|nd| {
+                    // Mark note as unspent if the txid being removed spent it.
+                    if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
+                        *nd.spent_mut() = None;
+                    }
 
-                        // Remove unconfirmed spends too
-                        if nd.pending_spent().is_some()
-                            && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
-                        {
-                            *nd.pending_spent_mut() = None;
-                        }
-                    });
-            });
+                    // Remove unconfirmed spends too
+                    if nd.pending_spent().is_some()
+                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
+                    {
+                        *nd.pending_spent_mut() = None;
+                    }
+                });
+        });
     }
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
@@ -88,7 +81,6 @@ impl TxMapAndMaybeTrees {
         // First, collect txids that need to be removed
         let txids_to_remove = self
             .current
-            .map
             .values()
             .filter_map(|transaction_metadata| {
                 if transaction_metadata
@@ -268,7 +260,7 @@ impl TxMapAndMaybeTrees {
         Ok(if let Some(height) = status.get_confirmed_height() {
             // ie remove_witness_mark_sapling or _orchard
             self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index)?;
-            if let Some(transaction_spent_from) = self.current.map.get_mut(&source_txid) {
+            if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
                 if let Some(confirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
@@ -285,7 +277,7 @@ impl TxMapAndMaybeTrees {
             }
         } else if let Some(height) = status.get_broadcast_height() {
             // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
-            if let Some(transaction_spent_from) = self.current.map.get_mut(&source_txid) {
+            if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
                 if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
@@ -477,7 +469,7 @@ impl TxMapAndMaybeTrees {
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
                     .retain(|n| n.nullifier().is_some());
             }
-            Some(n) => {
+            Some(mut n) => {
                 // An overwrite should be safe here: TODO: test that confirms this
                 *n = nd;
             }
@@ -491,7 +483,7 @@ impl TxMapAndMaybeTrees {
         note: Nd::Note,
         memo: Memo,
     ) {
-        if let Some(transaction_metadata) = self.current.map.get_mut(txid) {
+        if let Some(transaction_metadata) = self.current.get_mut(txid) {
             if let Some(n) = Nd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
                 .find(|n| n.note() == &note)
@@ -503,7 +495,7 @@ impl TxMapAndMaybeTrees {
 
     pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
         // println!("        adding outgoing metadata to txid {}", txid);
-        if let Some(transaction_metadata) = self.current.map.get_mut(txid) {
+        if let Some(transaction_metadata) = self.current.get_mut(txid) {
             transaction_metadata.outgoing_tx_data = outgoing_metadata
         } else {
             error!(
@@ -536,7 +528,6 @@ impl TxMapAndMaybeTrees {
     {
         let transaction_metadata = self
             .current
-            .map
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
@@ -586,7 +577,7 @@ impl TxMapAndMaybeTrees {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
-        if let Some(tmd) = self.current.map.get_mut(&txid) {
+        if let Some(tmd) = self.current.get_mut(&txid) {
             if let Some(maybe_nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find_map(|nnmd| {
                 if nnmd.output_index().is_some() != output_index.is_some() {
                     return Some(Err(ZingoLibError::MissingOutputIndex(txid)));

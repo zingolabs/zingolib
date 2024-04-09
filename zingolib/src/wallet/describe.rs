@@ -53,7 +53,6 @@ impl LightWallet {
                 .read()
                 .await
                 .current
-                .map
                 .values()
                 .map(|transaction| {
                     let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
@@ -221,7 +220,6 @@ impl LightWallet {
             .read()
             .await
             .current
-            .map
             .values()
             .map(|wtx| u64::from(wtx.status.get_height()))
             .min();
@@ -241,7 +239,6 @@ impl LightWallet {
             .read()
             .await
             .current
-            .map
             .values()
             .flat_map(|transaction| {
                 transaction
