@@ -25,6 +25,33 @@ impl TransactionRecordMap {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordMap(map)
     }
+    pub fn get_received_note_from_identifier(
+        &self,
+        note_record_reference: super::notes::NoteRecordIdentifier,
+    ) -> Option<
+        zcash_client_backend::wallet::ReceivedNote<
+            super::notes::NoteRecordIdentifier,
+            zcash_client_backend::wallet::Note,
+        >,
+    > {
+        let transaction = self.get(&note_record_reference.txid);
+        transaction.and_then(|transaction_record| match note_record_reference.pool {
+            zcash_client_backend::PoolType::Transparent => None, // explain implication
+            zcash_client_backend::PoolType::Shielded(domain) => match domain {
+                zcash_client_backend::ShieldedProtocol::Sapling => {
+                    transaction_record
+                        .get_received_note::<sapling_crypto::note_encryption::SaplingDomain>(
+                            note_record_reference.index,
+                        )
+                }
+                zcash_client_backend::ShieldedProtocol::Orchard => {
+                    transaction_record.get_received_note::<orchard::note_encryption::OrchardDomain>(
+                        note_record_reference.index,
+                    )
+                }
+            },
+        })
+    }
 }
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
