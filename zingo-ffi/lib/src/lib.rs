@@ -1,5 +1,13 @@
+uniffi::include_scaffolding!("rustlib");
+
 #[macro_use]
 extern crate lazy_static;
+extern crate android_logger;
+
+#[cfg(target_os = "android")]
+use android_logger::{Config, FilterBuilder};
+#[cfg(target_os = "android")]
+use log::Level;
 
 use base64::{decode, encode};
 use std::cell::RefCell;
@@ -21,7 +29,7 @@ fn lock_client_return_seed(lightclient: LightClient) -> String {
 
     LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
-    execute("seed".to_string(), "".to_string())
+    execute_command("seed".to_string(), "".to_string())
 }
 
 fn construct_uri_load_config(
@@ -53,6 +61,20 @@ fn construct_uri_load_config(
 
     Ok((config, lightwalletd_uri))
 }
+
+pub fn init_logging() -> String {
+    // this is only for Android
+    #[cfg(target_os = "android")]
+    android_logger::init_once(
+      Config::default().with_min_level(Level::Trace).with_filter(
+          FilterBuilder::new()
+              .parse("debug,hello::crate=zingolib")
+              .build(),
+      ),
+    );
+  
+    "OK".to_string()
+}  
 
 pub fn init_new(
     server_uri: String,
@@ -184,7 +206,7 @@ pub fn save_to_b64() -> String {
     }
 }
 
-pub fn execute(cmd: String, args_list: String) -> String {
+pub fn execute_command(cmd: String, args_list: String) -> String {
     let resp: String;
     {
         let lightclient: Arc<LightClient>;
@@ -209,7 +231,7 @@ pub fn execute(cmd: String, args_list: String) -> String {
     resp
 }
 
-pub fn get_latest_block(server_uri: String) -> String {
+pub fn get_latest_block_server(server_uri: String) -> String {
     let lightwalletd_uri: http::Uri = server_uri.parse().expect("To be able to represent a Uri.");
     match zingolib::get_latest_block_height(lightwalletd_uri).map_err(|e| format! {"Error: {e}"}) {
         Ok(height) => height.to_string(),
@@ -217,31 +239,3 @@ pub fn get_latest_block(server_uri: String) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use zingolib::git_description;
-    #[ignore]
-    #[tokio::test]
-    async fn unconnected_client_framework() {
-        // Use test in RustFFITest.kt as template
-        let server = "http://10.0.2.2:20000".to_string();
-        let datadir = "testdata".to_string();
-        let chain_hint = "main".to_string();
-        let abandon_art_seed =  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art".to_string();
-        let wallet_base = WalletBase::from_string(abandon_art_seed);
-        let (config, _lightwalletd_uri);
-        match construct_uri_load_config(server, datadir, chain_hint, false) {
-            Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
-            Err(_) => panic!(),
-        }
-        let test_client = LightClient::create_unconnected(&config, wallet_base, 1)
-            .await
-            .expect("To create a lightclient.");
-        dbg!(test_client.do_info().await);
-    }
-    #[test]
-    fn report_git_description() {
-        assert!(git_description().starts_with("mob-"));
-    }
-}
