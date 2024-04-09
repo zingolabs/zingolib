@@ -747,15 +747,7 @@ mod slow {
             .await
             .unwrap();
 
-        for txid_known in recipient
-            .wallet
-            .transactions()
-            .read()
-            .await
-            .current
-            .map
-            .keys()
-        {
+        for txid_known in recipient.wallet.transactions().read().await.current.keys() {
             dbg!(txid_known);
         }
 
@@ -766,7 +758,6 @@ mod slow {
             .read()
             .await
             .current
-            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -800,7 +791,6 @@ mod slow {
             .read()
             .await
             .current
-            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -844,7 +834,6 @@ mod slow {
             .read()
             .await
             .current
-            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -876,7 +865,6 @@ mod slow {
             .read()
             .await
             .current
-            .map
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -2946,7 +2934,7 @@ mod slow {
                 json::stringify_pretty(note.clone(), 4)
             );
 
-            //The first address in a wallet should always contain all three current.maply extant
+            //The first address in a wallet should always contain all three currently extant
             //receiver types.
             recipient_restored
                 .do_send(vec![(&get_base_address!(faucet, "sapling"), 4_000, None)])
@@ -3317,7 +3305,6 @@ mod slow {
                     .read()
                     .await
                     .current
-                    .map
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
@@ -3358,7 +3345,6 @@ mod slow {
                     .read()
                     .await
                     .current
-                    .map
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
@@ -3464,7 +3450,6 @@ mod slow {
                 .read()
                 .await
                 .current
-                .map
         );
 
         assert_eq!(bala_sim, bala_syn);

@@ -4,6 +4,7 @@ use zcash_primitives::transaction::TxId;
 
 use super::data::{TransactionRecord, WitnessTrees};
 
+#[derive(Debug)]
 pub struct TransactionRecordMap(pub HashMap<TxId, TransactionRecord>);
 
 impl std::ops::Deref for TransactionRecordMap {
