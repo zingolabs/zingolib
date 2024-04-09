@@ -139,7 +139,6 @@ impl TxMapAndMaybeTrees {
         {
             let mut transaction_metadatas = self
                 .current
-                .map
                 .iter()
                 .collect::<Vec<(&TxId, &TransactionRecord)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover

@@ -114,7 +114,6 @@ impl TxMapAndMaybeTrees {
 
         let txids_to_remove = self
             .current
-            .map
             .iter()
             .filter(|(_, transaction_metadata)| {
                 transaction_metadata.status.is_broadcast_before(&cutoff)
@@ -136,7 +135,7 @@ impl TxMapAndMaybeTrees {
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
         if self.total_funds_spent_in(txid) > 0 {
-            if let Some(transaction_metadata) = self.current.map.get_mut(txid) {
+            if let Some(transaction_metadata) = self.current.get_mut(txid) {
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);
             }
@@ -158,7 +157,6 @@ impl TxMapAndMaybeTrees {
         datetime: u64,
     ) -> &'_ mut TransactionRecord {
         self.current
-            .map
             .entry(*txid)
             // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
             .and_modify(|transaction_metadata| {
@@ -319,7 +317,7 @@ impl TxMapAndMaybeTrees {
         spending_tx_status: ConfirmationStatus,
     ) -> u64 {
         // Find the UTXO
-        let value = if let Some(utxo_transacion_metadata) = self.current.map.get_mut(&spent_txid) {
+        let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
             if let Some(spent_utxo) = utxo_transacion_metadata
                 .transparent_notes
                 .iter_mut()
@@ -506,7 +504,7 @@ impl TxMapAndMaybeTrees {
     }
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
-        price.map(|p| self.current.map.get_mut(txid).map(|tx| tx.price = Some(p)));
+        price.map(|p| self.current.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
 }
 
