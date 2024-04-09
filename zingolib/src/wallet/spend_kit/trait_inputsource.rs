@@ -1,3 +1,4 @@
+!#[cfg(feature = "spendkit")]
 use zcash_client_backend::data_api::{InputSource, SpendableNotes};
 
 use crate::{error::ZingoLibError, wallet::notes::NoteRecordIdentifier};
