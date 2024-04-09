@@ -941,7 +941,7 @@ mod slow {
         //     4.3. rescan
         //     4.4. check that notes and utxos were detected by the wallet
         //
-        // # Current.map watch-only mode limitations:
+        // # Currently watch-only mode limitations:
         // - wallet will not detect funds on all transparent addresses
         //   see: https://github.com/zingolabs/zingolib/issues/245
         // - wallet will not detect funds on internal addresses
