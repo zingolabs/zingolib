@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use zcash_primitives::transaction::TxId;
 
-use super::data::{TransactionRecord, WitnessTrees};
+
+use super::data::{WitnessTrees};
 use crate::wallet::transaction_record_map::TransactionRecordMap;
 
 /// HashMap of all transactions in a wallet, keyed by txid.

@@ -6,7 +6,7 @@ use zcash_primitives::transaction::TxId;
 use crate::error::ZingoLibError;
 
 use crate::wallet::{
-    data::{TransactionRecord, WitnessTrees},
+    data::{TransactionRecord},
     notes::NoteRecordIdentifier,
 };
 
@@ -40,9 +40,9 @@ impl InputSource for TransactionRecordMap {
 
     fn get_spendable_note(
         &self,
-        txid: &TxId,
-        protocol: zcash_client_backend::ShieldedProtocol,
-        index: u32,
+        _txid: &TxId,
+        _protocol: zcash_client_backend::ShieldedProtocol,
+        _index: u32,
     ) -> Result<
         Option<
             zcash_client_backend::wallet::ReceivedNote<
@@ -57,11 +57,11 @@ impl InputSource for TransactionRecordMap {
 
     fn select_spendable_notes(
         &self,
-        account: Self::AccountId,
-        target_value: zcash_primitives::transaction::components::amount::NonNegativeAmount,
-        sources: &[zcash_client_backend::ShieldedProtocol],
-        anchor_height: zcash_primitives::consensus::BlockHeight,
-        exclude: &[Self::NoteRef],
+        _account: Self::AccountId,
+        _target_value: zcash_primitives::transaction::components::amount::NonNegativeAmount,
+        _sources: &[zcash_client_backend::ShieldedProtocol],
+        _anchor_height: zcash_primitives::consensus::BlockHeight,
+        _exclude: &[Self::NoteRef],
     ) -> Result<zcash_client_backend::data_api::SpendableNotes<Self::NoteRef>, Self::Error> {
         todo!()
     }
