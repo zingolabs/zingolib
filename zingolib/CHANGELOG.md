@@ -24,11 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test_framework` module
 - `test_framework::mocks` module
 - `lightclient::send`
-  - `do_propose` behind zip317 feature
-  - `do_send_proposal` behind zip317 feature
+  - `do_propose` behind "zip317" feature
+  - `do_send_proposal` behind "zip317" feature
 - `commands`
-  - `ProposeCommand` struct and methods
-  - `QuickSendCommand` struct and methods
+  - `ProposeCommand` struct and methods behind "zip317" feature
+  - `QuickSendCommand` struct and methods behind "zip317" feature
 
 ### Changed
 
@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - zingolib/src/wallet/transaction_record_map.rs -> zingolib/src/wallet/transaction_records_by_id.rs
 - TransactionRecordMap -> TransactionRecordsById
 - `commands`
-  - `get_commands` added propose and quicksend to entries behind zip317 feature
+  - `get_commands` added propose and quicksend to entries behind "zip317" feature
   - `SendCommand::help` formatting
 
 ### Removed
