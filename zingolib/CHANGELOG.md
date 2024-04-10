@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LightClient pub fn get_wallet_dir_location
 - `wallet::keys`:
   - `is_transparent_address`
+- pub struct crate::wallet::notes::NoteRecordIdentifier
 
 ### Changed
 
