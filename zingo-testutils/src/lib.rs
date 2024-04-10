@@ -429,6 +429,87 @@ pub async fn tx_actions(
     }
 }
 
+/// Returns the total transfer value of txid.
+pub async fn total_tx_value(client: &LightClient, txid: &str) -> u64 {
+    let notes = client.do_list_notes(true).await;
+
+    let mut tx_spend: u64 = 0;
+    let mut tx_change: u64 = 0;
+    if let JsonValue::Array(spent_utxos) = &notes["spent_utxos"] {
+        for utxo in spent_utxos {
+            if utxo["spent"] == txid || utxo["unconfirmed_spent"] == txid {
+                tx_spend += utxo["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+    if let JsonValue::Array(pending_utxos) = &notes["pending_utxos"] {
+        for utxo in pending_utxos {
+            if utxo["spent"] == txid || utxo["unconfirmed_spent"] == txid {
+                tx_spend += utxo["value"].as_u64().unwrap_or(0);
+            } else if utxo["created_in_txid"] == txid {
+                tx_change += utxo["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+    if let JsonValue::Array(unspent_utxos) = &notes["utxos"] {
+        for utxo in unspent_utxos {
+            if utxo["created_in_txid"] == txid {
+                tx_change += utxo["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+
+    if let JsonValue::Array(spent_sapling_notes) = &notes["spent_sapling_notes"] {
+        for note in spent_sapling_notes {
+            if note["spent"] == txid || note["unconfirmed_spent"] == txid {
+                tx_spend += note["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+    if let JsonValue::Array(pending_sapling_notes) = &notes["pending_sapling_notes"] {
+        for note in pending_sapling_notes {
+            if note["spent"] == txid || note["unconfirmed_spent"] == txid {
+                tx_spend += note["value"].as_u64().unwrap_or(0);
+            } else if note["created_in_txid"] == txid {
+                tx_change += note["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+    if let JsonValue::Array(unspent_sapling_notes) = &notes["unspent_sapling_notes"] {
+        for note in unspent_sapling_notes {
+            if note["created_in_txid"] == txid {
+                tx_change += note["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+
+    if let JsonValue::Array(spent_orchard_notes) = &notes["spent_orchard_notes"] {
+        for note in spent_orchard_notes {
+            if note["spent"] == txid || note["unconfirmed_spent"] == txid {
+                tx_spend += note["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+    if let JsonValue::Array(pending_orchard_notes) = &notes["pending_orchard_notes"] {
+        for note in pending_orchard_notes {
+            if note["spent"] == txid || note["unconfirmed_spent"] == txid {
+                tx_spend += note["value"].as_u64().unwrap_or(0);
+            } else if note["created_in_txid"] == txid {
+                tx_change += note["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+    if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
+        for note in unspent_orchard_notes {
+            if note["created_in_txid"] == txid {
+                tx_change += note["value"].as_u64().unwrap_or(0);
+            }
+        }
+    }
+
+    tx_spend - tx_change
+}
+
 pub mod scenarios {
     //! In practice there are several common scenarios for which helpers are provided.
     //! These scenarios vary in the configuration of clients in use.  Most scenarios
