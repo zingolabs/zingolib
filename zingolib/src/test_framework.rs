@@ -5,7 +5,8 @@ pub(crate) mod macros;
 mod mocks;
 
 #[allow(dead_code)]
-pub(crate) fn create_txid_and_tnote() -> (zcash_primitives::transaction::TxId, TransparentNote) {
+pub(crate) fn create_empty_txid_and_tnote() -> (zcash_primitives::transaction::TxId, TransparentNote)
+{
     // A single transparent note makes is_incoming_trsaction true.
     let txid = zcash_primitives::transaction::TxId::from_bytes([0u8; 32]);
     (
@@ -35,12 +36,12 @@ pub(crate) fn create_transaction_record_with_one_tnote(
 #[allow(dead_code)]
 pub(crate) fn default_trecord_with_one_tnote(
 ) -> crate::wallet::transaction_record::TransactionRecord {
-    let (txid, transparent_note) = create_txid_and_tnote();
+    let (txid, transparent_note) = create_empty_txid_and_tnote();
     create_transaction_record_with_one_tnote(txid, transparent_note)
 }
 #[allow(dead_code)]
 pub(crate) fn create_note_record_id() -> crate::wallet::notes::NoteRecordIdentifier {
-    let (txid, tnote) = create_txid_and_tnote();
+    let (txid, tnote) = create_empty_txid_and_tnote();
     let transaction_record = create_transaction_record_with_one_tnote(txid, tnote);
     let index = 5u32;
     let txid = transaction_record.txid;
