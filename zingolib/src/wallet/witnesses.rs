@@ -13,7 +13,7 @@ impl LightWallet {
             .transaction_metadata_set
             .write()
             .await
-            .witness_trees
+            .witness_trees_mut()
         {
             trees.insert_all_frontier_nodes(legacy_sapling_frontier, legacy_orchard_frontier)
         };
@@ -25,7 +25,7 @@ impl LightWallet {
             .transaction_metadata_set
             .write()
             .await;
-        if let Some(ref mut trees) = txmds_writelock.witness_trees {
+        if let Some(ref mut trees) = txmds_writelock.witness_trees_mut() {
             trees
                 .witness_tree_sapling
                 .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
@@ -43,8 +43,7 @@ impl LightWallet {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .is_some_and(|trees| {
                 trees
                     .witness_tree_orchard
