@@ -22,7 +22,6 @@ pub(crate) fn create_transaction_record_with_one_tnote(
     transparent_note: TransparentNote,
 ) -> crate::wallet::transaction_record::TransactionRecord {
     // A single transparent note makes is_incoming_trsaction true.
-    let (txid, transparent_note) = create_tnote();
     let mut transaction_record = crate::wallet::transaction_record::TransactionRecord::new(
         zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
             zcash_primitives::consensus::BlockHeight::from_u32(5),
@@ -32,6 +31,12 @@ pub(crate) fn create_transaction_record_with_one_tnote(
     );
     transaction_record.transparent_notes.push(transparent_note);
     transaction_record
+}
+#[allow(dead_code)]
+pub(crate) fn default_trecord_with_one_tnote(
+) -> crate::wallet::transaction_record::TransactionRecord {
+    let (txid, transparent_note) = create_txid_and_tnote();
+    create_transaction_record_with_one_tnote(txid, transparent_note)
 }
 #[allow(dead_code)]
 pub(crate) fn create_note_record_id() -> crate::wallet::notes::NoteRecordIdentifier {
