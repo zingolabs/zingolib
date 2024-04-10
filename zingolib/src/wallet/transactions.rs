@@ -48,6 +48,7 @@ impl zcash_client_backend::data_api::InputSource for TransactionRecordMap {
         Ok(self.get_shielded_received_note_from_identifier(note_record_reference))
     }
 
+    #[allow(unused_variables)]
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
