@@ -53,6 +53,7 @@ pub mod notes;
 pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
+pub mod transaction_record_map;
 pub(crate) mod transactions;
 pub mod utils;
 
