@@ -41,10 +41,8 @@ pub(crate) fn default_trecord_with_one_tnote(
 }
 #[allow(dead_code)]
 pub(crate) fn create_note_record_id() -> crate::wallet::notes::NoteRecordIdentifier {
-    let (txid, tnote) = create_empty_txid_and_tnote();
-    let transaction_record = create_transaction_record_with_one_tnote(txid, tnote);
+    let (txid, _tnote) = create_empty_txid_and_tnote();
     let index = 5u32;
-    let txid = transaction_record.txid;
     crate::wallet::notes::NoteRecordIdentifier {
         txid,
         pool: zcash_client_backend::PoolType::Transparent,
