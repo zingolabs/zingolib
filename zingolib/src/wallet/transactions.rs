@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::data::WitnessTrees;
-use crate::wallet::records_by_id::TransactionRecordsById;
+use crate::wallet::transaction_records_by_id::TransactionRecordsById;
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
