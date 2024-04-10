@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use zcash_primitives::transaction::TxId;
 
-use super::data::TransactionRecord;
+use crate::wallet::data::TransactionRecord;
 
 #[derive(Debug)]
 pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
