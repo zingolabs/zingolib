@@ -9,6 +9,8 @@ use zcash_primitives::{transaction::components::amount::NonNegativeAmount, zip32
 
 use crate::error::{ZingoLibError, ZingoLibResult};
 
+use super::{NoteRecordIdentifier, TransactionRecordMap};
+
 impl InputSource for TransactionRecordMap {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
