@@ -21,7 +21,7 @@ use super::notes::TransparentNote;
 use super::traits::DomainWalletExt;
 use super::traits::Recipient;
 
-use super::{data::BlockData, transactions::TxMapAndMaybeTrees};
+use super::{data::BlockData, transactions::TxMapAndMaybeSpendingData};
 
 use super::LightWallet;
 impl LightWallet {
@@ -270,7 +270,7 @@ impl LightWallet {
             .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
     }
 
-    pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
+    pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeSpendingData>> {
         self.transaction_context.transaction_metadata_set.clone()
     }
 }

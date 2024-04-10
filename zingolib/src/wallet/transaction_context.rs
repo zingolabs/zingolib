@@ -3,20 +3,20 @@ use tokio::sync::RwLock;
 
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::{keys::unified::WalletCapability, transactions::TxMapAndMaybeTrees};
+use crate::wallet::{keys::unified::WalletCapability, transactions::TxMapAndMaybeSpendingData};
 
 #[derive(Clone)]
 pub struct TransactionContext {
     pub config: ZingoConfig,
     pub(crate) key: Arc<WalletCapability>,
-    pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+    pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeSpendingData>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeSpendingData>>,
     ) -> Self {
         Self {
             config: config.clone(),

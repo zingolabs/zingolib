@@ -8,7 +8,7 @@ use super::{
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    transactions::TxMapAndMaybeTrees,
+    transactions::TxMapAndMaybeSpendingData,
 };
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
@@ -452,14 +452,14 @@ where
             .sum()
     }
     fn transaction_metadata_set_to_shardtree(
-        txmds: &TxMapAndMaybeTrees,
+        txmds: &TxMapAndMaybeSpendingData,
     ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees()
             .map(|trees| Self::get_shardtree(trees))
     }
     fn transaction_metadata_set_to_shardtree_mut(
-        txmds: &mut TxMapAndMaybeTrees,
+        txmds: &mut TxMapAndMaybeSpendingData,
     ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees_mut()

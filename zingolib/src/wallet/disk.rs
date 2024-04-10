@@ -28,7 +28,7 @@ use super::LightWallet;
 use super::{
     data::{BlockData, WalletZecPriceInfo},
     transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
+    transactions::TxMapAndMaybeSpendingData,
 };
 
 impl LightWallet {
@@ -138,9 +138,9 @@ impl LightWallet {
         }
 
         let mut transactions = if external_version <= 14 {
-            TxMapAndMaybeTrees::read_old(&mut reader, &wallet_capability)
+            TxMapAndMaybeSpendingData::read_old(&mut reader, &wallet_capability)
         } else {
-            TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
+            TxMapAndMaybeSpendingData::read(&mut reader, &wallet_capability)
         }?;
         let txids = transactions
             .transaction_records_by_id

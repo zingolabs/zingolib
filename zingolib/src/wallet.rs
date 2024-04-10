@@ -43,7 +43,7 @@ use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
+    transactions::TxMapAndMaybeSpendingData,
 };
 
 pub mod data;
@@ -344,9 +344,9 @@ impl LightWallet {
             ));
         };
         let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_spending()))
+            Arc::new(RwLock::new(TxMapAndMaybeSpendingData::new_spending()))
         } else {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_viewing()))
+            Arc::new(RwLock::new(TxMapAndMaybeSpendingData::new_viewing()))
         };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);

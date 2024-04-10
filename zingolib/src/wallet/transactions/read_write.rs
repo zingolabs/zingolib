@@ -11,8 +11,8 @@ use crate::wallet::{
     WitnessTrees,
 };
 
-use super::{TransactionRecordsById, TxMapAndMaybeTrees};
-impl TxMapAndMaybeTrees {
+use super::{TransactionRecordsById, TxMapAndMaybeSpendingData};
+impl TxMapAndMaybeSpendingData {
     pub fn serialized_version() -> u64 {
         22
     }
@@ -165,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write() {
-        let mut tms = TxMapAndMaybeTrees::new_spending();
+        let mut tms = TxMapAndMaybeSpendingData::new_spending();
         let mut buffer = Cursor::new(Vec::new());
 
         // Perform the write operation

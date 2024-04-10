@@ -8,7 +8,7 @@ use crate::wallet::{
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-pub struct TxMapAndMaybeTrees {
+pub struct TxMapAndMaybeSpendingData {
     pub transaction_records_by_id: TransactionRecordsById,
     spending_data: Option<SpendingData>,
 }
@@ -17,14 +17,14 @@ pub mod get;
 pub mod read_write;
 pub mod recording;
 
-impl TxMapAndMaybeTrees {
-    pub(crate) fn new_spending() -> TxMapAndMaybeTrees {
+impl TxMapAndMaybeSpendingData {
+    pub(crate) fn new_spending() -> TxMapAndMaybeSpendingData {
         Self {
             transaction_records_by_id: TransactionRecordsById(HashMap::new()),
             spending_data: Some(SpendingData::default()),
         }
     }
-    pub(crate) fn new_viewing() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_viewing() -> TxMapAndMaybeSpendingData {
         Self {
             transaction_records_by_id: TransactionRecordsById(HashMap::new()),
             spending_data: None,
