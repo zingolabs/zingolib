@@ -37,6 +37,7 @@ pub struct TxMapAndMaybeTrees {
 pub mod get;
 pub mod read_write;
 pub mod recording;
+mod trait_inputsource;
 
 impl TxMapAndMaybeTrees {
     pub(crate) fn new_with_witness_trees() -> TxMapAndMaybeTrees {
