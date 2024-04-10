@@ -5,21 +5,21 @@
 
 use crate::error::ZingoLibResult;
 
+use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    transactions::TransactionMetadataSet,
+    transactions::TxMapAndMaybeTrees,
     utils::txid_from_slice,
     MemoDownloadOption,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
-use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
+use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-use sapling_crypto::SaplingIvk;
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -41,7 +41,7 @@ use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,
-    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -49,7 +49,7 @@ impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
         wc: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
             config,
@@ -89,8 +89,12 @@ impl TrialDecryptions {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let sapling_ivk = SaplingIvk::try_from(&*wc).ok();
-            let orchard_ivk = orchard::keys::IncomingViewingKey::try_from(&*wc).ok();
+            let sapling_ivk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&*wc)
+                .ok()
+                .map(|key| key.derive_ivk());
+            let orchard_ivk = orchard::keys::FullViewingKey::try_from(&*wc)
+                .ok()
+                .map(|key| key.derive_ivk());
 
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
@@ -128,9 +132,9 @@ impl TrialDecryptions {
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<WalletCapability>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        sapling_ivk: Option<SaplingIvk>,
-        orchard_ivk: Option<OrchardIvk>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        sapling_ivk: Option<Ivk<SaplingDomain, External>>,
+        orchard_ivk: Option<Ivk<OrchardDomain, External>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -179,7 +183,7 @@ impl TrialDecryptions {
                         compact_transaction,
                         transaction_num,
                         &compact_block,
-                        sapling_crypto::note_encryption::PreparedIncomingViewingKey::new(ivk),
+                        ivk.ivk.clone(),
                         height,
                         &config,
                         &wc,
@@ -199,7 +203,7 @@ impl TrialDecryptions {
                         compact_transaction,
                         transaction_num,
                         &compact_block,
-                        orchard::keys::PreparedIncomingViewingKey::new(ivk),
+                        ivk.ivk.clone(),
                         height,
                         &config,
                         &wc,
@@ -263,7 +267,7 @@ impl TrialDecryptions {
         config: &zingoconfig::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -418,7 +422,7 @@ fn update_witnesses<D>(
         )>,
         BlockHeight,
     )>,
-    txmds_writelock: &mut TransactionMetadataSet,
+    txmds_writelock: &mut TxMapAndMaybeTrees,
     wc: &Arc<WalletCapability>,
 ) -> ZingoLibResult<()>
 where

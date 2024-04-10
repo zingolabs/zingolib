@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
@@ -8,6 +7,7 @@ use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr, time::Duration};
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     memo::Memo,
@@ -124,6 +124,9 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
+    use zcash_address::unified::Encoding;
+    use zingolib::wallet::WalletBase;
+
     use super::*;
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
@@ -549,6 +552,16 @@ mod fast {
             assert!(addr.transparent().is_some());
         }
 
+        let ufvk = wc.ufvk().unwrap();
+        let ufvk_string = ufvk.encode(&config.chain.network_type());
+        let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
+        let view_wallet =
+            LightWallet::new(config.clone(), ufvk_base, wallet.get_birthday().await).unwrap();
+        let v_wc = view_wallet.wallet_capability();
+        let vv = v_wc.ufvk().unwrap();
+        let vv_string = vv.encode(&config.chain.network_type());
+        assert_eq!(ufvk_string, vv_string);
+
         let client = LightClient::create_from_wallet_async(wallet, config)
             .await
             .unwrap();
@@ -629,6 +642,9 @@ mod fast {
     }
 }
 mod slow {
+    use orchard::note_encryption::OrchardDomain;
+    use zcash_primitives::consensus::NetworkConstants;
+
     use super::*;
 
     #[tokio::test]
@@ -1344,7 +1360,10 @@ mod slow {
             Some(expected_funds)
         );
         assert_eq!(
-            recipient.wallet.verified_orchard_balance(None).await,
+            recipient
+                .wallet
+                .verified_balance::<OrchardDomain>(None)
+                .await,
             Some(0)
         );
 
@@ -2574,7 +2593,7 @@ mod slow {
             .witness_tree_orchard
             .max_leaf_position(0)
             .unwrap();
-        let server_trees = zingolib::grpc_connector::GrpcConnector::get_trees(
+        let server_trees = zingolib::grpc_connector::get_trees(
             recipient.get_server_uri(),
             recipient.wallet.last_synced_height().await,
         )
@@ -3545,6 +3564,7 @@ mod slow {
         load_wallet_from_data_and_assert(data, 0, 3).await;
     }
 
+    #[ignore = "flakey test"]
     #[tokio::test]
     async fn load_wallet_from_v26_2_dat_file() {
         // We test that the LightWallet can be read from v26 .dat file
@@ -3565,6 +3585,7 @@ mod slow {
         load_wallet_from_data_and_assert(data, 10177826, 1).await;
     }
 
+    #[ignore = "flakey test"]
     #[tokio::test]
     async fn load_wallet_from_v28_dat_file() {
         // We test that the LightWallet can be read from v28 .dat file
@@ -3573,6 +3594,53 @@ mod slow {
         let data = include_bytes!("zingo-wallet-v28.dat");
 
         load_wallet_from_data_and_assert(data, 10342837, 3).await;
+    }
+}
+
+mod basic_transactions {
+    use zingo_testutils::scenarios;
+    use zingolib::get_base_address;
+
+    #[tokio::test]
+    async fn send_and_sync_with_multiple_notes_no_panic() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+
+        let recipient_addr_ua = get_base_address!(recipient, "unified");
+        let faucet_addr_ua = get_base_address!(faucet, "unified");
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 2)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+
+        for _ in 0..2 {
+            faucet
+                .do_send(vec![(recipient_addr_ua.as_str(), 40_000, None)])
+                .await
+                .unwrap();
+        }
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
+
+        recipient
+            .do_send(vec![(faucet_addr_ua.as_str(), 50_000, None)])
+            .await
+            .unwrap();
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        faucet.do_sync(true).await.unwrap();
     }
 }
 

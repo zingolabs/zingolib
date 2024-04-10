@@ -1,12 +1,9 @@
 use crate::wallet::traits::FromCommitment;
-use crate::{
-    grpc_connector::GrpcConnector,
-    wallet::{
-        data::{BlockData, PoolNullifier},
-        notes::ShieldedNoteInterface,
-        traits::DomainWalletExt,
-        transactions::TransactionMetadataSet,
-    },
+use crate::wallet::{
+    data::{BlockData, PoolNullifier},
+    notes::ShieldedNoteInterface,
+    traits::DomainWalletExt,
+    transactions::TxMapAndMaybeTrees,
 };
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
@@ -320,19 +317,25 @@ impl BlockManagementData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) {
-        // First, pop the first block (which is the top block) in the existing_blocks.
-        let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
-        if top_wallet_block.height != reorg_height {
-            panic!("Wrong block reorg'd");
-        }
+        let mut existing_blocks_writelock = existing_blocks.write().await;
+        if existing_blocks_writelock.len() != 0 {
+            // First, pop the first block (which is the top block) in the existing_blocks.
+            let top_wallet_block = existing_blocks_writelock
+                .drain(0..1)
+                .next()
+                .expect("there to be blocks");
+            if top_wallet_block.height != reorg_height {
+                panic!("Wrong block reorg'd");
+            }
 
-        // Remove all wallet transactions at the height
-        transaction_metadata_set
-            .write()
-            .await
-            .remove_txns_at_height(reorg_height);
+            // Remove all wallet transactions at the height
+            transaction_metadata_set
+                .write()
+                .await
+                .remove_txns_at_height(reorg_height);
+        }
     }
 
     /// Ingest the incoming blocks, handle any reorgs, then populate the block data
@@ -340,7 +343,7 @@ impl BlockManagementData {
         &self,
         start_block: u64,
         end_block: u64,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<Option<u64>, String>>,
@@ -517,7 +520,7 @@ impl BlockManagementData {
             let tree = if prev_height < activation_height {
                 frontier::CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
             } else {
-                let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
+                let tree_state = crate::grpc_connector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
                 self.unverified_treestates.write().await.push(tree_state);
                 read_commitment_tree(&tree[..]).map_err(|e| format!("{}", e))?
@@ -586,7 +589,7 @@ struct BlockManagementThreadData {
 impl BlockManagementThreadData {
     async fn handle_reorgs_populate_data_inner(
         mut self,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> Result<Option<u64>, String> {
         // Temporary holding place for blocks while we process them.
@@ -832,7 +835,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -881,7 +884,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -977,7 +980,7 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;

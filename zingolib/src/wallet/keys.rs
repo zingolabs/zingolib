@@ -8,8 +8,10 @@ use sapling_crypto::{
 };
 use sha2::Sha256;
 use zcash_client_backend::address;
-use zcash_primitives::{legacy::TransparentAddress, zip32::ChildIndex};
-use zingoconfig::ZingoConfig;
+use zcash_primitives::{
+    consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
+};
+use zingoconfig::{ChainType, ZingoConfig};
 
 pub mod extended_transparent;
 pub mod unified;
@@ -58,7 +60,7 @@ pub fn get_zaddr_from_bip39seed(
         &ExtendedSpendingKey::master(bip39_seed),
         &[
             ChildIndex::hardened(32),
-            ChildIndex::hardened(config.get_coin_type()),
+            ChildIndex::hardened(config.chain.coin_type()),
             ChildIndex::hardened(pos),
         ],
     );
@@ -79,21 +81,28 @@ pub fn get_zaddr_from_bip39seed(
     (extsk, fvk, address)
 }
 
-pub fn is_shielded_address(addr: &str, config: &ZingoConfig) -> bool {
+pub fn is_shielded_address(addr: &str, chain: &ChainType) -> bool {
     matches!(
-        address::Address::decode(&config.chain, addr),
+        address::Address::decode(chain, addr),
         Some(address::Address::Sapling(_)) | Some(address::Address::Unified(_))
+    )
+}
+
+pub fn is_transparent_address(addr: &str, chain: &ChainType) -> bool {
+    matches!(
+        address::Address::decode(chain, addr),
+        Some(address::Address::Transparent(_))
     )
 }
 
 /// STATIC METHODS
 pub fn address_from_pubkeyhash(config: &ZingoConfig, taddr: TransparentAddress) -> String {
     match taddr {
-        TransparentAddress::PublicKey(hash) => {
-            hash.to_base58check(&config.base58_pubkey_address(), &[])
+        TransparentAddress::PublicKeyHash(hash) => {
+            hash.to_base58check(&config.chain.b58_pubkey_address_prefix(), &[])
         }
-        TransparentAddress::Script(hash) => {
-            hash.to_base58check(&config.base58_script_address(), &[])
+        TransparentAddress::ScriptHash(hash) => {
+            hash.to_base58check(&config.chain.b58_script_address_prefix(), &[])
         }
     }
 }

@@ -4,6 +4,7 @@ extern crate rust_embed;
 
 pub mod blaze;
 pub mod commands;
+pub mod data;
 pub mod error;
 pub mod grpc_connector;
 pub mod lightclient;
@@ -25,7 +26,7 @@ pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u
     tokio::runtime::Runtime::new()
         .unwrap()
         .block_on(async move {
-            crate::grpc_connector::GrpcConnector::get_info(lightwalletd_uri)
+            crate::grpc_connector::get_info(lightwalletd_uri)
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))
         })

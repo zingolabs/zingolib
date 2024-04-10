@@ -1,6 +1,6 @@
-use crate::wallet::keys::is_shielded_address;
+use crate::wallet::keys::is_transparent_address;
 use crate::wallet::{MemoDownloadOption, Pool};
-use crate::{lightclient::LightClient, wallet::utils};
+use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
@@ -10,7 +10,13 @@ use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::Address;
+use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+
+use self::error::CommandError;
+
+mod error;
+mod utils;
 
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
@@ -191,7 +197,6 @@ impl Command for ParseAddressCommand {
                         zingoconfig::ChainType::Mainnet => "main",
                         zingoconfig::ChainType::Testnet => "test",
                         zingoconfig::ChainType::Regtest(_) => "regtest",
-                        zingoconfig::ChainType::FakeMainnet => unreachable!(),
                     };
 
                     match recipient_address {
@@ -620,7 +625,7 @@ impl Command for ExportUfvkCommand {
             Ok(ufvk) => {
                 use zcash_address::unified::Encoding as _;
                 object! {
-                    "ufvk" => ufvk.encode(&lightclient.config().chain.to_zcash_address_network()),
+                    "ufvk" => ufvk.encode(&lightclient.config().chain.network_type()),
                     "birthday" => RT.block_on(lightclient.wallet.get_birthday())
                 }
                 .pretty(2)
@@ -721,7 +726,8 @@ impl Command for EncryptMessageCommand {
                 return format!("{}\n{}", es, self.help());
             }
 
-            let memo = utils::interpret_memo_string(j["memo"].as_str().unwrap().to_string());
+            let memo =
+                wallet::utils::interpret_memo_string(j["memo"].as_str().unwrap().to_string());
             if memo.is_err() {
                 return format!("{}\n{}", memo.err().unwrap(), self.help());
             }
@@ -731,7 +737,7 @@ impl Command for EncryptMessageCommand {
         } else if args.len() == 2 {
             let to = args[0].to_string();
 
-            let memo = utils::interpret_memo_string(args[1].to_string());
+            let memo = wallet::utils::interpret_memo_string(args[1].to_string());
             if memo.is_err() {
                 return format!("{}\n{}", memo.err().unwrap(), self.help());
             }
@@ -790,9 +796,9 @@ impl Command for SendCommand {
         indoc! {r#"
             Send ZEC to a given address(es)
             Usage:
-            send <address> <amount in zatoshis> "optional_memo"
+            send <address> <amount in zatoshis> "<optional memo>"
             OR
-            send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'
+            send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
 
             NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
             Example:
@@ -807,112 +813,37 @@ impl Command for SendCommand {
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         // Parse the args. There are two argument types.
-        // 1 - A set of 2(+1 optional) arguments for a single address send representing address, value, memo?
-        // 2 - A single argument in the form of a JSON string that is "[{address: address, value: value, memo: memo},...]"
-        if args.is_empty() || args.len() > 3 {
-            return self.help().to_string();
-        }
-
-        RT.block_on(async move {
-            // Check for a single argument that can be parsed as JSON
-            let send_args = if args.len() == 1 {
-                let arg_list = args[0];
-
-                let json_args = match json::parse(arg_list) {
-                    Ok(j) => j,
-                    Err(e) => {
-                        let es = format!("Couldn't understand JSON: {}", e);
-                        return format!("{}\n{}", es, self.help());
-                    }
-                };
-
-                if !json_args.is_array() {
-                    return format!("Couldn't parse argument as array\n{}", self.help());
-                }
-
-                let fee = u64::from(MINIMUM_FEE);
-                let maybe_send_args = json_args
-                    .members()
-                    .map(|j| {
-                        if !j.has_key("address") || !j.has_key("amount") {
-                            Err("Need 'address' and 'amount'\n".to_string())
-                        } else {
-                            let amount = Some(j["amount"].as_u64().unwrap());
-
-                            match amount {
-                                Some(amt) => Ok((
-                                    j["address"].as_str().unwrap().to_string(),
-                                    amt,
-                                    j["memo"].as_str().map(|s| s.to_string()),
-                                )),
-                                None => Err(format!(
-                                    "Not enough in wallet to pay transaction fee of {}",
-                                    fee
-                                )),
-                            }
-                        }
-                    })
-                    .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
-
-                match maybe_send_args {
-                    Ok(a) => a.clone(),
-                    Err(s) => {
-                        return format!("Error: {}\n{}", s, self.help());
-                    }
-                }
-            } else if args.len() == 2 || args.len() == 3 {
-                let address = args[0].to_string();
-
-                // Make sure we can parse the amount
-                let value = match args[1].parse::<u64>() {
-                    Ok(amt) => amt,
-                    Err(e) => return format!("Couldn't parse amount: {}", e),
-                };
-
-                let memo = if args.len() == 3 {
-                    Some(args[2].to_string())
-                } else {
-                    None
-                };
-
-                // Memo has to be None if not sending to a shielded address
-                if memo.is_some() && !is_shielded_address(&address, &lightclient.config) {
-                    return format!("Can't send a memo to the non-shielded address {}", address);
-                }
-
-                vec![(args[0].to_string(), value, memo)]
-            } else {
-                return self.help().to_string();
-            };
-
-            // Convert to the right format.
-            let mut error = None;
-            let tos = send_args
-                .iter()
-                .map(|(a, v, m)| {
-                    (
-                        a.as_str(),
-                        *v,
-                        match m {
-                            // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
-                            // interpret it as a hex
-                            Some(s) => match utils::interpret_memo_string(s.clone()) {
-                                Ok(m) => Some(m),
-                                Err(e) => {
-                                    error = Some(format!("Couldn't interpret memo: {}", e));
-                                    None
-                                }
-                            },
-                            None => None,
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
-            if let Some(e) = error {
-                return e;
+        // 1 - A set of 2(+1 optional) arguments for a single address send representing address, amount, memo?
+        // 2 - A single argument in the form of a JSON string that is '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
+        let send_inputs = match utils::parse_send_args(args) {
+            Ok(args) => args,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    e
+                )
             }
-
-            match lightclient.do_send(tos).await {
+        };
+        for send in &send_inputs {
+            let address = &send.0;
+            let memo = &send.2;
+            if memo.is_some() && is_transparent_address(address, &lightclient.config.chain) {
+                return format!(
+                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    CommandError::IncompatibleMemo,
+                );
+            }
+        }
+        RT.block_on(async move {
+            match lightclient
+                .do_send(
+                    send_inputs
+                        .iter()
+                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
+                        .collect(),
+                )
+                .await
+            {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
@@ -925,24 +856,6 @@ impl Command for SendCommand {
     }
 }
 
-fn wallet_deleter(lightclient: &LightClient) -> String {
-    RT.block_on(async move {
-        match lightclient.do_delete().await {
-            Ok(_) => {
-                let r = object! { "result" => "success",
-                "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
-                r.pretty(2)
-            }
-            Err(e) => {
-                let r = object! {
-                    "result" => "error",
-                    "error" => e
-                };
-                r.pretty(2)
-            }
-        }
-    })
-}
 struct DeleteCommand {}
 impl Command for DeleteCommand {
     fn help(&self) -> &'static str {
@@ -961,7 +874,22 @@ impl Command for DeleteCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        wallet_deleter(lightclient)
+        RT.block_on(async move {
+            match lightclient.do_delete().await {
+                Ok(_) => {
+                    let r = object! { "result" => "success",
+                    "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
+                    r.pretty(2)
+                }
+                Err(e) => {
+                    let r = object! {
+                        "result" => "error",
+                        "error" => e
+                    };
+                    r.pretty(2)
+                }
+            }
+        })
     }
 }
 struct SeedCommand {}

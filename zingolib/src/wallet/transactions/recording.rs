@@ -22,8 +22,8 @@ use crate::{
     },
 };
 
-use super::TransactionMetadataSet;
-impl TransactionMetadataSet {
+use super::TxMapAndMaybeTrees;
+impl TxMapAndMaybeTrees {
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.current.remove(txid);
@@ -467,7 +467,8 @@ impl TransactionMetadataSet {
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
                     .retain(|n| n.nullifier().is_some());
             }
-            Some(n) => {
+            #[allow(unused_mut)]
+            Some(mut n) => {
                 // An overwrite should be safe here: TODO: test that confirms this
                 *n = nd;
             }
@@ -509,7 +510,7 @@ impl TransactionMetadataSet {
 }
 
 // shardtree
-impl TransactionMetadataSet {
+impl TxMapAndMaybeTrees {
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(

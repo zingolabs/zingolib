@@ -7,14 +7,14 @@ use sapling_crypto::{
     note::ExtractedNoteCommitment,
     note_encryption::{try_sapling_note_decryption, PreparedIncomingViewingKey, SaplingDomain},
     value::NoteValue,
-    PaymentAddress, Rseed, SaplingIvk,
+    PaymentAddress, Rseed,
 };
 use std::io::{self, ErrorKind, Read};
 use zcash_note_encryption::{
     Domain, EphemeralKeyBytes, NoteEncryption, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
-    consensus::{sapling_zip212_enforcement, BlockHeight},
+    consensus::BlockHeight,
     memo::{Memo, MemoBytes},
 };
 use zingoconfig::ChainType;
@@ -104,7 +104,7 @@ impl Message {
         Ok(data)
     }
 
-    pub fn decrypt(data: &[u8], ivk: &SaplingIvk) -> io::Result<Message> {
+    pub fn decrypt(data: &[u8], ivk: &PreparedIncomingViewingKey) -> io::Result<Message> {
         if data.len() != 1 + Message::magic_word().len() + 32 + 32 + ENC_CIPHERTEXT_SIZE {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
@@ -182,13 +182,16 @@ impl Message {
         // really apply, since this note is not spendable anyway, so the rseed and the note itself
         // are not usable.
         match try_sapling_note_decryption(
-            &PreparedIncomingViewingKey::new(ivk),
+            ivk,
             &Unspendable {
                 cmu_bytes,
                 epk_bytes,
                 enc_bytes,
             },
-            sapling_zip212_enforcement(&ChainType::Mainnet, BlockHeight::from_u32(1_100_000)),
+            zcash_primitives::transaction::components::sapling::zip212_enforcement(
+                &ChainType::Mainnet,
+                BlockHeight::from_u32(1_100_000),
+            ),
         ) {
             Some((_note, address, memo)) => Ok(Self::new(
                 address,
@@ -212,7 +215,11 @@ pub mod tests {
 
     use super::*;
 
-    fn get_random_zaddr() -> (ExtendedSpendingKey, SaplingIvk, PaymentAddress) {
+    fn get_random_zaddr() -> (
+        ExtendedSpendingKey,
+        PreparedIncomingViewingKey,
+        PaymentAddress,
+    ) {
         let mut rng = OsRng;
         let mut seed = [0u8; 32];
         rng.fill(&mut seed);
@@ -222,7 +229,11 @@ pub mod tests {
         let fvk = dfvk;
         let (_, addr) = fvk.default_address();
 
-        (extsk, fvk.fvk().vk.ivk(), addr)
+        (
+            extsk,
+            PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
+            addr,
+        )
     }
 
     #[test]

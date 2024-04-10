@@ -8,7 +8,7 @@ use super::{
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    transactions::TransactionMetadataSet,
+    transactions::TxMapAndMaybeTrees,
 };
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
@@ -39,7 +39,7 @@ use zcash_note_encryption::{
     BatchDomain, Domain, EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
-    consensus::{sapling_zip212_enforcement, BlockHeight, NetworkUpgrade, Parameters},
+    consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
     merkle_tree::read_incremental_witness,
     transaction::{
@@ -122,7 +122,12 @@ impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
 
 impl ShieldedOutputExt<SaplingDomain> for OutputDescription<GrothProofBytes> {
     fn domain(&self, height: BlockHeight, parameters: ChainType) -> SaplingDomain {
-        SaplingDomain::new(sapling_zip212_enforcement(&parameters, height))
+        SaplingDomain::new(
+            zcash_primitives::transaction::components::sapling::zip212_enforcement(
+                &parameters,
+                height,
+            ),
+        )
     }
 
     fn out_ciphertext(&self) -> [u8; 80] {
@@ -241,7 +246,7 @@ impl Recipient for orchard::Address {
                 self.to_raw_address_bytes(),
             )])
             .expect("Could not create UA from orchard address"),
-            &chain.address_network().unwrap(),
+            &chain.network_type(),
         )
     }
 }
@@ -286,7 +291,12 @@ impl CompactOutput<SaplingDomain> for CompactSaplingOutput {
     }
 
     fn domain(&self, parameters: ChainType, height: BlockHeight) -> SaplingDomain {
-        SaplingDomain::new(sapling_zip212_enforcement(&parameters, height))
+        SaplingDomain::new(
+            zcash_primitives::transaction::components::sapling::zip212_enforcement(
+                &parameters,
+                height,
+            ),
+        )
     }
 
     fn to_compact_output_impl(&self) -> Self::CompactAction {
@@ -304,9 +314,7 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
     }
 
     fn domain(&self, _parameters: ChainType, _heightt: BlockHeight) -> OrchardDomain {
-        OrchardDomain::for_nullifier(
-            orchard::note::Nullifier::from_bytes(slice_to_array(&self.nullifier)).unwrap(),
-        )
+        OrchardDomain::for_compact_action(&self.to_compact_output_impl())
     }
 
     fn to_compact_output_impl(&self) -> Self::CompactAction {
@@ -419,7 +427,11 @@ where
     const NU: NetworkUpgrade;
     const NAME: &'static str;
 
-    type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>;
+    type Fvk: Clone
+        + Send
+        + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
+        + for<'a> TryFrom<&'a WalletCapability>
+        + super::keys::unified::Fvk<Self>;
 
     type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
@@ -440,7 +452,7 @@ where
             .sum()
     }
     fn transaction_metadata_set_to_shardtree(
-        txmds: &TransactionMetadataSet,
+        txmds: &TxMapAndMaybeTrees,
     ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees
@@ -448,7 +460,7 @@ where
             .map(|trees| Self::get_shardtree(trees))
     }
     fn transaction_metadata_set_to_shardtree_mut(
-        txmds: &mut TransactionMetadataSet,
+        txmds: &mut TxMapAndMaybeTrees,
     ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees
@@ -474,8 +486,6 @@ where
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
 }
 
@@ -543,12 +553,6 @@ impl DomainWalletExt for SaplingDomain {
     }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
-    }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
-        Self::IncomingViewingKey::try_from(wc)
-    }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
-        Self::OutgoingViewingKey::try_from(wc)
     }
 
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
@@ -620,12 +624,6 @@ impl DomainWalletExt for OrchardDomain {
     }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
-    }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
-        Self::IncomingViewingKey::try_from(wc)
-    }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
-        Self::OutgoingViewingKey::try_from(wc)
     }
 
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
@@ -942,14 +940,14 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         let value = reader.read_u64::<LittleEndian>()?;
         let mut nullifier_bytes = [0; 32];
         reader.read_exact(&mut nullifier_bytes)?;
-        let nullifier = Option::from(orchard::note::Nullifier::from_bytes(&nullifier_bytes))
+        let rho_nullifier = Option::from(orchard::note::Rho::from_bytes(&nullifier_bytes))
             .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Bad Nullifier"))?;
 
         let mut random_seed_bytes = [0; 32];
         reader.read_exact(&mut random_seed_bytes)?;
         let random_seed = Option::from(orchard::note::RandomSeed::from_bytes(
             random_seed_bytes,
-            &nullifier,
+            &rho_nullifier,
         ))
         .ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -961,7 +959,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         Option::from(orchard::note::Note::from_parts(
             fvk.address(diversifier, orchard::keys::Scope::External),
             orchard::value::NoteValue::from_raw(value),
-            nullifier,
+            rho_nullifier,
             random_seed,
         ))
         .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
