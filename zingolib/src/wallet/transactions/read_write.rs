@@ -8,7 +8,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
 
-use super::{TransactionRecordMap, TxMapAndMaybeTrees};
+use super::{RecordsById, TxMapAndMaybeTrees};
 impl TxMapAndMaybeTrees {
     pub fn serialized_version() -> u64 {
         22
@@ -38,7 +38,7 @@ impl TxMapAndMaybeTrees {
             ))
         })?;
 
-        let map = TransactionRecordMap::from_map(txs);
+        let map = RecordsById::from_map(txs);
 
         if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
             old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
@@ -125,7 +125,7 @@ impl TxMapAndMaybeTrees {
         };
 
         Ok(Self {
-            current: TransactionRecordMap::from_map(map),
+            current: RecordsById::from_map(map),
             witness_trees,
         })
     }

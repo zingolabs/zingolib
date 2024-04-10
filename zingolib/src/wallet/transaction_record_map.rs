@@ -5,15 +5,12 @@ use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
 
-use crate::wallet::{
-    data::{TransactionRecord},
-    notes::NoteRecordIdentifier,
-};
+use crate::wallet::{data::TransactionRecord, notes::NoteRecordIdentifier};
 
 #[derive(Debug)]
-pub struct TransactionRecordMap(pub HashMap<TxId, TransactionRecord>);
+pub struct RecordsById(pub HashMap<TxId, TransactionRecord>);
 
-impl std::ops::Deref for TransactionRecordMap {
+impl std::ops::Deref for RecordsById {
     type Target = HashMap<TxId, TransactionRecord>;
 
     fn deref(&self) -> &Self::Target {
@@ -21,19 +18,19 @@ impl std::ops::Deref for TransactionRecordMap {
     }
 }
 
-impl std::ops::DerefMut for TransactionRecordMap {
+impl std::ops::DerefMut for RecordsById {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
-impl TransactionRecordMap {
+impl RecordsById {
     // Associated function to create a TransactionRecordMap from a HashMap
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
-        TransactionRecordMap(map)
+        RecordsById(map)
     }
 }
 
-impl InputSource for TransactionRecordMap {
+impl InputSource for RecordsById {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
     type NoteRef = NoteRecordIdentifier;
