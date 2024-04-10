@@ -843,7 +843,7 @@ impl Command for ProposeCommand {
                 )
                 .await {
                 Ok(proposal) => {
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required()))}
+                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
                 }           
                 Err(e) => {
                     object! { "error" => e }
@@ -961,14 +961,16 @@ impl Command for QuickSendCommand {
             }
         }
         RT.block_on(async move {
-            lightclient
+            if let Err(e) = lightclient
                 .do_propose(
                     send_inputs
                         .iter()
                         .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
                         .collect(),
                 )
-                .await?;
+                .await {
+                return e;
+            };
             match lightclient
                 .do_send_proposal().await
             {

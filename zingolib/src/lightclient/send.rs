@@ -10,6 +10,9 @@ use zcash_proofs::prover::LocalTxProver;
 use super::{LightClient, LightWalletSendProgress};
 use crate::wallet::Pool;
 
+#[cfg(feature = "zip317")]
+use {zcash_client_backend::proposal::Proposal, zcash_primitives::transaction::TxId};
+
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
         Ok(BlockHeight::from_u32(
@@ -51,6 +54,19 @@ impl LightClient {
                 Ok((ra, value, to.2.clone()))
             })
             .collect()
+    }
+
+    #[cfg(feature = "zip317")]
+    pub async fn do_propose(
+        &self,
+        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+    ) -> Result<Proposal<(), ()>, String> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "zip317")]
+    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
+        unimplemented!()
     }
 
     //TODO: Add migrate_sapling_to_orchard argument
