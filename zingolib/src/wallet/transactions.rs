@@ -57,12 +57,19 @@ impl TransactionRecordMap {
 mod test {
     use std::collections::HashMap;
 
+    use crate::wallet::transaction_record::TransactionRecord;
+
     use super::TransactionRecordMap;
 
     #[test]
     fn trm_get_received_note_from_identifier() {
-        let trm = TransactionRecordMap::from_map(HashMap::default());
-        trm.get_received_note_from_identifier();
+        let single_transparent_trans_record =
+            crate::test_framework::create_transaction_record_with_one_tnote();
+        let txid = single_transparent_trans_record.txid;
+        let hashmap = HashMap::from([(txid, single_transparent_trans_record)]);
+        let trm = TransactionRecordMap::from_map(hashmap);
+        let identifier = crate::test_framework::create_note_record_id();
+        trm.get_received_note_from_identifier(identifier);
     }
 }
 /// HashMap of all transactions in a wallet, keyed by txid.
