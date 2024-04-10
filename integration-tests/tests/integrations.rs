@@ -3598,17 +3598,10 @@ mod slow {
 }
 
 mod basic_transactions {
-    use std::cmp;
-
-    use json::JsonValue;
-    use zcash_client_backend::wallet::Recipient;
     use zingo_testutils::scenarios;
     use zingolib::{
         get_base_address,
-        wallet::{
-            data::summaries::{ValueTransfer, ValueTransferKind},
-            Pool,
-        },
+        wallet::{data::summaries::ValueTransferKind, Pool},
     };
 
     #[tokio::test]
@@ -3770,16 +3763,9 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
-            .await
-            .unwrap();
-
-        faucet.do_sync(true).await.unwrap();
-        recipient.do_sync(true).await.unwrap();
-
-        let txid = recipient
+        let txid3 = faucet
             .do_send(vec![(
-                get_base_address!(faucet, "unified").as_str(),
+                get_base_address!(recipient, "transparent").as_str(),
                 40_000,
                 None,
             )])
@@ -3793,34 +3779,189 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
-        let tx_actions =
-            zingo_testutils::tx_actions(&recipient, Some(&faucet), txid.as_str()).await;
-        println!("Transaction Outputs:\n{:#?}", tx_actions);
+        println!(
+            "Transaction Inputs:\n{:?}",
+            zingo_testutils::tx_inputs(&faucet, txid1.as_str()).await
+        );
+        println!(
+            "Transaction Outputs:\n{:?}",
+            zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await
+        );
+        println!(
+            "Transaction Change:\n{:?}",
+            zingo_testutils::tx_outputs(&faucet, txid1.as_str()).await
+        );
 
-        let fee_paid: u64 = recipient
+        let tx_actions_txid1 =
+            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
+        println!("Transaction Actions:\n{:?}", tx_actions_txid1);
+
+        let fee_paid_txid1: u64 = faucet
             .do_list_txsummaries()
             .await
             .iter()
-            .filter(|summary| summary.txid.to_string() == txid)
+            .filter(|summary| summary.txid.to_string() == txid1)
             .find_map(|summary| match &summary.kind {
                 ValueTransferKind::Fee { amount } => Some(*amount),
                 _ => None,
             })
             .unwrap_or(0);
-        println!("Fee Paid: {}", fee_paid);
+        println!("Fee Paid: {}", fee_paid_txid1);
 
-        let expected_fee = 10000;
+        let expected_fee_txid1 = 10000;
         // currently expected fee is always 10000 but will change to the following in zip317
-        // let expected_fee = 5000
+        // let expected_fee_txid1 = 5000
         //     * (cmp::max(
         //         2,
-        //         tx_actions.transparent_tx_actions
-        //             + tx_actions.sapling_tx_actions
-        //             + tx_actions.orchard_tx_actions,
+        //         tx_actions_txid1.transparent_tx_actions
+        //             + tx_actions_txid1.sapling_tx_actions
+        //             + tx_actions_txid1.orchard_tx_actions,
         //     ));
-        println!("Expected Fee: {}", expected_fee);
+        println!("Expected Fee: {}", expected_fee_txid1);
 
-        assert_eq!(fee_paid, expected_fee as u64);
+        assert_eq!(fee_paid_txid1, expected_fee_txid1 as u64);
+
+        println!(
+            "Transaction Inputs:\n{:?}",
+            zingo_testutils::tx_inputs(&faucet, txid2.as_str()).await
+        );
+        println!(
+            "Transaction Outputs:\n{:?}",
+            zingo_testutils::tx_outputs(&recipient, txid2.as_str()).await
+        );
+        println!(
+            "Transaction Change:\n{:?}",
+            zingo_testutils::tx_outputs(&faucet, txid2.as_str()).await
+        );
+
+        let tx_actions_txid2 =
+            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid2.as_str()).await;
+        println!("Transaction Actions:\n{:?}", tx_actions_txid2);
+
+        let fee_paid_txid2: u64 = faucet
+            .do_list_txsummaries()
+            .await
+            .iter()
+            .filter(|summary| summary.txid.to_string() == txid2)
+            .find_map(|summary| match &summary.kind {
+                ValueTransferKind::Fee { amount } => Some(*amount),
+                _ => None,
+            })
+            .unwrap_or(0);
+        println!("Fee Paid: {}", fee_paid_txid2);
+
+        let expected_fee_txid2 = 10000;
+        // currently expected fee is always 10000 but will change to the following in zip317
+        // let expected_fee_txid2 = 5000
+        //     * (cmp::max(
+        //         2,
+        //         tx_actions_txid2.transparent_tx_actions
+        //             + tx_actions_txid2.sapling_tx_actions
+        //             + tx_actions_txid2.orchard_tx_actions,
+        //     ));
+        println!("Expected Fee: {}", expected_fee_txid2);
+
+        assert_eq!(fee_paid_txid2, expected_fee_txid2 as u64);
+
+        println!(
+            "Transaction Inputs:\n{:?}",
+            zingo_testutils::tx_inputs(&faucet, txid3.as_str()).await
+        );
+        println!(
+            "Transaction Outputs:\n{:?}",
+            zingo_testutils::tx_outputs(&recipient, txid3.as_str()).await
+        );
+        println!(
+            "Transaction Change:\n{:?}",
+            zingo_testutils::tx_outputs(&faucet, txid3.as_str()).await
+        );
+
+        let tx_actions_txid3 =
+            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid3.as_str()).await;
+        println!("Transaction Actions:\n{:?}", tx_actions_txid3);
+
+        let fee_paid_txid3: u64 = faucet
+            .do_list_txsummaries()
+            .await
+            .iter()
+            .filter(|summary| summary.txid.to_string() == txid3)
+            .find_map(|summary| match &summary.kind {
+                ValueTransferKind::Fee { amount } => Some(*amount),
+                _ => None,
+            })
+            .unwrap_or(0);
+        println!("Fee Paid: {}", fee_paid_txid3);
+
+        let expected_fee_txid3 = 10000;
+        // currently expected fee is always 10000 but will change to the following in zip317
+        // let expected_fee_txid3 = 5000
+        //     * (cmp::max(
+        //         2,
+        //         tx_actions_txid3.transparent_tx_actions
+        //             + tx_actions_txid3.sapling_tx_actions
+        //             + tx_actions_txid3.orchard_tx_actions,
+        //     ));
+        println!("Expected Fee: {}", expected_fee_txid3);
+
+        assert_eq!(fee_paid_txid3, expected_fee_txid3 as u64);
+
+        let txid4 = recipient
+            .do_send(vec![(
+                get_base_address!(faucet, "transparent").as_str(),
+                60_000,
+                None,
+            )])
+            .await
+            .unwrap();
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        faucet.do_sync(true).await.unwrap();
+        recipient.do_sync(true).await.unwrap();
+
+        println!(
+            "Transaction Inputs:\n{:?}",
+            zingo_testutils::tx_inputs(&recipient, txid4.as_str()).await
+        );
+        println!(
+            "Transaction Outputs:\n{:?}",
+            zingo_testutils::tx_outputs(&faucet, txid4.as_str()).await
+        );
+        println!(
+            "Transaction Change:\n{:?}",
+            zingo_testutils::tx_outputs(&recipient, txid4.as_str()).await
+        );
+
+        let tx_actions_txid4 =
+            zingo_testutils::tx_actions(&recipient, Some(&faucet), txid4.as_str()).await;
+        println!("Transaction Actions:\n{:?}", tx_actions_txid4);
+
+        let fee_paid_txid4: u64 = recipient
+            .do_list_txsummaries()
+            .await
+            .iter()
+            .filter(|summary| summary.txid.to_string() == txid4)
+            .find_map(|summary| match &summary.kind {
+                ValueTransferKind::Fee { amount } => Some(*amount),
+                _ => None,
+            })
+            .unwrap_or(0);
+        println!("Fee Paid: {}", fee_paid_txid4);
+
+        let expected_fee_txid4 = 10000;
+        // currently expected fee is always 10000 but will change to the following in zip317
+        // let expected_fee_txid4 = 5000
+        //     * (cmp::max(
+        //         2,
+        //         tx_actions_txid4.transparent_tx_actions
+        //             + tx_actions_txid4.sapling_tx_actions
+        //             + tx_actions_txid4.orchard_tx_actions,
+        //     ));
+        println!("Expected Fee: {}", expected_fee_txid4);
+
+        assert_eq!(fee_paid_txid4, expected_fee_txid4 as u64);
     }
 
     // #[tokio::test]
@@ -3863,7 +4004,7 @@ mod basic_transactions {
         recipient.do_sync(true).await.unwrap();
 
         let tx_actions_txid1 = zingo_testutils::tx_actions(&recipient, None, txid1.as_str()).await;
-        println!("Transaction Actions:\n{:#?}", tx_actions_txid1);
+        println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
         let fee_paid_txid1: u64 = recipient
             .do_list_txsummaries()
@@ -3922,7 +4063,7 @@ mod basic_transactions {
         recipient.do_sync(true).await.unwrap();
 
         let tx_actions_txid2 = zingo_testutils::tx_actions(&recipient, None, txid2.as_str()).await;
-        println!("Transaction Actions:\n{:#?}", tx_actions_txid2);
+        println!("Transaction Actions:\n{:?}", tx_actions_txid2);
 
         let fee_paid_txid2: u64 = recipient
             .do_list_txsummaries()
