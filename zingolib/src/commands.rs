@@ -805,7 +805,7 @@ impl Command for ProposeCommand {
             Example:
                 propose ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
                 send
-                
+
         "#}
     }
 
@@ -844,7 +844,7 @@ impl Command for ProposeCommand {
                 .await {
                 Ok(proposal) => {
                     object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
-                }           
+                }
                 Err(e) => {
                     object! { "error" => e }
                 }
