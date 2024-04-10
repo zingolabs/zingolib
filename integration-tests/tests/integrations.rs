@@ -747,7 +747,14 @@ mod slow {
             .await
             .unwrap();
 
-        for txid_known in recipient.wallet.transactions().read().await.current.keys() {
+        for txid_known in recipient
+            .wallet
+            .transactions()
+            .read()
+            .await
+            .transaction_records_by_id
+            .keys()
+        {
             dbg!(txid_known);
         }
 
@@ -757,7 +764,7 @@ mod slow {
             .transactions()
             .read()
             .await
-            .current
+            .transaction_records_by_id
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -790,7 +797,7 @@ mod slow {
             .transactions()
             .read()
             .await
-            .current
+            .transaction_records_by_id
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -833,7 +840,7 @@ mod slow {
             .transactions()
             .read()
             .await
-            .current
+            .transaction_records_by_id
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -864,7 +871,7 @@ mod slow {
             .transactions()
             .read()
             .await
-            .current
+            .transaction_records_by_id
             .get(&txid)
             .unwrap()
             .orchard_notes
@@ -3304,7 +3311,7 @@ mod slow {
                     .transaction_metadata_set
                     .read()
                     .await
-                    .current
+                    .transaction_records_by_id
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
@@ -3344,7 +3351,7 @@ mod slow {
                     .transaction_metadata_set
                     .read()
                     .await
-                    .current
+                    .transaction_records_by_id
                     .get(requested_txid)
                     .unwrap()
                     .orchard_notes
@@ -3449,7 +3456,7 @@ mod slow {
                 .transaction_metadata_set
                 .read()
                 .await
-                .current
+                .transaction_records_by_id
         );
 
         assert_eq!(bala_sim, bala_syn);
