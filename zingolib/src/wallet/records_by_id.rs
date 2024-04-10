@@ -8,9 +8,9 @@ use crate::error::ZingoLibError;
 use crate::wallet::{data::TransactionRecord, notes::NoteRecordIdentifier};
 
 #[derive(Debug)]
-pub struct RecordsById(pub HashMap<TxId, TransactionRecord>);
+pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
 
-impl std::ops::Deref for RecordsById {
+impl std::ops::Deref for TransactionRecordsById {
     type Target = HashMap<TxId, TransactionRecord>;
 
     fn deref(&self) -> &Self::Target {
@@ -18,19 +18,19 @@ impl std::ops::Deref for RecordsById {
     }
 }
 
-impl std::ops::DerefMut for RecordsById {
+impl std::ops::DerefMut for TransactionRecordsById {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
-impl RecordsById {
+impl TransactionRecordsById {
     // Associated function to create a TransactionRecordMap from a HashMap
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
-        RecordsById(map)
+        TransactionRecordsById(map)
     }
 }
 
-impl InputSource for RecordsById {
+impl InputSource for TransactionRecordsById {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
     type NoteRef = NoteRecordIdentifier;
