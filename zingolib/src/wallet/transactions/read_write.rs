@@ -162,7 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write() {
-        let mut tms = TxMapAndMaybeTrees::new_with_witness_trees();
+        let mut tms = TxMapAndMaybeTrees::new_spending();
         let mut buffer = Cursor::new(Vec::new());
 
         // Perform the write operation

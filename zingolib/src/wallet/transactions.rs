@@ -15,13 +15,13 @@ pub mod read_write;
 pub mod recording;
 
 impl TxMapAndMaybeTrees {
-    pub(crate) fn new_with_witness_trees() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_spending() -> TxMapAndMaybeTrees {
         Self {
             transaction_records_by_id: TransactionRecordsById(HashMap::new()),
             witness_trees: Some(WitnessTrees::default()),
         }
     }
-    pub(crate) fn new_treeless() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_viewing() -> TxMapAndMaybeTrees {
         Self {
             transaction_records_by_id: TransactionRecordsById(HashMap::new()),
             witness_trees: None,
