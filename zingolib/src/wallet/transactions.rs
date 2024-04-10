@@ -63,8 +63,9 @@ mod test {
 
     #[test]
     fn trm_get_received_note_from_identifier() {
+        let (txid, tnote) = crate::test_framework::create_txid_and_tnote();
         let single_transparent_trans_record =
-            crate::test_framework::create_transaction_record_with_one_tnote();
+            crate::test_framework::create_transaction_record_with_one_tnote(txid, tnote);
         let txid = single_transparent_trans_record.txid;
         let hashmap = HashMap::from([(txid, single_transparent_trans_record)]);
         let trm = TransactionRecordMap::from_map(hashmap);
