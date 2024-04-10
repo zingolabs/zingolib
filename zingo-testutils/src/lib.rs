@@ -251,7 +251,7 @@ pub struct TxActions {
     pub orchard_tx_actions: usize,
 }
 
-/// Returnes number of notes used as inputs for txid as TxNotes (transparent_notes, sapling_notes, orchard_notes).
+/// Returnes number of notes used as inputs for txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
 pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxActions {
     let notes = client.do_list_notes(true).await;
 
@@ -311,7 +311,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxActions {
     }
 }
 
-/// Returnes number of notes created in txid as TxNotes (transparent_notes, sapling_notes, orchard_notes).
+/// Returnes number of notes created in txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
 pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
     let notes = client.do_list_notes(true).await;
 
@@ -327,6 +327,14 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
         }
     }
 
+    if let JsonValue::Array(spent_utxos) = &notes["pending_utxos"] {
+        for utxo in spent_utxos {
+            if utxo["created_in_txid"] == txid {
+                transparent_notes += 1;
+            }
+        }
+    }
+
     if let JsonValue::Array(spent_sapling_notes) = &notes["unspent_sapling_notes"] {
         for note in spent_sapling_notes {
             if note["created_in_txid"] == txid {
@@ -335,7 +343,23 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
         }
     }
 
+    if let JsonValue::Array(spent_sapling_notes) = &notes["pending_sapling_notes"] {
+        for note in spent_sapling_notes {
+            if note["created_in_txid"] == txid {
+                sapling_notes += 1;
+            }
+        }
+    }
+
     if let JsonValue::Array(spent_orchard_notes) = &notes["unspent_orchard_notes"] {
+        for note in spent_orchard_notes {
+            if note["created_in_txid"] == txid {
+                orchard_notes += 1;
+            }
+        }
+    }
+
+    if let JsonValue::Array(spent_orchard_notes) = &notes["pending_orchard_notes"] {
         for note in spent_orchard_notes {
             if note["created_in_txid"] == txid {
                 orchard_notes += 1;
