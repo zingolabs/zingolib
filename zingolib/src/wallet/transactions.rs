@@ -25,7 +25,7 @@ impl TransactionRecordMap {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordMap(map)
     }
-    pub fn get_received_note_from_identifier(
+    pub fn get_shielded_received_note_from_identifier(
         &self,
         note_record_reference: super::notes::NoteRecordIdentifier,
     ) -> Option<
@@ -67,8 +67,8 @@ mod test {
         let hashmap = HashMap::from([(txid, single_transparent_trans_record)]);
         let trm = TransactionRecordMap::from_map(hashmap);
         let identifier = crate::test_framework::create_note_record_id();
-        let note = trm.get_received_note_from_identifier(identifier);
-        assert!(note.is_some());
+        let note = trm.get_shielded_received_note_from_identifier(identifier);
+        assert!(note.is_none());
     }
 }
 /// HashMap of all transactions in a wallet, keyed by txid.
