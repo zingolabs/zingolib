@@ -27,7 +27,7 @@ impl TxMapAndMaybeTrees {
             witness_trees: None,
         }
     }
-    pub(crate) fn witness_trees(&self) -> Option<&WitnessTrees> {
+    pub fn witness_trees(&self) -> Option<&WitnessTrees> {
         self.witness_trees.as_ref()
     }
     pub(crate) fn witness_trees_mut(&mut self) -> Option<&mut WitnessTrees> {
