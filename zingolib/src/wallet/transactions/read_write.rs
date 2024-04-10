@@ -8,7 +8,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
 
-use super::{TransactionRecordMap, TxMapAndMaybeTrees};
+use super::{TransactionRecordsById, TxMapAndMaybeTrees};
 impl TxMapAndMaybeTrees {
     pub fn serialized_version() -> u64 {
         22
@@ -38,7 +38,7 @@ impl TxMapAndMaybeTrees {
             ))
         })?;
 
-        let map = TransactionRecordMap::from_map(txs);
+        let map = TransactionRecordsById::from_map(txs);
 
         if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
             old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
@@ -60,7 +60,7 @@ impl TxMapAndMaybeTrees {
         }
 
         Ok(Self {
-            current: map,
+            transaction_records_by_id: map,
             witness_trees,
         })
     }
@@ -125,7 +125,7 @@ impl TxMapAndMaybeTrees {
         };
 
         Ok(Self {
-            current: TransactionRecordMap::from_map(map),
+            transaction_records_by_id: TransactionRecordsById::from_map(map),
             witness_trees,
         })
     }
@@ -138,7 +138,7 @@ impl TxMapAndMaybeTrees {
         // deterministically saved
         {
             let mut transaction_metadatas = self
-                .current
+                .transaction_records_by_id
                 .iter()
                 .collect::<Vec<(&TxId, &TransactionRecord)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover
