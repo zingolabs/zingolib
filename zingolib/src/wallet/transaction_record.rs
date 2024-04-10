@@ -124,7 +124,7 @@ impl TransactionRecord {
                         pool: PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Sapling),
                         index,
                     };
-                    value_ref_pairs.push((note.note, note_record_reference));
+                    value_ref_pairs.push((note.note.clone(), note_record_reference));
                 }
             }
         });

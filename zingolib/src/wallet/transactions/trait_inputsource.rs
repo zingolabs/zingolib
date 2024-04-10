@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
-
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{
     data_api::{InputSource, SpendableNotes},
     wallet::ReceivedNote,
@@ -35,7 +35,22 @@ impl InputSource for TransactionRecordMap {
             pool: PoolType::Shielded(protocol),
             index,
         };
-        Ok(self.get_received_note_from_identifier(note_record_reference))
+        match protocol {
+            ShieldedProtocol::Sapling => Ok(self
+                .get_received_note_from_identifier::<SaplingDomain>(note_record_reference)
+                .map(|note| {
+                    note.map_note(|note_inner| {
+                        zcash_client_backend::wallet::Note::Sapling(note_inner)
+                    })
+                })),
+            ShieldedProtocol::Orchard => Ok(self
+                .get_received_note_from_identifier::<OrchardDomain>(note_record_reference)
+                .map(|note| {
+                    note.map_note(|note_inner| {
+                        zcash_client_backend::wallet::Note::Orchard(note_inner)
+                    })
+                })),
+        }
     }
 
     fn select_spendable_notes(
@@ -78,12 +93,13 @@ impl InputSource for TransactionRecordMap {
         }
         let mut sapling_notes =
             Vec::<ReceivedNote<NoteRecordIdentifier, sapling_crypto::Note>>::new();
-        if let Some(missing_value) = sapling_note_noteref_pairs.into_iter().rev(/*biggest first*/).try_fold(
+        let mut orchard_notes = Vec::<ReceivedNote<NoteRecordIdentifier, orchard::Note>>::new();
+        if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().rev(/*biggest first*/).try_fold(
             Some(target_value),
             |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
                     sapling_notes.push(
-                        self.map.get(&noteref.txid).map(|tr| tr.get_received_note(noteref.index)).flatten()
+                        self.map.get(&noteref.txid).map(|tr| tr.get_received_note::<SaplingDomain>(noteref.index)).flatten()
                             .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
                     );
                     Ok(targ
@@ -93,11 +109,28 @@ impl InputSource for TransactionRecordMap {
                 None => Ok(None),
             },
         )? {
-            return ZingoLibResult::Err(ZingoLibError::Error(format!(
-                "insufficient funds, short {}",
-                missing_value.into_u64()
-            )));
+            if let Some(missing_value_after_orchard) = orchard_note_noteref_pairs.into_iter().rev(/*biggest first*/).try_fold(
+            Some(missing_value_after_sapling),
+            |rolling_target, (note, noteref)| match rolling_target {
+                Some(targ) => {
+                    orchard_notes.push(
+                        self.map.get(&noteref.txid).map(|tr| tr.get_received_note::<OrchardDomain>(noteref.index)).flatten()
+                            .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
+                    );
+                    Ok(targ
+                        - NonNegativeAmount::from_u64(note.value().inner())
+                            .map_err(|e| ZingoLibError::Error(e.to_string()))?)
+                }
+                None => Ok(None),
+            },
+        )? {
+                return ZingoLibResult::Err(ZingoLibError::Error(format!(
+                    "insufficient funds, short {}",
+                    missing_value_after_orchard.into_u64()
+                )));
+            };
         };
-        Ok(noteset)
+
+        Ok(SpendableNotes::new(sapling_notes, orchard_notes))
     }
 }

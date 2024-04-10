@@ -1,12 +1,12 @@
 use std::{collections::HashMap, convert::Infallible};
-
-use orchard::note_encryption::OrchardDomain;
-use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{fees::zip317::FeeRule, TxId};
 
 use crate::wallet::data::{TransactionRecord, WitnessTrees};
 use crate::wallet::notes::NoteRecordIdentifier;
+
+use super::traits::DomainWalletExt;
 
 pub struct TransactionRecordMap {
     pub map: HashMap<TxId, TransactionRecord>,
@@ -21,24 +21,26 @@ impl TransactionRecordMap {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         Self { map }
     }
-    pub fn get_received_note_from_identifier(
+    pub fn get_received_note_from_identifier<D: DomainWalletExt>(
         &self,
         note_record_reference: NoteRecordIdentifier,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
             NoteRecordIdentifier,
-            zcash_client_backend::wallet::Note,
+            <D as zcash_note_encryption::Domain>::Note,
         >,
-    > {
+    >
+    where
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
+    {
         let transaction = self.map.get(&note_record_reference.txid);
-        transaction.and_then(|transaction_record| match note_record_reference.pool {
-            zcash_client_backend::PoolType::Transparent => None, // explain implication
-            zcash_client_backend::PoolType::Shielded(domain) => match domain {
-                zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
-                    .get_received_note::<SaplingDomain>(note_record_reference.index),
-                zcash_client_backend::ShieldedProtocol::Orchard => transaction_record
-                    .get_received_note::<OrchardDomain>(note_record_reference.index),
-            },
+        transaction.and_then(|transaction_record| {
+            if note_record_reference.pool == PoolType::Shielded(D::protocol()) {
+                transaction_record.get_received_note::<D>(note_record_reference.index)
+            } else {
+                None
+            }
         })
     }
 }
