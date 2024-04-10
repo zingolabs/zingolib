@@ -245,6 +245,13 @@ pub async fn load_wallet(
 }
 
 #[derive(Debug)]
+pub struct TxNotes {
+    pub transparent_tx_notes: usize,
+    pub sapling_tx_notes: usize,
+    pub orchard_tx_notes: usize,
+}
+
+#[derive(Debug)]
 pub struct TxActions {
     pub transparent_tx_actions: usize,
     pub sapling_tx_actions: usize,
@@ -252,7 +259,7 @@ pub struct TxActions {
 }
 
 /// Returnes number of notes used as inputs for txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
-pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxActions {
+pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
     let notes = client.do_list_notes(true).await;
 
     let mut transparent_notes = 0;
@@ -304,15 +311,15 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxActions {
         }
     }
 
-    TxActions {
-        transparent_tx_actions: transparent_notes,
-        sapling_tx_actions: sapling_notes,
-        orchard_tx_actions: orchard_notes,
+    TxNotes {
+        transparent_tx_notes: transparent_notes,
+        sapling_tx_notes: sapling_notes,
+        orchard_tx_notes: orchard_notes,
     }
 }
 
 /// Returnes number of notes created in txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
-pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
+pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotes {
     let notes = client.do_list_notes(true).await;
 
     let mut transparent_notes = 0;
@@ -367,34 +374,34 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
         }
     }
 
-    TxActions {
-        transparent_tx_actions: transparent_notes,
-        sapling_tx_actions: sapling_notes,
-        orchard_tx_actions: orchard_notes,
+    TxNotes {
+        transparent_tx_notes: transparent_notes,
+        sapling_tx_notes: sapling_notes,
+        orchard_tx_notes: orchard_notes,
     }
 }
 
 /// Returns total actions for txid.
 pub async fn tx_actions(
-    faucet: &LightClient,
+    sender: &LightClient,
     recipient: Option<&LightClient>,
     txid: &str,
 ) -> TxActions {
-    let tx_ins = tx_inputs(faucet, txid).await;
+    let tx_ins = tx_inputs(sender, txid).await;
     let tx_outs = if let Some(rec) = recipient {
         tx_outputs(rec, txid).await
     } else {
-        TxActions {
-            transparent_tx_actions: 0,
-            sapling_tx_actions: 0,
-            orchard_tx_actions: 0,
+        TxNotes {
+            transparent_tx_notes: 0,
+            sapling_tx_notes: 0,
+            orchard_tx_notes: 0,
         }
     };
-    let tx_change = tx_outputs(faucet, txid).await;
+    let tx_change = tx_outputs(sender, txid).await;
 
     let calculated_sapling_tx_actions = cmp::max(
-        tx_ins.sapling_tx_actions,
-        tx_outs.sapling_tx_actions + tx_change.sapling_tx_actions,
+        tx_ins.sapling_tx_notes,
+        tx_outs.sapling_tx_notes + tx_change.sapling_tx_notes,
     );
     let final_sapling_tx_actions = if calculated_sapling_tx_actions == 1 {
         2
@@ -402,12 +409,9 @@ pub async fn tx_actions(
         calculated_sapling_tx_actions
     };
 
-    // let calculated_orchard_tx_actions =
-    //     tx_ins.orchard_tx_actions + tx_outs.orchard_tx_actions + tx_change.orchard_tx_actions;
-
     let calculated_orchard_tx_actions = cmp::max(
-        tx_ins.orchard_tx_actions,
-        tx_outs.orchard_tx_actions + tx_change.orchard_tx_actions,
+        tx_ins.orchard_tx_notes,
+        tx_outs.orchard_tx_notes + tx_change.orchard_tx_notes,
     );
     let final_orchard_tx_actions = if calculated_orchard_tx_actions == 1 {
         2
@@ -417,8 +421,8 @@ pub async fn tx_actions(
 
     TxActions {
         transparent_tx_actions: cmp::max(
-            tx_ins.transparent_tx_actions,
-            tx_outs.transparent_tx_actions + tx_change.transparent_tx_actions,
+            tx_ins.transparent_tx_notes,
+            tx_outs.transparent_tx_notes + tx_change.transparent_tx_notes,
         ),
         sapling_tx_actions: final_sapling_tx_actions,
         orchard_tx_actions: final_orchard_tx_actions,
