@@ -571,7 +571,7 @@ impl LightWallet {
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
         let mut candidate_notes = transaction_metadata_set
-            .current
+            .transaction_records_by_id
             .iter()
             .flat_map(|(transaction_id, transaction)| {
                 D::WalletNote::transaction_metadata_notes(transaction)

@@ -5,8 +5,10 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{
     data::WitnessTrees, notes::NoteRecordIdentifier, traits::DomainWalletExt,
-    transaction_record::TransactionRecord,
+    transaction_records_by_id::TransactionRecordsById,
 };
+
+use super::data::TransactionRecord;
 
 #[derive(Debug)]
 pub struct TransactionRecordMap(pub HashMap<TxId, TransactionRecord>);
@@ -25,10 +27,6 @@ impl std::ops::DerefMut for TransactionRecordMap {
     }
 }
 impl TransactionRecordMap {
-    // Associated function to create a TransactionRecordMap from a HashMap
-    pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
-        TransactionRecordMap(map)
-    }
     pub fn get_received_note_from_identifier<D: DomainWalletExt>(
         &self,
         note_record_reference: NoteRecordIdentifier,
@@ -56,7 +54,7 @@ impl TransactionRecordMap {
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TxMapAndMaybeTrees {
-    pub current: TransactionRecordMap,
+    pub transaction_records_by_id: TransactionRecordsById,
     pub witness_trees: Option<WitnessTrees>,
 }
 
@@ -68,18 +66,18 @@ mod trait_inputsource;
 impl TxMapAndMaybeTrees {
     pub(crate) fn new_with_witness_trees() -> TxMapAndMaybeTrees {
         Self {
-            current: TransactionRecordMap(HashMap::new()),
+            transaction_records_by_id: TransactionRecordsById(HashMap::new()),
             witness_trees: Some(WitnessTrees::default()),
         }
     }
     pub(crate) fn new_treeless() -> TxMapAndMaybeTrees {
         Self {
-            current: TransactionRecordMap(HashMap::new()),
+            transaction_records_by_id: TransactionRecordsById(HashMap::new()),
             witness_trees: None,
         }
     }
     pub fn clear(&mut self) {
-        self.current.clear();
+        self.transaction_records_by_id.clear();
         self.witness_trees.as_mut().map(WitnessTrees::clear);
     }
 }
