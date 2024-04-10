@@ -69,7 +69,8 @@ mod test {
         let hashmap = HashMap::from([(txid, single_transparent_trans_record)]);
         let trm = TransactionRecordMap::from_map(hashmap);
         let identifier = crate::test_framework::create_note_record_id();
-        trm.get_received_note_from_identifier(identifier);
+        let note = trm.get_received_note_from_identifier(identifier);
+        assert_eq!(note, "satan");
     }
 }
 /// HashMap of all transactions in a wallet, keyed by txid.
