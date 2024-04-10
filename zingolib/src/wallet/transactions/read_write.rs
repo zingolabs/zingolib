@@ -6,7 +6,10 @@ use std::{
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
+use crate::wallet::{
+    data::TransactionRecord, keys::unified::WalletCapability, spending_data::SpendingData,
+    WitnessTrees,
+};
 
 use super::{TransactionRecordsById, TxMapAndMaybeTrees};
 impl TxMapAndMaybeTrees {
@@ -61,7 +64,7 @@ impl TxMapAndMaybeTrees {
 
         Ok(Self {
             transaction_records_by_id: map,
-            witness_trees,
+            spending_data: SpendingData::load_with_option_witness_trees(witness_trees),
         })
     }
 
@@ -126,7 +129,7 @@ impl TxMapAndMaybeTrees {
 
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
-            witness_trees,
+            spending_data: SpendingData::load_with_option_witness_trees(witness_trees),
         })
     }
 
@@ -152,7 +155,7 @@ impl TxMapAndMaybeTrees {
             })?;
         }
 
-        Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
+        Optional::write(writer, self.witness_trees_mut(), |w, t| t.write(w))
     }
 }
 #[cfg(test)]

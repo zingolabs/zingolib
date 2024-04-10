@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 
-use crate::wallet::{data::WitnessTrees, transaction_records_by_id::TransactionRecordsById};
+use crate::wallet::{
+    data::WitnessTrees, spending_data::SpendingData,
+    transaction_records_by_id::TransactionRecordsById,
+};
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TxMapAndMaybeTrees {
     pub transaction_records_by_id: TransactionRecordsById,
-    witness_trees: Option<WitnessTrees>,
+    spending_data: Option<SpendingData>,
 }
 
 pub mod get;
@@ -18,23 +21,27 @@ impl TxMapAndMaybeTrees {
     pub(crate) fn new_spending() -> TxMapAndMaybeTrees {
         Self {
             transaction_records_by_id: TransactionRecordsById(HashMap::new()),
-            witness_trees: Some(WitnessTrees::default()),
+            spending_data: Some(SpendingData::default()),
         }
     }
     pub(crate) fn new_viewing() -> TxMapAndMaybeTrees {
         Self {
             transaction_records_by_id: TransactionRecordsById(HashMap::new()),
-            witness_trees: None,
+            spending_data: None,
         }
     }
     pub fn witness_trees(&self) -> Option<&WitnessTrees> {
-        self.witness_trees.as_ref()
+        self.spending_data
+            .as_ref()
+            .map(|spending_data| spending_data.witness_trees())
     }
     pub(crate) fn witness_trees_mut(&mut self) -> Option<&mut WitnessTrees> {
-        self.witness_trees.as_mut()
+        self.spending_data
+            .as_mut()
+            .map(|spending_data| spending_data.witness_trees_mut())
     }
     pub fn clear(&mut self) {
         self.transaction_records_by_id.clear();
-        self.witness_trees.as_mut().map(WitnessTrees::clear);
+        self.spending_data.as_mut().map(SpendingData::clear);
     }
 }
