@@ -20,11 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys`:
   - `is_transparent_address`
 - `lightclient::send`
-  - `do_propose` behind zip317 feature
-  - `do_send_proposal` behind zip317 feature
+  - `do_propose` behind "zip317" feature
+  - `do_send_proposal` behind "zip317" feature
 - `commands`
-  - `ProposeCommand` struct and methods
-  - `QuickSendCommand` struct and methods
+  - `ProposeCommand` struct and methods behind "zip317" feature
+  - `QuickSendCommand` struct and methods behind "zip317" feature
 
 ### Changed
 
@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys`:
   - `is_shielded_address` takes a `&ChainType` instead of a `&ZingoConfig`
 - `commands`
-  - `get_commands` added propose and quicksend to entries behind zip317 feature
+  - `get_commands` added propose and quicksend to entries behind "zip317" feature
   - `SendCommand::help` formatting
 
 ### Removed
