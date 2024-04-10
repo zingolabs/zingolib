@@ -273,8 +273,8 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
             }
         }
     }
-    if let JsonValue::Array(spent_utxos) = &notes["pending_utxos"] {
-        for utxo in spent_utxos {
+    if let JsonValue::Array(pending_utxos) = &notes["pending_utxos"] {
+        for utxo in pending_utxos {
             if utxo["spent"] == txid || utxo["unconfirmed_spent"] == txid {
                 transparent_notes += 1;
             }
@@ -288,8 +288,8 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
             }
         }
     }
-    if let JsonValue::Array(spent_sapling_notes) = &notes["pending_sapling_notes"] {
-        for note in spent_sapling_notes {
+    if let JsonValue::Array(pending_sapling_notes) = &notes["pending_sapling_notes"] {
+        for note in pending_sapling_notes {
             if note["spent"] == txid || note["unconfirmed_spent"] == txid {
                 sapling_notes += 1;
             }
@@ -303,8 +303,8 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
             }
         }
     }
-    if let JsonValue::Array(spent_orchard_notes) = &notes["pending_orchard_notes"] {
-        for note in spent_orchard_notes {
+    if let JsonValue::Array(pending_orchard_notes) = &notes["pending_orchard_notes"] {
+        for note in pending_orchard_notes {
             if note["spent"] == txid || note["unconfirmed_spent"] == txid {
                 orchard_notes += 1;
             }
@@ -326,48 +326,48 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotes {
     let mut sapling_notes = 0;
     let mut orchard_notes = 0;
 
-    if let JsonValue::Array(spent_utxos) = &notes["utxos"] {
-        for utxo in spent_utxos {
+    if let JsonValue::Array(unspent_utxos) = &notes["utxos"] {
+        for utxo in unspent_utxos {
             if utxo["created_in_txid"] == txid {
                 transparent_notes += 1;
             }
         }
     }
 
-    if let JsonValue::Array(spent_utxos) = &notes["pending_utxos"] {
-        for utxo in spent_utxos {
+    if let JsonValue::Array(pending_utxos) = &notes["pending_utxos"] {
+        for utxo in pending_utxos {
             if utxo["created_in_txid"] == txid {
                 transparent_notes += 1;
             }
         }
     }
 
-    if let JsonValue::Array(spent_sapling_notes) = &notes["unspent_sapling_notes"] {
-        for note in spent_sapling_notes {
+    if let JsonValue::Array(unspent_sapling_notes) = &notes["unspent_sapling_notes"] {
+        for note in unspent_sapling_notes {
             if note["created_in_txid"] == txid {
                 sapling_notes += 1;
             }
         }
     }
 
-    if let JsonValue::Array(spent_sapling_notes) = &notes["pending_sapling_notes"] {
-        for note in spent_sapling_notes {
+    if let JsonValue::Array(pending_sapling_notes) = &notes["pending_sapling_notes"] {
+        for note in pending_sapling_notes {
             if note["created_in_txid"] == txid {
                 sapling_notes += 1;
             }
         }
     }
 
-    if let JsonValue::Array(spent_orchard_notes) = &notes["unspent_orchard_notes"] {
-        for note in spent_orchard_notes {
+    if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
+        for note in unspent_orchard_notes {
             if note["created_in_txid"] == txid {
                 orchard_notes += 1;
             }
         }
     }
 
-    if let JsonValue::Array(spent_orchard_notes) = &notes["pending_orchard_notes"] {
-        for note in spent_orchard_notes {
+    if let JsonValue::Array(pending_orchard_notes) = &notes["pending_orchard_notes"] {
+        for note in pending_orchard_notes {
             if note["created_in_txid"] == txid {
                 orchard_notes += 1;
             }
