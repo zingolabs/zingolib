@@ -60,7 +60,7 @@ impl TxMapAndMaybeTrees {
         }
 
         Ok(Self {
-            current: map,
+            transaction_records_by_id: map,
             witness_trees,
         })
     }
@@ -125,7 +125,7 @@ impl TxMapAndMaybeTrees {
         };
 
         Ok(Self {
-            current: TransactionRecordsById::from_map(map),
+            transaction_records_by_id: TransactionRecordsById::from_map(map),
             witness_trees,
         })
     }
@@ -138,7 +138,7 @@ impl TxMapAndMaybeTrees {
         // deterministically saved
         {
             let mut transaction_metadatas = self
-                .current
+                .transaction_records_by_id
                 .iter()
                 .collect::<Vec<(&TxId, &TransactionRecord)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover

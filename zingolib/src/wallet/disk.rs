@@ -143,7 +143,7 @@ impl LightWallet {
             TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
         }?;
         let txids = transactions
-            .current
+            .transaction_records_by_id
             .keys()
             .cloned()
             .collect::<Vec<transaction::TxId>>();

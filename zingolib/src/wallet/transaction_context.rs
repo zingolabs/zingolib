@@ -229,7 +229,11 @@ pub mod decrypt_transaction {
             let mut spent_utxos = vec![];
 
             {
-                let current = &self.transaction_metadata_set.read().await.current;
+                let current = &self
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .transaction_records_by_id;
                 if let Some(t_bundle) = transaction.transparent_bundle() {
                     for vin in t_bundle.vin.iter() {
                         // Find the prev txid that was spent
@@ -290,7 +294,7 @@ pub mod decrypt_transaction {
                                 .transaction_metadata_set
                                 .write()
                                 .await
-                                .current
+                                .transaction_records_by_id
                                 .get_mut(&txid)
                             {
                                 if !transaction.outgoing_tx_data.is_empty() {
