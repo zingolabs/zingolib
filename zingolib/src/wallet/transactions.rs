@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-
-
-use super::data::{WitnessTrees};
+use super::data::WitnessTrees;
 use crate::wallet::transaction_record_map::TransactionRecordMap;
 
 /// HashMap of all transactions in a wallet, keyed by txid.
