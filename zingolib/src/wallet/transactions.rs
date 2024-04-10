@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
 
-use super::data::{TransactionRecord, WitnessTrees};
+use crate::wallet::{
+    data::WitnessTrees, notes::NoteRecordIdentifier, traits::DomainWalletExt,
+    transaction_record::TransactionRecord,
+};
 
 #[derive(Debug)]
 pub struct TransactionRecordMap(pub HashMap<TxId, TransactionRecord>);
@@ -24,6 +28,28 @@ impl TransactionRecordMap {
     // Associated function to create a TransactionRecordMap from a HashMap
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordMap(map)
+    }
+    pub fn get_received_note_from_identifier<D: DomainWalletExt>(
+        &self,
+        note_record_reference: NoteRecordIdentifier,
+    ) -> Option<
+        zcash_client_backend::wallet::ReceivedNote<
+            NoteRecordIdentifier,
+            <D as zcash_note_encryption::Domain>::Note,
+        >,
+    >
+    where
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
+    {
+        let transaction = self.get(&note_record_reference.txid);
+        transaction.and_then(|transaction_record| {
+            if note_record_reference.pool == PoolType::Shielded(D::protocol()) {
+                transaction_record.get_received_note::<D>(note_record_reference.index)
+            } else {
+                None
+            }
+        })
     }
 }
 /// HashMap of all transactions in a wallet, keyed by txid.

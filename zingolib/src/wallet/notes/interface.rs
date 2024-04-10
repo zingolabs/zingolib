@@ -72,4 +72,5 @@ pub trait ShieldedNoteInterface: NoteInterface + Sized {
     fn value_from_note(note: &Self::Note) -> u64;
     fn witnessed_position(&self) -> &Option<Position>;
     fn witnessed_position_mut(&mut self) -> &mut Option<Position>;
+    fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note;
 }

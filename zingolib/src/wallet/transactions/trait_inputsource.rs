@@ -7,9 +7,12 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{transaction::components::amount::NonNegativeAmount, zip32::AccountId};
 
-use crate::error::{ZingoLibError, ZingoLibResult};
+use crate::{
+    error::{ZingoLibError, ZingoLibResult},
+    wallet::notes::NoteRecordIdentifier,
+};
 
-use super::{NoteRecordIdentifier, TransactionRecordMap};
+use super::TransactionRecordMap;
 
 impl InputSource for TransactionRecordMap {
     type Error = ZingoLibError;
@@ -69,7 +72,7 @@ impl InputSource for TransactionRecordMap {
         let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, NoteRecordIdentifier)> =
             Vec::new();
         let mut orchard_note_noteref_pairs: Vec<(orchard::Note, NoteRecordIdentifier)> = Vec::new();
-        for transaction_record in self.map.values().filter(|transaction_record| {
+        for transaction_record in self.values().filter(|transaction_record| {
             transaction_record
                 .status
                 .is_confirmed_before_or_at(&anchor_height)
@@ -99,7 +102,7 @@ impl InputSource for TransactionRecordMap {
             |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
                     sapling_notes.push(
-                        self.map.get(&noteref.txid).map(|tr| tr.get_received_note::<SaplingDomain>(noteref.index)).flatten()
+                        self.get(&noteref.txid).map(|tr| tr.get_received_note::<SaplingDomain>(noteref.index)).flatten()
                             .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
                     );
                     Ok(targ
@@ -114,7 +117,7 @@ impl InputSource for TransactionRecordMap {
             |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
                     orchard_notes.push(
-                        self.map.get(&noteref.txid).map(|tr| tr.get_received_note::<OrchardDomain>(noteref.index)).flatten()
+                        self.get(&noteref.txid).map(|tr| tr.get_received_note::<OrchardDomain>(noteref.index)).flatten()
                             .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
                     );
                     Ok(targ

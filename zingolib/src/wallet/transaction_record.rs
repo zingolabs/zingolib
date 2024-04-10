@@ -1,4 +1,5 @@
 use incrementalmerkletree::witness::IncrementalWitness;
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
@@ -6,6 +7,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
+    notes::{NoteInterface as _, NoteRecordIdentifier},
     traits::DomainWalletExt,
     *,
 };
@@ -215,7 +217,7 @@ impl TransactionRecord {
     where
         D: DomainWalletExt + Sized,
         D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
+        D::Recipient: traits::Recipient,
     {
         let note = D::to_notes_vec(self)
             .iter()
