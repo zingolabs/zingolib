@@ -50,10 +50,10 @@ pub mod data;
 pub mod keys;
 pub(crate) mod message;
 pub mod notes;
+mod records_by_id;
 pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
-pub mod transaction_record_map;
 pub(crate) mod transactions;
 pub mod utils;
 
