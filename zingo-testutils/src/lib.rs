@@ -319,7 +319,7 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxActions {
     let mut sapling_notes = 0;
     let mut orchard_notes = 0;
 
-    if let JsonValue::Array(spent_utxos) = &notes["unspent_utxos"] {
+    if let JsonValue::Array(spent_utxos) = &notes["utxos"] {
         for utxo in spent_utxos {
             if utxo["created_in_txid"] == txid {
                 transparent_notes += 1;

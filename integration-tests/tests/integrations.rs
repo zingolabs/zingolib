@@ -3601,6 +3601,7 @@ mod basic_transactions {
     use std::cmp;
 
     use json::JsonValue;
+    use zcash_client_backend::wallet::Recipient;
     use zingo_testutils::scenarios;
     use zingolib::{
         get_base_address,
@@ -3678,7 +3679,7 @@ mod basic_transactions {
 
         let txid1 = recipient
             .do_send(vec![(
-                get_base_address!(faucet, "sapling").as_str(),
+                get_base_address!(faucet, "transparent").as_str(),
                 20_000,
                 None,
             )])
@@ -3704,6 +3705,9 @@ mod basic_transactions {
         let tx_actions =
             zingo_testutils::tx_actions(&recipient, Some(&faucet), txid1.as_str()).await;
         println!("Transaction Actions:\n{:#?}", tx_actions);
+
+        // let recipient_notes = recipient.do_list_notes(true).await;
+        // println!("Recipient Notes:\n{:#?}", recipient_notes);
 
         let faucet_summaries = faucet.do_list_txsummaries().await;
         let simplified_faucet_summaries: Vec<_> = faucet_summaries
