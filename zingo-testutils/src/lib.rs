@@ -402,8 +402,13 @@ pub async fn tx_actions(
         calculated_sapling_tx_actions
     };
 
-    let calculated_orchard_tx_actions =
-        tx_ins.orchard_tx_actions + tx_outs.orchard_tx_actions + tx_change.orchard_tx_actions;
+    // let calculated_orchard_tx_actions =
+    //     tx_ins.orchard_tx_actions + tx_outs.orchard_tx_actions + tx_change.orchard_tx_actions;
+
+    let calculated_orchard_tx_actions = cmp::max(
+        tx_ins.orchard_tx_actions,
+        tx_outs.orchard_tx_actions + tx_change.orchard_tx_actions,
+    );
     let final_orchard_tx_actions = if calculated_orchard_tx_actions == 1 {
         2
     } else {

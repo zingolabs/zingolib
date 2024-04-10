@@ -3891,6 +3891,19 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
+        println!(
+            "Transaction Inputs:\n{:?}",
+            zingo_testutils::tx_inputs(&faucet, txid1.as_str()).await
+        );
+        println!(
+            "Transaction Outputs:\n{:?}",
+            zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await
+        );
+        println!(
+            "Transaction Change:\n{:?}",
+            zingo_testutils::tx_outputs(&faucet, txid1.as_str()).await
+        );
+
         let tx_actions_txid1 =
             zingo_testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid1);
@@ -3957,6 +3970,15 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
+        println!(
+            "Transaction Inputs:\n{:?}",
+            zingo_testutils::tx_inputs(&recipient, txid1.as_str()).await
+        );
+        println!(
+            "Transaction Outputs:\n{:?}",
+            zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await
+        );
+
         let tx_actions_txid1 = zingo_testutils::tx_actions(&recipient, None, txid1.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
@@ -4015,6 +4037,15 @@ mod basic_transactions {
 
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
+
+        println!(
+            "Transaction Inputs:\n{:?}",
+            zingo_testutils::tx_inputs(&recipient, txid2.as_str()).await
+        );
+        println!(
+            "Transaction Outputs:\n{:?}",
+            zingo_testutils::tx_outputs(&recipient, txid2.as_str()).await
+        );
 
         let tx_actions_txid2 = zingo_testutils::tx_actions(&recipient, None, txid2.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid2);
