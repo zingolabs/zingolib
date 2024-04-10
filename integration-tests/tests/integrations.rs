@@ -3646,100 +3646,6 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
     }
 
-    // not a test, using to test test code!
-    // #[tokio::test]
-    // async fn standard_fee() {
-    //     let (regtest_manager, _cph, faucet, recipient) =
-    //         scenarios::faucet_recipient_default().await;
-
-    //     for _ in 0..3 {
-    //         faucet
-    //             .do_send(vec![(
-    //                 get_base_address!(recipient, "unified").as_str(),
-    //                 40_000,
-    //                 None,
-    //             )])
-    //             .await
-    //             .unwrap();
-    //     }
-
-    //     zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-
-    //     let txid1 = recipient
-    //         .do_send(vec![(
-    //             get_base_address!(faucet, "transparent").as_str(),
-    //             20_000,
-    //             None,
-    //         )])
-    //         .await
-    //         .unwrap();
-
-    //     zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-
-    //     let tx_ins = zingo_testutils::tx_inputs(&recipient, txid1.as_str()).await;
-    //     println!("Transaction Inputs:\n{:#?}\n", tx_ins);
-
-    //     let tx_outs = zingo_testutils::tx_outputs(&faucet, txid1.as_str()).await;
-    //     println!("Transaction Outputs:\n{:#?}\n", tx_outs);
-
-    //     let tx_change = zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await;
-    //     println!("Transaction Change Outputs:\n{:#?}\n", tx_change);
-
-    //     let tx_actions =
-    //         zingo_testutils::tx_actions(&recipient, Some(&faucet), txid1.as_str()).await;
-    //     println!("Transaction Actions:\n{:#?}", tx_actions);
-
-    //     // let recipient_notes = recipient.do_list_notes(true).await;
-    //     // println!("Recipient Notes:\n{:#?}", recipient_notes);
-
-    //     let faucet_summaries = faucet.do_list_txsummaries().await;
-    //     let simplified_faucet_summaries: Vec<_> = faucet_summaries
-    //         .iter()
-    //         .filter(|summary| summary.txid.to_string() == txid1)
-    //         .map(|summary| match &summary.kind {
-    //             ValueTransferKind::Sent { amount, to_address } => {
-    //                 format!("Sent to: {}, Amount: {}", to_address, amount)
-    //             }
-    //             ValueTransferKind::Received { pool, amount } => {
-    //                 format!("Received in pool: {:?}, Amount: {}", pool, amount)
-    //             }
-    //             ValueTransferKind::SendToSelf => "Sent to Self".to_string(),
-    //             ValueTransferKind::Fee { amount } => format!("Fee, Amount: {}", amount),
-    //         })
-    //         .collect();
-    //     println!("Faucet Summaries:\n{:#?}\n", simplified_faucet_summaries);
-
-    //     let recipient_summaries = recipient.do_list_txsummaries().await;
-    //     let simplified_recipient_summaries: Vec<_> = recipient_summaries
-    //         .iter()
-    //         .filter(|summary| summary.txid.to_string() == txid1)
-    //         .map(|summary| match &summary.kind {
-    //             ValueTransferKind::Sent { amount, to_address } => {
-    //                 format!("Sent to: {}, Amount: {}", to_address, amount)
-    //             }
-    //             ValueTransferKind::Received { pool, amount } => {
-    //                 format!("Received in pool: {:?}, Amount: {}", pool, amount)
-    //             }
-    //             ValueTransferKind::SendToSelf => "Sent to Self".to_string(),
-    //             ValueTransferKind::Fee { amount } => format!("Fee, Amount: {}", amount),
-    //         })
-    //         .collect();
-    //     println!(
-    //         "Recipient Summaries:\n{:#?}\n",
-    //         simplified_recipient_summaries
-    //     );
-    // }
-
     #[tokio::test]
     async fn standard_send_fees() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -3964,8 +3870,56 @@ mod basic_transactions {
         assert_eq!(fee_paid_txid4, expected_fee_txid4 as u64);
     }
 
-    // #[tokio::test]
-    // async fn dust_send_fees() {}
+    #[tokio::test]
+    async fn dust_send_fees() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+
+        let txid1 = faucet
+            .do_send(vec![(
+                get_base_address!(recipient, "unified").as_str(),
+                0,
+                None,
+            )])
+            .await
+            .unwrap();
+
+        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+            .await
+            .unwrap();
+
+        faucet.do_sync(true).await.unwrap();
+        recipient.do_sync(true).await.unwrap();
+
+        let tx_actions_txid1 =
+            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
+        println!("Transaction Actions:\n{:?}", tx_actions_txid1);
+
+        let fee_paid_txid1: u64 = faucet
+            .do_list_txsummaries()
+            .await
+            .iter()
+            .filter(|summary| summary.txid.to_string() == txid1)
+            .find_map(|summary| match &summary.kind {
+                ValueTransferKind::Fee { amount } => Some(*amount),
+                _ => None,
+            })
+            .unwrap_or(0);
+        println!("Fee Paid: {}", fee_paid_txid1);
+
+        let expected_fee_txid1 = 10000;
+        // currently expected fee is always 10000 but will change to the following in zip317
+        // let expected_fee_txid1 = 5000
+        //     * (cmp::max(
+        //         2,
+        //         tx_actions_txid1.transparent_tx_actions
+        //             + tx_actions_txid1.sapling_tx_actions
+        //             + tx_actions_txid1.orchard_tx_actions,
+        //     ));
+        println!("Expected Fee: {}", expected_fee_txid1);
+
+        assert_eq!(fee_paid_txid1, expected_fee_txid1 as u64);
+    }
 
     #[tokio::test]
     async fn shield_send_fees() {
