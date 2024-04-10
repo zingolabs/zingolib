@@ -36,6 +36,12 @@ impl SpendingData {
             latest_proposal: None,
         })
     }
+    pub fn witness_trees(&self) -> &WitnessTrees {
+        &self.witness_trees
+    }
+    pub fn witness_trees_mut(&mut self) -> &mut WitnessTrees {
+        &mut self.witness_trees
+    }
     pub fn clear(&mut self) {
         *self = Self::default()
     }
