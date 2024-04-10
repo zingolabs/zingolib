@@ -22,24 +22,23 @@ zingo-status = { path = "../zingo-status" }
 zingo-testvectors = { path = "../zingo-testvectors", optional = true }
 zingo-netutils = { path = "../zingo-netutils" }
 
+http-body = { workspace = true }
+hyper = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
+prost = { workspace = true }
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 incrementalmerkletree = { workspace = true, features = ["test-dependencies", "legacy-api"] }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
 zcash_encoding = { workspace = true }
-zcash_keys = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
+hyper-rustls = { workspace = true }
 zip32.workspace = true
 
-hyper-rustls = { workspace = true }
-http-body = { workspace = true }
-hyper = { workspace = true }
-tonic = { workspace = true }
-tower = { workspace = true }
-prost = { workspace = true }
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
 
 log = "0.4.14"
