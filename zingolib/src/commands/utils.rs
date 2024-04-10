@@ -4,7 +4,10 @@ use crate::commands::error::CommandError;
 use crate::wallet;
 use zcash_primitives::memo::MemoBytes;
 
-/// Send args accepts two different formats for its input
+/// Parse the send arguments for `do_propose`.
+/// The send arguments have two possible formats:
+/// - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
+/// - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
 pub(super) fn parse_send_args(
     args: &[&str],
 ) -> Result<Vec<(String, u64, Option<MemoBytes>)>, CommandError> {
