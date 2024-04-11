@@ -147,7 +147,7 @@ impl InputSource for TransactionRecordsById {
             |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
                     sapling_notes.push(
-                        self.get(&noteref.txid).map(|tr| tr.get_received_note::<SaplingDomain>(noteref.index)).flatten()
+                        self.get(&noteref.txid).and_then(|tr| tr.get_received_note::<SaplingDomain>(noteref.index))
                             .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
                     );
                     Ok(targ
@@ -162,7 +162,7 @@ impl InputSource for TransactionRecordsById {
             |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
                     orchard_notes.push(
-                        self.get(&noteref.txid).map(|tr| tr.get_received_note::<OrchardDomain>(noteref.index)).flatten()
+                        self.get(&noteref.txid).and_then(|tr| tr.get_received_note::<OrchardDomain>(noteref.index))
                             .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
                     );
                     Ok(targ
