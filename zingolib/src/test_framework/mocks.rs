@@ -112,3 +112,7 @@ mod sapling_note {
 pub fn mock_sapling_crypto_note() -> sapling_crypto::Note {
     sapling_note::LRZSaplingNoteBuilder::default().build()
 }
+
+pub fn mock_txid() -> TxId {
+    zcash_primitives::transaction::TxId::from_bytes([7; 32])
+}
