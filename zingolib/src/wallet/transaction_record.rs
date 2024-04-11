@@ -394,34 +394,6 @@ impl TransactionRecord {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::wallet::utils::txid_from_slice;
-
-    use super::*;
-
-    #[test]
-    pub fn blank_record() {
-        let new = TransactionRecord::new(
-            ConfirmationStatus::Confirmed(2_000_000.into()),
-            103,
-            &txid_from_slice(&[0u8; 32]),
-        );
-        assert_eq!(new.get_transparent_value_spent(), 0);
-        assert_eq!(new.get_transaction_fee().unwrap(), 0);
-        assert!(!new.is_outgoing_transaction());
-        assert!(!new.is_incoming_transaction());
-        // assert_eq!(new.net_spent(), 0);
-        assert_eq!(new.pool_change_returned::<OrchardDomain>(), 0);
-        assert_eq!(new.pool_change_returned::<SaplingDomain>(), 0);
-        assert_eq!(new.total_value_received(), 0);
-        assert_eq!(new.total_value_spent(), 0);
-        assert_eq!(new.value_outgoing(), 0);
-        let t: [u64; 3] = [0, 0, 0];
-        assert_eq!(new.value_spent_by_pool(), t);
-    }
-}
-
 #[cfg(feature = "test-features")]
 pub(crate) mod mocks {
     use crate::wallet::notes::{SaplingNote, TransparentNote};
@@ -448,5 +420,45 @@ pub(crate) mod mocks {
             transaction_record.sapling_notes.push(SaplingNote::mock());
             transaction_record
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "test-features")]
+mod tests {
+    use crate::wallet::utils::txid_from_slice;
+    use crate::wallet::{notes::TransparentNote, transaction_record::TransactionRecord};
+
+    use super::*;
+
+    #[test]
+    pub fn blank_record() {
+        let new = TransactionRecord::new(
+            ConfirmationStatus::Confirmed(2_000_000.into()),
+            103,
+            &txid_from_slice(&[0u8; 32]),
+        );
+        assert_eq!(new.get_transparent_value_spent(), 0);
+        assert_eq!(new.get_transaction_fee().unwrap(), 0);
+        assert!(!new.is_outgoing_transaction());
+        assert!(!new.is_incoming_transaction());
+        // assert_eq!(new.net_spent(), 0);
+        assert_eq!(new.pool_change_returned::<OrchardDomain>(), 0);
+        assert_eq!(new.pool_change_returned::<SaplingDomain>(), 0);
+        assert_eq!(new.total_value_received(), 0);
+        assert_eq!(new.total_value_spent(), 0);
+        assert_eq!(new.value_outgoing(), 0);
+        let t: [u64; 3] = [0, 0, 0];
+        assert_eq!(new.value_spent_by_pool(), t);
+    }
+
+    #[test]
+    fn single_transparent_note_makes_is_incoming_true() {
+        // A single transparent note makes is_incoming_transaction true.
+        let mut transaction_record = TransactionRecord::mock();
+        transaction_record
+            .transparent_notes
+            .push(TransparentNote::mock());
+        assert!(transaction_record.is_incoming_transaction());
     }
 }
