@@ -1,3 +1,7 @@
+//! Zingo-Netutils
+//! TODO: Add Crate Discription Here!
+
+#![warn(missing_docs)]
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -15,20 +19,24 @@ type UnderlyingService = BoxCloneService<
     hyper::Error,
 >;
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone)]
 pub struct GrpcConnector {
     uri: http::Uri,
 }
 
 impl GrpcConnector {
+    /// TODO: Add Doc Comment Here!
     pub fn new(uri: http::Uri) -> Self {
         Self { uri }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn uri(&self) -> &Uri {
         &self.uri
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
