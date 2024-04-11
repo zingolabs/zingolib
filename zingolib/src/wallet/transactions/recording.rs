@@ -24,13 +24,13 @@ use crate::{
 
 use super::TxMapAndMaybeTrees;
 impl TxMapAndMaybeTrees {
-    pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
+    pub fn invalidate_txids(&mut self, txids_to_remove: Vec<TxId>) {
         self.transaction_records_by_id
             .invalidate_txids(txids_to_remove)
     }
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
-    pub fn remove_txns_at_height(&mut self, reorg_height: u64) {
+    pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
         // First, collect txids that need to be removed
@@ -52,7 +52,7 @@ impl TxMapAndMaybeTrees {
                 }
             })
             .collect::<Vec<_>>();
-        self.remove_txids(txids_to_remove);
+        self.invalidate_txids(txids_to_remove);
         if let Some(ref mut t) = self.witness_trees {
             t.witness_tree_sapling
                 .truncate_removing_checkpoint(&(reorg_height - 1))
@@ -80,7 +80,7 @@ impl TxMapAndMaybeTrees {
             .iter()
             .for_each(|t| println!("Removing expired mempool tx {}", t));
 
-        self.remove_txids(txids_to_remove);
+        self.invalidate_txids(txids_to_remove);
     }
 
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this

@@ -75,8 +75,8 @@ impl TransactionRecordsById {
         });
     }
 
-    /// this function invalidiates
-    pub fn invalidate_txids(&mut self, txids_to_remove: Vec<TxId>) {
+    /// this function invalidiates a vec of txids
+    pub(crate) fn invalidate_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.remove(txid);
         }
