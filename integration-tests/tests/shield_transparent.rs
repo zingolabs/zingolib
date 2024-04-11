@@ -41,13 +41,13 @@ async fn shield_transparent() {
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
     );
 
-    let shielder = recipient
+    let shielding_proposal = recipient
         .do_shield(&[Pool::Transparent], None)
         .await
         .unwrap();
 
     println!("Initial proposal {:?}", proposal);
-    println!("Shielding proposal {:?}", shielder);
+    println!("Shielding proposal {:?}", shielding_proposal);
 
     println!(
         "post-shield recipient
