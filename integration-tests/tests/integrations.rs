@@ -1001,7 +1001,7 @@ mod slow {
         let wallet_capability = original_recipient.wallet.wallet_capability().clone();
         let [o_fvk, s_fvk, t_fvk] =
             zingo_testutils::build_fvks_from_wallet_capability(&wallet_capability);
-        let fvks_sets = vec![
+        let fvks_sets = [
             vec![&o_fvk],
             vec![&s_fvk],
             vec![&o_fvk, &s_fvk],
@@ -3462,7 +3462,7 @@ mod slow {
                     .unwrap(),
             )
             .create();
-        let wallet = LightWallet::read_internal(&data[..], &config)
+        let wallet = LightWallet::read_internal(data, &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap();
