@@ -31,7 +31,7 @@ impl std::ops::DerefMut for TransactionRecordsById {
     }
 }
 impl TransactionRecordsById {
-    // Associated function to create a TransactionRecordMap from a HashMap
+    // Associated function to create a TransactionRecordsById from a HashMap
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
