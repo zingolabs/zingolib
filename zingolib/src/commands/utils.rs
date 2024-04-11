@@ -3,6 +3,7 @@
 use crate::commands::error::CommandError;
 use crate::wallet;
 use zcash_primitives::memo::MemoBytes;
+use zingoconfig::ChainType;
 
 /// Parse the send arguments for `do_propose`.
 /// The send arguments have two possible formats:
@@ -77,6 +78,22 @@ pub(super) fn parse_send_args(
     }?;
 
     Ok(send_args)
+}
+
+/// Checks send inputs do not contain memo's to transparent addresses.
+pub(super) fn check_memo_compatibility(
+    send_inputs: &[(String, u64, Option<MemoBytes>)],
+    chain: &ChainType,
+) -> Result<(), CommandError> {
+    for send in send_inputs {
+        let address = &send.0;
+        let memo = &send.2;
+        if memo.is_some() && wallet::keys::is_transparent_address(address, chain) {
+            return Err(CommandError::IncompatibleMemo);
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
