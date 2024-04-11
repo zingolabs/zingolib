@@ -36,6 +36,8 @@ impl std::ops::DerefMut for TransactionRecordsById {
     }
 }
 impl TransactionRecordsById {
+    // initializers
+
     // Associated function to create a TransactionRecordMap from a HashMap
     pub fn new() -> Self {
         TransactionRecordsById(HashMap::new())
@@ -43,7 +45,10 @@ impl TransactionRecordsById {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
-    pub(crate) fn remove_domain_specific_txids<D: DomainWalletExt>(
+
+    // modify methods
+
+    pub(crate) fn invalidate_domain_specific_txids<D: DomainWalletExt>(
         &mut self,
         txids_to_remove: &[TxId],
     ) where
@@ -70,7 +75,37 @@ impl TransactionRecordsById {
         });
     }
 
-    // get functions.
+    /// this function invalidiates
+    pub fn invalidate_txids(&mut self, txids_to_remove: Vec<TxId>) {
+        for txid in &txids_to_remove {
+            self.remove(txid);
+        }
+
+        // invalidate (roll back) any transparent spends in each invalidated tx
+        self.values_mut().for_each(|transaction_metadata| {
+            // Update UTXOs to roll back any spent utxos
+            transaction_metadata
+                .transparent_notes
+                .iter_mut()
+                .for_each(|utxo| {
+                    if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
+                        *utxo.spent_mut() = None;
+                    }
+
+                    if utxo.unconfirmed_spent.is_some()
+                        && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
+                    {
+                        utxo.unconfirmed_spent = None;
+                    }
+                })
+        });
+        // roll back any sapling spends in each invalidated tx
+        self.invalidate_domain_specific_txids::<SaplingDomain>(&txids_to_remove);
+        // roll back any orchard spends in each invalidated tx
+        self.invalidate_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
+    }
+
+    // get methods
 
     pub fn get_received_note_from_identifier<D: DomainWalletExt>(
         &self,

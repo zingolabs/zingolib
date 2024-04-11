@@ -25,39 +25,8 @@ use crate::{
 use super::TxMapAndMaybeTrees;
 impl TxMapAndMaybeTrees {
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
-        for txid in &txids_to_remove {
-            self.transaction_records_by_id.remove(txid);
-        }
         self.transaction_records_by_id
-            .values_mut()
-            .for_each(|transaction_metadata| {
-                // Update UTXOs to rollback any spent utxos
-                transaction_metadata
-                    .transparent_notes
-                    .iter_mut()
-                    .for_each(|utxo| {
-                        if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
-                            *utxo.spent_mut() = None;
-                        }
-
-                        if utxo.unconfirmed_spent.is_some()
-                            && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
-                        {
-                            utxo.unconfirmed_spent = None;
-                        }
-                    })
-            });
-        self.remove_domain_specific_txids::<SaplingDomain>(&txids_to_remove);
-        self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
-    }
-
-    fn remove_domain_specific_txids<D: DomainWalletExt>(&mut self, txids_to_remove: &[TxId])
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        self.transaction_records_by_id
-            .remove_domain_specific_txids::<D>(txids_to_remove)
+            .invalidate_txids(txids_to_remove)
     }
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
