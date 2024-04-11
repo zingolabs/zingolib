@@ -250,7 +250,9 @@ pub(crate) mod mocks {
         }
     }
 
-    pub(crate) fn mock_sapling_note() -> SaplingNote {
-        SaplingNoteBuilder::default().build()
+    impl SaplingNote {
+        pub(crate) fn mock() -> Self {
+            SaplingNoteBuilder::default().build()
+        }
     }
 }

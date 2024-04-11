@@ -24,12 +24,12 @@ pub(crate) fn create_transaction_record_with_one_tnote(
 #[allow(dead_code)]
 pub(crate) fn default_trecord_with_one_tnote(
 ) -> crate::wallet::transaction_record::TransactionRecord {
-    let transparent_note = crate::wallet::notes::transparent::mocks::mock_transparent_note();
+    let transparent_note = TransparentNote::mock();
     create_transaction_record_with_one_tnote(transparent_note.txid, transparent_note)
 }
 #[allow(dead_code)]
 pub(crate) fn create_note_record_id() -> crate::wallet::notes::NoteRecordIdentifier {
-    let transparent_note = crate::wallet::notes::transparent::mocks::mock_transparent_note();
+    let transparent_note = TransparentNote::mock();
     let index = 5u32;
     crate::wallet::notes::NoteRecordIdentifier {
         txid: transparent_note.txid,

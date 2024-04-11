@@ -224,12 +224,13 @@ pub(crate) mod mocks {
         }
     }
 
-    pub(crate) fn mock_transparent_note() -> TransparentNote {
-        // A single transparent note makes is_incoming_trsaction true.
-        let txid = zcash_primitives::transaction::TxId::from_bytes([0u8; 32]);
-        TransparentNoteBuilder::new()
-            .address("t".to_string())
-            .spent(Some((txid, 3)))
-            .build()
+    impl TransparentNote {
+        pub(crate) fn mock() -> Self {
+            let txid = zcash_primitives::transaction::TxId::from_bytes([0u8; 32]);
+            TransparentNoteBuilder::new()
+                .address("t".to_string())
+                .spent(Some((txid, 3)))
+                .build()
+        }
     }
 }

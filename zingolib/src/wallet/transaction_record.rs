@@ -421,3 +421,6 @@ mod tests {
         assert_eq!(new.value_spent_by_pool(), t);
     }
 }
+
+#[cfg(feature = "test-features")]
+pub(crate) mod mocks {}
