@@ -1,4 +1,5 @@
 use incrementalmerkletree::witness::IncrementalWitness;
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
@@ -6,6 +7,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
+    notes::{NoteInterface as _, NoteRecordIdentifier},
     traits::DomainWalletExt,
     *,
 };
@@ -110,6 +112,43 @@ impl TransactionRecord {
         }
     }
 
+    pub fn select_unspent_note_noteref_pairs_sapling(
+        &self,
+    ) -> Vec<(sapling_crypto::Note, NoteRecordIdentifier)> {
+        let mut value_ref_pairs = Vec::new();
+        SaplingDomain::to_notes_vec(self).iter().for_each(|note| {
+            if !note.is_spent_or_pending_spent() {
+                if let Some(index) = note.output_index {
+                    let note_record_reference = NoteRecordIdentifier {
+                        txid: self.txid,
+                        pool: PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Sapling),
+                        index,
+                    };
+                    value_ref_pairs.push((note.note.clone(), note_record_reference));
+                }
+            }
+        });
+        value_ref_pairs
+    }
+    pub fn select_unspent_note_noteref_pairs_orchard(
+        &self,
+    ) -> Vec<(orchard::Note, NoteRecordIdentifier)> {
+        let mut value_ref_pairs = Vec::new();
+        OrchardDomain::to_notes_vec(self).iter().for_each(|note| {
+            if !note.is_spent_or_pending_spent() {
+                if let Some(index) = note.output_index {
+                    let note_record_reference = NoteRecordIdentifier {
+                        txid: self.txid,
+                        pool: PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard),
+                        index,
+                    };
+                    value_ref_pairs.push((note.note, note_record_reference));
+                }
+            }
+        });
+        value_ref_pairs
+    }
+
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
     pub fn is_outgoing_transaction(&self) -> bool {
@@ -170,6 +209,37 @@ impl TransactionRecord {
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
+    }
+    pub fn get_received_note<D>(
+        &self,
+        index: u32,
+    ) -> Option<zcash_client_backend::wallet::ReceivedNote<NoteRecordIdentifier, <D as Domain>::Note>>
+    where
+        D: DomainWalletExt + Sized,
+        D::Note: PartialEq + Clone,
+        D::Recipient: traits::Recipient,
+    {
+        let note = D::to_notes_vec(self)
+            .iter()
+            .find(|note| *note.output_index() == Some(index));
+        note.and_then(|note| {
+            let txid = self.txid;
+            let note_record_reference = NoteRecordIdentifier {
+                txid,
+                pool: zcash_client_backend::PoolType::Shielded(note.to_zcb_note().protocol()),
+                index,
+            };
+            note.witnessed_position().map(|pos| {
+                zcash_client_backend::wallet::ReceivedNote::from_parts(
+                    note_record_reference,
+                    txid,
+                    index as u16,
+                    note.note().clone(),
+                    zip32::Scope::External,
+                    pos,
+                )
+            })
+        })
     }
 }
 // read/write

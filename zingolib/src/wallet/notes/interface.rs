@@ -15,7 +15,13 @@ pub trait NoteInterface: Sized {
     }
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
+    fn is_pending_spent(&self) -> bool {
+        Self::pending_spent(self).is_some()
+    }
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn is_spent_or_pending_spent(&self) -> bool {
+        self.is_spent() || self.is_pending_spent()
+    }
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool

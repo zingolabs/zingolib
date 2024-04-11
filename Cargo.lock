@@ -4292,6 +4292,7 @@ dependencies = [
  "zingo-status",
  "zingo-testvectors",
  "zingoconfig",
+ "zip32",
 ]
 
 [[package]]
