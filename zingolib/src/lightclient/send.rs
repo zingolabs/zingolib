@@ -69,8 +69,9 @@ impl LightClient {
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
         if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
             unimplemented!()
+        } else {
+            Err("Needs proposal".to_string())
         }
-        unimplemented!()
     }
 
     //TODO: Add migrate_sapling_to_orchard argument
