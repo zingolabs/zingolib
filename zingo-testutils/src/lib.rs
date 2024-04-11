@@ -258,7 +258,7 @@ pub struct TxActions {
     pub orchard_tx_actions: usize,
 }
 
-/// Returnes number of notes used as inputs for txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
+/// Returns number of notes used as inputs for txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
 pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
@@ -318,7 +318,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
     }
 }
 
-/// Returnes number of notes created in txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
+/// Returns number of notes created in txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
 pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
@@ -438,23 +438,23 @@ pub async fn total_tx_value(client: &LightClient, txid: &str) -> u64 {
     if let JsonValue::Array(spent_utxos) = &notes["spent_utxos"] {
         for utxo in spent_utxos {
             if utxo["spent"] == txid || utxo["unconfirmed_spent"] == txid {
-                tx_spend += utxo["value"].as_u64().unwrap_or(0);
+                tx_spend += utxo["value"].as_u64().unwrap();
             }
         }
     }
     if let JsonValue::Array(pending_utxos) = &notes["pending_utxos"] {
         for utxo in pending_utxos {
             if utxo["spent"] == txid || utxo["unconfirmed_spent"] == txid {
-                tx_spend += utxo["value"].as_u64().unwrap_or(0);
+                tx_spend += utxo["value"].as_u64().unwrap();
             } else if utxo["created_in_txid"] == txid {
-                tx_change += utxo["value"].as_u64().unwrap_or(0);
+                tx_change += utxo["value"].as_u64().unwrap();
             }
         }
     }
     if let JsonValue::Array(unspent_utxos) = &notes["utxos"] {
         for utxo in unspent_utxos {
             if utxo["created_in_txid"] == txid {
-                tx_change += utxo["value"].as_u64().unwrap_or(0);
+                tx_change += utxo["value"].as_u64().unwrap();
             }
         }
     }
@@ -462,23 +462,23 @@ pub async fn total_tx_value(client: &LightClient, txid: &str) -> u64 {
     if let JsonValue::Array(spent_sapling_notes) = &notes["spent_sapling_notes"] {
         for note in spent_sapling_notes {
             if note["spent"] == txid || note["unconfirmed_spent"] == txid {
-                tx_spend += note["value"].as_u64().unwrap_or(0);
+                tx_spend += note["value"].as_u64().unwrap();
             }
         }
     }
     if let JsonValue::Array(pending_sapling_notes) = &notes["pending_sapling_notes"] {
         for note in pending_sapling_notes {
             if note["spent"] == txid || note["unconfirmed_spent"] == txid {
-                tx_spend += note["value"].as_u64().unwrap_or(0);
+                tx_spend += note["value"].as_u64().unwrap();
             } else if note["created_in_txid"] == txid {
-                tx_change += note["value"].as_u64().unwrap_or(0);
+                tx_change += note["value"].as_u64().unwrap();
             }
         }
     }
     if let JsonValue::Array(unspent_sapling_notes) = &notes["unspent_sapling_notes"] {
         for note in unspent_sapling_notes {
             if note["created_in_txid"] == txid {
-                tx_change += note["value"].as_u64().unwrap_or(0);
+                tx_change += note["value"].as_u64().unwrap();
             }
         }
     }
@@ -486,23 +486,23 @@ pub async fn total_tx_value(client: &LightClient, txid: &str) -> u64 {
     if let JsonValue::Array(spent_orchard_notes) = &notes["spent_orchard_notes"] {
         for note in spent_orchard_notes {
             if note["spent"] == txid || note["unconfirmed_spent"] == txid {
-                tx_spend += note["value"].as_u64().unwrap_or(0);
+                tx_spend += note["value"].as_u64().unwrap();
             }
         }
     }
     if let JsonValue::Array(pending_orchard_notes) = &notes["pending_orchard_notes"] {
         for note in pending_orchard_notes {
             if note["spent"] == txid || note["unconfirmed_spent"] == txid {
-                tx_spend += note["value"].as_u64().unwrap_or(0);
+                tx_spend += note["value"].as_u64().unwrap();
             } else if note["created_in_txid"] == txid {
-                tx_change += note["value"].as_u64().unwrap_or(0);
+                tx_change += note["value"].as_u64().unwrap();
             }
         }
     }
     if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
         for note in unspent_orchard_notes {
             if note["created_in_txid"] == txid {
-                tx_change += note["value"].as_u64().unwrap_or(0);
+                tx_change += note["value"].as_u64().unwrap();
             }
         }
     }
