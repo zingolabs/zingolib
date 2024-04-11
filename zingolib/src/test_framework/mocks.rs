@@ -11,6 +11,32 @@ macro_rules! build_method {
 }
 pub(crate) use build_method;
 
+use rand::{rngs::OsRng, Rng};
+use sapling_crypto::{
+    note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey, PaymentAddress,
+};
+
+pub(crate) fn get_random_zaddr() -> (
+    ExtendedSpendingKey,
+    PreparedIncomingViewingKey,
+    PaymentAddress,
+) {
+    let mut rng = OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill(&mut seed);
+
+    let extsk = ExtendedSpendingKey::master(&seed);
+    let dfvk = extsk.to_diversifiable_full_viewing_key();
+    let fvk = dfvk;
+    let (_, addr) = fvk.default_address();
+
+    (
+        extsk,
+        PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
+        addr,
+    )
+}
+
 // Sapling Note Mocker
 mod sapling_note {
 
@@ -45,8 +71,9 @@ mod sapling_note {
     }
     impl Default for LRZSaplingNoteBuilder {
         fn default() -> Self {
+            let (_, _, address) = super::get_random_zaddr();
             LRZSaplingNoteBuilder {
-                recipient: PaymentAddress::from_bytes(&[7; 43]),
+                recipient: Some(address),
                 value: Some(NoteValue::from_raw(1000000)),
                 rseed: Some(Rseed::AfterZip212([7; 32])),
             }

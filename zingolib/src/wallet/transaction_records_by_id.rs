@@ -281,15 +281,37 @@ impl InputSource for TransactionRecordsById {
 #[cfg(test)]
 #[cfg(feature = "test-features")]
 mod tests {
-    use crate::wallet::{notes::TransparentNote, transaction_record::TransactionRecord};
+    use crate::wallet::{
+        notes::{NoteRecordIdentifier, SaplingNote},
+        transaction_record::TransactionRecord,
+    };
+
+    use super::TransactionRecordsById;
+    use zcash_client_backend::data_api::{InputSource, SpendableNotes};
+    use zcash_primitives::{
+        consensus::BlockHeight, transaction::components::amount::NonNegativeAmount,
+    };
+    use zip32::AccountId;
 
     #[test]
     fn note_is_selected() {
         // WIP
         let mut transaction_record = TransactionRecord::mock();
-        transaction_record
-            .transparent_notes
-            .push(TransparentNote::mock());
-        assert!(transaction_record.is_incoming_transaction());
+        transaction_record.sapling_notes.push(SaplingNote::mock());
+
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+        transaction_records_by_id.insert(transaction_record.txid, transaction_record);
+
+        let target_value = NonNegativeAmount::const_from_u64(20000);
+        let anchor_height: BlockHeight = 0.into();
+        let spendable_notes: SpendableNotes<NoteRecordIdentifier> = transaction_records_by_id
+            .select_spendable_notes(
+                AccountId::ZERO,
+                target_value,
+                &vec![],
+                anchor_height,
+                &vec![],
+            )
+            .unwrap();
     }
 }
