@@ -2,7 +2,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::notes::TransparentNote;
 pub(crate) mod macros;
-mod mocks;
+pub mod mocks;
 
 #[allow(dead_code)]
 pub(crate) fn create_empty_txid_and_tnote() -> (zcash_primitives::transaction::TxId, TransparentNote)
