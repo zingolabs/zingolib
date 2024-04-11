@@ -229,14 +229,20 @@ pub mod decrypt_transaction {
             let mut spent_utxos = vec![];
 
             {
-                let current = &self.transaction_metadata_set.read().await.current;
+                let current_transaction_records_by_id = &self
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .transaction_records_by_id;
                 if let Some(t_bundle) = transaction.transparent_bundle() {
                     for vin in t_bundle.vin.iter() {
                         // Find the prev txid that was spent
                         let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
                         let prev_n = vin.prevout.n() as u64;
 
-                        if let Some(wtx) = current.get(&prev_transaction_id) {
+                        if let Some(wtx) =
+                            current_transaction_records_by_id.get(&prev_transaction_id)
+                        {
                             // One of the tx outputs is a match
                             if let Some(spent_utxo) = wtx
                                 .transparent_notes
@@ -290,7 +296,7 @@ pub mod decrypt_transaction {
                                 .transaction_metadata_set
                                 .write()
                                 .await
-                                .current
+                                .transaction_records_by_id
                                 .get_mut(&txid)
                             {
                                 if !transaction.outgoing_tx_data.is_empty() {

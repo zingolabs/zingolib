@@ -8,7 +8,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
 
-use super::TxMapAndMaybeTrees;
+use super::{TransactionRecordsById, TxMapAndMaybeTrees};
 impl TxMapAndMaybeTrees {
     pub fn serialized_version() -> u64 {
         22
@@ -38,6 +38,8 @@ impl TxMapAndMaybeTrees {
             ))
         })?;
 
+        let map = TransactionRecordsById::from_map(txs);
+
         if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
             old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
@@ -58,7 +60,7 @@ impl TxMapAndMaybeTrees {
         }
 
         Ok(Self {
-            current: txs,
+            transaction_records_by_id: map,
             witness_trees,
         })
     }
@@ -78,7 +80,7 @@ impl TxMapAndMaybeTrees {
         } else {
             None
         };
-        let current: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
+        let map: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
@@ -123,7 +125,7 @@ impl TxMapAndMaybeTrees {
         };
 
         Ok(Self {
-            current,
+            transaction_records_by_id: TransactionRecordsById::from_map(map),
             witness_trees,
         })
     }
@@ -136,7 +138,7 @@ impl TxMapAndMaybeTrees {
         // deterministically saved
         {
             let mut transaction_metadatas = self
-                .current
+                .transaction_records_by_id
                 .iter()
                 .collect::<Vec<(&TxId, &TransactionRecord)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover
@@ -160,11 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write() {
-        let mut tms = TxMapAndMaybeTrees {
-            current: HashMap::new(), // Populate with test data as necessary
-            witness_trees: Some(WitnessTrees::default()), // Adjust as needed
-        };
-
+        let mut tms = TxMapAndMaybeTrees::new_with_witness_trees();
         let mut buffer = Cursor::new(Vec::new());
 
         // Perform the write operation

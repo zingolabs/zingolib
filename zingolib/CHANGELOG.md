@@ -19,12 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LightClient pub fn get_wallet_dir_location
 - `wallet::keys`:
   - `is_transparent_address`
+- pub struct crate::wallet::notes::NoteRecordIdentifier
 
 ### Changed
 
 - load_client_config fn moves from zingolib to zingoconfig
 - `wallet::keys`:
   - `is_shielded_address` takes a `&ChainType` instead of a `&ZingoConfig`
+- zingolib/src/wallet/transaction_record_map.rs -> zingolib/src/wallet/transaction_records_by_id.rs
+- TransactionRecordMap -> TransactionRecordsById
 
 ### Removed
 

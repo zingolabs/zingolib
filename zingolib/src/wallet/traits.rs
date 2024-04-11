@@ -455,16 +455,14 @@ where
         txmds: &TxMapAndMaybeTrees,
     ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .map(|trees| Self::get_shardtree(trees))
     }
     fn transaction_metadata_set_to_shardtree_mut(
         txmds: &mut TxMapAndMaybeTrees,
     ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
-            .witness_trees
-            .as_mut()
+            .witness_trees_mut()
             .map(|trees| Self::get_shardtree_mut(trees))
     }
     fn get_shardtree(

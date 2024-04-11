@@ -272,8 +272,7 @@ impl LightWallet {
             .read()
             .await;
         let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .ok_or("No spend capability.")?;
         let (tx_builder, total_shielded_receivers) = match self
             .create_and_populate_tx_builder(
@@ -571,7 +570,7 @@ impl LightWallet {
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
         let mut candidate_notes = transaction_metadata_set
-            .current
+            .transaction_records_by_id
             .iter()
             .flat_map(|(transaction_id, transaction)| {
                 D::WalletNote::transaction_metadata_notes(transaction)
