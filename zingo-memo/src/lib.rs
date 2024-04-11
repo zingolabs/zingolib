@@ -1,3 +1,7 @@
+//! Zingo-Memo
+//! TODO: Add Crate Discription Here!
+
+#![warn(missing_docs)]
 use std::io::{self, Read, Write};
 
 use zcash_address::unified::{Address, Container, Encoding, Receiver};
@@ -11,7 +15,11 @@ use zcash_encoding::{CompactSize, Vector};
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ParsedMemo {
-    Version0 { uas: Vec<UnifiedAddress> },
+    /// TODO: Add Doc Comment Here!
+    Version0 {
+        /// TODO: Add Doc Comment Here!
+        uas: Vec<UnifiedAddress>,
+    },
 }
 
 /// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
