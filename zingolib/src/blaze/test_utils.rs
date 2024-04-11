@@ -24,11 +24,11 @@ pub fn trees_from_cblocks(
     for fake_compact_block in compactblock_list {
         let mut sapling_tree = sapling_trees
             .last()
-            .map(Clone::clone)
+            .cloned()
             .unwrap_or_else(CommitmentTree::empty);
         let mut orchard_tree = orchard_trees
             .last()
-            .map(Clone::clone)
+            .cloned()
             .unwrap_or_else(CommitmentTree::empty);
         for compact_transaction in &fake_compact_block.block.vtx {
             update_trees_with_compact_transaction(
