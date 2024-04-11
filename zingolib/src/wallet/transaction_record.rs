@@ -6,8 +6,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
-    notes::NoteRecordIdentifier,
-    traits::{DomainWalletExt, Recipient},
+    traits::DomainWalletExt,
     *,
 };
 
@@ -171,43 +170,6 @@ impl TransactionRecord {
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
-    }
-    pub fn get_received_note<D>(
-        &self,
-        index: u32,
-    ) -> Option<
-        zcash_client_backend::wallet::ReceivedNote<
-            NoteRecordIdentifier,
-            zcash_client_backend::wallet::Note,
-        >,
-    >
-    where
-        D: DomainWalletExt + Sized,
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
-        let note = D::to_notes_vec(self)
-            .iter()
-            .find(|note| *note.output_index() == Some(index));
-        note.and_then(|note| {
-            let txid = self.txid;
-            let zcb_note = note.to_zcb_note();
-            let note_record_reference = NoteRecordIdentifier {
-                txid,
-                pool: zcash_client_backend::PoolType::Shielded(zcb_note.protocol()),
-                index,
-            };
-            note.witnessed_position().map(|pos| {
-                zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    note_record_reference,
-                    txid,
-                    index as u16,
-                    zcb_note,
-                    zcash_primitives::zip32::Scope::External,
-                    pos,
-                )
-            })
-        })
     }
 }
 // read/write
