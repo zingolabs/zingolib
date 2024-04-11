@@ -57,26 +57,7 @@ impl TxMapAndMaybeTrees {
         <D as Domain>::Note: PartialEq + Clone,
     {
         self.transaction_records_by_id
-            .values_mut()
-            .for_each(|transaction_metadata| {
-                // Update notes to rollback any spent notes
-                D::to_notes_vec_mut(transaction_metadata)
-                    .iter_mut()
-                    .for_each(|nd| {
-                        // Mark note as unspent if the txid being removed spent it.
-                        if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0)
-                        {
-                            *nd.spent_mut() = None;
-                        }
-
-                        // Remove unconfirmed spends too
-                        if nd.pending_spent().is_some()
-                            && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
-                        {
-                            *nd.pending_spent_mut() = None;
-                        }
-                    });
-            });
+            .remove_domain_specific_txids::<D>(txids_to_remove)
     }
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.

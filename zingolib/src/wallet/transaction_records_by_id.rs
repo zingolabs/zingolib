@@ -5,13 +5,18 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::data_api::{InputSource, SpendableNotes};
 use zcash_client_backend::wallet::ReceivedNote;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
+use zcash_note_encryption::Domain;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::TxId;
 use zip32::AccountId;
 
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
-    wallet::{data::TransactionRecord, notes::NoteRecordIdentifier, traits::DomainWalletExt},
+    wallet::{
+        data::TransactionRecord,
+        notes::{NoteInterface, NoteRecordIdentifier},
+        traits::{DomainWalletExt, Recipient},
+    },
 };
 
 #[derive(Debug)]
@@ -38,6 +43,35 @@ impl TransactionRecordsById {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
+    pub(crate) fn remove_domain_specific_txids<D: DomainWalletExt>(
+        &mut self,
+        txids_to_remove: &[TxId],
+    ) where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.values_mut().for_each(|transaction_metadata| {
+            // Update notes to rollback any spent notes
+            D::to_notes_vec_mut(transaction_metadata)
+                .iter_mut()
+                .for_each(|nd| {
+                    // Mark note as unspent if the txid being removed spent it.
+                    if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
+                        *nd.spent_mut() = None;
+                    }
+
+                    // Remove unconfirmed spends too
+                    if nd.pending_spent().is_some()
+                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
+                    {
+                        *nd.pending_spent_mut() = None;
+                    }
+                });
+        });
+    }
+
+    // get functions.
+
     pub fn get_received_note_from_identifier<D: DomainWalletExt>(
         &self,
         note_record_reference: NoteRecordIdentifier,
