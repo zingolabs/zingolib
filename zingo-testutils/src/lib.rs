@@ -245,7 +245,7 @@ pub async fn load_wallet(
 }
 
 #[derive(Debug)]
-pub struct TxNotes {
+pub struct TxNotesCount {
     pub transparent_tx_notes: usize,
     pub sapling_tx_notes: usize,
     pub orchard_tx_notes: usize,
@@ -259,7 +259,7 @@ pub struct TxActions {
 }
 
 /// Returnes number of notes used as inputs for txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
-pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
+pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
     let mut transparent_notes = 0;
@@ -311,7 +311,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
         }
     }
 
-    TxNotes {
+    TxNotesCount {
         transparent_tx_notes: transparent_notes,
         sapling_tx_notes: sapling_notes,
         orchard_tx_notes: orchard_notes,
@@ -319,7 +319,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotes {
 }
 
 /// Returnes number of notes created in txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
-pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotes {
+pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
     let mut transparent_notes = 0;
@@ -374,7 +374,7 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotes {
         }
     }
 
-    TxNotes {
+    TxNotesCount {
         transparent_tx_notes: transparent_notes,
         sapling_tx_notes: sapling_notes,
         orchard_tx_notes: orchard_notes,
@@ -391,7 +391,7 @@ pub async fn tx_actions(
     let tx_outs = if let Some(rec) = recipient {
         tx_outputs(rec, txid).await
     } else {
-        TxNotes {
+        TxNotesCount {
             transparent_tx_notes: 0,
             sapling_tx_notes: 0,
             orchard_tx_notes: 0,
