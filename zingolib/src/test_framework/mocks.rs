@@ -9,7 +9,10 @@ macro_rules! build_method {
         }
     };
 }
+
+// Transparent Note Mocker
 use crate::wallet::notes::TransparentNote;
+/// builds a mock transparent note after all pieces are supplied
 pub struct TransparentNoteBuilder {
     address: Option<String>,
     txid: Option<TxId>,
