@@ -251,6 +251,7 @@ pub(crate) mod mocks {
     }
 
     impl SaplingNote {
+        #[allow(dead_code)]
         pub(crate) fn mock() -> Self {
             SaplingNoteBuilder::default().build()
         }

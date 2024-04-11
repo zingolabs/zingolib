@@ -54,10 +54,12 @@ mod sapling_note {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn mock_sapling_crypto_note() -> sapling_crypto::Note {
     sapling_note::LRZSaplingNoteBuilder::default().build()
 }
 
+#[allow(dead_code)]
 pub(crate) fn mock_txid() -> zcash_primitives::transaction::TxId {
     zcash_primitives::transaction::TxId::from_bytes([7; 32])
 }

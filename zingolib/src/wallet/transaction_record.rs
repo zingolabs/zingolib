@@ -429,6 +429,7 @@ pub(crate) mod mocks {
     use super::TransactionRecord;
 
     impl TransactionRecord {
+        #[allow(dead_code)]
         pub(crate) fn mock() -> Self {
             Self::new(
                 zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
@@ -438,6 +439,7 @@ pub(crate) mod mocks {
                 &crate::test_framework::mocks::mock_txid(),
             )
         }
+        #[allow(dead_code)]
         pub(crate) fn mock_complex() -> Self {
             let mut transaction_record = Self::mock();
             transaction_record
