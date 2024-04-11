@@ -185,7 +185,7 @@ pub(crate) mod mocks {
     use super::SaplingNote;
 
     /// builds a mock transparent note after all pieces are supplied
-    pub struct SaplingNoteBuilder {
+    pub(crate) struct SaplingNoteBuilder {
         diversifier: Option<sapling_crypto::Diversifier>,
         note: Option<sapling_crypto::Note>,
         witnessed_position: Option<Option<Position>>,

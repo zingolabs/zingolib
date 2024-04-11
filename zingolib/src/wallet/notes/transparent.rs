@@ -173,7 +173,7 @@ pub(crate) mod mocks {
     // Transparent Note Mocker
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentNote};
     /// builds a mock transparent note after all pieces are supplied
-    pub struct TransparentNoteBuilder {
+    pub(crate) struct TransparentNoteBuilder {
         address: Option<String>,
         txid: Option<TxId>,
         output_index: Option<u64>,
