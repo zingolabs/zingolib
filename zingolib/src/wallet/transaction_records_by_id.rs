@@ -303,7 +303,7 @@ mod tests {
         transaction_records_by_id.insert(transaction_record.txid, transaction_record);
 
         let target_value = NonNegativeAmount::const_from_u64(20000);
-        let anchor_height: BlockHeight = 0.into();
+        let anchor_height: BlockHeight = 10.into();
         let spendable_notes: SpendableNotes<NoteRecordIdentifier> = transaction_records_by_id
             .select_spendable_notes(
                 AccountId::ZERO,
