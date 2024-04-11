@@ -203,6 +203,7 @@ pub struct LightClient {
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 
+    #[cfg(feature = "zip317")]
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>,
 
     save_buffer: ZingoSaveBuffer,
@@ -246,6 +247,7 @@ pub mod instantiation {
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
                 interrupt_sync: Arc::new(RwLock::new(false)),
+                #[cfg(feature = "zip317")]
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
             })
