@@ -277,3 +277,13 @@ impl InputSource for TransactionRecordsById {
         Ok(SpendableNotes::new(sapling_notes, orchard_notes))
     }
 }
+
+#[test]
+#[cfg(feature = "test-features")]
+fn note_is_selected() {
+    // A single transparent note makes is_incoming_trsaction true.
+    let transaction_record = crate::test_framework::default_trecord_with_one_tnote();
+    assert!(transaction_record.is_incoming_transaction());
+    let mut transaction_records_by_id = TransactionRecordsById::new();
+    transaction_records_by_id.insert(transaction_record.txid, transaction_record);
+}
