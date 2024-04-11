@@ -55,7 +55,7 @@ impl TransactionRecordMap {
 /// this struct are threadsafe/locked properly.
 pub struct TxMapAndMaybeTrees {
     pub transaction_records_by_id: TransactionRecordsById,
-    pub witness_trees: Option<WitnessTrees>,
+    witness_trees: Option<WitnessTrees>,
 }
 
 pub mod get;
@@ -75,6 +75,12 @@ impl TxMapAndMaybeTrees {
             transaction_records_by_id: TransactionRecordsById(HashMap::new()),
             witness_trees: None,
         }
+    }
+    pub fn witness_trees(&self) -> Option<&WitnessTrees> {
+        self.witness_trees.as_ref()
+    }
+    pub(crate) fn witness_trees_mut(&mut self) -> Option<&mut WitnessTrees> {
+        self.witness_trees.as_mut()
     }
     pub fn clear(&mut self) {
         self.transaction_records_by_id.clear();

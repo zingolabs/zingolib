@@ -778,8 +778,7 @@ mod slow {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .unwrap()
             .witness_tree_orchard
             .marked_positions()
@@ -811,8 +810,7 @@ mod slow {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .unwrap()
             .witness_tree_orchard
             .marked_positions()
@@ -825,8 +823,7 @@ mod slow {
                 .transaction_metadata_set
                 .read()
                 .await
-                .witness_trees
-                .as_ref()
+                .witness_trees()
                 .unwrap()
                 .witness_tree_orchard
         );
@@ -854,8 +851,7 @@ mod slow {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .unwrap()
             .witness_tree_orchard
             .marked_positions()
@@ -887,8 +883,7 @@ mod slow {
                 .transaction_metadata_set
                 .read()
                 .await
-                .witness_trees
-                .as_ref()
+                .witness_trees()
                 .unwrap()
                 .witness_tree_orchard
         );
@@ -898,8 +893,7 @@ mod slow {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .unwrap()
             .witness_tree_orchard
             .marked_positions()
@@ -2128,8 +2122,7 @@ mod slow {
                 .transaction_metadata_set
                 .read()
                 .await
-                .witness_trees
-                .as_ref()
+                .witness_trees()
                 .unwrap()
                 .witness_tree_orchard
                 .max_leaf_position(0),
@@ -2139,8 +2132,7 @@ mod slow {
                 .transaction_metadata_set
                 .read()
                 .await
-                .witness_trees
-                .as_ref()
+                .witness_trees()
                 .unwrap()
                 .witness_tree_orchard
                 .max_leaf_position(0)
@@ -2477,8 +2469,7 @@ mod slow {
                 .transaction_metadata_set
                 .read()
                 .await
-                .witness_trees
-                .as_ref()
+                .witness_trees()
                 .unwrap()
                 .witness_tree_orchard
         );
@@ -2595,7 +2586,7 @@ mod slow {
             .transaction_metadata_set
             .read()
             .await;
-        let wallet_trees = read_lock.witness_trees.as_ref().unwrap();
+        let wallet_trees = read_lock.witness_trees().unwrap();
         let last_leaf = wallet_trees
             .witness_tree_orchard
             .max_leaf_position(0)
@@ -3300,8 +3291,7 @@ mod slow {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .unwrap()
             .witness_tree_orchard
             .witness_at_checkpoint_depth(
@@ -3340,8 +3330,7 @@ mod slow {
             .transaction_metadata_set
             .read()
             .await
-            .witness_trees
-            .as_ref()
+            .witness_trees()
             .unwrap()
             .witness_tree_orchard
             .witness_at_checkpoint_depth(
