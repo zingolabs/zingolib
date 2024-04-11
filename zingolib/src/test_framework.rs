@@ -5,18 +5,6 @@ pub(crate) mod macros;
 pub mod mocks;
 
 #[allow(dead_code)]
-pub(crate) fn create_empty_txid_and_tnote() -> (zcash_primitives::transaction::TxId, TransparentNote)
-{
-    // A single transparent note makes is_incoming_trsaction true.
-    let txid = zcash_primitives::transaction::TxId::from_bytes([0u8; 32]);
-    (
-        txid,
-        mocks::TransparentNoteBuilder::new()
-            .address("t".to_string())
-            .spent(Some((txid, 3)))
-            .build(),
-    )
-}
 #[allow(dead_code)]
 pub(crate) fn create_transaction_record_with_one_tnote(
     txid: TxId,
@@ -36,15 +24,15 @@ pub(crate) fn create_transaction_record_with_one_tnote(
 #[allow(dead_code)]
 pub(crate) fn default_trecord_with_one_tnote(
 ) -> crate::wallet::transaction_record::TransactionRecord {
-    let (txid, transparent_note) = create_empty_txid_and_tnote();
-    create_transaction_record_with_one_tnote(txid, transparent_note)
+    let transparent_note = crate::wallet::notes::transparent::mocks::mock_transparent_note();
+    create_transaction_record_with_one_tnote(transparent_note.txid, transparent_note)
 }
 #[allow(dead_code)]
 pub(crate) fn create_note_record_id() -> crate::wallet::notes::NoteRecordIdentifier {
-    let (txid, _tnote) = create_empty_txid_and_tnote();
+    let transparent_note = crate::wallet::notes::transparent::mocks::mock_transparent_note();
     let index = 5u32;
     crate::wallet::notes::NoteRecordIdentifier {
-        txid,
+        txid: transparent_note.txid,
         pool: zcash_client_backend::PoolType::Transparent,
         index,
     }

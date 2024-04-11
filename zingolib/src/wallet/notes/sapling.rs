@@ -173,7 +173,7 @@ impl ShieldedNoteInterface for SaplingNote {
 }
 
 #[cfg(feature = "test-features")]
-mod test {
+pub(crate) mod mocks {
     use incrementalmerkletree::Position;
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
