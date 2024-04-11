@@ -96,7 +96,7 @@ impl LightClient {
             .transactions()
             .read()
             .await
-            .current
+            .transaction_records_by_id
             .iter()
             .for_each(|(_, tx)| {
                 let mature = tx
@@ -240,7 +240,7 @@ impl LightClient {
             .transaction_metadata_set
             .read()
             .await
-            .current
+            .transaction_records_by_id
             .iter()
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
@@ -482,7 +482,7 @@ impl LightClient {
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         // Collect Sapling notes
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
                 transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
                     if !all_notes && note_metadata.spent.is_some() {
@@ -525,7 +525,7 @@ impl LightClient {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
                 transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
                     if !all_notes && orch_note_metadata.is_spent() {
@@ -568,7 +568,7 @@ impl LightClient {
         let mut pending_transparent_notes: Vec<JsonValue> = vec![];
         let mut spent_transparent_notes: Vec<JsonValue> = vec![];
 
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, wtx)| {
                 wtx.transparent_notes.iter().filter_map(move |utxo|
                     if !all_notes && utxo.is_spent() {

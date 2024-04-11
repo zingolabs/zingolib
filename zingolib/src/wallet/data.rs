@@ -703,17 +703,7 @@ pub use crate::wallet::transaction_record::TransactionRecord;
 #[cfg(feature = "test-features")]
 fn single_transparent_note_makes_is_incoming_true() {
     // A single transparent note makes is_incoming_trsaction true.
-    let txid = TxId::from_bytes([0u8; 32]);
-    let transparent_note = crate::test_framework::TransparentNoteBuilder::new()
-        .address("t".to_string())
-        .spent(Some((txid, 3)))
-        .build();
-    let mut transaction_record = TransactionRecord::new(
-        zingo_status::confirmation_status::ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
-        1705077003,
-        &txid,
-    );
-    transaction_record.transparent_notes.push(transparent_note);
+    let transaction_record = crate::test_framework::create_transaction_record_with_one_tnote();
     assert!(transaction_record.is_incoming_transaction());
 }
 #[derive(Debug)]

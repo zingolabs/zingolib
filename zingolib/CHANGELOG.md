@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `commands`
   - `ProposeCommand` struct and methods behind "zip317" feature
   - `QuickSendCommand` struct and methods behind "zip317" feature
+- pub struct crate::wallet::notes::NoteRecordIdentifier
 
 ### Changed
 
@@ -34,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `commands`
   - `get_commands` added propose and quicksend to entries behind "zip317" feature
   - `SendCommand::help` formatting
+- zingolib/src/wallet/transaction_record_map.rs -> zingolib/src/wallet/transaction_records_by_id.rs
+- TransactionRecordMap -> TransactionRecordsById
 
 ### Removed
 
