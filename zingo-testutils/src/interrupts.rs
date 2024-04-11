@@ -1,5 +1,6 @@
 use zingolib::lightclient::LightClient;
 
+/// TODO: Add Doc Comment Here!
 pub async fn sync_with_timeout_millis(lightclient: &LightClient, timeout: u64) -> Result<(), ()> {
     tokio::select!(
         biased;

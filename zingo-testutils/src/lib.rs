@@ -1,3 +1,8 @@
+//! Zingo-Testutils
+//! Holds functionality for zingo testing
+
+#![warn(missing_docs)]
+/// TODO: Add Doc Comment Here!
 pub mod interrupts;
 
 use grpc_proxy::ProxyServer;
@@ -23,10 +28,14 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
+/// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
+/// TODO: Add Doc Comment Here!
 pub mod paths;
+/// TODO: Add Doc Comment Here!
 pub mod regtest;
 
+/// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
         orchard::keys::FullViewingKey::try_from(wallet_capability)
@@ -49,6 +58,7 @@ pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -
     [o_fvk, s_fvk, t_fvk]
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
@@ -84,7 +94,8 @@ fn poll_server_height(manager: &RegtestManager) -> JsonValue {
     tips[0]["height"].clone()
 }
 
-// This function _DOES NOT SYNC THE CLIENT/WALLET_.
+/// TODO: Add Doc Comment Here!
+/// This function _DOES NOT SYNC THE CLIENT/WALLET_.
 pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
     let start_height = poll_server_height(manager).as_fixed_point_u64(2).unwrap();
     let target = start_height + n as u64;
@@ -118,6 +129,7 @@ pub fn check_transaction_equality(first: &JsonValue, second: &JsonValue) -> bool
     true
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn send_value_between_clients_and_sync(
     manager: &RegtestManager,
     sender: &LightClient,
@@ -142,10 +154,10 @@ pub async fn send_value_between_clients_and_sync(
     Ok(txid)
 }
 
-// This function increases the chain height reliably (with polling) but
-// it _also_ ensures that the client state is synced.
-// Unsynced clients are very interesting to us.  See increate_server_height
-// to reliably increase the server without syncing the client
+/// This function increases the chain height reliably (with polling) but
+/// it _also_ ensures that the client state is synced.
+/// Unsynced clients are very interesting to us.  See increate_server_height
+/// to reliably increase the server without syncing the client
 pub async fn increase_height_and_wait_for_client(
     manager: &RegtestManager,
     client: &LightClient,
@@ -160,6 +172,7 @@ pub async fn increase_height_and_wait_for_client(
     .await
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn generate_n_blocks_return_new_height(
     manager: &RegtestManager,
     n: u32,
@@ -173,7 +186,7 @@ pub async fn generate_n_blocks_return_new_height(
     Ok(target)
 }
 
-///will hang if RegtestManager does not reach target_block_height
+/// will hang if RegtestManager does not reach target_block_height
 pub async fn wait_until_client_reaches_block_height(
     client: &LightClient,
     target_block_height: u32,
@@ -187,6 +200,7 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Re
     Ok(get_synced_wallet_height(client).await? != target)
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     match nym {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
@@ -206,6 +220,7 @@ pub fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub struct RecordingReader<Reader> {
     from: Reader,
     read_lengths: Vec<usize>,
@@ -222,6 +237,7 @@ where
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn load_wallet(
     dir: PathBuf,
     chaintype: ChainType,
@@ -264,6 +280,7 @@ pub mod scenarios {
     use zingolib::testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
+    /// TODO: Add Doc Comment Here!
     pub mod setup {
         use super::BASE_HEIGHT;
         use zingolib::testvectors::{
@@ -277,10 +294,16 @@ pub mod scenarios {
         use tokio::time::sleep;
         use zingolib::wallet::Pool;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
+
+        /// TODO: Add Doc Comment Here!
         pub struct ScenarioBuilder {
+            /// TODO: Add Doc Comment Here!
             pub test_env: TestEnvironmentGenerator,
+            /// TODO: Add Doc Comment Here!
             pub regtest_manager: RegtestManager,
+            /// TODO: Add Doc Comment Here!
             pub client_builder: ClientBuilder,
+            /// TODO: Add Doc Comment Here!
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
@@ -353,6 +376,7 @@ pub mod scenarios {
                 }
             }
 
+            /// TODO: Add Doc Comment Here!
             pub async fn new_load_1153_saplingcb_regtest_chain(
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) -> Self {
@@ -396,12 +420,15 @@ pub mod scenarios {
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
         /// take a seed, and generate a client from the seed (planted in the chain).
         pub struct ClientBuilder {
+            /// TODO: Add Doc Comment Here!
             pub server_id: http::Uri,
+            /// TODO: Add Doc Comment Here!
             pub zingo_datadir: PathBuf,
             client_number: u8,
         }
 
         impl ClientBuilder {
+            /// TODO: Add Doc Comment Here!
             pub fn new(server_id: http::Uri, zingo_datadir: PathBuf) -> Self {
                 let client_number = 0;
                 ClientBuilder {
@@ -426,6 +453,7 @@ pub mod scenarios {
                 self.create_clientconfig(PathBuf::from(conf_path), regtest_network)
             }
 
+            /// TODO: Add Doc Comment Here!
             pub fn create_clientconfig(
                 &self,
                 conf_path: PathBuf,
@@ -441,6 +469,7 @@ pub mod scenarios {
                 .unwrap()
             }
 
+            /// TODO: Add Doc Comment Here!
             pub async fn build_faucet(
                 &mut self,
                 overwrite: bool,
@@ -456,6 +485,7 @@ pub mod scenarios {
                 .await
             }
 
+            /// TODO: Add Doc Comment Here!
             pub async fn build_client(
                 &mut self,
                 mnemonic_phrase: String,
@@ -475,6 +505,7 @@ pub mod scenarios {
             }
         }
 
+        /// TODO: Add Doc Comment Here!
         pub struct TestEnvironmentGenerator {
             zcashd_rpcservice_port: String,
             lightwalletd_rpcservice_port: String,
@@ -483,6 +514,7 @@ pub mod scenarios {
         }
 
         impl TestEnvironmentGenerator {
+            /// TODO: Add Doc Comment Here!
             pub(crate) fn new(set_lightwalletd_port: Option<portpicker::Port>) -> Self {
                 let zcashd_rpcservice_port =
                     TestEnvironmentGenerator::pick_unused_port_to_string(None);
@@ -504,6 +536,7 @@ pub mod scenarios {
                 }
             }
 
+            /// TODO: Add Doc Comment Here!
             pub(crate) fn create_zcash_conf(
                 &self,
                 mine_to_address: Option<&str>,
@@ -524,6 +557,7 @@ pub mod scenarios {
                 self.write_contents_and_return_path("zcash", config)
             }
 
+            /// TODO: Add Doc Comment Here!
             pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
                 self.write_contents_and_return_path(
                     "lightwalletd",
@@ -532,6 +566,7 @@ pub mod scenarios {
                     ),
                 )
             }
+
             fn write_contents_and_return_path(
                 &self,
                 configtype: &str,
@@ -548,10 +583,12 @@ pub mod scenarios {
                 loc.clone()
             }
 
+            /// TODO: Add Doc Comment Here!
             pub(crate) fn get_lightwalletd_uri(&self) -> http::Uri {
                 self.lightwalletd_uri.clone()
             }
 
+            /// TODO: Add Doc Comment Here!
             pub fn pick_unused_port_to_string(set_port: Option<portpicker::Port>) -> String {
                 if let Some(port) = set_port {
                     if !portpicker::is_free(port) {
@@ -567,6 +604,7 @@ pub mod scenarios {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn unfunded_client(
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, LightClient) {
@@ -582,6 +620,8 @@ pub mod scenarios {
                 .await,
         )
     }
+
+    /// TODO: Add Doc Comment Here!
     pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         unfunded_client(regtest_network).await
@@ -617,11 +657,13 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         faucet(Pool::Orchard, regtest_network).await
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn faucet_recipient(
         mine_to_pool: Pool,
         regtest_network: zingoconfig::RegtestNetwork,
@@ -658,6 +700,7 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn faucet_recipient_default() -> (
         RegtestManager,
         ChildProcessHandler,
@@ -668,6 +711,7 @@ pub mod scenarios {
         faucet_recipient(Pool::Orchard, regtest_network).await
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn faucet_funded_recipient(
         orchard_funds: Option<u64>,
         sapling_funds: Option<u64>,
@@ -745,6 +789,7 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn faucet_funded_recipient_default(
         orchard_funds: u64,
     ) -> (
@@ -780,6 +825,7 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn custom_clients(
         mine_to_pool: Pool,
         regtest_network: zingoconfig::RegtestNetwork,
@@ -798,6 +844,7 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn custom_clients_default() -> (
         RegtestManager,
         ChildProcessHandler,
@@ -810,6 +857,7 @@ pub mod scenarios {
         (regtest_manager, cph, client_builder, regtest_network)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
@@ -825,6 +873,7 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
@@ -861,6 +910,7 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn funded_orchard_with_3_txs_mobileclient(
         value: u64,
     ) -> (RegtestManager, ChildProcessHandler) {
@@ -926,6 +976,7 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         value: u64,
     ) -> (RegtestManager, ChildProcessHandler) {
@@ -1053,9 +1104,11 @@ pub mod scenarios {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub mod chainload {
         use super::*;
 
+        /// TODO: Add Doc Comment Here!
         pub async fn unsynced_basic() -> ChildProcessHandler {
             let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
@@ -1064,6 +1117,7 @@ pub mod scenarios {
                 .unwrap()
         }
 
+        /// TODO: Add Doc Comment Here!
         pub async fn faucet_recipient_1153() -> (
             RegtestManager,
             ChildProcessHandler,
@@ -1088,6 +1142,7 @@ pub mod scenarios {
             )
         }
 
+        /// TODO: Add Doc Comment Here!
         pub async fn unsynced_faucet_recipient_1153() -> (
             RegtestManager,
             ChildProcessHandler,
@@ -1113,6 +1168,7 @@ pub mod scenarios {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[allow(clippy::type_complexity)]
 pub fn start_proxy_and_connect_lightclient(
     client: &LightClient,
@@ -1134,6 +1190,7 @@ pub fn start_proxy_and_connect_lightclient(
     (proxy_handle, proxy_online)
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn check_proxy_server_works() {
     let (_regtest_manager, _cph, ref faucet) = scenarios::faucet_default().await;
     let (_proxy_handle, proxy_status) = start_proxy_and_connect_lightclient(faucet, HashMap::new());
@@ -1147,6 +1204,7 @@ pub async fn check_proxy_server_works() {
     println!("{}", faucet.do_info().await)
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {
     format!("http://localhost:{port}").parse().unwrap()
 }
