@@ -423,4 +423,28 @@ mod tests {
 }
 
 #[cfg(feature = "test-features")]
-pub(crate) mod mocks {}
+pub(crate) mod mocks {
+    use crate::wallet::notes::{SaplingNote, TransparentNote};
+
+    use super::TransactionRecord;
+
+    impl TransactionRecord {
+        pub(crate) fn mock() -> Self {
+            Self::new(
+                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                    zcash_primitives::consensus::BlockHeight::from_u32(5),
+                ),
+                1705077003,
+                &crate::test_framework::mocks::mock_txid(),
+            )
+        }
+        pub(crate) fn mock_complex() -> Self {
+            let mut transaction_record = Self::mock();
+            transaction_record
+                .transparent_notes
+                .push(TransparentNote::mock());
+            transaction_record.sapling_notes.push(SaplingNote::mock());
+            transaction_record
+        }
+    }
+}
