@@ -6,6 +6,7 @@ use zcash_client_backend::data_api::{InputSource, SpendableNotes};
 use zcash_client_backend::wallet::ReceivedNote;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_note_encryption::Domain;
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::TxId;
 use zip32::AccountId;
@@ -48,31 +49,26 @@ impl TransactionRecordsById {
 
     // modify methods
 
-    pub(crate) fn invalidate_domain_specific_txids<D: DomainWalletExt>(
-        &mut self,
-        txids_to_remove: &[TxId],
-    ) where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        self.values_mut().for_each(|transaction_metadata| {
-            // Update notes to rollback any spent notes
-            D::to_notes_vec_mut(transaction_metadata)
-                .iter_mut()
-                .for_each(|nd| {
-                    // Mark note as unspent if the txid being removed spent it.
-                    if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
-                        *nd.spent_mut() = None;
-                    }
-
-                    // Remove unconfirmed spends too
-                    if nd.pending_spent().is_some()
-                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
-                    {
-                        *nd.pending_spent_mut() = None;
-                    }
-                });
-        });
+    pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: BlockHeight) {
+        // First, collect txids that need to be removed
+        let txids_to_remove = self
+            .values()
+            .filter_map(|transaction_metadata| {
+                if transaction_metadata
+                    .status
+                    .is_confirmed_after_or_at(&reorg_height)
+                    || transaction_metadata
+                        .status
+                        .is_broadcast_after_or_at(&reorg_height)
+                // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
+                {
+                    Some(transaction_metadata.txid)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        self.invalidate_txids(txids_to_remove);
     }
 
     /// this function invalidiates a vec of txids
@@ -103,6 +99,33 @@ impl TransactionRecordsById {
         self.invalidate_domain_specific_txids::<SaplingDomain>(&txids_to_remove);
         // roll back any orchard spends in each invalidated tx
         self.invalidate_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
+    }
+
+    pub(crate) fn invalidate_domain_specific_txids<D: DomainWalletExt>(
+        &mut self,
+        txids_to_remove: &[TxId],
+    ) where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.values_mut().for_each(|transaction_metadata| {
+            // Update notes to rollback any spent notes
+            D::to_notes_vec_mut(transaction_metadata)
+                .iter_mut()
+                .for_each(|nd| {
+                    // Mark note as unspent if the txid being removed spent it.
+                    if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
+                        *nd.spent_mut() = None;
+                    }
+
+                    // Remove unconfirmed spends too
+                    if nd.pending_spent().is_some()
+                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
+                    {
+                        *nd.pending_spent_mut() = None;
+                    }
+                });
+        });
     }
 
     // get methods

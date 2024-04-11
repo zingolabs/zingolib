@@ -33,26 +33,9 @@ impl TxMapAndMaybeTrees {
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
-        // First, collect txids that need to be removed
-        let txids_to_remove = self
-            .transaction_records_by_id
-            .values()
-            .filter_map(|transaction_metadata| {
-                if transaction_metadata
-                    .status
-                    .is_confirmed_after_or_at(&reorg_height)
-                    || transaction_metadata
-                        .status
-                        .is_broadcast_after_or_at(&reorg_height)
-                // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
-                {
-                    Some(transaction_metadata.txid)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        self.invalidate_txids(txids_to_remove);
+        self.transaction_records_by_id
+            .invalidate_all_transactions_after_or_at_height(reorg_height);
+
         if let Some(ref mut t) = self.witness_trees {
             t.witness_tree_sapling
                 .truncate_removing_checkpoint(&(reorg_height - 1))
