@@ -61,11 +61,15 @@ impl LightClient {
         &self,
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<Proposal<(), ()>, String> {
+        *self.latest_proposal.write().await = None;
         unimplemented!()
     }
 
     #[cfg(feature = "zip317")]
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
+        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+            unimplemented!()
+        }
         unimplemented!()
     }
 
