@@ -264,18 +264,10 @@ pub(crate) mod mocks {
 #[cfg(test)]
 #[cfg(feature = "test-features")]
 pub mod tests {
-    use incrementalmerkletree::Position;
-    use zcash_primitives::{memo::Memo, transaction::TxId};
-
     use crate::{
-        test_framework::mocks::{build_method, mock_txid},
-        wallet::{
-            notes::{sapling::mocks::SaplingNoteBuilder, NoteInterface, ShieldedNoteInterface},
-            traits::FromBytes,
-        },
+        test_framework::mocks::mock_txid,
+        wallet::notes::{sapling::mocks::SaplingNoteBuilder, NoteInterface},
     };
-
-    use super::SaplingNote;
 
     #[test]
     fn pending_spent_note_is_pending_spent() {
