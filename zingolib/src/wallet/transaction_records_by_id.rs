@@ -159,10 +159,10 @@ mod tests {
         transaction_records_by_id.insert_transaction_record(transaction_record_early);
         transaction_records_by_id.insert_transaction_record(transaction_record_later);
 
-        let reorg_height: BlockHeight = 2.into();
+        let reorg_height: BlockHeight = 10.into();
 
         transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
 
-        assert_eq!(transaction_records_by_id.len(), 0);
+        assert_eq!(transaction_records_by_id.len(), 1);
     }
 }
