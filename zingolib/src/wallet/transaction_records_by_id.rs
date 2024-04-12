@@ -229,3 +229,9 @@ impl InputSource for TransactionRecordsById {
         todo!()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn get_unspent_transparent_output() {}
+}
