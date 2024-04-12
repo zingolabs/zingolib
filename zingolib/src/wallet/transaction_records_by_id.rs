@@ -181,4 +181,19 @@ impl InputSource for TransactionRecordsById {
 
         Ok(SpendableNotes::new(sapling_notes, orchard_notes))
     }
+
+    fn get_unspent_transparent_output(
+        &self,
+        _outpoint: &zcash_primitives::transaction::components::OutPoint,
+    ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
+        todo!()
+    }
+    fn get_unspent_transparent_outputs(
+        &self,
+        _address: &zcash_primitives::legacy::TransparentAddress,
+        _max_height: zcash_primitives::consensus::BlockHeight,
+        _exclude: &[zcash_primitives::transaction::components::OutPoint],
+    ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
+        todo!()
+    }
 }
