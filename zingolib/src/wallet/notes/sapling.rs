@@ -186,16 +186,16 @@ pub(crate) mod mocks {
 
     /// builds a mock transparent note after all pieces are supplied
     pub(crate) struct SaplingNoteBuilder {
-        diversifier: Option<sapling_crypto::Diversifier>,
-        note: Option<sapling_crypto::Note>,
-        witnessed_position: Option<Option<Position>>,
-        output_index: Option<Option<u32>>,
-        nullifier: Option<Option<sapling_crypto::Nullifier>>,
-        spent: Option<Option<(TxId, u32)>>,
-        unconfirmed_spent: Option<Option<(TxId, u32)>>,
-        memo: Option<Option<Memo>>,
-        is_change: Option<bool>,
-        have_spending_key: Option<bool>,
+        diversifier: sapling_crypto::Diversifier,
+        note: sapling_crypto::Note,
+        witnessed_position: Option<Position>,
+        output_index: Option<u32>,
+        nullifier: Option<sapling_crypto::Nullifier>,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
     }
 
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
@@ -214,7 +214,7 @@ pub(crate) mod mocks {
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
         pub fn set_change(mut self, is_change: bool) -> Self {
-            self.is_change = Some(is_change);
+            self.is_change = is_change;
             self
         }
         build_method!(have_spending_key, bool);
@@ -222,16 +222,16 @@ pub(crate) mod mocks {
         // Build method
         pub fn build(self) -> SaplingNote {
             SaplingNote::from_parts(
-                self.diversifier.unwrap(),
-                self.note.unwrap(),
-                self.witnessed_position.unwrap(),
-                self.nullifier.unwrap(),
-                self.spent.unwrap(),
-                self.unconfirmed_spent.unwrap(),
-                self.memo.unwrap(),
-                self.is_change.unwrap(),
-                self.have_spending_key.unwrap(),
-                self.output_index.unwrap(),
+                self.diversifier,
+                self.note,
+                self.witnessed_position,
+                self.nullifier,
+                self.spent,
+                self.unconfirmed_spent,
+                self.memo,
+                self.is_change,
+                self.have_spending_key,
+                self.output_index,
             )
         }
     }
@@ -239,16 +239,16 @@ pub(crate) mod mocks {
     impl Default for SaplingNoteBuilder {
         fn default() -> Self {
             SaplingNoteBuilder {
-                diversifier: Some(sapling_crypto::Diversifier([0; 11])),
-                note: Some(crate::test_framework::mocks::mock_sapling_crypto_note()),
-                witnessed_position: Some(Some(Position::from(0))),
-                output_index: Some(Some(0)),
-                nullifier: Some(Some(sapling_crypto::Nullifier::from_bytes([0; 32]))),
-                spent: Some(None),
-                unconfirmed_spent: Some(None),
-                memo: Some(None),
-                is_change: Some(false),
-                have_spending_key: Some(true),
+                diversifier: sapling_crypto::Diversifier([0; 11]),
+                note: crate::test_framework::mocks::mock_sapling_crypto_note(),
+                witnessed_position: Some(Position::from(0)),
+                output_index: Some(0),
+                nullifier: Some(sapling_crypto::Nullifier::from_bytes([0; 32])),
+                spent: None,
+                unconfirmed_spent: None,
+                memo: None,
+                is_change: false,
+                have_spending_key: true,
             }
         }
     }

@@ -174,13 +174,13 @@ pub(crate) mod mocks {
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentNote};
     /// builds a mock transparent note after all pieces are supplied
     pub(crate) struct TransparentNoteBuilder {
-        address: Option<String>,
-        txid: Option<TxId>,
-        output_index: Option<u64>,
-        script: Option<Vec<u8>>,
-        value: Option<u64>,
-        spent: Option<Option<(TxId, u32)>>,
-        unconfirmed_spent: Option<Option<(TxId, u32)>>,
+        address: String,
+        txid: TxId,
+        output_index: u64,
+        script: Vec<u8>,
+        value: u64,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransparentNoteBuilder {
@@ -199,13 +199,13 @@ pub(crate) mod mocks {
         // Build method
         pub fn build(self) -> TransparentNote {
             TransparentNote::from_parts(
-                self.address.unwrap(),
-                self.txid.unwrap(),
-                self.output_index.unwrap(),
-                self.script.unwrap(),
-                self.value.unwrap(),
-                self.spent.unwrap(),
-                self.unconfirmed_spent.unwrap(),
+                self.address,
+                self.txid,
+                self.output_index,
+                self.script,
+                self.value,
+                self.spent,
+                self.unconfirmed_spent,
             )
         }
     }
@@ -213,13 +213,13 @@ pub(crate) mod mocks {
     impl Default for TransparentNoteBuilder {
         fn default() -> Self {
             TransparentNoteBuilder {
-                address: Some("default_address".to_string()),
-                txid: Some(TxId::from_bytes([0u8; 32])),
-                output_index: Some(0),
-                script: Some(vec![]),
-                value: Some(0),
-                spent: Some(None),
-                unconfirmed_spent: Some(None),
+                address: "default_address".to_string(),
+                txid: TxId::from_bytes([0u8; 32]),
+                output_index: 0,
+                script: vec![],
+                value: 0,
+                spent: None,
+                unconfirmed_spent: None,
             }
         }
     }

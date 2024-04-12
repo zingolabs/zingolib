@@ -4,7 +4,7 @@
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         pub fn $name(mut self, $name: $localtype) -> Self {
-            self.$name = Some($name);
+            self.$name = $name;
             self
         }
     };
@@ -45,9 +45,9 @@ mod sapling_note {
     use sapling_crypto::Rseed;
 
     pub struct LRZSaplingNoteBuilder {
-        recipient: Option<PaymentAddress>,
-        value: Option<NoteValue>,
-        rseed: Option<Rseed>,
+        recipient: PaymentAddress,
+        value: NoteValue,
+        rseed: Rseed,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl LRZSaplingNoteBuilder {
@@ -62,20 +62,16 @@ mod sapling_note {
 
         // Build method
         pub fn build(self) -> sapling_crypto::Note {
-            sapling_crypto::Note::from_parts(
-                self.recipient.unwrap(),
-                self.value.unwrap(),
-                self.rseed.unwrap(),
-            )
+            sapling_crypto::Note::from_parts(self.recipient, self.value, self.rseed)
         }
     }
     impl Default for LRZSaplingNoteBuilder {
         fn default() -> Self {
             let (_, _, address) = super::get_random_zaddr();
             LRZSaplingNoteBuilder {
-                recipient: Some(address),
-                value: Some(NoteValue::from_raw(1000000)),
-                rseed: Some(Rseed::AfterZip212([7; 32])),
+                recipient: address,
+                value: NoteValue::from_raw(1000000),
+                rseed: Rseed::AfterZip212([7; 32]),
             }
         }
     }
