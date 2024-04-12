@@ -12,7 +12,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     memo::Memo,
     memo::MemoBytes,
-    transaction::{fees::zip317::MINIMUM_FEE, TxId},
+    transaction::fees::zip317::MINIMUM_FEE,
 };
 use zingo_testutils::{
     self, build_fvk_client, check_transaction_equality, increase_height_and_wait_for_client,
@@ -28,6 +28,7 @@ use zingolib::{
         seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
         BASE_HEIGHT,
     },
+    utils,
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
@@ -729,12 +730,7 @@ mod slow {
     async fn witness_clearing() {
         let (regtest_manager, _cph, faucet, recipient, txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
-        dbg!(&txid);
-        let mut txid_bytes = <[u8; 32]>::try_from(hex::decode(txid).unwrap()).unwrap();
-        // TxId byte order is displayed in the reverse order from how it's encoded, for some reason
-        txid_bytes.reverse();
-        let txid = TxId::from_bytes(txid_bytes);
-        dbg!(&txid);
+        let txid = utils::txid_from_hex_encoded_str(&txid).unwrap();
 
         // 3. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
