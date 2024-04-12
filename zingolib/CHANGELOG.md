@@ -17,9 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LightClient pub fn export_save_buffer_runtime
 - LightClient pub fn get_wallet_file_location
 - LightClient pub fn get_wallet_dir_location
-- `wallet::keys`:
-  - `is_transparent_address`
+- `wallet::keys::is_transparent_address`
 - pub struct crate::wallet::notes::NoteRecordIdentifier
+- `utils` mod
+- `utils::txid_from_hex_encoded_str` fn
 
 ### Changed
 
