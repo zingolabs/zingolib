@@ -363,18 +363,12 @@ pub(crate) mod mocks {
             }
         }
     }
-
-    impl TransactionRecord {
-        #[allow(dead_code)]
-        pub(crate) fn mock() -> Self {
-            TransactionRecordBuilder::default().build()
-        }
-    }
 }
 
 #[cfg(test)]
 #[cfg(feature = "test-features")]
 mod tests {
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
     use crate::wallet::utils::txid_from_slice;
     use crate::wallet::{notes::TransparentNote, transaction_record::TransactionRecord};
 
@@ -403,7 +397,7 @@ mod tests {
     #[test]
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
-        let mut transaction_record = TransactionRecord::mock();
+        let mut transaction_record = TransactionRecordBuilder::default().build();
         transaction_record
             .transparent_notes
             .push(TransparentNote::mock());
