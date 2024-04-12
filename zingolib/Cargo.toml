@@ -37,6 +37,7 @@ zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 hyper-rustls = { workspace = true }
+zip32.workspace = true
 
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
 
