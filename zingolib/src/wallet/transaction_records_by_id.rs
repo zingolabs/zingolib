@@ -43,6 +43,9 @@ impl TransactionRecordsById {
 
     // modify methods
 
+    pub fn insert_transaction_record(&mut self, transaction_record: TransactionRecord) {
+        self.insert(transaction_record.txid, transaction_record);
+    }
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: BlockHeight) {
         // First, collect txids that need to be removed
         let txids_to_remove = self
@@ -153,8 +156,8 @@ mod tests {
             .push(SaplingNote::mock());
 
         let mut transaction_records_by_id = TransactionRecordsById::default();
-        transaction_records_by_id.insert(transaction_record_early.txid, transaction_record_early);
-        transaction_records_by_id.insert(transaction_record_later.txid, transaction_record_later);
+        transaction_records_by_id.insert_transaction_record(transaction_record_early);
+        transaction_records_by_id.insert_transaction_record(transaction_record_later);
 
         let reorg_height: BlockHeight = 2.into();
 
