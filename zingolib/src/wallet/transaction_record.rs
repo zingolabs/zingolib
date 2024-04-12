@@ -324,9 +324,39 @@ impl TransactionRecord {
     }
 }
 
+#[cfg(feature = "test-features")]
+pub(crate) mod mocks {
+    use crate::wallet::notes::{SaplingNote, TransparentNote};
+
+    use super::TransactionRecord;
+
+    impl TransactionRecord {
+        #[allow(dead_code)]
+        pub(crate) fn mock() -> Self {
+            Self::new(
+                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                    zcash_primitives::consensus::BlockHeight::from_u32(5),
+                ),
+                1705077003,
+                &crate::test_framework::mocks::mock_txid(),
+            )
+        }
+        #[allow(dead_code)]
+        pub(crate) fn mock_complex() -> Self {
+            let mut transaction_record = Self::mock();
+            transaction_record
+                .transparent_notes
+                .push(TransparentNote::mock());
+            transaction_record.sapling_notes.push(SaplingNote::mock());
+            transaction_record
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::wallet::utils::txid_from_slice;
+    use crate::wallet::{notes::TransparentNote, transaction_record::TransactionRecord};
 
     use super::*;
 
@@ -349,5 +379,14 @@ mod tests {
         assert_eq!(new.value_outgoing(), 0);
         let t: [u64; 3] = [0, 0, 0];
         assert_eq!(new.value_spent_by_pool(), t);
+    }
+    #[test]
+    fn single_transparent_note_makes_is_incoming_true() {
+        // A single transparent note makes is_incoming_transaction true.
+        let mut transaction_record = TransactionRecord::mock();
+        transaction_record
+            .transparent_notes
+            .push(TransparentNote::mock());
+        assert!(transaction_record.is_incoming_transaction());
     }
 }
