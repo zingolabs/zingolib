@@ -127,25 +127,34 @@ impl TransactionRecordsById {
 #[cfg(feature = "test-features")]
 mod tests {
     use crate::wallet::{
-        notes::{SaplingNote},
-        transaction_record::{mocks::TransactionRecordBuilder},
+        notes::{SaplingNote, TransparentNote},
+        transaction_record::mocks::TransactionRecordBuilder,
     };
 
     use super::TransactionRecordsById;
-    
-    use zcash_primitives::{
-        consensus::BlockHeight,
-    };
-    
+
+    use zcash_primitives::consensus::BlockHeight;
+    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
     fn invalidated_note_is_deleted() {
-        // WIP
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-        transaction_record.sapling_notes.push(SaplingNote::mock());
+        let mut transaction_record_early = TransactionRecordBuilder::default()
+            .status(Confirmed(5.into()))
+            .build();
+        transaction_record_early
+            .transparent_notes
+            .push(TransparentNote::mock());
+
+        let mut transaction_record_later = TransactionRecordBuilder::default()
+            .status(Confirmed(15.into()))
+            .build();
+        transaction_record_later
+            .sapling_notes
+            .push(SaplingNote::mock());
 
         let mut transaction_records_by_id = TransactionRecordsById::default();
-        transaction_records_by_id.insert(transaction_record.txid, transaction_record);
+        transaction_records_by_id.insert(transaction_record_early.txid, transaction_record_early);
+        transaction_records_by_id.insert(transaction_record_later.txid, transaction_record_later);
 
         let reorg_height: BlockHeight = 2.into();
 
