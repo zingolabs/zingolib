@@ -326,17 +326,52 @@ impl TransactionRecord {
 
 #[cfg(feature = "test-features")]
 pub(crate) mod mocks {
-    use crate::wallet::notes::{SaplingNote, TransparentNote};
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::{
+        test_framework::mocks::build_method,
+        wallet::notes::{SaplingNote, TransparentNote},
+    };
 
     use super::TransactionRecord;
+
+    pub struct TransactionRecordBuilder {
+        status: ConfirmationStatus,
+        datetime: u64,
+        transaction_id: TxId,
+    }
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl TransactionRecordBuilder {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        // Methods to set each field
+        build_method!(status, ConfirmationStatus);
+        build_method!(datetime, u64);
+        build_method!(transaction_id, TxId);
+
+        // Build method
+        pub fn build(self) -> TransactionRecord {
+            TransactionRecord::new(self.status, self.datetime, &self.transaction_id)
+        }
+    }
+    impl Default for TransactionRecordBuilder {
+        fn default() -> Self {
+            TransactionRecordBuilder {
+                status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)),
+                datetime: 1705077003,
+                transaction_id: crate::test_framework::mocks::mock_txid(),
+            }
+        }
+    }
 
     impl TransactionRecord {
         #[allow(dead_code)]
         pub(crate) fn mock() -> Self {
             Self::new(
-                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
-                    zcash_primitives::consensus::BlockHeight::from_u32(5),
-                ),
+                ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
                 1705077003,
                 &crate::test_framework::mocks::mock_txid(),
             )
