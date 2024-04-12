@@ -252,7 +252,7 @@ pub struct TxNotesCount {
 }
 
 #[derive(Debug)]
-pub struct TxActions {
+pub struct TxActionsCount {
     pub transparent_tx_actions: usize,
     pub sapling_tx_actions: usize,
     pub orchard_tx_actions: usize,
@@ -386,7 +386,7 @@ pub async fn tx_actions(
     sender: &LightClient,
     recipient: Option<&LightClient>,
     txid: &str,
-) -> TxActions {
+) -> TxActionsCount {
     let tx_ins = tx_inputs(sender, txid).await;
     let tx_outs = if let Some(rec) = recipient {
         tx_outputs(rec, txid).await
@@ -419,7 +419,7 @@ pub async fn tx_actions(
         calculated_orchard_tx_actions
     };
 
-    TxActions {
+    TxActionsCount {
         transparent_tx_actions: cmp::max(
             tx_ins.transparent_tx_notes,
             tx_outs.transparent_tx_notes + tx_change.transparent_tx_notes,
