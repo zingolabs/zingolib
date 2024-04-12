@@ -354,6 +354,7 @@ pub(crate) mod mocks {
 }
 
 #[cfg(test)]
+#[cfg(feature = "test-features")]
 mod tests {
     use crate::wallet::utils::txid_from_slice;
     use crate::wallet::{notes::TransparentNote, transaction_record::TransactionRecord};

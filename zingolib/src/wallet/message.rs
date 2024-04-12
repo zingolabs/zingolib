@@ -208,6 +208,7 @@ impl Message {
 }
 
 #[cfg(test)]
+#[cfg(feature = "test-features")]
 pub mod tests {
     use ff::Field;
     use zcash_note_encryption::OUT_PLAINTEXT_SIZE;
