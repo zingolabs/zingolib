@@ -329,10 +329,7 @@ pub(crate) mod mocks {
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use crate::{
-        test_framework::mocks::build_method,
-        wallet::notes::{SaplingNote, TransparentNote},
-    };
+    use crate::test_framework::mocks::build_method;
 
     use super::TransactionRecord;
 
@@ -370,20 +367,7 @@ pub(crate) mod mocks {
     impl TransactionRecord {
         #[allow(dead_code)]
         pub(crate) fn mock() -> Self {
-            Self::new(
-                ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
-                1705077003,
-                &crate::test_framework::mocks::mock_txid(),
-            )
-        }
-        #[allow(dead_code)]
-        pub(crate) fn mock_complex() -> Self {
-            let mut transaction_record = Self::mock();
-            transaction_record
-                .transparent_notes
-                .push(TransparentNote::mock());
-            transaction_record.sapling_notes.push(SaplingNote::mock());
-            transaction_record
+            TransactionRecordBuilder::default().build()
         }
     }
 }
