@@ -127,16 +127,16 @@ impl TransactionRecordsById {
 #[cfg(feature = "test-features")]
 mod tests {
     use crate::wallet::{
-        notes::{NoteRecordIdentifier, SaplingNote},
-        transaction_record::{mocks::TransactionRecordBuilder, TransactionRecord},
+        notes::{SaplingNote},
+        transaction_record::{mocks::TransactionRecordBuilder},
     };
 
     use super::TransactionRecordsById;
-    use zcash_client_backend::data_api::{InputSource, SpendableNotes};
+    
     use zcash_primitives::{
-        consensus::BlockHeight, transaction::components::amount::NonNegativeAmount,
+        consensus::BlockHeight,
     };
-    use zip32::AccountId;
+    
 
     #[test]
     fn invalidated_note_is_deleted() {
