@@ -213,7 +213,10 @@ pub(crate) mod mocks {
         build_method!(spent, Option<(TxId, u32)>);
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
-        build_method!(is_change, bool);
+        pub fn set_change(mut self, is_change: bool) -> Self {
+            self.is_change = Some(is_change);
+            self
+        }
         build_method!(have_spending_key, bool);
 
         // Build method
