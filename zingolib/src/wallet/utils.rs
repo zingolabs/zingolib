@@ -22,7 +22,7 @@ pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
     writer.write_all(s.as_bytes())
 }
 
-// Interpret a string or hex-encoded memo, and return a Memo object
+/// Interpret a string or hex-encoded memo, and return a Memo object
 pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
     // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
     // interpret it as a hex
