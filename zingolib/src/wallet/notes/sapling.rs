@@ -260,3 +260,32 @@ pub(crate) mod mocks {
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "test-features")]
+pub mod tests {
+    use incrementalmerkletree::Position;
+    use zcash_primitives::{memo::Memo, transaction::TxId};
+
+    use crate::{
+        test_framework::mocks::{build_method, mock_txid},
+        wallet::{
+            notes::{sapling::mocks::SaplingNoteBuilder, NoteInterface, ShieldedNoteInterface},
+            traits::FromBytes,
+        },
+    };
+
+    use super::SaplingNote;
+
+    #[test]
+    fn pending_spent_note_is_pending_spent() {
+        let spend = Some((mock_txid(), 112358));
+        let note = SaplingNoteBuilder::default()
+            .unconfirmed_spent(spend)
+            .build();
+        assert_eq!(note.is_spent(), false);
+        assert_eq!(note.is_pending_spent(), true);
+        assert_eq!(note.is_spent_or_pending_spent(), true);
+        assert_eq!(note.pending_spent(), &spend);
+    }
+}
