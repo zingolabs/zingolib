@@ -244,21 +244,29 @@ pub async fn load_wallet(
     )
 }
 
+/// Number of notes created and consumed in a transaction.
 #[derive(Debug)]
 pub struct TxNotesCount {
+    /// Transparent notes in transaction.
     pub transparent_tx_notes: usize,
+    /// Sapling notes in transaction.
     pub sapling_tx_notes: usize,
+    /// Orchard notes in transaction.
     pub orchard_tx_notes: usize,
 }
 
+/// Number of logical actions in a transaction
 #[derive(Debug)]
 pub struct TxActionsCount {
+    /// Transparent actions in transaction
     pub transparent_tx_actions: usize,
+    /// Sapling actions in transaction
     pub sapling_tx_actions: usize,
+    /// Orchard notes in transaction
     pub orchard_tx_actions: usize,
 }
 
-/// Returns number of notes used as inputs for txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
+/// Returns number of notes used as inputs for txid as TxNotesCount (transparent_notes, sapling_notes, orchard_notes).
 pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
@@ -318,7 +326,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
     }
 }
 
-/// Returns number of notes created in txid as TxActions (transparent_notes, sapling_notes, orchard_notes).
+/// Returns number of notes created in txid as TxNotesCount (transparent_notes, sapling_notes, orchard_notes).
 pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
@@ -381,7 +389,7 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotesCount {
     }
 }
 
-/// Returns total actions for txid.
+/// Returns total actions for txid as TxActionsCount.
 pub async fn tx_actions(
     sender: &LightClient,
     recipient: Option<&LightClient>,
