@@ -15,6 +15,7 @@ use rand::{rngs::OsRng, Rng};
 use sapling_crypto::{
     note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey, PaymentAddress,
 };
+use zcash_primitives::transaction::TxId;
 
 pub(crate) fn get_random_zaddr() -> (
     ExtendedSpendingKey,
@@ -82,7 +83,15 @@ pub(crate) fn mock_sapling_crypto_note() -> sapling_crypto::Note {
     sapling_note::LRZSaplingNoteBuilder::default().build()
 }
 
+pub(crate) fn get_random_txid() -> TxId {
+    let mut rng = OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill(&mut seed);
+
+    TxId::from_bytes(seed)
+}
+
 #[allow(dead_code)]
 pub(crate) fn mock_txid() -> zcash_primitives::transaction::TxId {
-    zcash_primitives::transaction::TxId::from_bytes([7; 32])
+    get_random_txid()
 }
