@@ -122,3 +122,35 @@ impl TransactionRecordsById {
         });
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "test-features")]
+mod tests {
+    use crate::wallet::{
+        notes::{NoteRecordIdentifier, SaplingNote},
+        transaction_record::TransactionRecord,
+    };
+
+    use super::TransactionRecordsById;
+    use zcash_client_backend::data_api::{InputSource, SpendableNotes};
+    use zcash_primitives::{
+        consensus::BlockHeight, transaction::components::amount::NonNegativeAmount,
+    };
+    use zip32::AccountId;
+
+    #[test]
+    fn invalidated_note_is_deleted() {
+        // WIP
+        let mut transaction_record = TransactionRecord::mock();
+        transaction_record.sapling_notes.push(SaplingNote::mock());
+
+        let mut transaction_records_by_id = TransactionRecordsById::default();
+        transaction_records_by_id.insert(transaction_record.txid, transaction_record);
+
+        let reorg_height: BlockHeight = 2.into();
+
+        transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
+
+        assert_eq!(transaction_records_by_id.len(), 0);
+    }
+}
