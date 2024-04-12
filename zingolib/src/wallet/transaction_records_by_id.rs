@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::data_api::{InputSource, SpendableNotes};
-use zcash_client_backend::wallet::ReceivedNote;
+use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
+use zcash_primitives::legacy::Script;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::transaction::components::TxOut;
 use zcash_primitives::transaction::TxId;
 use zip32::AccountId;
 
@@ -184,9 +186,39 @@ impl InputSource for TransactionRecordsById {
 
     fn get_unspent_transparent_output(
         &self,
-        _outpoint: &zcash_primitives::transaction::components::OutPoint,
+        outpoint: &zcash_primitives::transaction::components::OutPoint,
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        todo!()
+        let Some((height, tnote)) = self.values().find_map(|transaction_record| {
+            transaction_record
+                .transparent_notes
+                .iter()
+                .find_map(|output| {
+                    if &output.to_outpoint() == outpoint {
+                        transaction_record
+                            .status
+                            .get_confirmed_height()
+                            .map(|height| (height, output))
+                    } else {
+                        None
+                    }
+                })
+        }) else {
+            return Ok(None);
+        };
+        let value = NonNegativeAmount::from_u64(tnote.value)
+            .map_err(|e| ZingoLibError::Error(e.to_string()))?;
+
+        let script_pubkey = Script::read(tnote.script.as_slice())
+            .map_err(|e| ZingoLibError::Error(e.to_string()))?;
+
+        Ok(WalletTransparentOutput::from_parts(
+            outpoint.clone(),
+            TxOut {
+                value,
+                script_pubkey,
+            },
+            height,
+        ))
     }
     fn get_unspent_transparent_outputs(
         &self,
