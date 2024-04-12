@@ -171,3 +171,92 @@ impl ShieldedNoteInterface for SaplingNote {
         zcash_client_backend::wallet::Note::Sapling(self.note().clone())
     }
 }
+
+#[cfg(feature = "test-features")]
+pub(crate) mod mocks {
+    use incrementalmerkletree::Position;
+    use zcash_primitives::{memo::Memo, transaction::TxId};
+
+    use crate::{
+        test_framework::mocks::build_method,
+        wallet::{notes::ShieldedNoteInterface, traits::FromBytes},
+    };
+
+    use super::SaplingNote;
+
+    /// builds a mock transparent note after all pieces are supplied
+    pub(crate) struct SaplingNoteBuilder {
+        diversifier: sapling_crypto::Diversifier,
+        note: sapling_crypto::Note,
+        witnessed_position: Option<Position>,
+        output_index: Option<u32>,
+        nullifier: Option<sapling_crypto::Nullifier>,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
+    }
+
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl SaplingNoteBuilder {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        // Methods to set each field
+        build_method!(diversifier, sapling_crypto::Diversifier);
+        build_method!(note, sapling_crypto::Note);
+        build_method!(witnessed_position, Option<Position>);
+        build_method!(output_index, Option<u32>);
+        build_method!(nullifier, Option<sapling_crypto::Nullifier>);
+        build_method!(spent, Option<(TxId, u32)>);
+        build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+        build_method!(memo, Option<Memo>);
+        pub fn set_change(mut self, is_change: bool) -> Self {
+            self.is_change = is_change;
+            self
+        }
+        build_method!(have_spending_key, bool);
+
+        // Build method
+        pub fn build(self) -> SaplingNote {
+            SaplingNote::from_parts(
+                self.diversifier,
+                self.note,
+                self.witnessed_position,
+                self.nullifier,
+                self.spent,
+                self.unconfirmed_spent,
+                self.memo,
+                self.is_change,
+                self.have_spending_key,
+                self.output_index,
+            )
+        }
+    }
+
+    impl Default for SaplingNoteBuilder {
+        fn default() -> Self {
+            SaplingNoteBuilder {
+                diversifier: sapling_crypto::Diversifier([0; 11]),
+                note: crate::test_framework::mocks::mock_sapling_crypto_note(),
+                witnessed_position: Some(Position::from(0)),
+                output_index: Some(0),
+                nullifier: Some(sapling_crypto::Nullifier::from_bytes([0; 32])),
+                spent: None,
+                unconfirmed_spent: None,
+                memo: None,
+                is_change: false,
+                have_spending_key: true,
+            }
+        }
+    }
+
+    impl SaplingNote {
+        #[allow(dead_code)]
+        pub(crate) fn mock() -> Self {
+            SaplingNoteBuilder::default().build()
+        }
+    }
+}

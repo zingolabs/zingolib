@@ -165,3 +165,72 @@ impl TransparentNote {
         })
     }
 }
+
+#[cfg(feature = "test-features")]
+pub(crate) mod mocks {
+    use zcash_primitives::transaction::TxId;
+
+    // Transparent Note Mocker
+    use crate::{test_framework::mocks::build_method, wallet::notes::TransparentNote};
+    /// builds a mock transparent note after all pieces are supplied
+    pub(crate) struct TransparentNoteBuilder {
+        address: String,
+        txid: TxId,
+        output_index: u64,
+        script: Vec<u8>,
+        value: u64,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+    }
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl TransparentNoteBuilder {
+        pub fn new() -> Self {
+            Self::default()
+        }
+        // Methods to set each field
+        build_method!(address, String);
+        build_method!(txid, TxId);
+        build_method!(output_index, u64);
+        build_method!(script, Vec<u8>);
+        build_method!(value, u64);
+        build_method!(spent, Option<(TxId, u32)>);
+        build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+
+        // Build method
+        pub fn build(self) -> TransparentNote {
+            TransparentNote::from_parts(
+                self.address,
+                self.txid,
+                self.output_index,
+                self.script,
+                self.value,
+                self.spent,
+                self.unconfirmed_spent,
+            )
+        }
+    }
+
+    impl Default for TransparentNoteBuilder {
+        fn default() -> Self {
+            TransparentNoteBuilder {
+                address: "default_address".to_string(),
+                txid: TxId::from_bytes([0u8; 32]),
+                output_index: 0,
+                script: vec![],
+                value: 0,
+                spent: None,
+                unconfirmed_spent: None,
+            }
+        }
+    }
+
+    impl TransparentNote {
+        pub(crate) fn mock() -> Self {
+            let txid = zcash_primitives::transaction::TxId::from_bytes([0u8; 32]);
+            TransparentNoteBuilder::new()
+                .address("t".to_string())
+                .spent(Some((txid, 3)))
+                .build()
+        }
+    }
+}

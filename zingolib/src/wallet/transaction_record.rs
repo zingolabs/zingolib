@@ -324,9 +324,53 @@ impl TransactionRecord {
     }
 }
 
+#[cfg(feature = "test-features")]
+pub(crate) mod mocks {
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::test_framework::mocks::build_method;
+
+    use super::TransactionRecord;
+
+    pub struct TransactionRecordBuilder {
+        status: ConfirmationStatus,
+        datetime: u64,
+        transaction_id: TxId,
+    }
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl TransactionRecordBuilder {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        // Methods to set each field
+        build_method!(status, ConfirmationStatus);
+        build_method!(datetime, u64);
+        build_method!(transaction_id, TxId);
+
+        // Build method
+        pub fn build(self) -> TransactionRecord {
+            TransactionRecord::new(self.status, self.datetime, &self.transaction_id)
+        }
+    }
+    impl Default for TransactionRecordBuilder {
+        fn default() -> Self {
+            TransactionRecordBuilder {
+                status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)),
+                datetime: 1705077003,
+                transaction_id: crate::test_framework::mocks::mock_txid(),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
+#[cfg(feature = "test-features")]
 mod tests {
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
     use crate::wallet::utils::txid_from_slice;
+    use crate::wallet::{notes::TransparentNote, transaction_record::TransactionRecord};
 
     use super::*;
 
@@ -349,5 +393,14 @@ mod tests {
         assert_eq!(new.value_outgoing(), 0);
         let t: [u64; 3] = [0, 0, 0];
         assert_eq!(new.value_spent_by_pool(), t);
+    }
+    #[test]
+    fn single_transparent_note_makes_is_incoming_true() {
+        // A single transparent note makes is_incoming_transaction true.
+        let mut transaction_record = TransactionRecordBuilder::default().build();
+        transaction_record
+            .transparent_notes
+            .push(TransparentNote::mock());
+        assert!(transaction_record.is_incoming_transaction());
     }
 }

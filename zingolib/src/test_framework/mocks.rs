@@ -1,62 +1,97 @@
 //! Tools to facilitate mocks for testing
-use zcash_primitives::transaction::TxId;
+//! This file contains mock implementations of lrz types for unit testing with.
 
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         pub fn $name(mut self, $name: $localtype) -> Self {
-            self.$name = Some($name);
+            self.$name = $name;
             self
         }
     };
 }
-use crate::wallet::notes::TransparentNote;
-pub struct TransparentNoteBuilder {
-    address: Option<String>,
-    txid: Option<TxId>,
-    output_index: Option<u64>,
-    script: Option<Vec<u8>>,
-    value: Option<u64>,
-    spent: Option<Option<(TxId, u32)>>,
-    unconfirmed_spent: Option<Option<(TxId, u32)>>,
-}
-#[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
-impl TransparentNoteBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    // Methods to set each field
-    build_method!(address, String);
-    build_method!(txid, TxId);
-    build_method!(output_index, u64);
-    build_method!(script, Vec<u8>);
-    build_method!(value, u64);
-    build_method!(spent, Option<(TxId, u32)>);
-    build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+pub(crate) use build_method;
 
-    // Build method
-    pub fn build(self) -> TransparentNote {
-        TransparentNote::from_parts(
-            self.address.unwrap(),
-            self.txid.unwrap(),
-            self.output_index.unwrap(),
-            self.script.unwrap(),
-            self.value.unwrap(),
-            self.spent.unwrap(),
-            self.unconfirmed_spent.unwrap(),
-        )
-    }
+use rand::{rngs::OsRng, Rng};
+use sapling_crypto::{
+    note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey, PaymentAddress,
+};
+use zcash_primitives::transaction::TxId;
+
+pub(crate) fn get_random_zaddr() -> (
+    ExtendedSpendingKey,
+    PreparedIncomingViewingKey,
+    PaymentAddress,
+) {
+    let mut rng = OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill(&mut seed);
+
+    let extsk = ExtendedSpendingKey::master(&seed);
+    let dfvk = extsk.to_diversifiable_full_viewing_key();
+    let fvk = dfvk;
+    let (_, addr) = fvk.default_address();
+
+    (
+        extsk,
+        PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
+        addr,
+    )
 }
 
-impl Default for TransparentNoteBuilder {
-    fn default() -> Self {
-        TransparentNoteBuilder {
-            address: Some("default_address".to_string()),
-            txid: Some(TxId::from_bytes([0u8; 32])),
-            output_index: Some(0),
-            script: Some(vec![]),
-            value: Some(0),
-            spent: Some(None),
-            unconfirmed_spent: Some(None),
+// Sapling Note Mocker
+mod sapling_note {
+
+    use sapling_crypto::value::NoteValue;
+    use sapling_crypto::PaymentAddress;
+    use sapling_crypto::Rseed;
+
+    pub struct LRZSaplingNoteBuilder {
+        recipient: PaymentAddress,
+        value: NoteValue,
+        rseed: Rseed,
+    }
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl LRZSaplingNoteBuilder {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        // Methods to set each field
+        build_method!(recipient, PaymentAddress);
+        build_method!(value, NoteValue);
+        build_method!(rseed, Rseed);
+
+        // Build method
+        pub fn build(self) -> sapling_crypto::Note {
+            sapling_crypto::Note::from_parts(self.recipient, self.value, self.rseed)
         }
     }
+    impl Default for LRZSaplingNoteBuilder {
+        fn default() -> Self {
+            let (_, _, address) = super::get_random_zaddr();
+            LRZSaplingNoteBuilder {
+                recipient: address,
+                value: NoteValue::from_raw(1000000),
+                rseed: Rseed::AfterZip212([7; 32]),
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn mock_sapling_crypto_note() -> sapling_crypto::Note {
+    sapling_note::LRZSaplingNoteBuilder::default().build()
+}
+
+pub(crate) fn get_random_txid() -> TxId {
+    let mut rng = OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill(&mut seed);
+
+    TxId::from_bytes(seed)
+}
+
+#[allow(dead_code)]
+pub(crate) fn mock_txid() -> zcash_primitives::transaction::TxId {
+    get_random_txid()
 }

@@ -208,33 +208,14 @@ impl Message {
 }
 
 #[cfg(test)]
+#[cfg(feature = "test-features")]
 pub mod tests {
     use ff::Field;
-    use sapling_crypto::zip32::ExtendedSpendingKey;
     use zcash_note_encryption::OUT_PLAINTEXT_SIZE;
 
+    use crate::test_framework::mocks::get_random_zaddr;
+
     use super::*;
-
-    fn get_random_zaddr() -> (
-        ExtendedSpendingKey,
-        PreparedIncomingViewingKey,
-        PaymentAddress,
-    ) {
-        let mut rng = OsRng;
-        let mut seed = [0u8; 32];
-        rng.fill(&mut seed);
-
-        let extsk = ExtendedSpendingKey::master(&seed);
-        let dfvk = extsk.to_diversifiable_full_viewing_key();
-        let fvk = dfvk;
-        let (_, addr) = fvk.default_address();
-
-        (
-            extsk,
-            PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
-            addr,
-        )
-    }
 
     #[test]
     fn test_encrpyt_decrypt() {
