@@ -126,17 +126,11 @@ impl TransactionRecordsById {
 #[cfg(test)]
 #[cfg(feature = "test-features")]
 mod tests {
-    use crate::wallet::{
-        notes::{SaplingNote},
-        transaction_record::TransactionRecord,
-    };
+    use crate::wallet::{notes::SaplingNote, transaction_record::TransactionRecord};
 
     use super::TransactionRecordsById;
-    
-    use zcash_primitives::{
-        consensus::BlockHeight,
-    };
-    
+
+    use zcash_primitives::consensus::BlockHeight;
 
     #[test]
     fn invalidated_note_is_deleted() {
