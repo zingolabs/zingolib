@@ -28,3 +28,21 @@ impl std::fmt::Display for NoteRecordIdentifier {
         )
     }
 }
+
+#[cfg(feature = "test-features")]
+pub(crate) mod mocks {
+    use super::{NoteRecordIdentifier, TransparentNote};
+
+    impl NoteRecordIdentifier {
+        #[allow(dead_code)]
+        pub(crate) fn mock() -> Self {
+            let transparent_note = TransparentNote::mock();
+            let index = 5u32;
+            NoteRecordIdentifier {
+                txid: transparent_note.txid,
+                pool: zcash_client_backend::PoolType::Transparent,
+                index,
+            }
+        }
+    }
+}
