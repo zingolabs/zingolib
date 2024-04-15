@@ -29,8 +29,9 @@ impl std::fmt::Display for NoteRecordIdentifier {
     }
 }
 
-#[cfg(feature = "test-features")]
-pub(crate) mod mocks {
+#[cfg(any(feature = "test", feature = "test-features"))]
+pub mod mocks {
+    //! Mock version of the struct for testing
     use super::{NoteRecordIdentifier, TransparentNote};
 
     impl NoteRecordIdentifier {

@@ -166,8 +166,9 @@ impl TransparentNote {
     }
 }
 
-#[cfg(feature = "test-features")]
-pub(crate) mod mocks {
+#[cfg(any(feature = "test", feature = "test-features"))]
+pub mod mocks {
+    //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
 
     // Transparent Note Mocker
