@@ -78,7 +78,10 @@ pub struct ProposalBuilder<FeeRuleT, NoteRef> {
     steps: Option<NonEmpty<Step<NoteRef>>>,
 }
 
-impl<FeeRuleT, NoteRef> ProposalBuilder<FeeRuleT, NoteRef> {
+impl<FeeRuleT, NoteRef> ProposalBuilder<FeeRuleT, NoteRef>
+where
+    NoteRef: Clone,
+{
     pub fn new() -> Self {
         ProposalBuilder {
             fee_rule: None,
@@ -92,15 +95,16 @@ impl<FeeRuleT, NoteRef> ProposalBuilder<FeeRuleT, NoteRef> {
     build_method!(steps, NonEmpty<Step<NoteRef>>);
 
     pub fn build(self) -> Proposal<FeeRuleT, NoteRef> {
+        let step = self.steps.unwrap().first().clone();
         Proposal::single_step(
-            self.steps.unwrap().first().transaction_request().clone(),
-            self.steps.unwrap().first().payment_pools().clone(),
-            self.steps.unwrap().first().transparent_inputs().to_vec(),
-            self.steps.unwrap().first().shielded_inputs(),
-            self.steps.unwrap().first().balance().clone(),
+            step.transaction_request().clone(),
+            step.payment_pools().clone(),
+            step.transparent_inputs().to_vec(),
+            step.shielded_inputs().cloned(),
+            step.balance().clone(),
             self.fee_rule.unwrap(),
             self.min_target_height.unwrap(),
-            self.steps.unwrap().first().is_shielding(),
+            step.is_shielding(),
         )
         .unwrap()
     }
