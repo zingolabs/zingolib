@@ -1,5 +1,7 @@
 //! Zingo-Memo
-//! TODO: Add Crate Discription Here!
+//! Utilities for procedural creation and parsing of the Memo field
+//! These memos will likely never be directly exposed to the user,
+//! but instead write down things on-chain, for recovery after rescan, etc
 
 #![warn(missing_docs)]
 use std::io::{self, Read, Write};
@@ -15,9 +17,9 @@ use zcash_encoding::{CompactSize, Vector};
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ParsedMemo {
-    /// TODO: Add Doc Comment Here!
+    /// the memo including only a list of unified addresses
     Version0 {
-        /// TODO: Add Doc Comment Here!
+        /// The list of unified addresses
         uas: Vec<UnifiedAddress>,
     },
 }
