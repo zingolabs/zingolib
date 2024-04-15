@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use log::{debug, error};
 
 use zcash_primitives::{
@@ -18,6 +19,7 @@ impl LightClient {
                 .height as u32,
         ) + 1)
     }
+
     fn map_tos_to_receivers(
         &self,
         tos: Vec<(&str, u64, Option<MemoBytes>)>,
@@ -53,6 +55,7 @@ impl LightClient {
             .collect()
     }
 
+    /// TODO: Add Doc Comment Here!
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
@@ -92,6 +95,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
         Ok(LightWalletSendProgress {
@@ -100,6 +104,7 @@ impl LightClient {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_shield(
         &self,
         pools_to_shield: &[Pool],
