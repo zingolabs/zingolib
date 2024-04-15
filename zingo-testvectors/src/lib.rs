@@ -6,7 +6,7 @@
 /// TODO: Add Doc Comment Here!
 pub const BASE_HEIGHT: u32 = 3;
 
-/// TODO: Add Doc Comment Here!
+/// TODO: Add Mod Description Here!
 pub mod seeds {
     /// TODO: Add Doc Comment Here!
     pub const DARKSIDE_SEED: &str =

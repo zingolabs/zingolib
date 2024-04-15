@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
 
-/// TODO: Add Doc Comment Here!
+/// TODO: Add Mod Description Here!
 pub mod version;
 
 /// TODO: Add Doc Comment Here!
