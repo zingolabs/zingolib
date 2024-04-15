@@ -8,6 +8,7 @@ pub mod data;
 pub mod error;
 pub mod grpc_connector;
 pub mod lightclient;
+pub mod utils;
 pub mod wallet;
 #[cfg(feature = "test-features")]
 pub use zingo_testvectors as testvectors;
