@@ -87,7 +87,7 @@ impl TransactionRecordsById {
     /// any transparent note that is listed as being spent in one of these transactions will be marked as unspent.
     pub(crate) fn invalidate_txid_specific_transparent_spends(
         &mut self,
-        invalidated_txids: &Vec<TxId>,
+        invalidated_txids: &[TxId],
     ) {
         self.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to roll back any spent utxos
