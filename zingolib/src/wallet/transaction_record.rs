@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use incrementalmerkletree::witness::IncrementalWitness;
 use zcash_primitives::transaction::TxId;
 
@@ -13,49 +14,50 @@ use super::{
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionRecord {
-    // the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
+    /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
     pub status: ConfirmationStatus,
 
-    // Timestamp of Tx. Added in v4
+    /// Timestamp of Tx. Added in v4
     pub datetime: u64,
 
-    // Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
-    // WalletTx in LightWallet::txs)
+    /// Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
+    /// WalletTx in LightWallet::txs)
     pub txid: TxId,
 
-    // List of all nullifiers spent by this wallet in this Tx.
+    /// List of all nullifiers spent by this wallet in this Tx.
     pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
 
-    // List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
+    /// List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
-    // List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
     pub sapling_notes: Vec<notes::SaplingNote>,
 
-    // List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
     pub orchard_notes: Vec<notes::OrchardNote>,
 
-    // List of all Utxos by this wallet received in this Tx. Some of these might be change notes
+    /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
     pub transparent_notes: Vec<notes::TransparentNote>,
 
-    // Total value of all the sapling nullifiers that were spent by this wallet in this Tx
+    /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
 
-    // Total value of all the orchard nullifiers that were spent by this wallet in this Tx
+    /// Total value of all the orchard nullifiers that were spent by this wallet in this Tx
     pub total_orchard_value_spent: u64,
 
-    // Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
+    /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
     pub total_transparent_value_spent: u64,
 
-    // All outgoing sends
+    /// All outgoing sends
     pub outgoing_tx_data: Vec<OutgoingTxData>,
 
-    // Price of Zec when this Tx was created
+    /// Price of Zec when this Tx was created
     pub price: Option<f64>,
 }
 
 // set
 impl TransactionRecord {
+    /// TODO: Add Doc Comment Here!
     pub fn new(status: ConfirmationStatus, datetime: u64, transaction_id: &TxId) -> Self {
         TransactionRecord {
             status,
@@ -73,6 +75,8 @@ impl TransactionRecord {
             price: None,
         }
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
@@ -89,9 +93,12 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// TODO: Add Doc Comment Here!
     pub fn get_transparent_value_spent(&self) -> u64 {
         self.total_transparent_value_spent
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
         let outputted = self.value_outgoing() + self.total_change_returned();
         if self.total_value_spent() >= outputted {
@@ -110,20 +117,27 @@ impl TransactionRecord {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
     pub fn is_outgoing_transaction(&self) -> bool {
         (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes.iter().any(|note| !note.is_change())
             || self.orchard_notes.iter().any(|note| !note.is_change())
             || !self.transparent_notes.is_empty()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
     }
+
+    /// TODO: Add Doc Comment Here!
     fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -132,6 +146,7 @@ impl TransactionRecord {
         D::sum_pool_change(self)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -142,9 +157,13 @@ impl TransactionRecord {
             .map(|note_and_metadata| note_and_metadata.value())
             .sum()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn total_change_returned(&self) -> u64 {
         self.pool_change_returned::<SaplingDomain>() + self.pool_change_returned::<OrchardDomain>()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn total_value_received(&self) -> u64 {
         self.pool_value_received::<OrchardDomain>()
             + self.pool_value_received::<SaplingDomain>()
@@ -154,16 +173,20 @@ impl TransactionRecord {
                 .map(|utxo| utxo.value)
                 .sum::<u64>()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn total_value_spent(&self) -> u64 {
         self.value_spent_by_pool().iter().sum()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn value_outgoing(&self) -> u64 {
         self.outgoing_tx_data
             .iter()
             .fold(0, |running_total, tx_data| tx_data.value + running_total)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
         [
             self.get_transparent_value_spent(),
@@ -174,6 +197,7 @@ impl TransactionRecord {
 }
 // read/write
 impl TransactionRecord {
+    /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
     pub fn read<R: Read>(
         mut reader: R,
@@ -280,10 +304,12 @@ impl TransactionRecord {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn serialized_version() -> u64 {
         23
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 

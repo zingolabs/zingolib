@@ -1,9 +1,11 @@
+//! TODO: Add Mod Description Here!
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Read, Write};
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 
 use super::data::WalletZecPriceInfo;
 
+/// TODO: Add Doc Comment Here!
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
     // Strings are written as <littleendian> len + bytes
     let str_len = reader.read_u64::<LittleEndian>()?;
@@ -16,6 +18,7 @@ pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
     Ok(str)
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
     // Strings are written as len + utf8
     writer.write_u64::<LittleEndian>(s.as_bytes().len() as u64)?;
@@ -38,11 +41,15 @@ pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
     MemoBytes::from_bytes(&s_bytes)
         .map_err(|_| format!("Error creating output. Memo '{:?}' is too long", memo_str))
 }
+
+/// TODO: Add Doc Comment Here!
 pub fn txid_from_slice(txid: &[u8]) -> TxId {
     let mut txid_bytes = [0u8; 32];
     txid_bytes.copy_from_slice(txid);
     TxId::from_bytes(txid_bytes)
 }
+
+/// TODO: Add Doc Comment Here!
 pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
     match price.zec_price {
         None => None,
