@@ -30,19 +30,21 @@ impl std::ops::DerefMut for TransactionRecordsById {
         &mut self.0
     }
 }
-impl TransactionRecordsById {
-    // initializers
 
-    // Associated function to create a TransactionRecordMap from a HashMap
-    pub fn default() -> Self {
+/// This block implements constructors.
+impl TransactionRecordsById {
+    // New empty Map
+    pub fn new() -> Self {
         TransactionRecordsById(HashMap::new())
     }
+    // Associated function to create a TransactionRecordMap from a HashMap
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
-
-    // modify methods
-
+}
+/// This block implements methods to modify the map.
+impl TransactionRecordsById {
+    /// All information after a certain height is invalidated during a reorg.
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: BlockHeight) {
         // First, collect txids that need to be removed
         let txids_to_remove = self
@@ -64,40 +66,45 @@ impl TransactionRecordsById {
             .collect::<Vec<_>>();
         self.invalidate_txids(txids_to_remove);
     }
-
-    /// this function invalidiates a vec of txids
+    /// this function invalidiates a vec of txids by removing them and then all references to them.
     pub(crate) fn invalidate_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.remove(txid);
         }
 
-        // invalidate (roll back) any transparent spends in each invalidated tx
+        self.invalidate_txid_specific_transparent_spends(&txids_to_remove);
+        // roll back any sapling spends in each invalidated tx
+        self.invalidate_txid_specific_domain_spends::<SaplingDomain>(&txids_to_remove);
+        // roll back any orchard spends in each invalidated tx
+        self.invalidate_txid_specific_domain_spends::<OrchardDomain>(&txids_to_remove);
+    }
+    /// any transparent note that is listed as being spent in one of these transactions will be marked as unspent.
+    pub(crate) fn invalidate_txid_specific_transparent_spends(
+        &mut self,
+        invalidated_txids: &Vec<TxId>,
+    ) {
         self.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to roll back any spent utxos
             transaction_metadata
                 .transparent_notes
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
+                    if utxo.is_spent() && invalidated_txids.contains(&utxo.spent().unwrap().0) {
                         *utxo.spent_mut() = None;
                     }
 
                     if utxo.unconfirmed_spent.is_some()
-                        && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
+                        && invalidated_txids.contains(&utxo.unconfirmed_spent.unwrap().0)
                     {
                         utxo.unconfirmed_spent = None;
                     }
                 })
         });
-        // roll back any sapling spends in each invalidated tx
-        self.invalidate_domain_specific_txids::<SaplingDomain>(&txids_to_remove);
-        // roll back any orchard spends in each invalidated tx
-        self.invalidate_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
     }
-
-    pub(crate) fn invalidate_domain_specific_txids<D: DomainWalletExt>(
+    /// any shielded note of the specified domain that is listed as being spent in one of these transactions will be marked as unspent.
+    pub(crate) fn invalidate_txid_specific_domain_spends<D: DomainWalletExt>(
         &mut self,
-        txids_to_remove: &[TxId],
+        invalidated_txids: &[TxId],
     ) where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -108,13 +115,13 @@ impl TransactionRecordsById {
                 .iter_mut()
                 .for_each(|nd| {
                     // Mark note as unspent if the txid being removed spent it.
-                    if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
+                    if nd.spent().is_some() && invalidated_txids.contains(&nd.spent().unwrap().0) {
                         *nd.spent_mut() = None;
                     }
 
                     // Remove unconfirmed spends too
                     if nd.pending_spent().is_some()
-                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
+                        && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
                     {
                         *nd.pending_spent_mut() = None;
                     }
