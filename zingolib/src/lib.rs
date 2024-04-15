@@ -1,12 +1,11 @@
 //! ZingoLib
-//! TODO: Add Crate Discription Here!
+//! Zingo backend code base
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 #[macro_use]
 extern crate rust_embed;
 
-/// TODO: Add Mod Description Here!
 pub mod blaze;
 
 pub mod commands;
@@ -19,7 +18,6 @@ pub mod grpc_connector;
 
 pub mod lightclient;
 
-// General library utilities such as parsing and conversions.
 pub mod utils;
 
 pub mod wallet;

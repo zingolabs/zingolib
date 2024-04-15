@@ -18,7 +18,9 @@ pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, ConversionError> {
 /// The error type for conversion errors.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConversionError {
+    /// TODO: Add Doc Comment Here!
     DecodeHexFailed(hex::FromHexError),
+    /// TODO: Add Doc Comment Here!
     InvalidStringLength,
 }
 
