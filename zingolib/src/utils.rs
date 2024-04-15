@@ -1,4 +1,3 @@
-//! Utils
 //! General library utilities such as parsing and conversions.
 
 use std::fmt;

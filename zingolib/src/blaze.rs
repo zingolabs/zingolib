@@ -1,4 +1,3 @@
-//! Blaze
 //! Depricated! holds sync engine 1.0
 
 pub(super) mod block_management_reorg_detection;

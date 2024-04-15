@@ -16,7 +16,6 @@ use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
 
-/// TODO: Add Mod Description Here!
 pub mod version;
 
 /// TODO: Add Doc Comment Here!

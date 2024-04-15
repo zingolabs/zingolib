@@ -3,7 +3,6 @@
 
 #![warn(missing_docs)]
 
-/// TODO: Add Mod Description Here!
 pub mod interrupts;
 
 use grpc_proxy::ProxyServer;

@@ -1,4 +1,3 @@
-//! Interupts
 //! TODO: Add Mod Description Here!
 
 use zingolib::lightclient::LightClient;

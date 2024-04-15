@@ -1,3 +1,5 @@
+//! TODO: Add Mod Description Here!
+
 use zcash_primitives::consensus::BlockHeight;
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 
