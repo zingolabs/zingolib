@@ -22,7 +22,6 @@ use zingoconfig::RegtestNetwork;
 use zingolib::{
     get_base_address,
     lightclient::PoolBalances,
-    testvectors::seeds,
     wallet::{data::summaries::ValueTransferKind, Pool},
 };
 
@@ -85,11 +84,7 @@ async fn interrupt_initial_tree_fetch() {
 async fn shielded_note_marked_as_change_chainbuild() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     let chainbuild_file = create_chainbuild_file("shielded_note_marked_as_change");
-    let mut scenario = DarksideScenario::default().await;
-    scenario.build_faucet(Pool::Sapling).await;
-    scenario
-        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
-        .await;
+    let mut scenario = DarksideScenario::default_faucet_recipient(Pool::Sapling).await;
 
     // stage a sapling to orchard send-to-self every thousand blocks
     for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {
@@ -136,11 +131,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
 async fn shielded_note_marked_as_change_test() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");
-    let mut scenario = DarksideScenario::default().await;
-    scenario.build_faucet(Pool::Sapling).await;
-    scenario
-        .build_client(seeds::HOSPITAL_MUSEUM_SEED.to_string(), 4)
-        .await;
+    let mut scenario = DarksideScenario::default_faucet_recipient(Pool::Sapling).await;
 
     // stage a send to self every thousand blocks
     for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {

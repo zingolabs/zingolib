@@ -214,7 +214,7 @@ mod tests {
                             e,
                             format!(
                                 "Error creating output. Memo '\"{}\"' is too long",
-                                long_513_byte_memo.to_string()
+                                long_513_byte_memo
                             )
                         )
                     }
@@ -256,7 +256,7 @@ mod tests {
                             e,
                             format!(
                                 "Error creating output. Memo '\"{}\"' is too long",
-                                long_513_byte_memo.to_string()
+                                long_513_byte_memo
                             )
                         )
                     }
