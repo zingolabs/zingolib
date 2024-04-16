@@ -1,9 +1,7 @@
-//! Zing-Testvectors
-//! TODO: Add Crate Discription Here!
-
-#![warn(missing_docs)]
-
-/// TODO: Add Doc Comment Here!
+//! A publishable crate that provides access to the full dataset ZingoLabs uses to test
+//! zingolib.  It's available as a re-export from zingolib.
+//! TODO:  1. specify feature gates for re-export access
+//! TODO:  2. after 1. is resolved add a doc-test
 pub const BASE_HEIGHT: u32 = 3;
 
 /// TODO: Add Mod Description Here!
