@@ -39,7 +39,7 @@ impl Default for TransactionRecordsById {
 }
 
 impl TransactionRecordsById {
-    // New empty Map
+    /// Constructs a new TransactionRecordsById with an empty map.
     pub fn new() -> Self {
         TransactionRecordsById(HashMap::new())
     }
