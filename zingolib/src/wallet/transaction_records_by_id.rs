@@ -72,7 +72,7 @@ impl TransactionRecordsById {
     ///
     /// A transaction can be invalidated either by a reorg or if it was never confirmed by a miner.
     /// This is required in the case that a note was spent in a invalidated transaction.
-    /// Takes a slice of txids corresponding to the invalidated transactions.
+    /// Takes a slice of txids corresponding to the invalidated transactions, searches all notes for being spent in one of those txids, and resets them to unspent.
     pub(crate) fn invalidate_transactions(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.remove(txid);
