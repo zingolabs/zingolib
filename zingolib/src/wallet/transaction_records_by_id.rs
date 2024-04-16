@@ -84,7 +84,10 @@ impl TransactionRecordsById {
         // roll back any orchard spends in each invalidated tx
         self.invalidate_txid_specific_domain_spends::<OrchardDomain>(&txids_to_remove);
     }
-    /// any transparent note that is listed as being spent in one of these transactions will be marked as unspent.
+    /// Reverts any spent transparent notes in the given transactions to unspent.
+    ///
+    /// This is required in the case that the note was spent in an invalidated transaction.
+    /// Takes a slice of txids corresponding to the invalidated transactions.
     pub(crate) fn invalidate_txid_specific_transparent_spends(
         &mut self,
         invalidated_txids: &[TxId],
