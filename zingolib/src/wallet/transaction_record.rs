@@ -385,8 +385,6 @@ pub(crate) mod mocks {
 mod tests {
     use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
     use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
-    use crate::wallet::transaction_record::TransactionRecord;
-    use crate::wallet::utils::txid_from_slice;
 
     use super::*;
 
