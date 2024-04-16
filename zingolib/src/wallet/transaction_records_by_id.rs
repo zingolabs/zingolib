@@ -31,25 +31,18 @@ impl std::ops::DerefMut for TransactionRecordsById {
     }
 }
 
-/// This block implements constructors.
-impl Default for TransactionRecordsById {
-    /// Default constructor
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
+/// Constructors
 impl TransactionRecordsById {
     /// Constructs a new TransactionRecordsById with an empty map.
     pub fn new() -> Self {
         TransactionRecordsById(HashMap::new())
     }
-    // Associated function to create a TransactionRecordMap from a HashMap
+    // Constructs a TransactionRecordMap from a HashMap
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
 }
-/// This block implements methods to modify the map.
+/// Methods to modify the map.
 impl TransactionRecordsById {
     /// Invalidates all transactions from a given height including the block with block height `reorg_height`
     ///
@@ -75,7 +68,7 @@ impl TransactionRecordsById {
             .collect::<Vec<_>>();
         self.invalidate_transactions(txids_to_remove);
     }
-    /// This function invalidiates a vec of txids by removing them and then all references to them.
+    /// Invalidiates a vec of txids by removing them and then all references to them.
     ///
     /// A transaction can be invalidated either by a reorg or if it was never confirmed by a miner.
     /// This is required in the case that a note was spent in a invalidated transaction.
@@ -140,5 +133,12 @@ impl TransactionRecordsById {
                     }
                 });
         });
+    }
+}
+
+impl Default for TransactionRecordsById {
+    /// Default constructor
+    fn default() -> Self {
+        Self::new()
     }
 }
