@@ -76,6 +76,11 @@ mod sapling_note {
         build_method!(value, NoteValue);
         build_method!(rseed, Rseed);
 
+        pub fn randomize_recipient(self) -> Self {
+            let (_, _, address) = super::get_random_zaddr();
+            self.recipient(address)
+        }
+
         /// Build the note.
         pub fn build(self) -> Note {
             Note::from_parts(
