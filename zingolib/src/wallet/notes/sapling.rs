@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use incrementalmerkletree::Position;
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
@@ -6,8 +7,11 @@ use super::{
     NoteInterface, ShieldedNoteInterface,
 };
 
+/// TODO: Add Doc Comment Here!
 pub struct SaplingNote {
+    /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
+    /// TODO: Add Doc Comment Here!
     pub note: sapling_crypto::Note,
 
     // The position of this note's value commitment in the global commitment tree
@@ -17,17 +21,23 @@ pub struct SaplingNote {
     // The note's index in its containing transaction
     pub(crate) output_index: Option<u32>,
 
+    /// TODO: Add Doc Comment Here!
     pub nullifier: Option<sapling_crypto::Nullifier>,
 
+    /// TODO: Add Doc Comment Here!
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
 
-    // If this note was spent in a send, but has not yet been confirmed.
-    // Contains the transaction id and height at which it was broadcast
+    /// If this note was spent in a send, but has not yet been confirmed.
+    /// Contains the transaction id and height at which it was broadcast
     pub unconfirmed_spent: Option<(TxId, u32)>,
+
+    /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
+
+    /// TODO: Add Doc Comment Here!
     pub is_change: bool,
 
-    // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date) Todo should this data point really be here?
+    /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date) Todo should this data point really be here?
     pub have_spending_key: bool,
 }
 
@@ -55,12 +65,15 @@ impl NoteInterface for SaplingNote {
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
+
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.spent
     }
+
     fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
+
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
@@ -167,6 +180,7 @@ impl ShieldedNoteInterface for SaplingNote {
     fn output_index(&self) -> &Option<u32> {
         &self.output_index
     }
+
     fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note {
         zcash_client_backend::wallet::Note::Sapling(self.note().clone())
     }
