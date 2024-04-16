@@ -14,16 +14,13 @@ macro_rules! build_method {
 }
 pub(crate) use build_method;
 
-pub fn default_txid() -> zcash_primitives::transaction::TxId {
-    zcash_primitives::transaction::TxId::from_bytes([0u8; 32])
-}
-pub fn default_zaddr() -> (
+fn zaddr_from_seed(
+    seed: [u8; 32],
+) -> (
     ExtendedSpendingKey,
     PreparedIncomingViewingKey,
     PaymentAddress,
 ) {
-    let seed = [0u8; 32];
-
     let extsk = ExtendedSpendingKey::master(&seed);
     let dfvk = extsk.to_diversifiable_full_viewing_key();
     let fvk = dfvk;
@@ -34,6 +31,17 @@ pub fn default_zaddr() -> (
         PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
         addr,
     )
+}
+
+pub fn default_txid() -> zcash_primitives::transaction::TxId {
+    zcash_primitives::transaction::TxId::from_bytes([0u8; 32])
+}
+pub fn default_zaddr() -> (
+    ExtendedSpendingKey,
+    PreparedIncomingViewingKey,
+    PaymentAddress,
+) {
+    zaddr_from_seed([0u8; 32])
 }
 
 use rand::{rngs::OsRng, Rng};
@@ -56,16 +64,7 @@ pub fn random_zaddr() -> (
     let mut seed = [0u8; 32];
     rng.fill(&mut seed);
 
-    let extsk = ExtendedSpendingKey::master(&seed);
-    let dfvk = extsk.to_diversifiable_full_viewing_key();
-    let fvk = dfvk;
-    let (_, addr) = fvk.default_address();
-
-    (
-        extsk,
-        PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
-        addr,
-    )
+    zaddr_from_seed(seed)
 }
 
 // Sapling Note Mocker
