@@ -1,7 +1,8 @@
 //! Zingo-Memo
+//!
 //! Utilities for procedural creation and parsing of the Memo field
-//! These memos will likely never be directly exposed to the user,
-//! but instead write down things on-chain, for recovery after rescan, etc
+//! These memos are currently never directly exposed to the user,
+//! but instead write down UAs on-chain for recovery after rescan.
 
 #![warn(missing_docs)]
 use std::io::{self, Read, Write};
