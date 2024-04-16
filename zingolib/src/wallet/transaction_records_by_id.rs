@@ -33,6 +33,7 @@ impl std::ops::DerefMut for TransactionRecordsById {
 
 /// This block implements constructors.
 impl Default for TransactionRecordsById {
+    /// Default constructor
     fn default() -> Self {
         Self::new()
     }
