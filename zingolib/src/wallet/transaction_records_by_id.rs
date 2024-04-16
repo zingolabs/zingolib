@@ -107,7 +107,10 @@ impl TransactionRecordsById {
                 })
         });
     }
-    /// any shielded note of the specified domain that is listed as being spent in one of these transactions will be marked as unspent.
+    /// Reverts any spent shielded notes in the given transactions to unspent.
+    ///
+    /// This is required in the case that the note was spent in an invalidated transaction.
+    /// Takes a slice of txids corresponding to the invalidated transactions.
     pub(crate) fn invalidate_txid_specific_domain_spends<D: DomainWalletExt>(
         &mut self,
         invalidated_txids: &[TxId],
