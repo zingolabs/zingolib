@@ -21,14 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pub struct crate::wallet::notes::NoteRecordIdentifier
 - `utils` mod
 - `utils::txid_from_hex_encoded_str` fn
-- `test_framework` module
-- `test_framework::mocks` module
 - `lightclient::send`
   - `do_propose` behind "zip317" feature
   - `do_send_proposal` behind "zip317" feature
 - `commands`
   - `ProposeCommand` struct and methods behind "zip317" feature
   - `QuickSendCommand` struct and methods behind "zip317" feature
+- `test_framework` mod
 
 ### Changed
 
