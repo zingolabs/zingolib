@@ -4,6 +4,8 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::notes::TransparentNote;
 
+pub use proposal::{ProposalBuilder, StepBuilder};
+
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         pub fn $name(mut self, $name: $localtype) -> Self {
