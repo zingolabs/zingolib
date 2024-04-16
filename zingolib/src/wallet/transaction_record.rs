@@ -324,22 +324,59 @@ impl TransactionRecord {
     }
 }
 
-#[cfg(feature = "test-features")]
+#[cfg(any(test, feature = "test-features"))]
 pub(crate) mod mocks {
-    
+    use zcash_primitives::transaction::TxId;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::test_framework::mocks::build_method;
 
     use super::TransactionRecord;
 
-    impl TransactionRecord {
-        #[allow(dead_code)]
-        pub(crate) fn mock() -> Self {
-            Self::new(
-                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
-                    zcash_primitives::consensus::BlockHeight::from_u32(5),
-                ),
-                1705077003,
-                &crate::test_framework::mocks::default_txid(),
+    pub(crate) struct TransactionRecordBuilder {
+        status: Option<ConfirmationStatus>,
+        datetime: Option<u64>,
+        txid: Option<TxId>,
+    }
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl TransactionRecordBuilder {
+        pub fn new() -> Self {
+            Self {
+                status: None,
+                datetime: None,
+                txid: None,
+            }
+        }
+        // Methods to set each field
+        build_method!(status, ConfirmationStatus);
+        build_method!(datetime, u64);
+        build_method!(txid, TxId);
+
+        pub fn randomize_txid(self) -> Self {
+            self.txid(crate::test_framework::mocks::random_txid())
+        }
+
+        // Build method
+        pub fn build(self) -> TransactionRecord {
+            TransactionRecord::new(
+                self.status.unwrap(),
+                self.datetime.unwrap(),
+                &self.txid.unwrap(),
             )
+        }
+    }
+
+    impl Default for TransactionRecordBuilder {
+        fn default() -> Self {
+            Self {
+                status: Some(
+                    zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                        zcash_primitives::consensus::BlockHeight::from_u32(5),
+                    ),
+                ),
+                datetime: Some(1705077003),
+                txid: Some(crate::test_framework::mocks::default_txid()),
+            }
         }
     }
 }
@@ -347,18 +384,15 @@ pub(crate) mod mocks {
 #[cfg(test)]
 mod tests {
     use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
+    use crate::wallet::transaction_record::TransactionRecord;
     use crate::wallet::utils::txid_from_slice;
-    use crate::wallet::{transaction_record::TransactionRecord};
 
     use super::*;
 
     #[test]
     pub fn blank_record() {
-        let new = TransactionRecord::new(
-            ConfirmationStatus::Confirmed(2_000_000.into()),
-            103,
-            &txid_from_slice(&[0u8; 32]),
-        );
+        let new = TransactionRecordBuilder::default().build();
         assert_eq!(new.get_transparent_value_spent(), 0);
         assert_eq!(new.get_transaction_fee().unwrap(), 0);
         assert!(!new.is_outgoing_transaction());
@@ -375,7 +409,7 @@ mod tests {
     #[test]
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
-        let mut transaction_record = TransactionRecord::mock();
+        let mut transaction_record = TransactionRecordBuilder::default().build();
         transaction_record
             .transparent_notes
             .push(TransparentNoteBuilder::default().build());
