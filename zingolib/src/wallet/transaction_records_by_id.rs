@@ -50,7 +50,9 @@ impl TransactionRecordsById {
 }
 /// This block implements methods to modify the map.
 impl TransactionRecordsById {
-    /// All information after a certain height is invalidated during a reorg.
+    /// Invalidates all transactions from a given height including the block with block height `reorg_height`
+    ///
+    /// All information above a certain height is invalidated during a reorg.
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: BlockHeight) {
         // First, collect txids that need to be removed
         let txids_to_remove = self
