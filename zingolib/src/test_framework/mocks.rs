@@ -49,10 +49,14 @@ mod sapling_note {
         value: Option<NoteValue>,
         rseed: Option<Rseed>,
     }
-    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+
     impl LRZSaplingNoteBuilder {
         pub fn new() -> Self {
-            Self::default()
+            LRZSaplingNoteBuilder {
+                recipient: None,
+                value: None,
+                rseed: None,
+            }
         }
 
         // Methods to set each field
@@ -72,11 +76,10 @@ mod sapling_note {
     impl Default for LRZSaplingNoteBuilder {
         fn default() -> Self {
             let (_, _, address) = super::get_random_zaddr();
-            LRZSaplingNoteBuilder {
-                recipient: Some(address),
-                value: Some(NoteValue::from_raw(1000000)),
-                rseed: Some(Rseed::AfterZip212([7; 32])),
-            }
+            Self::new()
+                .recipient(address)
+                .value(NoteValue::from_raw(1000000))
+                .rseed(Rseed::AfterZip212([7; 32]))
         }
     }
 }
