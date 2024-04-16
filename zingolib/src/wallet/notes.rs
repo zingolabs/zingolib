@@ -41,7 +41,7 @@ pub mod mocks {
     use zcash_client_backend::PoolType;
     use zcash_primitives::transaction::TxId;
 
-    use crate::test_framework::mocks::build_method;
+    use crate::test_framework::mocks::{build_method, default_txid};
 
     use super::NoteRecordIdentifier;
 
@@ -81,7 +81,7 @@ pub mod mocks {
     impl Default for NoteRecordIdentifierBuilder {
         fn default() -> Self {
             Self::new()
-                .txid(TxId::from_bytes([0u8; 32]))
+                .txid(default_txid())
                 .pool(PoolType::Shielded(
                     zcash_client_backend::ShieldedProtocol::Orchard,
                 ))
