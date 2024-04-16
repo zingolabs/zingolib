@@ -3,6 +3,7 @@
 
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
+        #[doc = "Set the $name field of the builder."]
         pub fn $name(mut self, $name: $localtype) -> Self {
             self.$name = Some($name);
             self
@@ -41,9 +42,12 @@ pub(crate) fn get_random_zaddr() -> (
 mod sapling_note {
 
     use sapling_crypto::value::NoteValue;
+    use sapling_crypto::Note;
     use sapling_crypto::PaymentAddress;
     use sapling_crypto::Rseed;
 
+    /// A struct to build a mock sapling_crypto::Note from scratch.
+    /// Distinguish sapling_crypto::Note from crate::wallet::notes::SaplingNote. The latter wraps the former with some other attributes.
     pub struct LRZSaplingNoteBuilder {
         recipient: Option<PaymentAddress>,
         value: Option<NoteValue>,
@@ -51,6 +55,7 @@ mod sapling_note {
     }
 
     impl LRZSaplingNoteBuilder {
+        /// Instantiate an empty builder.
         pub fn new() -> Self {
             LRZSaplingNoteBuilder {
                 recipient: None,
@@ -64,9 +69,9 @@ mod sapling_note {
         build_method!(value, NoteValue);
         build_method!(rseed, Rseed);
 
-        // Build method
-        pub fn build(self) -> sapling_crypto::Note {
-            sapling_crypto::Note::from_parts(
+        /// Build the note.
+        pub fn build(self) -> Note {
+            Note::from_parts(
                 self.recipient.unwrap(),
                 self.value.unwrap(),
                 self.rseed.unwrap(),
