@@ -338,7 +338,7 @@ pub(crate) mod mocks {
                     zcash_primitives::consensus::BlockHeight::from_u32(5),
                 ),
                 1705077003,
-                &crate::test_framework::mocks::mock_txid(),
+                &crate::test_framework::mocks::default_txid(),
             )
         }
     }

@@ -14,9 +14,8 @@ macro_rules! build_method {
 }
 pub(crate) use build_method;
 
-#[allow(dead_code)]
-pub fn mock_txid() -> zcash_primitives::transaction::TxId {
-    zcash_primitives::transaction::TxId::from_bytes([7; 32])
+pub fn default_txid() -> zcash_primitives::transaction::TxId {
+    zcash_primitives::transaction::TxId::from_bytes([0u8; 32])
 }
 
 use rand::{rngs::OsRng, Rng};
@@ -123,6 +122,8 @@ pub mod proposal {
     };
 
     use crate::wallet::notes::NoteRecordIdentifier;
+
+    use super::default_txid;
 
     /// Provides a builder for constructing a mock [`zcash_client_backend::proposal::Proposal`].
     ///
@@ -257,7 +258,7 @@ pub mod proposal {
     impl Default for StepBuilder {
         /// Constructs a new [`StepBuilder`] where all fields are preset to default values.
         fn default() -> Self {
-            let txid = TxId::from_bytes([0u8; 32]);
+            let txid = default_txid();
             let seed = [0u8; 32];
             let dfvk = ExtendedSpendingKey::master(&seed).to_diversifiable_full_viewing_key();
             let (_, address) = dfvk.default_address();

@@ -65,7 +65,7 @@ pub mod mocks {
         build_method!(index, u32);
 
         pub fn randomize_txid(self) -> Self {
-            self.txid(crate::test_framework::mocks::mock_txid())
+            self.txid(crate::test_framework::mocks::default_txid())
         }
 
         // Build method
