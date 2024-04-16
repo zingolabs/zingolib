@@ -64,6 +64,10 @@ pub mod mocks {
         build_method!(pool, PoolType);
         build_method!(index, u32);
 
+        pub fn randomize_txid(self) -> Self {
+            self.txid(crate::test_framework::mocks::mock_txid())
+        }
+
         // Build method
         pub fn build(self) -> NoteRecordIdentifier {
             NoteRecordIdentifier::from_parts(
