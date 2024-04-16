@@ -17,6 +17,24 @@ pub(crate) use build_method;
 pub fn default_txid() -> zcash_primitives::transaction::TxId {
     zcash_primitives::transaction::TxId::from_bytes([0u8; 32])
 }
+pub fn default_zaddr() -> (
+    ExtendedSpendingKey,
+    PreparedIncomingViewingKey,
+    PaymentAddress,
+) {
+    let seed = [0u8; 32];
+
+    let extsk = ExtendedSpendingKey::master(&seed);
+    let dfvk = extsk.to_diversifiable_full_viewing_key();
+    let fvk = dfvk;
+    let (_, addr) = fvk.default_address();
+
+    (
+        extsk,
+        PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
+        addr,
+    )
+}
 
 use rand::{rngs::OsRng, Rng};
 use sapling_crypto::{
@@ -51,6 +69,8 @@ mod sapling_note {
     use sapling_crypto::Note;
     use sapling_crypto::PaymentAddress;
     use sapling_crypto::Rseed;
+
+    use super::default_zaddr;
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
     /// Distinguish sapling_crypto::Note from crate::wallet::notes::SaplingNote. The latter wraps the former with some other attributes.
@@ -91,8 +111,7 @@ mod sapling_note {
     }
     impl Default for LRZSaplingNoteBuilder {
         fn default() -> Self {
-            let address = PaymentAddress::from_bytes(&[22; 43])
-                .expect("this sequence of bytes corresponds to a valid PaymentAddress");
+            let (_, _, address) = default_zaddr();
             Self::new()
                 .recipient(address)
                 .value(NoteValue::from_raw(1000000))
@@ -123,7 +142,7 @@ pub mod proposal {
 
     use crate::wallet::notes::NoteRecordIdentifier;
 
-    use super::default_txid;
+    use super::{default_txid, default_zaddr};
 
     /// Provides a builder for constructing a mock [`zcash_client_backend::proposal::Proposal`].
     ///
@@ -259,9 +278,7 @@ pub mod proposal {
         /// Constructs a new [`StepBuilder`] where all fields are preset to default values.
         fn default() -> Self {
             let txid = default_txid();
-            let seed = [0u8; 32];
-            let dfvk = ExtendedSpendingKey::master(&seed).to_diversifiable_full_viewing_key();
-            let (_, address) = dfvk.default_address();
+            let (_, _, address) = default_zaddr();
             let note = sapling_crypto::Note::from_parts(
                 address,
                 NoteValue::from_raw(20_000),
