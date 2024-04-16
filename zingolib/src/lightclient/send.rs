@@ -3,12 +3,15 @@ use log::{debug, error};
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::MemoBytes,
-    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
+    transaction::{
+        components::amount::NonNegativeAmount,
+        fees::zip317::{FeeRule, MINIMUM_FEE},
+    },
 };
 use zcash_proofs::prover::LocalTxProver;
 
 use super::{LightClient, LightWalletSendProgress};
-use crate::wallet::Pool;
+use crate::wallet::{notes::NoteRecordIdentifier, Pool};
 
 #[cfg(feature = "zip317")]
 use {zcash_client_backend::proposal::Proposal, zcash_primitives::transaction::TxId};
@@ -56,17 +59,21 @@ impl LightClient {
             .collect()
     }
 
+    /// Unstable function to expose the zip317 interface for development
     #[cfg(feature = "zip317")]
     pub async fn do_propose(
         &self,
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<Proposal<(), ()>, String> {
-        unimplemented!()
+    ) -> Result<Proposal<FeeRule, NoteRecordIdentifier>, String> {
+        use crate::test_framework::mocks::ProposalBuilder;
+
+        Ok(ProposalBuilder::default().build())
     }
 
+    /// Unstable function to expose the zip317 interface for development
     #[cfg(feature = "zip317")]
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        unimplemented!()
+        Ok(vec![TxId::from_bytes([0u8; 32])])
     }
 
     //TODO: Add migrate_sapling_to_orchard argument
