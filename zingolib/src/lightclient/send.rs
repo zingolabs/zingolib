@@ -3,15 +3,12 @@ use log::{debug, error};
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::MemoBytes,
-    transaction::{
-        components::amount::NonNegativeAmount,
-        fees::zip317::{FeeRule, MINIMUM_FEE},
-    },
+    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
 };
 use zcash_proofs::prover::LocalTxProver;
 
 use super::{LightClient, LightWalletSendProgress};
-use crate::wallet::{notes::NoteRecordIdentifier, Pool};
+use crate::wallet::Pool;
 
 #[cfg(feature = "zip317")]
 use {zcash_client_backend::proposal::Proposal, zcash_primitives::transaction::TxId};
