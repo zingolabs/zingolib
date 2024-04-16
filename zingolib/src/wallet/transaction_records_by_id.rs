@@ -73,25 +73,26 @@ impl TransactionRecordsById {
                 }
             })
             .collect::<Vec<_>>();
-        self.invalidate_txids(txids_to_remove);
+        self.invalidate_transactions(txids_to_remove);
     }
-    /// this function invalidiates a vec of txids by removing them and then all references to them.
-    pub(crate) fn invalidate_txids(&mut self, txids_to_remove: Vec<TxId>) {
+    /// This function invalidiates a vec of txids by removing them and then all references to them.
+    ///
+    /// A transaction can be invalidated either by a reorg or if it was never confirmed by a miner.
+    /// This is required in the case that a note was spent in a invalidated transaction.
+    /// Takes a slice of txids corresponding to the invalidated transactions.
+    pub(crate) fn invalidate_transactions(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.remove(txid);
         }
 
-        self.invalidate_txid_specific_transparent_spends(&txids_to_remove);
+        self.invalidate_transaction_specific_transparent_spends(&txids_to_remove);
         // roll back any sapling spends in each invalidated tx
-        self.invalidate_txid_specific_domain_spends::<SaplingDomain>(&txids_to_remove);
+        self.invalidate_transaction_specific_domain_spends::<SaplingDomain>(&txids_to_remove);
         // roll back any orchard spends in each invalidated tx
-        self.invalidate_txid_specific_domain_spends::<OrchardDomain>(&txids_to_remove);
+        self.invalidate_transaction_specific_domain_spends::<OrchardDomain>(&txids_to_remove);
     }
     /// Reverts any spent transparent notes in the given transactions to unspent.
-    ///
-    /// This is required in the case that the note was spent in an invalidated transaction.
-    /// Takes a slice of txids corresponding to the invalidated transactions.
-    pub(crate) fn invalidate_txid_specific_transparent_spends(
+    pub(crate) fn invalidate_transaction_specific_transparent_spends(
         &mut self,
         invalidated_txids: &[TxId],
     ) {
@@ -114,10 +115,7 @@ impl TransactionRecordsById {
         });
     }
     /// Reverts any spent shielded notes in the given transactions to unspent.
-    ///
-    /// This is required in the case that the note was spent in an invalidated transaction.
-    /// Takes a slice of txids corresponding to the invalidated transactions.
-    pub(crate) fn invalidate_txid_specific_domain_spends<D: DomainWalletExt>(
+    pub(crate) fn invalidate_transaction_specific_domain_spends<D: DomainWalletExt>(
         &mut self,
         invalidated_txids: &[TxId],
     ) where

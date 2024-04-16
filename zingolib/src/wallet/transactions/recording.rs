@@ -24,11 +24,6 @@ use crate::{
 
 use super::TxMapAndMaybeTrees;
 impl TxMapAndMaybeTrees {
-    pub fn invalidate_txids(&mut self, txids_to_remove: Vec<TxId>) {
-        self.transaction_records_by_id
-            .invalidate_txids(txids_to_remove)
-    }
-
     /// During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
@@ -47,6 +42,7 @@ impl TxMapAndMaybeTrees {
         }
     }
 
+    /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
 
@@ -63,7 +59,8 @@ impl TxMapAndMaybeTrees {
             .iter()
             .for_each(|t| println!("Removing expired mempool tx {}", t));
 
-        self.invalidate_txids(txids_to_remove);
+        self.transaction_records_by_id
+            .invalidate_transactions(txids_to_remove);
     }
 
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
