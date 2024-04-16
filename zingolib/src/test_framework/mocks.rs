@@ -1,6 +1,7 @@
 //! Tools to facilitate mocks for testing
 
 pub use proposal::{ProposalBuilder, StepBuilder};
+pub use sapling_note::LRZSaplingNoteBuilder;
 
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
@@ -12,6 +13,11 @@ macro_rules! build_method {
     };
 }
 pub(crate) use build_method;
+
+#[allow(dead_code)]
+pub fn mock_txid() -> zcash_primitives::transaction::TxId {
+    zcash_primitives::transaction::TxId::from_bytes([7; 32])
+}
 
 use rand::{rngs::OsRng, Rng};
 use sapling_crypto::{
@@ -88,16 +94,6 @@ mod sapling_note {
                 .rseed(Rseed::AfterZip212([7; 32]))
         }
     }
-}
-
-#[allow(dead_code)]
-pub(crate) fn mock_sapling_crypto_note() -> sapling_crypto::Note {
-    sapling_note::LRZSaplingNoteBuilder::default().build()
-}
-
-#[allow(dead_code)]
-pub(crate) fn mock_txid() -> zcash_primitives::transaction::TxId {
-    zcash_primitives::transaction::TxId::from_bytes([7; 32])
 }
 
 pub mod proposal {

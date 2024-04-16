@@ -341,15 +341,6 @@ pub(crate) mod mocks {
                 &crate::test_framework::mocks::mock_txid(),
             )
         }
-        #[allow(dead_code)]
-        pub(crate) fn mock_complex() -> Self {
-            let mut transaction_record = Self::mock();
-            transaction_record
-                .transparent_notes
-                .push(TransparentNote::mock());
-            transaction_record.sapling_notes.push(SaplingNote::mock());
-            transaction_record
-        }
     }
 }
 

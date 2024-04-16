@@ -241,7 +241,7 @@ pub mod mocks {
         fn default() -> Self {
             SaplingNoteBuilder {
                 diversifier: Some(sapling_crypto::Diversifier([0; 11])),
-                note: Some(crate::test_framework::mocks::mock_sapling_crypto_note()),
+                note: Some(crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build()),
                 witnessed_position: Some(Some(Position::from(0))),
                 output_index: Some(Some(0)),
                 nullifier: Some(Some(sapling_crypto::Nullifier::from_bytes([0; 32]))),
@@ -251,13 +251,6 @@ pub mod mocks {
                 is_change: Some(false),
                 have_spending_key: Some(true),
             }
-        }
-    }
-
-    impl SaplingNote {
-        #[allow(dead_code)]
-        pub(crate) fn mock() -> Self {
-            SaplingNoteBuilder::default().build()
         }
     }
 }
