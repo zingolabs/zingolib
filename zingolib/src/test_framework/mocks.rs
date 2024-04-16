@@ -128,7 +128,7 @@ pub mod proposal {
     use incrementalmerkletree::Position;
     use nonempty::NonEmpty;
     use sapling_crypto::value::NoteValue;
-    use sapling_crypto::zip32::ExtendedSpendingKey;
+    
     use sapling_crypto::Rseed;
     use zcash_client_backend::fees::TransactionBalance;
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
@@ -137,7 +137,7 @@ pub mod proposal {
     use zcash_client_backend::PoolType;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{
-        components::amount::NonNegativeAmount, fees::zip317::FeeRule, TxId,
+        components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
     use crate::wallet::notes::NoteRecordIdentifier;
