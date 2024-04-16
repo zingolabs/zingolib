@@ -29,7 +29,7 @@ impl TxMapAndMaybeTrees {
             .invalidate_txids(txids_to_remove)
     }
 
-    // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
+    /// During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
