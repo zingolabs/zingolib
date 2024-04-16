@@ -92,7 +92,8 @@ mod sapling_note {
     }
     impl Default for LRZSaplingNoteBuilder {
         fn default() -> Self {
-            let (_, _, address) = super::get_random_zaddr();
+            let address = PaymentAddress::from_bytes(&[22; 43])
+                .expect("this sequence of bytes corresponds to a valid PaymentAddress");
             Self::new()
                 .recipient(address)
                 .value(NoteValue::from_raw(1000000))

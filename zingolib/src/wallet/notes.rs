@@ -35,7 +35,7 @@ impl std::fmt::Display for NoteRecordIdentifier {
     }
 }
 
-#[cfg(any(feature = "test", feature = "test-features"))]
+#[cfg(any(test, feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_client_backend::PoolType;

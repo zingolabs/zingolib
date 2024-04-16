@@ -172,7 +172,7 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 }
 
-#[cfg(any(feature = "test", feature = "test-features"))]
+#[cfg(any(test, feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;
@@ -263,5 +263,15 @@ pub mod mocks {
                 .set_change(false)
                 .have_spending_key(true)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mocks::SaplingNoteBuilder;
+
+    #[test]
+    pub fn build_sapling_note() {
+        let _sapling_note = SaplingNoteBuilder::default().build();
     }
 }
