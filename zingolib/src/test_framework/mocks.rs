@@ -41,7 +41,13 @@ use sapling_crypto::{
     note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey, PaymentAddress,
 };
 
-pub fn get_random_zaddr() -> (
+pub fn random_txid() -> zcash_primitives::transaction::TxId {
+    let mut rng = OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill(&mut seed);
+    zcash_primitives::transaction::TxId::from_bytes(seed)
+}
+pub fn random_zaddr() -> (
     ExtendedSpendingKey,
     PreparedIncomingViewingKey,
     PaymentAddress,
@@ -96,7 +102,7 @@ mod sapling_note {
         build_method!(rseed, Rseed);
 
         pub fn randomize_recipient(self) -> Self {
-            let (_, _, address) = super::get_random_zaddr();
+            let (_, _, address) = super::random_zaddr();
             self.recipient(address)
         }
 
@@ -128,7 +134,7 @@ pub mod proposal {
     use incrementalmerkletree::Position;
     use nonempty::NonEmpty;
     use sapling_crypto::value::NoteValue;
-    
+
     use sapling_crypto::Rseed;
     use zcash_client_backend::fees::TransactionBalance;
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
