@@ -202,7 +202,18 @@ pub mod mocks {
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl SaplingNoteBuilder {
         pub fn new() -> Self {
-            Self::default()
+            SaplingNoteBuilder {
+                diversifier: None,
+                note: None,
+                witnessed_position: None,
+                output_index: None,
+                nullifier: None,
+                spent: None,
+                unconfirmed_spent: None,
+                memo: None,
+                is_change: None,
+                have_spending_key: None,
+            }
         }
 
         // Methods to set each field
@@ -214,6 +225,7 @@ pub mod mocks {
         build_method!(spent, Option<(TxId, u32)>);
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
+        #[doc = "Set the is_change field of the builder."]
         pub fn set_change(mut self, is_change: bool) -> Self {
             self.is_change = Some(is_change);
             self
@@ -239,18 +251,17 @@ pub mod mocks {
 
     impl Default for SaplingNoteBuilder {
         fn default() -> Self {
-            SaplingNoteBuilder {
-                diversifier: Some(sapling_crypto::Diversifier([0; 11])),
-                note: Some(crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build()),
-                witnessed_position: Some(Some(Position::from(0))),
-                output_index: Some(Some(0)),
-                nullifier: Some(Some(sapling_crypto::Nullifier::from_bytes([0; 32]))),
-                spent: Some(None),
-                unconfirmed_spent: Some(None),
-                memo: Some(None),
-                is_change: Some(false),
-                have_spending_key: Some(true),
-            }
+            SaplingNoteBuilder::new()
+                .diversifier(sapling_crypto::Diversifier([0; 11]))
+                .note(crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build())
+                .witnessed_position(Some(Position::from(0)))
+                .output_index(Some(0))
+                .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))
+                .spent(None)
+                .unconfirmed_spent(None)
+                .memo(None)
+                .set_change(false)
+                .have_spending_key(true)
         }
     }
 }
