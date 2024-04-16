@@ -13,10 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `lightclient::LightClient::save`
-  - `export_save_buffer_runtime` fn
-  - `get_wallet_file_location` fn
-  - `get_wallet_dir_location` fn
+- `lightclient::LightClient` methods
+  - `export_save_buffer_runtime`
+  - `get_wallet_file_location`
+  - `get_wallet_dir_location`
 - `wallet::keys::is_transparent_address` fn
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils::txid_from_hex_encoded_str` fn
