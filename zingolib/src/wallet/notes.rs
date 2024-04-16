@@ -32,12 +32,14 @@ impl std::fmt::Display for NoteRecordIdentifier {
 #[cfg(any(feature = "test", feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use super::{NoteRecordIdentifier, TransparentNote};
+    use super::{
+        transparent::mocks::TransparentNoteBuilder, NoteRecordIdentifier, TransparentNote,
+    };
 
     impl NoteRecordIdentifier {
         #[allow(dead_code)]
         pub(crate) fn mock() -> Self {
-            let transparent_note = TransparentNote::mock();
+            let transparent_note = TransparentNoteBuilder::default().build();
             let index = 5u32;
             NoteRecordIdentifier {
                 txid: transparent_note.txid,

@@ -186,7 +186,15 @@ pub mod mocks {
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransparentNoteBuilder {
         pub fn new() -> Self {
-            Self::default()
+            Self {
+                address: None,
+                txid: None,
+                output_index: None,
+                script: None,
+                value: None,
+                spent: None,
+                unconfirmed_spent: None,
+            }
         }
         // Methods to set each field
         build_method!(address, String);
@@ -213,25 +221,14 @@ pub mod mocks {
 
     impl Default for TransparentNoteBuilder {
         fn default() -> Self {
-            TransparentNoteBuilder {
-                address: Some("default_address".to_string()),
-                txid: Some(TxId::from_bytes([0u8; 32])),
-                output_index: Some(0),
-                script: Some(vec![]),
-                value: Some(0),
-                spent: Some(None),
-                unconfirmed_spent: Some(None),
-            }
-        }
-    }
-
-    impl TransparentNote {
-        pub(crate) fn mock() -> Self {
-            let txid = zcash_primitives::transaction::TxId::from_bytes([0u8; 32]);
-            TransparentNoteBuilder::new()
-                .address("t".to_string())
-                .spent(Some((txid, 3)))
-                .build()
+            Self::new()
+                .address("default_address".to_string())
+                .txid(TxId::from_bytes([0u8; 32]))
+                .output_index(0)
+                .script(vec![])
+                .value(0)
+                .spent(None)
+                .unconfirmed_spent(None)
         }
     }
 }

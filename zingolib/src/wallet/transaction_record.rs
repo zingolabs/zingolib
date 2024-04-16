@@ -346,6 +346,7 @@ pub(crate) mod mocks {
 
 #[cfg(test)]
 mod tests {
+    use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
     use crate::wallet::utils::txid_from_slice;
     use crate::wallet::{notes::TransparentNote, transaction_record::TransactionRecord};
 
@@ -377,7 +378,7 @@ mod tests {
         let mut transaction_record = TransactionRecord::mock();
         transaction_record
             .transparent_notes
-            .push(TransparentNote::mock());
+            .push(TransparentNoteBuilder::default().build());
         assert!(transaction_record.is_incoming_transaction());
     }
 }
