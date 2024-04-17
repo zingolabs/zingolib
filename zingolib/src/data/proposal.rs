@@ -7,6 +7,7 @@ use zcash_primitives::transaction::fees::zip317::FeeRule;
 use crate::wallet::notes::NoteRecordIdentifier;
 
 /// A proposed send to addresses.
+/// Identifies the notes to spend by txid, pool, and output_index.
 pub(crate) type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
 /// A proposed shielding.
 /// The zcash_client_backend Proposal type exposes a "NoteRef" generic
