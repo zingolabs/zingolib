@@ -1,4 +1,9 @@
+//! ZingoCli
+//! TODO: Add Crate Discription Here!
+
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
+
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
@@ -13,6 +18,7 @@ use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
+/// TODO: Add Doc Comment Here!
 pub fn build_clap_app() -> clap::ArgMatches {
     clap::Command::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::new("nosync")
@@ -217,6 +223,7 @@ fn start_interactive(
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn command_loop(
     lightclient: Arc<LightClient>,
 ) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
@@ -242,6 +249,7 @@ pub fn command_loop(
     (command_transmitter, resp_receiver)
 }
 
+/// TODO: Add Doc Comment Here!
 pub struct ConfigTemplate {
     params: Vec<String>,
     server: http::Uri,
@@ -500,6 +508,8 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
         }
     }
 }
+
+/// TODO: Add Doc Comment Here!
 pub fn run_cli() {
     // Initialize logging
     if let Err(e) = LightClient::init_logging() {

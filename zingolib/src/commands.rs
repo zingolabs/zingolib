@@ -1,3 +1,6 @@
+//! An interface that passes strings (e.g. from a cli, into zingolib)
+//! upgrade-or-replace
+
 use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -12,24 +15,33 @@ use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
+/// TODO: Add Doc Comment Here!
 mod error;
+/// TODO: Add Doc Comment Here!
 mod utils;
 
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
+/// TODO: Add Doc Comment Here!
 pub trait Command {
+    /// TODO: Add Doc Comment Here!
     fn help(&self) -> &'static str;
 
+    /// TODO: Add Doc Comment Here!
     fn short_help(&self) -> &'static str;
 
+    /// TODO: Add Doc Comment Here!
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
 }
 
+/// TODO: Add Doc Comment Here!
 pub trait ShortCircuitedCommand {
+    /// TODO: Add Doc Comment Here!
     fn exec_without_lc(args: Vec<String>) -> String;
 }
+
 struct GetVersionCommand {}
 impl Command for GetVersionCommand {
     fn help(&self) -> &'static str {
@@ -46,6 +58,7 @@ impl Command for GetVersionCommand {
         crate::git_description().to_string()
     }
 }
+
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
@@ -450,6 +463,7 @@ impl Command for ClearCommand {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> &'static str {
@@ -491,6 +505,7 @@ impl Command for HelpCommand {
         }
     }
 }
+
 impl ShortCircuitedCommand for HelpCommand {
     fn exec_without_lc(args: Vec<String>) -> String {
         let mut responses = vec![];
@@ -514,6 +529,7 @@ impl ShortCircuitedCommand for HelpCommand {
         }
     }
 }
+
 struct InfoCommand {}
 impl Command for InfoCommand {
     fn help(&self) -> &'static str {
@@ -1007,6 +1023,7 @@ impl Command for DeleteCommand {
         })
     }
 }
+
 struct SeedCommand {}
 impl Command for SeedCommand {
     fn help(&self) -> &'static str {
@@ -1086,6 +1103,7 @@ impl Command for ValueTxSummariesCommand {
         })
     }
 }
+
 struct MemoBytesToAddressCommand {}
 impl Command for MemoBytesToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1110,6 +1128,7 @@ impl Command for MemoBytesToAddressCommand {
         })
     }
 }
+
 struct ValueToAddressCommand {}
 impl Command for ValueToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1134,6 +1153,7 @@ impl Command for ValueToAddressCommand {
         })
     }
 }
+
 struct SendsToAddressCommand {}
 impl Command for SendsToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1158,6 +1178,7 @@ impl Command for SendsToAddressCommand {
         })
     }
 }
+
 struct SetOptionCommand {}
 impl Command for SetOptionCommand {
     fn help(&self) -> &'static str {
@@ -1502,6 +1523,7 @@ impl Command for DeprecatedNoCommand {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     #[allow(unused_mut)]
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
@@ -1557,6 +1579,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     entries.into_iter().collect()
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &LightClient) -> String {
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),

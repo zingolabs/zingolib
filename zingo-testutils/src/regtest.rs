@@ -18,24 +18,37 @@ pub struct RegtestManager {
     cli_bin: PathBuf,
     logs_dir: PathBuf,
     data_dir: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub zcashd_data_dir: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub zcashd_logs_dir: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub zcashd_stdout_log: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub zcashd_config: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub lightwalletd_config: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub lightwalletd_logs_dir: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub lightwalletd_log: PathBuf,
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_data_dir: PathBuf,
+    /// TODO: Add Doc Comment Here!
     pub zingo_datadir: PathBuf,
 }
+
 ///  We use the `ChildProcessHandler` to handle the children of generated in scenario testing
 pub struct ChildProcessHandler {
+    /// TODO: Add Doc Comment Here!
     pub zcashd: Child,
+    /// TODO: Add Doc Comment Here!
     pub lightwalletd: Child,
+    /// TODO: Add Doc Comment Here!
     pub zcash_cli_command: std::process::Command,
 }
+
 impl Drop for ChildProcessHandler {
     fn drop(&mut self) {
         match self.zcash_cli_command.arg("stop").output() {
@@ -67,19 +80,28 @@ impl Drop for ChildProcessHandler {
         }
     }
 }
+
+/// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub enum LaunchChildProcessError {
+    /// TODO: Add Doc Comment Here!
     ZcashdState {
+        /// TODO: Add Doc Comment Here!
         errorcode: std::process::ExitStatus,
+        /// TODO: Add Doc Comment Here!
         stdout: String,
+        /// TODO: Add Doc Comment Here!
         stderr: String,
     },
 }
+
 impl From<LaunchChildProcessError> for String {
     fn from(underlyingerror: LaunchChildProcessError) -> Self {
         format!("LaunchChildProcessError from {:?}", underlyingerror)
     }
 }
+
+/// TODO: Add Doc Comment Here!
 pub fn launch_lightwalletd(
     logsdir: PathBuf,
     confsdir: PathBuf,
@@ -180,6 +202,7 @@ pub fn launch_lightwalletd(
     }
     lightwalletd_child
 }
+
 fn write_zcash_conf(location: &PathBuf) {
     // This is the only data we need to supply *to* the zcashd, the other files are created by zcashd and lightwalletd
     use std::io::Write;
@@ -189,7 +212,9 @@ fn write_zcash_conf(location: &PathBuf) {
         .write_all(conf_bytes)
         .unwrap();
 }
+
 impl RegtestManager {
+    /// TODO: Add Doc Comment Here!
     pub fn new(rootpathname: PathBuf) -> Self {
         let regtest_dir = rootpathname;
         let confs_dir = regtest_dir.join("conf");
@@ -237,6 +262,7 @@ impl RegtestManager {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_cli_handle(&self) -> std::process::Command {
         let config_str = &self
             .zcashd_config
@@ -248,6 +274,7 @@ impl RegtestManager {
         command
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn generate_n_blocks(
         &self,
         num_blocks: u32,
@@ -256,9 +283,12 @@ impl RegtestManager {
             .args(["generate".to_string(), num_blocks.to_string()])
             .output()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_chain_tip(&self) -> Result<std::process::Output, std::io::Error> {
         self.get_cli_handle().arg("getchaintips").output()
     }
+
     fn clean_regtest_data(&self) {
         // remove contents of existing data directories
         let zcd_subdir = &self.zcashd_data_dir.join("regtest");
@@ -297,6 +327,7 @@ impl RegtestManager {
             .output()
             .expect("problem with rm -r contents of regtest dir");
     }
+
     fn zcashd_launch(&self) -> (std::process::Child, File) {
         use std::ffi::OsStr;
         let zcashd_bin = &mut self.bin_dir.clone();
@@ -368,6 +399,7 @@ impl RegtestManager {
             File::create(&self.zcashd_stdout_log).expect("file::create Result error"),
         )
     }
+
     /// Once the expected filesystem setup is complete attempt to launch the children
     /// lightwalletd and zcashd.  Child processes are killed during drop of their
     /// "ChildProcessHandler" container
@@ -471,6 +503,8 @@ impl RegtestManager {
             zcash_cli_command: self.get_cli_handle(),
         })
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_current_height(&self) -> Result<u32, String> {
         let wut = self
             .get_cli_handle()
