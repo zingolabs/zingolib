@@ -11,7 +11,7 @@ pub type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
 /// A proposed shielding.
 /// The zcash_client_backend Proposal type exposes a "NoteRef" generic
 /// parameter to track Shielded inputs to the proposal these are
-/// disallowed ing Zingo ShielddedProposals
+/// disallowed in Zingo ShieldedProposals
 pub type ShieldProposal = Proposal<FeeRule, Infallible>;
 
 /// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
