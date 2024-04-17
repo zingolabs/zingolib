@@ -185,7 +185,7 @@ pub mod mocks {
 
     use super::SaplingNote;
 
-    /// builds a mock transparent note after all pieces are supplied
+    /// to create a mock SaplingNote
     pub(crate) struct SaplingNoteBuilder {
         diversifier: Option<sapling_crypto::Diversifier>,
         note: Option<sapling_crypto::Note>,
@@ -201,6 +201,7 @@ pub mod mocks {
 
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl SaplingNoteBuilder {
+        /// blank builder
         pub fn new() -> Self {
             SaplingNoteBuilder {
                 diversifier: None,
@@ -232,7 +233,7 @@ pub mod mocks {
         }
         build_method!(have_spending_key, bool);
 
-        // Build method
+        /// builds a mock SaplingNote after all pieces are supplied
         pub fn build(self) -> SaplingNote {
             SaplingNote::from_parts(
                 self.diversifier.unwrap(),

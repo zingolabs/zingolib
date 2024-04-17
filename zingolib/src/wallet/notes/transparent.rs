@@ -171,9 +171,9 @@ pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
 
-    // Transparent Note Mocker
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentNote};
-    /// builds a mock transparent note after all pieces are supplied
+
+    /// to create a mock TransparentNote
     pub(crate) struct TransparentNoteBuilder {
         address: Option<String>,
         txid: Option<TxId>,
@@ -185,6 +185,7 @@ pub mod mocks {
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransparentNoteBuilder {
+        /// blank builder
         pub fn new() -> Self {
             Self {
                 address: None,
@@ -205,7 +206,7 @@ pub mod mocks {
         build_method!(spent, Option<(TxId, u32)>);
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
 
-        // Build method
+        /// builds a mock TransparentNote after all pieces are supplied
         pub fn build(self) -> TransparentNote {
             TransparentNote::from_parts(
                 self.address.unwrap(),

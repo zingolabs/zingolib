@@ -45,6 +45,7 @@ pub mod mocks {
 
     use super::NoteRecordIdentifier;
 
+    /// to build a mock NoteRecordIdentifier
     pub(crate) struct NoteRecordIdentifierBuilder {
         txid: Option<TxId>,
         pool: Option<PoolType>,
@@ -52,6 +53,7 @@ pub mod mocks {
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl NoteRecordIdentifierBuilder {
+        /// blank builder
         pub fn new() -> Self {
             Self {
                 txid: None,
@@ -64,11 +66,12 @@ pub mod mocks {
         build_method!(pool, PoolType);
         build_method!(index, u32);
 
+        /// selects a random probablistically unique txid
         pub fn randomize_txid(self) -> Self {
             self.txid(crate::test_framework::mocks::random_txid())
         }
 
-        // Build method
+        /// builds a mock NoteRecordIdentifier after all pieces are supplied
         pub fn build(self) -> NoteRecordIdentifier {
             NoteRecordIdentifier::from_parts(
                 self.txid.unwrap(),

@@ -326,6 +326,7 @@ impl TransactionRecord {
 
 #[cfg(any(test, feature = "test-features"))]
 pub(crate) mod mocks {
+    //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -333,6 +334,7 @@ pub(crate) mod mocks {
 
     use super::TransactionRecord;
 
+    /// to create a mock TransactionRecord
     pub(crate) struct TransactionRecordBuilder {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
@@ -340,6 +342,7 @@ pub(crate) mod mocks {
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransactionRecordBuilder {
+        /// blank builder
         pub fn new() -> Self {
             Self {
                 status: None,
@@ -356,7 +359,7 @@ pub(crate) mod mocks {
             self.txid(crate::test_framework::mocks::random_txid())
         }
 
-        // Build method
+        /// builds a mock TransactionRecord after all pieces are supplied
         pub fn build(self) -> TransactionRecord {
             TransactionRecord::new(
                 self.status.unwrap(),
