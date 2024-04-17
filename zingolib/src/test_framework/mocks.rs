@@ -1,8 +1,5 @@
 //! Tools to facilitate mocks for testing
 
-pub use proposal::{ProposalBuilder, StepBuilder};
-pub use sapling_note::LRZSaplingNoteBuilder;
-
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         #[doc = "Set the $name field of the builder."]
@@ -13,6 +10,8 @@ macro_rules! build_method {
     };
 }
 pub(crate) use build_method;
+pub use proposal::{ProposalBuilder, StepBuilder};
+pub use sapling_note::LRZSaplingNoteBuilder;
 
 fn zaddr_from_seed(
     seed: [u8; 32],
@@ -78,7 +77,7 @@ mod sapling_note {
     use super::default_zaddr;
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
-    /// Distinguish sapling_crypto::Note from crate::wallet::notes::SaplingNote. The latter wraps the former with some other attributes.
+    /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::notes::SaplingNote`]. The latter wraps the former with some other attributes.
     pub struct LRZSaplingNoteBuilder {
         recipient: Option<PaymentAddress>,
         value: Option<NoteValue>,
