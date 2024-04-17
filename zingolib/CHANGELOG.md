@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `commands`:
   - `ProposeCommand` struct and methods behind "zip317" feature
   - `QuickSendCommand` struct and methods behind "zip317" feature
+- `data::proposal` mod
 
 - `test_framework` mod behind "test-features" feature
 
