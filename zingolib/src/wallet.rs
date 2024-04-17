@@ -471,7 +471,7 @@ fn decode_orchard_spending_key(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 

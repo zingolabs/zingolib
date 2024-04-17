@@ -209,37 +209,17 @@ impl Message {
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use ff::Field;
-    use sapling_crypto::zip32::ExtendedSpendingKey;
     use zcash_note_encryption::OUT_PLAINTEXT_SIZE;
+
+    use crate::test_framework::mocks::random_zaddr;
 
     use super::*;
 
-    fn get_random_zaddr() -> (
-        ExtendedSpendingKey,
-        PreparedIncomingViewingKey,
-        PaymentAddress,
-    ) {
-        let mut rng = OsRng;
-        let mut seed = [0u8; 32];
-        rng.fill(&mut seed);
-
-        let extsk = ExtendedSpendingKey::master(&seed);
-        let dfvk = extsk.to_diversifiable_full_viewing_key();
-        let fvk = dfvk;
-        let (_, addr) = fvk.default_address();
-
-        (
-            extsk,
-            PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
-            addr,
-        )
-    }
-
     #[test]
     fn test_encrpyt_decrypt() {
-        let (_, ivk, to) = get_random_zaddr();
+        let (_, ivk, to) = random_zaddr();
 
         let msg = Memo::from_bytes("Hello World with some value!".to_string().as_bytes()).unwrap();
 
@@ -265,8 +245,8 @@ pub mod tests {
 
     #[test]
     fn test_bad_inputs() {
-        let (_, ivk1, to1) = get_random_zaddr();
-        let (_, ivk2, _) = get_random_zaddr();
+        let (_, ivk1, to1) = random_zaddr();
+        let (_, ivk2, _) = random_zaddr();
 
         let msg = Memo::from_bytes("Hello World with some value!".to_string().as_bytes()).unwrap();
 
@@ -287,7 +267,7 @@ pub mod tests {
         let magic_len = Message::magic_word().len();
         let prefix_len = magic_len + 1; // version byte
 
-        let (_, ivk, to) = get_random_zaddr();
+        let (_, ivk, to) = random_zaddr();
         let msg_str = "Hello World with some value!";
         let msg = Memo::from_bytes(msg_str.to_string().as_bytes()).unwrap();
 
@@ -374,7 +354,7 @@ pub mod tests {
 
     #[test]
     fn test_individual_bytes() {
-        let (_, ivk, to) = get_random_zaddr();
+        let (_, ivk, to) = random_zaddr();
         let msg_str = "Hello World with some value!";
         let msg = Memo::from_bytes(msg_str.to_string().as_bytes()).unwrap();
 

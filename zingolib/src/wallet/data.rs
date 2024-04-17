@@ -773,6 +773,7 @@ pub mod summaries {
 
 pub use crate::wallet::transaction_record::TransactionRecord;
 
+/// TODO: Add Doc Comment Here!
 #[test]
 #[cfg(feature = "test-features")]
 fn single_transparent_note_makes_is_incoming_true() {
@@ -780,8 +781,6 @@ fn single_transparent_note_makes_is_incoming_true() {
     let transaction_record = crate::test_framework::default_trecord_with_one_tnote();
     assert!(transaction_record.is_incoming_transaction());
 }
-
-/// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
     /// TODO: Add Doc Comment Here!
