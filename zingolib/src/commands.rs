@@ -1,4 +1,6 @@
-use crate::wallet::keys::is_transparent_address;
+//! An interface that passes strings (e.g. from a cli, into zingolib)
+//! upgrade-or-replace
+
 use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -13,26 +15,33 @@ use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
-use self::error::CommandError;
-
+/// TODO: Add Doc Comment Here!
 mod error;
+/// TODO: Add Doc Comment Here!
 mod utils;
 
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
+/// TODO: Add Doc Comment Here!
 pub trait Command {
+    /// TODO: Add Doc Comment Here!
     fn help(&self) -> &'static str;
 
+    /// TODO: Add Doc Comment Here!
     fn short_help(&self) -> &'static str;
 
+    /// TODO: Add Doc Comment Here!
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
 }
 
+/// TODO: Add Doc Comment Here!
 pub trait ShortCircuitedCommand {
+    /// TODO: Add Doc Comment Here!
     fn exec_without_lc(args: Vec<String>) -> String;
 }
+
 struct GetVersionCommand {}
 impl Command for GetVersionCommand {
     fn help(&self) -> &'static str {
@@ -49,6 +58,7 @@ impl Command for GetVersionCommand {
         crate::git_description().to_string()
     }
 }
+
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
@@ -453,6 +463,7 @@ impl Command for ClearCommand {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> &'static str {
@@ -494,6 +505,7 @@ impl Command for HelpCommand {
         }
     }
 }
+
 impl ShortCircuitedCommand for HelpCommand {
     fn exec_without_lc(args: Vec<String>) -> String {
         let mut responses = vec![];
@@ -517,6 +529,7 @@ impl ShortCircuitedCommand for HelpCommand {
         }
     }
 }
+
 struct InfoCommand {}
 impl Command for InfoCommand {
     fn help(&self) -> &'static str {
@@ -790,31 +803,30 @@ impl Command for DecryptMessageCommand {
     }
 }
 
-struct SendCommand {}
-impl Command for SendCommand {
+#[cfg(feature = "zip317")]
+struct ProposeCommand {}
+#[cfg(feature = "zip317")]
+impl Command for ProposeCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Send ZEC to a given address(es)
+            Propose a transfer of ZEC to the given address(es) prior to sending.
+            The fee required to send this transaction will be added to the proposal and displayed to the user.
             Usage:
-            send <address> <amount in zatoshis> "<optional memo>"
-            OR
-            send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
-
-            NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
+                propose <address> <amount in zatoshis> "<optional memo>"
+                OR
+                propose '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
             Example:
-            send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+                propose ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+                send
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Send ZEC to the given address"
+        "Propose a transfer of ZEC to the given address(es) prior to sending."
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        // Parse the args. There are two argument types.
-        // 1 - A set of 2(+1 optional) arguments for a single address send representing address, amount, memo?
-        // 2 - A single argument in the form of a JSON string that is '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
         let send_inputs = match utils::parse_send_args(args) {
             Ok(args) => args,
             Err(e) => {
@@ -824,16 +836,69 @@ impl Command for SendCommand {
                 )
             }
         };
-        for send in &send_inputs {
-            let address = &send.0;
-            let memo = &send.2;
-            if memo.is_some() && is_transparent_address(address, &lightclient.config.chain) {
+        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
+            return format!(
+                "Error: {}\nTry 'help send' for correct usage and examples.",
+                e,
+            );
+        };
+        RT.block_on(async move {
+            match lightclient
+                .do_propose(
+                    send_inputs
+                        .iter()
+                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
+                        .collect(),
+                )
+                .await {
+                Ok(proposal) => {
+                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                }
+                Err(e) => {
+                    object! { "error" => e }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct SendCommand {}
+impl Command for SendCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Send ZEC to the given address(es).
+            The 10_000 zat fee required to send this transaction is additionally deducted from your balance.
+            Usage:
+                send <address> <amount in zatoshis> "<optional memo>"
+                OR
+                send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
+            Example:
+                send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send ZEC to the given address(es)."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let send_inputs = match utils::parse_send_args(args) {
+            Ok(args) => args,
+            Err(e) => {
                 return format!(
                     "Error: {}\nTry 'help send' for correct usage and examples.",
-                    CommandError::IncompatibleMemo,
-                );
+                    e
+                )
             }
-        }
+        };
+        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
+            return format!(
+                "Error: {}\nTry 'help send' for correct usage and examples.",
+                e,
+            );
+        };
         RT.block_on(async move {
             match lightclient
                 .do_send(
@@ -846,6 +911,72 @@ impl Command for SendCommand {
             {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
+                }
+                Err(e) => {
+                    object! { "error" => e }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
+#[cfg(feature = "zip317")]
+struct QuickSendCommand {}
+#[cfg(feature = "zip317")]
+impl Command for QuickSendCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command.
+            The fee required to send this transaction is additionally deducted from your balance.
+            Warning:
+                Transaction(s) will be sent without the user being aware of the fee amount.
+            Usage:
+                quicksend <address> <amount in zatoshis> "<optional memo>"
+                OR
+                quicksend '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
+            Example:
+                quicksend ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let send_inputs = match utils::parse_send_args(args) {
+            Ok(args) => args,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
+            return format!(
+                "Error: {}\nTry 'help send' for correct usage and examples.",
+                e,
+            );
+        };
+        RT.block_on(async move {
+            if let Err(e) = lightclient
+                .do_propose(
+                    send_inputs
+                        .iter()
+                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
+                        .collect(),
+                )
+                .await {
+                return e;
+            };
+            match lightclient
+                .do_send_proposal().await
+            {
+                Ok(txids) => {
+                     object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
                 }
                 Err(e) => {
                     object! { "error" => e }
@@ -892,6 +1023,7 @@ impl Command for DeleteCommand {
         })
     }
 }
+
 struct SeedCommand {}
 impl Command for SeedCommand {
     fn help(&self) -> &'static str {
@@ -971,6 +1103,7 @@ impl Command for ValueTxSummariesCommand {
         })
     }
 }
+
 struct MemoBytesToAddressCommand {}
 impl Command for MemoBytesToAddressCommand {
     fn help(&self) -> &'static str {
@@ -995,6 +1128,7 @@ impl Command for MemoBytesToAddressCommand {
         })
     }
 }
+
 struct ValueToAddressCommand {}
 impl Command for ValueToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1019,6 +1153,7 @@ impl Command for ValueToAddressCommand {
         })
     }
 }
+
 struct SendsToAddressCommand {}
 impl Command for SendsToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1043,6 +1178,7 @@ impl Command for SendsToAddressCommand {
         })
     }
 }
+
 struct SetOptionCommand {}
 impl Command for SetOptionCommand {
     fn help(&self) -> &'static str {
@@ -1387,6 +1523,7 @@ impl Command for DeprecatedNoCommand {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     #[allow(unused_mut)]
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
@@ -1434,9 +1571,15 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     {
         entries.push(("list", Box::new(TransactionsCommand {})));
     }
+    #[cfg(feature = "zip317")]
+    {
+        entries.push(("propose", Box::new(ProposeCommand {})));
+        entries.push(("quicksend", Box::new(QuickSendCommand {})));
+    }
     entries.into_iter().collect()
 }
 
+/// TODO: Add Doc Comment Here!
 pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &LightClient) -> String {
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),

@@ -8,12 +8,12 @@ edition = "2021"
 
 [features]
 deprecations = ["lightclient-deprecated"]
-test = ["lightclient-deprecated", "test-features"]
+test-features = ["lightclient-deprecated", "zingo-testvectors"]
 lightclient-deprecated = []
-test-features = ["zingo-testvectors"]
 default = ["embed_params"]
 embed_params = []
 darkside_tests = []
+zip317 = []
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }

@@ -496,7 +496,9 @@ pub mod scenarios {
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zingo_testutils::scenarios::setup::ClientBuilder;
     use zingoconfig::RegtestNetwork;
-    use zingolib::{lightclient::LightClient, wallet::Pool};
+    use zingolib::{
+        lightclient::LightClient, testvectors::seeds::HOSPITAL_MUSEUM_SEED, wallet::Pool,
+    };
 
     use crate::{
         constants,
@@ -543,6 +545,15 @@ pub mod scenarios {
         }
         pub async fn default() -> DarksideScenario {
             DarksideScenario::new(None).await
+        }
+        pub async fn default_faucet_recipient(funded_pool: Pool) -> DarksideScenario {
+            let mut scenario = DarksideScenario::new(None).await;
+            scenario
+                .build_faucet(funded_pool)
+                .await
+                .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 4)
+                .await;
+            scenario
         }
 
         /// Builds a lightclient with spending capability to the initial source of funds to the darkside blockchain
@@ -638,6 +649,19 @@ pub mod scenarios {
             value: u64,
             chainbuild_file: &File,
         ) -> &mut DarksideScenario {
+            let (_, raw_tx) = self.send_transaction(sender, receiver_address, value).await;
+            write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
+            self
+        }
+
+        pub async fn send_transaction(
+            &mut self,
+            // We can't just take a reference to a LightClient, as that might be a reference to
+            // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
+            sender: DarksideSender<'_>,
+            receiver_address: &str,
+            value: u64,
+        ) -> (&mut DarksideScenario, RawTransaction) {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
                 .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
@@ -664,7 +688,6 @@ pub mod scenarios {
             let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
             // There should only be one transaction incoming
             assert!(streamed_raw_txns.message().await.unwrap().is_none());
-            write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
             self.darkside_connector
                 .stage_transactions_stream(vec![(
                     raw_tx.data.clone(),
@@ -674,25 +697,20 @@ pub mod scenarios {
                 .unwrap();
             self.tree_state = update_tree_states_for_transaction(
                 &self.darkside_connector.0,
-                raw_tx,
+                raw_tx.clone(),
                 u64::from(self.staged_blockheight),
             )
             .await;
-            self
+            (self, raw_tx)
         }
-        /// Tool for chainbuilds.
-        /// Stage a block and a shield from funded lightclient, then write hex transaction to file.
-        /// Only one pool can be shielded at a time.
-        /// All sends in a chainbuild are appended to same file in order.
-        /// Does not apply block.
-        pub async fn shield_and_write_transaction(
+
+        pub async fn shield_transaction(
             &mut self,
             // We can't just take a reference to a LightClient, as that might be a reference to
             // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
             sender: DarksideSender<'_>,
             pool_to_shield: Pool,
-            chainbuild_file: &File,
-        ) -> &mut DarksideScenario {
+        ) -> (&mut DarksideScenario, RawTransaction) {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
                 .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
@@ -719,7 +737,6 @@ pub mod scenarios {
             let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
             // There should only be one transaction incoming
             assert!(streamed_raw_txns.message().await.unwrap().is_none());
-            write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
             self.darkside_connector
                 .stage_transactions_stream(vec![(
                     raw_tx.data.clone(),
@@ -729,10 +746,28 @@ pub mod scenarios {
                 .unwrap();
             self.tree_state = update_tree_states_for_transaction(
                 &self.darkside_connector.0,
-                raw_tx,
+                raw_tx.clone(),
                 u64::from(self.staged_blockheight),
             )
             .await;
+            (self, raw_tx)
+        }
+
+        /// Tool for chainbuilds.
+        /// Stage a block and a shield from funded lightclient, then write hex transaction to file.
+        /// Only one pool can be shielded at a time.
+        /// All sends in a chainbuild are appended to same file in order.
+        /// Does not apply block.
+        pub async fn shield_and_write_transaction(
+            &mut self,
+            // We can't just take a reference to a LightClient, as that might be a reference to
+            // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
+            sender: DarksideSender<'_>,
+            pool_to_shield: Pool,
+            chainbuild_file: &File,
+        ) -> &mut DarksideScenario {
+            let (_, raw_tx) = self.shield_transaction(sender, pool_to_shield).await;
+            write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
             self
         }
         /// Stage a block and transaction, then update tree state.

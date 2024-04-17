@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -6,18 +7,24 @@ use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 use super::NoteInterface;
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransparentNote {
+    /// TODO: Add Doc Comment Here!
     pub address: String,
+    /// TODO: Add Doc Comment Here!
     pub txid: TxId,
+    /// TODO: Add Doc Comment Here!
     pub output_index: u64,
+    /// TODO: Add Doc Comment Here!
     pub script: Vec<u8>,
+    /// TODO: Add Doc Comment Here!
     pub value: u64,
 
     spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
 
-    // If this utxo was spent in a send, but has not yet been confirmed.
-    // Contains the txid and height at which the Tx was broadcast
+    /// If this utxo was spent in a send, but has not yet been confirmed.
+    /// Contains the txid and height at which the Tx was broadcast
     pub unconfirmed_spent: Option<(TxId, u32)>,
 }
 
@@ -25,18 +32,22 @@ impl NoteInterface for TransparentNote {
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
+
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.spent
     }
+
     fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
+
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
 }
 
 impl TransparentNote {
+    /// TODO: Add Doc Comment Here!
     pub fn from_parts(
         address: String,
         txid: TxId,
@@ -57,14 +68,17 @@ impl TransparentNote {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn to_outpoint(&self) -> OutPoint {
         OutPoint::new(*self.txid.as_ref(), self.output_index as u32)
     }
 
-    // write + read
+    /// write + read
     pub fn serialized_version() -> u64 {
         4
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u64::<byteorder::LittleEndian>(Self::serialized_version())?;
 
@@ -95,6 +109,8 @@ impl TransparentNote {
 
         Ok(())
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn read<R: std::io::Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u64::<byteorder::LittleEndian>()?;
 
@@ -163,5 +179,73 @@ impl TransparentNote {
             spent: spent_tuple,
             unconfirmed_spent: None,
         })
+    }
+}
+
+#[cfg(any(test, feature = "test-features"))]
+pub mod mocks {
+    //! Mock version of the struct for testing
+    use zcash_primitives::transaction::TxId;
+
+    use crate::{test_framework::mocks::build_method, wallet::notes::TransparentNote};
+
+    /// to create a mock TransparentNote
+    pub struct TransparentNoteBuilder {
+        address: Option<String>,
+        txid: Option<TxId>,
+        output_index: Option<u64>,
+        script: Option<Vec<u8>>,
+        value: Option<u64>,
+        spent: Option<Option<(TxId, u32)>>,
+        unconfirmed_spent: Option<Option<(TxId, u32)>>,
+    }
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl TransparentNoteBuilder {
+        /// blank builder
+        pub fn new() -> Self {
+            Self {
+                address: None,
+                txid: None,
+                output_index: None,
+                script: None,
+                value: None,
+                spent: None,
+                unconfirmed_spent: None,
+            }
+        }
+        // Methods to set each field
+        build_method!(address, String);
+        build_method!(txid, TxId);
+        build_method!(output_index, u64);
+        build_method!(script, Vec<u8>);
+        build_method!(value, u64);
+        build_method!(spent, Option<(TxId, u32)>);
+        build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+
+        /// builds a mock TransparentNote after all pieces are supplied
+        pub fn build(self) -> TransparentNote {
+            TransparentNote::from_parts(
+                self.address.unwrap(),
+                self.txid.unwrap(),
+                self.output_index.unwrap(),
+                self.script.unwrap(),
+                self.value.unwrap(),
+                self.spent.unwrap(),
+                self.unconfirmed_spent.unwrap(),
+            )
+        }
+    }
+
+    impl Default for TransparentNoteBuilder {
+        fn default() -> Self {
+            Self::new()
+                .address("default_address".to_string())
+                .txid(TxId::from_bytes([0u8; 32]))
+                .output_index(0)
+                .script(vec![])
+                .value(0)
+                .spent(None)
+                .unconfirmed_spent(None)
+        }
     }
 }

@@ -1,3 +1,5 @@
+//! Depricated! holds sync engine 1.0
+
 pub(super) mod block_management_reorg_detection;
 pub(super) mod fetch_compact_blocks;
 pub(super) mod fetch_full_transaction;

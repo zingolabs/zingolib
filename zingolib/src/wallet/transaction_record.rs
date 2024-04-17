@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use incrementalmerkletree::witness::IncrementalWitness;
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
@@ -15,49 +16,50 @@ use super::{
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionRecord {
-    // the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
+    /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
     pub status: ConfirmationStatus,
 
-    // Timestamp of Tx. Added in v4
+    /// Timestamp of Tx. Added in v4
     pub datetime: u64,
 
-    // Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
-    // WalletTx in LightWallet::txs)
+    /// Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
+    /// WalletTx in LightWallet::txs)
     pub txid: TxId,
 
-    // List of all nullifiers spent by this wallet in this Tx.
+    /// List of all nullifiers spent by this wallet in this Tx.
     pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
 
-    // List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
+    /// List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
-    // List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
     pub sapling_notes: Vec<notes::SaplingNote>,
 
-    // List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
     pub orchard_notes: Vec<notes::OrchardNote>,
 
-    // List of all Utxos by this wallet received in this Tx. Some of these might be change notes
+    /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
     pub transparent_notes: Vec<notes::TransparentNote>,
 
-    // Total value of all the sapling nullifiers that were spent by this wallet in this Tx
+    /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
 
-    // Total value of all the orchard nullifiers that were spent by this wallet in this Tx
+    /// Total value of all the orchard nullifiers that were spent by this wallet in this Tx
     pub total_orchard_value_spent: u64,
 
-    // Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
+    /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
     pub total_transparent_value_spent: u64,
 
-    // All outgoing sends
+    /// All outgoing sends
     pub outgoing_tx_data: Vec<OutgoingTxData>,
 
-    // Price of Zec when this Tx was created
+    /// Price of Zec when this Tx was created
     pub price: Option<f64>,
 }
 
 // set
 impl TransactionRecord {
+    /// TODO: Add Doc Comment Here!
     pub fn new(status: ConfirmationStatus, datetime: u64, transaction_id: &TxId) -> Self {
         TransactionRecord {
             status,
@@ -75,6 +77,8 @@ impl TransactionRecord {
             price: None,
         }
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
@@ -91,9 +95,12 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// TODO: Add Doc Comment Here!
     pub fn get_transparent_value_spent(&self) -> u64 {
         self.total_transparent_value_spent
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
         let outputted = self.value_outgoing() + self.total_change_returned();
         if self.total_value_spent() >= outputted {
@@ -112,6 +119,10 @@ impl TransactionRecord {
         }
     }
 
+    /// For each sapling note received in this transactions,
+    /// pair it with a NoteRecordIdentifier identifying the note
+    /// and return the list
+    // TODO: Make these generic, this is wet code
     pub fn select_unspent_note_noteref_pairs_sapling(
         &self,
     ) -> Vec<(sapling_crypto::Note, NoteRecordIdentifier)> {
@@ -130,6 +141,9 @@ impl TransactionRecord {
         });
         value_ref_pairs
     }
+    /// For each orchard note received in this transactions,
+    /// pair it with a NoteRecordIdentifier identifying the note
+    /// and return the list
     pub fn select_unspent_note_noteref_pairs_orchard(
         &self,
     ) -> Vec<(orchard::Note, NoteRecordIdentifier)> {
@@ -149,20 +163,27 @@ impl TransactionRecord {
         value_ref_pairs
     }
 
+    /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
     pub fn is_outgoing_transaction(&self) -> bool {
         (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes.iter().any(|note| !note.is_change())
             || self.orchard_notes.iter().any(|note| !note.is_change())
             || !self.transparent_notes.is_empty()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
     }
+
+    /// TODO: Add Doc Comment Here!
     fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -171,6 +192,7 @@ impl TransactionRecord {
         D::sum_pool_change(self)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -181,9 +203,13 @@ impl TransactionRecord {
             .map(|note_and_metadata| note_and_metadata.value())
             .sum()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn total_change_returned(&self) -> u64 {
         self.pool_change_returned::<SaplingDomain>() + self.pool_change_returned::<OrchardDomain>()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn total_value_received(&self) -> u64 {
         self.pool_value_received::<OrchardDomain>()
             + self.pool_value_received::<SaplingDomain>()
@@ -193,16 +219,20 @@ impl TransactionRecord {
                 .map(|utxo| utxo.value)
                 .sum::<u64>()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn total_value_spent(&self) -> u64 {
         self.value_spent_by_pool().iter().sum()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn value_outgoing(&self) -> u64 {
         self.outgoing_tx_data
             .iter()
             .fold(0, |running_total, tx_data| tx_data.value + running_total)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
         [
             self.get_transparent_value_spent(),
@@ -210,6 +240,8 @@ impl TransactionRecord {
             self.total_orchard_value_spent,
         ]
     }
+
+    /// Gets a received note, by index and domain
     pub fn get_received_note<D>(
         &self,
         index: u32,
@@ -244,6 +276,7 @@ impl TransactionRecord {
 }
 // read/write
 impl TransactionRecord {
+    /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
     pub fn read<R: Read>(
         mut reader: R,
@@ -350,10 +383,12 @@ impl TransactionRecord {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn serialized_version() -> u64 {
         23
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -394,19 +429,77 @@ impl TransactionRecord {
     }
 }
 
+#[cfg(any(test, feature = "test-features"))]
+pub mod mocks {
+    //! Mock version of the struct for testing
+    use zcash_primitives::transaction::TxId;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::test_framework::mocks::build_method;
+
+    use super::TransactionRecord;
+
+    /// to create a mock TransactionRecord
+    pub struct TransactionRecordBuilder {
+        status: Option<ConfirmationStatus>,
+        datetime: Option<u64>,
+        txid: Option<TxId>,
+    }
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl TransactionRecordBuilder {
+        /// blank builder
+        pub fn new() -> Self {
+            Self {
+                status: None,
+                datetime: None,
+                txid: None,
+            }
+        }
+        // Methods to set each field
+        build_method!(status, ConfirmationStatus);
+        build_method!(datetime, u64);
+        build_method!(txid, TxId);
+
+        /// Use the mocery of random_txid to get one?
+        pub fn randomize_txid(self) -> Self {
+            self.txid(crate::test_framework::mocks::random_txid())
+        }
+
+        /// builds a mock TransactionRecord after all pieces are supplied
+        pub fn build(self) -> TransactionRecord {
+            TransactionRecord::new(
+                self.status.unwrap(),
+                self.datetime.unwrap(),
+                &self.txid.unwrap(),
+            )
+        }
+    }
+
+    impl Default for TransactionRecordBuilder {
+        fn default() -> Self {
+            Self {
+                status: Some(
+                    zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                        zcash_primitives::consensus::BlockHeight::from_u32(5),
+                    ),
+                ),
+                datetime: Some(1705077003),
+                txid: Some(crate::test_framework::mocks::default_txid()),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::wallet::utils::txid_from_slice;
+    use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
     use super::*;
 
     #[test]
     pub fn blank_record() {
-        let new = TransactionRecord::new(
-            ConfirmationStatus::Confirmed(2_000_000.into()),
-            103,
-            &txid_from_slice(&[0u8; 32]),
-        );
+        let new = TransactionRecordBuilder::default().build();
         assert_eq!(new.get_transparent_value_spent(), 0);
         assert_eq!(new.get_transaction_fee().unwrap(), 0);
         assert!(!new.is_outgoing_transaction());
@@ -419,5 +512,14 @@ mod tests {
         assert_eq!(new.value_outgoing(), 0);
         let t: [u64; 3] = [0, 0, 0];
         assert_eq!(new.value_spent_by_pool(), t);
+    }
+    #[test]
+    fn single_transparent_note_makes_is_incoming_true() {
+        // A single transparent note makes is_incoming_transaction true.
+        let mut transaction_record = TransactionRecordBuilder::default().build();
+        transaction_record
+            .transparent_notes
+            .push(TransparentNoteBuilder::default().build());
+        assert!(transaction_record.is_incoming_transaction());
     }
 }

@@ -1,3 +1,5 @@
+//! LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
+
 use log::error;
 
 use std::{
@@ -62,6 +64,7 @@ impl LightClient {
         Ok(())
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {

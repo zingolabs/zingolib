@@ -1,3 +1,9 @@
+//! Zingo-Netutils
+//!
+//! This crate provides the `GrpcConnector` struct,
+//! used to communicate with a lightwalletd
+
+#![warn(missing_docs)]
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -15,20 +21,29 @@ type UnderlyingService = BoxCloneService<
     hyper::Error,
 >;
 
+/// The connector, containing the URI to connect to.
+/// This type is mostly an interface to the get_client method,
+/// the proto-generated CompactTxStreamerClient type is the main
+/// interface to actually communicating with a lightwalletd.
 #[derive(Clone)]
 pub struct GrpcConnector {
     uri: http::Uri,
 }
 
 impl GrpcConnector {
+    /// Takes a URI, and wraps in a GrpcConnector
     pub fn new(uri: http::Uri) -> Self {
         Self { uri }
     }
 
+    /// The URI to connect to
     pub fn uri(&self) -> &Uri {
         &self.uri
     }
 
+    /// Connect to the URI, and return a Client. For the full list of methods
+    /// the client supports, see the service.proto file (some of the types
+    /// are defined in the compact_formats.proto file)
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<

@@ -1,5 +1,7 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
+//! TODO: Add Mod Description Here
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use json::JsonValue;
@@ -65,6 +67,7 @@ pub mod witnesses;
 
 pub(crate) use send::SendProgress;
 
+/// TODO: Add Doc Comment Here!
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -72,13 +75,18 @@ pub fn now() -> u64 {
         .as_secs()
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pool {
+    /// TODO: Add Doc Comment Here!
     Orchard,
+    /// TODO: Add Doc Comment Here!
     Sapling,
+    /// TODO: Add Doc Comment Here!
     Transparent,
 }
 
+/// TODO: Add Doc Comment Here!
 impl From<Pool> for JsonValue {
     fn from(value: Pool) -> Self {
         match value {
@@ -89,19 +97,26 @@ impl From<Pool> for JsonValue {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoDownloadOption {
+    /// TODO: Add Doc Comment Here!
     NoMemos = 0,
+    /// TODO: Add Doc Comment Here!
     WalletMemos,
+    /// TODO: Add Doc Comment Here!
     AllMemos,
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
+    /// TODO: Add Doc Comment Here!
     pub transaction_size_filter: Option<u32>,
 }
 
+/// TODO: Add Doc Comment Here!
 pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
 
 impl Default for WalletOptions {
@@ -114,10 +129,12 @@ impl Default for WalletOptions {
 }
 
 impl WalletOptions {
+    /// TODO: Add Doc Comment Here!
     pub const fn serialized_version() -> u64 {
         2
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
 
@@ -145,6 +162,7 @@ impl WalletOptions {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
@@ -158,19 +176,28 @@ impl WalletOptions {
 
 /// Data used to initialize new instance of LightWallet
 pub enum WalletBase {
+    /// TODO: Add Doc Comment Here!
     FreshEntropy,
+    /// TODO: Add Doc Comment Here!
     SeedBytes([u8; 32]),
+    /// TODO: Add Doc Comment Here!
     MnemonicPhrase(String),
+    /// TODO: Add Doc Comment Here!
     Mnemonic(Mnemonic),
+    /// TODO: Add Doc Comment Here!
     SeedBytesAndIndex([u8; 32], u32),
+    /// TODO: Add Doc Comment Here!
     MnemonicPhraseAndIndex(String, u32),
+    /// TODO: Add Doc Comment Here!
     MnemonicAndIndex(Mnemonic, u32),
     /// Unified full viewing key
     Ufvk(String),
     /// Unified spending key
     Usk(Vec<u8>),
 }
+
 impl WalletBase {
+    /// TODO: Add Doc Comment Here!
     pub fn from_string(base: String) -> WalletBase {
         if (&base[0..5]) == "uview" {
             WalletBase::Ufvk(base)
@@ -180,6 +207,7 @@ impl WalletBase {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
@@ -190,23 +218,23 @@ pub struct LightWallet {
     /// or created directly from spending keys.
     mnemonic: Option<(Mnemonic, u32)>,
 
-    // The last 100 blocks, used if something gets re-orged
+    /// The last 100 blocks, used if something gets re-orged
     pub blocks: Arc<RwLock<Vec<BlockData>>>,
 
-    // Wallet options
+    /// Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>,
 
-    // Highest verified block
+    /// Highest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
-    // Progress of an outgoing transaction
+    /// Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
 
-    // The current price of ZEC. (time_fetched, price in USD)
+    /// The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
 
-    // Local state needed to submit [compact]block-requests to the proxy
-    // and interpret responses
+    /// Local state needed to submit (compact)block-requests to the proxy
+    /// and interpret responses
     pub transaction_context: TransactionContext,
 }
 
@@ -250,6 +278,7 @@ impl LightWallet {
         Err("No message matched".to_string())
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn memo_str(memo: Option<Memo>) -> Option<String> {
         match memo {
             Some(Memo::Text(m)) => Some(m.to_string()),
@@ -258,6 +287,7 @@ impl LightWallet {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
         let (wc, mnemonic) = match base {
             WalletBase::FreshEntropy => {
@@ -361,16 +391,19 @@ impl LightWallet {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
         let mut blocks = self.blocks.write().await;
         blocks.clear();
         blocks.extend_from_slice(&new_blocks[..]);
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {
         self.wallet_options.write().await.download_memos = value;
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
         let mut blocks = self.blocks.write().await;
         if !blocks.is_empty() {
@@ -382,6 +415,7 @@ impl LightWallet {
         true
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn set_latest_zec_price(&self, price: f64) {
         if price <= 0 as f64 {
             warn!("Tried to set a bad current zec price {}", price);
@@ -437,7 +471,7 @@ fn decode_orchard_spending_key(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 

@@ -1,3 +1,5 @@
+//! TODO: Add Mod Description Here!
+
 use zcash_primitives::consensus::BlockHeight;
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 
@@ -23,6 +25,7 @@ impl ConfirmationStatus {
             Self::Confirmed(blockheight)
         }
     }
+
     /// A wrapper matching the Broadcast case.
     /// # Examples
     ///
@@ -41,6 +44,7 @@ impl ConfirmationStatus {
     pub fn is_broadcast(&self) -> bool {
         matches!(self, Self::Broadcast(_))
     }
+
     /// A wrapper matching the Confirmed case.
     /// # Examples
     ///
@@ -59,6 +63,7 @@ impl ConfirmationStatus {
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
     }
+
     /// To return true, the status must be confirmed and no earlier than specified height.
     /// # Examples
     ///
@@ -81,6 +86,7 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+
     /// To return true, the status must be confirmed and no later than specified height.
     /// # Examples
     ///
@@ -105,6 +111,7 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+
     /// To return true, the status must be confirmed earlier than specified height.
     /// # Examples
     ///
@@ -127,6 +134,7 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+
     /// To return true, the status must have broadcast at or later than specified height.
     /// # Examples
     ///
@@ -149,6 +157,7 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+
     /// To return true, the status must not be confirmed and it must have been submitted sufficiently far in the past. This allows deduction of expired transactions.
     /// # Examples
     ///
@@ -171,6 +180,7 @@ impl ConfirmationStatus {
             Self::Confirmed(_) => false,
         }
     }
+
     /// Returns none if transaction is not confirmed, otherwise returns the height it was confirmed at.
     /// # Examples
     ///
@@ -190,6 +200,7 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
+
     /// Returns if transaction is confirmed, otherwise returns the height it was broadcast to the mempool.
     /// # Examples
     ///
@@ -209,6 +220,7 @@ impl ConfirmationStatus {
             _ => None,
         }
     }
+
     /// # Examples
     ///
     /// ```

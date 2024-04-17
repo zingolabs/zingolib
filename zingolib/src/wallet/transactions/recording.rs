@@ -24,85 +24,13 @@ use crate::{
 
 use super::TxMapAndMaybeTrees;
 impl TxMapAndMaybeTrees {
-    pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
-        for txid in &txids_to_remove {
-            self.transaction_records_by_id.remove(txid);
-        }
-        self.transaction_records_by_id
-            .values_mut()
-            .for_each(|transaction_metadata| {
-                // Update UTXOs to rollback any spent utxos
-                transaction_metadata
-                    .transparent_notes
-                    .iter_mut()
-                    .for_each(|utxo| {
-                        if utxo.is_spent() && txids_to_remove.contains(&utxo.spent().unwrap().0) {
-                            *utxo.spent_mut() = None;
-                        }
-
-                        if utxo.unconfirmed_spent.is_some()
-                            && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
-                        {
-                            utxo.unconfirmed_spent = None;
-                        }
-                    })
-            });
-        self.remove_domain_specific_txids::<SaplingDomain>(&txids_to_remove);
-        self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
-    }
-
-    fn remove_domain_specific_txids<D: DomainWalletExt>(&mut self, txids_to_remove: &[TxId])
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        self.transaction_records_by_id
-            .values_mut()
-            .for_each(|transaction_metadata| {
-                // Update notes to rollback any spent notes
-                D::to_notes_vec_mut(transaction_metadata)
-                    .iter_mut()
-                    .for_each(|nd| {
-                        // Mark note as unspent if the txid being removed spent it.
-                        if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0)
-                        {
-                            *nd.spent_mut() = None;
-                        }
-
-                        // Remove unconfirmed spends too
-                        if nd.pending_spent().is_some()
-                            && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
-                        {
-                            *nd.pending_spent_mut() = None;
-                        }
-                    });
-            });
-    }
-
-    // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
-    pub fn remove_txns_at_height(&mut self, reorg_height: u64) {
+    /// During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
+    pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
-        // First, collect txids that need to be removed
-        let txids_to_remove = self
-            .transaction_records_by_id
-            .values()
-            .filter_map(|transaction_metadata| {
-                if transaction_metadata
-                    .status
-                    .is_confirmed_after_or_at(&reorg_height)
-                    || transaction_metadata
-                        .status
-                        .is_broadcast_after_or_at(&reorg_height)
-                // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
-                {
-                    Some(transaction_metadata.txid)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        self.remove_txids(txids_to_remove);
+        self.transaction_records_by_id
+            .invalidate_all_transactions_after_or_at_height(reorg_height);
+
         if let Some(ref mut t) = self.witness_trees {
             t.witness_tree_sapling
                 .truncate_removing_checkpoint(&(reorg_height - 1))
@@ -114,6 +42,7 @@ impl TxMapAndMaybeTrees {
         }
     }
 
+    /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
 
@@ -130,7 +59,8 @@ impl TxMapAndMaybeTrees {
             .iter()
             .for_each(|t| println!("Removing expired mempool tx {}", t));
 
-        self.remove_txids(txids_to_remove);
+        self.transaction_records_by_id
+            .invalidate_transactions(txids_to_remove);
     }
 
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
