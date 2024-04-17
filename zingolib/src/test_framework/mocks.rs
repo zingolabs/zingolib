@@ -1,67 +1,126 @@
 //! Tools to facilitate mocks for testing
 
-use zcash_primitives::transaction::TxId;
-
-use crate::wallet::notes::TransparentNote;
-
 pub use proposal::{ProposalBuilder, StepBuilder};
+pub use sapling_note::LRZSaplingNoteBuilder;
 
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
+        #[doc = "Set the $name field of the builder."]
         pub fn $name(mut self, $name: $localtype) -> Self {
             self.$name = Some($name);
             self
         }
     };
 }
+pub(crate) use build_method;
 
-pub struct TransparentNoteBuilder {
-    address: Option<String>,
-    txid: Option<TxId>,
-    output_index: Option<u64>,
-    script: Option<Vec<u8>>,
-    value: Option<u64>,
-    spent: Option<Option<(TxId, u32)>>,
-    unconfirmed_spent: Option<Option<(TxId, u32)>>,
-}
-#[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
-impl TransparentNoteBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    // Methods to set each field
-    build_method!(address, String);
-    build_method!(txid, TxId);
-    build_method!(output_index, u64);
-    build_method!(script, Vec<u8>);
-    build_method!(value, u64);
-    build_method!(spent, Option<(TxId, u32)>);
-    build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+fn zaddr_from_seed(
+    seed: [u8; 32],
+) -> (
+    ExtendedSpendingKey,
+    PreparedIncomingViewingKey,
+    PaymentAddress,
+) {
+    let extsk = ExtendedSpendingKey::master(&seed);
+    let dfvk = extsk.to_diversifiable_full_viewing_key();
+    let fvk = dfvk;
+    let (_, addr) = fvk.default_address();
 
-    // Build method
-    pub fn build(self) -> TransparentNote {
-        TransparentNote::from_parts(
-            self.address.unwrap(),
-            self.txid.unwrap(),
-            self.output_index.unwrap(),
-            self.script.unwrap(),
-            self.value.unwrap(),
-            self.spent.unwrap(),
-            self.unconfirmed_spent.unwrap(),
-        )
-    }
+    (
+        extsk,
+        PreparedIncomingViewingKey::new(&fvk.fvk().vk.ivk()),
+        addr,
+    )
 }
 
-impl Default for TransparentNoteBuilder {
-    fn default() -> Self {
-        TransparentNoteBuilder {
-            address: Some("default_address".to_string()),
-            txid: Some(TxId::from_bytes([0u8; 32])),
-            output_index: Some(0),
-            script: Some(vec![]),
-            value: Some(0),
-            spent: Some(None),
-            unconfirmed_spent: Some(None),
+pub fn default_txid() -> zcash_primitives::transaction::TxId {
+    zcash_primitives::transaction::TxId::from_bytes([0u8; 32])
+}
+pub fn default_zaddr() -> (
+    ExtendedSpendingKey,
+    PreparedIncomingViewingKey,
+    PaymentAddress,
+) {
+    zaddr_from_seed([0u8; 32])
+}
+
+use rand::{rngs::OsRng, Rng};
+use sapling_crypto::{
+    note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey, PaymentAddress,
+};
+
+pub fn random_txid() -> zcash_primitives::transaction::TxId {
+    let mut rng = OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill(&mut seed);
+    zcash_primitives::transaction::TxId::from_bytes(seed)
+}
+pub fn random_zaddr() -> (
+    ExtendedSpendingKey,
+    PreparedIncomingViewingKey,
+    PaymentAddress,
+) {
+    let mut rng = OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill(&mut seed);
+
+    zaddr_from_seed(seed)
+}
+
+// Sapling Note Mocker
+mod sapling_note {
+
+    use sapling_crypto::value::NoteValue;
+    use sapling_crypto::Note;
+    use sapling_crypto::PaymentAddress;
+    use sapling_crypto::Rseed;
+
+    use super::default_zaddr;
+
+    /// A struct to build a mock sapling_crypto::Note from scratch.
+    /// Distinguish sapling_crypto::Note from crate::wallet::notes::SaplingNote. The latter wraps the former with some other attributes.
+    pub struct LRZSaplingNoteBuilder {
+        recipient: Option<PaymentAddress>,
+        value: Option<NoteValue>,
+        rseed: Option<Rseed>,
+    }
+
+    impl LRZSaplingNoteBuilder {
+        /// Instantiate an empty builder.
+        pub fn new() -> Self {
+            LRZSaplingNoteBuilder {
+                recipient: None,
+                value: None,
+                rseed: None,
+            }
+        }
+
+        // Methods to set each field
+        build_method!(recipient, PaymentAddress);
+        build_method!(value, NoteValue);
+        build_method!(rseed, Rseed);
+
+        pub fn randomize_recipient(self) -> Self {
+            let (_, _, address) = super::random_zaddr();
+            self.recipient(address)
+        }
+
+        /// Build the note.
+        pub fn build(self) -> Note {
+            Note::from_parts(
+                self.recipient.unwrap(),
+                self.value.unwrap(),
+                self.rseed.unwrap(),
+            )
+        }
+    }
+    impl Default for LRZSaplingNoteBuilder {
+        fn default() -> Self {
+            let (_, _, address) = default_zaddr();
+            Self::new()
+                .recipient(address)
+                .value(NoteValue::from_raw(1000000))
+                .rseed(Rseed::AfterZip212([7; 32]))
         }
     }
 }
@@ -74,7 +133,7 @@ pub mod proposal {
     use incrementalmerkletree::Position;
     use nonempty::NonEmpty;
     use sapling_crypto::value::NoteValue;
-    use sapling_crypto::zip32::ExtendedSpendingKey;
+
     use sapling_crypto::Rseed;
     use zcash_client_backend::fees::TransactionBalance;
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
@@ -83,10 +142,12 @@ pub mod proposal {
     use zcash_client_backend::PoolType;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{
-        components::amount::NonNegativeAmount, fees::zip317::FeeRule, TxId,
+        components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
     use crate::wallet::notes::NoteRecordIdentifier;
+
+    use super::{default_txid, default_zaddr};
 
     /// Provides a builder for constructing a mock [`zcash_client_backend::proposal::Proposal`].
     ///
@@ -221,10 +282,8 @@ pub mod proposal {
     impl Default for StepBuilder {
         /// Constructs a new [`StepBuilder`] where all fields are preset to default values.
         fn default() -> Self {
-            let txid = TxId::from_bytes([0u8; 32]);
-            let seed = [0u8; 32];
-            let dfvk = ExtendedSpendingKey::master(&seed).to_diversifiable_full_viewing_key();
-            let (_, address) = dfvk.default_address();
+            let txid = default_txid();
+            let (_, _, address) = default_zaddr();
             let note = sapling_crypto::Note::from_parts(
                 address,
                 NoteValue::from_raw(20_000),
