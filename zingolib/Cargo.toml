@@ -13,6 +13,7 @@ lightclient-deprecated = []
 default = ["embed_params"]
 embed_params = []
 darkside_tests = []
+zip317 = []
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
