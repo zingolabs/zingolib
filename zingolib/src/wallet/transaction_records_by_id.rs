@@ -44,6 +44,10 @@ impl TransactionRecordsById {
 }
 /// Methods to modify the map.
 impl TransactionRecordsById {
+    /// Adds a TransactionRecord to the hashmap, using its TxId as a key.
+    pub fn insert_transaction_record(&mut self, transaction_record: TransactionRecord) {
+        self.insert(transaction_record.txid, transaction_record);
+    }
     /// Invalidates all transactions from a given height including the block with block height `reorg_height`
     ///
     /// All information above a certain height is invalidated during a reorg.
