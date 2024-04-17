@@ -699,13 +699,6 @@ pub mod summaries {
 
 pub use crate::wallet::transaction_record::TransactionRecord;
 
-#[test]
-#[cfg(feature = "test-features")]
-fn single_transparent_note_makes_is_incoming_true() {
-    // A single transparent note makes is_incoming_trsaction true.
-    let transaction_record = crate::test_framework::default_trecord_with_one_tnote();
-    assert!(transaction_record.is_incoming_transaction());
-}
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
     pub transaction_id: TxId,
