@@ -1,3 +1,4 @@
+//! Utilities that support (initially internal/unit) tests
 use zcash_primitives::transaction::TxId;
 
 use crate::wallet::notes::TransparentNote;
