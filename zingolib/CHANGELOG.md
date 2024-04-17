@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `lightclient::LightClient` methods
+- `lightclient::LightClient`:
   - `export_save_buffer_runtime`
   - `get_wallet_file_location`
   - `get_wallet_dir_location`
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `load_clientconfig` moved to zingoconfig crate
-- `lightclient::LightClient`
+- `lightclient::LightClient`:
   - `do_save`
   - `do_save_to_buffer`
   - `do_save_to_buffer_sync`
