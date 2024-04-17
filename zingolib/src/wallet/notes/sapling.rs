@@ -171,3 +171,108 @@ impl ShieldedNoteInterface for SaplingNote {
         zcash_client_backend::wallet::Note::Sapling(self.note().clone())
     }
 }
+
+#[cfg(any(test, feature = "test-features"))]
+pub mod mocks {
+    //! Mock version of the struct for testing
+    use incrementalmerkletree::Position;
+    use zcash_primitives::{memo::Memo, transaction::TxId};
+
+    use crate::{
+        test_framework::mocks::build_method,
+        wallet::{notes::ShieldedNoteInterface, traits::FromBytes},
+    };
+
+    use super::SaplingNote;
+
+    /// to create a mock SaplingNote
+    pub(crate) struct SaplingNoteBuilder {
+        diversifier: Option<sapling_crypto::Diversifier>,
+        note: Option<sapling_crypto::Note>,
+        witnessed_position: Option<Option<Position>>,
+        output_index: Option<Option<u32>>,
+        nullifier: Option<Option<sapling_crypto::Nullifier>>,
+        spent: Option<Option<(TxId, u32)>>,
+        unconfirmed_spent: Option<Option<(TxId, u32)>>,
+        memo: Option<Option<Memo>>,
+        is_change: Option<bool>,
+        have_spending_key: Option<bool>,
+    }
+
+    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+    impl SaplingNoteBuilder {
+        /// blank builder
+        pub fn new() -> Self {
+            SaplingNoteBuilder {
+                diversifier: None,
+                note: None,
+                witnessed_position: None,
+                output_index: None,
+                nullifier: None,
+                spent: None,
+                unconfirmed_spent: None,
+                memo: None,
+                is_change: None,
+                have_spending_key: None,
+            }
+        }
+
+        // Methods to set each field
+        build_method!(diversifier, sapling_crypto::Diversifier);
+        build_method!(note, sapling_crypto::Note);
+        build_method!(witnessed_position, Option<Position>);
+        build_method!(output_index, Option<u32>);
+        build_method!(nullifier, Option<sapling_crypto::Nullifier>);
+        build_method!(spent, Option<(TxId, u32)>);
+        build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+        build_method!(memo, Option<Memo>);
+        #[doc = "Set the is_change field of the builder."]
+        pub fn set_change(mut self, is_change: bool) -> Self {
+            self.is_change = Some(is_change);
+            self
+        }
+        build_method!(have_spending_key, bool);
+
+        /// builds a mock SaplingNote after all pieces are supplied
+        pub fn build(self) -> SaplingNote {
+            SaplingNote::from_parts(
+                self.diversifier.unwrap(),
+                self.note.unwrap(),
+                self.witnessed_position.unwrap(),
+                self.nullifier.unwrap(),
+                self.spent.unwrap(),
+                self.unconfirmed_spent.unwrap(),
+                self.memo.unwrap(),
+                self.is_change.unwrap(),
+                self.have_spending_key.unwrap(),
+                self.output_index.unwrap(),
+            )
+        }
+    }
+
+    impl Default for SaplingNoteBuilder {
+        fn default() -> Self {
+            SaplingNoteBuilder::new()
+                .diversifier(sapling_crypto::Diversifier([0; 11]))
+                .note(crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build())
+                .witnessed_position(Some(Position::from(0)))
+                .output_index(Some(0))
+                .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))
+                .spent(None)
+                .unconfirmed_spent(None)
+                .memo(None)
+                .set_change(false)
+                .have_spending_key(true)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mocks::SaplingNoteBuilder;
+
+    #[test]
+    pub fn build_sapling_note() {
+        let _sapling_note = SaplingNoteBuilder::default().build();
+    }
+}
