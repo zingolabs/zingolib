@@ -208,7 +208,7 @@ impl Message {
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use ff::Field;
     use zcash_note_encryption::OUT_PLAINTEXT_SIZE;
 
