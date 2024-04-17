@@ -1,7 +1,6 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::wallet::keys::is_transparent_address;
 use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -17,7 +16,6 @@ use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 /// TODO: Add Doc Comment Here!
-use self::error::CommandError;
 mod error;
 /// TODO: Add Doc Comment Here!
 mod utils;
