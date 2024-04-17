@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -6,18 +7,24 @@ use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 use super::NoteInterface;
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransparentNote {
+    /// TODO: Add Doc Comment Here!
     pub address: String,
+    /// TODO: Add Doc Comment Here!
     pub txid: TxId,
+    /// TODO: Add Doc Comment Here!
     pub output_index: u64,
+    /// TODO: Add Doc Comment Here!
     pub script: Vec<u8>,
+    /// TODO: Add Doc Comment Here!
     pub value: u64,
 
     spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
 
-    // If this utxo was spent in a send, but has not yet been confirmed.
-    // Contains the txid and height at which the Tx was broadcast
+    /// If this utxo was spent in a send, but has not yet been confirmed.
+    /// Contains the txid and height at which the Tx was broadcast
     pub unconfirmed_spent: Option<(TxId, u32)>,
 }
 
@@ -25,18 +32,22 @@ impl NoteInterface for TransparentNote {
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
+
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.spent
     }
+
     fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
+
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
 }
 
 impl TransparentNote {
+    /// TODO: Add Doc Comment Here!
     pub fn from_parts(
         address: String,
         txid: TxId,
@@ -57,14 +68,17 @@ impl TransparentNote {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn to_outpoint(&self) -> OutPoint {
         OutPoint::new(*self.txid.as_ref(), self.output_index as u32)
     }
 
-    // write + read
+    /// write + read
     pub fn serialized_version() -> u64 {
         4
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u64::<byteorder::LittleEndian>(Self::serialized_version())?;
 
@@ -95,6 +109,8 @@ impl TransparentNote {
 
         Ok(())
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn read<R: std::io::Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u64::<byteorder::LittleEndian>()?;
 

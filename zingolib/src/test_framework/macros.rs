@@ -15,9 +15,9 @@ macro_rules! apply_scenario {
     };
 }
 
-// Note that do_addresses returns an array, each element is a JSON representation
-// of a UA.  Legacy addresses can be extracted from the receivers, per:
-// <https://zips.z.cash/zip-0316>
+/// Note that do_addresses returns an array, each element is a JSON representation
+/// of a UA.  Legacy addresses can be extracted from the receivers, per:
+/// <https://zips.z.cash/zip-0316>
 #[macro_export]
 macro_rules! get_base_address {
     ($client:expr, $address_protocol:expr) => {
@@ -35,6 +35,8 @@ macro_rules! get_base_address {
         }
     };
 }
+
+/// TODO: Add Doc Comment Here!
 #[macro_export]
 macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {

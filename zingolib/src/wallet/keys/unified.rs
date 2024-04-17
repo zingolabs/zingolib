@@ -1,3 +1,4 @@
+//! TODO: Add Mod Discription Here!
 use std::marker::PhantomData;
 use std::sync::atomic;
 use std::{
@@ -29,19 +30,25 @@ use super::{
     get_zaddr_from_bip39seed, ToBase58Check,
 };
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Capability<ViewingKeyType, SpendKeyType> {
+    /// TODO: Add Doc Comment Here!
     None,
+    /// TODO: Add Doc Comment Here!
     View(ViewingKeyType),
+    /// TODO: Add Doc Comment Here!
     Spend(SpendKeyType),
 }
 
 impl<V, S> Capability<V, S> {
+    /// TODO: Add Doc Comment Here!
     pub fn can_spend(&self) -> bool {
         matches!(self, Capability::Spend(_))
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn can_view(&self) -> bool {
         match self {
             Capability::None => false,
@@ -50,6 +57,7 @@ impl<V, S> Capability<V, S> {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn kind_str(&self) -> &'static str {
         match self {
             Capability::None => "No key",
@@ -59,16 +67,20 @@ impl<V, S> Capability<V, S> {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub struct WalletCapability {
+    /// TODO: Add Doc Comment Here!
     pub transparent: Capability<
         super::extended_transparent::ExtendedPubKey,
         super::extended_transparent::ExtendedPrivKey,
     >,
+    /// TODO: Add Doc Comment Here!
     pub sapling: Capability<
         sapling_crypto::zip32::DiversifiableFullViewingKey,
         sapling_crypto::zip32::ExtendedSpendingKey,
     >,
+    /// TODO: Add Doc Comment Here!
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
     transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
@@ -89,11 +101,16 @@ impl Default for WalletCapability {
         }
     }
 }
+
+/// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub struct ReceiverSelection {
+    /// TODO: Add Doc Comment Here!
     pub orchard: bool,
+    /// TODO: Add Doc Comment Here!
     pub sapling: bool,
+    /// TODO: Add Doc Comment Here!
     pub transparent: bool,
 }
 
@@ -151,10 +168,12 @@ impl WalletCapability {
             .find(|ua| ua.transparent() == Some(receiver))
             .cloned()
     }
+    /// TODO: Add Doc Comment Here!
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn transparent_child_keys(
         &self,
     ) -> Result<&AppendOnlyVec<(usize, secp256k1::SecretKey)>, String> {
@@ -165,6 +184,7 @@ impl WalletCapability {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn ufvk(&self) -> Result<Ufvk, std::string::String> {
         use zcash_address::unified::Fvk as UfvkComponent;
         let o_fvk =
@@ -184,6 +204,7 @@ impl WalletCapability {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn new_address(
         &self,
         desired_receivers: ReceiverSelection,
@@ -302,6 +323,7 @@ impl WalletCapability {
         Ok(ua)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_taddr_to_secretkey_map(
         &self,
         config: &ZingoConfig,
@@ -334,6 +356,7 @@ impl WalletCapability {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn new_from_seed(config: &ZingoConfig, seed: &[u8; 64], position: u32) -> Self {
         let (sapling_key, _, _) = get_zaddr_from_bip39seed(config, seed, position);
         let transparent_parent_key =
@@ -355,6 +378,7 @@ impl WalletCapability {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn new_from_phrase(
         config: &ZingoConfig,
         seed_phrase: &Mnemonic,
@@ -385,6 +409,7 @@ impl WalletCapability {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, String> {
         // Decode UFVK
         if ufvk_encoded.starts_with(config.chain.hrp_sapling_extended_full_viewing_key()) {
@@ -455,6 +480,7 @@ impl WalletCapability {
             .collect()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
         // This index is dangerous, but all ways to instantiate a UnifiedSpendAuthority
         // create it with a suitable first address
@@ -466,6 +492,7 @@ impl WalletCapability {
         self.orchard.can_spend() && self.sapling.can_spend() && self.transparent.can_spend()
     }
 
+    /// TODO: Add Doc Comment Here!
     //TODO: NAME?????!!
     pub fn get_trees_witness_trees(&self) -> Option<crate::wallet::data::WitnessTrees> {
         if self.can_spend_from_all_pools() {
@@ -474,6 +501,7 @@ impl WalletCapability {
             None
         }
     }
+
     /// Returns a selection of pools where the wallet can view funds.
     pub fn can_view(&self) -> ReceiverSelection {
         ReceiverSelection {
@@ -620,10 +648,13 @@ mod scope {
         }
     }
 }
+
+/// TODO: Add Doc Comment Here!
 pub struct Ivk<D, Scope>
 where
     D: zcash_note_encryption::Domain,
 {
+    /// TODO: Add Doc Comment Here!
     pub ivk: D::IncomingViewingKey,
     __scope: PhantomData<Scope>,
 }
@@ -635,6 +666,7 @@ pub struct Ovk<D, Scope>
 where
     D: zcash_note_encryption::Domain,
 {
+    /// TODO: Add Doc Comment Here!
     pub ovk: D::OutgoingViewingKey,
     __scope: PhantomData<Scope>,
 }
@@ -711,12 +743,15 @@ impl TryFrom<&WalletCapability> for sapling_crypto::zip32::DiversifiableFullView
     }
 }
 
+/// TODO: Add Doc Comment Here!
 pub trait Fvk<D: DomainWalletExt>
 where
     <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
     <D as zcash_note_encryption::Domain>::Recipient: Recipient,
 {
+    /// TODO: Add Doc Comment Here!
     fn derive_ivk<S: scope::Scope>(&self) -> Ivk<D, S>;
+    /// TODO: Add Doc Comment Here!
     fn derive_ovk<S: scope::Scope>(&self) -> Ovk<D, S>;
 }
 

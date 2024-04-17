@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use super::traits::{self, DomainWalletExt, ToBytes};
 use crate::error::{ZingoLibError, ZingoLibResult};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -26,7 +27,9 @@ use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree,
 use zcash_primitives::{memo::Memo, transaction::TxId};
 use zingoconfig::MAX_REORG;
 
+/// TODO: Add Doc Comment Here!
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
+/// TODO: Add Doc Comment Here!
 pub const MAX_SHARD_LEVEL: u8 = 16;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
@@ -35,15 +38,21 @@ pub const MAX_SHARD_LEVEL: u8 = 16;
 /// <https://github.com/zingolabs/zingolib/issues/64>
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PoolNullifier {
+    /// TODO: Add Doc Comment Here!
     Sapling(sapling_crypto::Nullifier),
+    /// TODO: Add Doc Comment Here!
     Orchard(orchard::note::Nullifier),
 }
 
 type SapStore = MemoryShardStore<Node, BlockHeight>;
 type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+
+/// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub struct WitnessTrees {
+    /// TODO: Add Doc Comment Here!
     pub witness_tree_sapling: ShardTree<SapStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
+    /// TODO: Add Doc Comment Here!
     pub witness_tree_orchard: ShardTree<OrchStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
 }
 
@@ -66,6 +75,7 @@ where
     })?;
     Ok(())
 }
+
 fn write_checkpoints<W, Cid>(mut writer: W, checkpoints: &[(Cid, Checkpoint)]) -> io::Result<()>
 where
     W: Write,
@@ -93,6 +103,7 @@ where
     )?;
     Ok(())
 }
+
 /// Write memory-backed shardstore, represented tree.
 fn write_shardtree<H: Hashable + Clone + Eq + HashSer, C: Ord + std::fmt::Debug + Copy, W: Write>(
     tree: &mut shardtree::ShardTree<
@@ -151,7 +162,10 @@ impl WitnessTrees {
         self.witness_tree_sapling.checkpoint(height).unwrap();
         self.witness_tree_orchard.checkpoint(height).unwrap();
     }
+
     const VERSION: u8 = 0;
+
+    /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let _serialized_version = reader.read_u8()?;
         let witness_tree_sapling = read_shardtree(&mut reader)?;
@@ -162,11 +176,13 @@ impl WitnessTrees {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         write_shardtree(&mut self.witness_tree_sapling, &mut writer)?;
         write_shardtree(&mut self.witness_tree_orchard, &mut writer)
     }
+
     pub(crate) fn insert_all_frontier_nodes(
         &mut self,
         non_empty_sapling_frontier: Option<NonEmptyFrontier<Node>>,
@@ -175,6 +191,7 @@ impl WitnessTrees {
         self.insert_domain_frontier_nodes::<SaplingDomain>(non_empty_sapling_frontier);
         self.insert_domain_frontier_nodes::<OrchardDomain>(non_empty_orchard_frontier);
     }
+
     fn insert_domain_frontier_nodes<D: DomainWalletExt>(
         &mut self,
         non_empty_frontier: Option<
@@ -198,6 +215,7 @@ impl WitnessTrees {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn clear(&mut self) {
         *self = Self::default()
     }
@@ -266,13 +284,17 @@ impl std::hash::Hash for PoolNullifier {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlockData {
+    /// TODO: Add Doc Comment Here!
     pub(crate) ecb: Vec<u8>,
+    /// TODO: Add Doc Comment Here!
     pub height: u64,
 }
 
 impl BlockData {
+    /// TODO: Add Doc Comment Here!
     pub fn serialized_version() -> u64 {
         20
     }
@@ -317,6 +339,7 @@ impl BlockData {
         self.cb().hash().to_string()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let height = reader.read_i32::<LittleEndian>()? as u64;
 
@@ -344,6 +367,7 @@ impl BlockData {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_i32::<LittleEndian>(self.height as i32)?;
 
@@ -367,9 +391,12 @@ impl BlockData {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone)]
 pub struct WitnessCache<Node: Hashable> {
+    /// TODO: Add Doc Comment Here!
     pub(crate) witnesses: Vec<IncrementalWitness<Node, 32>>,
+    /// TODO: Add Doc Comment Here!
     pub top_height: u64,
 }
 
@@ -383,6 +410,7 @@ impl<Node: Hashable> std::fmt::Debug for WitnessCache<Node> {
 }
 
 impl<Node: Hashable> WitnessCache<Node> {
+    /// TODO: Add Doc Comment Here!
     pub fn new(witnesses: Vec<IncrementalWitness<Node, 32>>, top_height: u64) -> Self {
         Self {
             witnesses,
@@ -390,6 +418,7 @@ impl<Node: Hashable> WitnessCache<Node> {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn empty() -> Self {
         Self {
             witnesses: vec![],
@@ -397,31 +426,38 @@ impl<Node: Hashable> WitnessCache<Node> {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn len(&self) -> usize {
         self.witnesses.len()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn is_empty(&self) -> bool {
         self.witnesses.is_empty()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn clear(&mut self) {
         self.witnesses.clear();
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get(&self, i: usize) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.get(i)
     }
 
+    /// TODO: Add Doc Comment Here!
     #[cfg(test)]
     pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.get(self.len() - i - 1)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn last(&self) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.last()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn pop(&mut self, at_height: u64) {
         while !self.witnesses.is_empty() && self.top_height >= at_height {
             self.witnesses.pop();
@@ -472,11 +508,16 @@ pub(crate) fn write_sapling_rseed<W: Write>(
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub struct OutgoingTxData {
+    /// TODO: Add Doc Comment Here!
     pub to_address: String,
+    /// TODO: Add Doc Comment Here!
     pub value: u64,
+    /// TODO: Add Doc Comment Here!
     pub memo: Memo,
+    /// TODO: Add Doc Comment Here!
     pub recipient_ua: Option<String>,
 }
 
@@ -489,6 +530,7 @@ impl PartialEq for OutgoingTxData {
 }
 
 impl OutgoingTxData {
+    /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
@@ -518,6 +560,7 @@ impl OutgoingTxData {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Strings are written as len + utf8
         match &self.recipient_ua {
@@ -535,12 +578,18 @@ impl OutgoingTxData {
     }
 }
 
+/// TODO: Add Mod Description Here!
 pub mod finsight {
+    /// TODO: Add Doc Comment Here!
     pub struct ValuesSentToAddress(pub std::collections::HashMap<String, Vec<u64>>);
+    /// TODO: Add Doc Comment Here!
     pub struct TotalValueToAddress(pub std::collections::HashMap<String, u64>);
+    /// TODO: Add Doc Comment Here!
     pub struct TotalSendsToAddress(pub std::collections::HashMap<String, u64>);
+    /// TODO: Add Doc Comment Here!
     #[derive(Debug)]
     pub struct TotalMemoBytesToAddress(pub std::collections::HashMap<String, usize>);
+
     impl From<TotalMemoBytesToAddress> for json::JsonValue {
         fn from(value: TotalMemoBytesToAddress) -> Self {
             let mut jsonified = json::object!();
@@ -551,6 +600,7 @@ pub mod finsight {
             jsonified
         }
     }
+
     impl From<TotalValueToAddress> for json::JsonValue {
         fn from(value: TotalValueToAddress) -> Self {
             let mut jsonified = json::object!();
@@ -561,6 +611,7 @@ pub mod finsight {
             jsonified
         }
     }
+
     impl From<TotalSendsToAddress> for json::JsonValue {
         fn from(value: TotalSendsToAddress) -> Self {
             let mut jsonified = json::object!();
@@ -572,6 +623,8 @@ pub mod finsight {
         }
     }
 }
+
+/// TODO: Add Mod Description Here!
 pub mod summaries {
     use json::{object, JsonValue};
     use zcash_primitives::transaction::TxId;
@@ -583,15 +636,24 @@ pub mod summaries {
     /// consumption in mobile and mobile-like UI
     #[derive(PartialEq)]
     pub struct ValueTransfer {
+        /// TODO: Add Doc Comment Here!
         pub block_height: zcash_primitives::consensus::BlockHeight,
+        /// TODO: Add Doc Comment Here!
         pub datetime: u64,
+        /// TODO: Add Doc Comment Here!
         pub kind: ValueTransferKind,
+        /// TODO: Add Doc Comment Here!
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
+        /// TODO: Add Doc Comment Here!
         pub price: Option<f64>,
+        /// TODO: Add Doc Comment Here!
         pub txid: TxId,
+        /// TODO: Add Doc Comment Here!
         pub unconfirmed: bool,
     }
+
     impl ValueTransfer {
+        /// TODO: Add Doc Comment Here!
         pub fn balance_delta(&self) -> i64 {
             use ValueTransferKind::*;
             match self.kind {
@@ -625,21 +687,32 @@ pub mod summaries {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
+        /// TODO: Add Doc Comment Here!
         Sent {
+            /// TODO: Add Doc Comment Here!
             amount: u64,
+            /// TODO: Add Doc Comment Here!
             to_address: zcash_address::ZcashAddress,
         },
+        /// TODO: Add Doc Comment Here!
         Received {
+            /// TODO: Add Doc Comment Here!
             pool: Pool,
+            /// TODO: Add Doc Comment Here!
             amount: u64,
         },
+        /// TODO: Add Doc Comment Here!
         SendToSelf,
+        /// TODO: Add Doc Comment Here!
         Fee {
+            /// TODO: Add Doc Comment Here!
             amount: u64,
         },
     }
+
     impl From<&ValueTransferKind> for JsonValue {
         fn from(value: &ValueTransferKind) -> Self {
             match value {
@@ -650,6 +723,7 @@ pub mod summaries {
             }
         }
     }
+
     impl From<ValueTransfer> for JsonValue {
         fn from(value: ValueTransfer) -> Self {
             let mut temp_object = object! {
@@ -699,39 +773,53 @@ pub mod summaries {
 
 pub use crate::wallet::transaction_record::TransactionRecord;
 
+/// Convenience wrapper for primitive
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
+    /// TODO: Add Doc Comment Here!
     pub transaction_id: TxId,
+    /// TODO: Add Doc Comment Here!
     pub nullifier: sapling_crypto::Nullifier,
+    /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
+    /// TODO: Add Doc Comment Here!
     pub note: sapling_crypto::Note,
+    /// TODO: Add Doc Comment Here!
     pub witnessed_position: Position,
+    /// TODO: Add Doc Comment Here!
     pub extsk: Option<sapling_crypto::zip32::ExtendedSpendingKey>,
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub struct SpendableOrchardNote {
+    /// TODO: Add Doc Comment Here!
     pub transaction_id: TxId,
+    /// TODO: Add Doc Comment Here!
     pub nullifier: orchard::note::Nullifier,
+    /// TODO: Add Doc Comment Here!
     pub diversifier: orchard::keys::Diversifier,
+    /// TODO: Add Doc Comment Here!
     pub note: orchard::note::Note,
+    /// TODO: Add Doc Comment Here!
     pub witnessed_position: Position,
+    /// TODO: Add Doc Comment Here!
     pub spend_key: Option<orchard::keys::SpendingKey>,
 }
 
-// Struct that tracks the latest and historical price of ZEC in the wallet
+/// Struct that tracks the latest and historical price of ZEC in the wallet
 #[derive(Clone, Debug)]
 pub struct WalletZecPriceInfo {
-    // Latest price of ZEC and when it was fetched
+    /// Latest price of ZEC and when it was fetched
     pub zec_price: Option<(u64, f64)>,
 
-    // Wallet's currency. All the prices are in this currency
+    /// Wallet's currency. All the prices are in this currency
     pub currency: String,
 
-    // When the last time historical prices were fetched
+    /// When the last time historical prices were fetched
     pub last_historical_prices_fetched_at: Option<u64>,
 
-    // Historical prices retry count
+    /// Historical prices retry count
     pub historical_prices_retry_count: u64,
 }
 
@@ -747,10 +835,12 @@ impl Default for WalletZecPriceInfo {
 }
 
 impl WalletZecPriceInfo {
+    /// TODO: Add Doc Comment Here!
     pub fn serialized_version() -> u64 {
         20
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
@@ -778,6 +868,7 @@ impl WalletZecPriceInfo {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 

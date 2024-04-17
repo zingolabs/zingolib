@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use incrementalmerkletree::Position;
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
@@ -6,29 +7,37 @@ use super::{
     NoteInterface, ShieldedNoteInterface,
 };
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub struct OrchardNote {
+    /// TODO: Add Doc Comment Here!
     pub diversifier: orchard::keys::Diversifier,
+    /// TODO: Add Doc Comment Here!
     pub note: orchard::note::Note,
 
-    // The position of this note's value commitment in the global commitment tree
-    // We need to create a witness to it, to spend
+    /// The position of this note's value commitment in the global commitment tree
+    /// We need to create a witness to it, to spend
     pub witnessed_position: Option<Position>,
 
-    // The note's index in its containing transaction
+    /// The note's index in its containing transaction
     pub(crate) output_index: Option<u32>,
 
     pub(crate) nullifier: Option<orchard::note::Nullifier>,
 
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
+    /// If this note was confirmed spent
+    pub spent: Option<(TxId, u32)>, // Todo: as related to unconfirmed spent, this is potential data incoherence
 
-    // If this note was spent in a send, but has not yet been confirmed.
-    // Contains the transaction id and height at which it was broadcast
+    /// If this note was spent in a send, but has not yet been confirmed.
+    /// Contains the transaction id and height at which it was broadcast
     pub unconfirmed_spent: Option<(TxId, u32)>,
+
+    /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
+
+    /// TODO: Add Doc Comment Here!
     pub is_change: bool,
 
-    // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
+    /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
     pub have_spending_key: bool,
 }
 
@@ -36,12 +45,15 @@ impl NoteInterface for OrchardNote {
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
+
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.spent
     }
+
     fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
+
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
@@ -139,12 +151,15 @@ impl ShieldedNoteInterface for OrchardNote {
     fn witnessed_position(&self) -> &Option<Position> {
         &self.witnessed_position
     }
+
     fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
     }
+
     fn output_index(&self) -> &Option<u32> {
         &self.output_index
     }
+
     fn to_zcb_note(&self) -> zcash_client_backend::wallet::Note {
         zcash_client_backend::wallet::Note::Orchard(*self.note())
     }
