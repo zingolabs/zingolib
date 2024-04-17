@@ -1,3 +1,4 @@
+//! All things needed to create, manaage, and use notes
 pub mod interface;
 pub use interface::NoteInterface;
 pub use interface::ShieldedNoteInterface;
@@ -14,12 +15,16 @@ use zcash_primitives::transaction::TxId;
 /// This triple of values uniquely identifies an entry on a zcash blockchain.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct NoteRecordIdentifier {
+    /// TODO: Add Doc Comment Here!
     pub txid: TxId,
+    /// TODO: Add Doc Comment Here!
     pub pool: PoolType,
+    /// TODO: Add Doc Comment Here!
     pub index: u32,
 }
 
 impl NoteRecordIdentifier {
+    /// The primary constructor, note index means FLARRGGGLLLE!
     pub fn from_parts(txid: TxId, pool: PoolType, index: u32) -> Self {
         NoteRecordIdentifier { txid, pool, index }
     }

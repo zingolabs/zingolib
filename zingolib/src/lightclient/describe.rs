@@ -1,4 +1,4 @@
-/// These functions can be called by consumer to learn about the LightClient.
+//! These functions can be called by consumer to learn about the LightClient.
 use json::{object, JsonValue};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
@@ -31,6 +31,7 @@ use crate::{
 };
 
 impl LightClient {
+    /// TODO: Add Doc Comment Here!
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.wallet_capability().addresses().iter() {
@@ -50,6 +51,7 @@ impl LightClient {
         JsonValue::Array(objectified_addresses)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_balance(&self) -> PoolBalances {
         PoolBalances {
             sapling_balance: self
@@ -211,6 +213,8 @@ impl LightClient {
 
         Ok(balances)
     }
+
+    /// TODO: Add Doc Comment Here!
     pub async fn do_info(&self) -> String {
         match crate::grpc_connector::get_info(self.get_server_uri()).await {
             Ok(i) => {
@@ -231,6 +235,7 @@ impl LightClient {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
@@ -268,6 +273,8 @@ impl LightClient {
         summaries.sort_by_key(|summary| summary.block_height);
         summaries
     }
+
+    /// TODO: Add Doc Comment Here!
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
         match self.wallet.mnemonic() {
             Some(m) => Ok(AccountBackupInfo {
@@ -279,12 +286,14 @@ impl LightClient {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn do_seed_phrase_sync(&self) -> Result<AccountBackupInfo, &str> {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.do_seed_phrase().await })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
         let summaries = self.do_list_txsummaries().await;
         let mut memobytes_by_address = HashMap::new();
@@ -305,6 +314,7 @@ impl LightClient {
         finsight::TotalMemoBytesToAddress(memobytes_by_address)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
         let values_sent_to_addresses = self.value_transfer_by_to_address().await;
         let mut by_address_number_sends = HashMap::new();
@@ -315,6 +325,7 @@ impl LightClient {
         finsight::TotalSendsToAddress(by_address_number_sends)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
         let values_sent_to_addresses = self.value_transfer_by_to_address().await;
         let mut by_address_total = HashMap::new();
@@ -325,13 +336,17 @@ impl LightClient {
         finsight::TotalValueToAddress(by_address_total)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
         json::JsonValue::from(self.wallet.last_synced_height().await)
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
         self.config.lightwalletd_uri.read().unwrap()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_server_uri(&self) -> http::Uri {
         self.config.get_lightwalletd_uri()
     }
@@ -473,6 +488,7 @@ impl LightClient {
             }
         };
     }
+
     async fn list_sapling_notes(
         &self,
         all_notes: bool,
@@ -517,6 +533,7 @@ impl LightClient {
             pending_sapling_notes,
         )
     }
+
     async fn list_orchard_notes(
         &self,
         all_notes: bool,
@@ -560,6 +577,7 @@ impl LightClient {
             pending_orchard_notes,
         )
     }
+
     async fn list_transparent_notes(
         &self,
         all_notes: bool,
@@ -653,6 +671,7 @@ impl LightClient {
 
         res
     }
+
     async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
         let summaries = self.do_list_txsummaries().await;
         let mut amount_by_address = HashMap::new();

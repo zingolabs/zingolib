@@ -1,3 +1,10 @@
+//! Zingo-Memo
+//!
+//! Utilities for procedural creation and parsing of the Memo field
+//! These memos are currently never directly exposed to the user,
+//! but instead write down UAs on-chain for recovery after rescan.
+
+#![warn(missing_docs)]
 use std::io::{self, Read, Write};
 
 use zcash_address::unified::{Address, Container, Encoding, Receiver};
@@ -11,7 +18,11 @@ use zcash_encoding::{CompactSize, Vector};
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ParsedMemo {
-    Version0 { uas: Vec<UnifiedAddress> },
+    /// the memo including only a list of unified addresses
+    Version0 {
+        /// The list of unified addresses
+        uas: Vec<UnifiedAddress>,
+    },
 }
 
 /// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol

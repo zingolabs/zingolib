@@ -1,3 +1,5 @@
+//! TODO: Add Mod Description Here!
+
 use futures::future::join_all;
 
 use log::{debug, error, warn};
@@ -42,6 +44,7 @@ use crate::{
 };
 
 impl LightClient {
+    /// TODO: Add Doc Comment Here!
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
@@ -92,6 +95,7 @@ impl LightClient {
         sync_result
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_sync_status(&self) -> BatchSyncStatus {
         self.bsync_data
             .read()
@@ -103,6 +107,7 @@ impl LightClient {
             .clone()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn download_initial_tree_state_from_lightwalletd(
         &self,
         height: u64,
@@ -132,6 +137,7 @@ impl LightClient {
         *self.interrupt_sync.read().await
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn init_logging() -> io::Result<()> {
         // Configure logging first.
         LOG_INIT.call_once(tracing_subscriber::fmt::init);
@@ -139,6 +145,7 @@ impl LightClient {
         Ok(())
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
         *self.interrupt_sync.write().await = set_interrupt;
     }
@@ -164,6 +171,8 @@ impl LightClient {
 
         Ok((sapling_output, sapling_spend))
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn start_mempool_monitor(lc: Arc<LightClient>) {
         if !lc.config.monitor_mempool {
             return;
@@ -606,6 +615,8 @@ impl LightClient {
             total_blocks_synced: start_block - end_block + 1,
         })
     }
+
+    /// TODO: Add Doc Comment Here!
     pub async fn do_rescan(&self) -> Result<SyncResult, String> {
         debug!("Rescan starting");
 

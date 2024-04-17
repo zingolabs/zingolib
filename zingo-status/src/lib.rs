@@ -1,4 +1,6 @@
-#[forbid(unsafe_code)]
+//! Zingo-Status
+//! TODO: Add Crate Discription Here!
 
-/// This crate provides a partition of the states for a transaction confirmation.
+#![warn(missing_docs)]
+#[forbid(unsafe_code)]
 pub mod confirmation_status;

@@ -1,3 +1,5 @@
+//! TODO: Add Mod Description Here!
+
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::proto::service::TreeState;
@@ -9,6 +11,7 @@ use crate::wallet::{
     traits::{self, DomainWalletExt},
 };
 
+/// TODO: Add Doc Comment Here!
 pub fn get_legacy_frontiers(
     trees: TreeState,
 ) -> (
@@ -20,6 +23,7 @@ pub fn get_legacy_frontiers(
         get_legacy_frontier::<OrchardDomain>(&trees),
     )
 }
+
 fn get_legacy_frontier<D: DomainWalletExt>(
     trees: &TreeState,
 ) -> Option<

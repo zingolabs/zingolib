@@ -1,4 +1,5 @@
-/// the counterpart to mod save, these functions find a LightWallet and convert it to a LightClient using methods in instantiation.
+//! the counterpart to mod save, these functions find a LightWallet and convert it to a LightClient using methods in instantiation.
+
 use log::debug;
 use std::{
     fs::File,
@@ -12,6 +13,7 @@ use super::LightClient;
 use crate::wallet::LightWallet;
 
 impl LightClient {
+    /// TODO: Add Doc Comment Here!
     pub async fn read_wallet_from_buffer_async<R: Read>(
         config: &ZingoConfig,
         mut reader: R,
@@ -41,6 +43,7 @@ impl LightClient {
             .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
         let wallet_path = if config.wallet_path_exists() {
             config.get_wallet_path()

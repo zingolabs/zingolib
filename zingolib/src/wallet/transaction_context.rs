@@ -1,3 +1,5 @@
+//! TODO: Add Mod Discription Here!
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -5,14 +7,19 @@ use zingoconfig::ZingoConfig;
 
 use crate::wallet::{keys::unified::WalletCapability, transactions::TxMapAndMaybeTrees};
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone)]
 pub struct TransactionContext {
+    /// TODO: Add Doc Comment Here!
     pub config: ZingoConfig,
+    /// TODO: Add Doc Comment Here!
     pub(crate) key: Arc<WalletCapability>,
+    /// TODO: Add Doc Comment Here!
     pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
 }
 
 impl TransactionContext {
+    /// TODO: Add Doc Comment Here!
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
@@ -191,6 +198,7 @@ pub mod decrypt_transaction {
             )
             .await;
         }
+
         async fn decrypt_transaction_to_record_transparent(
             &self,
             transaction: &Transaction,
@@ -284,6 +292,7 @@ pub mod decrypt_transaction {
                 );
             }
         }
+
         async fn update_outgoing_txdatas_with_uas(
             &self,
             txid_indexed_zingo_memos: Vec<(ParsedMemo, TxId)>,
@@ -358,6 +367,7 @@ pub mod decrypt_transaction {
             )
             .await
         }
+
         #[allow(clippy::too_many_arguments)]
         async fn decrypt_transaction_to_record_orchard(
             &self,
