@@ -20,7 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys::is_transparent_address` fn
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils::txid_from_hex_encoded_str` fn
-- `utils::txid_from_hex_encoded_str` fn
+
+- `test-features` flag
+  - `test_framework` mod
+    - `mocks` module
+      - `ProposalBuilder` struct
+      - `StepBuilder` struct
+      - `LRZSaplingNoteBuilder` struct
+      - `default_txid` fn
+      - `random_txid` fn
+      - `default_zaddr` fn
+      - `random_zaddr` fn
 
 ### Changed
 
