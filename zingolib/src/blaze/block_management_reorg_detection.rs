@@ -334,7 +334,7 @@ impl BlockManagementData {
             transaction_metadata_set
                 .write()
                 .await
-                .remove_txns_at_height(reorg_height);
+                .invalidate_all_transactions_after_or_at_height(reorg_height);
         }
     }
 
