@@ -1,14 +1,14 @@
-//! Module containing utility functions for the commands interface
+// Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
 use crate::wallet;
 use zcash_primitives::memo::MemoBytes;
 use zingoconfig::ChainType;
 
-/// Parse the send arguments for `do_propose`.
-/// The send arguments have two possible formats:
-/// - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
-/// - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
+// Parse the send arguments for `do_propose`.
+// The send arguments have two possible formats:
+// - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
+// - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
 pub(super) fn parse_send_args(
     args: &[&str],
 ) -> Result<Vec<(String, u64, Option<MemoBytes>)>, CommandError> {
@@ -80,7 +80,7 @@ pub(super) fn parse_send_args(
     Ok(send_args)
 }
 
-/// Checks send inputs do not contain memo's to transparent addresses.
+// Checks send inputs do not contain memo's to transparent addresses.
 pub(super) fn check_memo_compatibility(
     send_inputs: &[(String, u64, Option<MemoBytes>)],
     chain: &ChainType,
@@ -98,7 +98,7 @@ pub(super) fn check_memo_compatibility(
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet;
+    use crate::{commands::error::CommandError, wallet};
 
     #[test]
     fn parse_send_args() {
@@ -149,6 +149,7 @@ mod tests {
     mod fail_parse_send_args {
         mod json_array {
             use crate::commands::{error::CommandError, utils::parse_send_args};
+
             #[test]
             fn failed_json_parsing() {
                 let args = [r#"testaddress{{"#];
@@ -284,5 +285,43 @@ mod tests {
                 };
             }
         }
+    }
+
+    #[test]
+    fn check_memo_compatibility() {
+        let value_str = "100000";
+        let memo_str = "test memo";
+
+        // shielded address with memo
+        let address = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let send_inputs = super::parse_send_args(&[address, value_str, memo_str]).unwrap();
+        super::check_memo_compatibility(
+            &send_inputs,
+            &zingoconfig::ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
+        )
+        .unwrap();
+
+        // transparent address without memo
+        let address = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
+        let value_str = "100000";
+        let send_inputs = super::parse_send_args(&[address, value_str]).unwrap();
+        super::check_memo_compatibility(
+            &send_inputs,
+            &zingoconfig::ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
+        )
+        .unwrap();
+
+        // transparent address with memo
+        let address = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
+        let value_str = "100000";
+        let memo_str = "test memo";
+        let send_inputs = super::parse_send_args(&[address, value_str, memo_str]).unwrap();
+        match super::check_memo_compatibility(
+            &send_inputs,
+            &zingoconfig::ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
+        ) {
+            Err(CommandError::IncompatibleMemo) => (),
+            _ => panic!(),
+        };
     }
 }

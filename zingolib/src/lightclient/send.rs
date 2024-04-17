@@ -61,6 +61,7 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
+    // TODO: add correct functionality and doc comments / tests
     #[cfg(feature = "zip317")]
     pub async fn do_propose(
         &self,
@@ -72,12 +73,13 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
+    // TODO: add correct functionality and doc comments / tests
     #[cfg(feature = "zip317")]
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
         Ok(vec![TxId::from_bytes([0u8; 32])])
     }
 
-    //TODO: Add migrate_sapling_to_orchard argument
+    // TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
