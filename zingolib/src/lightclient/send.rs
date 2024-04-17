@@ -81,7 +81,11 @@ impl LightClient {
     // TODO: add correct functionality and doc comments / tests
     #[cfg(feature = "zip317")]
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        Ok(vec![TxId::from_bytes([0u8; 32])])
+        if let Some(_proposal) = self.latest_proposal.read().await.as_ref() {
+            Ok(vec![TxId::from_bytes([0u8; 32])])
+        } else {
+            Err("No proposal. Call do_propose first.".to_string())
+        }
     }
 
     // TODO: Add migrate_sapling_to_orchard argument
