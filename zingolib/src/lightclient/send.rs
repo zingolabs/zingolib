@@ -11,6 +11,13 @@ use zcash_proofs::prover::LocalTxProver;
 use super::{LightClient, LightWalletSendProgress};
 use crate::wallet::Pool;
 
+#[cfg(feature = "zip317")]
+use {
+    crate::wallet::notes::NoteRecordIdentifier,
+    zcash_client_backend::proposal::Proposal,
+    zcash_primitives::transaction::{fees::zip317::FeeRule, TxId},
+};
+
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
         Ok(BlockHeight::from_u32(
@@ -55,8 +62,27 @@ impl LightClient {
             .collect()
     }
 
-    /// TODO: Add Doc Comment Here!
-    //TODO: Add migrate_sapling_to_orchard argument
+    /// Unstable function to expose the zip317 interface for development
+    // TODO: add correct functionality and doc comments / tests
+    // TODO: Add migrate_sapling_to_orchard argument
+    #[cfg(feature = "zip317")]
+    pub async fn do_propose(
+        &self,
+        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+    ) -> Result<Proposal<FeeRule, NoteRecordIdentifier>, String> {
+        use crate::test_framework::mocks::ProposalBuilder;
+
+        Ok(ProposalBuilder::default().build())
+    }
+
+    /// Unstable function to expose the zip317 interface for development
+    // TODO: add correct functionality and doc comments / tests
+    #[cfg(feature = "zip317")]
+    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
+        Ok(vec![TxId::from_bytes([0u8; 32])])
+    }
+
+    // TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
