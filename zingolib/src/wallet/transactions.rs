@@ -1,7 +1,5 @@
 //! Functionality for managing transactions
 
-use std::collections::HashMap;
-
 use crate::wallet::{data::WitnessTrees, transaction_records_by_id::TransactionRecordsById};
 
 /// HashMap of all transactions in a wallet, keyed by txid.

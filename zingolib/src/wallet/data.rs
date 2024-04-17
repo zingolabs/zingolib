@@ -781,6 +781,7 @@ fn single_transparent_note_makes_is_incoming_true() {
     let transaction_record = crate::test_framework::default_trecord_with_one_tnote();
     assert!(transaction_record.is_incoming_transaction());
 }
+/// Convenience wrapper for primitive
 #[derive(Debug)]
 pub struct SpendableSaplingNote {
     /// TODO: Add Doc Comment Here!

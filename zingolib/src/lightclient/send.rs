@@ -82,7 +82,7 @@ impl LightClient {
         Ok(vec![TxId::from_bytes([0u8; 32])])
     }
 
-    // TODO: Add migrate_sapling_to_orchard argument
+    /// TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,

@@ -381,6 +381,7 @@ pub mod mocks {
         build_method!(datetime, u64);
         build_method!(txid, TxId);
 
+        /// Use the mocery of random_txid to get one?
         pub fn randomize_txid(self) -> Self {
             self.txid(crate::test_framework::mocks::random_txid())
         }

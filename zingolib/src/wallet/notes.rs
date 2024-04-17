@@ -1,4 +1,4 @@
-//! TODO: Add Mod Description Here!
+//! All things needed to create, manaage, and use notes
 pub mod interface;
 pub use interface::NoteInterface;
 pub use interface::ShieldedNoteInterface;
@@ -24,6 +24,7 @@ pub struct NoteRecordIdentifier {
 }
 
 impl NoteRecordIdentifier {
+    /// The primary constructor, note index means FLARRGGGLLLE!
     pub fn from_parts(txid: TxId, pool: PoolType, index: u32) -> Self {
         NoteRecordIdentifier { txid, pool, index }
     }
