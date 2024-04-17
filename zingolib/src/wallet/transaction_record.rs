@@ -325,7 +325,7 @@ impl TransactionRecord {
 }
 
 #[cfg(any(test, feature = "test-features"))]
-pub(crate) mod mocks {
+pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -335,7 +335,7 @@ pub(crate) mod mocks {
     use super::TransactionRecord;
 
     /// to create a mock TransactionRecord
-    pub(crate) struct TransactionRecordBuilder {
+    pub struct TransactionRecordBuilder {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,

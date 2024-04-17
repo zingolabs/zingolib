@@ -46,7 +46,7 @@ pub mod mocks {
     use super::NoteRecordIdentifier;
 
     /// to build a mock NoteRecordIdentifier
-    pub(crate) struct NoteRecordIdentifierBuilder {
+    pub struct NoteRecordIdentifierBuilder {
         txid: Option<TxId>,
         pool: Option<PoolType>,
         index: Option<u32>,
