@@ -268,11 +268,21 @@ pub mod mocks {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::mocks::SaplingNoteBuilder;
+pub mod tests {
+    use crate::{
+        test_framework::mocks::default_txid,
+        wallet::notes::{sapling::mocks::SaplingNoteBuilder, NoteInterface},
+    };
 
     #[test]
-    pub fn build_sapling_note() {
-        let _sapling_note = SaplingNoteBuilder::default().build();
+    fn pending_spent_note_is_pending_spent() {
+        let spend = Some((default_txid(), 641312));
+        let note = SaplingNoteBuilder::default()
+            .unconfirmed_spent(spend)
+            .build();
+        assert_eq!(note.is_spent(), false);
+        assert_eq!(note.is_pending_spent(), true);
+        assert_eq!(note.is_spent_or_pending_spent(), true);
+        assert_eq!(note.pending_spent(), &spend);
     }
 }
