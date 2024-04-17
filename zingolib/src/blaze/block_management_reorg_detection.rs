@@ -334,7 +334,7 @@ impl BlockManagementData {
             transaction_metadata_set
                 .write()
                 .await
-                .remove_txns_at_height(reorg_height);
+                .invalidate_all_transactions_after_or_at_height(reorg_height);
         }
     }
 
@@ -744,7 +744,7 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
