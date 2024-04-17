@@ -21,10 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pub struct crate::wallet::notes::NoteRecordIdentifier
 - `utils` mod
 - `utils::txid_from_hex_encoded_str` fn
-- `lightclient::send`
+- `lightclient::LightClient`:
   - `do_propose` behind "zip317" feature
   - `do_send_proposal` behind "zip317" feature
-- `commands`
+- `commands`:
   - `ProposeCommand` struct and methods behind "zip317" feature
   - `QuickSendCommand` struct and methods behind "zip317" feature
 - `test_framework` mod
@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys::is_shielded_address` takes a `&ChainType` instead of a `&ZingoConfig`
 - zingolib/src/wallet/transaction_record_map.rs -> zingolib/src/wallet/transaction_records_by_id.rs
 - TransactionRecordMap -> TransactionRecordsById
-- `commands`
+- `commands`:
   - `get_commands` added propose and quicksend to entries behind "zip317" feature
   - `SendCommand::help` formatting
 
