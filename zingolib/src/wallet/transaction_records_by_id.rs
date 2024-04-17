@@ -146,3 +146,45 @@ impl Default for TransactionRecordsById {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::wallet::{
+        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentNoteBuilder},
+        transaction_record::mocks::TransactionRecordBuilder,
+    };
+
+    use super::TransactionRecordsById;
+
+    use zcash_primitives::consensus::BlockHeight;
+    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+
+    #[test]
+    fn invalidated_note_is_deleted() {
+        let mut transaction_record_early = TransactionRecordBuilder::default()
+            .randomize_txid()
+            .status(Confirmed(5.into()))
+            .build();
+        transaction_record_early
+            .transparent_notes
+            .push(TransparentNoteBuilder::default().build());
+
+        let mut transaction_record_later = TransactionRecordBuilder::default()
+            .randomize_txid()
+            .status(Confirmed(15.into()))
+            .build();
+        transaction_record_later
+            .sapling_notes
+            .push(SaplingNoteBuilder::default().build());
+
+        let mut transaction_records_by_id = TransactionRecordsById::default();
+        transaction_records_by_id.insert_transaction_record(transaction_record_early);
+        transaction_records_by_id.insert_transaction_record(transaction_record_later);
+
+        let reorg_height: BlockHeight = 10.into();
+
+        transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
+
+        assert_eq!(transaction_records_by_id.len(), 1);
+    }
+}
