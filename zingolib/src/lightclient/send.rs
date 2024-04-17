@@ -1,3 +1,4 @@
+//! TODO: Add Mod Description Here!
 use log::{debug, error};
 
 use zcash_primitives::{
@@ -25,6 +26,7 @@ impl LightClient {
                 .height as u32,
         ) + 1)
     }
+
     fn map_tos_to_receivers(
         &self,
         tos: Vec<(&str, u64, Option<MemoBytes>)>,
@@ -62,6 +64,7 @@ impl LightClient {
 
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
+    // TODO: Add migrate_sapling_to_orchard argument
     #[cfg(feature = "zip317")]
     pub async fn do_propose(
         &self,
@@ -88,7 +91,7 @@ impl LightClient {
         }
     }
 
-    // TODO: Add migrate_sapling_to_orchard argument
+    /// TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
@@ -127,6 +130,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
         Ok(LightWalletSendProgress {
@@ -135,6 +139,7 @@ impl LightClient {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_shield(
         &self,
         pools_to_shield: &[Pool],

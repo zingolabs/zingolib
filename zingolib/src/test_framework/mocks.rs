@@ -32,9 +32,11 @@ fn zaddr_from_seed(
     )
 }
 
+/// This is the "all-0" base case!
 pub fn default_txid() -> zcash_primitives::transaction::TxId {
     zcash_primitives::transaction::TxId::from_bytes([0u8; 32])
 }
+/// This is the "all-0" base case!
 pub fn default_zaddr() -> (
     ExtendedSpendingKey,
     PreparedIncomingViewingKey,
@@ -48,12 +50,14 @@ use sapling_crypto::{
     note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey, PaymentAddress,
 };
 
+/// Any old OS randomness
 pub fn random_txid() -> zcash_primitives::transaction::TxId {
     let mut rng = OsRng;
     let mut seed = [0u8; 32];
     rng.fill(&mut seed);
     zcash_primitives::transaction::TxId::from_bytes(seed)
 }
+/// Any old OS randomness
 pub fn random_zaddr() -> (
     ExtendedSpendingKey,
     PreparedIncomingViewingKey,
@@ -99,6 +103,7 @@ mod sapling_note {
         build_method!(value, NoteValue);
         build_method!(rseed, Rseed);
 
+        /// For any old zcaddr!
         pub fn randomize_recipient(self) -> Self {
             let (_, _, address) = super::random_zaddr();
             self.recipient(address)

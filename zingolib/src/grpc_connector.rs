@@ -1,3 +1,5 @@
+//! TODO: Add Mod Description Here!
+
 use std::sync::Arc;
 
 use futures::future::join_all;
@@ -18,6 +20,7 @@ use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters};
 use zcash_primitives::transaction::{Transaction, TxId};
 pub(crate) use zingo_netutils::GrpcConnector;
 
+/// TODO: Add Doc Comment Here!
 pub async fn start_saplingtree_fetcher(
     conn: &GrpcConnector,
 ) -> (
@@ -40,6 +43,7 @@ pub async fn start_saplingtree_fetcher(
     (h, transmitter)
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn start_taddr_transaction_fetcher(
     conn: &GrpcConnector,
 ) -> (
@@ -85,6 +89,7 @@ pub async fn start_taddr_transaction_fetcher(
     (h, transmitter)
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn start_full_transaction_fetcher(
     conn: &GrpcConnector,
     network: impl Parameters + Send + Copy + 'static,
@@ -119,6 +124,7 @@ pub async fn start_full_transaction_fetcher(
     (h, transmitter)
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn get_block_range(
     conn: &GrpcConnector,
     start_height: u64,
@@ -157,6 +163,7 @@ pub async fn get_block_range(
     Ok(())
 }
 
+/// TODO: Add Doc Comment Here!
 async fn get_full_transaction(
     uri: http::Uri,
     transaction_id: &TxId,
@@ -250,6 +257,7 @@ async fn get_taddr_transactions(
     Ok(())
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
     let client = Arc::new(GrpcConnector::new(uri.clone()));
 
@@ -267,6 +275,7 @@ pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
     Ok(response.into_inner())
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn monitor_mempool(
     uri: http::Uri,
     mempool_transmitter: UnboundedSender<RawTransaction>,
@@ -294,6 +303,7 @@ pub async fn monitor_mempool(
     Ok(())
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
     let client = Arc::new(GrpcConnector::new(uri.clone()));
     let mut client = client
@@ -313,7 +323,7 @@ pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String>
     Ok(response.into_inner())
 }
 
-// get_latest_block GRPC call
+/// get_latest_block GRPC call
 pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
     let client = Arc::new(GrpcConnector::new(uri.clone()));
     let mut client = client
@@ -331,6 +341,7 @@ pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
     Ok(response.into_inner())
 }
 
+/// TODO: Add Doc Comment Here!
 pub async fn send_transaction(
     uri: http::Uri,
     transaction_bytes: Box<[u8]>,

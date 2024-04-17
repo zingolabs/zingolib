@@ -1,3 +1,5 @@
+//! TODO: Add Mod Description Here!
+
 use json::{array, object, JsonValue};
 use log::{debug, error};
 use serde::Serialize;
@@ -20,10 +22,14 @@ use crate::{
 #[cfg(feature = "zip317")]
 use crate::data::proposal::ZingoProposal;
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
+    /// TODO: Add Doc Comment Here!
     pub success: bool,
+    /// TODO: Add Doc Comment Here!
     pub latest_block: u64,
+    /// TODO: Add Doc Comment Here!
     pub total_blocks_synced: u64,
 }
 
@@ -50,14 +56,19 @@ impl std::fmt::Display for SyncResult {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, Default)]
 pub struct WalletStatus {
+    /// TODO: Add Doc Comment Here!
     pub is_syncing: bool,
+    /// TODO: Add Doc Comment Here!
     pub total_blocks: u64,
+    /// TODO: Add Doc Comment Here!
     pub synced_blocks: u64,
 }
 
 impl WalletStatus {
+    /// TODO: Add Doc Comment Here!
     pub fn new() -> Self {
         WalletStatus {
             is_syncing: false,
@@ -67,13 +78,17 @@ impl WalletStatus {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
 pub struct LightWalletSendProgress {
+    /// TODO: Add Doc Comment Here!
     pub progress: SendProgress,
+    /// TODO: Add Doc Comment Here!
     pub interrupt_sync: bool,
 }
 
 impl LightWalletSendProgress {
+    /// TODO: Add Doc Comment Here!
     pub fn to_json(&self) -> JsonValue {
         object! {
             "id" => self.progress.id,
@@ -87,26 +102,40 @@ impl LightWalletSendProgress {
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PoolBalances {
+    /// TODO: Add Doc Comment Here!
     pub sapling_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
     pub verified_sapling_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
     pub spendable_sapling_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
     pub unverified_sapling_balance: Option<u64>,
 
+    /// TODO: Add Doc Comment Here!
     pub orchard_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
     pub verified_orchard_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
     pub unverified_orchard_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
     pub spendable_orchard_balance: Option<u64>,
 
+    /// TODO: Add Doc Comment Here!
     pub transparent_balance: Option<u64>,
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct AccountBackupInfo {
+    /// TODO: Add Doc Comment Here!
     #[serde(rename = "seed")]
     pub seed_phrase: String,
+    /// TODO: Add Doc Comment Here!
     pub birthday: u64,
+    /// TODO: Add Doc Comment Here!
     pub account_index: u32,
 }
 
@@ -196,6 +225,7 @@ pub struct UserBalances {
 ///      *
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
+    /// TODO: Add Doc Comment Here!
     pub wallet: LightWallet,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
@@ -212,7 +242,6 @@ pub struct LightClient {
 }
 
 ///  This is the omnibus interface to the library, we are currently in the process of refining this typez broad definition!
-
 pub mod instantiation {
     use log::debug;
     use std::{
@@ -254,6 +283,7 @@ pub mod instantiation {
                 save_buffer: ZingoSaveBuffer::new(buffer),
             })
         }
+
         /// The wallet this fn associates with the lightclient is specifically derived from
         /// a spend authority.
         /// this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
@@ -268,6 +298,7 @@ pub mod instantiation {
                     .await
             })
         }
+
         /// The wallet this fn associates with the lightclient is specifically derived from
         /// a spend authority.
         pub async fn create_from_wallet_base_async(
@@ -304,6 +335,8 @@ pub mod instantiation {
 
             Ok(lightclient)
         }
+
+        /// TODO: Add Doc Comment Here!
         pub async fn create_unconnected(
             config: &ZingoConfig,
             wallet_base: WalletBase,
@@ -353,13 +386,10 @@ pub mod instantiation {
     }
 }
 
-/// LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 pub mod save;
 
-/// the counterpart to mod save, these functions find a LightWallet and convert it to a LightClient using methods in instantiation.
 pub mod read;
 
-/// These functions can be called by consumer to learn about the LightClient.
 pub mod describe;
 
 pub mod sync;
@@ -368,6 +398,7 @@ pub mod send;
 
 // other functions
 impl LightClient {
+    /// TODO: Add Doc Comment Here!
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
@@ -377,10 +408,13 @@ impl LightClient {
         self.set_wallet_initial_state(birthday).await;
         debug!("Cleared wallet state, with birthday at {}", birthday);
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn config(&self) -> &ZingoConfig {
         &self.config
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
         let data = match base64::decode(enc_base64) {
             Ok(v) => v,
@@ -402,6 +436,7 @@ impl LightClient {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn do_encrypt_message(&self, to_address_str: String, memo: Memo) -> JsonValue {
         let to = match decode_payment_address(
             self.config.chain.hrp_sapling_payment_address(),
@@ -441,6 +476,7 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
+
     #[cfg(not(feature = "embed_params"))]
     fn read_sapling_params(&self) -> Result<(vec<u8>, vec<u8>), String> {
         let path = self
@@ -465,6 +501,7 @@ impl LightClient {
         Ok((sapling_output, sapling_spend))
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn set_sapling_params(
         &mut self,
         sapling_output: &[u8],
@@ -532,10 +569,12 @@ impl LightClient {
         Ok(())
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn set_server(&self, server: http::Uri) {
         *self.config.lightwalletd_uri.write().unwrap() = server
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn set_wallet_initial_state(&self, height: u64) {
         let state = self
             .download_initial_tree_state_from_lightwalletd(height)
@@ -562,6 +601,7 @@ impl LightClient {
             }
         }
     }
+
     fn unspent_pending_spent(
         &self,
         note: JsonValue,
@@ -618,6 +658,7 @@ impl std::fmt::Display for PriceReprError {
         })
     }
 }
+
 fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
     if let Some(value) = from_gemini.get("price") {
         if let Some(stringable) = value.as_str() {
@@ -743,5 +784,7 @@ mod tests {
 
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
+
+/// TODO: Add Doc Comment Here!
 #[cfg(feature = "test-features")]
 pub mod test_features;
