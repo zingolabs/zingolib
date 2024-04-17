@@ -140,36 +140,30 @@ fn test_get_some_txid_from_highest_wallet_block() {
     let txid_1 = TxId::from_bytes(txid_bytes_1);
     let txid_2 = TxId::from_bytes(txid_bytes_2);
     let txid_3 = TxId::from_bytes(txid_bytes_3);
-    tms.transaction_records_by_id.insert(
-        txid_1,
-        TransactionRecord::new(
+    tms.transaction_records_by_id
+        .insert_transaction_record(TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
                 BlockHeight::from_u32(3_200_000),
             ),
             100,
             &txid_1,
-        ),
-    );
-    tms.transaction_records_by_id.insert(
-        txid_2,
-        TransactionRecord::new(
+        ));
+    tms.transaction_records_by_id
+        .insert_transaction_record(TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
                 BlockHeight::from_u32(3_000_069),
             ),
             0,
             &txid_2,
-        ),
-    );
-    tms.transaction_records_by_id.insert(
-        txid_3,
-        TransactionRecord::new(
+        ));
+    tms.transaction_records_by_id
+        .insert_transaction_record(TransactionRecord::new(
             zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
                 BlockHeight::from_u32(2_650_000),
             ),
             0,
             &txid_3,
-        ),
-    );
+        ));
     let highest = tms.get_some_txid_from_highest_wallet_block();
     assert_eq!(highest, Some(txid_2));
 }
