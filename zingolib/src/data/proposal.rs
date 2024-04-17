@@ -19,8 +19,10 @@ pub type ShieldProposal = Proposal<FeeRule, Infallible>;
 /// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
 #[derive(Clone)]
 pub enum ZingoProposal {
-    /// Destination somewhere else.
+    /// Destination somewhere else. This is an implementation detail of the code as is, not
+    /// an invariant that is guaranteed for any number of versions.
     Transfer(TransferProposal),
-    /// Destination this wallet.
+    /// Destination this wallet. This is an implementation detail of the code as is, not
+    /// an invariant that is guaranteed for any number of versions.
     Shield(ShieldProposal),
 }
