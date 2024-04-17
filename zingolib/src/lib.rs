@@ -10,9 +10,9 @@ pub mod grpc_connector;
 pub mod lightclient;
 pub mod utils;
 pub mod wallet;
-#[cfg(feature = "test")]
+#[cfg(feature = "test-features")]
 pub use zingo_testvectors as testvectors;
-#[cfg(feature = "test")]
+#[cfg(feature = "test-features")]
 pub mod test_framework;
 
 // This line includes the generated `git_description()` function directly into this scope.
