@@ -69,7 +69,12 @@ impl LightClient {
     ) -> Result<Proposal<FeeRule, NoteRecordIdentifier>, String> {
         use crate::test_framework::mocks::ProposalBuilder;
 
-        Ok(ProposalBuilder::default().build())
+        let proposal = ProposalBuilder::default().build();
+        let mut latest_proposal_lock = self.latest_proposal.write().await;
+        *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
+            proposal.clone(),
+        ));
+        Ok(proposal)
     }
 
     /// Unstable function to expose the zip317 interface for development
