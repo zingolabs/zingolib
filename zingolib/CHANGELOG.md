@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys::is_transparent_address` fn
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils` mod
-- `utils::txid_from_hex_encoded_str` fn
+  - `utils::txid_from_hex_encoded_str` fn
 - `lightclient::LightClient`:
   - `do_propose` behind "zip317" feature
   - `do_send_proposal` behind "zip317" feature
