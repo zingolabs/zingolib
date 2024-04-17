@@ -7,13 +7,13 @@ use zcash_primitives::transaction::fees::zip317::FeeRule;
 use crate::wallet::notes::NoteRecordIdentifier;
 
 /// A proposed send to addresses.
-pub type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
+pub(crate) type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
 /// A proposed shielding.
-pub type ShieldProposal = Proposal<FeeRule, Infallible>;
+pub(crate) type ShieldProposal = Proposal<FeeRule, Infallible>;
 
 /// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
 #[derive(Clone)]
-pub enum ZingoProposal {
+pub(crate) enum ZingoProposal {
     /// Destination somewhere else.
     Transfer(TransferProposal),
     /// Destination this wallet.
