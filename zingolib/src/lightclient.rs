@@ -14,9 +14,11 @@ use zingoconfig::ZingoConfig;
 
 use crate::{
     blaze::syncdata::BlazeSyncData,
-    data::proposal::ZingoProposal,
     wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress},
 };
+
+#[cfg(feature = "zip317")]
+use crate::data::proposal::ZingoProposal;
 
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
