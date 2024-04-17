@@ -7,15 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Deprecated
 
-- `get_wallet_pathbuf` fn
-- `wallet_path_exists` fn
+### Added
 
 ### Changed
 
-### Deprecated
-
-- `wallet_exists` fn
-
 ### Removed
+
