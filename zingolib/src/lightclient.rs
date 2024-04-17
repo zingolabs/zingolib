@@ -17,6 +17,9 @@ use crate::{
     wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress},
 };
 
+#[cfg(feature = "zip317")]
+use crate::data::proposal::ZingoProposal;
+
 #[derive(Clone, Debug, Default)]
 pub struct SyncResult {
     pub success: bool,
@@ -202,6 +205,9 @@ pub struct LightClient {
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 
+    #[cfg(feature = "zip317")]
+    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>,
+
     save_buffer: ZingoSaveBuffer,
 }
 
@@ -227,8 +233,9 @@ pub mod instantiation {
     };
 
     impl LightClient {
-        /// this is the standard initializer for a LightClient.
         // toDo rework ZingoConfig.
+
+        /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.        
         pub async fn create_from_wallet_async(
             wallet: LightWallet,
             config: ZingoConfig,
@@ -242,6 +249,8 @@ pub mod instantiation {
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
                 interrupt_sync: Arc::new(RwLock::new(false)),
+                #[cfg(feature = "zip317")]
+                latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
             })
         }
