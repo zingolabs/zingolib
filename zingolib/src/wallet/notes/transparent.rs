@@ -247,9 +247,9 @@ pub mod tests {
         let note = TransparentNoteBuilder::default()
             .unconfirmed_spent(spend)
             .build();
-        assert_eq!(note.is_spent(), false);
-        assert_eq!(note.is_pending_spent(), true);
-        assert_eq!(note.is_spent_or_pending_spent(), true);
+        assert!(!note.is_spent());
+        assert!(note.is_pending_spent());
+        assert!(note.is_spent_or_pending_spent());
         assert_eq!(note.pending_spent(), &spend);
     }
 }
