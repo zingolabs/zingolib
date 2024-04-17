@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys::is_transparent_address` fn
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils` mod
+- `test_framework` mod
 
 ### Changed
 
