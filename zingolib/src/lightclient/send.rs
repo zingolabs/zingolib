@@ -11,7 +11,11 @@ use super::{LightClient, LightWalletSendProgress};
 use crate::wallet::Pool;
 
 #[cfg(feature = "zip317")]
-use {zcash_client_backend::proposal::Proposal, zcash_primitives::transaction::TxId};
+use {
+    crate::wallet::notes::NoteRecordIdentifier,
+    zcash_client_backend::proposal::Proposal,
+    zcash_primitives::transaction::{fees::zip317::FeeRule, TxId},
+};
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -56,25 +60,26 @@ impl LightClient {
             .collect()
     }
 
+    /// Unstable function to expose the zip317 interface for development
+    // TODO: add correct functionality and doc comments / tests
     #[cfg(feature = "zip317")]
     pub async fn do_propose(
         &self,
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<Proposal<(), ()>, String> {
-        *self.latest_proposal.write().await = None;
-        unimplemented!()
+    ) -> Result<Proposal<FeeRule, NoteRecordIdentifier>, String> {
+        use crate::test_framework::mocks::ProposalBuilder;
+
+        Ok(ProposalBuilder::default().build())
     }
 
+    /// Unstable function to expose the zip317 interface for development
+    // TODO: add correct functionality and doc comments / tests
     #[cfg(feature = "zip317")]
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-            unimplemented!()
-        } else {
-            Err("Needs proposal".to_string())
-        }
+        Ok(vec![TxId::from_bytes([0u8; 32])])
     }
 
-    //TODO: Add migrate_sapling_to_orchard argument
+    // TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,

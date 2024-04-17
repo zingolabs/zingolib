@@ -1,4 +1,3 @@
-use crate::wallet::keys::is_transparent_address;
 use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -12,8 +11,6 @@ use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
-
-use self::error::CommandError;
 
 mod error;
 mod utils;
@@ -823,16 +820,12 @@ impl Command for ProposeCommand {
                 )
             }
         };
-        for send in &send_inputs {
-            let address = &send.0;
-            let memo = &send.2;
-            if memo.is_some() && is_transparent_address(address, &lightclient.config.chain) {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    CommandError::IncompatibleMemo,
-                );
-            }
-        }
+        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
+            return format!(
+                "Error: {}\nTry 'help send' for correct usage and examples.",
+                e,
+            );
+        };
         RT.block_on(async move {
             match lightclient
                 .do_propose(
@@ -884,16 +877,12 @@ impl Command for SendCommand {
                 )
             }
         };
-        for send in &send_inputs {
-            let address = &send.0;
-            let memo = &send.2;
-            if memo.is_some() && is_transparent_address(address, &lightclient.config.chain) {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    CommandError::IncompatibleMemo,
-                );
-            }
-        }
+        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
+            return format!(
+                "Error: {}\nTry 'help send' for correct usage and examples.",
+                e,
+            );
+        };
         RT.block_on(async move {
             match lightclient
                 .do_send(
@@ -950,16 +939,12 @@ impl Command for QuickSendCommand {
                 )
             }
         };
-        for send in &send_inputs {
-            let address = &send.0;
-            let memo = &send.2;
-            if memo.is_some() && is_transparent_address(address, &lightclient.config.chain) {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    CommandError::IncompatibleMemo,
-                );
-            }
-        }
+        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
+            return format!(
+                "Error: {}\nTry 'help send' for correct usage and examples.",
+                e,
+            );
+        };
         RT.block_on(async move {
             if let Err(e) = lightclient
                 .do_propose(

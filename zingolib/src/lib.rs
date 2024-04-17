@@ -8,11 +8,12 @@ pub mod data;
 pub mod error;
 pub mod grpc_connector;
 pub mod lightclient;
+pub mod utils;
 pub mod wallet;
-#[cfg(feature = "test")]
+#[cfg(feature = "test-features")]
 pub use zingo_testvectors as testvectors;
-#[cfg(feature = "test")]
-pub(crate) mod test_framework;
+#[cfg(feature = "test-features")]
+pub mod test_framework;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
