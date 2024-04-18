@@ -268,7 +268,7 @@ pub mod mocks {
         fn default() -> Self {
             SaplingNoteBuilder::new()
                 .diversifier(sapling_crypto::Diversifier([0; 11]))
-                .note(crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build())
+                .note(crate::test_framework::mocks::SaplingCryptoNoteBuilder::default().build())
                 .witnessed_position(Some(Position::from(0)))
                 .output_index(Some(0))
                 .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))
