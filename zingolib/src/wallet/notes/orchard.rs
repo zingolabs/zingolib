@@ -13,7 +13,7 @@ pub struct OrchardNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: orchard::keys::Diversifier,
     /// TODO: Add Doc Comment Here!
-    pub note: orchard::note::Note,
+    pub orchard_note_crypto: orchard::note::Note,
 
     /// The position of this note's value commitment in the global commitment tree
     /// We need to create a witness to it, to spend
@@ -87,7 +87,7 @@ impl ShieldedNoteInterface for OrchardNote {
     ) -> Self {
         Self {
             diversifier,
-            note,
+            orchard_note_crypto: note,
             witnessed_position,
             nullifier,
             spent,
@@ -123,7 +123,7 @@ impl ShieldedNoteInterface for OrchardNote {
     }
 
     fn note(&self) -> &Self::Note {
-        &self.note
+        &self.orchard_note_crypto
     }
 
     fn nullifier(&self) -> Option<Self::Nullifier> {

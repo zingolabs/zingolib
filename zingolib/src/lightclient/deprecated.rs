@@ -72,13 +72,13 @@ impl LightClient {
             .sapling_notes
             .iter()
             .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
+            .map(|nd| nd.sapling_note_crypto.value().inner())
             .sum::<u64>()
             + wallet_transaction
                 .orchard_notes
                 .iter()
                 .filter(|nd| nd.is_change)
-                .map(|nd| nd.note.value().inner())
+                .map(|nd| nd.orchard_note_crypto.value().inner())
                 .sum::<u64>()
             + received_utxo_value;
 

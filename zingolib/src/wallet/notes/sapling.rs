@@ -12,7 +12,7 @@ pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
     /// TODO: Add Doc Comment Here!
-    pub note: sapling_crypto::Note,
+    pub sapling_note_crypto: sapling_crypto::Note,
 
     // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
@@ -45,13 +45,13 @@ impl std::fmt::Debug for SaplingNote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("diversifier", &self.diversifier)
-            .field("note", &self.note)
+            .field("note", &self.sapling_note_crypto)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
             .field("memo", &self.memo)
             .field("diversifier", &self.diversifier)
-            .field("note", &self.note)
+            .field("note", &self.sapling_note_crypto)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
@@ -107,7 +107,7 @@ impl ShieldedNoteInterface for SaplingNote {
     ) -> Self {
         Self {
             diversifier,
-            note,
+            sapling_note_crypto: note,
             witnessed_position,
             nullifier,
             spent,
@@ -144,7 +144,7 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 
     fn note(&self) -> &Self::Note {
-        &self.note
+        &self.sapling_note_crypto
     }
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
