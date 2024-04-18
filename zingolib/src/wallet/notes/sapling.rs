@@ -3,9 +3,11 @@ use derive_builder::Builder;
 use incrementalmerkletree::Position;
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
+use crate::wallet::{notes::ShieldedNoteInterface, traits::FromBytes};
+
 use super::{
     super::{data::TransactionRecord, Pool},
-    NoteInterface, ShieldedNoteInterface,
+    NoteInterface,
 };
 
 /// TODO: Add Doc Comment Here!
