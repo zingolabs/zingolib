@@ -13,9 +13,7 @@ use crate::wallet::Pool;
 
 #[cfg(feature = "zip317")]
 use {
-    crate::wallet::notes::NoteRecordIdentifier,
-    zcash_client_backend::proposal::Proposal,
-    zcash_primitives::transaction::{fees::zip317::FeeRule, TxId},
+    zcash_primitives::transaction::{TxId},
 };
 
 impl LightClient {
@@ -87,7 +85,7 @@ impl LightClient {
         &self,
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<crate::data::proposal::ShieldProposal, String> {
-        use crate::test_framework::mocks::ProposalBuilder;
+        
         todo!()
     }
 
