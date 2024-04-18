@@ -20,6 +20,7 @@ pub(crate) type ShieldProposal = Proposal<FeeRule, Infallible>;
 pub(crate) enum ZingoProposal {
     /// Destination somewhere else.
     /// Can propose any valid recipient.
+    #[allow(dead_code)] // TOdo use it
     Transfer(TransferProposal),
     /// For now this is constrained by lrz zcash_client_backend transaction construction
     /// to send to the proposing capability's receiver for its fanciest shielded pool
