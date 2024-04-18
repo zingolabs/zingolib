@@ -12,11 +12,7 @@ use super::{LightClient, LightWalletSendProgress};
 use crate::wallet::Pool;
 
 #[cfg(feature = "zip317")]
-use {
-    crate::wallet::notes::NoteRecordIdentifier,
-    zcash_client_backend::proposal::Proposal,
-    zcash_primitives::transaction::{fees::zip317::FeeRule, TxId},
-};
+use zcash_primitives::transaction::TxId;
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -63,23 +59,49 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
+    // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
     #[cfg(feature = "zip317")]
-    pub async fn do_propose(
+    pub async fn do_propose_spend(
         &self,
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<Proposal<FeeRule, NoteRecordIdentifier>, String> {
+    ) -> Result<crate::data::proposal::TransferProposal, String> {
         use crate::test_framework::mocks::ProposalBuilder;
 
-        Ok(ProposalBuilder::default().build())
+        let proposal = ProposalBuilder::default().build();
+        let mut latest_proposal_lock = self.latest_proposal.write().await;
+        *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
+            proposal.clone(),
+        ));
+        Ok(proposal)
+    }
+
+    /// Unstable function to expose the zip317 interface for development
+    // TOdo: add correct functionality and doc comments / tests
+    #[cfg(feature = "zip317")]
+    pub async fn do_propose_shield(
+        &self,
+        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+    ) -> Result<crate::data::proposal::ShieldProposal, String> {
+        todo!()
     }
 
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
     #[cfg(feature = "zip317")]
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        Ok(vec![TxId::from_bytes([0u8; 32])])
+        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+            match proposal {
+                crate::lightclient::ZingoProposal::Transfer(_) => {
+                    Ok(vec![TxId::from_bytes([1u8; 32])])
+                }
+                crate::lightclient::ZingoProposal::Shield(_) => {
+                    Ok(vec![TxId::from_bytes([222u8; 32])])
+                }
+            }
+        } else {
+            Err("No proposal. Call do_propose first.".to_string())
+        }
     }
 
     /// TODO: Add migrate_sapling_to_orchard argument
