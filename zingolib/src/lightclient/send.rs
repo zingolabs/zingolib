@@ -63,13 +63,13 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
+    // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
     #[cfg(feature = "zip317")]
-    pub async fn do_propose(
+    pub async fn do_propose_spend(
         &self,
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<Proposal<FeeRule, NoteRecordIdentifier>, String> {
+    ) -> Result<crate::data::proposal::TransferProposal, String> {
         use crate::test_framework::mocks::ProposalBuilder;
 
         let proposal = ProposalBuilder::default().build();
@@ -78,6 +78,17 @@ impl LightClient {
             proposal.clone(),
         ));
         Ok(proposal)
+    }
+
+    /// Unstable function to expose the zip317 interface for development
+    // TOdo: add correct functionality and doc comments / tests
+    #[cfg(feature = "zip317")]
+    pub async fn do_propose_shield(
+        &self,
+        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+    ) -> Result<crate::data::proposal::ShieldProposal, String> {
+        use crate::test_framework::mocks::ProposalBuilder;
+        todo!()
     }
 
     /// Unstable function to expose the zip317 interface for development
