@@ -18,7 +18,7 @@ pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
     #[builder(
-        default = "crate::test_framework::mocks::sapling_note::SaplingCryptoNoteBuilder::default().build().unwrap().to_note()"
+        default = "crate::test_framework::mocks::sapling_note::SaplingCryptoNoteBuilder::default().build().unwrap().to_sapling_crypto_note()"
     )]
     /// TODO: Add Doc Comment Here!
     pub sapling_crypto_note: sapling_crypto::Note,
