@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! TODO: Add Mod Description Here!
 use derive_builder::Builder;
 use incrementalmerkletree::Position;
