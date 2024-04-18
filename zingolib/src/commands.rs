@@ -844,7 +844,7 @@ impl Command for ProposeCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .do_propose(
+                .do_propose_spend(
                     send_inputs
                         .iter()
                         .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
@@ -963,7 +963,7 @@ impl Command for QuickSendCommand {
         };
         RT.block_on(async move {
             if let Err(e) = lightclient
-                .do_propose(
+                .do_propose_spend(
                     send_inputs
                         .iter()
                         .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
