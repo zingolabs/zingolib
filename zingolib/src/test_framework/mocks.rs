@@ -108,7 +108,7 @@ mod sapling_crypto_note {
         }
 
         /// Build the note.
-        pub fn to_lrz(&self) -> sapling_crypto::Note {
+        pub fn to_note(&self) -> sapling_crypto::Note {
             sapling_crypto::Note::from_parts(self.recipient, self.value, self.rseed)
         }
     }
