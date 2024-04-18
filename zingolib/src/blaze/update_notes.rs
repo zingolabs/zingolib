@@ -115,6 +115,7 @@ impl UpdateNotes {
                         .await
                     {
                         //info!("Note was spent, just add it as spent for TxId {}", txid);
+                        // we got the height the nullifier was spent at. now, we go back to the index because todO actually we needed the CompactTx, not just the height
                         let (compact_transaction, ts) = bsync_data
                             .read()
                             .await

@@ -36,7 +36,7 @@ type Node<D> = <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::No
 const ORCHARD_START: &str = "000000";
 /// The data relating to the blocks in the current batch
 pub struct BlockManagementData {
-    // List of all downloaded blocks in the current batch and
+    // List of all downloaded Compact Blocks in the current batch and
     // their hashes/commitment trees. Stored with the tallest
     // block first, and the shortest last.
     blocks_in_current_batch: Arc<RwLock<Vec<BlockData>>>,
@@ -447,17 +447,22 @@ impl BlockManagementData {
         self.wait_for_block(after_height).await;
 
         {
-            // Read Lock
+            // Read Lock for
             let blocks = self.blocks_in_current_batch.read().await;
+            // take the height of the first/highest block in the batch and subtract target height to get index into the block list
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
                 PoolNullifier::Sapling(nf) => {
                     let nf = nf.to_vec();
 
+                    // starting with a block and searching until the top of the batch
                     for i in (0..pos + 1).rev() {
                         let cb = &blocks.get(i as usize).unwrap().cb();
+                        // if this block contains a transaction
                         for compact_transaction in &cb.vtx {
+                            // that contains a spent
                             for cs in &compact_transaction.spends {
+                                // with the given nullifier
                                 if cs.nf == nf {
                                     return Some(cb.height);
                                 }
