@@ -84,8 +84,15 @@ impl LightClient {
     // TODO: add correct functionality and doc comments / tests
     #[cfg(feature = "zip317")]
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        if let Some(_proposal) = self.latest_proposal.read().await.as_ref() {
-            Ok(vec![TxId::from_bytes([0u8; 32])])
+        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+            match proposal {
+                crate::lightclient::ZingoProposal::Transfer(_) => {
+                    Ok(vec![TxId::from_bytes([1u8; 32])])
+                }
+                crate::lightclient::ZingoProposal::Shield(_) => {
+                    Ok(vec![TxId::from_bytes([222u8; 32])])
+                }
+            }
         } else {
             Err("No proposal. Call do_propose first.".to_string())
         }
