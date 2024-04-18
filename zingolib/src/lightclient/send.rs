@@ -12,9 +12,7 @@ use super::{LightClient, LightWalletSendProgress};
 use crate::wallet::Pool;
 
 #[cfg(feature = "zip317")]
-use {
-    zcash_primitives::transaction::{TxId},
-};
+use zcash_primitives::transaction::TxId;
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -85,7 +83,6 @@ impl LightClient {
         &self,
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<crate::data::proposal::ShieldProposal, String> {
-        
         todo!()
     }
 
