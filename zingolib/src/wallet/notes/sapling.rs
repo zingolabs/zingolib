@@ -1,4 +1,3 @@
-#![allow(missing_docs)]
 //! TODO: Add Mod Description Here!
 use derive_builder::Builder;
 use incrementalmerkletree::Position;
@@ -13,6 +12,7 @@ use super::{
 
 /// TODO: Add Doc Comment Here!
 #[derive(Builder)]
+#[allow(missing_docs)]
 pub struct SaplingNote {
     #[builder(default = "sapling_crypto::Diversifier([0; 11])")]
     /// TODO: Add Doc Comment Here!
