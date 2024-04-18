@@ -1,4 +1,5 @@
 //! TODO: Add Mod Description Here!
+use derive_builder::Builder;
 use incrementalmerkletree::Position;
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
@@ -8,20 +9,26 @@ use super::{
 };
 
 /// TODO: Add Doc Comment Here!
+#[derive(Builder)]
 pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
+    #[builder(default = "sapling_crypto::Diversifier([0; 11])")]
     pub diversifier: sapling_crypto::Diversifier,
     /// TODO: Add Doc Comment Here!
+    #[builder(default = "crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build()")]
     pub note: sapling_crypto::Note,
 
     // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
+    #[builder(default = "Some(Position::from(0))")]
     pub(crate) witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
+    #[builder(default = "Some(0)")]
     pub(crate) output_index: Option<u32>,
 
     /// TODO: Add Doc Comment Here!
+    #[builder(default = "Some(sapling_crypto::Nullifier::from_bytes([0; 32]))")]
     pub nullifier: Option<sapling_crypto::Nullifier>,
 
     /// TODO: Add Doc Comment Here!
@@ -35,9 +42,11 @@ pub struct SaplingNote {
     pub memo: Option<Memo>,
 
     /// TODO: Add Doc Comment Here!
+    #[builder(default = "false")]
     pub is_change: bool,
 
     /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date) Todo should this data point really be here?
+    #[builder(default = "true")]
     pub have_spending_key: bool,
 }
 
