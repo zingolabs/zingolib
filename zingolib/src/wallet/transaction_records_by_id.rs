@@ -1,6 +1,5 @@
 //! TODO: Add Mod Discription Here!
 
-use crate::wallet::notes::interface::NoteInterface;
 use std::collections::HashMap;
 
 use orchard::note_encryption::OrchardDomain;
@@ -20,7 +19,11 @@ use zip32::AccountId;
 
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
-    wallet::{data::TransactionRecord, notes::NoteRecordIdentifier, traits::DomainWalletExt},
+    wallet::{
+        data::TransactionRecord,
+        notes::{NoteInterface as _, NoteRecordIdentifier},
+        traits::{DomainWalletExt, Recipient},
+    },
 };
 
 #[derive(Debug)]
@@ -243,11 +246,6 @@ impl InputSource for TransactionRecordsById {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn get_unspent_transparent_output() {}
-}
 /// Methods to modify the map.
 impl TransactionRecordsById {
     /// Adds a TransactionRecord to the hashmap, using its TxId as a key.
@@ -322,7 +320,7 @@ impl TransactionRecordsById {
         &mut self,
         invalidated_txids: &[TxId],
     ) where
-        <D as Domain>::Recipient: crate::wallet::traits::Recipient,
+        <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
         self.values_mut().for_each(|transaction_metadata| {
