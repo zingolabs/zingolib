@@ -39,7 +39,7 @@ pub trait NoteInterface: Sized {
     }
 }
 
-///   ShieldedNotes are either part of a Sapling or Orchard Pool
+/// ShieldedNotes are either part of a Sapling or Orchard Pool
 pub trait ShieldedNoteInterface: NoteInterface + Sized {
     /// TODO: Add Doc Comment Here!
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;

@@ -21,7 +21,7 @@ pub struct SaplingNote {
         default = "crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build().unwrap().to_lrz()"
     )]
     /// TODO: Add Doc Comment Here!
-    pub note: sapling_crypto::Note,
+    pub sapling_crypto_note: sapling_crypto::Note,
 
     #[builder(default = "Some(Position::from(0))")]
     // The position of this note's value commitment in the global commitment tree
@@ -37,13 +37,16 @@ pub struct SaplingNote {
     pub nullifier: Option<sapling_crypto::Nullifier>,
 
     /// TODO: Add Doc Comment Here!
+    #[builder(default = "None")]
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
 
     /// If this note was spent in a send, but has not yet been confirmed.
     /// Contains the transaction id and height at which it was broadcast
+    #[builder(default = "None")]
     pub unconfirmed_spent: Option<(TxId, u32)>,
 
     /// TODO: Add Doc Comment Here!
+    #[builder(default = "None")]
     pub memo: Option<Memo>,
 
     #[builder(default = "false")]
@@ -60,13 +63,13 @@ impl std::fmt::Debug for SaplingNote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("diversifier", &self.diversifier)
-            .field("note", &self.note)
+            .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
             .field("memo", &self.memo)
             .field("diversifier", &self.diversifier)
-            .field("note", &self.note)
+            .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
@@ -110,7 +113,7 @@ impl ShieldedNoteInterface for SaplingNote {
 
     fn from_parts(
         diversifier: sapling_crypto::Diversifier,
-        note: sapling_crypto::Note,
+        sapling_crypto_note: sapling_crypto::Note,
         witnessed_position: Option<Position>,
         nullifier: Option<sapling_crypto::Nullifier>,
         spent: Option<(TxId, u32)>,
@@ -122,7 +125,7 @@ impl ShieldedNoteInterface for SaplingNote {
     ) -> Self {
         Self {
             diversifier,
-            note,
+            sapling_crypto_note,
             witnessed_position,
             nullifier,
             spent,
@@ -159,7 +162,7 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 
     fn note(&self) -> &Self::Note {
-        &self.note
+        &self.sapling_crypto_note
     }
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
