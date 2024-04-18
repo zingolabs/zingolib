@@ -73,12 +73,10 @@ pub fn random_zaddr() -> (
 // Sapling Note Mocker
 mod sapling_crypto_note {
 
+    use derive_builder::Builder;
     use sapling_crypto::value::NoteValue;
-    use sapling_crypto::Note;
     use sapling_crypto::PaymentAddress;
     use sapling_crypto::Rseed;
-
-    use super::default_zaddr;
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
     /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::notes::SaplingNote`]. The latter wraps the former with some other attributes.
@@ -110,8 +108,8 @@ mod sapling_crypto_note {
         }
 
         /// Build the note.
-        pub fn build(self) -> Note {
-            Note::from_parts(
+        pub fn build(self) -> sapling_crypto::Note {
+            sapling_crypto::Note::from_parts(
                 self.recipient.unwrap(),
                 self.value.unwrap(),
                 self.rseed.unwrap(),
