@@ -109,11 +109,7 @@ mod sapling_crypto_note {
 
         /// Build the note.
         pub fn to_lrz(self) -> sapling_crypto::Note {
-            sapling_crypto::Note::from_parts(
-                self.recipient.unwrap(),
-                self.value.unwrap(),
-                self.rseed.unwrap(),
-            )
+            sapling_crypto::Note::from_parts(self.recipient, self.value, self.rseed)
         }
     }
     impl Default for SaplingCryptoNoteBuilder {

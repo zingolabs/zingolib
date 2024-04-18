@@ -17,7 +17,9 @@ pub struct SaplingNote {
     #[builder(default = "sapling_crypto::Diversifier([0; 11])")]
     pub diversifier: sapling_crypto::Diversifier,
     /// TODO: Add Doc Comment Here!
-    #[builder(default = "crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build()")]
+    #[builder(
+        default = "crate::test_framework::mocks::LRZSaplingNoteBuilder::default().build().unwrap().to_lrz()"
+    )]
     pub note: sapling_crypto::Note,
 
     // The position of this note's value commitment in the global commitment tree
