@@ -23,5 +23,6 @@ pub(crate) enum ZingoProposal {
     Transfer(TransferProposal),
     /// For now this is constrained by lrz zcash_client_backend transaction construction
     /// to send to the proposing capability's receiver for its fanciest shielded pool
+    #[allow(dead_code)] // TOdo construct it
     Shield(ShieldProposal),
 }
