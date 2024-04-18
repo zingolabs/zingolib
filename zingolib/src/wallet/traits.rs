@@ -487,24 +487,6 @@ where
     type Bundle: Bundle<Self>;
 
     /// TODO: Add Doc Comment Here!
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> <Self::WalletNote as ShieldedNoteInterface>::Nullifier;
-    /// TODO: Add Doc Comment Here!
-    fn get_shardtree(
-        trees: &WitnessTrees,
-    ) -> &MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>;
-    /// TODO: Add Doc Comment Here!
-    fn get_shardtree_mut(
-        trees: &mut WitnessTrees,
-    ) -> &mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>;
-    /// TODO: Add Doc Comment Here!
-    fn get_tree(tree_state: &TreeState) -> &String;
-    /// The [zcash_protocol::ShieldedProtocol] this domain represents
-    fn protocol() -> ShieldedProtocol;
-    /// TODO: Add Doc Comment Here!
     fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
         Self::to_notes_vec(transaction_md)
             .iter()
@@ -512,10 +494,7 @@ where
             .map(|nd| nd.value())
             .sum()
     }
-    /// TODO: Add Doc Comment Here!
-    fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
-    /// TODO: Add Doc Comment Here!
-    fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
+
     /// TODO: Add Doc Comment Here!
     fn transaction_metadata_set_to_shardtree(
         txmds: &TxMapAndMaybeTrees,
@@ -533,6 +512,35 @@ where
             .witness_trees_mut()
             .map(|trees| Self::get_shardtree_mut(trees))
     }
+
+    /// TODO: Add Doc Comment Here!
+    fn get_shardtree(
+        trees: &WitnessTrees,
+    ) -> &MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>;
+
+    /// TODO: Add Doc Comment Here!
+    fn get_shardtree_mut(
+        trees: &mut WitnessTrees,
+    ) -> &mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>;
+
+    /// TODO: Add Doc Comment Here!
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> <Self::WalletNote as ShieldedNoteInterface>::Nullifier;
+
+    /// TODO: Add Doc Comment Here!
+    fn get_tree(tree_state: &TreeState) -> &String;
+
+    /// The [zcash_protocol::ShieldedProtocol] this domain represents
+    fn protocol() -> ShieldedProtocol;
+
+    /// TODO: Add Doc Comment Here!
+    fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
+
+    /// TODO: Add Doc Comment Here!
+    fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
 
     /// TODO: Add Doc Comment Here!
     fn ua_from_contained_receiver<'a>(
@@ -563,13 +571,6 @@ impl DomainWalletExt for SaplingDomain {
 
     type Bundle = sapling_crypto::Bundle<sapling_crypto::bundle::Authorized, Amount>;
 
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> <<Self as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier {
-        note.nf(&fvk.fvk().vk.nk, position)
-    }
     fn get_shardtree(
         trees: &WitnessTrees,
     ) -> &ShardTree<
@@ -590,6 +591,14 @@ impl DomainWalletExt for SaplingDomain {
         &mut trees.witness_tree_sapling
     }
 
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> <<Self as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier {
+        note.nf(&fvk.fvk().vk.nk, position)
+    }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
     }
@@ -601,6 +610,7 @@ impl DomainWalletExt for SaplingDomain {
     fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
         &transaction_md.sapling_notes
     }
+
     fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
@@ -640,13 +650,6 @@ impl DomainWalletExt for OrchardDomain {
 
     type Bundle = orchard::bundle::Bundle<orchard::bundle::Authorized, Amount>;
 
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        _position: u64,
-    ) -> <<Self as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier {
-        note.nullifier(fvk)
-    }
     fn get_shardtree(
         trees: &WitnessTrees,
     ) -> &ShardTree<
@@ -667,6 +670,14 @@ impl DomainWalletExt for OrchardDomain {
         &mut trees.witness_tree_orchard
     }
 
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        _position: u64,
+    ) -> <<Self as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier {
+        note.nullifier(fvk)
+    }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
     }
@@ -678,6 +689,7 @@ impl DomainWalletExt for OrchardDomain {
     fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
         &transaction_md.orchard_notes
     }
+
     fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
