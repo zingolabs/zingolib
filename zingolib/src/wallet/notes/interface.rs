@@ -25,13 +25,13 @@ pub trait NoteInterface: Sized {
     /// TODO: Add Doc Comment Here!
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
 
+    /// TODO: Add Doc Comment Here!
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
         Self::pending_spent(self).is_some()
     }
-
-    /// TODO: Add Doc Comment Here!
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
     /// Returns false if the note is spendable.
     fn is_spent_or_pending_spent(&self) -> bool {
