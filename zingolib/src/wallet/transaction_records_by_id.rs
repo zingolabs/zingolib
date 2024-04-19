@@ -238,11 +238,55 @@ impl InputSource for TransactionRecordsById {
     }
     fn get_unspent_transparent_outputs(
         &self,
+        // I don't understand what this argument is for. Is the Trait's intent to only shield
+        // utxos from one address at a time? Is this needed?
         _address: &zcash_primitives::legacy::TransparentAddress,
-        _max_height: zcash_primitives::consensus::BlockHeight,
-        _exclude: &[zcash_primitives::transaction::components::OutPoint],
+        max_height: zcash_primitives::consensus::BlockHeight,
+        exclude: &[zcash_primitives::transaction::components::OutPoint],
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        todo!()
+        self.values()
+            .filter_map(|transaction_record| {
+                transaction_record
+                    .status
+                    .get_confirmed_height()
+                    .map(|height| (transaction_record, height))
+                    .filter(|(_, height)| height <= &max_height)
+            })
+            .flat_map(|(transaction_record, confirmed_height)| {
+                transaction_record
+                    .transparent_notes
+                    .iter()
+                    .filter(|output| {
+                        exclude
+                            .iter()
+                            .any(|excluded| excluded == &output.to_outpoint())
+                    })
+                    .filter_map(move |output| {
+                        let value = match NonNegativeAmount::from_u64(output.value)
+                            .map_err(|e| ZingoLibError::Error(e.to_string()))
+                        {
+                            Ok(v) => v,
+                            Err(e) => return Some(Err(e)),
+                        };
+
+                        let script_pubkey = match Script::read(output.script.as_slice())
+                            .map_err(|e| ZingoLibError::Error(e.to_string()))
+                        {
+                            Ok(v) => v,
+                            Err(e) => return Some(Err(e)),
+                        };
+                        Ok(WalletTransparentOutput::from_parts(
+                            output.to_outpoint(),
+                            TxOut {
+                                value,
+                                script_pubkey,
+                            },
+                            confirmed_height,
+                        ))
+                        .transpose()
+                    })
+            })
+            .collect()
     }
 }
 
