@@ -1,46 +1,27 @@
 //! TODO: Add Mod Description Here!
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::witness::IncrementalWitness;
-
-
-
+use std::io::{self, Read, Write};
 
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
-
-
 use sapling_crypto::note_encryption::SaplingDomain;
-
-
-
-use std::{
-    io::{self, Read, Write},
-};
-
-
-
-
-
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
-
-use zcash_primitives::{consensus::BlockHeight};
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::TxId;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-
-use crate::wallet::notes::ShieldedNoteInterface;
-
-use crate::wallet::traits::ReadableWriteable;
-use zcash_primitives::transaction::TxId;
-
 use crate::error::ZingoLibError;
-use crate::wallet::data::{COMMITMENT_TREE_LEVELS};
+use crate::wallet::data::COMMITMENT_TREE_LEVELS;
 use crate::wallet::notes;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletCapability;
 use crate::wallet::{
     data::{OutgoingTxData, PoolNullifier},
-    notes::{NoteInterface},
+    notes::NoteInterface,
     traits,
     traits::DomainWalletExt,
 };

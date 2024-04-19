@@ -3,18 +3,10 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-
 use json::JsonValue;
 use log::{info, warn};
-use orchard::keys::SpendingKey as OrchardSpendingKey;
-
-
 use rand::rngs::OsRng;
 use rand::Rng;
-
-
-use sapling_crypto::zip32::DiversifiableFullViewingKey;
-
 use std::{
     cmp,
     io::{self, Error, ErrorKind, Read, Write},
@@ -22,25 +14,19 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
 
+use orchard::keys::SpendingKey as OrchardSpendingKey;
+use sapling_crypto::zip32::DiversifiableFullViewingKey;
 use zcash_client_backend::proto::service::TreeState;
-use zcash_encoding::{Optional};
-
-
-use zcash_primitives::{memo::Memo};
-
+use zcash_encoding::Optional;
+use zcash_primitives::memo::Memo;
+use zcash_primitives::zip339::Mnemonic;
 
 use zingoconfig::ZingoConfig;
 
-
-
-use crate::wallet::traits::ReadableWriteable;
-
-use self::data::{WitnessTrees};
+use self::data::WitnessTrees;
 use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
-
 use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
