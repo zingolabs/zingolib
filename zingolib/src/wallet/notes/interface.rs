@@ -1,6 +1,6 @@
 //! TODO: Add Mod Description Here!
 use incrementalmerkletree::{Hashable, Position};
-use zcash_client_backend::PoolType;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 
 use super::{
@@ -10,7 +10,7 @@ use super::{
         traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
         Pool,
     },
-    query::NoteSpendStatusQuery,
+    query::{NotePoolQuery, NoteSpendStatusQuery},
 };
 
 /// TODO: Add Doc Comment Here!
@@ -50,6 +50,15 @@ pub trait NoteInterface: Sized {
         (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
             || (*query.pending_spent() && self.is_pending_spent())
             || (*query.spent() && self.is_spent())
+    }
+
+    /// Returns true if the note matches the spend status query
+    fn pool_query(&self, query: NotePoolQuery) -> bool {
+        (*query.transparent() && self.pool_type() == PoolType::Transparent)
+            || (*query.sapling()
+                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Sapling))
+            || (*query.orchard()
+                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Orchard))
     }
 }
 
