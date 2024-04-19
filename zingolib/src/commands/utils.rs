@@ -80,6 +80,17 @@ pub(super) fn parse_send_args(
     Ok(send_args)
 }
 
+// Parse the send arguments for `do_propose` when sending all funds from shielded pools.
+// The send arguments have two possible formats:
+// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
+// - 2 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
+pub(super) fn parse_send_all_args(
+    args: &[&str],
+) -> Result<Vec<(String, Option<MemoBytes>)>, CommandError> {
+    if args.len() == 1 {}
+    todo!()
+}
+
 // Checks send inputs do not contain memo's to transparent addresses.
 pub(super) fn check_memo_compatibility(
     send_inputs: &[(String, u64, Option<MemoBytes>)],
