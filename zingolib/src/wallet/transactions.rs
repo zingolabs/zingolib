@@ -279,14 +279,28 @@ impl WalletRead for TxMapAndMaybeTrees {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(test)]
+    use std::num::NonZeroU32;
+
+    use zcash_client_backend::data_api::WalletRead;
+    use zcash_primitives::consensus::BlockHeight;
+
+    #[test]
     fn test_get_target_and_anchor_heights() {
         use super::TxMapAndMaybeTrees;
 
-        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+        let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
         transaction_records_and_maybe_trees
             .witness_trees
+            .as_mut()
             .unwrap()
-            .insert();
+            .add_checkpoint(8421.into());
+
+        assert_eq!(
+            transaction_records_and_maybe_trees
+                .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
+                .unwrap()
+                .unwrap(),
+            (BlockHeight::from_u32(8422), BlockHeight::from_u32(8411))
+        );
     }
 }
