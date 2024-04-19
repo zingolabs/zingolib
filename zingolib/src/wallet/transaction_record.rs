@@ -2,35 +2,32 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::witness::IncrementalWitness;
 
-use json::JsonValue;
-use log::{info, warn};
-use orchard::keys::SpendingKey as OrchardSpendingKey;
+
+
+
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
-use rand::rngs::OsRng;
-use rand::Rng;
+
+
 use sapling_crypto::note_encryption::SaplingDomain;
 
-use sapling_crypto::zip32::DiversifiableFullViewingKey;
+
 
 use std::{
-    cmp,
-    io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, Arc},
-    time::SystemTime,
+    io::{self, Read, Write},
 };
-use tokio::sync::RwLock;
 
-use zcash_primitives::zip339::Mnemonic;
 
-use zcash_client_backend::proto::service::TreeState;
+
+
+
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
+use zcash_primitives::{consensus::BlockHeight};
 
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
+
 
 use crate::wallet::notes::ShieldedNoteInterface;
 
@@ -38,12 +35,12 @@ use crate::wallet::traits::ReadableWriteable;
 use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
-use crate::wallet::data::{WitnessTrees, COMMITMENT_TREE_LEVELS};
+use crate::wallet::data::{COMMITMENT_TREE_LEVELS};
 use crate::wallet::notes;
 use crate::wallet::WalletCapability;
 use crate::wallet::{
     data::{OutgoingTxData, PoolNullifier},
-    notes::{query::NoteQuery, NoteInterface},
+    notes::{NoteInterface},
     traits,
     traits::DomainWalletExt,
 };

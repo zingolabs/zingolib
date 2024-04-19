@@ -7,11 +7,11 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use json::JsonValue;
 use log::{info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
-use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
+
+
 use rand::rngs::OsRng;
 use rand::Rng;
-use sapling_crypto::note_encryption::SaplingDomain;
+
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
 
@@ -25,19 +25,19 @@ use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
 use zcash_client_backend::proto::service::TreeState;
-use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::Domain;
+use zcash_encoding::{Optional};
 
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zcash_primitives::{memo::Memo};
+
+
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::notes::ShieldedNoteInterface;
+
 
 use crate::wallet::traits::ReadableWriteable;
 
-use self::data::{WitnessTrees, COMMITMENT_TREE_LEVELS};
+use self::data::{WitnessTrees};
 use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
 
