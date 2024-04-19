@@ -34,6 +34,10 @@ impl NoteInterface for TransparentNote {
         PoolType::Transparent
     }
 
+    fn value(&self) -> u64 {
+        self.value
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }

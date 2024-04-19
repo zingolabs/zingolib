@@ -18,6 +18,9 @@ pub trait NoteInterface: Sized {
     /// returns the zcash_client_backend PoolType enum (one of 3)
     fn pool_type(&self) -> PoolType;
 
+    /// number of Zatoshis unlocked by the note
+    fn value(&self) -> u64;
+
     /// TODO: Add Doc Comment Here!
     fn spent(&self) -> &Option<(TxId, u32)>;
 
@@ -142,11 +145,6 @@ pub trait ShieldedNoteInterface: NoteInterface + Sized {
     /// TODO: Add Doc Comment Here!
     fn transaction_metadata_notes_mut(wallet_transaction: &mut TransactionRecord)
         -> &mut Vec<Self>;
-
-    ///Convenience function
-    fn value(&self) -> u64 {
-        Self::value_from_note(self.note())
-    }
 
     /// TODO: Add Doc Comment Here!
     fn value_from_note(note: &Self::Note) -> u64;

@@ -4,6 +4,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::error::ZingoLibError;
 use crate::wallet::notes;
+use crate::wallet::notes::interface::NoteInterface;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
