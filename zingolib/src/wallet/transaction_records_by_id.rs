@@ -294,7 +294,7 @@ impl InputSource for TransactionRecordsById {
 impl TransactionRecordsById {
     /// Adds a TransactionRecord to the hashmap, using its TxId as a key.
     pub fn insert_transaction_record(&mut self, transaction_record: TransactionRecord) {
-        self.insert(transaction_record.txid, transaction_record);
+        self.insert(transaction_record.transaction_id, transaction_record);
     }
     /// Invalidates all transactions from a given height including the block with block height `reorg_height`
     ///
@@ -312,7 +312,7 @@ impl TransactionRecordsById {
                         .is_broadcast_after_or_at(&reorg_height)
                 // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
                 {
-                    Some(transaction_metadata.txid)
+                    Some(transaction_metadata.transaction_id)
                 } else {
                     None
                 }

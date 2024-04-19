@@ -94,7 +94,7 @@ impl TxMapAndMaybeTrees {
                             (
                                 unspent_nullifier,
                                 unspent_note_data.value(),
-                                transaction_metadata.txid,
+                                transaction_metadata.transaction_id,
                                 *unspent_note_data.output_index(),
                             )
                         })
@@ -115,12 +115,12 @@ impl TxMapAndMaybeTrees {
                 {
                     None => highest,
                     Some(w_height) => match highest {
-                        None => Some((w.txid, w_height)),
+                        None => Some((w.transaction_id, w_height)),
                         Some(highest_tuple) => {
                             if highest_tuple.1 > w_height {
                                 highest
                             } else {
-                                Some((w.txid, w_height))
+                                Some((w.transaction_id, w_height))
                             }
                         }
                     },
