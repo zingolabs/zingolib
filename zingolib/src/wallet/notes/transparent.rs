@@ -3,6 +3,7 @@ use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 use super::NoteInterface;
@@ -29,6 +30,10 @@ pub struct TransparentNote {
 }
 
 impl NoteInterface for TransparentNote {
+    fn pool_type(&self) -> PoolType {
+        PoolType::Transparent
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }

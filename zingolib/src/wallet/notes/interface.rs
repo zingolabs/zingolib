@@ -1,16 +1,23 @@
 //! TODO: Add Mod Description Here!
 use incrementalmerkletree::{Hashable, Position};
+use zcash_client_backend::PoolType;
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 
-use super::super::{
-    data::TransactionRecord,
-    keys::unified::WalletCapability,
-    traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
-    Pool,
+use super::{
+    super::{
+        data::TransactionRecord,
+        keys::unified::WalletCapability,
+        traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
+        Pool,
+    },
+    query::NoteSpendStatusQuery,
 };
 
 /// TODO: Add Doc Comment Here!
 pub trait NoteInterface: Sized {
+    /// returns the zcash_client_backend PoolType enum (one of 3)
+    fn pool_type(&self) -> PoolType;
+
     /// TODO: Add Doc Comment Here!
     fn spent(&self) -> &Option<(TxId, u32)>;
 
@@ -36,6 +43,13 @@ pub trait NoteInterface: Sized {
     /// Returns false if the note is spendable.
     fn is_spent_or_pending_spent(&self) -> bool {
         self.is_spent() || self.is_pending_spent()
+    }
+
+    /// Returns true if the note matches the spend status query
+    fn spend_status_query(&self, query: NoteSpendStatusQuery) -> bool {
+        (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
+            || (*query.pending_spent() && self.is_pending_spent())
+            || (*query.spent() && self.is_spent())
     }
 }
 
