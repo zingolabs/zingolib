@@ -102,11 +102,9 @@ impl WalletRead for TxMapAndMaybeTrees {
                         Err(e) => match e {},
                     };
 
-                let target_height = highest_block_height.map(|height| height + 1);
-
-                Ok(target_height.map(|height| {
+                Ok(highest_block_height.map(|height| {
                     (
-                        height,
+                        height + 1,
                         BlockHeight::from_u32(std::cmp::max(
                             1,
                             u32::from(height).saturating_sub(u32::from(min_confirmations)),
