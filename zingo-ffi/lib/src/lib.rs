@@ -1,4 +1,4 @@
-uniffi::include_scaffolding!("rustlib");
+uniffi::include_scaffolding!("zingo");
 
 #[macro_use]
 extern crate lazy_static;

@@ -1,5 +1,5 @@
 [package]
-name = "rustlib"
+name = "zingo"
 version = "1.0.1"
 authors = ["Zingolabs <zingo@zingolabs.com>"]
 edition = "2021"
@@ -22,7 +22,7 @@ tokio = "1.32.0"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
-name = "rustlib"
+name = "zingo"
 
 [[bin]]
 # This can be whatever name makes sense for your project, 
