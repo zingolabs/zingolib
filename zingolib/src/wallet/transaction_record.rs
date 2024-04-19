@@ -1,4 +1,6 @@
-//! TODO: Add Mod Description Here!
+//! An (incomplete) representation of what the Zingo instance "knows" about a transaction
+//! conspicuously absent is the set of transparent inputs to the transaction.
+//! by its`nature this evolves through, different states of completeness.
 use incrementalmerkletree::witness::IncrementalWitness;
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
