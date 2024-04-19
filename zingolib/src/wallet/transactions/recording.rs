@@ -52,7 +52,7 @@ impl TxMapAndMaybeTrees {
             .filter(|(_, transaction_metadata)| {
                 transaction_metadata.status.is_broadcast_before(&cutoff)
             }) // this transaction was submitted to the mempool before the cutoff and has not been confirmed. we deduce that it has expired.
-            .map(|(_, transaction_metadata)| transaction_metadata.txid)
+            .map(|(_, transaction_metadata)| transaction_metadata.transaction_id)
             .collect::<Vec<_>>();
 
         txids_to_remove

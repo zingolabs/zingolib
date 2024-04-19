@@ -22,7 +22,7 @@ pub struct TransactionRecord {
 
     /// Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
     /// WalletTx in LightWallet::txs)
-    pub txid: TxId,
+    pub transaction_id: TxId,
 
     /// List of all nullifiers spent by this wallet in this Tx.
     pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
@@ -62,7 +62,7 @@ impl TransactionRecord {
         TransactionRecord {
             status,
             datetime,
-            txid: *transaction_id,
+            transaction_id: *transaction_id,
             spent_sapling_nullifiers: vec![],
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
@@ -106,7 +106,7 @@ impl TransactionRecord {
         } else {
             ZingoLibError::MetadataUnderflow(format!(
                 "for txid {} with status {}: spent {}, outgoing {}, returned change {} \n {:?}",
-                self.txid,
+                self.transaction_id,
                 self.status,
                 self.total_value_spent(),
                 self.value_outgoing(),
@@ -290,7 +290,7 @@ impl TransactionRecord {
         Ok(Self {
             status,
             datetime,
-            txid: transaction_id,
+            transaction_id,
             sapling_notes,
             orchard_notes,
             transparent_notes: utxos,
@@ -320,7 +320,7 @@ impl TransactionRecord {
 
         writer.write_u64::<LittleEndian>(self.datetime)?;
 
-        writer.write_all(self.txid.as_ref())?;
+        writer.write_all(self.transaction_id.as_ref())?;
 
         Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
