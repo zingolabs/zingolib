@@ -10,7 +10,7 @@ use crate::wallet::notes;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
-    notes::{NoteInterface as _, NoteRecordIdentifier},
+    notes::NoteRecordIdentifier,
     traits::DomainWalletExt,
     *,
 };
@@ -130,7 +130,7 @@ impl TransactionRecord {
     ) -> Vec<(sapling_crypto::Note, NoteRecordIdentifier)> {
         let mut value_ref_pairs = Vec::new();
         SaplingDomain::to_notes_vec(self).iter().for_each(|note| {
-            if !note.is_spent_or_pending_spent() {
+            if !notes::NoteInterface::is_spent_or_pending_spent(note) {
                 if let Some(index) = note.output_index {
                     let note_record_reference = NoteRecordIdentifier {
                         txid: self.transaction_id,
@@ -151,7 +151,7 @@ impl TransactionRecord {
     ) -> Vec<(orchard::Note, NoteRecordIdentifier)> {
         let mut value_ref_pairs = Vec::new();
         OrchardDomain::to_notes_vec(self).iter().for_each(|note| {
-            if !note.is_spent_or_pending_spent() {
+            if !notes::NoteInterface::is_spent_or_pending_spent(note) {
                 if let Some(index) = note.output_index {
                     let note_record_reference = NoteRecordIdentifier {
                         txid: self.transaction_id,
