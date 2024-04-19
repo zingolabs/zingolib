@@ -1,9 +1,10 @@
 //! Contains structs for querying a database about notes.
 
+use derive_more::Constructor;
 use getset::Getters;
 
 /// Selects received notes by how they been spent
-#[derive(Getters)]
+#[derive(Getters, Constructor, Clone, Copy)]
 pub struct NoteSpendStatusQuery {
     /// will the query include unspent notes?
     #[getset(get = "pub")]
@@ -17,7 +18,7 @@ pub struct NoteSpendStatusQuery {
 }
 
 /// Selects received notes by pool
-#[derive(Getters)]
+#[derive(Getters, Constructor, Clone, Copy)]
 pub struct NotePoolQuery {
     /// will the query include transparent notes? (coins)
     #[getset(get = "pub")]
@@ -31,7 +32,7 @@ pub struct NotePoolQuery {
 }
 
 /// Selects received notes by any properties
-#[derive(Getters)]
+#[derive(Getters, Constructor, Clone, Copy)]
 pub struct NoteQuery {
     /// selects spend status properties
     #[getset(get = "pub")]
