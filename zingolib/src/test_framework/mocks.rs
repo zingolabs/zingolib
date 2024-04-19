@@ -11,7 +11,7 @@ macro_rules! build_method {
 }
 pub(crate) use build_method;
 pub use proposal::{ProposalBuilder, StepBuilder};
-pub use sapling_note::LRZSaplingNoteBuilder;
+pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
 fn zaddr_from_seed(
     seed: [u8; 32],
@@ -71,7 +71,7 @@ pub fn random_zaddr() -> (
 }
 
 // Sapling Note Mocker
-mod sapling_note {
+mod sapling_crypto_note {
 
     use sapling_crypto::value::NoteValue;
     use sapling_crypto::Note;
@@ -82,16 +82,16 @@ mod sapling_note {
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
     /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::notes::SaplingNote`]. The latter wraps the former with some other attributes.
-    pub struct LRZSaplingNoteBuilder {
+    pub struct SaplingCryptoNoteBuilder {
         recipient: Option<PaymentAddress>,
         value: Option<NoteValue>,
         rseed: Option<Rseed>,
     }
 
-    impl LRZSaplingNoteBuilder {
+    impl SaplingCryptoNoteBuilder {
         /// Instantiate an empty builder.
         pub fn new() -> Self {
-            LRZSaplingNoteBuilder {
+            SaplingCryptoNoteBuilder {
                 recipient: None,
                 value: None,
                 rseed: None,
@@ -118,7 +118,7 @@ mod sapling_note {
             )
         }
     }
-    impl Default for LRZSaplingNoteBuilder {
+    impl Default for SaplingCryptoNoteBuilder {
         fn default() -> Self {
             let (_, _, address) = default_zaddr();
             Self::new()
