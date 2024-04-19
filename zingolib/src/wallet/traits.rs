@@ -607,8 +607,8 @@ impl DomainWalletExt for SaplingDomain {
         ShieldedProtocol::Sapling
     }
 
-    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
-        &transaction_md.sapling_notes
+    fn to_notes_vec(transaction_record: &TransactionRecord) -> &Vec<Self::WalletNote> {
+        &transaction_record.sapling_notes
     }
 
     fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
