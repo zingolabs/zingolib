@@ -8,6 +8,7 @@ pub mod sapling;
 pub use sapling::SaplingNote;
 pub mod orchard;
 pub use orchard::OrchardNote;
+pub mod query;
 
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
