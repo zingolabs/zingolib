@@ -12,7 +12,7 @@ pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
     /// TODO: Add Doc Comment Here!
-    pub sapling_note_crypto: sapling_crypto::Note,
+    pub sapling_crypto_note: sapling_crypto::Note,
 
     // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
@@ -45,13 +45,13 @@ impl std::fmt::Debug for SaplingNote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("diversifier", &self.diversifier)
-            .field("note", &self.sapling_note_crypto)
+            .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
             .field("memo", &self.memo)
             .field("diversifier", &self.diversifier)
-            .field("note", &self.sapling_note_crypto)
+            .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
@@ -95,7 +95,7 @@ impl ShieldedNoteInterface for SaplingNote {
 
     fn from_parts(
         diversifier: sapling_crypto::Diversifier,
-        note: sapling_crypto::Note,
+        sapling_crypto_note: sapling_crypto::Note,
         witnessed_position: Option<Position>,
         nullifier: Option<sapling_crypto::Nullifier>,
         spent: Option<(TxId, u32)>,
@@ -107,7 +107,7 @@ impl ShieldedNoteInterface for SaplingNote {
     ) -> Self {
         Self {
             diversifier,
-            sapling_note_crypto: note,
+            sapling_crypto_note,
             witnessed_position,
             nullifier,
             spent,
@@ -144,7 +144,7 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 
     fn note(&self) -> &Self::Note {
-        &self.sapling_note_crypto
+        &self.sapling_crypto_note
     }
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
