@@ -138,7 +138,7 @@ impl WalletRead for TxMapAndMaybeTrees {
 
     fn get_tx_height(
         &self,
-        txid: zcash_primitives::transaction::TxId,
+        _txid: zcash_primitives::transaction::TxId,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         todo!()
         // Ok(self
@@ -271,7 +271,7 @@ impl WalletRead for TxMapAndMaybeTrees {
     }
     fn seed_relevance_to_derived_accounts(
         &self,
-        seed: &SecretVec<u8>,
+        _seed: &SecretVec<u8>,
     ) -> Result<zcash_client_backend::data_api::SeedRelevance<Self::AccountId>, Self::Error> {
         unimplemented!()
     }
