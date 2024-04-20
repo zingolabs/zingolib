@@ -1,4 +1,5 @@
-//! TODO: Add Mod Discription Here!
+//! The lookup for transaction id indexed data.  Currently this provides the
+//! transaction record.
 
 use std::collections::HashMap;
 
@@ -26,6 +27,7 @@ use crate::{
     },
 };
 
+/// A convenience wrapper, to impl behavior on.
 #[derive(Debug)]
 pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
 
