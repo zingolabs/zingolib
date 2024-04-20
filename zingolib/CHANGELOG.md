@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 - `lightclient::LightClient::do_list_transactions`
+- `wallet::keys::is_shielded_address`
 
 ### Added
 
@@ -17,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `export_save_buffer_runtime`
   - `get_wallet_file_location`
   - `get_wallet_dir_location`
-- `wallet::keys::is_transparent_address` fn
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils` mod
 - `lightclient::LightClient`:

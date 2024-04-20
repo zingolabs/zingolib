@@ -11,6 +11,7 @@ pub(crate) enum CommandError {
     IncompatibleMemo,
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
+    ConversionFailed(crate::utils::ConversionError),
 }
 
 impl fmt::Display for CommandError {
@@ -31,6 +32,7 @@ impl fmt::Display for CommandError {
             SingleArgNotJsonArray(e) => {
                 write!(f, "argument cannot be parsed to a json array: {}", e)
             }
+            ConversionFailed(e) => write!(f, "conversion failed. {}", e),
         }
     }
 }

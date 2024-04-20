@@ -827,7 +827,7 @@ impl Command for ProposeCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -835,12 +835,6 @@ impl Command for ProposeCommand {
                     e
                 )
             }
-        };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
-                e,
-            );
         };
         RT.block_on(async move {
             match lightclient
@@ -892,12 +886,6 @@ impl Command for SendCommand {
                     e
                 )
             }
-        };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
-                e,
-            );
         };
         RT.block_on(async move {
             match lightclient
@@ -954,12 +942,6 @@ impl Command for QuickSendCommand {
                     e
                 )
             }
-        };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
-                e,
-            );
         };
         RT.block_on(async move {
             if let Err(e) = lightclient
