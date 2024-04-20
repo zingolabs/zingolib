@@ -1,3 +1,6 @@
+//! A micro crate to provide a wrapper around the zcash_client_backend account trait.
+//! By constraining the wrapper to be independent of internal zingolib functionality
+//! we expose a shareable component, and refine the definition of zingolib.
 pub struct ZingoAccount(
     pub zip32::AccountId,
     pub zcash_keys::keys::UnifiedFullViewingKey,
