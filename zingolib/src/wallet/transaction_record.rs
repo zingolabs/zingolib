@@ -1,7 +1,6 @@
 //! An (incomplete) representation of what the Zingo instance "knows" about a transaction
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
-use crate::wallet::notes::interface::ShieldedNoteInterface as _;
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};

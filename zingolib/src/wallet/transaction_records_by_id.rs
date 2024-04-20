@@ -143,7 +143,7 @@ impl InputSource for TransactionRecordsById {
             if sources.contains(&ShieldedProtocol::Sapling) {
                 sapling_note_noteref_pairs.extend(
                     transaction_record
-                        .select_unspent_note_noteref_pairs_sapling()
+                        .select_unspent_note_noteref_pairs::<SaplingDomain>()
                         .into_iter()
                         .filter(|note_ref_pair| !exclude.contains(&note_ref_pair.1)),
                 );
