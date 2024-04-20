@@ -25,7 +25,7 @@ pub(crate) fn address_from_str(
 }
 
 pub(crate) fn zatoshis_from_u64(amount: u64) -> Result<NonNegativeAmount, ConversionError> {
-    NonNegativeAmount::from_u64(amount).map_err(|e| ConversionError::OutsideValidRange)
+    NonNegativeAmount::from_u64(amount).map_err(|_e| ConversionError::OutsideValidRange)
 }
 
 /// The error type for conversion errors.
@@ -45,7 +45,7 @@ impl std::error::Error for ConversionError {}
 
 impl fmt::Display for ConversionError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             ConversionError::DecodeHexFailed(e) => write!(f, "failed to decode hex. {}", e),
             ConversionError::InvalidStringLength => write!(f, "invalid string length"),
             ConversionError::InvalidAddress(address) => {

@@ -104,232 +104,237 @@ fn check_memo_compatibility(
     Ok(())
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{commands::error::CommandError, wallet};
+#[cfg(test)]
+mod tests {
+    use zingoconfig::{ChainType, RegtestNetwork};
 
-//     #[test]
-//     fn parse_send_args() {
-//         let address = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-//         let value_str = "100000";
-//         let value = 100_000;
-//         let memo_str = "test memo";
-//         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
+    use crate::{
+        commands::error::CommandError,
+        utils::{address_from_str, zatoshis_from_u64},
+        wallet::{self, utils::interpret_memo_string},
+    };
 
-//         // No memo
-//         let send_args = &[address, value_str];
-//         assert_eq!(
-//             super::parse_send_args(send_args).unwrap(),
-//             vec![(address.to_string(), value, None)]
-//         );
+    #[test]
+    fn parse_send_args() {
+        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let address = address_from_str(address_str, &chain).unwrap();
+        let value_str = "100000";
+        let value = zatoshis_from_u64(100_000).unwrap();
+        let memo_str = "test memo";
+        let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
-//         // Memo
-//         let send_args = &[address, value_str, memo_str];
-//         assert_eq!(
-//             super::parse_send_args(send_args).unwrap(),
-//             vec![(address.to_string(), value, Some(memo.clone()))]
-//         );
+        // No memo
+        let send_args = &[address_str, value_str];
+        assert_eq!(
+            super::parse_send_args(send_args, &chain).unwrap(),
+            vec![(address.clone(), value, None)]
+        );
 
-//         // Json
-//         let json = "[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\", \"amount\":50000}, \
-//             {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
-//             \"amount\":100000, \"memo\":\"test memo\"}]";
-//         assert_eq!(
-//             super::parse_send_args(&[json]).unwrap(),
-//             vec![
-//                 (
-//                     "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
-//                     50_000,
-//                     None
-//                 ),
-//                 (address.to_string(), value, Some(memo))
-//             ]
-//         );
-//         // Note the " " character after the 1.  The parser can handle by trimming, is that correct?
-//         let args = ["testaddress", "1 ", "whatever"];
-//         let result = super::parse_send_args(&args);
-//         match result {
-//             Ok(_) => (),
-//             _ => panic!(),
-//         };
-//     }
+        // Memo
+        let send_args = &[address_str, value_str, memo_str];
+        assert_eq!(
+            super::parse_send_args(send_args, &chain).unwrap(),
+            vec![(address.clone(), value, Some(memo.clone()))]
+        );
 
-//     mod fail_parse_send_args {
-//         mod json_array {
-//             use crate::commands::{error::CommandError, utils::parse_send_args};
+        // Json
+        let json = "[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\", \"amount\":50000}, \
+                    {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"amount\":100000, \"memo\":\"test memo\"}]";
+        assert_eq!(
+            super::parse_send_args(&[json], &chain).unwrap(),
+            vec![
+                (
+                    address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd", &chain).unwrap(),
+                    zatoshis_from_u64(50_000).unwrap(),
+                    None
+                ),
+                (address.clone(), value, Some(memo.clone()))
+            ]
+        );
 
-//             #[test]
-//             fn failed_json_parsing() {
-//                 let args = [r#"testaddress{{"#];
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::ArgsNotJson(e)) => match e {
-//                         json::Error::UnexpectedCharacter { ch, line, column } => {
-//                             assert_eq!(ch, 'e');
-//                             assert_eq!(line, 1);
-//                             assert_eq!(column, 2);
-//                         }
-//                         _ => panic!(),
-//                     },
-//                     _ => panic!(),
-//                 };
-//             }
-//             #[test]
-//             fn single_arg_not_an_array_unexpected_type() {
-//                 let args = ["1"];
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::SingleArgNotJsonArray(e)) => assert_eq!(e, "1".to_string()),
-//                     _ => panic!(),
-//                 };
-//             }
-//             #[test]
-//             fn no_address_missing_key() {
-//                 let args = ["[{\"amount\": 123, \"memo\": \"testmemo\"}]"];
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::MissingKey(e)) => assert_eq!(e, "address".to_string()),
-//                     _ => panic!(),
-//                 };
-//             }
-//             #[test]
-//             fn no_amount_missing_key() {
-//                 let args = ["[{\"address\": \"testaddress\", \"memo\": \"testmemo\"}]"];
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::MissingKey(e)) => assert_eq!(e, "amount".to_string()),
-//                     _ => panic!(),
-//                 };
-//             }
-//             #[test]
-//             fn non_string_address() {
-//                 let args = ["[{\"address\": 1, \"amount\": 123, \"memo\": \"testmemo\"}]"];
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::UnexpectedType(e)) => {
-//                         assert_eq!(e, "address not a Str!".to_string())
-//                     }
-//                     _ => panic!(),
-//                 };
-//             }
-//             #[test]
-//             fn non_u64_amount() {
-//                 let args =
-//                 ["[{\"address\": \"testaddress\", \"amount\": \"Oscar Pepper\", \"memo\": \"testmemo\"}]"];
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::NonJsonNumberForAmount(e)) => {
-//                         assert_eq!(
-//                             e,
-//                             "\"amount\": Oscar Pepper\nis not a json::number::Number".to_string()
-//                         )
-//                     }
-//                     _ => panic!(),
-//                 };
-//             }
-//             #[test]
-//             fn invalid_memo() {
-//                 let arg_contents =
-//                     "[{\"address\": \"testaddress\", \"amount\": 123, \"memo\": \"testmemo\"}]";
-//                 let long_513_byte_memo = &"a".repeat(513);
-//                 let long_memo_args =
-//                     arg_contents.replace("\"testmemo\"", &format!("\"{}\"", long_513_byte_memo));
-//                 let args = [long_memo_args.as_str()];
+        // Trim whitespace
+        let send_args = &[address_str, "1 ", memo_str];
+        assert_eq!(
+            super::parse_send_args(send_args, &chain).unwrap(),
+            vec![(address, zatoshis_from_u64(1).unwrap(), Some(memo.clone()))]
+        );
+    }
 
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::InvalidMemo(e)) => {
-//                         assert_eq!(
-//                             e,
-//                             format!(
-//                                 "Error creating output. Memo '\"{}\"' is too long",
-//                                 long_513_byte_memo
-//                             )
-//                         )
-//                     }
-//                     _ => panic!(),
-//                 };
-//             }
-//         }
-//         mod multi_string_args {
-//             use crate::commands::{error::CommandError, utils::parse_send_args};
-//             #[test]
-//             fn two_args_wrong_amount() {
-//                 let args = ["testaddress", "foo"];
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::ParseIntFromString(e)) => {
-//                         assert_eq!(
-//                             "invalid digit found in string".to_string(),
-//                             format!("{}", e)
-//                         )
-//                     }
-//                     _ => panic!(),
-//                 };
-//             }
-//             #[test]
-//             fn wrong_number_of_args() {
-//                 let args = ["testaddress", "123", "3", "4"];
-//                 let result = parse_send_args(&args);
-//                 assert!(matches!(result, Err(CommandError::InvalidArguments)));
-//             }
-//             #[test]
-//             fn invalid_memo() {
-//                 let long_513_byte_memo = &"a".repeat(513);
-//                 let args = ["testaddress", "123", long_513_byte_memo];
+    mod fail_parse_send_args {
+        use zingoconfig::{ChainType, RegtestNetwork};
 
-//                 let result = parse_send_args(&args);
-//                 match result {
-//                     Err(CommandError::InvalidMemo(e)) => {
-//                         assert_eq!(
-//                             e,
-//                             format!(
-//                                 "Error creating output. Memo '\"{}\"' is too long",
-//                                 long_513_byte_memo
-//                             )
-//                         )
-//                     }
-//                     _ => panic!(),
-//                 };
-//             }
-//         }
-//     }
+        use crate::commands::{error::CommandError, utils::parse_send_args};
+        mod json_array {
+            use super::*;
 
-//     #[test]
-//     fn check_memo_compatibility() {
-//         let value_str = "100000";
-//         let memo_str = "test memo";
+            #[test]
+            fn failed_json_parsing() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args = [r#"testaddress{{"#];
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::ArgsNotJson(e)) => match e {
+                        json::Error::UnexpectedCharacter { ch, line, column } => {
+                            assert_eq!(ch, 'e');
+                            assert_eq!(line, 1);
+                            assert_eq!(column, 2);
+                        }
+                        _ => panic!(),
+                    },
+                    _ => panic!(),
+                };
+            }
+            #[test]
+            fn single_arg_not_an_array_unexpected_type() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args = ["1"];
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::SingleArgNotJsonArray(e)) => assert_eq!(e, "1".to_string()),
+                    _ => panic!(),
+                };
+            }
+            #[test]
+            fn no_address_missing_key() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args = ["[{\"amount\": 123, \"memo\": \"testmemo\"}]"];
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::MissingKey(e)) => assert_eq!(e, "address".to_string()),
+                    _ => panic!(),
+                };
+            }
+            #[test]
+            fn no_amount_missing_key() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args = ["[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"memo\": \"testmemo\"}]"];
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::MissingKey(e)) => assert_eq!(e, "amount".to_string()),
+                    _ => panic!(),
+                };
+            }
+            #[test]
+            fn non_string_address() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args = ["[{\"address\": 1, \"amount\": 123, \"memo\": \"testmemo\"}]"];
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::UnexpectedType(e)) => {
+                        assert_eq!(e, "address not a Str!".to_string())
+                    }
+                    _ => panic!(),
+                };
+            }
+            #[test]
+            fn non_u64_amount() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args =
+                            ["[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": \"Oscar Pepper\", \"memo\": \"testmemo\"}]"];
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::NonJsonNumberForAmount(e)) => {
+                        assert_eq!(
+                            e,
+                            "\"amount\": Oscar Pepper\nis not a json::number::Number".to_string()
+                        )
+                    }
+                    _ => panic!(),
+                };
+            }
+            #[test]
+            fn invalid_memo() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let arg_contents =
+                    "[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": 123, \"memo\": \"testmemo\"}]";
+                let long_513_byte_memo = &"a".repeat(513);
+                let long_memo_args =
+                    arg_contents.replace("\"testmemo\"", &format!("\"{}\"", long_513_byte_memo));
+                let args = [long_memo_args.as_str()];
 
-//         // shielded address with memo
-//         let address = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-//         let send_inputs = super::parse_send_args(&[address, value_str, memo_str]).unwrap();
-//         super::check_memo_compatibility(
-//             &send_inputs,
-//             &zingoconfig::ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
-//         )
-//         .unwrap();
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::InvalidMemo(e)) => {
+                        assert_eq!(
+                            e,
+                            format!(
+                                "Error creating output. Memo '\"{}\"' is too long",
+                                long_513_byte_memo
+                            )
+                        )
+                    }
+                    _ => panic!(),
+                };
+            }
+        }
+        mod multi_string_args {
+            use super::*;
 
-//         // transparent address without memo
-//         let address = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
-//         let value_str = "100000";
-//         let send_inputs = super::parse_send_args(&[address, value_str]).unwrap();
-//         super::check_memo_compatibility(
-//             &send_inputs,
-//             &zingoconfig::ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
-//         )
-//         .unwrap();
+            #[test]
+            fn two_args_wrong_amount() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "foo"];
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::ParseIntFromString(e)) => {
+                        assert_eq!(
+                            "invalid digit found in string".to_string(),
+                            format!("{}", e)
+                        )
+                    }
+                    _ => panic!(),
+                };
+            }
+            #[test]
+            fn wrong_number_of_args() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", "3", "4"];
+                let result = parse_send_args(&args, &chain);
+                assert!(matches!(result, Err(CommandError::InvalidArguments)));
+            }
+            #[test]
+            fn invalid_memo() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let long_513_byte_memo = &"a".repeat(513);
+                let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", long_513_byte_memo];
 
-//         // transparent address with memo
-//         let address = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
-//         let value_str = "100000";
-//         let memo_str = "test memo";
-//         let send_inputs = super::parse_send_args(&[address, value_str, memo_str]).unwrap();
-//         match super::check_memo_compatibility(
-//             &send_inputs,
-//             &zingoconfig::ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
-//         ) {
-//             Err(CommandError::IncompatibleMemo) => (),
-//             _ => panic!(),
-//         };
-//     }
-// }
+                let result = parse_send_args(&args, &chain);
+                match result {
+                    Err(CommandError::InvalidMemo(e)) => {
+                        assert_eq!(
+                            e,
+                            format!(
+                                "Error creating output. Memo '\"{}\"' is too long",
+                                long_513_byte_memo
+                            )
+                        )
+                    }
+                    _ => panic!(),
+                };
+            }
+        }
+    }
+
+    #[test]
+    fn check_memo_compatibility() {
+        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let sapling_address = address_from_str("zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", &chain).unwrap();
+        let transparent_address =
+            address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd", &chain).unwrap();
+        let memo = interpret_memo_string("test memo".to_string()).unwrap();
+
+        // shielded address with memo
+        super::check_memo_compatibility(&sapling_address, &Some(memo.clone())).unwrap();
+
+        // transparent address without memo
+        super::check_memo_compatibility(&transparent_address, &None).unwrap();
+
+        // transparent address with memo
+        match super::check_memo_compatibility(&transparent_address, &Some(memo.clone())) {
+            Err(CommandError::IncompatibleMemo) => (),
+            _ => panic!(),
+        };
+    }
+}

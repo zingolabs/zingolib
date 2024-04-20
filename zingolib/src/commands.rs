@@ -836,24 +836,25 @@ impl Command for ProposeCommand {
                 )
             }
         };
-        RT.block_on(async move {
-            match lightclient
-                .do_propose_spend(
-                    send_inputs
-                        .iter()
-                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-                        .collect(),
-                )
-                .await {
-                Ok(proposal) => {
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
-                }
-                Err(e) => {
-                    object! { "error" => e }
-                }
-            }
-            .pretty(2)
-        })
+        // RT.block_on(async move {
+        //     match lightclient
+        //         .do_propose_spend(
+        //             send_inputs
+        //                 .iter()
+        //                 .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
+        //                 .collect(),
+        //         )
+        //         .await {
+        //         Ok(proposal) => {
+        //             object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+        //         }
+        //         Err(e) => {
+        //             object! { "error" => e }
+        //         }
+        //     }
+        //     .pretty(2)
+        // })
+        "".to_string()
     }
 }
 
@@ -878,7 +879,7 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -887,25 +888,26 @@ impl Command for SendCommand {
                 )
             }
         };
-        RT.block_on(async move {
-            match lightclient
-                .do_send(
-                    send_inputs
-                        .iter()
-                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-                        .collect(),
-                )
-                .await
-            {
-                Ok(transaction_id) => {
-                    object! { "txid" => transaction_id }
-                }
-                Err(e) => {
-                    object! { "error" => e }
-                }
-            }
-            .pretty(2)
-        })
+        // RT.block_on(async move {
+        //     match lightclient
+        //         .do_send(
+        //             send_inputs
+        //                 .iter()
+        //                 .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
+        //                 .collect(),
+        //         )
+        //         .await
+        //     {
+        //         Ok(transaction_id) => {
+        //             object! { "txid" => transaction_id }
+        //         }
+        //         Err(e) => {
+        //             object! { "error" => e }
+        //         }
+        //     }
+        //     .pretty(2)
+        // })
+        "".to_string()
     }
 }
 
@@ -943,29 +945,30 @@ impl Command for QuickSendCommand {
                 )
             }
         };
-        RT.block_on(async move {
-            if let Err(e) = lightclient
-                .do_propose_spend(
-                    send_inputs
-                        .iter()
-                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-                        .collect(),
-                )
-                .await {
-                return e;
-            };
-            match lightclient
-                .do_send_proposal().await
-            {
-                Ok(txids) => {
-                     object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-                }
-                Err(e) => {
-                    object! { "error" => e }
-                }
-            }
-            .pretty(2)
-        })
+        // RT.block_on(async move {
+        //     if let Err(e) = lightclient
+        //         .do_propose_spend(
+        //             send_inputs
+        //                 .iter()
+        //                 .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
+        //                 .collect(),
+        //         )
+        //         .await {
+        //         return e;
+        //     };
+        //     match lightclient
+        //         .do_send_proposal().await
+        //     {
+        //         Ok(txids) => {
+        //              object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+        //         }
+        //         Err(e) => {
+        //             object! { "error" => e }
+        //         }
+        //     }
+        //     .pretty(2)
+        // })
+        "".to_string()
     }
 }
 
