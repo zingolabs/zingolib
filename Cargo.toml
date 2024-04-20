@@ -48,6 +48,7 @@ tower = { version = "0.4" }
 hex = "0.4"
 tokio-rustls = "0.23"
 webpki-roots = "0.25"
+log = "0.4"
 
 [profile.release]
 debug = false

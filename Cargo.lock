@@ -4147,6 +4147,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-error"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "zingo-memo"
 version = "0.1.0"
 dependencies = [
@@ -4294,6 +4302,7 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
+ "zingo-error",
  "zingo-memo",
  "zingo-netutils",
  "zingo-status",
