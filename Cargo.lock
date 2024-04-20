@@ -4125,6 +4125,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-account"
+version = "0.1.0"
+dependencies = [
+ "zcash_client_backend",
+ "zcash_keys",
+ "zip32",
+]
+
+[[package]]
 name = "zingo-cli"
 version = "0.2.0"
 dependencies = [
@@ -4294,6 +4303,7 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
+ "zingo-account",
  "zingo-memo",
  "zingo-netutils",
  "zingo-status",
