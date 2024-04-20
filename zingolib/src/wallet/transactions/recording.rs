@@ -11,15 +11,13 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::MAX_REORG;
 
 use log::error;
+use zingo_error::{ZingoLibError, ZingoLibResult};
 
-use crate::{
-    error::{ZingoLibError, ZingoLibResult},
-    wallet::{
-        data::{OutgoingTxData, PoolNullifier, TransactionRecord},
-        notes::NoteInterface,
-        notes::ShieldedNoteInterface,
-        traits::{self, DomainWalletExt, Nullifier, Recipient},
-    },
+use crate::wallet::{
+    data::{OutgoingTxData, PoolNullifier, TransactionRecord},
+    notes::NoteInterface,
+    notes::ShieldedNoteInterface,
+    traits::{self, DomainWalletExt, Nullifier, Recipient},
 };
 
 use super::TxMapAndMaybeTrees;

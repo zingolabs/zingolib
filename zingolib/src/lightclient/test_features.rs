@@ -1,4 +1,4 @@
-use crate::error::ZingoLibError;
+use zingo_error::ZingoLibError;
 
 use super::*;
 

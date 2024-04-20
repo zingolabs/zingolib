@@ -3,7 +3,7 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use crate::error::ZingoLibResult;
+use zingo_error::ZingoLibResult;
 
 use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;

@@ -16,19 +16,17 @@ use zcash_primitives::{
 use zingoconfig::margin_fee;
 
 use super::{AccountBackupInfo, LightClient, PoolBalances, UserBalances};
-use crate::{
-    error::ZingoLibError,
-    wallet::{
-        data::{
-            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionRecord,
-        },
-        keys::address_from_pubkeyhash,
-        notes::NoteInterface,
-        notes::ShieldedNoteInterface,
-        LightWallet, Pool,
+use crate::wallet::{
+    data::{
+        finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+        TransactionRecord,
     },
+    keys::address_from_pubkeyhash,
+    notes::NoteInterface,
+    notes::ShieldedNoteInterface,
+    LightWallet, Pool,
 };
+use zingo_error::ZingoLibError;
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!

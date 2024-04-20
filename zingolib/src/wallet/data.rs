@@ -1,6 +1,5 @@
 //! TODO: Add Mod Description Here!
 use super::traits::{self, DomainWalletExt, ToBytes};
-use crate::error::{ZingoLibError, ZingoLibResult};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
@@ -25,6 +24,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::{memo::Memo, transaction::TxId};
+use zingo_error::{ZingoLibError, ZingoLibResult};
 use zingoconfig::MAX_REORG;
 
 /// TODO: Add Doc Comment Here!

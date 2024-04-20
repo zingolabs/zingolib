@@ -43,24 +43,22 @@ impl TransactionContext {
 /// thus, scan_full_tx is incomplete and skips some steps on the assumption that they will be covered elsewhere. Notably, add_note is not called inside scan_full_tx.
 /// (A viewkey wallet, on the other hand, doesnt need witness and could maybe get away with only calling scan_full_tx)
 pub mod decrypt_transaction {
-    use crate::{
-        error::{ZingoLibError, ZingoLibResult},
-        wallet::{
-            data::OutgoingTxData,
-            keys::{
-                address_from_pubkeyhash,
-                unified::{External, Fvk},
-            },
-            notes::ShieldedNoteInterface,
-            traits::{
-                self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
-                ShieldedOutputExt as _, Spend as _, ToBytes as _,
-            },
+    use crate::wallet::{
+        data::OutgoingTxData,
+        keys::{
+            address_from_pubkeyhash,
+            unified::{External, Fvk},
+        },
+        notes::ShieldedNoteInterface,
+        traits::{
+            self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
+            ShieldedOutputExt as _, Spend as _, ToBytes as _,
         },
     };
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
     use std::{collections::HashSet, convert::TryInto};
+    use zingo_error::{ZingoLibError, ZingoLibResult};
 
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::try_output_recovery_with_ovk;

@@ -1,9 +1,9 @@
-use crate::error::ZingoLibResult;
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
     data::PoolNullifier, transactions::TxMapAndMaybeTrees, utils::txid_from_slice,
 };
 use std::sync::Arc;
+use zingo_error::ZingoLibResult;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;

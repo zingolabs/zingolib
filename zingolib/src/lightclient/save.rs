@@ -10,7 +10,7 @@ use std::{
 use tokio::runtime::Runtime;
 
 use super::LightClient;
-use crate::error::{ZingoLibError, ZingoLibResult};
+use zingo_error::{ZingoLibError, ZingoLibResult};
 
 impl LightClient {
     //        SAVE METHODS

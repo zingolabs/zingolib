@@ -1,4 +1,4 @@
-//! TODO: Add Mod Description Here!
+//! Errors for the ZingoLib workspace
 
 use std::error::Error;
 use std::fmt;
