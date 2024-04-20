@@ -55,28 +55,6 @@ impl TransactionRecordsById {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
-    pub fn get_received_note_from_identifier<D: DomainWalletExt>(
-        &self,
-        note_record_reference: NoteRecordIdentifier,
-    ) -> Option<
-        zcash_client_backend::wallet::ReceivedNote<
-            NoteRecordIdentifier,
-            <D as zcash_note_encryption::Domain>::Note,
-        >,
-    >
-    where
-        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
-        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
-    {
-        let transaction = self.get(&note_record_reference.txid);
-        transaction.and_then(|transaction_record| {
-            if note_record_reference.pool == PoolType::Shielded(D::protocol()) {
-                transaction_record.get_received_note::<D>(note_record_reference.index)
-            } else {
-                None
-            }
-        })
-    }
 }
 
 impl InputSource for TransactionRecordsById {
@@ -292,8 +270,30 @@ impl InputSource for TransactionRecordsById {
     }
 }
 
-/// Methods to modify the map.
+/// Methods to query and modify the map.
 impl TransactionRecordsById {
+    pub fn get_received_note_from_identifier<D: DomainWalletExt>(
+        &self,
+        note_record_reference: NoteRecordIdentifier,
+    ) -> Option<
+        zcash_client_backend::wallet::ReceivedNote<
+            NoteRecordIdentifier,
+            <D as zcash_note_encryption::Domain>::Note,
+        >,
+    >
+    where
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
+    {
+        let transaction = self.get(&note_record_reference.txid);
+        transaction.and_then(|transaction_record| {
+            if note_record_reference.pool == PoolType::Shielded(D::protocol()) {
+                transaction_record.get_received_note::<D>(note_record_reference.index)
+            } else {
+                None
+            }
+        })
+    }
     /// Adds a TransactionRecord to the hashmap, using its TxId as a key.
     pub fn insert_transaction_record(&mut self, transaction_record: TransactionRecord) {
         self.insert(transaction_record.transaction_id, transaction_record);
