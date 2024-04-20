@@ -12,7 +12,6 @@ use super::{
     data::{OutgoingTxData, PoolNullifier},
     notes::NoteRecordIdentifier,
     traits::DomainWalletExt,
-    *,
 };
 
 ///  Everything (SOMETHING) about a transaction
