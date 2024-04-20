@@ -3,7 +3,7 @@ use crate::wallet::{
     data::PoolNullifier, transactions::TxMapAndMaybeTrees, utils::txid_from_slice,
 };
 use std::sync::Arc;
-use zingo_error::ZingoLibResult;
+use zingo_error::ZingoResult;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -89,7 +89,7 @@ impl UpdateNotes {
 
         let wallet_transactions = self.transaction_metadata_set.clone();
         let h1 = tokio::spawn(async move {
-            let mut workers: FuturesUnordered<JoinHandle<ZingoLibResult<()>>> =
+            let mut workers: FuturesUnordered<JoinHandle<ZingoResult<()>>> =
                 FuturesUnordered::new();
 
             // Receive Txns that are sent to the wallet. We need to update the notes for this.

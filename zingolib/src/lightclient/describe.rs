@@ -26,7 +26,7 @@ use crate::wallet::{
     notes::ShieldedNoteInterface,
     LightWallet, Pool,
 };
-use zingo_error::ZingoLibError;
+use zingo_error::ZingoError;
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!
@@ -78,7 +78,7 @@ impl LightClient {
     pub async fn get_user_balances(
         &self,
         auto_shielding: bool,
-    ) -> Result<UserBalances, ZingoLibError> {
+    ) -> Result<UserBalances, ZingoError> {
         let mut balances = UserBalances {
             spendable: 0,
             immature_change: 0,

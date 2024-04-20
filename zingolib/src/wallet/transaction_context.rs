@@ -58,7 +58,7 @@ pub mod decrypt_transaction {
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
     use std::{collections::HashSet, convert::TryInto};
-    use zingo_error::{ZingoLibError, ZingoLibResult};
+    use zingo_error::{ZingoError, ZingoResult};
 
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::try_output_recovery_with_ovk;
@@ -502,8 +502,8 @@ pub mod decrypt_transaction {
                                 .push((parsed_zingo_memo, transaction.txid()));
                         }
                         Err(e) => {
-                            let _memo_error: ZingoLibResult<()> =
-                                ZingoLibError::CouldNotDecodeMemo(e).handle();
+                            let _memo_error: ZingoResult<()> =
+                                ZingoError::CouldNotDecodeMemo(e).handle();
                         }
                     }
                 }

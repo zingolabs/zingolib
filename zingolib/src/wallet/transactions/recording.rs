@@ -11,7 +11,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::MAX_REORG;
 
 use log::error;
-use zingo_error::{ZingoLibError, ZingoLibResult};
+use zingo_error::{ZingoError, ZingoResult};
 
 use crate::wallet::{
     data::{OutgoingTxData, PoolNullifier, TransactionRecord},
@@ -110,7 +110,7 @@ impl TxMapAndMaybeTrees {
         spent_nullifier: PoolNullifier,
         source_txid: TxId,
         output_index: Option<u32>,
-    ) -> ZingoLibResult<()> {
+    ) -> ZingoResult<()> {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => self
                 .found_spent_nullifier_internal::<OrchardDomain>(
@@ -142,7 +142,7 @@ impl TxMapAndMaybeTrees {
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         source_txid: TxId,
         output_index: Option<u32>,
-    ) -> ZingoLibResult<()>
+    ) -> ZingoResult<()>
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -183,7 +183,7 @@ impl TxMapAndMaybeTrees {
         status: ConfirmationStatus,
         source_txid: TxId,
         output_index: Option<u32>,
-    ) -> ZingoLibResult<u64>
+    ) -> ZingoResult<u64>
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -203,10 +203,10 @@ impl TxMapAndMaybeTrees {
 
                     confirmed_spent_note.value()
                 } else {
-                    ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
+                    ZingoError::NoSuchNullifierInTx(spending_txid).handle()?
                 }
             } else {
-                ZingoLibError::NoSuchTxId(spending_txid).handle()?
+                ZingoError::NoSuchTxId(spending_txid).handle()?
             }
         } else if let Some(height) = status.get_broadcast_height() {
             // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
@@ -221,13 +221,13 @@ impl TxMapAndMaybeTrees {
                         Some((spending_txid, u32::from(height)));
                     unconfirmed_spent_note.value()
                 } else {
-                    ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
+                    ZingoError::NoSuchNullifierInTx(spending_txid).handle()?
                 }
             } else {
-                ZingoLibError::NoSuchTxId(spending_txid).handle()?
+                ZingoError::NoSuchTxId(spending_txid).handle()?
             }
         } else {
-            ZingoLibError::UnknownError.handle()?
+            ZingoError::UnknownError.handle()?
         }) // todO add special error variant
     }
 
@@ -462,7 +462,7 @@ impl TxMapAndMaybeTrees {
         txid: TxId,
         source_txid: TxId,
         output_index: Option<u32>,
-    ) -> ZingoLibResult<()>
+    ) -> ZingoResult<()>
     where
         D: DomainWalletExt,
         <D as Domain>::Note: PartialEq + Clone,
@@ -477,7 +477,7 @@ impl TxMapAndMaybeTrees {
             .iter_mut()
             .find_map(|nnmd| {
                 if nnmd.output_index().is_some() != output_index.is_some() {
-                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                    return Some(Err(ZingoError::MissingOutputIndex(txid)));
                 }
                 if *nnmd.output_index() == output_index {
                     Some(Ok(nnmd))
@@ -500,7 +500,7 @@ impl TxMapAndMaybeTrees {
                         todo!("Tried to mark note as spent with no position: FIX")
                     }
                 }
-                Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
+                Err(_) => return Err(ZingoError::MissingOutputIndex(txid)),
             }
         } else {
             eprintln!("Could not remove node!")
@@ -514,7 +514,7 @@ impl TxMapAndMaybeTrees {
         output_index: Option<u32>,
         position: Position,
         fvk: &D::Fvk,
-    ) -> ZingoLibResult<()>
+    ) -> ZingoResult<()>
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
@@ -522,7 +522,7 @@ impl TxMapAndMaybeTrees {
         if let Some(tmd) = self.transaction_records_by_id.get_mut(&txid) {
             if let Some(maybe_nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find_map(|nnmd| {
                 if nnmd.output_index().is_some() != output_index.is_some() {
-                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                    return Some(Err(ZingoError::MissingOutputIndex(txid)));
                 }
                 if *nnmd.output_index() == output_index {
                     Some(Ok(nnmd))
@@ -540,7 +540,7 @@ impl TxMapAndMaybeTrees {
                                 u64::from(position),
                             ));
                     }
-                    Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
+                    Err(_) => return Err(ZingoError::MissingOutputIndex(txid)),
                 }
             } else {
                 println!("Could not update witness position");

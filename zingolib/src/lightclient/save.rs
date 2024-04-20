@@ -10,13 +10,13 @@ use std::{
 use tokio::runtime::Runtime;
 
 use super::LightClient;
-use zingo_error::{ZingoLibError, ZingoLibResult};
+use zingo_error::{ZingoError, ZingoResult};
 
 impl LightClient {
     //        SAVE METHODS
 
     /// Called internally at sync checkpoints to save state. Should not be called midway through sync.
-    pub(super) async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
+    pub(super) async fn save_internal_rust(&self) -> ZingoResult<bool> {
         match self.save_internal_buffer().await {
             Ok(()) => self.rust_write_save_buffer_to_file().await,
             Err(err) => {
@@ -26,18 +26,18 @@ impl LightClient {
         }
     }
 
-    pub(super) async fn save_internal_buffer(&self) -> ZingoLibResult<()> {
+    pub(super) async fn save_internal_buffer(&self) -> ZingoResult<()> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet
             .write(&mut buffer)
             .await
-            .map_err(ZingoLibError::InternalWriteBufferError)?;
+            .map_err(ZingoError::InternalWriteBufferError)?;
         *self.save_buffer.buffer.write().await = buffer;
         Ok(())
     }
 
     /// If possible, write to disk. todo conditionally compile this function
-    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<bool> {
+    async fn rust_write_save_buffer_to_file(&self) -> ZingoResult<bool> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // on mobile platforms, saving from this buffer will be handled by the native layer
         {
@@ -50,10 +50,10 @@ impl LightClient {
             let read_buffer = self.save_buffer.buffer.read().await;
             if !read_buffer.is_empty() {
                 LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
-                    .map_err(ZingoLibError::WriteFileError)?;
+                    .map_err(ZingoError::WriteFileError)?;
                 Ok(true)
             } else {
-                ZingoLibError::EmptySaveBuffer.handle()
+                ZingoError::EmptySaveBuffer.handle()
             }
         }
     }
@@ -65,12 +65,12 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
+    pub async fn export_save_buffer_async(&self) -> ZingoResult<Vec<u8>> {
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
         } else {
-            ZingoLibError::EmptySaveBuffer.handle()
+            ZingoError::EmptySaveBuffer.handle()
         }
     }
 
@@ -121,23 +121,23 @@ impl LightClient {
     /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
     /// ZingoConfig specifies both a wallet file and a directory containing it.
     /// This function returns a PathBuf, the absolute path of the wallet file typically named zingo-wallet.dat
-    pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoLibError> {
+    pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoError> {
         if let Some(mut loc) = self.config.wallet_dir.clone() {
             loc.push(self.config.wallet_name.clone());
             Ok(loc)
         } else {
-            Err(ZingoLibError::NoWalletLocation)
+            Err(ZingoError::NoWalletLocation)
         }
     }
 
     /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
     /// ZingoConfig specifies both a wallet file and a directory containing it.
     /// This function returns a PathBuf, the absolute path of a directory which typically contains a wallet.dat file
-    pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoLibError> {
+    pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoError> {
         if let Some(loc) = self.config.wallet_dir.clone() {
             Ok(loc)
         } else {
-            Err(ZingoLibError::NoWalletLocation)
+            Err(ZingoError::NoWalletLocation)
         }
     }
 }

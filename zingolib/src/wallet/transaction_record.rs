@@ -3,7 +3,7 @@ use incrementalmerkletree::witness::IncrementalWitness;
 use zcash_primitives::transaction::TxId;
 
 use crate::wallet::notes;
-use zingo_error::ZingoLibError;
+use zingo_error::ZingoError;
 
 use super::{
     data::{OutgoingTxData, PoolNullifier},
@@ -99,12 +99,12 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
+    pub fn get_transaction_fee(&self) -> Result<u64, ZingoError> {
         let outputted = self.value_outgoing() + self.total_change_returned();
         if self.total_value_spent() >= outputted {
             Ok(self.total_value_spent() - outputted)
         } else {
-            ZingoLibError::MetadataUnderflow(format!(
+            ZingoError::MetadataUnderflow(format!(
                 "for txid {} with status {}: spent {}, outgoing {}, returned change {} \n {:?}",
                 self.txid,
                 self.status,

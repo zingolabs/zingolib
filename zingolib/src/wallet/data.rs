@@ -24,7 +24,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::{memo::Memo, transaction::TxId};
-use zingo_error::{ZingoLibError, ZingoLibResult};
+use zingo_error::{ZingoError, ZingoResult};
 use zingoconfig::MAX_REORG;
 
 /// TODO: Add Doc Comment Here!
@@ -206,7 +206,7 @@ impl WitnessTrees {
             D::get_shardtree_mut(self)
                 .insert_frontier_nodes(front, Retention::Ephemeral)
                 .unwrap_or_else(|e| {
-                    let _: ZingoLibResult<()> = ZingoLibError::Error(format!(
+                    let _: ZingoResult<()> = ZingoError::Error(format!(
                         "failed to insert non-empty {} frontier: {e}",
                         D::NAME
                     ))

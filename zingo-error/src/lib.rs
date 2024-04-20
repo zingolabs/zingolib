@@ -7,7 +7,7 @@ use zcash_primitives::transaction::TxId;
 
 /// Holds zingolib error types
 #[derive(Debug)]
-pub enum ZingoLibError {
+pub enum ZingoError {
     /// TODO: Add Doc Comment Here!
     UnknownError,
     /// TODO: Add Doc Comment Here!
@@ -39,19 +39,19 @@ pub enum ZingoLibError {
 }
 
 /// TODO: Add Doc Comment Here!
-pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
+pub type ZingoResult<T> = Result<T, ZingoError>;
 
-impl ZingoLibError {
+impl ZingoError {
     /// TODO: Add Doc Comment Here!
-    pub fn handle<T>(self) -> ZingoLibResult<T> {
+    pub fn handle<T>(self) -> ZingoResult<T> {
         log::error!("{}", self);
         Err(self)
     }
 }
 
-impl std::fmt::Display for ZingoLibError {
+impl std::fmt::Display for ZingoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use ZingoLibError::*;
+        use ZingoError::*;
         match self {
             UnknownError => write!(
                 f,
@@ -125,10 +125,10 @@ impl std::fmt::Display for ZingoLibError {
     }
 }
 
-impl From<ZingoLibError> for String {
-    fn from(value: ZingoLibError) -> Self {
+impl From<ZingoError> for String {
+    fn from(value: ZingoError) -> Self {
         format!("{value}")
     }
 }
 
-impl Error for ZingoLibError {}
+impl Error for ZingoError {}

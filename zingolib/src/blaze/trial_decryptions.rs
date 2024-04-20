@@ -3,7 +3,7 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use zingo_error::ZingoLibResult;
+use zingo_error::ZingoResult;
 
 use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
@@ -424,7 +424,7 @@ fn update_witnesses<D>(
     )>,
     txmds_writelock: &mut TxMapAndMaybeTrees,
     wc: &Arc<WalletCapability>,
-) -> ZingoLibResult<()>
+) -> ZingoResult<()>
 where
     D: DomainWalletExt,
     <D as Domain>::Note: PartialEq + Clone,
