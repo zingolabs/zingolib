@@ -17,7 +17,7 @@ use crate::wallet::notes;
 use super::{
     data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
     keys::unified::WalletCapability,
-    notes::NoteRecordIdentifier,
+    notes::{NoteRecordIdentifier, ShieldedNoteInterface},
     traits::{DomainWalletExt, ReadableWriteable as _},
 };
 
@@ -135,15 +135,24 @@ impl TransactionRecord {
     /// pair it with a NoteRecordIdentifier identifying the note
     /// and return the list
     // TODO: Make these generic, this is wet code
-    pub fn select_unspent_note_noteref_pairs_sapling(
+    pub fn select_unspent_note_noteref_pairs<D>(
         &self,
-    ) -> Vec<(sapling_crypto::Note, NoteRecordIdentifier)> {
+    ) -> Vec<(
+        <D as zcash_note_encryption::Domain>::Note,
+        NoteRecordIdentifier,
+    )>
+    where
+        D: DomainWalletExt,
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
+    {
         let mut value_ref_pairs = Vec::new();
-        sapling_crypto::note_encryption::SaplingDomain::to_notes_vec(self)
+        <D as DomainWalletExt>::to_notes_vec(self)
             .iter()
             .for_each(|note| {
                 if !notes::NoteInterface::is_spent_or_pending_spent(note) {
-                    if let Some(index) = note.output_index {
+                    if let Some(index) = note.output_index() {
+                        let index = *index;
                         let note_record_reference = NoteRecordIdentifier {
                             txid: self.transaction_id,
                             pool: PoolType::Shielded(
@@ -151,8 +160,10 @@ impl TransactionRecord {
                             ),
                             index,
                         };
-                        value_ref_pairs
-                            .push((note.sapling_crypto_note.clone(), note_record_reference));
+                        value_ref_pairs.push((
+                            notes::ShieldedNoteInterface::note(note).clone(),
+                            note_record_reference,
+                        ));
                     }
                 }
             });
