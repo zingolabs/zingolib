@@ -130,7 +130,7 @@ impl TransactionRecord {
         }
     }
 
-    /// For each sapling note received in this transactions,
+    /// For each Shielded note received in this transactions,
     /// pair it with a NoteRecordIdentifier identifying the note
     /// and return the list
     // TODO: Make these generic, this is wet code
@@ -168,32 +168,6 @@ impl TransactionRecord {
             });
         value_ref_pairs
     }
-    /// For each orchard note received in this transactions,
-    /// pair it with a NoteRecordIdentifier identifying the note
-    /// and return the list
-    pub fn select_unspent_note_noteref_pairs_orchard(
-        &self,
-    ) -> Vec<(orchard::Note, NoteRecordIdentifier)> {
-        let mut value_ref_pairs = Vec::new();
-        orchard::note_encryption::OrchardDomain::to_notes_vec(self)
-            .iter()
-            .for_each(|note| {
-                if !notes::NoteInterface::is_spent_or_pending_spent(note) {
-                    if let Some(index) = note.output_index {
-                        let note_record_reference = NoteRecordIdentifier {
-                            txid: self.transaction_id,
-                            pool: PoolType::Shielded(
-                                zcash_client_backend::ShieldedProtocol::Orchard,
-                            ),
-                            index,
-                        };
-                        value_ref_pairs.push((note.orchard_crypto_note, note_record_reference));
-                    }
-                }
-            });
-        value_ref_pairs
-    }
-
     /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
