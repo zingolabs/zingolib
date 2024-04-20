@@ -21,6 +21,7 @@ zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-testvectors = { path = "../zingo-testvectors", optional = true }
 zingo-netutils = { path = "../zingo-netutils" }
+zingo-error = { path = "../zingo-error" }
 
 http-body = { workspace = true }
 hyper = { workspace = true }
