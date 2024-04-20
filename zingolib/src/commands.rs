@@ -831,14 +831,14 @@ impl Command for ProposeCommand {
             Ok(args) => args,
             Err(e) => {
                 return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    "Error: {}\nTry 'help propose' for correct usage and examples.",
                     e
                 )
             }
         };
         if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
             return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
+                "Error: {}\nTry 'help propose' for correct usage and examples.",
                 e,
             );
         };
