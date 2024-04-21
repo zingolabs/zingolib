@@ -1,5 +1,6 @@
 //! TODO: Add Mod Description Here!
 use incrementalmerkletree::Position;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
@@ -42,6 +43,10 @@ pub struct OrchardNote {
 }
 
 impl NoteInterface for OrchardNote {
+    fn pool_type(&self) -> PoolType {
+        PoolType::Shielded(ShieldedProtocol::Orchard)
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }

@@ -1,16 +1,23 @@
 //! TODO: Add Mod Description Here!
 use incrementalmerkletree::{Hashable, Position};
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 
-use super::super::{
-    data::TransactionRecord,
-    keys::unified::WalletCapability,
-    traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
-    Pool,
+use super::{
+    super::{
+        data::TransactionRecord,
+        keys::unified::WalletCapability,
+        traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
+        Pool,
+    },
+    query::{NotePoolQuery, NoteQuery, NoteSpendStatusQuery},
 };
 
 /// TODO: Add Doc Comment Here!
 pub trait NoteInterface: Sized {
+    /// returns the zcash_client_backend PoolType enum (one of 3)
+    fn pool_type(&self) -> PoolType;
+
     /// TODO: Add Doc Comment Here!
     fn spent(&self) -> &Option<(TxId, u32)>;
 
@@ -36,6 +43,27 @@ pub trait NoteInterface: Sized {
     /// Returns false if the note is spendable.
     fn is_spent_or_pending_spent(&self) -> bool {
         self.is_spent() || self.is_pending_spent()
+    }
+
+    /// Returns true if the note has one of the spend statuses enumerated by the query
+    fn spend_status_query(&self, query: NoteSpendStatusQuery) -> bool {
+        (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
+            || (*query.pending_spent() && self.is_pending_spent())
+            || (*query.spent() && self.is_spent())
+    }
+
+    /// Returns true if the note is one of the pools enumerated by the query.
+    fn pool_query(&self, query: NotePoolQuery) -> bool {
+        (*query.transparent() && self.pool_type() == PoolType::Transparent)
+            || (*query.sapling()
+                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Sapling))
+            || (*query.orchard()
+                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Orchard))
+    }
+
+    /// Returns true if the note is one of the spend statuses enumerated by the query AND one of the pools enumerated by the query.
+    fn query(&self, query: NoteQuery) -> bool {
+        self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
 }
 
