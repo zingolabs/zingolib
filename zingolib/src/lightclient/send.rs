@@ -1,6 +1,7 @@
 //! TODO: Add Mod Description Here!
 use log::{debug, error};
 
+use zcash_client_backend::address::Address;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::MemoBytes,
@@ -9,7 +10,10 @@ use zcash_primitives::{
 use zcash_proofs::prover::LocalTxProver;
 
 use super::{LightClient, LightWalletSendProgress};
-use crate::wallet::Pool;
+use crate::{
+    utils::{address_from_str, zatoshis_from_u64},
+    wallet::Pool,
+};
 
 #[cfg(feature = "zip317")]
 use zcash_primitives::transaction::TxId;
@@ -21,41 +25,6 @@ impl LightClient {
                 .await?
                 .height as u32,
         ) + 1)
-    }
-
-    fn map_tos_to_receivers(
-        &self,
-        tos: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<
-        Vec<(
-            zcash_client_backend::address::Address,
-            NonNegativeAmount,
-            Option<MemoBytes>,
-        )>,
-        String,
-    > {
-        if tos.is_empty() {
-            return Err("Need at least one destination address".to_string());
-        }
-        tos.iter()
-            .map(|to| {
-                let ra = match zcash_client_backend::address::Address::decode(
-                    &self.config.chain,
-                    to.0,
-                ) {
-                    Some(to) => to,
-                    None => {
-                        let e = format!("Invalid recipient address: '{}'", to.0);
-                        error!("{}", e);
-                        return Err(e);
-                    }
-                };
-
-                let value = NonNegativeAmount::from_u64(to.1).unwrap();
-
-                Ok((ra, value, to.2.clone()))
-            })
-            .collect()
     }
 
     /// Unstable function to expose the zip317 interface for development
@@ -107,9 +76,8 @@ impl LightClient {
     /// TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+        receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
     ) -> Result<String, String> {
-        let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the consensus branch ID
         debug!("Creating transaction");
@@ -143,6 +111,40 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    /// Test only lightclient method for calling `do_send` with primitive rust types
+    ///
+    /// # Panics
+    ///
+    /// Panics if the address, amount or memo conversion fails.
+    #[cfg(feature = "test-features")]
+    pub async fn do_send_test_only(
+        &self,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<String, String> {
+        let receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)> =
+            address_amount_memo_tuples
+                .into_iter()
+                .map(|(address, amount, memo)| {
+                    let address = address_from_str(address, &self.config().chain)
+                        .expect("should be a valid address");
+                    let amount = zatoshis_from_u64(amount)
+                        .expect("should be inside the range of valid zatoshis");
+                    let memo = if let Some(m) = memo {
+                        Some(
+                            crate::wallet::utils::interpret_memo_string(m.to_string())
+                                .expect("should be able to interpret memo"),
+                        )
+                    } else {
+                        None
+                    };
+
+                    (address, amount, memo)
+                })
+                .collect();
+
+        self.do_send(receivers).await
+    }
+
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
@@ -156,7 +158,7 @@ impl LightClient {
     pub async fn do_shield(
         &self,
         pools_to_shield: &[Pool],
-        address: Option<String>,
+        address: Option<Address>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
@@ -189,12 +191,12 @@ impl LightClient {
             ));
         }
 
-        let addr = address
-            .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
+        let address = address.unwrap_or(Address::from(
+            self.wallet.wallet_capability().addresses()[0].clone(),
+        ));
+        let amount = zatoshis_from_u64(balance_to_shield - fee).unwrap();
+        let receiver = vec![(address, amount, None)];
 
-        let receiver = self
-            .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
-            .expect("To build shield receiver.");
         let result = {
             let _lock = self.sync_lock.lock().await;
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;

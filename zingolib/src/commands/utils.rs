@@ -2,11 +2,35 @@
 
 use crate::commands::error::CommandError;
 use crate::utils::{address_from_str, zatoshis_from_u64};
-use crate::wallet;
+use crate::wallet::{self, Pool};
 use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
+
+pub(super) fn parse_shield_args(
+    args: &[&str],
+    chain: &ChainType,
+) -> Result<(Vec<Pool>, Option<Address>), CommandError> {
+    if args.is_empty() || args.len() > 2 {
+        return Err(CommandError::InvalidArguments);
+    }
+
+    let pools_to_shield: &[Pool] = match args[0] {
+        "transparent" => &[Pool::Transparent],
+        "sapling" => &[Pool::Sapling],
+        "all" => &[Pool::Sapling, Pool::Transparent],
+        _ => return Err(CommandError::InvalidPool),
+    };
+    let address = if args.len() == 2 {
+        // let address =
+        Some(address_from_str(args[1], chain).map_err(CommandError::ConversionFailed)?)
+    } else {
+        None
+    };
+
+    Ok((pools_to_shield.to_vec(), address))
+}
 
 // Parse the send arguments for `do_propose`.
 // The send arguments have two possible formats:
@@ -111,8 +135,36 @@ mod tests {
     use crate::{
         commands::error::CommandError,
         utils::{address_from_str, zatoshis_from_u64},
-        wallet::{self, utils::interpret_memo_string},
+        wallet::{self, utils::interpret_memo_string, Pool},
     };
+
+    #[test]
+    fn parse_shield_args() {
+        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let address = address_from_str(address_str, &chain).unwrap();
+
+        // Shield all to default address
+        let shield_args = &["all"];
+        assert_eq!(
+            super::parse_shield_args(shield_args, &chain).unwrap(),
+            (vec![Pool::Transparent, Pool::Sapling], None)
+        );
+
+        // Shield all to given address
+        let shield_args = &["all", address_str];
+        assert_eq!(
+            super::parse_shield_args(shield_args, &chain).unwrap(),
+            (vec![Pool::Transparent, Pool::Sapling], Some(address))
+        );
+
+        // Invalid pool
+        let shield_args = &["invalid"];
+        assert!(matches!(
+            super::parse_shield_args(shield_args, &chain),
+            Err(CommandError::InvalidPool)
+        ));
+    }
 
     #[test]
     fn parse_send_args() {
@@ -169,6 +221,23 @@ mod tests {
         mod json_array {
             use super::*;
 
+            #[test]
+            fn empty_json_array() {
+                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let json = "[{}]";
+                let result = parse_send_args(&[json], &chain);
+                match result {
+                    Err(CommandError::ArgsNotJson(e)) => match e {
+                        json::Error::UnexpectedCharacter { ch, line, column } => {
+                            assert_eq!(ch, 'e');
+                            assert_eq!(line, 1);
+                            assert_eq!(column, 2);
+                        }
+                        _ => panic!(),
+                    },
+                    _ => panic!(),
+                };
+            }
             #[test]
             fn failed_json_parsing() {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());

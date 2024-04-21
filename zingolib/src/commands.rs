@@ -1,6 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
+use crate::utils::address_from_str;
 use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -14,6 +15,8 @@ use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+
+use self::error::CommandError;
 
 /// TODO: Add Doc Comment Here!
 mod error;
@@ -668,23 +671,18 @@ impl Command for ShieldCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.is_empty() || args.len() > 2 {
-            return self.help().to_string();
-        }
-        let pools_to_shield: &[Pool] = match args[0] {
-            "transparent" => &[Pool::Transparent],
-            "sapling" => &[Pool::Sapling],
-            "all" => &[Pool::Sapling, Pool::Transparent],
-            _ => return self.help().to_string(),
-        };
-        // Parse the address or amount
-        let address = if args.len() == 2 {
-            Some(args[1].to_string())
-        } else {
-            None
-        };
+        let (pools_to_shield, address) =
+            match utils::parse_shield_args(args, &lightclient.config().chain) {
+                Ok(args) => args,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help shield' for correct usage and examples.",
+                        e
+                    )
+                }
+            };
         RT.block_on(async move {
-            match lightclient.do_shield(pools_to_shield, address).await {
+            match lightclient.do_shield(&pools_to_shield, address).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
@@ -888,26 +886,18 @@ impl Command for SendCommand {
                 )
             }
         };
-        // RT.block_on(async move {
-        //     match lightclient
-        //         .do_send(
-        //             send_inputs
-        //                 .iter()
-        //                 .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-        //                 .collect(),
-        //         )
-        //         .await
-        //     {
-        //         Ok(transaction_id) => {
-        //             object! { "txid" => transaction_id }
-        //         }
-        //         Err(e) => {
-        //             object! { "error" => e }
-        //         }
-        //     }
-        //     .pretty(2)
-        // })
-        "".to_string()
+        RT.block_on(async move {
+            match lightclient.do_send(send_inputs).await {
+                Ok(transaction_id) => {
+                    object! { "txid" => transaction_id }
+                }
+                Err(e) => {
+                    object! { "error" => e }
+                }
+            }
+            .pretty(2)
+        })
+        // "".to_string()
     }
 }
 
@@ -936,7 +926,7 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(

@@ -673,7 +673,7 @@ pub mod scenarios {
                 DarksideSender::ExternalClient(lc) => lc,
             };
             lightclient
-                .do_send(vec![(receiver_address, value, None)])
+                .do_send_test_only(vec![(receiver_address, value, None)])
                 .await
                 .unwrap();
             let mut streamed_raw_txns = self
