@@ -722,7 +722,7 @@ pub mod scenarios {
                 DarksideSender::ExternalClient(lc) => lc,
             };
             lightclient
-                .do_shield(&[pool_to_shield], None)
+                .do_shield_test_only(&[pool_to_shield], None)
                 .await
                 .unwrap();
             let mut streamed_raw_txns = self

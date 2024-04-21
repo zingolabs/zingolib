@@ -73,7 +73,7 @@ impl LightClient {
         }
     }
 
-    /// TODO: Add migrate_sapling_to_orchard argument
+    /// Send funds
     pub async fn do_send(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
@@ -129,14 +129,10 @@ impl LightClient {
                         .expect("should be a valid address");
                     let amount = zatoshis_from_u64(amount)
                         .expect("should be inside the range of valid zatoshis");
-                    let memo = if let Some(m) = memo {
-                        Some(
-                            crate::wallet::utils::interpret_memo_string(m.to_string())
-                                .expect("should be able to interpret memo"),
-                        )
-                    } else {
-                        None
-                    };
+                    let memo = memo.map(|memo| {
+                        crate::wallet::utils::interpret_memo_string(memo.to_string())
+                            .expect("should be able to interpret memo")
+                    });
 
                     (address, amount, memo)
                 })
@@ -154,7 +150,8 @@ impl LightClient {
         })
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Shield funds. Send transparent or sapling funds to a unified address.
+    /// Defaults to the unified address of the capability if `address` is `None`.
     pub async fn do_shield(
         &self,
         pools_to_shield: &[Pool],
@@ -221,5 +218,22 @@ impl LightClient {
         };
 
         result.map(|(transaction_id, _)| transaction_id)
+    }
+
+    /// Test only lightclient method for calling `do_shield` with an address as &str
+    ///
+    /// # Panics
+    ///
+    /// Panics if the address conversion fails.
+    #[cfg(feature = "test-features")]
+    pub async fn do_shield_test_only(
+        &self,
+        pools_to_shield: &[Pool],
+        address: Option<&str>,
+    ) -> Result<String, String> {
+        let address = address.map(|addr| {
+            address_from_str(addr, &self.config().chain).expect("should be a valid address")
+        });
+        self.do_shield(pools_to_shield, address).await
     }
 }

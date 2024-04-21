@@ -1360,14 +1360,17 @@ pub mod scenarios {
             .unwrap();
         // shield transparent
         recipient
-            .do_shield(&[Pool::Transparent], None)
+            .do_shield_test_only(&[Pool::Transparent], None)
             .await
             .unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
         // upgrade sapling
-        recipient.do_shield(&[Pool::Sapling], None).await.unwrap();
+        recipient
+            .do_shield_test_only(&[Pool::Sapling], None)
+            .await
+            .unwrap();
         // end
         scenario_builder
             .regtest_manager

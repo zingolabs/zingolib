@@ -42,7 +42,7 @@ async fn shield_transparent() {
     );
 
     let shielding_proposal = recipient
-        .do_shield(&[Pool::Transparent], None)
+        .do_shield_test_only(&[Pool::Transparent], None)
         .await
         .unwrap();
 
