@@ -1,5 +1,5 @@
 //! TODO: Add Mod Description Here!
-use log::{debug, error};
+use log::debug;
 
 use zcash_client_backend::address::Address;
 use zcash_primitives::{
@@ -33,7 +33,7 @@ impl LightClient {
     #[cfg(feature = "zip317")]
     pub async fn do_propose_spend(
         &self,
-        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+        _receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
     ) -> Result<crate::data::proposal::TransferProposal, String> {
         use crate::test_framework::mocks::ProposalBuilder;
 
@@ -194,7 +194,8 @@ impl LightClient {
         let address = address.unwrap_or(Address::from(
             self.wallet.wallet_capability().addresses()[0].clone(),
         ));
-        let amount = zatoshis_from_u64(balance_to_shield - fee).unwrap();
+        let amount = zatoshis_from_u64(balance_to_shield - fee)
+            .expect("balance cannot be outside valid range of zatoshis");
         let receiver = vec![(address, amount, None)];
 
         let result = {

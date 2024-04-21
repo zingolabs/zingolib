@@ -1,8 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::utils::address_from_str;
-use crate::wallet::{MemoDownloadOption, Pool};
+use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
@@ -16,11 +15,9 @@ use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
-use self::error::CommandError;
-
-/// TODO: Add Doc Comment Here!
+/// Errors associated with the commands interface
 mod error;
-/// TODO: Add Doc Comment Here!
+/// Utilities associated with the commands interface
 mod utils;
 
 lazy_static! {
@@ -655,7 +652,7 @@ struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Shield all your transparent and/or orchard funds
+            Shield all your transparent and/or sapling funds
             Usage:
             shield ['transparent' or 'sapling' or 'all'] [optional address]
 
@@ -834,25 +831,21 @@ impl Command for ProposeCommand {
                 )
             }
         };
-        // RT.block_on(async move {
-        //     match lightclient
-        //         .do_propose_spend(
-        //             send_inputs
-        //                 .iter()
-        //                 .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-        //                 .collect(),
-        //         )
-        //         .await {
-        //         Ok(proposal) => {
-        //             object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
-        //         }
-        //         Err(e) => {
-        //             object! { "error" => e }
-        //         }
-        //     }
-        //     .pretty(2)
-        // })
-        "".to_string()
+        RT.block_on(async move {
+            match lightclient
+                .do_propose_spend(
+                    send_inputs
+                )
+                .await {
+                Ok(proposal) => {
+                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                }
+                Err(e) => {
+                    object! { "error" => e }
+                }
+            }
+            .pretty(2)
+        })
     }
 }
 
@@ -897,7 +890,6 @@ impl Command for SendCommand {
             }
             .pretty(2)
         })
-        // "".to_string()
     }
 }
 
@@ -935,30 +927,26 @@ impl Command for QuickSendCommand {
                 )
             }
         };
-        // RT.block_on(async move {
-        //     if let Err(e) = lightclient
-        //         .do_propose_spend(
-        //             send_inputs
-        //                 .iter()
-        //                 .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-        //                 .collect(),
-        //         )
-        //         .await {
-        //         return e;
-        //     };
-        //     match lightclient
-        //         .do_send_proposal().await
-        //     {
-        //         Ok(txids) => {
-        //              object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-        //         }
-        //         Err(e) => {
-        //             object! { "error" => e }
-        //         }
-        //     }
-        //     .pretty(2)
-        // })
-        "".to_string()
+        RT.block_on(async move {
+            if let Err(e) = lightclient
+                .do_propose_spend(
+                    send_inputs
+                )
+                .await {
+                return object! { "error" => e }.pretty(2);
+            };
+            match lightclient
+                .do_send_proposal().await
+            {
+                Ok(txids) => {
+                     object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+                }
+                Err(e) => {
+                    object! { "error" => e }
+                }
+            }
+            .pretty(2)
+        })
     }
 }
 
