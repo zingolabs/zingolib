@@ -81,6 +81,7 @@ derive_more = "0.99.17"
 either = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
 sapling-crypto.workspace = true
+getset = "0.1.2"
 
 [dev-dependencies]
 portpicker = "0.1.0"
