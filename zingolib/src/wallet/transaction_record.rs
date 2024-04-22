@@ -15,7 +15,7 @@ use crate::wallet::{
     data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
     keys::unified::WalletCapability,
     notes::{
-        query::NoteQuery, OrchardNote, OutputId, SaplingNote, ShieldedNoteInterface,
+        query::OutputQuery, OrchardNote, OutputId, SaplingNote, ShieldedNoteInterface,
         TransparentNote,
     },
     traits::DomainWalletExt,
@@ -108,7 +108,7 @@ impl TransactionRecord {
 //get
 impl TransactionRecord {
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn query_for_ids(&self, include_notes: NoteQuery) -> Vec<OutputId> {
+    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
         let mut set = vec![];
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
@@ -152,7 +152,7 @@ impl TransactionRecord {
     }
 
     /// Uses a query to select all notes with specific properties and sum them
-    pub fn query_sum_value(&self, include_notes: NoteQuery) -> u64 {
+    pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
         let mut sum = 0;
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
@@ -510,7 +510,7 @@ mod tests {
 
     use crate::test_framework::mocks::default_txid;
     use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
-    use crate::wallet::notes::query::NoteQuery;
+    use crate::wallet::notes::query::OutputQuery;
     use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
     use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
     use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
@@ -632,7 +632,7 @@ mod tests {
 
         assert_eq!(
             nine_note_transaction_record()
-                .query_for_ids(NoteQuery::stipulations(
+                .query_for_ids(OutputQuery::stipulations(
                     unspent,
                     pending_spent,
                     spent,
@@ -686,7 +686,7 @@ mod tests {
         let expected = valid_spend_stati * valid_pool_value;
 
         assert_eq!(
-            nine_note_transaction_record().query_sum_value(NoteQuery::stipulations(
+            nine_note_transaction_record().query_sum_value(OutputQuery::stipulations(
                 unspent,
                 pending_spent,
                 spent,
