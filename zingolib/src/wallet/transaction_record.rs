@@ -445,7 +445,13 @@ pub mod mocks {
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use crate::test_framework::mocks::build_method;
+    use crate::{
+        test_framework::mocks::{build_method, default_txid},
+        wallet::notes::{
+            orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+            transparent::mocks::TransparentNoteBuilder,
+        },
+    };
 
     use super::TransactionRecord;
 
@@ -498,54 +504,9 @@ pub mod mocks {
             }
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use test_case::test_matrix;
-
-    use crate::test_framework::mocks::default_txid;
-    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
-    use crate::wallet::notes::query::OutputQuery;
-    use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
-    use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
-    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
-
-    use super::TransactionRecord;
-
-    #[test]
-    pub fn blank_record() {
-        let new = TransactionRecordBuilder::default().build();
-        assert_eq!(new.get_transparent_value_spent(), 0);
-        assert_eq!(new.get_transaction_fee().unwrap(), 0);
-        assert!(!new.is_outgoing_transaction());
-        assert!(!new.is_incoming_transaction());
-        // assert_eq!(new.net_spent(), 0);
-        assert_eq!(
-            new.pool_change_returned::<orchard::note_encryption::OrchardDomain>(),
-            0
-        );
-        assert_eq!(
-            new.pool_change_returned::<sapling_crypto::note_encryption::SaplingDomain>(),
-            0
-        );
-        assert_eq!(new.total_value_received(), 0);
-        assert_eq!(new.total_value_spent(), 0);
-        assert_eq!(new.value_outgoing(), 0);
-        let t: [u64; 3] = [0, 0, 0];
-        assert_eq!(new.value_spent_by_pool(), t);
-    }
-    #[test]
-    fn single_transparent_note_makes_is_incoming_true() {
-        // A single transparent note makes is_incoming_transaction true.
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-        transaction_record
-            .transparent_notes
-            .push(TransparentNoteBuilder::default().build());
-        assert!(transaction_record.is_incoming_transaction());
-    }
-
-    fn nine_note_transaction_record() -> TransactionRecord {
+    /// creates a TransactionRecord holding each type of note.
+    pub fn nine_note_transaction_record() -> TransactionRecord {
         let spend = Some((default_txid(), 112358));
 
         let mut transaction_record = TransactionRecordBuilder::default().build();
@@ -585,6 +546,54 @@ mod tests {
         );
 
         transaction_record
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use test_case::test_matrix;
+
+    use crate::test_framework::mocks::default_txid;
+    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+    use crate::wallet::notes::query::OutputQuery;
+    use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
+    use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
+    use crate::wallet::transaction_record::mocks::{
+        nine_note_transaction_record, TransactionRecordBuilder,
+    };
+
+    use super::TransactionRecord;
+
+    #[test]
+    pub fn blank_record() {
+        let new = TransactionRecordBuilder::default().build();
+        assert_eq!(new.get_transparent_value_spent(), 0);
+        assert_eq!(new.get_transaction_fee().unwrap(), 0);
+        assert!(!new.is_outgoing_transaction());
+        assert!(!new.is_incoming_transaction());
+        // assert_eq!(new.net_spent(), 0);
+        assert_eq!(
+            new.pool_change_returned::<orchard::note_encryption::OrchardDomain>(),
+            0
+        );
+        assert_eq!(
+            new.pool_change_returned::<sapling_crypto::note_encryption::SaplingDomain>(),
+            0
+        );
+        assert_eq!(new.total_value_received(), 0);
+        assert_eq!(new.total_value_spent(), 0);
+        assert_eq!(new.value_outgoing(), 0);
+        let t: [u64; 3] = [0, 0, 0];
+        assert_eq!(new.value_spent_by_pool(), t);
+    }
+    #[test]
+    fn single_transparent_note_makes_is_incoming_true() {
+        // A single transparent note makes is_incoming_transaction true.
+        let mut transaction_record = TransactionRecordBuilder::default().build();
+        transaction_record
+            .transparent_notes
+            .push(TransparentNoteBuilder::default().build());
+        assert!(transaction_record.is_incoming_transaction());
     }
 
     #[test_matrix(
@@ -692,5 +701,20 @@ mod tests {
             )),
             expected,
         );
+    }
+
+    #[test]
+    fn total_value_received() {
+        let transaction_record = nine_note_transaction_record();
+        let old_total = transaction_record
+            .pool_value_received::<orchard::note_encryption::OrchardDomain>()
+            + transaction_record
+                .pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
+            + transaction_record
+                .transparent_notes
+                .iter()
+                .map(|utxo| utxo.value)
+                .sum::<u64>();
+        assert_eq!(transaction_record.total_value_received(), old_total);
     }
 }
