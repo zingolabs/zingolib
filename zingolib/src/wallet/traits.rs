@@ -490,7 +490,7 @@ where
 
     /// TODO: Add Doc Comment Here!
     fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
-        Self::to_notes_vec(transaction_md)
+        Self::get_shnotes(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())
@@ -536,7 +536,7 @@ where
     fn get_tree(tree_state: &TreeState) -> &String;
 
     /// TODO: Add Doc Comment Here!
-    fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
+    fn get_shnotes(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
 
     /// TODO: Add Doc Comment Here!
     fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
@@ -603,7 +603,7 @@ impl DomainWalletExt for SaplingDomain {
         &tree_state.sapling_tree
     }
 
-    fn to_notes_vec(transaction_record: &TransactionRecord) -> &Vec<Self::WalletNote> {
+    fn get_shnotes(transaction_record: &TransactionRecord) -> &Vec<Self::WalletNote> {
         &transaction_record.sapling_notes
     }
 
@@ -679,7 +679,7 @@ impl DomainWalletExt for OrchardDomain {
         &tree_state.orchard_tree
     }
 
-    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
+    fn get_shnotes(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
         &transaction_md.orchard_notes
     }
 

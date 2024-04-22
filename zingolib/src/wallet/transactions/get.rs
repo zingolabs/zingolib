@@ -86,7 +86,7 @@ impl TxMapAndMaybeTrees {
         self.transaction_records_by_id
             .iter()
             .flat_map(|(_, transaction_metadata)| {
-                D::to_notes_vec(transaction_metadata)
+                D::get_shnotes(transaction_metadata)
                     .iter()
                     .filter(|unspent_note_data| unspent_note_data.spent().is_none())
                     .filter_map(move |unspent_note_data| {
