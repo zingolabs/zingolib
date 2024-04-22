@@ -219,6 +219,7 @@ pub mod decrypt_transaction {
                             self.transaction_metadata_set
                                 .write()
                                 .await
+                                .transaction_records_by_id
                                 .add_new_taddr_output(
                                     transaction.txid(),
                                     output_taddr.clone(),
@@ -279,6 +280,7 @@ pub mod decrypt_transaction {
                 self.transaction_metadata_set
                     .write()
                     .await
+                    .transaction_records_by_id
                     .mark_txid_utxo_spent(prev_transaction_id, prev_n, transaction_id, status);
             }
 
@@ -286,12 +288,16 @@ pub mod decrypt_transaction {
             if total_transparent_value_spent > 0 {
                 *is_outgoing_transaction = true;
 
-                self.transaction_metadata_set.write().await.add_taddr_spent(
-                    transaction.txid(),
-                    status,
-                    block_time as u64,
-                    total_transparent_value_spent,
-                );
+                self.transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id
+                    .add_taddr_spent(
+                        transaction.txid(),
+                        status,
+                        block_time as u64,
+                        total_transparent_value_spent,
+                    );
             }
         }
 
