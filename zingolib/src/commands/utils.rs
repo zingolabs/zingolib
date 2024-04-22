@@ -23,7 +23,6 @@ pub(super) fn parse_shield_args(
         _ => return Err(CommandError::InvalidPool),
     };
     let address = if args.len() == 2 {
-        // let address =
         Some(address_from_str(args[1], chain).map_err(CommandError::ConversionFailed)?)
     } else {
         None
