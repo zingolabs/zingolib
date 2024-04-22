@@ -1,5 +1,6 @@
 //! TODO: Add Mod Description Here!
 use incrementalmerkletree::Position;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
@@ -12,7 +13,7 @@ pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
     /// TODO: Add Doc Comment Here!
-    pub note: sapling_crypto::Note,
+    pub sapling_crypto_note: sapling_crypto::Note,
 
     // The position of this note's value commitment in the global commitment tree
     // We need to create a witness to it, to spend
@@ -45,13 +46,13 @@ impl std::fmt::Debug for SaplingNote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("diversifier", &self.diversifier)
-            .field("note", &self.note)
+            .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
             .field("memo", &self.memo)
             .field("diversifier", &self.diversifier)
-            .field("note", &self.note)
+            .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
@@ -62,6 +63,10 @@ impl std::fmt::Debug for SaplingNote {
 }
 
 impl NoteInterface for SaplingNote {
+    fn pool_type(&self) -> PoolType {
+        PoolType::Shielded(ShieldedProtocol::Sapling)
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
@@ -95,7 +100,7 @@ impl ShieldedNoteInterface for SaplingNote {
 
     fn from_parts(
         diversifier: sapling_crypto::Diversifier,
-        note: sapling_crypto::Note,
+        sapling_crypto_note: sapling_crypto::Note,
         witnessed_position: Option<Position>,
         nullifier: Option<sapling_crypto::Nullifier>,
         spent: Option<(TxId, u32)>,
@@ -107,7 +112,7 @@ impl ShieldedNoteInterface for SaplingNote {
     ) -> Self {
         Self {
             diversifier,
-            note,
+            sapling_crypto_note,
             witnessed_position,
             nullifier,
             spent,
@@ -144,7 +149,7 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 
     fn note(&self) -> &Self::Note {
-        &self.note
+        &self.sapling_crypto_note
     }
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
@@ -278,25 +283,5 @@ pub mod mocks {
                 .set_change(false)
                 .have_spending_key(true)
         }
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use crate::{
-        test_framework::mocks::default_txid,
-        wallet::notes::{sapling::mocks::SaplingNoteBuilder, NoteInterface},
-    };
-
-    #[test]
-    fn pending_spent_note_is_pending_spent() {
-        let spend = Some((default_txid(), 641312));
-        let note = SaplingNoteBuilder::default()
-            .unconfirmed_spent(spend)
-            .build();
-        assert!(!note.is_spent());
-        assert!(note.is_pending_spent());
-        assert!(note.is_spent_or_pending_spent());
-        assert_eq!(note.pending_spent(), &spend);
     }
 }

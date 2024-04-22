@@ -1,7 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::wallet::{MemoDownloadOption, Pool};
+use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
@@ -15,9 +15,9 @@ use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
-/// TODO: Add Doc Comment Here!
+/// Errors associated with the commands interface
 mod error;
-/// TODO: Add Doc Comment Here!
+/// Utilities associated with the commands interface
 mod utils;
 
 lazy_static! {
@@ -652,7 +652,7 @@ struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Shield all your transparent and/or orchard funds
+            Shield all your transparent and/or sapling funds
             Usage:
             shield ['transparent' or 'sapling' or 'all'] [optional address]
 
@@ -668,23 +668,18 @@ impl Command for ShieldCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.is_empty() || args.len() > 2 {
-            return self.help().to_string();
-        }
-        let pools_to_shield: &[Pool] = match args[0] {
-            "transparent" => &[Pool::Transparent],
-            "sapling" => &[Pool::Sapling],
-            "all" => &[Pool::Sapling, Pool::Transparent],
-            _ => return self.help().to_string(),
-        };
-        // Parse the address or amount
-        let address = if args.len() == 2 {
-            Some(args[1].to_string())
-        } else {
-            None
-        };
+        let (pools_to_shield, address) =
+            match utils::parse_shield_args(args, &lightclient.config().chain) {
+                Ok(args) => args,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help shield' for correct usage and examples.",
+                        e
+                    )
+                }
+            };
         RT.block_on(async move {
-            match lightclient.do_shield(pools_to_shield, address).await {
+            match lightclient.do_shield(&pools_to_shield, address).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
@@ -827,28 +822,19 @@ impl Command for ProposeCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    "Error: {}\nTry 'help propose' for correct usage and examples.",
                     e
                 )
             }
-        };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
-                e,
-            );
         };
         RT.block_on(async move {
             match lightclient
                 .do_propose_spend(
                     send_inputs
-                        .iter()
-                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-                        .collect(),
                 )
                 .await {
                 Ok(proposal) => {
@@ -947,7 +933,7 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -956,22 +942,8 @@ impl Command for SendCommand {
                 )
             }
         };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
-                e,
-            );
-        };
         RT.block_on(async move {
-            match lightclient
-                .do_send(
-                    send_inputs
-                        .iter()
-                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-                        .collect(),
-                )
-                .await
-            {
+            match lightclient.do_send(send_inputs).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
@@ -1009,31 +981,22 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
                     e
                 )
             }
-        };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
-                e,
-            );
         };
         RT.block_on(async move {
             if let Err(e) = lightclient
                 .do_propose_spend(
                     send_inputs
-                        .iter()
-                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-                        .collect(),
                 )
                 .await {
-                return e;
+                return object! { "error" => e }.pretty(2);
             };
             match lightclient
                 .do_send_proposal().await

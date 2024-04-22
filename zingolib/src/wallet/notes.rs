@@ -8,6 +8,7 @@ pub mod sapling;
 pub use sapling::SaplingNote;
 pub mod orchard;
 pub use orchard::OrchardNote;
+pub mod query;
 
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
@@ -95,5 +96,93 @@ pub mod mocks {
                 ))
                 .index(0)
         }
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use crate::{
+        test_framework::mocks::default_txid,
+        wallet::notes::{
+            query::NoteQuery, sapling::mocks::SaplingNoteBuilder,
+            transparent::mocks::TransparentNoteBuilder, NoteInterface,
+        },
+    };
+
+    use super::query::{NotePoolQuery, NoteSpendStatusQuery};
+
+    #[test]
+    fn note_queries() {
+        let spend = Some((default_txid(), 112358));
+
+        let transparent_unspent_note = TransparentNoteBuilder::default().build();
+        let transparent_pending_spent_note = TransparentNoteBuilder::default()
+            .unconfirmed_spent(spend)
+            .build();
+        let transparent_spent_note = TransparentNoteBuilder::default().spent(spend).build();
+        let sapling_unspent_note = SaplingNoteBuilder::default().build();
+        let sapling_pending_spent_note = SaplingNoteBuilder::default()
+            .unconfirmed_spent(spend)
+            .build();
+        let sapling_spent_note = SaplingNoteBuilder::default().spent(spend).build();
+
+        let unspent_query = NoteSpendStatusQuery::new(true, false, false);
+        let pending_or_spent_query = NoteSpendStatusQuery::new(false, true, true);
+        let spent_query = NoteSpendStatusQuery::new(false, false, true);
+
+        let transparent_query = NotePoolQuery::new(true, false, false);
+        let shielded_query = NotePoolQuery::new(false, true, true);
+        let any_pool_query = NotePoolQuery::new(true, true, true);
+
+        let unspent_transparent_query = NoteQuery::new(unspent_query, transparent_query);
+        let unspent_any_pool_query = NoteQuery::new(unspent_query, any_pool_query);
+        let pending_or_spent_transparent_query =
+            NoteQuery::new(pending_or_spent_query, transparent_query);
+        let pending_or_spent_shielded_query =
+            NoteQuery::new(pending_or_spent_query, shielded_query);
+        let spent_shielded_query = NoteQuery::new(spent_query, shielded_query);
+        let spent_any_pool_query = NoteQuery::new(spent_query, any_pool_query);
+
+        assert!(transparent_unspent_note.query(unspent_transparent_query));
+        assert!(transparent_unspent_note.query(unspent_any_pool_query));
+        assert!(!transparent_unspent_note.query(pending_or_spent_transparent_query));
+        assert!(!transparent_unspent_note.query(pending_or_spent_shielded_query));
+        assert!(!transparent_unspent_note.query(spent_shielded_query));
+        assert!(!transparent_unspent_note.query(spent_any_pool_query));
+
+        assert!(!transparent_pending_spent_note.query(unspent_transparent_query));
+        assert!(!transparent_pending_spent_note.query(unspent_any_pool_query));
+        assert!(transparent_pending_spent_note.query(pending_or_spent_transparent_query));
+        assert!(!transparent_pending_spent_note.query(pending_or_spent_shielded_query));
+        assert!(!transparent_pending_spent_note.query(spent_shielded_query));
+        assert!(!transparent_pending_spent_note.query(spent_any_pool_query));
+
+        assert!(!transparent_spent_note.query(unspent_transparent_query));
+        assert!(!transparent_spent_note.query(unspent_any_pool_query));
+        assert!(transparent_spent_note.query(pending_or_spent_transparent_query));
+        assert!(!transparent_spent_note.query(pending_or_spent_shielded_query));
+        assert!(!transparent_spent_note.query(spent_shielded_query));
+        assert!(transparent_spent_note.query(spent_any_pool_query));
+
+        assert!(!sapling_unspent_note.query(unspent_transparent_query));
+        assert!(sapling_unspent_note.query(unspent_any_pool_query));
+        assert!(!sapling_unspent_note.query(pending_or_spent_transparent_query));
+        assert!(!sapling_unspent_note.query(pending_or_spent_shielded_query));
+        assert!(!sapling_unspent_note.query(spent_shielded_query));
+        assert!(!sapling_unspent_note.query(spent_any_pool_query));
+
+        assert!(!sapling_pending_spent_note.query(unspent_transparent_query));
+        assert!(!sapling_pending_spent_note.query(unspent_any_pool_query));
+        assert!(!sapling_pending_spent_note.query(pending_or_spent_transparent_query));
+        assert!(sapling_pending_spent_note.query(pending_or_spent_shielded_query));
+        assert!(!sapling_pending_spent_note.query(spent_shielded_query));
+        assert!(!sapling_pending_spent_note.query(spent_any_pool_query));
+
+        assert!(!sapling_spent_note.query(unspent_transparent_query));
+        assert!(!sapling_spent_note.query(unspent_any_pool_query));
+        assert!(!sapling_spent_note.query(pending_or_spent_transparent_query));
+        assert!(sapling_spent_note.query(pending_or_spent_shielded_query));
+        assert!(sapling_spent_note.query(spent_shielded_query));
+        assert!(sapling_spent_note.query(spent_any_pool_query));
     }
 }

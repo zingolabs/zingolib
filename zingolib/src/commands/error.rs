@@ -4,6 +4,7 @@ use std::fmt;
 pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
     SingleArgNotJsonArray(String),
+    EmptyJsonArray,
     ParseIntFromString(std::num::ParseIntError),
     UnexpectedType(String),
     MissingKey(String),
@@ -11,6 +12,8 @@ pub(crate) enum CommandError {
     IncompatibleMemo,
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
+    ConversionFailed(crate::utils::ConversionError),
+    InvalidPool,
 }
 
 impl fmt::Display for CommandError {
@@ -19,6 +22,10 @@ impl fmt::Display for CommandError {
 
         match self {
             ArgsNotJson(e) => write!(f, "failed to parse argument. {}", e),
+            SingleArgNotJsonArray(e) => {
+                write!(f, "argument cannot be parsed to a json array. {}", e)
+            }
+            EmptyJsonArray => write!(f, "json array has no arguments"),
             ParseIntFromString(e) => write!(f, "failed to parse argument. {}", e),
             UnexpectedType(e) => write!(f, "arguments cannot be parsed to expected type. {}", e),
             MissingKey(key) => write!(f, "json array is missing \"{}\" key.", key),
@@ -27,10 +34,9 @@ impl fmt::Display for CommandError {
                 write!(f, "memo's cannot be sent to transparent addresses.")
             }
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
-            NonJsonNumberForAmount(e) => write!(f, "Non Number input: {}", e),
-            SingleArgNotJsonArray(e) => {
-                write!(f, "argument cannot be parsed to a json array: {}", e)
-            }
+            NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
+            ConversionFailed(e) => write!(f, "conversion failed. {}", e),
+            InvalidPool => write!(f, "invalid pool."),
         }
     }
 }

@@ -1,5 +1,6 @@
 //! TODO: Add Mod Description Here!
 use incrementalmerkletree::Position;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
@@ -13,7 +14,7 @@ pub struct OrchardNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: orchard::keys::Diversifier,
     /// TODO: Add Doc Comment Here!
-    pub note: orchard::note::Note,
+    pub orchard_crypto_note: orchard::note::Note,
 
     /// The position of this note's value commitment in the global commitment tree
     /// We need to create a witness to it, to spend
@@ -42,6 +43,10 @@ pub struct OrchardNote {
 }
 
 impl NoteInterface for OrchardNote {
+    fn pool_type(&self) -> PoolType {
+        PoolType::Shielded(ShieldedProtocol::Orchard)
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
@@ -75,7 +80,7 @@ impl ShieldedNoteInterface for OrchardNote {
 
     fn from_parts(
         diversifier: Self::Diversifier,
-        note: Self::Note,
+        orchard_crypto_note: Self::Note,
         witnessed_position: Option<Position>,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
@@ -87,7 +92,7 @@ impl ShieldedNoteInterface for OrchardNote {
     ) -> Self {
         Self {
             diversifier,
-            note,
+            orchard_crypto_note,
             witnessed_position,
             nullifier,
             spent,
@@ -123,7 +128,7 @@ impl ShieldedNoteInterface for OrchardNote {
     }
 
     fn note(&self) -> &Self::Note {
-        &self.note
+        &self.orchard_crypto_note
     }
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
