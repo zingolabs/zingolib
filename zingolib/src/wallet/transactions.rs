@@ -301,7 +301,7 @@ mod tests {
     use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
     #[test]
-    fn test_get_target_and_anchor_heights() {
+    fn get_target_and_anchor_heights() {
         use super::TxMapAndMaybeTrees;
 
         let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_min_unspent_height() {
+    fn get_min_unspent_height() {
         use super::TxMapAndMaybeTrees;
 
         let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
