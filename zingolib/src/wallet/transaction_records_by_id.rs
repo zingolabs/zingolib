@@ -443,7 +443,7 @@ mod tests {
         assert_eq!(transaction_records_by_id.len(), 1);
     }
     #[test]
-    fn note_is_selected() {
+    fn sapling_note_is_selected() {
         // WIP
         let mut transaction_record =
             transaction_record::mocks::TransactionRecordBuilder::default().build();
@@ -456,7 +456,7 @@ mod tests {
 
         let target_value = NonNegativeAmount::const_from_u64(20000);
         let anchor_height: BlockHeight = 10.into();
-        let _spendable_notes: SpendableNotes<ShNoteId> =
+        let spendable_notes: SpendableNotes<ShNoteId> =
             zcash_client_backend::data_api::InputSource::select_spendable_notes(
                 &transaction_records_by_id,
                 AccountId::ZERO,
@@ -466,5 +466,16 @@ mod tests {
                 &vec![],
             )
             .unwrap();
+        assert_eq!(
+            spendable_notes
+                .sapling()
+                .first()
+                .unwrap()
+                .note()
+                .value()
+                .inner(),
+            // Default mock sapling note value
+            1_000_000
+        )
     }
 }
