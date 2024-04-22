@@ -145,6 +145,7 @@ pub mod decrypt_transaction {
                 self.transaction_metadata_set
                     .write()
                     .await
+                    .transaction_records_by_id
                     .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
             }
 
@@ -156,6 +157,7 @@ pub mod decrypt_transaction {
                 self.transaction_metadata_set
                     .write()
                     .await
+                    .transaction_records_by_id
                     .set_price(&transaction.txid(), price);
             }
         }
@@ -521,6 +523,7 @@ pub mod decrypt_transaction {
                 self.transaction_metadata_set
                     .write()
                     .await
+                    .transaction_records_by_id
                     .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
             }
             for (_domain, output) in domain_tagged_outputs {

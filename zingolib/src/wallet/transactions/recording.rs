@@ -262,6 +262,39 @@ impl super::TransactionRecordsById {
             }
         }
     }
+
+    // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
+    pub(crate) fn add_memo_to_note_metadata<Nd: ShieldedNoteInterface>(
+        &mut self,
+        txid: &TxId,
+        note: Nd::Note,
+        memo: Memo,
+    ) {
+        if let Some(transaction_metadata) = self.get_mut(txid) {
+            if let Some(n) = Nd::transaction_metadata_notes_mut(transaction_metadata)
+                .iter_mut()
+                .find(|n| n.note() == &note)
+            {
+                *n.memo_mut() = Some(memo);
+            }
+        }
+    }
+
+    pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
+        // println!("        adding outgoing metadata to txid {}", txid);
+        if let Some(transaction_metadata) = self.get_mut(txid) {
+            transaction_metadata.outgoing_tx_data = outgoing_metadata
+        } else {
+            error!(
+                "TxId {} should be present while adding metadata, but wasn't",
+                txid
+            );
+        }
+    }
+
+    pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
+        price.map(|p| self.get_mut(txid).map(|tx| tx.price = Some(p)));
+    }
 }
 
 /// Witness tree requiring methods, each method is noted with *HOW* it requires witness trees.
@@ -403,43 +436,6 @@ impl super::TxMapAndMaybeTrees {
         } else {
             ZingoLibError::UnknownError.handle()?
         }) // todO add special error variant
-    }
-
-    // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub(crate) fn add_memo_to_note_metadata<Nd: ShieldedNoteInterface>(
-        &mut self,
-        txid: &TxId,
-        note: Nd::Note,
-        memo: Memo,
-    ) {
-        if let Some(transaction_metadata) = self.transaction_records_by_id.get_mut(txid) {
-            if let Some(n) = Nd::transaction_metadata_notes_mut(transaction_metadata)
-                .iter_mut()
-                .find(|n| n.note() == &note)
-            {
-                *n.memo_mut() = Some(memo);
-            }
-        }
-    }
-
-    pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
-        // println!("        adding outgoing metadata to txid {}", txid);
-        if let Some(transaction_metadata) = self.transaction_records_by_id.get_mut(txid) {
-            transaction_metadata.outgoing_tx_data = outgoing_metadata
-        } else {
-            error!(
-                "TxId {} should be present while adding metadata, but wasn't",
-                txid
-            );
-        }
-    }
-
-    pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
-        price.map(|p| {
-            self.transaction_records_by_id
-                .get_mut(txid)
-                .map(|tx| tx.price = Some(p))
-        });
     }
 }
 
