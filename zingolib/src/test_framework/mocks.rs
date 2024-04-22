@@ -70,7 +70,7 @@ pub fn random_zaddr() -> (
     zaddr_from_seed(seed)
 }
 
-// Sapling Note Mocker
+/// Sapling Note Mocker
 mod sapling_crypto_note {
 
     use sapling_crypto::value::NoteValue;
@@ -129,6 +129,66 @@ mod sapling_crypto_note {
     }
 }
 
+/// Orchard Note Mocker
+pub mod orchard_note {
+
+    use orchard::{
+        keys::{FullViewingKey, SpendingKey},
+        note::{RandomSeed, Rho},
+        value::NoteValue,
+        Note,
+    };
+    use rand::{rngs::OsRng, Rng};
+    use zip32::Scope;
+
+    /// mocks a random orchard note
+    pub fn mock_random_orchard_note() -> Note {
+        let mut rng = OsRng;
+
+        let sk = {
+            loop {
+                let mut bytes = [0; 32];
+                rng.fill(&mut bytes);
+                let sk = SpendingKey::from_bytes(bytes);
+                if sk.is_some().into() {
+                    break sk.unwrap();
+                }
+            }
+        };
+        let fvk: FullViewingKey = (&sk).into();
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let value = NoteValue::default(); // ZERO
+        let rho = {
+            loop {
+                let mut bytes = [0u8; 32];
+                rng.fill(&mut bytes);
+                let rho = Rho::from_bytes(&bytes);
+                if rho.is_some().into() {
+                    break rho.unwrap();
+                }
+            }
+        };
+        let random_seed = {
+            loop {
+                let mut bytes = [0; 32];
+                rng.fill(&mut bytes);
+                let random_seed = RandomSeed::from_bytes(bytes, &rho);
+                if random_seed.is_some().into() {
+                    break random_seed.unwrap();
+                }
+            }
+        };
+
+        loop {
+            let note = Note::from_parts(recipient, value, rho, random_seed);
+            if note.is_some().into() {
+                break note.unwrap();
+            }
+        }
+    }
+}
+
 pub mod proposal {
     //! Module for mocking structs from [`zcash_client_backend::proposal`]
 
@@ -149,7 +209,7 @@ pub mod proposal {
         components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
-    use crate::wallet::notes::OutputId;
+    use crate::wallet::notes::ShNoteId;
 
     use super::{default_txid, default_zaddr};
 
@@ -166,7 +226,7 @@ pub mod proposal {
     pub struct ProposalBuilder {
         fee_rule: Option<FeeRule>,
         min_target_height: Option<BlockHeight>,
-        steps: Option<NonEmpty<Step<OutputId>>>,
+        steps: Option<NonEmpty<Step<ShNoteId>>>,
     }
 
     #[allow(dead_code)]
@@ -182,7 +242,7 @@ pub mod proposal {
 
         build_method!(fee_rule, FeeRule);
         build_method!(min_target_height, BlockHeight);
-        build_method!(steps, NonEmpty<Step<OutputId>>);
+        build_method!(steps, NonEmpty<Step<ShNoteId>>);
 
         /// Builds a proposal after all fields have been set.
         ///
@@ -190,7 +250,7 @@ pub mod proposal {
         ///
         /// `build` will panic if any fields of the builder are `None` or if the build failed
         /// due to invalid values.
-        pub fn build(self) -> Proposal<FeeRule, OutputId> {
+        pub fn build(self) -> Proposal<FeeRule, ShNoteId> {
             let step = self.steps.unwrap().first().clone();
             Proposal::single_step(
                 step.transaction_request().clone(),
@@ -229,7 +289,7 @@ pub mod proposal {
         transaction_request: Option<TransactionRequest>,
         payment_pools: Option<BTreeMap<usize, PoolType>>,
         transparent_inputs: Option<Vec<WalletTransparentOutput>>,
-        shielded_inputs: Option<Option<ShieldedInputs<OutputId>>>,
+        shielded_inputs: Option<Option<ShieldedInputs<ShNoteId>>>,
         prior_step_inputs: Option<Vec<StepOutput>>,
         balance: Option<TransactionBalance>,
         is_shielding: Option<bool>,
@@ -253,7 +313,7 @@ pub mod proposal {
         build_method!(payment_pools, BTreeMap<usize, PoolType>
         );
         build_method!(transparent_inputs, Vec<WalletTransparentOutput>);
-        build_method!(shielded_inputs, Option<ShieldedInputs<OutputId>>);
+        build_method!(shielded_inputs, Option<ShieldedInputs<ShNoteId>>);
         build_method!(prior_step_inputs, Vec<StepOutput>);
         build_method!(balance, TransactionBalance);
         build_method!(is_shielding, bool);
@@ -265,7 +325,7 @@ pub mod proposal {
         /// `build` will panic if any fields of the builder are `None` or if the build failed
         /// due to invalid values.
         #[allow(dead_code)]
-        pub fn build(self) -> Step<OutputId> {
+        pub fn build(self) -> Step<ShNoteId> {
             Step::from_parts(
                 &[],
                 self.transaction_request.unwrap(),
@@ -299,11 +359,10 @@ pub mod proposal {
                 .shielded_inputs(Some(ShieldedInputs::from_parts(
                     BlockHeight::from_u32(1),
                     NonEmpty::singleton(ReceivedNote::from_parts(
-                        OutputId {
+                        ShNoteId {
                             txid,
-                            pool: PoolType::Shielded(
-                                zcash_client_backend::ShieldedProtocol::Sapling,
-                            ),
+                            shpool: zcash_client_backend::ShieldedProtocol::Sapling,
+
                             index: 0,
                         },
                         txid,
