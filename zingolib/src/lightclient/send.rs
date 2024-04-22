@@ -10,10 +10,7 @@ use zcash_primitives::{
 use zcash_proofs::prover::LocalTxProver;
 
 use super::{LightClient, LightWalletSendProgress};
-use crate::{
-    utils::{address_from_str, zatoshis_from_u64},
-    wallet::Pool,
-};
+use crate::{utils::zatoshis_from_u64, wallet::Pool};
 
 #[cfg(feature = "zip317")]
 use zcash_primitives::transaction::TxId;
@@ -111,36 +108,6 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    /// Test only lightclient method for calling `do_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
-    /// Panics if the address, amount or memo conversion fails.
-    #[cfg(feature = "test-features")]
-    pub async fn do_send_test_only(
-        &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<String, String> {
-        let receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)> =
-            address_amount_memo_tuples
-                .into_iter()
-                .map(|(address, amount, memo)| {
-                    let address = address_from_str(address, &self.config().chain)
-                        .expect("should be a valid address");
-                    let amount = zatoshis_from_u64(amount)
-                        .expect("should be inside the range of valid zatoshis");
-                    let memo = memo.map(|memo| {
-                        crate::wallet::utils::interpret_memo_string(memo.to_string())
-                            .expect("should be able to interpret memo")
-                    });
-
-                    (address, amount, memo)
-                })
-                .collect();
-
-        self.do_send(receivers).await
-    }
-
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
@@ -218,22 +185,5 @@ impl LightClient {
         };
 
         result.map(|(transaction_id, _)| transaction_id)
-    }
-
-    /// Test only lightclient method for calling `do_shield` with an address as &str
-    ///
-    /// # Panics
-    ///
-    /// Panics if the address conversion fails.
-    #[cfg(feature = "test-features")]
-    pub async fn do_shield_test_only(
-        &self,
-        pools_to_shield: &[Pool],
-        address: Option<&str>,
-    ) -> Result<String, String> {
-        let address = address.map(|addr| {
-            address_from_str(addr, &self.config().chain).expect("should be a valid address")
-        });
-        self.do_shield(pools_to_shield, address).await
     }
 }
