@@ -372,7 +372,13 @@ pub mod mocks {
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use crate::test_framework::mocks::build_method;
+    use crate::{
+        test_framework::mocks::{build_method, build_method_push, build_push_list, default_txid},
+        wallet::notes::{
+            orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+            transparent::mocks::TransparentNoteBuilder, OrchardNote, SaplingNote, TransparentNote,
+        },
+    };
 
     use super::TransactionRecord;
 
@@ -381,6 +387,9 @@ pub mod mocks {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
+        transparent_notes: Vec<TransparentNote>,
+        sapling_notes: Vec<SaplingNote>,
+        orchard_notes: Vec<OrchardNote>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransactionRecordBuilder {
@@ -390,12 +399,18 @@ pub mod mocks {
                 status: None,
                 datetime: None,
                 txid: None,
+                transparent_notes: vec![],
+                sapling_notes: vec![],
+                orchard_notes: vec![],
             }
         }
         // Methods to set each field
         build_method!(status, ConfirmationStatus);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
+        build_method_push!(transparent_notes, TransparentNote);
+        build_method_push!(sapling_notes, SaplingNote);
+        build_method_push!(orchard_notes, OrchardNote);
 
         /// Use the mocery of random_txid to get one?
         pub fn randomize_txid(self) -> Self {
@@ -404,11 +419,15 @@ pub mod mocks {
 
         /// builds a mock TransactionRecord after all pieces are supplied
         pub fn build(self) -> TransactionRecord {
-            TransactionRecord::new(
+            let mut transaction_record = TransactionRecord::new(
                 self.status.unwrap(),
                 self.datetime.unwrap(),
                 &self.txid.unwrap(),
-            )
+            );
+            build_push_list!(transparent_notes, self, transaction_record);
+            build_push_list!(sapling_notes, self, transaction_record);
+            build_push_list!(orchard_notes, self, transaction_record);
+            transaction_record
         }
     }
 
@@ -422,6 +441,9 @@ pub mod mocks {
                 ),
                 datetime: Some(1705077003),
                 txid: Some(crate::test_framework::mocks::default_txid()),
+                transparent_notes: vec![],
+                sapling_notes: vec![],
+                orchard_notes: vec![],
             }
         }
     }

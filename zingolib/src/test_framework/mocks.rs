@@ -9,7 +9,26 @@ macro_rules! build_method {
         }
     };
 }
+macro_rules! build_method_push {
+    ($name:ident, $localtype:ty) => {
+        #[doc = "Push a $ty to the builder."]
+        pub fn $name(mut self, $name: $localtype) -> Self {
+            self.$name.push($name);
+            self
+        }
+    };
+}
+macro_rules! build_push_list {
+    ($name:ident, $builder:ident, $struct:ident) => {
+        for i in $builder.$name {
+            $struct.$name.push(i);
+        }
+    };
+}
+
 pub(crate) use build_method;
+pub(crate) use build_method_push;
+pub(crate) use build_push_list;
 pub use proposal::{ProposalBuilder, StepBuilder};
 pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
