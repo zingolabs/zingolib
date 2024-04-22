@@ -81,6 +81,95 @@ impl super::TransactionRecordsById {
             // if this transaction is new to our data, insert it
             .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
     }
+
+    pub fn add_taddr_spent(
+        &mut self,
+        txid: TxId,
+        status: ConfirmationStatus,
+        timestamp: u64,
+        total_transparent_value_spent: u64,
+    ) {
+        let transaction_metadata =
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+
+        transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
+
+        self.check_notes_mark_change(&txid);
+    }
+
+    pub fn mark_txid_utxo_spent(
+        &mut self,
+        spent_txid: TxId,
+        output_num: u32,
+        source_txid: TxId,
+        spending_tx_status: ConfirmationStatus,
+    ) -> u64 {
+        // Find the UTXO
+        let value = if let Some(utxo_transacion_metadata) = self.get_mut(&spent_txid) {
+            if let Some(spent_utxo) = utxo_transacion_metadata
+                .transparent_notes
+                .iter_mut()
+                .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
+            {
+                if spending_tx_status.is_confirmed() {
+                    // Mark this utxo as spent
+                    *spent_utxo.spent_mut() =
+                        Some((source_txid, spending_tx_status.get_height().into()));
+                    spent_utxo.unconfirmed_spent = None;
+                } else {
+                    spent_utxo.unconfirmed_spent =
+                        Some((source_txid, u32::from(spending_tx_status.get_height())));
+                }
+
+                spent_utxo.value
+            } else {
+                error!("Couldn't find UTXO that was spent");
+                0
+            }
+        } else {
+            error!("Couldn't find TxID that was spent!");
+            0
+        };
+
+        // Return the value of the note that was spent.
+        value
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_new_taddr_output(
+        &mut self,
+        txid: TxId,
+        taddr: String,
+        status: ConfirmationStatus,
+        timestamp: u64,
+        vout: &TxOut,
+        output_num: u32,
+    ) {
+        // Read or create the current TxId
+        let transaction_metadata =
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+
+        // Add this UTXO if it doesn't already exist
+        if transaction_metadata
+            .transparent_notes
+            .iter_mut()
+            .any(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
+        {
+            // If it already exists, it is likely an mempool tx, so update the height
+        } else {
+            transaction_metadata.transparent_notes.push(
+                crate::wallet::notes::TransparentNote::from_parts(
+                    taddr,
+                    txid,
+                    output_num as u64,
+                    vout.script_pubkey.0.clone(),
+                    u64::from(vout.value),
+                    None,
+                    None,
+                ),
+            );
+        }
+    }
 }
 
 impl super::TxMapAndMaybeTrees {
@@ -215,100 +304,6 @@ impl super::TxMapAndMaybeTrees {
         } else {
             ZingoLibError::UnknownError.handle()?
         }) // todO add special error variant
-    }
-
-    pub fn add_taddr_spent(
-        &mut self,
-        txid: TxId,
-        status: ConfirmationStatus,
-        timestamp: u64,
-        total_transparent_value_spent: u64,
-    ) {
-        let transaction_metadata = self
-            .transaction_records_by_id
-            .create_modify_get_transaction_metadata(&txid, status, timestamp);
-
-        transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
-
-        self.transaction_records_by_id
-            .check_notes_mark_change(&txid);
-    }
-
-    pub fn mark_txid_utxo_spent(
-        &mut self,
-        spent_txid: TxId,
-        output_num: u32,
-        source_txid: TxId,
-        spending_tx_status: ConfirmationStatus,
-    ) -> u64 {
-        // Find the UTXO
-        let value = if let Some(utxo_transacion_metadata) =
-            self.transaction_records_by_id.get_mut(&spent_txid)
-        {
-            if let Some(spent_utxo) = utxo_transacion_metadata
-                .transparent_notes
-                .iter_mut()
-                .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
-            {
-                if spending_tx_status.is_confirmed() {
-                    // Mark this utxo as spent
-                    *spent_utxo.spent_mut() =
-                        Some((source_txid, spending_tx_status.get_height().into()));
-                    spent_utxo.unconfirmed_spent = None;
-                } else {
-                    spent_utxo.unconfirmed_spent =
-                        Some((source_txid, u32::from(spending_tx_status.get_height())));
-                }
-
-                spent_utxo.value
-            } else {
-                error!("Couldn't find UTXO that was spent");
-                0
-            }
-        } else {
-            error!("Couldn't find TxID that was spent!");
-            0
-        };
-
-        // Return the value of the note that was spent.
-        value
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_new_taddr_output(
-        &mut self,
-        txid: TxId,
-        taddr: String,
-        status: ConfirmationStatus,
-        timestamp: u64,
-        vout: &TxOut,
-        output_num: u32,
-    ) {
-        // Read or create the current TxId
-        let transaction_metadata = self
-            .transaction_records_by_id
-            .create_modify_get_transaction_metadata(&txid, status, timestamp);
-
-        // Add this UTXO if it doesn't already exist
-        if transaction_metadata
-            .transparent_notes
-            .iter_mut()
-            .any(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
-        {
-            // If it already exists, it is likely an mempool tx, so update the height
-        } else {
-            transaction_metadata.transparent_notes.push(
-                crate::wallet::notes::TransparentNote::from_parts(
-                    taddr,
-                    txid,
-                    output_num as u64,
-                    vout.script_pubkey.0.clone(),
-                    u64::from(vout.value),
-                    None,
-                    None,
-                ),
-            );
-        }
     }
 
     pub(crate) fn add_pending_note<D>(
