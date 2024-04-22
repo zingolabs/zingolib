@@ -489,8 +489,8 @@ where
     type Bundle: Bundle<Self>;
 
     /// TODO: Add Doc Comment Here!
-    fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
-        Self::get_shnotes(transaction_md)
+    fn sum_pool_change(transaction_record: &TransactionRecord) -> u64 {
+        Self::get_shnotes(transaction_record)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())
