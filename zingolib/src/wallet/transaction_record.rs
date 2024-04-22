@@ -1,40 +1,31 @@
-//! TODO: Add Mod Description Here!
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::witness::IncrementalWitness;
+//! Data about a particular Transaction
+
+use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 use std::io::{self, Read, Write};
-use zcash_client_backend::PoolType;
 
-use orchard::note_encryption::OrchardDomain;
+use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use sapling_crypto::note_encryption::SaplingDomain;
-use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::Domain;
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::TxId;
-
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zcash_client_backend::PoolType;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::error::ZingoLibError;
-use crate::wallet::data::COMMITMENT_TREE_LEVELS;
-use crate::wallet::notes;
-use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::notes::interface::NoteInterface;
 use crate::wallet::traits::ReadableWriteable;
-use crate::wallet::WalletCapability;
 use crate::wallet::{
-    data::{OutgoingTxData, PoolNullifier},
-    notes::NoteInterface,
-    traits,
+    data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
+    keys::unified::WalletCapability,
+    notes::{
+        query::NoteQuery, OrchardNote, OutputId, SaplingNote, ShieldedNoteInterface,
+        TransparentNote,
+    },
     traits::DomainWalletExt,
 };
-
-use super::notes::query::NoteQuery;
-use super::notes::NoteRecordIdentifier;
 
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
-    pub status: ConfirmationStatus,
+    pub status: zingo_status::confirmation_status::ConfirmationStatus,
 
     /// Timestamp of Tx. Added in v4
     pub datetime: u64,
@@ -50,13 +41,13 @@ pub struct TransactionRecord {
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
     /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
-    pub sapling_notes: Vec<notes::SaplingNote>,
+    pub sapling_notes: Vec<SaplingNote>,
 
     /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
-    pub orchard_notes: Vec<notes::OrchardNote>,
+    pub orchard_notes: Vec<OrchardNote>,
 
     /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
-    pub transparent_notes: Vec<notes::TransparentNote>,
+    pub transparent_notes: Vec<TransparentNote>,
 
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
@@ -77,7 +68,11 @@ pub struct TransactionRecord {
 // set
 impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
-    pub fn new(status: ConfirmationStatus, datetime: u64, transaction_id: &TxId) -> Self {
+    pub fn new(
+        status: zingo_status::confirmation_status::ConfirmationStatus,
+        datetime: u64,
+        transaction_id: &TxId,
+    ) -> Self {
         TransactionRecord {
             status,
             datetime,
@@ -113,13 +108,13 @@ impl TransactionRecord {
 //get
 impl TransactionRecord {
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn query_for_ids(&self, include_notes: NoteQuery) -> Vec<NoteRecordIdentifier> {
+    pub fn query_for_ids(&self, include_notes: NoteQuery) -> Vec<OutputId> {
         let mut set = vec![];
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
             for note in self.transparent_notes.iter() {
                 if note.spend_status_query(spend_status_query) {
-                    set.push(NoteRecordIdentifier::from_parts(
+                    set.push(OutputId::from_parts(
                         self.txid,
                         PoolType::Transparent,
                         note.output_index as u32,
@@ -131,7 +126,7 @@ impl TransactionRecord {
             for note in self.sapling_notes.iter() {
                 if note.spend_status_query(spend_status_query) {
                     if let Some(output_index) = note.output_index {
-                        set.push(NoteRecordIdentifier::from_parts(
+                        set.push(OutputId::from_parts(
                             self.txid,
                             PoolType::Transparent,
                             output_index as u32,
@@ -144,7 +139,7 @@ impl TransactionRecord {
             for note in self.orchard_notes.iter() {
                 if note.spend_status_query(spend_status_query) {
                     if let Some(output_index) = note.output_index {
-                        set.push(NoteRecordIdentifier::from_parts(
+                        set.push(OutputId::from_parts(
                             self.txid,
                             PoolType::Transparent,
                             output_index as u32,
@@ -217,8 +212,13 @@ impl TransactionRecord {
 
     /// TODO: Add Doc Comment Here!
     pub fn is_incoming_transaction(&self) -> bool {
-        self.sapling_notes.iter().any(|note| !note.is_change())
-            || self.orchard_notes.iter().any(|note| !note.is_change())
+        self.sapling_notes
+            .iter()
+            .any(|note| !ShieldedNoteInterface::is_change(note))
+            || self
+                .orchard_notes
+                .iter()
+                .any(|note| !ShieldedNoteInterface::is_change(note))
             || !self.transparent_notes.is_empty()
     }
 
@@ -231,8 +231,8 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
     where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
         D::sum_pool_change(self)
     }
@@ -240,8 +240,8 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
     where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
         D::to_notes_vec(self)
             .iter()
@@ -251,13 +251,14 @@ impl TransactionRecord {
 
     /// TODO: Add Doc Comment Here!
     pub fn total_change_returned(&self) -> u64 {
-        self.pool_change_returned::<SaplingDomain>() + self.pool_change_returned::<OrchardDomain>()
+        self.pool_change_returned::<sapling_crypto::note_encryption::SaplingDomain>()
+            + self.pool_change_returned::<orchard::note_encryption::OrchardDomain>()
     }
 
     /// TODO: Add Doc Comment Here!
     pub fn total_value_received(&self) -> u64 {
-        self.pool_value_received::<OrchardDomain>()
-            + self.pool_value_received::<SaplingDomain>()
+        self.pool_value_received::<orchard::note_encryption::OrchardDomain>()
+            + self.pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
             + self
                 .transparent_notes
                 .iter()
@@ -327,17 +328,17 @@ impl TransactionRecord {
 
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
-        let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
-            notes::SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
+        let sapling_notes = zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
+            SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
         })?;
         let orchard_notes = if version > 22 {
-            Vector::read_collected_mut(&mut reader, |r| {
-                notes::OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
+            zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
+                OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
             })?
         } else {
             vec![]
         };
-        let utxos = Vector::read(&mut reader, |r| notes::TransparentNote::read(r))?;
+        let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentNote::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
@@ -348,20 +349,21 @@ impl TransactionRecord {
         };
 
         // Outgoing metadata was only added in version 2
-        let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxData::read(r))?;
+        let outgoing_metadata =
+            zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read(r))?;
 
         let _full_tx_scanned = reader.read_u8()? > 0;
 
         let zec_price = if version <= 4 {
             None
         } else {
-            Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())?
+            zcash_encoding::Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())?
         };
 
         let spent_sapling_nullifiers = if version <= 5 {
             vec![]
         } else {
-            Vector::read(&mut reader, |r| {
+            zcash_encoding::Vector::read(&mut reader, |r| {
                 let mut n = [0u8; 32];
                 r.read_exact(&mut n)?;
                 Ok(sapling_crypto::Nullifier(n))
@@ -371,13 +373,13 @@ impl TransactionRecord {
         let spent_orchard_nullifiers = if version <= 21 {
             vec![]
         } else {
-            Vector::read(&mut reader, |r| {
+            zcash_encoding::Vector::read(&mut reader, |r| {
                 let mut n = [0u8; 32];
                 r.read_exact(&mut n)?;
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-        let status = ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
+        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
         Ok(Self {
             status,
             datetime,
@@ -413,27 +415,27 @@ impl TransactionRecord {
 
         writer.write_all(self.txid.as_ref())?;
 
-        Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
-        Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
-        Vector::write(&mut writer, &self.transparent_notes, |w, u| u.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.transparent_notes, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
             writer.write_u64::<LittleEndian>(pool)?;
         }
 
         // Write the outgoing metadata
-        Vector::write(&mut writer, &self.outgoing_tx_data, |w, om| om.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.outgoing_tx_data, |w, om| om.write(w))?;
 
         writer.write_u8(0)?;
 
-        Optional::write(&mut writer, self.price, |w, p| {
+        zcash_encoding::Optional::write(&mut writer, self.price, |w, p| {
             w.write_f64::<LittleEndian>(p)
         })?;
 
-        Vector::write(&mut writer, &self.spent_sapling_nullifiers, |w, n| {
+        zcash_encoding::Vector::write(&mut writer, &self.spent_sapling_nullifiers, |w, n| {
             w.write_all(&n.0)
         })?;
-        Vector::write(&mut writer, &self.spent_orchard_nullifiers, |w, n| {
+        zcash_encoding::Vector::write(&mut writer, &self.spent_orchard_nullifiers, |w, n| {
             w.write_all(&n.to_bytes())
         })?;
 
@@ -508,11 +510,12 @@ mod tests {
 
     use crate::test_framework::mocks::default_txid;
     use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+    use crate::wallet::notes::query::NoteQuery;
     use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
     use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
     use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
-    use super::*;
+    use super::TransactionRecord;
 
     #[test]
     pub fn blank_record() {
@@ -522,8 +525,14 @@ mod tests {
         assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
-        assert_eq!(new.pool_change_returned::<OrchardDomain>(), 0);
-        assert_eq!(new.pool_change_returned::<SaplingDomain>(), 0);
+        assert_eq!(
+            new.pool_change_returned::<orchard::note_encryption::OrchardDomain>(),
+            0
+        );
+        assert_eq!(
+            new.pool_change_returned::<sapling_crypto::note_encryption::SaplingDomain>(),
+            0
+        );
         assert_eq!(new.total_value_received(), 0);
         assert_eq!(new.total_value_spent(), 0);
         assert_eq!(new.value_outgoing(), 0);
