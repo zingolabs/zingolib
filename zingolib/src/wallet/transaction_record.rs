@@ -605,23 +605,23 @@ mod tests {
     ) {
         let mut valid_spend_stati = 0;
         if unspent {
-            valid_spend_stati = valid_spend_stati + 1;
+            valid_spend_stati += 1;
         }
         if pending_spent {
-            valid_spend_stati = valid_spend_stati + 1;
+            valid_spend_stati += 1;
         }
         if spent {
-            valid_spend_stati = valid_spend_stati + 1;
+            valid_spend_stati += 1;
         }
         let mut valid_pools = 0;
         if transparent {
-            valid_pools = valid_pools + 1;
+            valid_pools += 1;
         }
         if sapling {
-            valid_pools = valid_pools + 1;
+            valid_pools += 1;
         }
         if orchard {
-            valid_pools = valid_pools + 1;
+            valid_pools += 1;
         }
 
         let expected = valid_spend_stati * valid_pools;
@@ -659,24 +659,24 @@ mod tests {
     ) {
         let mut valid_spend_stati = 0;
         if unspent {
-            valid_spend_stati = valid_spend_stati + 1;
+            valid_spend_stati += 1;
         }
         if pending_spent {
-            valid_spend_stati = valid_spend_stati + 1;
+            valid_spend_stati += 1;
         }
         if spent {
-            valid_spend_stati = valid_spend_stati + 1;
+            valid_spend_stati += 1;
         }
         //different pools have different mock values.
         let mut valid_pool_value = 0;
         if transparent {
-            valid_pool_value = valid_pool_value + 100000;
+            valid_pool_value += 100000;
         }
         if sapling {
-            valid_pool_value = valid_pool_value + 200000;
+            valid_pool_value += 200000;
         }
         if orchard {
-            valid_pool_value = valid_pool_value + 800000;
+            valid_pool_value += 800000;
         }
 
         let expected = valid_spend_stati * valid_pool_value;
