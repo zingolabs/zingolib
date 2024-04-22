@@ -16,7 +16,7 @@ use crate::wallet::notes;
 use super::{
     data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
     keys::unified::WalletCapability,
-    notes::{NoteRecordIdentifier, ShieldedNoteInterface},
+    notes::{OutputId, ShieldedNoteInterface},
     traits::{DomainWalletExt, ReadableWriteable as _},
 };
 
@@ -136,10 +136,7 @@ impl TransactionRecord {
     // TODO: Make these generic, this is wet code
     pub fn select_unspent_note_noteref_pairs<D>(
         &self,
-    ) -> Vec<(
-        <D as zcash_note_encryption::Domain>::Note,
-        NoteRecordIdentifier,
-    )>
+    ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, OutputId)>
     where
         D: DomainWalletExt,
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
@@ -152,7 +149,7 @@ impl TransactionRecord {
                 if !notes::NoteInterface::is_spent_or_pending_spent(note) {
                     if let Some(index) = note.output_index() {
                         let index = *index;
-                        let note_record_reference = NoteRecordIdentifier {
+                        let note_record_reference = OutputId {
                             txid: self.txid,
                             pool: PoolType::Shielded(<D as DomainWalletExt>::protocol()),
                             index,
@@ -256,7 +253,7 @@ impl TransactionRecord {
         index: u32,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            NoteRecordIdentifier,
+            OutputId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
     >
@@ -270,7 +267,7 @@ impl TransactionRecord {
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
             let txid = self.txid;
-            let note_record_reference = NoteRecordIdentifier {
+            let note_record_reference = OutputId {
                 txid,
                 pool: zcash_client_backend::PoolType::Shielded(note.to_zcb_note().protocol()),
                 index,
