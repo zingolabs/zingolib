@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    types: [ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [stable, dev]
   workflow_dispatch:
@@ -14,6 +14,7 @@ jobs:
   reject-trailing-whitespace:
     name: Reject trailing whitespace
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -24,6 +25,7 @@ jobs:
   run-doc-tests:
     name: Run doc tests
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
     steps:

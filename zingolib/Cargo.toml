@@ -8,12 +8,12 @@ edition = "2021"
 
 [features]
 deprecations = ["lightclient-deprecated"]
-test = ["lightclient-deprecated", "test-features"]
+test-features = ["lightclient-deprecated", "zingo-testvectors"]
 lightclient-deprecated = []
-test-features = ["zingo-testvectors"]
 default = ["embed_params"]
 embed_params = []
 darkside_tests = []
+zip317 = []
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
@@ -37,6 +37,7 @@ zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 hyper-rustls = { workspace = true }
+zip32.workspace = true
 
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
 
@@ -79,6 +80,7 @@ derive_more = "0.99.17"
 either = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
 sapling-crypto.workspace = true
+getset = "0.1.2"
 
 [dev-dependencies]
 portpicker = "0.1.0"

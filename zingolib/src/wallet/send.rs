@@ -1,4 +1,4 @@
-/// This mod contains pieces of the impl LightWallet that are invoked during a send.
+//! This mod contains pieces of the impl LightWallet that are invoked during a send.
 use crate::wallet::data::SpendableSaplingNote;
 use crate::wallet::notes::NoteInterface;
 use crate::wallet::now;
@@ -56,19 +56,27 @@ use super::traits::{DomainWalletExt, Recipient, SpendableNote};
 use super::utils::get_price;
 use super::Pool;
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
 pub struct SendProgress {
+    /// TODO: Add Doc Comment Here!
     pub id: u32,
+    /// TODO: Add Doc Comment Here!
     pub is_send_in_progress: bool,
+    /// TODO: Add Doc Comment Here!
     pub progress: u32,
+    /// TODO: Add Doc Comment Here!
     pub total: u32,
+    /// TODO: Add Doc Comment Here!
     pub last_error: Option<String>,
+    /// TODO: Add Doc Comment Here!
     pub last_transaction_id: Option<String>,
 }
 
 pub(crate) type NoteSelectionPolicy = Vec<Pool>;
 
 impl SendProgress {
+    /// TODO: Add Doc Comment Here!
     pub fn new(id: u32) -> Self {
         SendProgress {
             id,
@@ -83,6 +91,7 @@ impl SendProgress {
 
 type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
 
+/// TODO: Add Doc Comment Here!
 // review! unit test this
 pub fn build_transaction_request_from_receivers(
     receivers: Receivers,
@@ -144,6 +153,7 @@ impl LightWallet {
             self.transaction_context.config.reorg_buffer_offset as usize,
         )?))
     }
+
     pub(super) async fn get_sapling_anchor(
         &self,
         tree: &ShardTree<
@@ -196,11 +206,12 @@ impl LightWallet {
         let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
     }
 
-    // Get the current sending status.
+    /// Get the current sending status.
     pub async fn get_send_progress(&self) -> SendProgress {
         self.send_progress.read().await.clone()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn send_to_addresses<F, Fut, P: SpendProver + OutputProver>(
         &self,
         sapling_prover: P,
@@ -252,6 +263,7 @@ impl LightWallet {
             }
         }
     }
+
     async fn create_publication_ready_transaction<P: SpendProver + OutputProver>(
         &self,
         submission_height: BlockHeight,
@@ -343,6 +355,7 @@ impl LightWallet {
         progress_handle.await.unwrap();
         Ok(build_result)
     }
+
     async fn create_and_populate_tx_builder(
         &self,
         submission_height: BlockHeight,
@@ -684,6 +697,7 @@ impl LightWallet {
         )
         .expect("u64 representable"))
     }
+
     fn add_change_output_to_builder<'a>(
         &self,
         mut tx_builder: TxBuilder<'a>,
@@ -729,6 +743,7 @@ impl LightWallet {
         };
         Ok(tx_builder)
     }
+
     async fn add_spends_to_builder<'a>(
         &'a self,
         mut tx_builder: TxBuilder<'a>,
@@ -817,6 +832,7 @@ impl LightWallet {
         }
         Ok(tx_builder)
     }
+
     async fn send_to_addresses_inner<F, Fut>(
         &self,
         transaction: &Transaction,
@@ -868,15 +884,14 @@ mod tests {
     fn test_build_request() {
         let amount_1 = NonNegativeAmount::const_from_u64(20000);
         let recipient_address_1 =
-            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
+            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_1 = None;
 
         let amount_2 = NonNegativeAmount::const_from_u64(20000);
         let recipient_address_2 =
-            Address::decode(&ChainType::Testnet, &"utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()).unwrap();
+            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_2 = Some(MemoBytes::from(
-            Memo::from_str(&"the lake wavers along the beach".to_string())
-                .expect("string can memofy"),
+            Memo::from_str("the lake wavers along the beach").expect("string can memofy"),
         ));
 
         let rec: Receivers = vec![

@@ -14,6 +14,7 @@ jobs:
   build-test-artifacts:
     name: Build test artifacts
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -45,6 +46,7 @@ jobs:
   run-tests:
     name: Run tests
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     needs: build-test-artifacts
     env:
       RUSTFLAGS: -D warnings

@@ -1,3 +1,4 @@
+//! TODO: Add Mod Discription Here!
 use orchard::note_encryption::OrchardDomain;
 
 use sapling_crypto::note_encryption::SaplingDomain;
@@ -25,6 +26,7 @@ use super::{data::BlockData, transactions::TxMapAndMaybeTrees};
 
 use super::LightWallet;
 impl LightWallet {
+    /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
     pub async fn shielded_balance<D>(
         &self,
@@ -79,6 +81,7 @@ impl LightWallet {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
             self.verified_balance::<OrchardDomain>(target_addr).await
@@ -87,6 +90,7 @@ impl LightWallet {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().sapling {
             self.verified_balance::<SaplingDomain>(target_addr).await
@@ -95,6 +99,7 @@ impl LightWallet {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
@@ -113,6 +118,7 @@ impl LightWallet {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn unverified_balance<D: DomainWalletExt>(
         &self,
         target_addr: Option<String>,
@@ -133,6 +139,7 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn verified_balance<D: DomainWalletExt>(
         &self,
         target_addr: Option<String>,
@@ -154,18 +161,22 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
         self.shielded_balance::<OrchardDomain>(addr, &[]).await
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
         self.shielded_balance::<SaplingDomain>(addr, &[]).await
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn wallet_capability(&self) -> Arc<WalletCapability> {
         self.transaction_context.key.clone()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &zingoconfig::ChainType,
         note: &D::WalletNote,
@@ -183,6 +194,8 @@ impl LightWallet {
         })
         .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn mnemonic(&self) -> Option<&(Mnemonic, u32)> {
         self.mnemonic.as_ref()
     }
@@ -195,6 +208,7 @@ impl LightWallet {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn get_birthday(&self) -> u64 {
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
         if birthday == 0 {
@@ -209,9 +223,9 @@ impl LightWallet {
         self.blocks.read().await.iter().cloned().collect()
     }
 
-    // Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
-    // If there are no transactions, then the actual birthday (which is recorder at wallet creation) is returned
-    // If no birthday was recorded, return the sapling activation height
+    /// Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
+    /// If there are no transactions, then the actual birthday (which is recorder at wallet creation) is returned
+    /// If no birthday was recorded, return the sapling activation height
     pub async fn get_first_transaction_block(&self) -> u64 {
         // Find the first transaction
         let earliest_block = self
@@ -232,7 +246,7 @@ impl LightWallet {
             ))
     }
 
-    // Get all (unspent) utxos. Unconfirmed spent utxos are included
+    /// Get all (unspent) utxos. Unconfirmed spent utxos are included
     pub async fn get_utxos(&self) -> Vec<TransparentNote> {
         self.transaction_context
             .transaction_metadata_set
@@ -250,6 +264,7 @@ impl LightWallet {
             .collect::<Vec<TransparentNote>>()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn last_synced_hash(&self) -> String {
         self.blocks
             .read()
@@ -270,6 +285,7 @@ impl LightWallet {
             .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
         self.transaction_context.transaction_metadata_set.clone()
     }

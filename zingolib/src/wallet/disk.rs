@@ -1,4 +1,4 @@
-/// This mod contains write and read functionality of impl LightWallet
+//! This mod contains write and read functionality of impl LightWallet
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use log::{error, info};
@@ -32,9 +32,12 @@ use super::{
 };
 
 impl LightWallet {
+    /// TODO: Add Doc Comment Here!
     pub const fn serialized_version() -> u64 {
         28
     }
+
+    /// TODO: Add Doc Comment Here!
     pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
@@ -98,7 +101,6 @@ impl LightWallet {
     /// make explicit (via ident) which variable refers to a value deserialized from
     /// some source ("external") and which is represented as a source-code constant
     /// ("internal").
-
     pub async fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
         if external_version > Self::serialized_version() {

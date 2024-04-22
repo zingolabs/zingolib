@@ -6,6 +6,7 @@ jobs:
   cache-checkmate:
     name: Cache checkmate
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     steps:
       - uses: taiki-e/cache-cargo-install-action@v1
         with:
@@ -18,6 +19,7 @@ jobs:
         phase: [build, check, clippy, doc, format]
     needs: cache-checkmate
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
     steps:

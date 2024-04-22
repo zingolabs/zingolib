@@ -72,13 +72,13 @@ impl LightClient {
             .sapling_notes
             .iter()
             .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
+            .map(|nd| nd.sapling_crypto_note.value().inner())
             .sum::<u64>()
             + wallet_transaction
                 .orchard_notes
                 .iter()
                 .filter(|nd| nd.is_change)
-                .map(|nd| nd.note.value().inner())
+                .map(|nd| nd.orchard_crypto_note.value().inner())
                 .sum::<u64>()
             + received_utxo_value;
 
@@ -108,6 +108,8 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
+
+    /// TODO: Add Doc Comment Here!
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         let mut consumer_ui_notes = self
