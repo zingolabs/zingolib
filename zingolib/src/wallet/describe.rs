@@ -256,7 +256,7 @@ impl LightWallet {
             .values()
             .flat_map(|transaction| {
                 transaction
-                    .transparent_notes
+                    .transparent_outputs
                     .iter()
                     .filter(|utxo| !utxo.is_spent())
             })

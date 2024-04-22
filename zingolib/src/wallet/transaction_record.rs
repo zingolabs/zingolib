@@ -42,7 +42,7 @@ pub struct TransactionRecord {
     pub orchard_notes: Vec<notes::OrchardNote>,
 
     /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
-    pub transparent_notes: Vec<notes::TransparentOutput>,
+    pub transparent_outputs: Vec<notes::TransparentOutput>,
 
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
@@ -76,7 +76,7 @@ impl TransactionRecord {
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
-            transparent_notes: vec![],
+            transparent_outputs: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
@@ -142,7 +142,7 @@ impl TransactionRecord {
                 .orchard_notes
                 .iter()
                 .any(|note| !notes::ShieldedNoteInterface::is_change(note))
-            || !self.transparent_notes.is_empty()
+            || !self.transparent_outputs.is_empty()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -183,7 +183,7 @@ impl TransactionRecord {
         self.pool_value_received::<orchard::note_encryption::OrchardDomain>()
             + self.pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
             + self
-                .transparent_notes
+                .transparent_outputs
                 .iter()
                 .map(|utxo| utxo.value)
                 .sum::<u64>()
@@ -310,7 +310,7 @@ impl TransactionRecord {
             txid: transaction_id,
             sapling_notes,
             orchard_notes,
-            transparent_notes: utxos,
+            transparent_outputs: utxos,
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
             total_sapling_value_spent,
@@ -341,7 +341,7 @@ impl TransactionRecord {
 
         zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
-        zcash_encoding::Vector::write(&mut writer, &self.transparent_notes, |w, u| u.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.transparent_outputs, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
             writer.write_u64::<LittleEndian>(pool)?;
@@ -460,7 +460,7 @@ mod tests {
         // A single transparent note makes is_incoming_transaction true.
         let mut transaction_record = TransactionRecordBuilder::default().build();
         transaction_record
-            .transparent_notes
+            .transparent_outputs
             .push(TransparentNoteBuilder::default().build());
         assert!(transaction_record.is_incoming_transaction());
     }
