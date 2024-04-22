@@ -71,11 +71,13 @@ impl Account<AccountId> for ZingoAccount {
     }
 }
 
+/// some of these functions, initially those required for calculate_transaction, will be implemented
 impl WalletRead for TxMapAndMaybeTrees {
     type Error = ZingoLibError;
     type AccountId = AccountId;
     type Account = ZingoAccount;
 
+    /// partially implemented. zingo uses the default account. when we expand account functionality, this will be updated
     fn get_account_for_ufvk(
         &self,
         ufvk: &UnifiedFullViewingKey,
@@ -83,6 +85,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         Ok(Some(ZingoAccount(AccountId::ZERO, ufvk.clone())))
     }
 
+    /// fully implemented. the target height is always the next block, and the anchor is a variable depth below.
     fn get_target_and_anchor_heights(
         &self,
         min_confirmations: std::num::NonZeroU32,
