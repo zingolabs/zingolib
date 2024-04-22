@@ -25,7 +25,6 @@ use crate::{
         },
         keys::address_from_pubkeyhash,
         notes::NoteInterface,
-        notes::ShieldedNoteInterface,
         LightWallet, Pool,
     },
 };
@@ -118,7 +117,7 @@ impl LightClient {
                     .iter()
                     .filter(|n| n.spent().is_none() && n.unconfirmed_spent.is_none())
                     .for_each(|n| {
-                        let value = n.note.value().inner();
+                        let value = n.orchard_crypto_note.value().inner();
                         if !incoming && n.is_change {
                             change += value;
                             change_note_count += 1;
@@ -136,7 +135,7 @@ impl LightClient {
                     .iter()
                     .filter(|n| n.spent().is_none() && n.unconfirmed_spent.is_none())
                     .for_each(|n| {
-                        let value = n.note.value().inner();
+                        let value = n.sapling_crypto_note.value().inner();
                         if !incoming && n.is_change {
                             change += value;
                             change_note_count += 1;
@@ -512,7 +511,7 @@ impl LightClient {
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id.clone()),
-                            "value"              => note_metadata.note.value().inner(),
+                            "value"              => note_metadata.sapling_crypto_note.value().inner(),
                             "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
                             "is_change"          => note_metadata.is_change,
                             "address"            => address,
@@ -556,7 +555,7 @@ impl LightClient {
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id),
-                            "value"              => orch_note_metadata.note.value().inner(),
+                            "value"              => orch_note_metadata.orchard_crypto_note.value().inner(),
                             "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
                             "is_change"          => orch_note_metadata.is_change,
                             "address"            => address,

@@ -3,6 +3,7 @@ use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 use super::NoteInterface;
@@ -29,6 +30,14 @@ pub struct TransparentNote {
 }
 
 impl NoteInterface for TransparentNote {
+    fn pool_type(&self) -> PoolType {
+        PoolType::Transparent
+    }
+
+    fn value(&self) -> u64 {
+        self.value
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
@@ -243,29 +252,9 @@ pub mod mocks {
                 .txid(TxId::from_bytes([0u8; 32]))
                 .output_index(0)
                 .script(vec![])
-                .value(0)
+                .value(100000)
                 .spent(None)
                 .unconfirmed_spent(None)
         }
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use crate::{
-        test_framework::mocks::default_txid,
-        wallet::notes::{transparent::mocks::TransparentNoteBuilder, NoteInterface},
-    };
-
-    #[test]
-    fn pending_spent_note_is_pending_spent() {
-        let spend = Some((default_txid(), 112358));
-        let note = TransparentNoteBuilder::default()
-            .unconfirmed_spent(spend)
-            .build();
-        assert!(!note.is_spent());
-        assert!(note.is_pending_spent());
-        assert!(note.is_spent_or_pending_spent());
-        assert_eq!(note.pending_spent(), &spend);
     }
 }

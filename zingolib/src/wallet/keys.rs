@@ -83,19 +83,12 @@ pub fn get_zaddr_from_bip39seed(
     (extsk, fvk, address)
 }
 
-/// TODO: Add Doc Comment Here!
+/// Checks if the address str is a valid zcash address
+#[deprecated(note = "address strings are now immediately converted to valid addresses")]
 pub fn is_shielded_address(addr: &str, chain: &ChainType) -> bool {
     matches!(
         address::Address::decode(chain, addr),
         Some(address::Address::Sapling(_)) | Some(address::Address::Unified(_))
-    )
-}
-
-/// TODO: Add Doc Comment Here!
-pub fn is_transparent_address(addr: &str, chain: &ChainType) -> bool {
-    matches!(
-        address::Address::decode(chain, addr),
-        Some(address::Address::Transparent(_))
     )
 }
 

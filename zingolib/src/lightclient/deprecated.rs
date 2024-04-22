@@ -3,6 +3,7 @@ use std::cmp;
 use crate::wallet::transaction_record::TransactionRecord;
 
 use super::*;
+use crate::wallet::notes::NoteInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 use zcash_note_encryption::Domain;
 
@@ -72,13 +73,13 @@ impl LightClient {
             .sapling_notes
             .iter()
             .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
+            .map(|nd| nd.sapling_crypto_note.value().inner())
             .sum::<u64>()
             + wallet_transaction
                 .orchard_notes
                 .iter()
                 .filter(|nd| nd.is_change)
-                .map(|nd| nd.note.value().inner())
+                .map(|nd| nd.orchard_crypto_note.value().inner())
                 .sum::<u64>()
             + received_utxo_value;
 
