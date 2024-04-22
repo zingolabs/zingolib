@@ -43,6 +43,20 @@ pub struct NoteQuery {
 }
 
 impl NoteQuery {
+    /// build a query, specifying each stipulation
+    pub fn stipulations(
+        unspent: bool,
+        pending_spent: bool,
+        spent: bool,
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    ) -> Self {
+        Self::new(
+            NoteSpendStatusQuery::new(unspent, pending_spent, spent),
+            NotePoolQuery::new(transparent, sapling, orchard),
+        )
+    }
     /// will the query include unspent notes?
     pub fn unspent(&self) -> &bool {
         self.spend_status().unspent()

@@ -26,6 +26,8 @@ use crate::wallet::{
     traits::DomainWalletExt,
 };
 
+use super::notes::query::NoteQuery;
+
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionRecord {
@@ -108,6 +110,34 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// Uses a query to select all notes with specific properties and sum them
+    pub fn query_sum_value(&self, include_notes: NoteQuery) -> u64 {
+        let mut sum = 0;
+        let spend_status_query = *include_notes.spend_status();
+        if *include_notes.transparent() {
+            for note in self.transparent_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    sum += note.value()
+                }
+            }
+        }
+        if *include_notes.sapling() {
+            for note in self.sapling_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    sum += note.value()
+                }
+            }
+        }
+        if *include_notes.orchard() {
+            for note in self.orchard_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    sum += note.value()
+                }
+            }
+        }
+        sum
+    }
+
     /// TODO: Add Doc Comment Here!
     pub fn get_transparent_value_spent(&self) -> u64 {
         self.total_transparent_value_spent
@@ -428,6 +458,11 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
+    use test_case::test_matrix;
+
+    use crate::test_framework::mocks::default_txid;
+    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+    use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
     use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
     use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
@@ -457,5 +492,95 @@ mod tests {
             .transparent_notes
             .push(TransparentNoteBuilder::default().build());
         assert!(transaction_record.is_incoming_transaction());
+    }
+
+    #[test_matrix(
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false]
+    )]
+    fn query_sum_value(
+        unspent: bool,
+        pending_spent: bool,
+        spent: bool,
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    ) {
+        let spend = Some((default_txid(), 112358));
+
+        let mut transaction_record = TransactionRecordBuilder::default().build();
+
+        transaction_record
+            .transparent_notes
+            .push(TransparentNoteBuilder::default().build());
+        transaction_record
+            .transparent_notes
+            .push(TransparentNoteBuilder::default().spent(spend).build());
+        transaction_record.transparent_notes.push(
+            TransparentNoteBuilder::default()
+                .unconfirmed_spent(spend)
+                .build(),
+        );
+        transaction_record
+            .sapling_notes
+            .push(SaplingNoteBuilder::default().build());
+        transaction_record
+            .sapling_notes
+            .push(SaplingNoteBuilder::default().spent(spend).build());
+        transaction_record.sapling_notes.push(
+            SaplingNoteBuilder::default()
+                .unconfirmed_spent(spend)
+                .build(),
+        );
+        transaction_record
+            .orchard_notes
+            .push(OrchardNoteBuilder::default().build());
+        transaction_record
+            .orchard_notes
+            .push(OrchardNoteBuilder::default().spent(spend).build());
+        transaction_record.orchard_notes.push(
+            OrchardNoteBuilder::default()
+                .unconfirmed_spent(spend)
+                .build(),
+        );
+
+        let mut valid_spend_stati = 0;
+        if unspent {
+            valid_spend_stati = valid_spend_stati + 1;
+        }
+        if pending_spent {
+            valid_spend_stati = valid_spend_stati + 1;
+        }
+        if spent {
+            valid_spend_stati = valid_spend_stati + 1;
+        }
+        let mut valid_pools = 0;
+        if transparent {
+            valid_pools = valid_pools + 1;
+        }
+        if sapling {
+            valid_pools = valid_pools + 1;
+        }
+        if orchard {
+            valid_pools = valid_pools + 1;
+        }
+
+        let expected = valid_spend_stati * valid_pools * 100000;
+
+        assert_eq!(
+            transaction_record.query_sum_value(NoteQuery::stipulations(
+                unspent,
+                pending_spent,
+                spent,
+                transparent,
+                sapling,
+                orchard,
+            )),
+            expected,
+        );
     }
 }
