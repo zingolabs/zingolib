@@ -122,9 +122,64 @@ pub(super) fn parse_send_args(
 // - 2 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
 pub(super) fn parse_send_all_args(
     args: &[&str],
-) -> Result<Vec<(String, Option<MemoBytes>)>, CommandError> {
-    if args.len() == 1 {}
-    todo!()
+    chain: &ChainType,
+) -> Result<(Address, Option<MemoBytes>), CommandError> {
+    let address: Address;
+    let memo: Option<MemoBytes>;
+
+    if args.len() == 1 {
+        if let Ok(addr) = address_from_str(args[0], chain) {
+            address = addr;
+            memo = None;
+        } else {
+            let json_args =
+                json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+
+            if !json_args.is_array() {
+                return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
+            }
+            if json_args.is_empty() {
+                return Err(CommandError::EmptyJsonArray);
+            }
+            let json_args = if json_args.len() == 1 {
+                json_args
+                    .members()
+                    .next()
+                    .expect("should have a single member")
+            } else {
+                return Err(CommandError::MultipleReceivers);
+            };
+
+            if !json_args.has_key("address") {
+                return Err(CommandError::MissingKey("address".to_string()));
+            }
+            let address_str = json_args["address"]
+                .as_str()
+                .ok_or(CommandError::UnexpectedType(
+                    "address not a Str!".to_string(),
+                ))?;
+            address =
+                address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)?;
+
+            memo = if let Some(m) = json_args["memo"].as_str().map(|s| s.to_string()) {
+                Some(wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?)
+            } else {
+                None
+            };
+            check_memo_compatibility(&address, &memo)?;
+        }
+    } else if args.len() == 2 {
+        address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
+        memo = Some(
+            wallet::utils::interpret_memo_string(args[1].to_string())
+                .map_err(CommandError::InvalidMemo)?,
+        );
+        check_memo_compatibility(&address, &memo)?;
+    } else {
+        return Err(CommandError::InvalidArguments);
+    }
+
+    Ok((address, memo))
 }
 
 // Checks send inputs do not contain memo's to transparent addresses.
@@ -406,9 +461,9 @@ mod tests {
         super::check_memo_compatibility(&transparent_address, &None).unwrap();
 
         // transparent address with memo
-        match super::check_memo_compatibility(&transparent_address, &Some(memo.clone())) {
-            Err(CommandError::IncompatibleMemo) => (),
-            _ => panic!(),
-        };
+        assert!(matches!(
+            super::check_memo_compatibility(&transparent_address, &Some(memo.clone())),
+            Err(CommandError::IncompatibleMemo)
+        ));
     }
 }
