@@ -255,15 +255,11 @@ impl TransactionRecord {
             + self.pool_change_returned::<orchard::note_encryption::OrchardDomain>()
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
-        self.pool_value_received::<orchard::note_encryption::OrchardDomain>()
-            + self.pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
-            + self
-                .transparent_notes
-                .iter()
-                .map(|utxo| utxo.value)
-                .sum::<u64>()
+        self.query_sum_value(OutputQuery::stipulations(
+            true, true, true, true, true, true,
+        ))
     }
 
     /// TODO: Add Doc Comment Here!
