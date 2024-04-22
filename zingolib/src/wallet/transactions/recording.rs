@@ -213,6 +213,55 @@ impl super::TransactionRecordsById {
             Some(_) => {}
         }
     }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_new_note<D: DomainWalletExt>(
+        &mut self,
+        txid: TxId,
+        status: ConfirmationStatus,
+        timestamp: u64,
+        note: <D::WalletNote as ShieldedNoteInterface>::Note,
+        to: D::Recipient,
+        have_spending_key: bool,
+        nullifier: Option<<D::WalletNote as ShieldedNoteInterface>::Nullifier>,
+        output_index: u32,
+        position: Position,
+    ) where
+        D::Note: PartialEq + Clone,
+        D::Recipient: Recipient,
+    {
+        let transaction_metadata =
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+
+        let nd = D::WalletNote::from_parts(
+            D::Recipient::diversifier(&to),
+            note.clone(),
+            Some(position),
+            nullifier,
+            None,
+            None,
+            None,
+            // if this is change, we'll mark it later in check_notes_mark_change
+            false,
+            have_spending_key,
+            Some(output_index),
+        );
+        match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            None => {
+                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
+
+                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
+                    .retain(|n| n.nullifier().is_some());
+            }
+            #[allow(unused_mut)]
+            Some(mut n) => {
+                // An overwrite should be safe here: TODO: test that confirms this
+                *n = nd;
+            }
+        }
+    }
 }
 
 /// Witness tree requiring methods, each method is noted with *HOW* it requires witness trees.
@@ -354,57 +403,6 @@ impl super::TxMapAndMaybeTrees {
         } else {
             ZingoLibError::UnknownError.handle()?
         }) // todO add special error variant
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn add_new_note<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        status: ConfirmationStatus,
-        timestamp: u64,
-        note: <D::WalletNote as ShieldedNoteInterface>::Note,
-        to: D::Recipient,
-        have_spending_key: bool,
-        nullifier: Option<<D::WalletNote as ShieldedNoteInterface>::Nullifier>,
-        output_index: u32,
-        position: Position,
-    ) where
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
-        let transaction_metadata = self
-            .transaction_records_by_id
-            .create_modify_get_transaction_metadata(&txid, status, timestamp);
-
-        let nd = D::WalletNote::from_parts(
-            D::Recipient::diversifier(&to),
-            note.clone(),
-            Some(position),
-            nullifier,
-            None,
-            None,
-            None,
-            // if this is change, we'll mark it later in check_notes_mark_change
-            false,
-            have_spending_key,
-            Some(output_index),
-        );
-        match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            None => {
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
-
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
-                    .retain(|n| n.nullifier().is_some());
-            }
-            #[allow(unused_mut)]
-            Some(mut n) => {
-                // An overwrite should be safe here: TODO: test that confirms this
-                *n = nd;
-            }
-        }
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
