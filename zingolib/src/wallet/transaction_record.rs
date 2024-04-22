@@ -129,7 +129,7 @@ impl TransactionRecord {
                         set.push(OutputId::from_parts(
                             self.txid,
                             PoolType::Transparent,
-                            output_index as u32,
+                            output_index,
                         ));
                     }
                 }
@@ -142,7 +142,7 @@ impl TransactionRecord {
                         set.push(OutputId::from_parts(
                             self.txid,
                             PoolType::Transparent,
-                            output_index as u32,
+                            output_index,
                         ));
                     }
                 }
