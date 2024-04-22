@@ -4,11 +4,9 @@ use std::convert::Infallible;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::fees::zip317::FeeRule;
 
-use crate::wallet::notes::NoteRecordIdentifier;
-
 /// A proposed send to addresses.
 /// Identifies the notes to spend by txid, pool, and output_index.
-pub(crate) type TransferProposal = Proposal<FeeRule, NoteRecordIdentifier>;
+pub(crate) type TransferProposal = Proposal<FeeRule, crate::wallet::notes::ShNoteId>;
 /// A proposed shielding.
 /// The zcash_client_backend Proposal type exposes a "NoteRef" generic
 /// parameter to track Shielded inputs to the proposal these are
