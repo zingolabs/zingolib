@@ -7,7 +7,7 @@ use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::data_api::{InputSource, SpendableNotes};
 use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
-use zcash_client_backend::{PoolType, ShieldedProtocol};
+use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::legacy::Script;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::components::TxOut;
@@ -22,7 +22,7 @@ use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
         data::TransactionRecord,
-        notes::{NoteInterface as _, OutputId, ShNoteId},
+        notes::{NoteInterface as _, ShNoteId},
         traits::{DomainWalletExt, Recipient},
     },
 };
@@ -400,9 +400,9 @@ mod tests {
     use crate::wallet::{
         notes::{
             sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentNoteBuilder,
-            SaplingNote, ShNoteId,
+            ShNoteId,
         },
-        transaction_record::{self, mocks::TransactionRecordBuilder, TransactionRecord},
+        transaction_record::{self, mocks::TransactionRecordBuilder},
     };
 
     use super::TransactionRecordsById;
@@ -456,7 +456,7 @@ mod tests {
 
         let target_value = NonNegativeAmount::const_from_u64(20000);
         let anchor_height: BlockHeight = 10.into();
-        let spendable_notes: SpendableNotes<ShNoteId> =
+        let _spendable_notes: SpendableNotes<ShNoteId> =
             zcash_client_backend::data_api::InputSource::select_spendable_notes(
                 &transaction_records_by_id,
                 AccountId::ZERO,
