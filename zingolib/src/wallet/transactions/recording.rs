@@ -66,18 +66,14 @@ impl super::TransactionRecordsById {
             }
         });
     }
-}
-
-impl super::TxMapAndMaybeTrees {
     fn create_modify_get_transaction_metadata(
         &mut self,
         txid: &TxId,
         status: ConfirmationStatus,
         datetime: u64,
     ) -> &'_ mut TransactionRecord {
-        self.transaction_records_by_id
-            .entry(*txid)
-            // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
+        self.entry(*txid)
+            // if we already have the transaction metadata, it may be newly confirmed. update confirmation_status
             .and_modify(|transaction_metadata| {
                 transaction_metadata.status = status;
                 transaction_metadata.datetime = datetime;
@@ -85,7 +81,9 @@ impl super::TxMapAndMaybeTrees {
             // if this transaction is new to our data, insert it
             .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
     }
+}
 
+impl super::TxMapAndMaybeTrees {
     // Records a TxId as having spent some nullifiers from the wallet.
     #[allow(clippy::too_many_arguments)]
     pub fn found_spent_nullifier(
@@ -143,8 +141,9 @@ impl super::TxMapAndMaybeTrees {
         )?; // todo error handling
 
         // Record this Tx as having spent some funds
-        let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&spending_txid, status, timestamp as u64);
+        let transaction_metadata = self
+            .transaction_records_by_id
+            .create_modify_get_transaction_metadata(&spending_txid, status, timestamp as u64);
 
         if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
@@ -225,8 +224,9 @@ impl super::TxMapAndMaybeTrees {
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+        let transaction_metadata = self
+            .transaction_records_by_id
+            .create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
@@ -285,8 +285,9 @@ impl super::TxMapAndMaybeTrees {
         output_num: u32,
     ) {
         // Read or create the current TxId
-        let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+        let transaction_metadata = self
+            .transaction_records_by_id
+            .create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         // Add this UTXO if it doesn't already exist
         if transaction_metadata
@@ -324,8 +325,9 @@ impl super::TxMapAndMaybeTrees {
         D::Recipient: Recipient,
     {
         let status = ConfirmationStatus::Broadcast(height);
-        let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+        let transaction_metadata = self
+            .transaction_records_by_id
+            .create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         match D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
@@ -368,8 +370,9 @@ impl super::TxMapAndMaybeTrees {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+        let transaction_metadata = self
+            .transaction_records_by_id
+            .create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
