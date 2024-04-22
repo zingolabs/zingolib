@@ -11,11 +11,12 @@ pub use orchard::OrchardNote;
 pub mod query;
 
 use zcash_client_backend::PoolType;
+use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::transaction::TxId;
 
 /// This triple of values uniquely identifies an entry on a zcash blockchain.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct OutputRecord {
+pub struct OutputId {
     /// TODO: Add Doc Comment Here!
     pub txid: TxId,
     /// TODO: Add Doc Comment Here!
@@ -23,15 +24,14 @@ pub struct OutputRecord {
     /// TODO: Add Doc Comment Here!
     pub index: u32,
 }
-
-impl OutputRecord {
+impl OutputId {
     /// The primary constructor, note index means FLARRGGGLLLE!
     pub fn from_parts(txid: TxId, pool: PoolType, index: u32) -> Self {
-        OutputRecord { txid, pool, index }
+        OutputId { txid, pool, index }
     }
 }
 
-impl std::fmt::Display for OutputRecord {
+impl std::fmt::Display for OutputId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -41,35 +41,64 @@ impl std::fmt::Display for OutputRecord {
     }
 }
 
+/// This triple of values uniquely identifies an entry on a zcash blockchain.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ShNoteId {
+    /// TODO: Add Doc Comment Here!
+    pub txid: TxId,
+    /// TODO: Add Doc Comment Here!
+    pub shpool: zcash_client_backend::ShieldedProtocol,
+    /// TODO: Add Doc Comment Here!
+    pub index: u32,
+}
+impl ShNoteId {
+    /// The primary constructor, note index means FLARRGGGLLLE!
+    pub fn from_parts(txid: TxId, shpool: ShieldedProtocol, index: u32) -> Self {
+        ShNoteId {
+            txid,
+            shpool,
+            index,
+        }
+    }
+}
+
+impl std::fmt::Display for ShNoteId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "txid {}, {:?}, index {}",
+            self.txid, self.shpool, self.index,
+        )
+    }
+}
+
 #[cfg(any(test, feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_client_backend::PoolType;
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::transaction::TxId;
 
     use crate::test_framework::mocks::{build_method, default_txid};
 
-    use super::OutputRecord;
-
     /// to build a mock NoteRecordIdentifier
-    pub struct OutputRecordBuilder {
+    pub struct ShNoteIdBuilder {
         txid: Option<TxId>,
-        pool: Option<PoolType>,
+        shpool: Option<ShieldedProtocol>,
         index: Option<u32>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
-    impl OutputRecordBuilder {
+    impl ShNoteIdBuilder {
         /// blank builder
         pub fn new() -> Self {
             Self {
                 txid: None,
-                pool: None,
+                shpool: None,
                 index: None,
             }
         }
         // Methods to set each field
         build_method!(txid, TxId);
-        build_method!(pool, PoolType);
+        build_method!(shpool, ShieldedProtocol);
         build_method!(index, u32);
 
         /// selects a random probablistically unique txid
@@ -78,18 +107,20 @@ pub mod mocks {
         }
 
         /// builds a mock NoteRecordIdentifier after all pieces are supplied
-        pub fn build(self) -> OutputRecord {
-            OutputRecord::from_parts(self.txid.unwrap(), self.pool.unwrap(), self.index.unwrap())
+        pub fn build(self) -> super::ShNoteId {
+            super::ShNoteId::from_parts(
+                self.txid.unwrap(),
+                self.shpool.unwrap(),
+                self.index.unwrap(),
+            )
         }
     }
 
-    impl Default for OutputRecordBuilder {
+    impl Default for ShNoteIdBuilder {
         fn default() -> Self {
             Self::new()
                 .txid(default_txid())
-                .pool(PoolType::Shielded(
-                    zcash_client_backend::ShieldedProtocol::Orchard,
-                ))
+                .shpool(zcash_client_backend::ShieldedProtocol::Orchard)
                 .index(0)
         }
     }
