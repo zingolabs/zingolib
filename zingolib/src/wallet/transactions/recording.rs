@@ -311,7 +311,7 @@ impl TxMapAndMaybeTrees {
             // If it already exists, it is likely an mempool tx, so update the height
         } else {
             transaction_metadata.transparent_notes.push(
-                crate::wallet::notes::TransparentNote::from_parts(
+                crate::wallet::notes::TransparentOutput::from_parts(
                     taddr,
                     txid,
                     output_num as u64,

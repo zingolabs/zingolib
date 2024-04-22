@@ -42,7 +42,7 @@ pub struct TransactionRecord {
     pub orchard_notes: Vec<notes::OrchardNote>,
 
     /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
-    pub transparent_notes: Vec<notes::TransparentNote>,
+    pub transparent_notes: Vec<notes::TransparentOutput>,
 
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
@@ -261,7 +261,8 @@ impl TransactionRecord {
         } else {
             vec![]
         };
-        let utxos = zcash_encoding::Vector::read(&mut reader, |r| notes::TransparentNote::read(r))?;
+        let utxos =
+            zcash_encoding::Vector::read(&mut reader, |r| notes::TransparentOutput::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
