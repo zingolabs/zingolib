@@ -175,6 +175,9 @@ impl FromBytes<11> for orchard::keys::Diversifier {
     }
 }
 
+pub trait SpendCapable {
+    type RecordsByIds;
+}
 /// TODO: Add Doc Comment Here!
 pub trait FromCommitment
 where

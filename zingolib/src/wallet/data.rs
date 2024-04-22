@@ -56,6 +56,10 @@ pub struct WitnessTrees {
     pub witness_tree_orchard: ShardTree<OrchStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
 }
 
+impl crate::wallet::traits::SpendCapable for WitnessTrees {
+    type RecordsByIds = crate::wallet::transaction_records_by_id::TransactionRecordsById;
+}
+
 fn write_shards<W, H, C>(mut writer: W, store: &MemoryShardStore<H, C>) -> io::Result<()>
 where
     H: Hashable + Clone + Eq + HashSer,
