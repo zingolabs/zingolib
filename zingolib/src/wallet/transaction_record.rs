@@ -553,16 +553,12 @@ pub mod mocks {
 mod tests {
     use test_case::test_matrix;
 
-    
-    
     use crate::wallet::notes::query::OutputQuery;
-    
+
     use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, TransactionRecordBuilder,
     };
-
-    
 
     #[test]
     pub fn blank_record() {
