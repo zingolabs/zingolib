@@ -407,9 +407,13 @@ mod tests {
 
     use super::TransactionRecordsById;
 
-    use zcash_client_backend::{data_api::SpendableNotes, ShieldedProtocol};
+    use zcash_client_backend::{
+        data_api::{InputSource, SpendableNotes},
+        ShieldedProtocol,
+    };
     use zcash_primitives::{
-        consensus::BlockHeight, transaction::components::amount::NonNegativeAmount,
+        consensus::BlockHeight, legacy::TransparentAddress,
+        transaction::components::amount::NonNegativeAmount,
     };
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
     use zip32::AccountId;
@@ -461,9 +465,9 @@ mod tests {
                 &transaction_records_by_id,
                 AccountId::ZERO,
                 target_value,
-                &vec![ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
                 anchor_height,
-                &vec![],
+                &[],
             )
             .unwrap();
         assert_eq!(
@@ -477,5 +481,14 @@ mod tests {
             // Default mock sapling note value
             1_000_000
         )
+    }
+    fn select_transparent_outputs() {
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+
+        let selected_outputs = transaction_records_by_id.get_unspent_transparent_outputs(
+            &TransparentAddress::ScriptHash([0; 20]),
+            BlockHeight::from_u32(10),
+            &[],
+        );
     }
 }
