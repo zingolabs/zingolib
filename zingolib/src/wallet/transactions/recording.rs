@@ -40,6 +40,11 @@ impl super::TransactionRecordsById {
 
         self.invalidate_transactions(txids_to_remove);
     }
+    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
+        self.get(txid)
+            .map(TransactionRecord::total_value_spent)
+            .unwrap_or(0)
+    }
 }
 
 impl super::TxMapAndMaybeTrees {
@@ -49,7 +54,7 @@ impl super::TxMapAndMaybeTrees {
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
-        if self.total_funds_spent_in(txid) > 0 {
+        if self.transaction_records_by_id.total_funds_spent_in(txid) > 0 {
             if let Some(transaction_metadata) = self.transaction_records_by_id.get_mut(txid) {
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);

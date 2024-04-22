@@ -96,6 +96,7 @@ pub mod decrypt_transaction {
                 .transaction_metadata_set
                 .read()
                 .await
+                .transaction_records_by_id
                 .total_funds_spent_in(&transaction.txid())
                 > 0
             {
