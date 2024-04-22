@@ -70,7 +70,7 @@ pub fn random_zaddr() -> (
     zaddr_from_seed(seed)
 }
 
-// Sapling Note Mocker
+/// Sapling Note Mocker
 mod sapling_crypto_note {
 
     use sapling_crypto::value::NoteValue;
@@ -125,6 +125,66 @@ mod sapling_crypto_note {
                 .recipient(address)
                 .value(NoteValue::from_raw(1000000))
                 .rseed(Rseed::AfterZip212([7; 32]))
+        }
+    }
+}
+
+/// Orchard Note Mocker
+pub mod orchard_note {
+
+    use orchard::{
+        keys::{FullViewingKey, SpendingKey},
+        note::{RandomSeed, Rho},
+        value::NoteValue,
+        Note,
+    };
+    use rand::{rngs::OsRng, Rng};
+    use zip32::Scope;
+
+    /// mocks a random orchard note
+    pub fn mock_random_orchard_note() -> Note {
+        let mut rng = OsRng;
+
+        let sk = {
+            loop {
+                let mut bytes = [0; 32];
+                rng.fill(&mut bytes);
+                let sk = SpendingKey::from_bytes(bytes);
+                if sk.is_some().into() {
+                    break sk.unwrap();
+                }
+            }
+        };
+        let fvk: FullViewingKey = (&sk).into();
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let value = NoteValue::default(); // ZERO
+        let rho = {
+            loop {
+                let mut bytes = [0u8; 32];
+                rng.fill(&mut bytes);
+                let rho = Rho::from_bytes(&bytes);
+                if rho.is_some().into() {
+                    break rho.unwrap();
+                }
+            }
+        };
+        let random_seed = {
+            loop {
+                let mut bytes = [0; 32];
+                rng.fill(&mut bytes);
+                let random_seed = RandomSeed::from_bytes(bytes, &rho);
+                if random_seed.is_some().into() {
+                    break random_seed.unwrap();
+                }
+            }
+        };
+
+        loop {
+            let note = Note::from_parts(recipient, value, rho, random_seed);
+            if note.is_some().into() {
+                break note.unwrap();
+            }
         }
     }
 }
