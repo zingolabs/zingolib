@@ -398,14 +398,21 @@ impl Default for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
     use crate::wallet::{
-        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentNoteBuilder},
-        transaction_record::mocks::TransactionRecordBuilder,
+        notes::{
+            sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentNoteBuilder,
+            SaplingNote, ShNoteId,
+        },
+        transaction_record::{self, mocks::TransactionRecordBuilder, TransactionRecord},
     };
 
     use super::TransactionRecordsById;
 
-    use zcash_primitives::consensus::BlockHeight;
+    use zcash_client_backend::{data_api::SpendableNotes, ShieldedProtocol};
+    use zcash_primitives::{
+        consensus::BlockHeight, transaction::components::amount::NonNegativeAmount,
+    };
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zip32::AccountId;
 
     #[test]
     fn invalidated_note_is_deleted() {
@@ -434,5 +441,30 @@ mod tests {
         transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
 
         assert_eq!(transaction_records_by_id.len(), 1);
+    }
+    #[test]
+    fn note_is_selected() {
+        // WIP
+        let mut transaction_record =
+            transaction_record::mocks::TransactionRecordBuilder::default().build();
+        transaction_record
+            .sapling_notes
+            .push(crate::wallet::notes::sapling::mocks::SaplingNoteBuilder::default().build());
+
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+        transaction_records_by_id.insert(transaction_record.txid, transaction_record);
+
+        let target_value = NonNegativeAmount::const_from_u64(20000);
+        let anchor_height: BlockHeight = 10.into();
+        let spendable_notes: SpendableNotes<ShNoteId> =
+            zcash_client_backend::data_api::InputSource::select_spendable_notes(
+                &transaction_records_by_id,
+                AccountId::ZERO,
+                target_value,
+                &vec![ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                anchor_height,
+                &vec![],
+            )
+            .unwrap();
     }
 }
