@@ -15,7 +15,7 @@ use zcash_primitives::transaction::TxId;
 
 /// This triple of values uniquely identifies an entry on a zcash blockchain.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct NoteRecordIdentifier {
+pub struct OutputRecord {
     /// TODO: Add Doc Comment Here!
     pub txid: TxId,
     /// TODO: Add Doc Comment Here!
@@ -24,14 +24,14 @@ pub struct NoteRecordIdentifier {
     pub index: u32,
 }
 
-impl NoteRecordIdentifier {
+impl OutputRecord {
     /// The primary constructor, note index means FLARRGGGLLLE!
     pub fn from_parts(txid: TxId, pool: PoolType, index: u32) -> Self {
-        NoteRecordIdentifier { txid, pool, index }
+        OutputRecord { txid, pool, index }
     }
 }
 
-impl std::fmt::Display for NoteRecordIdentifier {
+impl std::fmt::Display for OutputRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -49,16 +49,16 @@ pub mod mocks {
 
     use crate::test_framework::mocks::{build_method, default_txid};
 
-    use super::NoteRecordIdentifier;
+    use super::OutputRecord;
 
     /// to build a mock NoteRecordIdentifier
-    pub struct NoteRecordIdentifierBuilder {
+    pub struct OutputRecordBuilder {
         txid: Option<TxId>,
         pool: Option<PoolType>,
         index: Option<u32>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
-    impl NoteRecordIdentifierBuilder {
+    impl OutputRecordBuilder {
         /// blank builder
         pub fn new() -> Self {
             Self {
@@ -78,16 +78,12 @@ pub mod mocks {
         }
 
         /// builds a mock NoteRecordIdentifier after all pieces are supplied
-        pub fn build(self) -> NoteRecordIdentifier {
-            NoteRecordIdentifier::from_parts(
-                self.txid.unwrap(),
-                self.pool.unwrap(),
-                self.index.unwrap(),
-            )
+        pub fn build(self) -> OutputRecord {
+            OutputRecord::from_parts(self.txid.unwrap(), self.pool.unwrap(), self.index.unwrap())
         }
     }
 
-    impl Default for NoteRecordIdentifierBuilder {
+    impl Default for OutputRecordBuilder {
         fn default() -> Self {
             Self::new()
                 .txid(default_txid())
