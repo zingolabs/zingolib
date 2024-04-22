@@ -172,8 +172,11 @@ impl super::TransactionRecordsById {
     }
 }
 
+/// Witness tree requiring methods, each method is noted with *HOW* it requires witness trees.
 impl super::TxMapAndMaybeTrees {
-    // Records a TxId as having spent some nullifiers from the wallet.
+    /// Records a TxId as having spent some nullifiers from the wallet.
+    /// witness tree requirement:
+    /// found_spent_nullifier_internal -> mark_note_as_spent -> remove_witness_mark
     #[allow(clippy::too_many_arguments)]
     pub fn found_spent_nullifier(
         &mut self,
@@ -206,6 +209,8 @@ impl super::TxMapAndMaybeTrees {
         }
     }
 
+    /// witness tree requirement:
+    /// mark_note_as_spent -> remove_witness_mark
     #[allow(clippy::too_many_arguments)]
     fn found_spent_nullifier_internal<D: DomainWalletExt>(
         &mut self,
@@ -251,6 +256,8 @@ impl super::TxMapAndMaybeTrees {
     }
 
     // Will mark a note as having been spent at the supplied height and spent_txid.
+    /// witness tree requirement:
+    /// remove_witness_mark ~-> note_datum.witnessed_position
     pub fn mark_note_as_spent<D: DomainWalletExt>(
         &mut self,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
@@ -306,6 +313,8 @@ impl super::TxMapAndMaybeTrees {
         }) // todO add special error variant
     }
 
+    /// witness tree requirement:
+    ///
     pub(crate) fn add_pending_note<D>(
         &mut self,
         txid: TxId,
