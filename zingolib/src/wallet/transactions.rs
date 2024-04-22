@@ -14,6 +14,8 @@ use crate::{
     wallet::{data::WitnessTrees, transaction_records_by_id::TransactionRecordsById},
 };
 
+use super::notes::query::OutputQuery;
+
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
@@ -82,6 +84,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
+        // todo we could assert that the ufvk matches, or return error.
         Ok(Some(ZingoAccount(AccountId::ZERO, ufvk.clone())))
     }
 
@@ -122,19 +125,28 @@ impl WalletRead for TxMapAndMaybeTrees {
     fn get_min_unspent_height(
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
-        todo!()
-        // Ok(self
-        //     .record_map
-        //     .map
-        //     .values()
-        //     .fold(None, |height, transaction| {
-        //         let transaction_height = transaction.status.get_confirmed_height();
-        //         match (height, transaction_height) {
-        //             (None, None) => None,
-        //             (Some(h), None) | (None, Some(h)) => Some(h),
-        //             (Some(h1), Some(h2)) => Some(std::cmp::min(h1, h2)),
-        //         }
-        //     }))
+        Ok(self
+            .transaction_records_by_id
+            .values()
+            .fold(None, |height_rolling_min, transaction| {
+                let transaction_height = transaction.status.get_confirmed_height();
+                // query for an unspent shielded output
+                if transaction
+                    .query_for_ids(OutputQuery::stipulations(
+                        true, false, false, false, true, true,
+                    ))
+                    .len()
+                    > 0
+                {
+                    match (height_rolling_min, transaction_height) {
+                        (None, None) => None,
+                        (Some(h), None) | (None, Some(h)) => Some(h),
+                        (Some(h1), Some(h2)) => Some(std::cmp::min(h1, h2)),
+                    }
+                } else {
+                    height_rolling_min
+                }
+            }))
     }
 
     fn get_tx_height(
