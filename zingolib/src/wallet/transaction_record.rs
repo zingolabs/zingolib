@@ -31,7 +31,7 @@ pub struct TransactionRecord {
 
     /// Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
     /// WalletTx in LightWallet::txs)
-    pub transaction_id: TxId,
+    pub txid: TxId,
 
     /// List of all nullifiers spent by this wallet in this Tx.
     pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
@@ -75,7 +75,7 @@ impl TransactionRecord {
         TransactionRecord {
             status,
             datetime,
-            transaction_id: *transaction_id,
+            txid: *transaction_id,
             spent_sapling_nullifiers: vec![],
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
@@ -119,7 +119,7 @@ impl TransactionRecord {
         } else {
             ZingoLibError::MetadataUnderflow(format!(
                 "for txid {} with status {}: spent {}, outgoing {}, returned change {} \n {:?}",
-                self.transaction_id,
+                self.txid,
                 self.status,
                 self.total_value_spent(),
                 self.value_outgoing(),
@@ -153,10 +153,8 @@ impl TransactionRecord {
                     if let Some(index) = note.output_index() {
                         let index = *index;
                         let note_record_reference = NoteRecordIdentifier {
-                            txid: self.transaction_id,
-                            pool: PoolType::Shielded(
-                                zcash_client_backend::ShieldedProtocol::Sapling,
-                            ),
+                            txid: self.txid,
+                            pool: PoolType::Shielded(<D as DomainWalletExt>::protocol()),
                             index,
                         };
                         value_ref_pairs.push((
@@ -271,7 +269,7 @@ impl TransactionRecord {
             .iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
-            let txid = self.transaction_id;
+            let txid = self.txid;
             let note_record_reference = NoteRecordIdentifier {
                 txid,
                 pool: zcash_client_backend::PoolType::Shielded(note.to_zcb_note().protocol()),
@@ -386,7 +384,7 @@ impl TransactionRecord {
         Ok(Self {
             status,
             datetime,
-            transaction_id,
+            txid: transaction_id,
             sapling_notes,
             orchard_notes,
             transparent_notes: utxos,
@@ -416,7 +414,7 @@ impl TransactionRecord {
 
         writer.write_u64::<LittleEndian>(self.datetime)?;
 
-        writer.write_all(self.transaction_id.as_ref())?;
+        writer.write_all(self.txid.as_ref())?;
 
         zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
