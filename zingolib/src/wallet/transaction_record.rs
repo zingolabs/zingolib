@@ -558,18 +558,19 @@ mod tests {
         if spent {
             valid_spend_stati = valid_spend_stati + 1;
         }
-        let mut valid_pools = 0;
+        //different pools have different mock values.
+        let mut valid_pool_value = 0;
         if transparent {
-            valid_pools = valid_pools + 1;
+            valid_pool_value = valid_pool_value + 100000;
         }
         if sapling {
-            valid_pools = valid_pools + 1;
+            valid_pool_value = valid_pool_value + 200000;
         }
         if orchard {
-            valid_pools = valid_pools + 1;
+            valid_pool_value = valid_pool_value + 800000;
         }
 
-        let expected = valid_spend_stati * valid_pools * 100000;
+        let expected = valid_spend_stati * valid_pool_value;
 
         assert_eq!(
             transaction_record.query_sum_value(NoteQuery::stipulations(
