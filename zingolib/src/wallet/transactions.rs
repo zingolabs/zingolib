@@ -292,6 +292,7 @@ impl WalletRead for TxMapAndMaybeTrees {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::proptest;
     use std::num::NonZeroU32;
 
     use zcash_client_backend::data_api::WalletRead;
@@ -320,8 +321,9 @@ mod tests {
         );
     }
 
+    proptest! {
     #[test]
-    fn get_min_unspent_height() {
+    fn get_min_unspent_height(sapling_height: u32, orchard_height: u32) {
         use super::TxMapAndMaybeTrees;
 
         let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
@@ -330,8 +332,9 @@ mod tests {
             .transaction_records_by_id
             .insert_transaction_record(
                 TransactionRecordBuilder::default()
-                    .status(Confirmed(10.into()))
+                    .status(Confirmed(sapling_height.into()))
                     .build(),
             );
     }
+        }
 }
