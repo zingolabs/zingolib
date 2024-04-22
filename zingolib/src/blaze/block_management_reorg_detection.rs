@@ -447,7 +447,7 @@ impl BlockManagementData {
         self.wait_for_block(after_height).await;
 
         {
-            // Read Lock for
+            // Read Lock for the Block Cache
             let blocks = self.blocks_in_current_batch.read().await;
             // take the height of the first/highest block in the batch and subtract target height to get index into the block list
             let pos = blocks.first().unwrap().height - after_height;
@@ -456,13 +456,14 @@ impl BlockManagementData {
                     let nf = nf.to_vec();
 
                     // starting with a block and searching until the top of the batch
+                    //     if this block contains a transaction
+                    //         that contains a spent
+                    //             with the given nullifier
+                    //                 return its height
                     for i in (0..pos + 1).rev() {
                         let cb = &blocks.get(i as usize).unwrap().cb();
-                        // if this block contains a transaction
                         for compact_transaction in &cb.vtx {
-                            // that contains a spent
                             for cs in &compact_transaction.spends {
-                                // with the given nullifier
                                 if cs.nf == nf {
                                     return Some(cb.height);
                                 }
