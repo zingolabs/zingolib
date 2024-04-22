@@ -831,12 +831,6 @@ impl Command for ProposeCommand {
                 )
             }
         };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help propose' for correct usage and examples.",
-                e,
-            );
-        };
         RT.block_on(async move {
             match lightclient
                 .do_propose_spend(
@@ -932,12 +926,6 @@ impl Command for QuickSendCommand {
                     e
                 )
             }
-        };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help quicksend' for correct usage and examples.",
-                e,
-            );
         };
         RT.block_on(async move {
             if let Err(e) = lightclient
