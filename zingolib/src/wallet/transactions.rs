@@ -296,6 +296,9 @@ mod tests {
 
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
+    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
     #[test]
     fn test_get_target_and_anchor_heights() {
@@ -315,5 +318,20 @@ mod tests {
                 .unwrap(),
             (BlockHeight::from_u32(8422), BlockHeight::from_u32(8411))
         );
+    }
+
+    #[test]
+    fn test_get_min_unspent_height() {
+        use super::TxMapAndMaybeTrees;
+
+        let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+
+        transaction_records_and_maybe_trees
+            .transaction_records_by_id
+            .insert_transaction_record(
+                TransactionRecordBuilder::default()
+                    .status(Confirmed(10.into()))
+                    .build(),
+            );
     }
 }
