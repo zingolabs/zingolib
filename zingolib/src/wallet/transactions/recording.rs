@@ -170,6 +170,49 @@ impl super::TransactionRecordsById {
             );
         }
     }
+    /// witness tree requirement:
+    ///
+    pub(crate) fn add_pending_note<D>(
+        &mut self,
+        txid: TxId,
+        height: BlockHeight,
+        timestamp: u64,
+        note: D::Note,
+        to: D::Recipient,
+        output_index: usize,
+    ) where
+        D: DomainWalletExt,
+        D::Note: PartialEq + Clone,
+        D::Recipient: Recipient,
+    {
+        let status = ConfirmationStatus::Broadcast(height);
+        let transaction_metadata =
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+
+        match D::to_notes_vec_mut(transaction_metadata)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            None => {
+                let nd = D::WalletNote::from_parts(
+                    to.diversifier(),
+                    note,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    // if this is change, we'll mark it later in check_notes_mark_change
+                    false,
+                    false,
+                    Some(output_index as u32),
+                );
+
+                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
+            }
+            Some(_) => {}
+        }
+    }
 }
 
 /// Witness tree requiring methods, each method is noted with *HOW* it requires witness trees.
@@ -311,51 +354,6 @@ impl super::TxMapAndMaybeTrees {
         } else {
             ZingoLibError::UnknownError.handle()?
         }) // todO add special error variant
-    }
-
-    /// witness tree requirement:
-    ///
-    pub(crate) fn add_pending_note<D>(
-        &mut self,
-        txid: TxId,
-        height: BlockHeight,
-        timestamp: u64,
-        note: D::Note,
-        to: D::Recipient,
-        output_index: usize,
-    ) where
-        D: DomainWalletExt,
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
-        let status = ConfirmationStatus::Broadcast(height);
-        let transaction_metadata = self
-            .transaction_records_by_id
-            .create_modify_get_transaction_metadata(&txid, status, timestamp);
-
-        match D::to_notes_vec_mut(transaction_metadata)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            None => {
-                let nd = D::WalletNote::from_parts(
-                    to.diversifier(),
-                    note,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    false,
-                    Some(output_index as u32),
-                );
-
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
-            }
-            Some(_) => {}
-        }
     }
 
     #[allow(clippy::too_many_arguments)]
