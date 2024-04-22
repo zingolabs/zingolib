@@ -18,10 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `export_save_buffer_runtime`
   - `get_wallet_file_location`
   - `get_wallet_dir_location`
+  - `do_send_test_only` behind `test-features` flag
+  - `do_shield_test_only` behind `test-features` flag
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils` mod
 - `lightclient::LightClient`:
-  - `do_propose` behind "zip317" feature
+  - `do_propose_spend` behind "zip317" feature
   - `do_send_proposal` behind "zip317" feature
 - `commands`:
   - `ProposeCommand` struct and methods behind "zip317" feature
@@ -37,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `commands`:
   - `get_commands` added propose and quicksend to entries behind "zip317" feature
   - `SendCommand::help` formatting
+- `lightclient::LightClient`:
+  - `do_send` inputs from `Vec<(&str, u64, Option<MemoBytes>)>` to `Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>`
+  - `do_shield` inputs from `Option<String>` to `Option<Address>`
 
 ### Removed
 

@@ -2214,7 +2214,7 @@ mod slow {
                         (
                             client_2_saplingaddress.as_str(),
                             n * 10000,
-                            Some(memos[n as usize]),
+                            Some(memos[(n - 1) as usize]),
                         )
                     })
                     .collect(),
@@ -3079,7 +3079,7 @@ mod slow {
         assert!(total_value_to_addrs_iter.next().is_none());
     }
     #[tokio::test]
-    async fn factor_do_shield_test_only_to_call_do_send_test_only() {
+    async fn factor_do_shield_to_call_do_send() {
         let (regtest_manager, __cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)

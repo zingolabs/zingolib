@@ -47,6 +47,9 @@ pub(super) fn parse_send_args(
         if !json_args.is_array() {
             return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
         }
+        if json_args.is_empty() {
+            return Err(CommandError::EmptyJsonArray);
+        }
 
         json_args
             .members()
@@ -148,14 +151,14 @@ mod tests {
         let shield_args = &["all"];
         assert_eq!(
             super::parse_shield_args(shield_args, &chain).unwrap(),
-            (vec![Pool::Transparent, Pool::Sapling], None)
+            (vec![Pool::Sapling, Pool::Transparent], None)
         );
 
         // Shield all to given address
         let shield_args = &["all", address_str];
         assert_eq!(
             super::parse_shield_args(shield_args, &chain).unwrap(),
-            (vec![Pool::Transparent, Pool::Sapling], Some(address))
+            (vec![Pool::Sapling, Pool::Transparent], Some(address))
         );
 
         // Invalid pool
@@ -224,19 +227,11 @@ mod tests {
             #[test]
             fn empty_json_array() {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-                let json = "[{}]";
-                let result = parse_send_args(&[json], &chain);
-                match result {
-                    Err(CommandError::ArgsNotJson(e)) => match e {
-                        json::Error::UnexpectedCharacter { ch, line, column } => {
-                            assert_eq!(ch, 'e');
-                            assert_eq!(line, 1);
-                            assert_eq!(column, 2);
-                        }
-                        _ => panic!(),
-                    },
-                    _ => panic!(),
-                };
+                let json = "[]";
+                assert!(matches!(
+                    parse_send_args(&[json], &chain),
+                    Err(CommandError::EmptyJsonArray)
+                ));
             }
             #[test]
             fn failed_json_parsing() {
