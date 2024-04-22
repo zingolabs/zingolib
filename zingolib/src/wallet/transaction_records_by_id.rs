@@ -22,7 +22,7 @@ use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
         data::TransactionRecord,
-        notes::{NoteInterface as _, OutputId},
+        notes::{NoteInterface as _, OutputId, ShNoteId},
         traits::{DomainWalletExt, Recipient},
     },
 };
@@ -60,7 +60,7 @@ impl TransactionRecordsById {
 impl InputSource for TransactionRecordsById {
     type Error = ZingoLibError;
     type AccountId = zcash_primitives::zip32::AccountId;
-    type NoteRef = OutputId;
+    type NoteRef = ShNoteId;
 
     fn get_spendable_note(
         &self,
@@ -76,9 +76,9 @@ impl InputSource for TransactionRecordsById {
         >,
         Self::Error,
     > {
-        let note_record_reference: <Self as InputSource>::NoteRef = OutputId {
+        let note_record_reference: <Self as InputSource>::NoteRef = ShNoteId {
             txid: *txid,
-            pool: PoolType::Shielded(protocol),
+            shpool: protocol,
             index,
         };
         match protocol {
@@ -106,14 +106,14 @@ impl InputSource for TransactionRecordsById {
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
-    ) -> Result<SpendableNotes<OutputId>, ZingoLibError> {
+    ) -> Result<SpendableNotes<ShNoteId>, ZingoLibError> {
         if account != AccountId::ZERO {
             return Err(ZingoLibError::Error(
                 "we don't use non-zero accounts (yet?)".to_string(),
             ));
         }
-        let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, OutputId)> = Vec::new();
-        let mut orchard_note_noteref_pairs: Vec<(orchard::Note, OutputId)> = Vec::new();
+        let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, ShNoteId)> = Vec::new();
+        let mut orchard_note_noteref_pairs: Vec<(orchard::Note, ShNoteId)> = Vec::new();
         for transaction_record in self.values().filter(|transaction_record| {
             transaction_record
                 .status
@@ -136,8 +136,8 @@ impl InputSource for TransactionRecordsById {
                 );
             }
         }
-        let mut sapling_notes = Vec::<ReceivedNote<OutputId, sapling_crypto::Note>>::new();
-        let mut orchard_notes = Vec::<ReceivedNote<OutputId, orchard::Note>>::new();
+        let mut sapling_notes = Vec::<ReceivedNote<ShNoteId, sapling_crypto::Note>>::new();
+        let mut orchard_notes = Vec::<ReceivedNote<ShNoteId, orchard::Note>>::new();
         if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().rev(/*biggest first*/).try_fold(
             Some(target_value),
             |rolling_target, (note, noteref)| match rolling_target {
@@ -272,10 +272,10 @@ impl InputSource for TransactionRecordsById {
 impl TransactionRecordsById {
     pub fn get_received_note_from_identifier<D: DomainWalletExt>(
         &self,
-        note_record_reference: OutputId,
+        note_record_reference: ShNoteId,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            OutputId,
+            ShNoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
     >
@@ -285,7 +285,7 @@ impl TransactionRecordsById {
     {
         let transaction = self.get(&note_record_reference.txid);
         transaction.and_then(|transaction_record| {
-            if note_record_reference.pool == PoolType::Shielded(D::SHIELDED_PROTOCOL) {
+            if note_record_reference.shpool == D::SHIELDED_PROTOCOL {
                 transaction_record.get_received_note::<D>(note_record_reference.index)
             } else {
                 None

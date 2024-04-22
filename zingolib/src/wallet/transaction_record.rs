@@ -6,17 +6,16 @@ use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use zcash_client_backend::PoolType;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
-use crate::error::ZingoLibError;
 use crate::wallet::notes;
+use crate::{error::ZingoLibError, wallet::notes::ShNoteId};
 
 use super::{
     data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
     keys::unified::WalletCapability,
-    notes::{OutputId, ShieldedNoteInterface},
+    notes::ShieldedNoteInterface,
     traits::{DomainWalletExt, ReadableWriteable as _},
 };
 
@@ -136,7 +135,7 @@ impl TransactionRecord {
     // TODO: Make these generic, this is wet code
     pub fn select_unspent_note_noteref_pairs<D>(
         &self,
-    ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, OutputId)>
+    ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, ShNoteId)>
     where
         D: DomainWalletExt,
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
@@ -149,9 +148,9 @@ impl TransactionRecord {
                 if !notes::NoteInterface::is_spent_or_pending_spent(note) {
                     if let Some(index) = note.output_index() {
                         let index = *index;
-                        let note_record_reference = OutputId {
+                        let note_record_reference = ShNoteId {
                             txid: self.txid,
-                            pool: PoolType::Shielded(D::SHIELDED_PROTOCOL),
+                            shpool: D::SHIELDED_PROTOCOL,
                             index,
                         };
                         value_ref_pairs.push((
@@ -253,7 +252,7 @@ impl TransactionRecord {
         index: u32,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            OutputId,
+            ShNoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
     >
@@ -267,9 +266,9 @@ impl TransactionRecord {
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
             let txid = self.txid;
-            let note_record_reference = OutputId {
+            let note_record_reference = ShNoteId {
                 txid,
-                pool: zcash_client_backend::PoolType::Shielded(note.to_zcb_note().protocol()),
+                shpool: note.to_zcb_note().protocol(),
                 index,
             };
             note.witnessed_position().map(|pos| {
