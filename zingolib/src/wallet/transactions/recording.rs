@@ -24,24 +24,6 @@ use crate::{
 
 use super::TxMapAndMaybeTrees;
 impl TxMapAndMaybeTrees {
-    /// During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
-    pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
-        let reorg_height = BlockHeight::from_u32(reorg_height as u32);
-
-        self.transaction_records_by_id
-            .invalidate_all_transactions_after_or_at_height(reorg_height);
-
-        if let Some(ref mut t) = self.witness_trees {
-            t.witness_tree_sapling
-                .truncate_removing_checkpoint(&(reorg_height - 1))
-                .expect("Infallible");
-            t.witness_tree_orchard
-                .truncate_removing_checkpoint(&(reorg_height - 1))
-                .expect("Infallible");
-            t.add_checkpoint(reorg_height - 1);
-        }
-    }
-
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
@@ -456,6 +438,24 @@ impl TxMapAndMaybeTrees {
 
 // shardtree
 impl TxMapAndMaybeTrees {
+    /// During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
+    pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
+        let reorg_height = BlockHeight::from_u32(reorg_height as u32);
+
+        self.transaction_records_by_id
+            .invalidate_all_transactions_after_or_at_height(reorg_height);
+
+        if let Some(ref mut t) = self.witness_trees {
+            t.witness_tree_sapling
+                .truncate_removing_checkpoint(&(reorg_height - 1))
+                .expect("Infallible");
+            t.witness_tree_orchard
+                .truncate_removing_checkpoint(&(reorg_height - 1))
+                .expect("Infallible");
+            t.add_checkpoint(reorg_height - 1);
+        }
+    }
+
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(
