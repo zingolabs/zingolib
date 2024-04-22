@@ -21,14 +21,12 @@ use crate::{
         traits::{self, DomainWalletExt, Nullifier, Recipient},
     },
 };
-
-impl super::TxMapAndMaybeTrees {
+impl super::TransactionRecordsById {
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
 
         let txids_to_remove = self
-            .transaction_records_by_id
             .iter()
             .filter(|(_, transaction_metadata)| {
                 transaction_metadata.status.is_broadcast_before(&cutoff)
@@ -40,10 +38,11 @@ impl super::TxMapAndMaybeTrees {
             .iter()
             .for_each(|t| println!("Removing expired mempool tx {}", t));
 
-        self.transaction_records_by_id
-            .invalidate_transactions(txids_to_remove);
+        self.invalidate_transactions(txids_to_remove);
     }
+}
 
+impl super::TxMapAndMaybeTrees {
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
     // transaction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
     //
