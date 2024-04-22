@@ -151,7 +151,7 @@ impl TransactionRecord {
                         let index = *index;
                         let note_record_reference = OutputId {
                             txid: self.txid,
-                            pool: PoolType::Shielded(<D as DomainWalletExt>::protocol()),
+                            pool: PoolType::Shielded(D::SHIELDED_PROTOCOL),
                             index,
                         };
                         value_ref_pairs.push((

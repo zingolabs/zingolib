@@ -463,6 +463,8 @@ where
     const NU: NetworkUpgrade;
     /// TODO: Add Doc Comment Here!
     const NAME: &'static str;
+    /// The [zcash_protocol::ShieldedProtocol] this domain represents
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
 
     /// TODO: Add Doc Comment Here!
     type Fvk: Clone
@@ -533,9 +535,6 @@ where
     /// TODO: Add Doc Comment Here!
     fn get_tree(tree_state: &TreeState) -> &String;
 
-    /// The [zcash_protocol::ShieldedProtocol] this domain represents
-    fn protocol() -> ShieldedProtocol;
-
     /// TODO: Add Doc Comment Here!
     fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
 
@@ -558,6 +557,7 @@ where
 impl DomainWalletExt for SaplingDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
     const NAME: &'static str = "sapling";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
     type Fvk = sapling_crypto::zip32::DiversifiableFullViewingKey;
 
@@ -603,10 +603,6 @@ impl DomainWalletExt for SaplingDomain {
         &tree_state.sapling_tree
     }
 
-    fn protocol() -> ShieldedProtocol {
-        ShieldedProtocol::Sapling
-    }
-
     fn to_notes_vec(transaction_record: &TransactionRecord) -> &Vec<Self::WalletNote> {
         &transaction_record.sapling_notes
     }
@@ -637,6 +633,7 @@ impl DomainWalletExt for SaplingDomain {
 impl DomainWalletExt for OrchardDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
     const NAME: &'static str = "orchard";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
     type Fvk = orchard::keys::FullViewingKey;
 
@@ -680,10 +677,6 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
-    }
-
-    fn protocol() -> ShieldedProtocol {
-        ShieldedProtocol::Orchard
     }
 
     fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {

@@ -285,7 +285,7 @@ impl TransactionRecordsById {
     {
         let transaction = self.get(&note_record_reference.txid);
         transaction.and_then(|transaction_record| {
-            if note_record_reference.pool == PoolType::Shielded(D::protocol()) {
+            if note_record_reference.pool == PoolType::Shielded(D::SHIELDED_PROTOCOL) {
                 transaction_record.get_received_note::<D>(note_record_reference.index)
             } else {
                 None
