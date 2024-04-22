@@ -134,7 +134,7 @@ impl TransactionRecord {
     /// pair it with a NoteRecordIdentifier identifying the note
     /// and return the list
     // TODO: Make these generic, this is wet code
-    pub fn select_unspent_note_noteref_pairs<D>(
+    pub fn select_unspent_shnotes_and_ids<D>(
         &self,
     ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, OutputId)>
     where
