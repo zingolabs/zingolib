@@ -2,6 +2,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::witness::IncrementalWitness;
 use std::io::{self, Read, Write};
+use zcash_client_backend::PoolType;
 
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
@@ -27,6 +28,7 @@ use crate::wallet::{
 };
 
 use super::notes::query::NoteQuery;
+use super::notes::NoteRecordIdentifier;
 
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
@@ -110,6 +112,50 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
+    pub fn query_for_ids(&self, include_notes: NoteQuery) -> Vec<NoteRecordIdentifier> {
+        let mut set = vec![];
+        let spend_status_query = *include_notes.spend_status();
+        if *include_notes.transparent() {
+            for note in self.transparent_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    set.push(NoteRecordIdentifier::from_parts(
+                        self.txid,
+                        PoolType::Transparent,
+                        note.output_index as u32,
+                    ));
+                }
+            }
+        }
+        if *include_notes.sapling() {
+            for note in self.sapling_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    if let Some(output_index) = note.output_index {
+                        set.push(NoteRecordIdentifier::from_parts(
+                            self.txid,
+                            PoolType::Transparent,
+                            output_index as u32,
+                        ));
+                    }
+                }
+            }
+        }
+        if *include_notes.orchard() {
+            for note in self.orchard_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    if let Some(output_index) = note.output_index {
+                        set.push(NoteRecordIdentifier::from_parts(
+                            self.txid,
+                            PoolType::Transparent,
+                            output_index as u32,
+                        ));
+                    }
+                }
+            }
+        }
+        set
+    }
+
     /// Uses a query to select all notes with specific properties and sum them
     pub fn query_sum_value(&self, include_notes: NoteQuery) -> u64 {
         let mut sum = 0;
@@ -494,22 +540,7 @@ mod tests {
         assert!(transaction_record.is_incoming_transaction());
     }
 
-    #[test_matrix(
-        [true, false],
-        [true, false],
-        [true, false],
-        [true, false],
-        [true, false],
-        [true, false]
-    )]
-    fn query_sum_value(
-        unspent: bool,
-        pending_spent: bool,
-        spent: bool,
-        transparent: bool,
-        sapling: bool,
-        orchard: bool,
-    ) {
+    fn nine_note_transaction_record() -> TransactionRecord {
         let spend = Some((default_txid(), 112358));
 
         let mut transaction_record = TransactionRecordBuilder::default().build();
@@ -548,6 +579,79 @@ mod tests {
                 .build(),
         );
 
+        transaction_record
+    }
+
+    #[test_matrix(
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false]
+    )]
+    fn query_for_ids(
+        unspent: bool,
+        pending_spent: bool,
+        spent: bool,
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    ) {
+        let mut valid_spend_stati = 0;
+        if unspent {
+            valid_spend_stati = valid_spend_stati + 1;
+        }
+        if pending_spent {
+            valid_spend_stati = valid_spend_stati + 1;
+        }
+        if spent {
+            valid_spend_stati = valid_spend_stati + 1;
+        }
+        let mut valid_pools = 0;
+        if transparent {
+            valid_pools = valid_pools + 1;
+        }
+        if sapling {
+            valid_pools = valid_pools + 1;
+        }
+        if orchard {
+            valid_pools = valid_pools + 1;
+        }
+
+        let expected = valid_spend_stati * valid_pools;
+
+        assert_eq!(
+            nine_note_transaction_record()
+                .query_for_ids(NoteQuery::stipulations(
+                    unspent,
+                    pending_spent,
+                    spent,
+                    transparent,
+                    sapling,
+                    orchard,
+                ))
+                .len(),
+            expected,
+        );
+    }
+
+    #[test_matrix(
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false]
+    )]
+    fn query_sum_value(
+        unspent: bool,
+        pending_spent: bool,
+        spent: bool,
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    ) {
         let mut valid_spend_stati = 0;
         if unspent {
             valid_spend_stati = valid_spend_stati + 1;
@@ -573,7 +677,7 @@ mod tests {
         let expected = valid_spend_stati * valid_pool_value;
 
         assert_eq!(
-            transaction_record.query_sum_value(NoteQuery::stipulations(
+            nine_note_transaction_record().query_sum_value(NoteQuery::stipulations(
                 unspent,
                 pending_spent,
                 spent,
