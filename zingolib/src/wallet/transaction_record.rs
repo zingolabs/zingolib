@@ -133,7 +133,7 @@ impl TransactionRecord {
     /// pair it with a NoteRecordIdentifier identifying the note
     /// and return the list
     // TODO: Make these generic, this is wet code
-    pub fn select_unspent_note_noteref_pairs<D>(
+    pub fn select_unspent_shnotes_and_ids<D>(
         &self,
     ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, ShNoteId)>
     where
@@ -142,7 +142,7 @@ impl TransactionRecord {
         <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
         let mut value_ref_pairs = Vec::new();
-        <D as DomainWalletExt>::to_notes_vec(self)
+        <D as DomainWalletExt>::get_shnotes(self)
             .iter()
             .for_each(|note| {
                 if !notes::NoteInterface::is_spent_or_pending_spent(note) {
@@ -202,7 +202,7 @@ impl TransactionRecord {
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
         <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
-        D::to_notes_vec(self)
+        D::get_shnotes(self)
             .iter()
             .map(|note_and_metadata| note_and_metadata.value())
             .sum()
@@ -261,7 +261,7 @@ impl TransactionRecord {
         D::Note: PartialEq + Clone,
         D::Recipient: super::traits::Recipient,
     {
-        let note = D::to_notes_vec(self)
+        let note = D::get_shnotes(self)
             .iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {

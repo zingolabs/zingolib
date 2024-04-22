@@ -122,7 +122,7 @@ impl InputSource for TransactionRecordsById {
             if sources.contains(&ShieldedProtocol::Sapling) {
                 sapling_note_noteref_pairs.extend(
                     transaction_record
-                        .select_unspent_note_noteref_pairs::<SaplingDomain>()
+                        .select_unspent_shnotes_and_ids::<SaplingDomain>()
                         .into_iter()
                         .filter(|note_ref_pair| !exclude.contains(&note_ref_pair.1)),
                 );
@@ -130,7 +130,7 @@ impl InputSource for TransactionRecordsById {
             if sources.contains(&ShieldedProtocol::Orchard) {
                 orchard_note_noteref_pairs.extend(
                     transaction_record
-                        .select_unspent_note_noteref_pairs::<OrchardDomain>()
+                        .select_unspent_shnotes_and_ids::<OrchardDomain>()
                         .into_iter()
                         .filter(|note_ref_pair| !exclude.contains(&note_ref_pair.1)),
                 );
