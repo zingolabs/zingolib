@@ -137,6 +137,7 @@ pub mod decrypt_transaction {
                 self.transaction_metadata_set
                     .write()
                     .await
+                    .transaction_records_by_id
                     .check_notes_mark_change(&transaction.txid());
             }
 

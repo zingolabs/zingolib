@@ -45,17 +45,14 @@ impl super::TransactionRecordsById {
             .map(TransactionRecord::total_value_spent)
             .unwrap_or(0)
     }
-}
-
-impl super::TxMapAndMaybeTrees {
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
     // transaction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
-        if self.transaction_records_by_id.total_funds_spent_in(txid) > 0 {
-            if let Some(transaction_metadata) = self.transaction_records_by_id.get_mut(txid) {
+        if self.total_funds_spent_in(txid) > 0 {
+            if let Some(transaction_metadata) = self.get_mut(txid) {
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);
             }
@@ -69,7 +66,9 @@ impl super::TxMapAndMaybeTrees {
             }
         });
     }
+}
 
+impl super::TxMapAndMaybeTrees {
     fn create_modify_get_transaction_metadata(
         &mut self,
         txid: &TxId,
@@ -157,7 +156,8 @@ impl super::TxMapAndMaybeTrees {
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-        self.check_notes_mark_change(&spending_txid);
+        self.transaction_records_by_id
+            .check_notes_mark_change(&spending_txid);
 
         Ok(())
     }
@@ -230,7 +230,8 @@ impl super::TxMapAndMaybeTrees {
 
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
-        self.check_notes_mark_change(&txid);
+        self.transaction_records_by_id
+            .check_notes_mark_change(&txid);
     }
 
     pub fn mark_txid_utxo_spent(
