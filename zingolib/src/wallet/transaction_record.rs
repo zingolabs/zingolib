@@ -449,7 +449,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
+    use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
     #[test]
@@ -478,7 +478,7 @@ mod tests {
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
         let transaction_record = TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentNoteBuilder::default().build())
+            .transparent_outputs(TransparentOutputBuilder::default().build())
             .build();
         assert!(transaction_record.is_incoming_transaction());
     }

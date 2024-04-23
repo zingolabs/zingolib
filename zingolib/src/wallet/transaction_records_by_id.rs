@@ -152,7 +152,7 @@ impl Default for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
     use crate::wallet::{
-        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentNoteBuilder},
+        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder},
         transaction_record::mocks::TransactionRecordBuilder,
     };
 
@@ -169,7 +169,7 @@ mod tests {
             .build();
         transaction_record_early
             .transparent_outputs
-            .push(TransparentNoteBuilder::default().build());
+            .push(TransparentOutputBuilder::default().build());
 
         let mut transaction_record_later = TransactionRecordBuilder::default()
             .randomize_txid()

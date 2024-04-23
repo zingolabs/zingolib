@@ -194,8 +194,8 @@ pub mod mocks {
 
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentOutput};
 
-    /// to create a mock TransparentNote
-    pub struct TransparentNoteBuilder {
+    /// to create a mock TransparentOutput
+    pub struct TransparentOutputBuilder {
         address: Option<String>,
         txid: Option<TxId>,
         output_index: Option<u64>,
@@ -205,7 +205,7 @@ pub mod mocks {
         unconfirmed_spent: Option<Option<(TxId, u32)>>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
-    impl TransparentNoteBuilder {
+    impl TransparentOutputBuilder {
         /// blank builder
         pub fn new() -> Self {
             Self {
@@ -241,7 +241,7 @@ pub mod mocks {
         }
     }
 
-    impl Default for TransparentNoteBuilder {
+    impl Default for TransparentOutputBuilder {
         fn default() -> Self {
             Self::new()
                 .address("default_address".to_string())
