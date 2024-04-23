@@ -92,6 +92,7 @@ pub(super) fn parse_send_args(
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
+#[cfg(feature = "zip317")]
 pub(super) fn parse_send_all_args(
     args: &[&str],
     chain: &ChainType,
@@ -339,7 +340,6 @@ mod tests {
             fn two_args_wrong_amount() {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "foo"];
-                let result = parse_send_args(&args, &chain);
                 assert!(matches!(
                     parse_send_args(&args, &chain),
                     Err(CommandError::ParseIntFromString(_))
@@ -368,6 +368,38 @@ mod tests {
         }
     }
 
+    #[test]
+    #[cfg(feature = "zip317")]
+    fn parse_send_all_args() {
+        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let address = address_from_str(address_str, &chain).unwrap();
+        let memo_str = "test memo";
+        let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
+
+        // with memo
+        let send_args = &[address_str, memo_str];
+        assert_eq!(
+            super::parse_send_all_args(send_args, &chain).unwrap(),
+            (address.clone(), Some(memo.clone()))
+        );
+
+        // invalid address
+        let send_args = &["invalid_address"];
+        assert!(matches!(
+            super::parse_send_all_args(send_args, &chain),
+            Err(CommandError::ArgNotJsonOrValidAddress)
+        ));
+
+        // multiple receivers
+        let send_args = &["[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\"}, \
+                    {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"memo\":\"test memo\"}]"];
+        assert!(matches!(
+            super::parse_send_all_args(send_args, &chain),
+            Err(CommandError::MultipleReceivers)
+        ));
+    }
     #[test]
     fn check_memo_compatibility() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
