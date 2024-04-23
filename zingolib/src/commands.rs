@@ -876,7 +876,7 @@ impl Command for ProposeAllCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_all_args(args) {
+        let (address, memo) = match utils::parse_send_all_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -885,20 +885,9 @@ impl Command for ProposeAllCommand {
                 )
             }
         };
-        if let Err(e) = utils::check_memo_compatibility(&send_inputs, &lightclient.config().chain) {
-            return format!(
-                "Error: {}\nTry 'help send' for correct usage and examples.",
-                e,
-            );
-        };
         RT.block_on(async move {
             match lightclient
-                .do_propose_spend(
-                    send_inputs
-                        .iter()
-                        .map(|(address, amount, memo)| (address.as_str(), *amount, memo.clone()))
-                        .collect(),
-                )
+                .do_propose_spend_all(address, memo)
                 .await {
                 Ok(proposal) => {
                     object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }

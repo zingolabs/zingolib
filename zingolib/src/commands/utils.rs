@@ -3,11 +3,13 @@
 use crate::commands::error::CommandError;
 use crate::utils::{address_from_str, zatoshis_from_u64};
 use crate::wallet::{self, Pool};
+use json::JsonValue;
 use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
 
+// Parse the shield arguments for `do_shield`
 pub(super) fn parse_shield_args(
     args: &[&str],
     chain: &ChainType,
@@ -31,7 +33,7 @@ pub(super) fn parse_shield_args(
     Ok((pools_to_shield.to_vec(), address))
 }
 
-// Parse the send arguments for `do_propose`.
+// Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
@@ -53,39 +55,9 @@ pub(super) fn parse_send_args(
         json_args
             .members()
             .map(|j| {
-                if !j.has_key("address") {
-                    return Err(CommandError::MissingKey("address".to_string()));
-                }
-                let address_str = j["address"].as_str().ok_or(CommandError::UnexpectedType(
-                    "address not a Str!".to_string(),
-                ))?;
-                let address =
-                    address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)?;
-
-                if !j.has_key("amount") {
-                    return Err(CommandError::MissingKey("amount".to_string()));
-                }
-                let amount_u64 = if !j["amount"].is_number() {
-                    return Err(CommandError::NonJsonNumberForAmount(format!(
-                        "\"amount\": {}\nis not a json::number::Number",
-                        j["amount"]
-                    )));
-                } else {
-                    j["amount"].as_u64().ok_or(CommandError::UnexpectedType(
-                        "amount not a u64!".to_string(),
-                    ))?
-                };
-                let amount =
-                    zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
-
-                let memo = if let Some(m) = j["memo"].as_str().map(|s| s.to_string()) {
-                    Some(
-                        wallet::utils::interpret_memo_string(m)
-                            .map_err(CommandError::InvalidMemo)?,
-                    )
-                } else {
-                    None
-                };
+                let address = address_from_json(j, chain)?;
+                let amount = zatoshis_from_json(j)?;
+                let memo = memo_from_json(j)?;
                 check_memo_compatibility(&address, &memo)?;
 
                 Ok((address, amount, memo))
@@ -116,7 +88,7 @@ pub(super) fn parse_send_args(
     Ok(send_args)
 }
 
-// Parse the send arguments for `do_propose` when sending all funds from shielded pools.
+// Parse the send arguments for `do_send` when sending all funds from shielded pools.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
@@ -131,6 +103,7 @@ pub(super) fn parse_send_all_args(
         if let Ok(addr) = address_from_str(args[0], chain) {
             address = addr;
             memo = None;
+            check_memo_compatibility(&address, &memo)?;
         } else {
             let json_args =
                 json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
@@ -145,27 +118,13 @@ pub(super) fn parse_send_all_args(
                 json_args
                     .members()
                     .next()
-                    .expect("should have a single member")
+                    .expect("should have a single json member")
             } else {
                 return Err(CommandError::MultipleReceivers);
             };
 
-            if !json_args.has_key("address") {
-                return Err(CommandError::MissingKey("address".to_string()));
-            }
-            let address_str = json_args["address"]
-                .as_str()
-                .ok_or(CommandError::UnexpectedType(
-                    "address not a Str!".to_string(),
-                ))?;
-            address =
-                address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)?;
-
-            memo = if let Some(m) = json_args["memo"].as_str().map(|s| s.to_string()) {
-                Some(wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?)
-            } else {
-                None
-            };
+            address = address_from_json(json_args, chain)?;
+            memo = memo_from_json(json_args)?;
             check_memo_compatibility(&address, &memo)?;
         }
     } else if args.len() == 2 {
@@ -194,6 +153,46 @@ fn check_memo_compatibility(
     }
 
     Ok(())
+}
+
+fn address_from_json(json_array: &JsonValue, chain: &ChainType) -> Result<Address, CommandError> {
+    if !json_array.has_key("address") {
+        return Err(CommandError::MissingKey("address".to_string()));
+    }
+    let address_str = json_array["address"]
+        .as_str()
+        .ok_or(CommandError::UnexpectedType(
+            "address is not a string!".to_string(),
+        ))?;
+    address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)
+}
+
+fn zatoshis_from_json(json_array: &JsonValue) -> Result<NonNegativeAmount, CommandError> {
+    if !json_array.has_key("amount") {
+        return Err(CommandError::MissingKey("amount".to_string()));
+    }
+    let amount_u64 = if !json_array["amount"].is_number() {
+        return Err(CommandError::NonJsonNumberForAmount(format!(
+            "\"amount\": {}\nis not a json::number::Number",
+            json_array["amount"]
+        )));
+    } else {
+        json_array["amount"]
+            .as_u64()
+            .ok_or(CommandError::UnexpectedType(
+                "amount not a u64!".to_string(),
+            ))?
+    };
+    zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)
+}
+
+fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandError> {
+    if let Some(m) = json_array["memo"].as_str().map(|s| s.to_string()) {
+        let memo = wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?;
+        Ok(Some(memo))
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -286,6 +285,7 @@ mod tests {
         use zingoconfig::{ChainType, RegtestNetwork};
 
         use crate::commands::{error::CommandError, utils::parse_send_args};
+
         mod json_array {
             use super::*;
 
@@ -352,7 +352,7 @@ mod tests {
                 let result = parse_send_args(&args, &chain);
                 match result {
                     Err(CommandError::UnexpectedType(e)) => {
-                        assert_eq!(e, "address not a Str!".to_string())
+                        assert_eq!(e, "address is not a string!".to_string())
                     }
                     _ => panic!(),
                 };
