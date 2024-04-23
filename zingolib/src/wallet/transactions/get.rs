@@ -1,3 +1,6 @@
+//! contains associated methods for asking TxMapAndMaybeTrees about the data it contains
+//! Does not contain trait implementations
+
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
