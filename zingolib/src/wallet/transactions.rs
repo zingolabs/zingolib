@@ -1,4 +1,7 @@
-//! Functionality for managing transactions
+//! This mod should be called tx_map_and_maybe_trees.rs. it contains
+//! struct TxMapAndMaybeTrees
+//! implementations for TxMapAndMaybeTrees
+//! associated types for TxMapAndMaybeTrees that have no relevance elsewhere.
 
 use crate::wallet::{data::WitnessTrees, transaction_records_by_id::TransactionRecordsById};
 

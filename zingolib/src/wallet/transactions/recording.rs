@@ -1,3 +1,5 @@
+//! contains associated methods for modifying and updating TxMapAndMaybeTrees
+
 use incrementalmerkletree::Position;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
