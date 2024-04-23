@@ -132,7 +132,7 @@ pub mod tests {
         test_framework::mocks::default_txid,
         wallet::notes::{
             query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentNoteBuilder, NoteInterface,
+            transparent::mocks::TransparentOutputBuilder, NoteInterface,
         },
     };
 
@@ -142,11 +142,11 @@ pub mod tests {
     fn note_queries() {
         let spend = Some((default_txid(), 112358));
 
-        let transparent_unspent_note = TransparentNoteBuilder::default().build();
-        let transparent_pending_spent_note = TransparentNoteBuilder::default()
+        let transparent_unspent_note = TransparentOutputBuilder::default().build();
+        let transparent_pending_spent_note = TransparentOutputBuilder::default()
             .unconfirmed_spent(spend)
             .build();
-        let transparent_spent_note = TransparentNoteBuilder::default().spent(spend).build();
+        let transparent_spent_note = TransparentOutputBuilder::default().spent(spend).build();
         let sapling_unspent_note = SaplingNoteBuilder::default().build();
         let sapling_pending_spent_note = SaplingNoteBuilder::default()
             .unconfirmed_spent(spend)

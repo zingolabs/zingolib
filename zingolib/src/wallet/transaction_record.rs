@@ -449,7 +449,7 @@ pub mod mocks {
         test_framework::mocks::{build_method, build_method_push, build_push_list, default_txid},
         wallet::notes::{
             orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentNoteBuilder, OrchardNote, SaplingNote,
+            transparent::mocks::TransparentOutputBuilder, OrchardNote, SaplingNote,
             TransparentOutput,
         },
     };
@@ -530,12 +530,12 @@ pub mod mocks {
 
         transaction_record
             .transparent_outputs
-            .push(TransparentNoteBuilder::default().build());
+            .push(TransparentOutputBuilder::default().build());
         transaction_record
             .transparent_outputs
-            .push(TransparentNoteBuilder::default().spent(spend).build());
+            .push(TransparentOutputBuilder::default().spent(spend).build());
         transaction_record.transparent_outputs.push(
-            TransparentNoteBuilder::default()
+            TransparentOutputBuilder::default()
                 .unconfirmed_spent(spend)
                 .build(),
         );
@@ -571,8 +571,7 @@ mod tests {
     use test_case::test_matrix;
 
     use crate::wallet::notes::query::OutputQuery;
-
-    use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
+    use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, TransactionRecordBuilder,
     };
@@ -603,7 +602,7 @@ mod tests {
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
         let transaction_record = TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentNoteBuilder::default().build())
+            .transparent_outputs(TransparentOutputBuilder::default().build())
             .build();
         assert!(transaction_record.is_incoming_transaction());
     }
