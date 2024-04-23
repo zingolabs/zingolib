@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `do_send` inputs from `Vec<(&str, u64, Option<MemoBytes>)>` to `Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>`
   - `do_shield` inputs from `Option<String>` to `Option<Address>`
 
+- `TxMapAndMaybeTrees::A --> TransactionRecordsById::A` where A:
+  - add_new_note<D>
+  - check_notes_mark_change
+  - add_taddr_spent
+  - total_funds_spent_in
+  - set_price
+
 ### Removed
 
 - `load_clientconfig` moved to zingoconfig crate

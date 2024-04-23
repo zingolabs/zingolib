@@ -153,7 +153,9 @@ impl LightWallet {
         // so we make sure that they are marked as change or not based on our
         // current definition
         for txid in txids {
-            transactions.check_notes_mark_change(&txid)
+            transactions
+                .transaction_records_by_id
+                .check_notes_mark_change(&txid)
         }
 
         let chain_name = utils::read_string(&mut reader)?;

@@ -1,6 +1,6 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 use crate::wallet::data::SpendableSaplingNote;
-use crate::wallet::notes::NoteInterface;
+use crate::wallet::notes::OutputInterface;
 use crate::wallet::now;
 
 use futures::Future;
