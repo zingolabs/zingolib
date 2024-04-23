@@ -22,7 +22,7 @@ use super::notes::TransparentOutput;
 use super::traits::DomainWalletExt;
 use super::traits::Recipient;
 
-use super::{data::BlockData, transactions::TxMapAndMaybeTrees};
+use super::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
 use super::LightWallet;
 impl LightWallet {
