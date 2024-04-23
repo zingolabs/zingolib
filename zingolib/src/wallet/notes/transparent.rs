@@ -248,7 +248,7 @@ pub mod mocks {
                 .txid(TxId::from_bytes([0u8; 32]))
                 .output_index(0)
                 .script(vec![])
-                .value(0)
+                .value(50_000)
                 .spent(None)
                 .unconfirmed_spent(None)
         }

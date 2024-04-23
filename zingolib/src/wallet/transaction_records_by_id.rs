@@ -402,7 +402,7 @@ mod tests {
             sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentNoteBuilder,
             ShNoteId,
         },
-        transaction_record::{self, mocks::TransactionRecordBuilder},
+        transaction_record::mocks::TransactionRecordBuilder,
     };
 
     use super::TransactionRecordsById;
@@ -449,11 +449,10 @@ mod tests {
     #[test]
     fn sapling_note_is_selected() {
         // WIP
-        let mut transaction_record =
-            transaction_record::mocks::TransactionRecordBuilder::default().build();
+        let mut transaction_record = TransactionRecordBuilder::default().build();
         transaction_record
             .sapling_notes
-            .push(crate::wallet::notes::sapling::mocks::SaplingNoteBuilder::default().build());
+            .push(SaplingNoteBuilder::default().build());
 
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert(transaction_record.txid, transaction_record);
@@ -482,13 +481,24 @@ mod tests {
             1_000_000
         )
     }
-    fn select_transparent_outputs() {
-        let mut transaction_records_by_id = TransactionRecordsById::new();
 
-        let selected_outputs = transaction_records_by_id.get_unspent_transparent_outputs(
-            &TransparentAddress::ScriptHash([0; 20]),
-            BlockHeight::from_u32(10),
-            &[],
-        );
+    #[test]
+    fn select_transparent_outputs() {
+        let mut transaction_record = TransactionRecordBuilder::default().build();
+        let transparent_output = TransparentNoteBuilder::default().build();
+        transaction_record
+            .transparent_notes
+            .push(transparent_output);
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+        transaction_records_by_id.insert_transaction_record(transaction_record);
+
+        let selected_outputs = transaction_records_by_id
+            .get_unspent_transparent_outputs(
+                &TransparentAddress::ScriptHash([0; 20]),
+                BlockHeight::from_u32(10),
+                &[],
+            )
+            .unwrap();
+        dbg!(selected_outputs);
     }
 }
