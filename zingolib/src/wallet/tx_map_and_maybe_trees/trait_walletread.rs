@@ -82,7 +82,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                         height + 1,
                         BlockHeight::from_u32(std::cmp::max(
                             1,
-                            u32::from(height).saturating_sub(u32::from(min_confirmations)),
+                            u32::from(height + 1).saturating_sub(u32::from(min_confirmations)),
                         )),
                     )
                 }))
