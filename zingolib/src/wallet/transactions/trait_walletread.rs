@@ -89,22 +89,26 @@ impl WalletRead for TxMapAndMaybeTrees {
             .transaction_records_by_id
             .values()
             .fold(None, |height_rolling_min, transaction| {
-                let transaction_height = transaction.status.get_confirmed_height();
-                // query for an unspent shielded output
-                if transaction
-                    .query_for_ids(OutputQuery::stipulations(
-                        true, false, false, false, true, true,
-                    ))
-                    .len()
-                    > 0
-                {
-                    match (height_rolling_min, transaction_height) {
-                        (None, None) => None,
-                        (Some(h), None) | (None, Some(h)) => Some(h),
-                        (Some(h1), Some(h2)) => Some(std::cmp::min(h1, h2)),
+                dbg!(height_rolling_min);
+                match transaction.status.get_confirmed_height() {
+                    None => height_rolling_min,
+                    Some(transaction_height) => {
+                        // query for an unspent shielded output
+                        if transaction
+                            .query_for_ids(OutputQuery::stipulations(
+                                true, false, false, false, true, true,
+                            ))
+                            .len()
+                            > 0
+                        {
+                            Some(match height_rolling_min {
+                                None => transaction_height,
+                                Some(min_height) => std::cmp::min(min_height, transaction_height),
+                            })
+                        } else {
+                            height_rolling_min
+                        }
                     }
-                } else {
-                    height_rolling_min
                 }
             }))
     }
@@ -259,7 +263,16 @@ mod tests {
     use zcash_primitives::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
-    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
+    use crate::{
+        test_framework::mocks::default_txid,
+        wallet::{
+            notes::{
+                orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+                transparent::mocks::TransparentOutputBuilder,
+            },
+            transaction_record::mocks::TransactionRecordBuilder,
+        },
+    };
 
     #[test]
     fn get_target_and_anchor_heights() {
@@ -282,19 +295,55 @@ mod tests {
     }
 
     proptest! {
-    #[test]
-    fn get_min_unspent_height(sapling_height: u32, orchard_height: u32) {
-        use super::TxMapAndMaybeTrees;
+        #[test]
+        fn get_min_unspent_height(sapling_height: u32, orchard_height: u32) {
+            use super::TxMapAndMaybeTrees;
 
-        let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
 
-        transaction_records_and_maybe_trees
-            .transaction_records_by_id
-            .insert_transaction_record(
-                TransactionRecordBuilder::default()
-                    .status(Confirmed(sapling_height.into()))
-                    .build(),
-            );
-    }
+            transaction_records_and_maybe_trees
+                .transaction_records_by_id
+                .insert_transaction_record(
+                    TransactionRecordBuilder::default()
+                        .transparent_outputs(TransparentOutputBuilder::default().build())
+                        .status(Confirmed(1000000.into()))
+                        .build(),
+                );
+            let spend = Some((default_txid(), 112358));
+            transaction_records_and_maybe_trees
+                .transaction_records_by_id
+                .insert_transaction_record(
+                    TransactionRecordBuilder::default()
+                        .sapling_notes(SaplingNoteBuilder::default().spent(spend).build())
+                        .status(Confirmed(2000000.into()))
+                        .build(),
+                );
+            transaction_records_and_maybe_trees
+                .transaction_records_by_id
+                .insert_transaction_record(
+                    TransactionRecordBuilder::default()
+                        .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend).build())
+                        .status(Confirmed(3000000.into()))
+                        .build(),
+                );
+            transaction_records_and_maybe_trees
+                .transaction_records_by_id
+                .insert_transaction_record(
+                    TransactionRecordBuilder::default()
+                        .sapling_notes(SaplingNoteBuilder::default().build())
+                        .status(Confirmed(sapling_height.into()))
+                        .build(),
+                );
+            transaction_records_and_maybe_trees
+                .transaction_records_by_id
+                .insert_transaction_record(
+                    TransactionRecordBuilder::default()
+                        .orchard_notes(OrchardNoteBuilder::default().build())
+                        .status(Confirmed(orchard_height.into()))
+                        .build(),
+                );
+
+            assert_eq!(transaction_records_and_maybe_trees.get_min_unspent_height().unwrap().unwrap(), BlockHeight::from_u32(std::cmp::min(sapling_height, orchard_height)));
         }
+    }
 }
