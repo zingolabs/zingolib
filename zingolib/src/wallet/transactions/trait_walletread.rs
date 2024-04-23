@@ -89,7 +89,6 @@ impl WalletRead for TxMapAndMaybeTrees {
             .transaction_records_by_id
             .values()
             .fold(None, |height_rolling_min, transaction| {
-                dbg!(height_rolling_min);
                 match transaction.status.get_confirmed_height() {
                     None => height_rolling_min,
                     Some(transaction_height) => {
@@ -316,6 +315,7 @@ mod tests {
                     TransactionRecordBuilder::default()
                         .sapling_notes(SaplingNoteBuilder::default().spent(spend).build())
                         .status(Confirmed(2000000.into()))
+                        .randomize_txid()
                         .build(),
                 );
             transaction_records_and_maybe_trees
@@ -324,6 +324,7 @@ mod tests {
                     TransactionRecordBuilder::default()
                         .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend).build())
                         .status(Confirmed(3000000.into()))
+                        .randomize_txid()
                         .build(),
                 );
             transaction_records_and_maybe_trees
@@ -332,6 +333,7 @@ mod tests {
                     TransactionRecordBuilder::default()
                         .sapling_notes(SaplingNoteBuilder::default().build())
                         .status(Confirmed(sapling_height.into()))
+                        .randomize_txid()
                         .build(),
                 );
             transaction_records_and_maybe_trees
@@ -340,6 +342,7 @@ mod tests {
                     TransactionRecordBuilder::default()
                         .orchard_notes(OrchardNoteBuilder::default().build())
                         .status(Confirmed(orchard_height.into()))
+                        .randomize_txid()
                         .build(),
                 );
 
