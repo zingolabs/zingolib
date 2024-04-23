@@ -5,7 +5,7 @@ use getset::Getters;
 
 /// Selects received notes by how they been spent
 #[derive(Getters, Constructor, Clone, Copy)]
-pub struct NoteSpendStatusQuery {
+pub struct OutputSpendStatusQuery {
     /// will the query include unspent notes?
     #[getset(get = "pub")]
     unspent: bool,
@@ -19,7 +19,7 @@ pub struct NoteSpendStatusQuery {
 
 /// Selects received notes by pool
 #[derive(Getters, Constructor, Clone, Copy)]
-pub struct NotePoolQuery {
+pub struct OutputPoolQuery {
     /// will the query include transparent notes? (coins)
     #[getset(get = "pub")]
     transparent: bool,
@@ -33,16 +33,30 @@ pub struct NotePoolQuery {
 
 /// Selects received notes by any properties
 #[derive(Getters, Constructor, Clone, Copy)]
-pub struct NoteQuery {
+pub struct OutputQuery {
     /// selects spend status properties
     #[getset(get = "pub")]
-    spend_status: NoteSpendStatusQuery,
+    spend_status: OutputSpendStatusQuery,
     /// selects pools
     #[getset(get = "pub")]
-    pools: NotePoolQuery,
+    pools: OutputPoolQuery,
 }
 
-impl NoteQuery {
+impl OutputQuery {
+    /// build a query, specifying each stipulation
+    pub fn stipulations(
+        unspent: bool,
+        pending_spent: bool,
+        spent: bool,
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    ) -> Self {
+        Self::new(
+            OutputSpendStatusQuery::new(unspent, pending_spent, spent),
+            OutputPoolQuery::new(transparent, sapling, orchard),
+        )
+    }
     /// will the query include unspent notes?
     pub fn unspent(&self) -> &bool {
         self.spend_status().unspent()

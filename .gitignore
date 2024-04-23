@@ -2,6 +2,7 @@
 !zingolib/test-data/openssl_cfg
 *.json.txt
 .DS_Store
+.helix/
 /procgov
 /testdata
 cobertura.xml

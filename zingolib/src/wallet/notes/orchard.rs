@@ -5,7 +5,7 @@ use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
     super::{data::TransactionRecord, Pool},
-    NoteInterface, ShieldedNoteInterface,
+    OutputInterface, ShieldedNoteInterface,
 };
 
 /// TODO: Add Doc Comment Here!
@@ -42,9 +42,13 @@ pub struct OrchardNote {
     pub have_spending_key: bool,
 }
 
-impl NoteInterface for OrchardNote {
+impl OutputInterface for OrchardNote {
     fn pool_type(&self) -> PoolType {
         PoolType::Shielded(ShieldedProtocol::Orchard)
+    }
+
+    fn value(&self) -> u64 {
+        self.orchard_crypto_note.value().inner()
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {

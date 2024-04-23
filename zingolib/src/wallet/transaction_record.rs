@@ -1,19 +1,24 @@
-//! TODO: Add Mod Description Here!
-use crate::wallet::notes::interface::ShieldedNoteInterface as _;
-use std::io::{self, Read, Write};
+//! Data about a particular Transaction
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
+use std::io::{self, Read, Write};
+
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
+use zcash_client_backend::PoolType;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::error::ZingoLibError;
-use crate::wallet::notes;
-
-use super::{
+use crate::wallet::notes::interface::OutputInterface;
+use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::{
     data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
     keys::unified::WalletCapability,
-    traits::{DomainWalletExt, ReadableWriteable as _},
+    notes::{
+        query::OutputQuery, OrchardNote, OutputId, SaplingNote, ShieldedNoteInterface,
+        TransparentOutput,
+    },
+    traits::DomainWalletExt,
 };
 
 ///  Everything (SOMETHING) about a transaction
@@ -36,13 +41,13 @@ pub struct TransactionRecord {
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
     /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
-    pub sapling_notes: Vec<notes::SaplingNote>,
+    pub sapling_notes: Vec<SaplingNote>,
 
     /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
-    pub orchard_notes: Vec<notes::OrchardNote>,
+    pub orchard_notes: Vec<OrchardNote>,
 
     /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
-    pub transparent_outputs: Vec<notes::TransparentOutput>,
+    pub transparent_outputs: Vec<TransparentOutput>,
 
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
@@ -102,6 +107,78 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
+    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
+        let mut set = vec![];
+        let spend_status_query = *include_notes.spend_status();
+        if *include_notes.transparent() {
+            for note in self.transparent_outputs.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    set.push(OutputId::from_parts(
+                        self.txid,
+                        PoolType::Transparent,
+                        note.output_index as u32,
+                    ));
+                }
+            }
+        }
+        if *include_notes.sapling() {
+            for note in self.sapling_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    if let Some(output_index) = note.output_index {
+                        set.push(OutputId::from_parts(
+                            self.txid,
+                            PoolType::Transparent,
+                            output_index,
+                        ));
+                    }
+                }
+            }
+        }
+        if *include_notes.orchard() {
+            for note in self.orchard_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    if let Some(output_index) = note.output_index {
+                        set.push(OutputId::from_parts(
+                            self.txid,
+                            PoolType::Transparent,
+                            output_index,
+                        ));
+                    }
+                }
+            }
+        }
+        set
+    }
+
+    /// Uses a query to select all notes with specific properties and sum them
+    pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
+        let mut sum = 0;
+        let spend_status_query = *include_notes.spend_status();
+        if *include_notes.transparent() {
+            for note in self.transparent_outputs.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    sum += note.value()
+                }
+            }
+        }
+        if *include_notes.sapling() {
+            for note in self.sapling_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    sum += note.value()
+                }
+            }
+        }
+        if *include_notes.orchard() {
+            for note in self.orchard_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    sum += note.value()
+                }
+            }
+        }
+        sum
+    }
+
     /// TODO: Add Doc Comment Here!
     pub fn get_transparent_value_spent(&self) -> u64 {
         self.total_transparent_value_spent
@@ -137,11 +214,11 @@ impl TransactionRecord {
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes
             .iter()
-            .any(|note| !notes::ShieldedNoteInterface::is_change(note))
+            .any(|note| !ShieldedNoteInterface::is_change(note))
             || self
                 .orchard_notes
                 .iter()
-                .any(|note| !notes::ShieldedNoteInterface::is_change(note))
+                .any(|note| !ShieldedNoteInterface::is_change(note))
             || !self.transparent_outputs.is_empty()
     }
 
@@ -178,15 +255,11 @@ impl TransactionRecord {
             + self.pool_change_returned::<orchard::note_encryption::OrchardDomain>()
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
-        self.pool_value_received::<orchard::note_encryption::OrchardDomain>()
-            + self.pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
-            + self
-                .transparent_outputs
-                .iter()
-                .map(|utxo| utxo.value)
-                .sum::<u64>()
+        self.query_sum_value(OutputQuery::stipulations(
+            true, true, true, true, true, true,
+        ))
     }
 
     /// TODO: Add Doc Comment Here!
@@ -252,18 +325,16 @@ impl TransactionRecord {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         let sapling_notes = zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
-            notes::SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
+            SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
         })?;
         let orchard_notes = if version > 22 {
             zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
-                notes::OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
+                OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
             })?
         } else {
             vec![]
         };
-        let utxos =
-            zcash_encoding::Vector::read(&mut reader, |r| notes::TransparentOutput::read(r))?;
-
+        let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_orchard_value_spent = if version >= 22 {
@@ -374,8 +445,12 @@ pub mod mocks {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
-        test_framework::mocks::{build_method, build_method_push, build_push_list},
-        wallet::notes::{OrchardNote, SaplingNote, TransparentOutput},
+        test_framework::mocks::{build_method, build_method_push, build_push_list, default_txid},
+        wallet::notes::{
+            orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+            transparent::mocks::TransparentOutputBuilder, OrchardNote, SaplingNote,
+            TransparentOutput,
+        },
     };
 
     use super::TransactionRecord;
@@ -445,12 +520,61 @@ pub mod mocks {
             }
         }
     }
+
+    /// creates a TransactionRecord holding each type of note.
+    pub fn nine_note_transaction_record() -> TransactionRecord {
+        let spend = Some((default_txid(), 112358));
+
+        let mut transaction_record = TransactionRecordBuilder::default().build();
+
+        transaction_record
+            .transparent_outputs
+            .push(TransparentOutputBuilder::default().build());
+        transaction_record
+            .transparent_outputs
+            .push(TransparentOutputBuilder::default().spent(spend).build());
+        transaction_record.transparent_outputs.push(
+            TransparentOutputBuilder::default()
+                .unconfirmed_spent(spend)
+                .build(),
+        );
+        transaction_record
+            .sapling_notes
+            .push(SaplingNoteBuilder::default().build());
+        transaction_record
+            .sapling_notes
+            .push(SaplingNoteBuilder::default().spent(spend).build());
+        transaction_record.sapling_notes.push(
+            SaplingNoteBuilder::default()
+                .unconfirmed_spent(spend)
+                .build(),
+        );
+        transaction_record
+            .orchard_notes
+            .push(OrchardNoteBuilder::default().build());
+        transaction_record
+            .orchard_notes
+            .push(OrchardNoteBuilder::default().spent(spend).build());
+        transaction_record.orchard_notes.push(
+            OrchardNoteBuilder::default()
+                .unconfirmed_spent(spend)
+                .build(),
+        );
+
+        transaction_record
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use test_case::test_matrix;
+
+    use crate::wallet::notes::query::OutputQuery;
+
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
-    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
+    use crate::wallet::transaction_record::mocks::{
+        nine_note_transaction_record, TransactionRecordBuilder,
+    };
 
     #[test]
     pub fn blank_record() {
@@ -481,5 +605,127 @@ mod tests {
             .transparent_outputs(TransparentOutputBuilder::default().build())
             .build();
         assert!(transaction_record.is_incoming_transaction());
+    }
+
+    #[test_matrix(
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false]
+    )]
+    fn query_for_ids(
+        unspent: bool,
+        pending_spent: bool,
+        spent: bool,
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    ) {
+        let mut valid_spend_stati = 0;
+        if unspent {
+            valid_spend_stati += 1;
+        }
+        if pending_spent {
+            valid_spend_stati += 1;
+        }
+        if spent {
+            valid_spend_stati += 1;
+        }
+        let mut valid_pools = 0;
+        if transparent {
+            valid_pools += 1;
+        }
+        if sapling {
+            valid_pools += 1;
+        }
+        if orchard {
+            valid_pools += 1;
+        }
+
+        let expected = valid_spend_stati * valid_pools;
+
+        assert_eq!(
+            nine_note_transaction_record()
+                .query_for_ids(OutputQuery::stipulations(
+                    unspent,
+                    pending_spent,
+                    spent,
+                    transparent,
+                    sapling,
+                    orchard,
+                ))
+                .len(),
+            expected,
+        );
+    }
+
+    #[test_matrix(
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false],
+        [true, false]
+    )]
+    fn query_sum_value(
+        unspent: bool,
+        pending_spent: bool,
+        spent: bool,
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    ) {
+        let mut valid_spend_stati = 0;
+        if unspent {
+            valid_spend_stati += 1;
+        }
+        if pending_spent {
+            valid_spend_stati += 1;
+        }
+        if spent {
+            valid_spend_stati += 1;
+        }
+        //different pools have different mock values.
+        let mut valid_pool_value = 0;
+        if transparent {
+            valid_pool_value += 100000;
+        }
+        if sapling {
+            valid_pool_value += 200000;
+        }
+        if orchard {
+            valid_pool_value += 800000;
+        }
+
+        let expected = valid_spend_stati * valid_pool_value;
+
+        assert_eq!(
+            nine_note_transaction_record().query_sum_value(OutputQuery::stipulations(
+                unspent,
+                pending_spent,
+                spent,
+                transparent,
+                sapling,
+                orchard,
+            )),
+            expected,
+        );
+    }
+
+    #[test]
+    fn total_value_received() {
+        let transaction_record = nine_note_transaction_record();
+        let old_total = transaction_record
+            .pool_value_received::<orchard::note_encryption::OrchardDomain>()
+            + transaction_record
+                .pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
+            + transaction_record
+                .transparent_outputs
+                .iter()
+                .map(|utxo| utxo.value)
+                .sum::<u64>();
+        assert_eq!(transaction_record.total_value_received(), old_total);
     }
 }
