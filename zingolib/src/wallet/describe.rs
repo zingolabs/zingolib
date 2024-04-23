@@ -18,7 +18,7 @@ use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::traits::Diversifiable as _;
 
 use super::keys::unified::{Capability, WalletCapability};
-use super::notes::TransparentNote;
+use super::notes::TransparentOutput;
 use super::traits::DomainWalletExt;
 use super::traits::Recipient;
 
@@ -247,7 +247,7 @@ impl LightWallet {
     }
 
     /// Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_utxos(&self) -> Vec<TransparentNote> {
+    pub async fn get_utxos(&self) -> Vec<TransparentOutput> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -256,12 +256,12 @@ impl LightWallet {
             .values()
             .flat_map(|transaction| {
                 transaction
-                    .transparent_notes
+                    .transparent_outputs
                     .iter()
                     .filter(|utxo| !utxo.is_spent())
             })
             .cloned()
-            .collect::<Vec<TransparentNote>>()
+            .collect::<Vec<TransparentOutput>>()
     }
 
     /// TODO: Add Doc Comment Here!

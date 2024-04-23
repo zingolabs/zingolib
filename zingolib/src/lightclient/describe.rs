@@ -150,7 +150,7 @@ impl LightClient {
                         }
                     });
 
-                tx.transparent_notes
+                tx.transparent_outputs
                     .iter()
                     .filter(|n| !n.is_spent() && n.unconfirmed_spent.is_none())
                     .for_each(|n| {
@@ -403,7 +403,7 @@ impl LightClient {
             }
             // No funds spent, this is a normal receipt
             (false, true) => {
-                for received_transparent in transaction_md.transparent_notes.iter() {
+                for received_transparent in transaction_md.transparent_outputs.iter() {
                     summaries.push(ValueTransfer {
                         block_height,
                         datetime,
@@ -588,7 +588,7 @@ impl LightClient {
 
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, wtx)| {
-                wtx.transparent_notes.iter().filter_map(move |utxo|
+                wtx.transparent_outputs.iter().filter_map(move |utxo|
                     if !all_notes && utxo.is_spent() {
                         None
                     } else {

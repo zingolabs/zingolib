@@ -260,7 +260,7 @@ impl TxMapAndMaybeTrees {
             self.transaction_records_by_id.get_mut(&spent_txid)
         {
             if let Some(spent_utxo) = utxo_transacion_metadata
-                .transparent_notes
+                .transparent_outputs
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
@@ -304,14 +304,14 @@ impl TxMapAndMaybeTrees {
 
         // Add this UTXO if it doesn't already exist
         if transaction_metadata
-            .transparent_notes
+            .transparent_outputs
             .iter_mut()
             .any(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
         {
             // If it already exists, it is likely an mempool tx, so update the height
         } else {
-            transaction_metadata.transparent_notes.push(
-                crate::wallet::notes::TransparentNote::from_parts(
+            transaction_metadata.transparent_outputs.push(
+                crate::wallet::notes::TransparentOutput::from_parts(
                     taddr,
                     txid,
                     output_num as u64,

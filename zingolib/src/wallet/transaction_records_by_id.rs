@@ -98,7 +98,7 @@ impl TransactionRecordsById {
         self.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to roll back any spent utxos
             transaction_metadata
-                .transparent_notes
+                .transparent_outputs
                 .iter_mut()
                 .for_each(|utxo| {
                     if utxo.is_spent() && invalidated_txids.contains(&utxo.spent().unwrap().0) {
@@ -168,7 +168,7 @@ mod tests {
             .status(Confirmed(5.into()))
             .build();
         transaction_record_early
-            .transparent_notes
+            .transparent_outputs
             .push(TransparentNoteBuilder::default().build());
 
         let mut transaction_record_later = TransactionRecordBuilder::default()
