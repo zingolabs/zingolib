@@ -1,9 +1,12 @@
+//! contains associated methods for asking TxMapAndMaybeTrees about the data it contains
+//! Does not contain trait implementations
+
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::wallet::{
     data::{PoolNullifier, TransactionRecord},
-    notes::NoteInterface,
+    notes::OutputInterface,
     notes::ShieldedNoteInterface,
     traits::{DomainWalletExt, Recipient},
 };
@@ -61,13 +64,6 @@ impl TxMapAndMaybeTrees {
                     ))
             })
             .collect()
-    }
-
-    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
-        self.transaction_records_by_id
-            .get(txid)
-            .map(TransactionRecord::total_value_spent)
-            .unwrap_or(0)
     }
 
     #[allow(clippy::type_complexity)]

@@ -9,7 +9,26 @@ macro_rules! build_method {
         }
     };
 }
+macro_rules! build_method_push {
+    ($name:ident, $localtype:ty) => {
+        #[doc = "Push a $ty to the builder."]
+        pub fn $name(mut self, $name: $localtype) -> Self {
+            self.$name.push($name);
+            self
+        }
+    };
+}
+macro_rules! build_push_list {
+    ($name:ident, $builder:ident, $struct:ident) => {
+        for i in $builder.$name {
+            $struct.$name.push(i);
+        }
+    };
+}
+
 pub(crate) use build_method;
+pub(crate) use build_method_push;
+pub(crate) use build_push_list;
 pub use proposal::{ProposalBuilder, StepBuilder};
 pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
@@ -123,7 +142,7 @@ mod sapling_crypto_note {
             let (_, _, address) = default_zaddr();
             Self::new()
                 .recipient(address)
-                .value(NoteValue::from_raw(1000000))
+                .value(NoteValue::from_raw(200000))
                 .rseed(Rseed::AfterZip212([7; 32]))
         }
     }
@@ -158,7 +177,7 @@ pub mod orchard_note {
         let fvk: FullViewingKey = (&sk).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let value = NoteValue::default(); // ZERO
+        let value = NoteValue::from_raw(800000);
         let rho = {
             loop {
                 let mut bytes = [0u8; 32];

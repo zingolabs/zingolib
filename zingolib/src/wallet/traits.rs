@@ -10,7 +10,7 @@ use super::{
     notes::{OrchardNote, SaplingNote},
     transactions::TxMapAndMaybeTrees,
 };
-use crate::wallet::notes::NoteInterface;
+use crate::wallet::notes::OutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};

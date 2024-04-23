@@ -5,7 +5,7 @@ use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
     super::{data::TransactionRecord, Pool},
-    NoteInterface, ShieldedNoteInterface,
+    OutputInterface, ShieldedNoteInterface,
 };
 
 /// TODO: Add Doc Comment Here!
@@ -62,9 +62,13 @@ impl std::fmt::Debug for SaplingNote {
     }
 }
 
-impl NoteInterface for SaplingNote {
+impl OutputInterface for SaplingNote {
     fn pool_type(&self) -> PoolType {
         PoolType::Shielded(ShieldedProtocol::Sapling)
+    }
+
+    fn value(&self) -> u64 {
+        self.sapling_crypto_note.value().inner()
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
