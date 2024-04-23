@@ -70,7 +70,7 @@ impl LightWallet {
                     filtered_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
-                                <D::WalletNote as ShieldedNoteInterface>::value(notedata)
+                                <D::WalletNote as NoteInterface>::value(notedata)
                             } else {
                                 0
                             }
