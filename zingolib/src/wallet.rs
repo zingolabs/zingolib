@@ -26,7 +26,6 @@ use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 use zingoconfig::ZingoConfig;
 
-use self::data::WitnessTrees;
 use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
 
@@ -34,7 +33,7 @@ use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
 
 pub mod data;
@@ -45,7 +44,7 @@ pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub(crate) mod transaction_records_by_id;
-pub(crate) mod transactions;
+pub(crate) mod tx_map_and_maybe_trees;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
