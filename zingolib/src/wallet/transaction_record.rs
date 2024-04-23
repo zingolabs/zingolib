@@ -16,7 +16,7 @@ use crate::wallet::{
     keys::unified::WalletCapability,
     notes::{
         query::OutputQuery, OrchardNote, OutputId, SaplingNote, ShieldedNoteInterface,
-        TransparentNote,
+        TransparentOutput,
     },
     traits::DomainWalletExt,
 };
@@ -47,7 +47,7 @@ pub struct TransactionRecord {
     pub orchard_notes: Vec<OrchardNote>,
 
     /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
-    pub transparent_notes: Vec<TransparentNote>,
+    pub transparent_outputs: Vec<TransparentOutput>,
 
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
@@ -81,7 +81,7 @@ impl TransactionRecord {
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
-            transparent_notes: vec![],
+            transparent_outputs: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
@@ -112,7 +112,7 @@ impl TransactionRecord {
         let mut set = vec![];
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
-            for note in self.transparent_notes.iter() {
+            for note in self.transparent_outputs.iter() {
                 if note.spend_status_query(spend_status_query) {
                     set.push(OutputId::from_parts(
                         self.txid,
@@ -156,7 +156,7 @@ impl TransactionRecord {
         let mut sum = 0;
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
-            for note in self.transparent_notes.iter() {
+            for note in self.transparent_outputs.iter() {
                 if note.spend_status_query(spend_status_query) {
                     sum += note.value()
                 }
@@ -238,7 +238,7 @@ impl TransactionRecord {
                 .orchard_notes
                 .iter()
                 .any(|note| !ShieldedNoteInterface::is_change(note))
-            || !self.transparent_notes.is_empty()
+            || !self.transparent_outputs.is_empty()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -334,7 +334,7 @@ impl TransactionRecord {
         } else {
             vec![]
         };
-        let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentNote::read(r))?;
+        let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
@@ -382,7 +382,7 @@ impl TransactionRecord {
             txid: transaction_id,
             sapling_notes,
             orchard_notes,
-            transparent_notes: utxos,
+            transparent_outputs: utxos,
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
             total_sapling_value_spent,
@@ -413,7 +413,7 @@ impl TransactionRecord {
 
         zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
-        zcash_encoding::Vector::write(&mut writer, &self.transparent_notes, |w, u| u.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.transparent_outputs, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
             writer.write_u64::<LittleEndian>(pool)?;
@@ -449,7 +449,8 @@ pub mod mocks {
         test_framework::mocks::{build_method, build_method_push, build_push_list, default_txid},
         wallet::notes::{
             orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentNoteBuilder, OrchardNote, SaplingNote, TransparentNote,
+            transparent::mocks::TransparentNoteBuilder, OrchardNote, SaplingNote,
+            TransparentOutput,
         },
     };
 
@@ -460,7 +461,7 @@ pub mod mocks {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
-        transparent_notes: Vec<TransparentNote>,
+        transparent_outputs: Vec<TransparentOutput>,
         sapling_notes: Vec<SaplingNote>,
         orchard_notes: Vec<OrchardNote>,
     }
@@ -472,7 +473,7 @@ pub mod mocks {
                 status: None,
                 datetime: None,
                 txid: None,
-                transparent_notes: vec![],
+                transparent_outputs: vec![],
                 sapling_notes: vec![],
                 orchard_notes: vec![],
             }
@@ -481,7 +482,7 @@ pub mod mocks {
         build_method!(status, ConfirmationStatus);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
-        build_method_push!(transparent_notes, TransparentNote);
+        build_method_push!(transparent_outputs, TransparentOutput);
         build_method_push!(sapling_notes, SaplingNote);
         build_method_push!(orchard_notes, OrchardNote);
 
@@ -497,7 +498,7 @@ pub mod mocks {
                 self.datetime.unwrap(),
                 &self.txid.unwrap(),
             );
-            build_push_list!(transparent_notes, self, transaction_record);
+            build_push_list!(transparent_outputs, self, transaction_record);
             build_push_list!(sapling_notes, self, transaction_record);
             build_push_list!(orchard_notes, self, transaction_record);
             transaction_record
@@ -514,7 +515,7 @@ pub mod mocks {
                 ),
                 datetime: Some(1705077003),
                 txid: Some(crate::test_framework::mocks::default_txid()),
-                transparent_notes: vec![],
+                transparent_outputs: vec![],
                 sapling_notes: vec![],
                 orchard_notes: vec![],
             }
@@ -528,12 +529,12 @@ pub mod mocks {
         let mut transaction_record = TransactionRecordBuilder::default().build();
 
         transaction_record
-            .transparent_notes
+            .transparent_outputs
             .push(TransparentNoteBuilder::default().build());
         transaction_record
-            .transparent_notes
+            .transparent_outputs
             .push(TransparentNoteBuilder::default().spent(spend).build());
-        transaction_record.transparent_notes.push(
+        transaction_record.transparent_outputs.push(
             TransparentNoteBuilder::default()
                 .unconfirmed_spent(spend)
                 .build(),
@@ -603,7 +604,7 @@ mod tests {
         // A single transparent note makes is_incoming_transaction true.
         let mut transaction_record = TransactionRecordBuilder::default().build();
         transaction_record
-            .transparent_notes
+            .transparent_outputs
             .push(TransparentNoteBuilder::default().build());
         assert!(transaction_record.is_incoming_transaction());
     }
@@ -723,7 +724,7 @@ mod tests {
             + transaction_record
                 .pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
             + transaction_record
-                .transparent_notes
+                .transparent_outputs
                 .iter()
                 .map(|utxo| utxo.value)
                 .sum::<u64>();

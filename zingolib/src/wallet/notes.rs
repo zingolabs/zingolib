@@ -3,7 +3,7 @@ pub mod interface;
 pub use interface::NoteInterface;
 pub use interface::ShieldedNoteInterface;
 pub mod transparent;
-pub use transparent::TransparentNote;
+pub use transparent::TransparentOutput;
 pub mod sapling;
 pub use sapling::SaplingNote;
 pub mod orchard;
