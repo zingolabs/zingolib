@@ -258,7 +258,7 @@ pub mod decrypt_transaction {
                         {
                             // One of the tx outputs is a match
                             if let Some(spent_utxo) = wtx
-                                .transparent_notes
+                                .transparent_outputs
                                 .iter()
                                 .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                             {

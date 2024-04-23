@@ -13,7 +13,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{
     data::TransactionRecord,
-    notes::NoteInterface,
+    notes::OutputInterface,
     traits::{DomainWalletExt, Recipient},
 };
 
@@ -99,7 +99,7 @@ impl TransactionRecordsById {
         self.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to roll back any spent utxos
             transaction_metadata
-                .transparent_notes
+                .transparent_outputs
                 .iter_mut()
                 .for_each(|utxo| {
                     if utxo.is_spent() && invalidated_txids.contains(&utxo.spent().unwrap().0) {
@@ -240,7 +240,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.get_mut(&spent_txid) {
             if let Some(spent_utxo) = utxo_transacion_metadata
-                .transparent_notes
+                .transparent_outputs
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
@@ -284,14 +284,14 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
 
         // Add this UTXO if it doesn't already exist
         if transaction_metadata
-            .transparent_notes
+            .transparent_outputs
             .iter_mut()
             .any(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
         {
             // If it already exists, it is likely an mempool tx, so update the height
         } else {
-            transaction_metadata.transparent_notes.push(
-                crate::wallet::notes::TransparentNote::from_parts(
+            transaction_metadata.transparent_outputs.push(
+                crate::wallet::notes::TransparentOutput::from_parts(
                     taddr,
                     txid,
                     output_num as u64,
@@ -445,7 +445,7 @@ impl Default for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
     use crate::wallet::{
-        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentNoteBuilder},
+        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder},
         transaction_record::mocks::TransactionRecordBuilder,
     };
 
@@ -461,8 +461,8 @@ mod tests {
             .status(Confirmed(5.into()))
             .build();
         transaction_record_early
-            .transparent_notes
-            .push(TransparentNoteBuilder::default().build());
+            .transparent_outputs
+            .push(TransparentOutputBuilder::default().build());
 
         let mut transaction_record_later = TransactionRecordBuilder::default()
             .randomize_txid()

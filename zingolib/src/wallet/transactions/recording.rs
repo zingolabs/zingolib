@@ -9,7 +9,7 @@ use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
         data::PoolNullifier,
-        notes::NoteInterface,
+        notes::OutputInterface,
         notes::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},
     },
