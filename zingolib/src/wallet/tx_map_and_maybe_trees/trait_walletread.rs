@@ -56,7 +56,7 @@ impl WalletRead for TxMapAndMaybeTrees {
     /// knows about.
     ///
     /// This will return `Ok(None)` if no block data is present in the database.
-    /// IMPL: fully implemented. the target height is always the next block, and the anchor is a variable depth below.
+    /// IMPL: fully implemented. the target height is always the next block after the last block fetched from the server, and the anchor is a variable depth below.
     /// IMPL: tested
     fn get_target_and_anchor_heights(
         &self,
@@ -70,22 +70,24 @@ impl WalletRead for TxMapAndMaybeTrees {
     > {
         match self.witness_trees.as_ref() {
             Some(trees) => {
-                let highest_block_height =
+                let opt_max_downloaded_height =
                     match trees.witness_tree_orchard.store().max_checkpoint_id() {
                         Ok(height) => height,
-                        // Infallible
-                        Err(e) => match e {},
+                        Err(e) => match e {}, // Infallible
                     };
 
-                Ok(highest_block_height.map(|height| {
-                    (
-                        height + 1,
-                        BlockHeight::from_u32(std::cmp::max(
-                            1,
-                            u32::from(height + 1).saturating_sub(u32::from(min_confirmations)),
-                        )),
-                    )
-                }))
+                Ok(opt_max_downloaded_height
+                    .map(|max_downloaded_height| max_downloaded_height + 1)
+                    .map(|next_block_height| {
+                        (
+                            next_block_height,
+                            BlockHeight::from_u32(std::cmp::max(
+                                1,
+                                u32::from(next_block_height)
+                                    .saturating_sub(u32::from(min_confirmations)),
+                            )),
+                        )
+                    }))
             }
             None => Err(ZingoLibError::UnknownError),
         }
@@ -301,7 +303,7 @@ mod tests {
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
                 .unwrap()
                 .unwrap(),
-            (BlockHeight::from_u32(8422), BlockHeight::from_u32(8411))
+            (BlockHeight::from_u32(8422), BlockHeight::from_u32(8412))
         );
     }
 
