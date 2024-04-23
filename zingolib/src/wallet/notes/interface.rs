@@ -14,7 +14,7 @@ use super::{
 };
 
 /// TODO: Add Doc Comment Here!
-pub trait NoteInterface: Sized {
+pub trait OutputInterface: Sized {
     /// returns the zcash_client_backend PoolType enum (one of 3)
     fn pool_type(&self) -> PoolType;
 
@@ -71,7 +71,7 @@ pub trait NoteInterface: Sized {
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
-pub trait ShieldedNoteInterface: NoteInterface + Sized {
+pub trait ShieldedNoteInterface: OutputInterface + Sized {
     /// TODO: Add Doc Comment Here!
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     /// TODO: Add Doc Comment Here!

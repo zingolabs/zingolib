@@ -1,6 +1,6 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 use crate::wallet::data::SpendableSaplingNote;
-use crate::wallet::notes::NoteInterface;
+use crate::wallet::notes::OutputInterface;
 use crate::wallet::now;
 
 use futures::Future;
@@ -613,7 +613,7 @@ impl LightWallet {
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
-            Vec<notes::TransparentNote>,
+            Vec<notes::TransparentOutput>,
             u64,
         ),
         u64,
@@ -750,7 +750,7 @@ impl LightWallet {
         witness_trees: &WitnessTrees,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
-        utxos: &[notes::TransparentNote],
+        utxos: &[notes::TransparentOutput],
     ) -> Result<TxBuilder<'_>, String> {
         // Add all tinputs
         // Create a map from address -> sk for all taddrs, so we can spend from the
