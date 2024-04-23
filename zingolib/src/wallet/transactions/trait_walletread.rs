@@ -299,6 +299,7 @@ mod tests {
 
             let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
 
+            // these first three outputs will not trigger min_unspent_note
             transaction_records_and_maybe_trees
                 .transaction_records_by_id
                 .insert_transaction_record(
@@ -326,6 +327,8 @@ mod tests {
                         .randomize_txid()
                         .build(),
                 );
+
+            // min_unspent will stop at the lesser of these
             transaction_records_and_maybe_trees
                 .transaction_records_by_id
                 .insert_transaction_record(
