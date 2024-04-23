@@ -6,7 +6,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
-use super::NoteInterface;
+use super::OutputInterface;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq)]
@@ -29,7 +29,7 @@ pub struct TransparentOutput {
     pub unconfirmed_spent: Option<(TxId, u32)>,
 }
 
-impl NoteInterface for TransparentOutput {
+impl OutputInterface for TransparentOutput {
     fn pool_type(&self) -> PoolType {
         PoolType::Transparent
     }

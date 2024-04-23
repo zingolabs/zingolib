@@ -1,6 +1,6 @@
 //! All things needed to create, manaage, and use notes
 pub mod interface;
-pub use interface::NoteInterface;
+pub use interface::OutputInterface;
 pub use interface::ShieldedNoteInterface;
 pub mod transparent;
 pub use transparent::TransparentOutput;
@@ -132,7 +132,7 @@ pub mod tests {
         test_framework::mocks::default_txid,
         wallet::notes::{
             query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder, NoteInterface,
+            transparent::mocks::TransparentOutputBuilder, OutputInterface,
         },
     };
 

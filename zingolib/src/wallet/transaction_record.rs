@@ -9,7 +9,7 @@ use zcash_client_backend::PoolType;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::error::ZingoLibError;
-use crate::wallet::notes::interface::NoteInterface;
+use crate::wallet::notes::interface::OutputInterface;
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::{
     data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},

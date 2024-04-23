@@ -13,7 +13,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{
     data::TransactionRecord,
-    notes::NoteInterface,
+    notes::OutputInterface,
     traits::{DomainWalletExt, Recipient},
 };
 

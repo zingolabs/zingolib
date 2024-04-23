@@ -3,7 +3,7 @@ use std::cmp;
 use crate::wallet::transaction_record::TransactionRecord;
 
 use super::*;
-use crate::wallet::notes::NoteInterface;
+use crate::wallet::notes::OutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 use zcash_note_encryption::Domain;
 
