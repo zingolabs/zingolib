@@ -3,7 +3,7 @@ use crate::wallet::{
     data::{BlockData, PoolNullifier},
     notes::ShieldedNoteInterface,
     traits::DomainWalletExt,
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};

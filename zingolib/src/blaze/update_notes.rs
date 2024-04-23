@@ -1,7 +1,7 @@
 use crate::error::ZingoLibResult;
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::PoolNullifier, transactions::TxMapAndMaybeTrees, utils::txid_from_slice,
+    data::PoolNullifier, tx_map_and_maybe_trees::TxMapAndMaybeTrees, utils::txid_from_slice,
 };
 use std::sync::Arc;
 

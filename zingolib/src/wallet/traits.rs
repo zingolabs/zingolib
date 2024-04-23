@@ -8,7 +8,7 @@ use super::{
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
 use crate::wallet::notes::OutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
