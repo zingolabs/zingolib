@@ -40,7 +40,8 @@ impl WalletRead for TxMapAndMaybeTrees {
     type AccountId = AccountId;
     type Account = ZingoAccount;
 
-    /// partially implemented. zingo uses the default account. when we expand account functionality, this will be updated
+    /// Returns the account corresponding to a given [`UnifiedFullViewingKey`], if any.
+    /// IMPL: partially implemented. zingo uses the default account. when we expand account functionality, this will be updated
     fn get_account_for_ufvk(
         &self,
         ufvk: &UnifiedFullViewingKey,
@@ -49,7 +50,14 @@ impl WalletRead for TxMapAndMaybeTrees {
         Ok(Some(ZingoAccount(AccountId::ZERO, ufvk.clone())))
     }
 
-    /// fully implemented. the target height is always the next block, and the anchor is a variable depth below.
+    /// Returns the default target height (for the block in which a new
+    /// transaction would be mined) and anchor height (to use for a new
+    /// transaction), given the range of block heights that the backend
+    /// knows about.
+    ///
+    /// This will return `Ok(None)` if no block data is present in the database.
+    /// IMPL: fully implemented. the target height is always the next block, and the anchor is a variable depth below.
+    /// IMPL: tested
     fn get_target_and_anchor_heights(
         &self,
         min_confirmations: std::num::NonZeroU32,
@@ -83,6 +91,9 @@ impl WalletRead for TxMapAndMaybeTrees {
         }
     }
 
+    /// Returns the minimum block height corresponding to an unspent note in the wallet.
+    /// IMPL: fully implemented
+    /// IMPL: tested
     fn get_min_unspent_height(
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
@@ -112,6 +123,8 @@ impl WalletRead for TxMapAndMaybeTrees {
             }))
     }
 
+    /// Returns the block height in which the specified transaction was mined, or `Ok(None)` if the
+    /// transaction is not in the main chain.
     fn get_tx_height(
         &self,
         _txid: zcash_primitives::transaction::TxId,
