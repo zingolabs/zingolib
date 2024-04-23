@@ -9,7 +9,7 @@ use zcash_client_backend::PoolType;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::error::ZingoLibError;
-use crate::wallet::notes::interface::NoteInterface;
+use crate::wallet::notes::interface::OutputInterface;
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::{
     data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
@@ -334,6 +334,7 @@ impl TransactionRecord {
         } else {
             vec![]
         };
+
         let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
