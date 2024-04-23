@@ -34,6 +34,10 @@ impl NoteInterface for TransparentOutput {
         PoolType::Transparent
     }
 
+    fn value(&self) -> u64 {
+        self.value
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
@@ -248,7 +252,7 @@ pub mod mocks {
                 .txid(TxId::from_bytes([0u8; 32]))
                 .output_index(0)
                 .script(vec![])
-                .value(0)
+                .value(100000)
                 .spent(None)
                 .unconfirmed_spent(None)
         }

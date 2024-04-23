@@ -25,7 +25,6 @@ use crate::{
         },
         keys::address_from_pubkeyhash,
         notes::NoteInterface,
-        notes::ShieldedNoteInterface,
         LightWallet, Pool,
     },
 };

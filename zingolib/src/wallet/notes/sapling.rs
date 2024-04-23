@@ -67,6 +67,10 @@ impl NoteInterface for SaplingNote {
         PoolType::Shielded(ShieldedProtocol::Sapling)
     }
 
+    fn value(&self) -> u64 {
+        self.sapling_crypto_note.value().inner()
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }

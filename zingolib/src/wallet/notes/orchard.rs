@@ -47,6 +47,10 @@ impl NoteInterface for OrchardNote {
         PoolType::Shielded(ShieldedProtocol::Orchard)
     }
 
+    fn value(&self) -> u64 {
+        self.orchard_crypto_note.value().inner()
+    }
+
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }

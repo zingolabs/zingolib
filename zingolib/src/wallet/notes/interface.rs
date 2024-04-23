@@ -10,13 +10,16 @@ use super::{
         traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
         Pool,
     },
-    query::{NotePoolQuery, NoteQuery, NoteSpendStatusQuery},
+    query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
 };
 
 /// TODO: Add Doc Comment Here!
 pub trait NoteInterface: Sized {
     /// returns the zcash_client_backend PoolType enum (one of 3)
     fn pool_type(&self) -> PoolType;
+
+    /// number of Zatoshis unlocked by the note
+    fn value(&self) -> u64;
 
     /// TODO: Add Doc Comment Here!
     fn spent(&self) -> &Option<(TxId, u32)>;
@@ -46,14 +49,14 @@ pub trait NoteInterface: Sized {
     }
 
     /// Returns true if the note has one of the spend statuses enumerated by the query
-    fn spend_status_query(&self, query: NoteSpendStatusQuery) -> bool {
+    fn spend_status_query(&self, query: OutputSpendStatusQuery) -> bool {
         (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
             || (*query.pending_spent() && self.is_pending_spent())
             || (*query.spent() && self.is_spent())
     }
 
     /// Returns true if the note is one of the pools enumerated by the query.
-    fn pool_query(&self, query: NotePoolQuery) -> bool {
+    fn pool_query(&self, query: OutputPoolQuery) -> bool {
         (*query.transparent() && self.pool_type() == PoolType::Transparent)
             || (*query.sapling()
                 && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Sapling))
@@ -62,7 +65,7 @@ pub trait NoteInterface: Sized {
     }
 
     /// Returns true if the note is one of the spend statuses enumerated by the query AND one of the pools enumerated by the query.
-    fn query(&self, query: NoteQuery) -> bool {
+    fn query(&self, query: OutputQuery) -> bool {
         self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
 }
@@ -142,11 +145,6 @@ pub trait ShieldedNoteInterface: NoteInterface + Sized {
     /// TODO: Add Doc Comment Here!
     fn transaction_metadata_notes_mut(wallet_transaction: &mut TransactionRecord)
         -> &mut Vec<Self>;
-
-    ///Convenience function
-    fn value(&self) -> u64 {
-        Self::value_from_note(self.note())
-    }
 
     /// TODO: Add Doc Comment Here!
     fn value_from_note(note: &Self::Note) -> u64;
