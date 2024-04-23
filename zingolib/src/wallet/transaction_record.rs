@@ -445,10 +445,11 @@ pub mod mocks {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
-        test_framework::mocks::{build_method, default_txid},
+        test_framework::mocks::{build_method, build_method_push, build_push_list, default_txid},
         wallet::notes::{
             orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder,
+            transparent::mocks::TransparentOutputBuilder, OrchardNote, SaplingNote,
+            TransparentOutput,
         },
     };
 
@@ -459,6 +460,9 @@ pub mod mocks {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
+        transparent_outputs: Vec<TransparentOutput>,
+        sapling_notes: Vec<SaplingNote>,
+        orchard_notes: Vec<OrchardNote>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransactionRecordBuilder {
@@ -468,12 +472,18 @@ pub mod mocks {
                 status: None,
                 datetime: None,
                 txid: None,
+                transparent_outputs: vec![],
+                sapling_notes: vec![],
+                orchard_notes: vec![],
             }
         }
         // Methods to set each field
         build_method!(status, ConfirmationStatus);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
+        build_method_push!(transparent_outputs, TransparentOutput);
+        build_method_push!(sapling_notes, SaplingNote);
+        build_method_push!(orchard_notes, OrchardNote);
 
         /// Use the mocery of random_txid to get one?
         pub fn randomize_txid(self) -> Self {
@@ -482,11 +492,15 @@ pub mod mocks {
 
         /// builds a mock TransactionRecord after all pieces are supplied
         pub fn build(self) -> TransactionRecord {
-            TransactionRecord::new(
+            let mut transaction_record = TransactionRecord::new(
                 self.status.unwrap(),
                 self.datetime.unwrap(),
                 &self.txid.unwrap(),
-            )
+            );
+            build_push_list!(transparent_outputs, self, transaction_record);
+            build_push_list!(sapling_notes, self, transaction_record);
+            build_push_list!(orchard_notes, self, transaction_record);
+            transaction_record
         }
     }
 
@@ -500,6 +514,9 @@ pub mod mocks {
                 ),
                 datetime: Some(1705077003),
                 txid: Some(crate::test_framework::mocks::default_txid()),
+                transparent_outputs: vec![],
+                sapling_notes: vec![],
+                orchard_notes: vec![],
             }
         }
     }
@@ -584,10 +601,9 @@ mod tests {
     #[test]
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-        transaction_record
-            .transparent_outputs
-            .push(TransparentOutputBuilder::default().build());
+        let transaction_record = TransactionRecordBuilder::default()
+            .transparent_outputs(TransparentOutputBuilder::default().build())
+            .build();
         assert!(transaction_record.is_incoming_transaction());
     }
 
