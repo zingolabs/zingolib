@@ -236,7 +236,7 @@ impl InputSource for TransactionRecordsById {
                     .filter(|output| {
                         exclude
                             .iter()
-                            .any(|excluded| excluded == &output.to_outpoint())
+                            .all(|excluded| excluded != &output.to_outpoint())
                     })
                     .filter_map(move |output| {
                         let value = match NonNegativeAmount::from_u64(output.value)
@@ -246,12 +246,7 @@ impl InputSource for TransactionRecordsById {
                             Err(e) => return Some(Err(e)),
                         };
 
-                        let script_pubkey = match Script::read(output.script.as_slice())
-                            .map_err(|e| ZingoLibError::Error(e.to_string()))
-                        {
-                            Ok(v) => v,
-                            Err(e) => return Some(Err(e)),
-                        };
+                        let script_pubkey = Script(output.script.clone());
                         Ok(WalletTransparentOutput::from_parts(
                             output.to_outpoint(),
                             TxOut {
@@ -779,7 +774,8 @@ mod tests {
         let transparent_output = TransparentOutputBuilder::default().build();
         transaction_record
             .transparent_outputs
-            .push(transparent_output);
+            .push(transparent_output.clone());
+        let record_height = transaction_record.status.get_confirmed_height();
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert_transaction_record(transaction_record);
 
@@ -790,6 +786,21 @@ mod tests {
                 &[],
             )
             .unwrap();
-        dbg!(selected_outputs);
+        assert_eq!(
+            selected_outputs.first().unwrap().outpoint(),
+            &transparent_output.to_outpoint()
+        );
+        assert_eq!(
+            selected_outputs.first().unwrap().txout().value.into_u64(),
+            transparent_output.value
+        );
+        assert_eq!(
+            selected_outputs.first().unwrap().txout().script_pubkey.0,
+            transparent_output.script
+        );
+        assert_eq!(
+            Some(selected_outputs.first().unwrap().height()),
+            record_height
+        )
     }
 }
