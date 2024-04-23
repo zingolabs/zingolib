@@ -272,10 +272,10 @@ mod tests {
         },
     };
 
+    use super::TxMapAndMaybeTrees;
+
     #[test]
     fn get_target_and_anchor_heights() {
-        use super::TxMapAndMaybeTrees;
-
         let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
         transaction_records_and_maybe_trees
             .witness_trees
@@ -295,8 +295,6 @@ mod tests {
     proptest! {
         #[test]
         fn get_min_unspent_height(sapling_height: u32, orchard_height: u32) {
-            use super::TxMapAndMaybeTrees;
-
             let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
 
             // these first three outputs will not trigger min_unspent_note
