@@ -125,16 +125,15 @@ impl WalletRead for TxMapAndMaybeTrees {
 
     /// Returns the block height in which the specified transaction was mined, or `Ok(None)` if the
     /// transaction is not in the main chain.
+    /// IMPL: fully implemented
     fn get_tx_height(
         &self,
-        _txid: zcash_primitives::transaction::TxId,
+        txid: zcash_primitives::transaction::TxId,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
-        todo!()
-        // Ok(self
-        //     .record_map
-        //     .map
-        //     .get(&txid)
-        //     .and_then(|transaction| transaction.status.get_confirmed_height()))
+        Ok(self
+            .transaction_records_by_id
+            .get(&txid)
+            .and_then(|transaction| transaction.status.get_confirmed_height()))
     }
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
@@ -361,6 +360,23 @@ mod tests {
                 );
 
             assert_eq!(transaction_records_and_maybe_trees.get_min_unspent_height().unwrap().unwrap(), BlockHeight::from_u32(std::cmp::min(sapling_height, orchard_height)));
+        }
+
+        #[test]
+        fn get_tx_height(tx_height: u32) {
+            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+
+            let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into())).build();
+
+            let txid = transaction_record.txid;
+            // these first three outputs will not trigger min_unspent_note
+            transaction_records_and_maybe_trees
+                .transaction_records_by_id
+                .insert_transaction_record(
+                    transaction_record
+                );
+
+            assert_eq!(transaction_records_and_maybe_trees.get_tx_height(txid).unwrap().unwrap(), BlockHeight::from_u32(tx_height));
         }
     }
 }
