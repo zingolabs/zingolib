@@ -602,10 +602,9 @@ mod tests {
     #[test]
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-        transaction_record
-            .transparent_outputs
-            .push(TransparentNoteBuilder::default().build());
+        let transaction_record = TransactionRecordBuilder::default()
+            .transparent_outputs(TransparentNoteBuilder::default().build())
+            .build();
         assert!(transaction_record.is_incoming_transaction());
     }
 
