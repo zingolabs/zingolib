@@ -12,13 +12,13 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 
 use crate::wallet::data::TransactionRecord;
-use crate::wallet::notes::NoteInterface;
+use crate::wallet::notes::OutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
 use crate::wallet::traits::Diversifiable as _;
 
 use super::keys::unified::{Capability, WalletCapability};
-use super::notes::TransparentNote;
+use super::notes::TransparentOutput;
 use super::traits::DomainWalletExt;
 use super::traits::Recipient;
 
@@ -70,7 +70,7 @@ impl LightWallet {
                     filtered_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
-                                <D::WalletNote as ShieldedNoteInterface>::value(notedata)
+                                <D::WalletNote as OutputInterface>::value(notedata)
                             } else {
                                 0
                             }
@@ -247,7 +247,7 @@ impl LightWallet {
     }
 
     /// Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_utxos(&self) -> Vec<TransparentNote> {
+    pub async fn get_utxos(&self) -> Vec<TransparentOutput> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -256,12 +256,12 @@ impl LightWallet {
             .values()
             .flat_map(|transaction| {
                 transaction
-                    .transparent_notes
+                    .transparent_outputs
                     .iter()
                     .filter(|utxo| !utxo.is_spent())
             })
             .cloned()
-            .collect::<Vec<TransparentNote>>()
+            .collect::<Vec<TransparentOutput>>()
     }
 
     /// TODO: Add Doc Comment Here!
