@@ -373,10 +373,9 @@ pub mod mocks {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
-        test_framework::mocks::{build_method, build_method_push, build_push_list, default_txid},
+        test_framework::mocks::{build_method, build_method_push, build_push_list},
         wallet::notes::{
-            orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentNoteBuilder, OrchardNote, SaplingNote, TransparentNote,
+            OrchardNote, SaplingNote, TransparentNote,
         },
     };
 
