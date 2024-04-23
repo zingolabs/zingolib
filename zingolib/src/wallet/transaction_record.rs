@@ -526,43 +526,29 @@ pub mod mocks {
     pub fn nine_note_transaction_record() -> TransactionRecord {
         let spend = Some((default_txid(), 112358));
 
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-
-        transaction_record
-            .transparent_outputs
-            .push(TransparentOutputBuilder::default().build());
-        transaction_record
-            .transparent_outputs
-            .push(TransparentOutputBuilder::default().spent(spend).build());
-        transaction_record.transparent_outputs.push(
-            TransparentOutputBuilder::default()
-                .unconfirmed_spent(spend)
-                .build(),
-        );
-        transaction_record
-            .sapling_notes
-            .push(SaplingNoteBuilder::default().build());
-        transaction_record
-            .sapling_notes
-            .push(SaplingNoteBuilder::default().spent(spend).build());
-        transaction_record.sapling_notes.push(
-            SaplingNoteBuilder::default()
-                .unconfirmed_spent(spend)
-                .build(),
-        );
-        transaction_record
-            .orchard_notes
-            .push(OrchardNoteBuilder::default().build());
-        transaction_record
-            .orchard_notes
-            .push(OrchardNoteBuilder::default().spent(spend).build());
-        transaction_record.orchard_notes.push(
-            OrchardNoteBuilder::default()
-                .unconfirmed_spent(spend)
-                .build(),
-        );
-
-        transaction_record
+        TransactionRecordBuilder::default()
+            .transparent_outputs(TransparentOutputBuilder::default().build())
+            .transparent_outputs(TransparentOutputBuilder::default().spent(spend).build())
+            .transparent_outputs(
+                TransparentOutputBuilder::default()
+                    .unconfirmed_spent(spend)
+                    .build(),
+            )
+            .sapling_notes(SaplingNoteBuilder::default().build())
+            .sapling_notes(SaplingNoteBuilder::default().spent(spend).build())
+            .sapling_notes(
+                SaplingNoteBuilder::default()
+                    .unconfirmed_spent(spend)
+                    .build(),
+            )
+            .orchard_notes(OrchardNoteBuilder::default().build())
+            .orchard_notes(OrchardNoteBuilder::default().spent(spend).build())
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .unconfirmed_spent(spend)
+                    .build(),
+            )
+            .build()
     }
 }
 
