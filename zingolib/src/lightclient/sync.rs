@@ -597,6 +597,7 @@ impl LightClient {
             .transactions()
             .write()
             .await
+            .transaction_records_by_id
             .clear_expired_mempool(start_block);
 
         // 6. Set the highest verified tree

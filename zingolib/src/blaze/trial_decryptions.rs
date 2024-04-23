@@ -11,7 +11,7 @@ use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
     utils::txid_from_slice,
     MemoDownloadOption,
 };
@@ -344,17 +344,21 @@ impl TrialDecryptions {
                         );
 
                         let status = ConfirmationStatus::Confirmed(height);
-                        transaction_metadata_set.write().await.add_new_note::<D>(
-                            transaction_id,
-                            status,
-                            timestamp,
-                            note,
-                            to,
-                            have_spending_key,
-                            Some(spend_nullifier),
-                            i as u32,
-                            witness.witnessed_position(),
-                        );
+                        transaction_metadata_set
+                            .write()
+                            .await
+                            .transaction_records_by_id
+                            .add_new_note::<D>(
+                                transaction_id,
+                                status,
+                                timestamp,
+                                note,
+                                to,
+                                have_spending_key,
+                                Some(spend_nullifier),
+                                i as u32,
+                                witness.witnessed_position(),
+                            );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
 

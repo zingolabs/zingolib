@@ -8,9 +8,9 @@ use super::{
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
-use crate::wallet::notes::NoteInterface;
+use crate::wallet::notes::OutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};

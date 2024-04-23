@@ -6,11 +6,11 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
-use super::NoteInterface;
+use super::OutputInterface;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq)]
-pub struct TransparentNote {
+pub struct TransparentOutput {
     /// TODO: Add Doc Comment Here!
     pub address: String,
     /// TODO: Add Doc Comment Here!
@@ -29,7 +29,7 @@ pub struct TransparentNote {
     pub unconfirmed_spent: Option<(TxId, u32)>,
 }
 
-impl NoteInterface for TransparentNote {
+impl OutputInterface for TransparentOutput {
     fn pool_type(&self) -> PoolType {
         PoolType::Transparent
     }
@@ -55,7 +55,7 @@ impl NoteInterface for TransparentNote {
     }
 }
 
-impl TransparentNote {
+impl TransparentOutput {
     /// TODO: Add Doc Comment Here!
     pub fn from_parts(
         address: String,
@@ -179,7 +179,7 @@ impl TransparentNote {
             None
         };
 
-        Ok(TransparentNote {
+        Ok(TransparentOutput {
             address,
             txid: transaction_id,
             output_index,
@@ -196,10 +196,10 @@ pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
 
-    use crate::{test_framework::mocks::build_method, wallet::notes::TransparentNote};
+    use crate::{test_framework::mocks::build_method, wallet::notes::TransparentOutput};
 
-    /// to create a mock TransparentNote
-    pub struct TransparentNoteBuilder {
+    /// to create a mock TransparentOutput
+    pub struct TransparentOutputBuilder {
         address: Option<String>,
         txid: Option<TxId>,
         output_index: Option<u64>,
@@ -209,7 +209,7 @@ pub mod mocks {
         unconfirmed_spent: Option<Option<(TxId, u32)>>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
-    impl TransparentNoteBuilder {
+    impl TransparentOutputBuilder {
         /// blank builder
         pub fn new() -> Self {
             Self {
@@ -232,8 +232,8 @@ pub mod mocks {
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
 
         /// builds a mock TransparentNote after all pieces are supplied
-        pub fn build(self) -> TransparentNote {
-            TransparentNote::from_parts(
+        pub fn build(self) -> TransparentOutput {
+            TransparentOutput::from_parts(
                 self.address.unwrap(),
                 self.txid.unwrap(),
                 self.output_index.unwrap(),
@@ -245,7 +245,7 @@ pub mod mocks {
         }
     }
 
-    impl Default for TransparentNoteBuilder {
+    impl Default for TransparentOutputBuilder {
         fn default() -> Self {
             Self::new()
                 .address("default_address".to_string())
