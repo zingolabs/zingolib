@@ -430,7 +430,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet::notes::transparent::mocks::TransparentNoteBuilder;
+    use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
     #[test]
@@ -461,7 +461,7 @@ mod tests {
         let mut transaction_record = TransactionRecordBuilder::default().build();
         transaction_record
             .transparent_outputs
-            .push(TransparentNoteBuilder::default().build());
+            .push(TransparentOutputBuilder::default().build());
         assert!(transaction_record.is_incoming_transaction());
     }
 }
