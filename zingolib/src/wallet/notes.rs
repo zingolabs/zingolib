@@ -131,12 +131,12 @@ pub mod tests {
     use crate::{
         test_framework::mocks::default_txid,
         wallet::notes::{
-            query::NoteQuery, sapling::mocks::SaplingNoteBuilder,
+            query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
             transparent::mocks::TransparentNoteBuilder, NoteInterface,
         },
     };
 
-    use super::query::{NotePoolQuery, NoteSpendStatusQuery};
+    use super::query::{OutputPoolQuery, OutputSpendStatusQuery};
 
     #[test]
     fn note_queries() {
@@ -153,22 +153,22 @@ pub mod tests {
             .build();
         let sapling_spent_note = SaplingNoteBuilder::default().spent(spend).build();
 
-        let unspent_query = NoteSpendStatusQuery::new(true, false, false);
-        let pending_or_spent_query = NoteSpendStatusQuery::new(false, true, true);
-        let spent_query = NoteSpendStatusQuery::new(false, false, true);
+        let unspent_query = OutputSpendStatusQuery::new(true, false, false);
+        let pending_or_spent_query = OutputSpendStatusQuery::new(false, true, true);
+        let spent_query = OutputSpendStatusQuery::new(false, false, true);
 
-        let transparent_query = NotePoolQuery::new(true, false, false);
-        let shielded_query = NotePoolQuery::new(false, true, true);
-        let any_pool_query = NotePoolQuery::new(true, true, true);
+        let transparent_query = OutputPoolQuery::new(true, false, false);
+        let shielded_query = OutputPoolQuery::new(false, true, true);
+        let any_pool_query = OutputPoolQuery::new(true, true, true);
 
-        let unspent_transparent_query = NoteQuery::new(unspent_query, transparent_query);
-        let unspent_any_pool_query = NoteQuery::new(unspent_query, any_pool_query);
+        let unspent_transparent_query = OutputQuery::new(unspent_query, transparent_query);
+        let unspent_any_pool_query = OutputQuery::new(unspent_query, any_pool_query);
         let pending_or_spent_transparent_query =
-            NoteQuery::new(pending_or_spent_query, transparent_query);
+            OutputQuery::new(pending_or_spent_query, transparent_query);
         let pending_or_spent_shielded_query =
-            NoteQuery::new(pending_or_spent_query, shielded_query);
-        let spent_shielded_query = NoteQuery::new(spent_query, shielded_query);
-        let spent_any_pool_query = NoteQuery::new(spent_query, any_pool_query);
+            OutputQuery::new(pending_or_spent_query, shielded_query);
+        let spent_shielded_query = OutputQuery::new(spent_query, shielded_query);
+        let spent_any_pool_query = OutputQuery::new(spent_query, any_pool_query);
 
         assert!(transparent_unspent_note.query(unspent_transparent_query));
         assert!(transparent_unspent_note.query(unspent_any_pool_query));
