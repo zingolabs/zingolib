@@ -63,13 +63,6 @@ impl TxMapAndMaybeTrees {
             .collect()
     }
 
-    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
-        self.transaction_records_by_id
-            .get(txid)
-            .map(TransactionRecord::total_value_spent)
-            .unwrap_or(0)
-    }
-
     #[allow(clippy::type_complexity)]
     pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
         &self,
