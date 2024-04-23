@@ -1,3 +1,5 @@
+//! contains associated methods for writing TxMapAndMaybeTrees to disk and reading TxMapAndMaybeTrees from disk
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     collections::HashMap,
