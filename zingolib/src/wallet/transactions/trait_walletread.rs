@@ -93,12 +93,11 @@ impl WalletRead for TxMapAndMaybeTrees {
                     None => height_rolling_min,
                     Some(transaction_height) => {
                         // query for an unspent shielded output
-                        if transaction
+                        if !transaction
                             .query_for_ids(OutputQuery::stipulations(
                                 true, false, false, false, true, true,
                             ))
-                            .len()
-                            > 0
+                            .is_empty()
                         {
                             Some(match height_rolling_min {
                                 None => transaction_height,
