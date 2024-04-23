@@ -890,7 +890,10 @@ impl Command for ProposeAllCommand {
                 .do_propose_spend_all(address, memo)
                 .await {
                 Ok(proposal) => {
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                    object! { 
+                        "amount" => proposal.steps().iter().fold(0, |acc, step| acc + step.shielded_inputs().unwrap().notes().iter().fold(0, |acc, note| acc + u64::from(note.note().value()))),
+                        "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())),
+                    }
                 }
                 Err(e) => {
                     object! { "error" => e }

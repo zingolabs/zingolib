@@ -393,12 +393,14 @@ mod tests {
     fn address_from_json() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
 
+        // with address
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         super::address_from_json(json_args, &chain).unwrap();
 
+        // without address
         let json_str = "[{\"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
@@ -407,6 +409,7 @@ mod tests {
             Err(CommandError::MissingKey(_))
         ));
 
+        // invalid address
         let json_str = "[{\"address\": 1, \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
@@ -419,12 +422,14 @@ mod tests {
 
     #[test]
     fn zatoshis_from_json() {
+        // with amount
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         super::zatoshis_from_json(json_args).unwrap();
 
+        // without amount
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
@@ -434,6 +439,7 @@ mod tests {
             Err(CommandError::MissingKey(_))
         ));
 
+        // invalid amount
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":\"non_number\", \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
@@ -446,6 +452,7 @@ mod tests {
 
     #[test]
     fn memo_from_json() {
+        // with memo
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
@@ -455,6 +462,7 @@ mod tests {
             Some(interpret_memo_string("test memo".to_string()).unwrap())
         );
 
+        // without memo
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000}]";
         let json_args = json::parse(json_str).unwrap();
