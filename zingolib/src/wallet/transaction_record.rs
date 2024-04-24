@@ -445,7 +445,7 @@ pub mod mocks {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
-        test_framework::mocks::{build_method, build_method_push, build_push_list, default_txid},
+        test_framework::mocks::{build_method, build_method_push, build_push_list, random_txid},
         wallet::notes::{
             orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
             transparent::mocks::TransparentOutputBuilder, OrchardNote, SaplingNote,
@@ -523,45 +523,33 @@ pub mod mocks {
 
     /// creates a TransactionRecord holding each type of note.
     pub fn nine_note_transaction_record() -> TransactionRecord {
-        let spend = Some((default_txid(), 112358));
+        let spend = Some((random_txid(), 112358));
+        let semi_spend = Some((random_txid(), 853211));
 
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-
-        transaction_record
-            .transparent_outputs
-            .push(TransparentOutputBuilder::default().build());
-        transaction_record
-            .transparent_outputs
-            .push(TransparentOutputBuilder::default().spent(spend).build());
-        transaction_record.transparent_outputs.push(
-            TransparentOutputBuilder::default()
-                .unconfirmed_spent(spend)
-                .build(),
-        );
-        transaction_record
-            .sapling_notes
-            .push(SaplingNoteBuilder::default().build());
-        transaction_record
-            .sapling_notes
-            .push(SaplingNoteBuilder::default().spent(spend).build());
-        transaction_record.sapling_notes.push(
-            SaplingNoteBuilder::default()
-                .unconfirmed_spent(spend)
-                .build(),
-        );
-        transaction_record
-            .orchard_notes
-            .push(OrchardNoteBuilder::default().build());
-        transaction_record
-            .orchard_notes
-            .push(OrchardNoteBuilder::default().spent(spend).build());
-        transaction_record.orchard_notes.push(
-            OrchardNoteBuilder::default()
-                .unconfirmed_spent(spend)
-                .build(),
-        );
-
-        transaction_record
+        TransactionRecordBuilder::default()
+            .transparent_outputs(TransparentOutputBuilder::default().build())
+            .transparent_outputs(TransparentOutputBuilder::default().spent(spend).build())
+            .transparent_outputs(
+                TransparentOutputBuilder::default()
+                    .unconfirmed_spent(semi_spend)
+                    .build(),
+            )
+            .sapling_notes(SaplingNoteBuilder::default().build())
+            .sapling_notes(SaplingNoteBuilder::default().spent(spend).build())
+            .sapling_notes(
+                SaplingNoteBuilder::default()
+                    .unconfirmed_spent(semi_spend)
+                    .build(),
+            )
+            .orchard_notes(OrchardNoteBuilder::default().build())
+            .orchard_notes(OrchardNoteBuilder::default().spent(spend).build())
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .unconfirmed_spent(semi_spend)
+                    .build(),
+            )
+            .randomize_txid()
+            .build()
     }
 }
 
