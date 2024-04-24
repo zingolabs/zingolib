@@ -463,7 +463,7 @@ where
     const NU: NetworkUpgrade;
     /// TODO: Add Doc Comment Here!
     const NAME: &'static str;
-    /// The [zcash_protocol::ShieldedProtocol] this domain represents
+    /// The [zcash_client_backend::ShieldedProtocol] this domain represents
     const SHIELDED_PROTOCOL: ShieldedProtocol;
 
     /// TODO: Add Doc Comment Here!

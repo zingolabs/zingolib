@@ -234,18 +234,19 @@ mod tests {
     };
     use zip32::AccountId;
 
-    use crate::wallet::{
-        notes::{
-            sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
-            ShNoteId,
+    use crate::{
+        test_framework::mocks::{default_txid, SaplingCryptoNoteBuilder},
+        wallet::{
+            notes::{
+                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
+                ShNoteId,
+            },
+            transaction_record::mocks::TransactionRecordBuilder,
+            transaction_records_by_id::TransactionRecordsById,
         },
-        transaction_record::mocks::TransactionRecordBuilder,
-        transaction_records_by_id::TransactionRecordsById,
     };
 
-    #[test]
-    fn sapling_note_is_selected() {
-        // WIP
+    fn setup_mock_trbid() -> TransactionRecordsById {
         let mut transaction_record = TransactionRecordBuilder::default().build();
         transaction_record
             .sapling_notes
@@ -253,6 +254,32 @@ mod tests {
 
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert(transaction_record.txid, transaction_record);
+        transaction_records_by_id
+    }
+
+    #[test]
+    fn get_individual_sapling_note() {
+        let transaction_records_by_id = setup_mock_trbid();
+
+        let single_note_wrong_index = transaction_records_by_id
+            .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 1)
+            .unwrap();
+        assert_eq!(single_note_wrong_index, None);
+        let real_single_note = transaction_records_by_id
+            .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            real_single_note.note(),
+            &zcash_client_backend::wallet::Note::Sapling(
+                SaplingCryptoNoteBuilder::default().build()
+            )
+        )
+    }
+
+    #[test]
+    fn sapling_note_is_selected() {
+        let transaction_records_by_id = setup_mock_trbid();
 
         let target_value = NonNegativeAmount::const_from_u64(20000);
         let anchor_height: BlockHeight = 10.into();
