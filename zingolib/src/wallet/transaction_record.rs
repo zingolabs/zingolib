@@ -845,4 +845,25 @@ mod tests {
                 .orchard_crypto_note,
         );
     }
+
+    #[test]
+    fn get_received_note() {
+        let transaction_record = setup_mock_transaction_record();
+
+        assert_eq!(
+            transaction_record.get_received_note::<SaplingDomain>(1),
+            None
+        );
+        assert_eq!(
+            transaction_record
+                .get_received_note::<SaplingDomain>(0)
+                .unwrap()
+                .note(),
+            &transaction_record
+                .sapling_notes
+                .first()
+                .unwrap()
+                .sapling_crypto_note
+        );
+    }
 }
