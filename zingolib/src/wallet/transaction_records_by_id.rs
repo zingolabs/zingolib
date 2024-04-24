@@ -469,13 +469,20 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet::{
-        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder},
-        transaction_record::mocks::TransactionRecordBuilder,
+    use crate::{
+        test_framework::mocks::default_txid,
+        wallet::{
+            notes::{
+                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
+            },
+            transaction_record::mocks::{setup_mock_transaction_record, TransactionRecordBuilder},
+        },
     };
 
     use super::TransactionRecordsById;
 
+    use sapling_crypto::note_encryption::SaplingDomain;
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
@@ -506,5 +513,32 @@ mod tests {
         transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
 
         assert_eq!(transaction_records_by_id.len(), 1);
+    }
+
+    #[test]
+    fn get_received_note_from_identifier() {
+        let mut trbid = TransactionRecordsById::new();
+        trbid.insert_transaction_record(setup_mock_transaction_record());
+
+        let received_note = trbid.get_received_note_from_identifier::<SaplingDomain>(
+            crate::wallet::notes::ShNoteId {
+                txid: default_txid(),
+                shpool: ShieldedProtocol::Sapling,
+                index: 0,
+            },
+        );
+
+        assert_eq!(
+            received_note.unwrap().note(),
+            &trbid
+                .0
+                .values()
+                .next()
+                .unwrap()
+                .sapling_notes
+                .first()
+                .unwrap()
+                .sapling_crypto_note
+        )
     }
 }

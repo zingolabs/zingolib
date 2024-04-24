@@ -639,18 +639,11 @@ pub mod mocks {
     /// creates a transaction_record with one of
     /// each mock note type in it
     pub fn setup_mock_transaction_record() -> TransactionRecord {
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-        transaction_record
-            .sapling_notes
-            .push(SaplingNoteBuilder::default().build());
-        let transparent_output = TransparentOutputBuilder::default().build();
-        transaction_record
-            .transparent_outputs
-            .push(transparent_output.clone());
-        let orchard_note = OrchardNoteBuilder::default().build();
-        transaction_record.orchard_notes.push(orchard_note);
-
-        transaction_record
+        TransactionRecordBuilder::default()
+            .sapling_notes(SaplingNoteBuilder::default().build())
+            .transparent_outputs(TransparentOutputBuilder::default().build())
+            .orchard_notes(OrchardNoteBuilder::default().build())
+            .build()
     }
 }
 
