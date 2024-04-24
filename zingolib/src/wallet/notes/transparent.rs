@@ -53,6 +53,10 @@ impl OutputInterface for TransparentOutput {
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
+    #[cfg(any(test, feature = "test-features"))]
+    fn set_output_index(&mut self, index: u32) {
+        self.output_index = index as u64
+    }
 }
 
 impl TransparentOutput {

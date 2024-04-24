@@ -20,8 +20,10 @@ macro_rules! build_method_push {
 }
 macro_rules! build_push_list {
     ($name:ident, $builder:ident, $struct:ident) => {
-        for i in $builder.$name {
-            $struct.$name.push(i);
+        for (i, mut item) in $builder.$name.into_iter().enumerate() {
+            use crate::wallet::notes::interface::OutputInterface as _;
+            item.set_output_index(i as u32);
+            $struct.$name.push(item);
         }
     };
 }

@@ -68,6 +68,10 @@ pub trait OutputInterface: Sized {
     fn query(&self, query: OutputQuery) -> bool {
         self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
+
+    #[cfg(any(test, feature = "test-features"))]
+    /// Sets the output index, for mocks
+    fn set_output_index(&mut self, index: u32);
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
