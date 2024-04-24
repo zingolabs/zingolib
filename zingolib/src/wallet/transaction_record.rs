@@ -521,6 +521,7 @@ pub mod mocks {
     }
 
     /// creates a TransactionRecord holding each type of note with custom values.
+    #[allow(clippy::too_many_arguments)]
     pub fn nine_note_transaction_record(
         transparent_unspent: u64,
         transparent_spent: u64,
@@ -729,6 +730,7 @@ mod tests {
 
     proptest! {
         #[test]
+        #[allow(clippy::too_many_arguments)]
         fn total_value_received(
             transparent_unspent: u32,
             transparent_spent: u32,
