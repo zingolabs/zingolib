@@ -460,9 +460,9 @@ pub mod mocks {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
-        transparent_outputs: Vec<TransparentOutput>,
-        sapling_notes: Vec<SaplingNote>,
-        orchard_notes: Vec<OrchardNote>,
+        transparent_outputs: Vec<TransparentOutputBuilder>,
+        sapling_notes: Vec<SaplingNoteBuilder>,
+        orchard_notes: Vec<OrchardNoteBuilder>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransactionRecordBuilder {
@@ -481,9 +481,9 @@ pub mod mocks {
         build_method!(status, ConfirmationStatus);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
-        build_method_push!(transparent_outputs, TransparentOutput);
-        build_method_push!(sapling_notes, SaplingNote);
-        build_method_push!(orchard_notes, OrchardNote);
+        build_method_push!(transparent_outputs, TransparentOutputBuilder);
+        build_method_push!(sapling_notes, SaplingNoteBuilder);
+        build_method_push!(orchard_notes, OrchardNoteBuilder);
 
         /// Use the mocery of random_txid to get one?
         pub fn randomize_txid(self) -> Self {
@@ -521,33 +521,47 @@ pub mod mocks {
         }
     }
 
-    /// creates a TransactionRecord holding each type of note.
-    pub fn nine_note_transaction_record() -> TransactionRecord {
+    /// creates a TransactionRecord holding each type of note with custom values.
+    pub fn nine_note_transaction_record(
+        transparent_unspent: u64,
+        transparent_spent: u64,
+        transparent_semi_spent: u64,
+        sapling_unspent: u64,
+        sapling_spent: u64,
+        sapling_semi_spent: u64,
+        orchard_unspent: u64,
+        orchard_spent: u64,
+        orchard_semi_spent: u64,
+    ) -> TransactionRecord {
         let spend = Some((random_txid(), 112358));
         let semi_spend = Some((random_txid(), 853211));
 
         TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentOutputBuilder::default().build())
-            .transparent_outputs(TransparentOutputBuilder::default().spent(spend).build())
+            .transparent_outputs(TransparentOutputBuilder::default().value(transparent_unspent))
+            .transparent_outputs(
+                TransparentOutputBuilder::default()
+                    .spent(spend)
+                    .value(transparent_spent),
+            )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .build(),
+                    .value(transparent_semi_spent),
             )
-            .sapling_notes(SaplingNoteBuilder::default().build())
-            .sapling_notes(SaplingNoteBuilder::default().spent(spend).build())
+            .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent))
+            .sapling_notes(
+                SaplingNoteBuilder::default()
+                    .spent(spend)
+                    .value(sapling_spent),
+            )
             .sapling_notes(
                 SaplingNoteBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .build(),
+                    .value(sapling_semi_spent),
             )
-            .orchard_notes(OrchardNoteBuilder::default().build())
-            .orchard_notes(OrchardNoteBuilder::default().spent(spend).build())
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .unconfirmed_spent(semi_spend)
-                    .build(),
-            )
+            .orchard_notes(OrchardNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default().spent(spend))
+            .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(semi_spend))
             .randomize_txid()
             .build()
     }
@@ -590,7 +604,7 @@ mod tests {
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
         let transaction_record = TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentOutputBuilder::default().build())
+            .transparent_outputs(TransparentOutputBuilder::default())
             .build();
         assert!(transaction_record.is_incoming_transaction());
     }
