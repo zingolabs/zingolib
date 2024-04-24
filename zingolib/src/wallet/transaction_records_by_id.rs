@@ -64,13 +64,13 @@ impl TransactionRecordsById {
         <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
         let transaction = self.get(&note_record_reference.txid);
-        transaction.and_then(|transaction_record| {
-            if note_record_reference.shpool == D::SHIELDED_PROTOCOL {
+        if note_record_reference.shpool == D::SHIELDED_PROTOCOL {
+            transaction.and_then(|transaction_record| {
                 transaction_record.get_received_note::<D>(note_record_reference.index)
-            } else {
-                None
-            }
-        })
+            })
+        } else {
+            None
+        }
     }
     /// Adds a TransactionRecord to the hashmap, using its TxId as a key.
     pub fn insert_transaction_record(&mut self, transaction_record: TransactionRecord) {
