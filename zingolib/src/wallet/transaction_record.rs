@@ -829,22 +829,23 @@ mod tests {
 
     #[test]
     fn get_received_note() {
-        let transaction_record = setup_mock_transaction_record();
+        let transaction_record = nine_note_transaction_record();
 
-        assert_eq!(
-            transaction_record.get_received_note::<SaplingDomain>(1),
-            None
-        );
-        assert_eq!(
-            transaction_record
-                .get_received_note::<SaplingDomain>(0)
-                .unwrap()
-                .note(),
-            &transaction_record
-                .sapling_notes
-                .first()
-                .unwrap()
-                .sapling_crypto_note
-        );
+        for (i, value) in transaction_record
+            .sapling_notes
+            .iter()
+            .map(|note| note.sapling_crypto_note.value())
+            .enumerate()
+        {
+            assert_eq!(
+                transaction_record
+                    .get_received_note::<SaplingDomain>(i as u32)
+                    .unwrap()
+                    .note_value()
+                    .unwrap()
+                    .into_u64(),
+                value.inner()
+            )
+        }
     }
 }
