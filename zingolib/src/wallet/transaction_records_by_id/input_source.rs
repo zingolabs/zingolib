@@ -236,33 +236,16 @@ mod tests {
     use crate::{
         test_framework::mocks::{default_txid, SaplingCryptoNoteBuilder},
         wallet::{
-            notes::{
-                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
-                ShNoteId,
-            },
-            transaction_record::mocks::TransactionRecordBuilder,
+            notes::{transparent::mocks::TransparentOutputBuilder, ShNoteId},
+            transaction_record::mocks::setup_mock_transaction_record,
             transaction_records_by_id::TransactionRecordsById,
         },
     };
 
-    fn setup_mock_trbid() -> TransactionRecordsById {
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-        transaction_record
-            .sapling_notes
-            .push(SaplingNoteBuilder::default().build());
-        let transparent_output = TransparentOutputBuilder::default().build();
-        transaction_record
-            .transparent_outputs
-            .push(transparent_output.clone());
-
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(transaction_record);
-        transaction_records_by_id
-    }
-
     #[test]
     fn get_individual_sapling_note() {
-        let transaction_records_by_id = setup_mock_trbid();
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+        transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
 
         let single_note_wrong_index = transaction_records_by_id
             .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 1)
@@ -282,7 +265,8 @@ mod tests {
 
     #[test]
     fn sapling_note_is_selected() {
-        let transaction_records_by_id = setup_mock_trbid();
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+        transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
 
         let target_value = NonNegativeAmount::const_from_u64(20000);
         let anchor_height: BlockHeight = 10.into();
@@ -304,7 +288,9 @@ mod tests {
 
     #[test]
     fn get_transparent_output() {
-        let transaction_records_by_id = setup_mock_trbid();
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+        transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
+
         let transparent_output = transaction_records_by_id
             .0
             .values()
@@ -336,7 +322,9 @@ mod tests {
 
     #[test]
     fn select_transparent_outputs() {
-        let transaction_records_by_id = setup_mock_trbid();
+        let mut transaction_records_by_id = TransactionRecordsById::new();
+        transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
+
         let transparent_output = transaction_records_by_id
             .0
             .values()

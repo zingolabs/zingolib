@@ -208,7 +208,6 @@ impl TransactionRecord {
     /// For each Shielded note received in this transactions,
     /// pair it with a NoteRecordIdentifier identifying the note
     /// and return the list
-    // TODO: Make these generic, this is wet code
     pub fn select_unspent_shnotes_and_ids<D>(
         &self,
     ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, ShNoteId)>
@@ -238,6 +237,7 @@ impl TransactionRecord {
             });
         value_ref_pairs
     }
+
     /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
@@ -636,13 +636,33 @@ pub mod mocks {
 
         transaction_record
     }
+    /// creates a transaction_record with one of
+    /// each mock note type in it
+    pub fn setup_mock_transaction_record() -> TransactionRecord {
+        let mut transaction_record = TransactionRecordBuilder::default().build();
+        transaction_record
+            .sapling_notes
+            .push(SaplingNoteBuilder::default().build());
+        let transparent_output = TransparentOutputBuilder::default().build();
+        transaction_record
+            .transparent_outputs
+            .push(transparent_output.clone());
+        let orchard_note = OrchardNoteBuilder::default().build();
+        transaction_record.orchard_notes.push(orchard_note);
+
+        transaction_record
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use orchard::note_encryption::OrchardDomain;
+    use sapling_crypto::note_encryption::SaplingDomain;
     use test_case::test_matrix;
 
-    use crate::wallet::notes::query::OutputQuery;
+    use crate::wallet::{
+        notes::query::OutputQuery, transaction_record::mocks::setup_mock_transaction_record,
+    };
 
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     use crate::wallet::transaction_record::mocks::{
@@ -800,5 +820,29 @@ mod tests {
                 .map(|utxo| utxo.value)
                 .sum::<u64>();
         assert_eq!(transaction_record.total_value_received(), old_total);
+    }
+
+    #[test]
+    fn select_unspent_shnotesids() {
+        let transaction_record = setup_mock_transaction_record();
+
+        let sapling_notes = transaction_record.select_unspent_shnotes_and_ids::<SaplingDomain>();
+        assert_eq!(
+            sapling_notes.first().unwrap().0,
+            transaction_record
+                .sapling_notes
+                .first()
+                .unwrap()
+                .sapling_crypto_note,
+        );
+        let orchard_notes = transaction_record.select_unspent_shnotes_and_ids::<OrchardDomain>();
+        assert_eq!(
+            orchard_notes.first().unwrap().0,
+            transaction_record
+                .orchard_notes
+                .first()
+                .unwrap()
+                .orchard_crypto_note,
+        );
     }
 }
