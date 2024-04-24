@@ -823,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn select_unspent_shnotesids() {
+    fn select_unspent_shnotes_and_ids() {
         let transaction_record = setup_mock_transaction_record();
 
         let sapling_notes = transaction_record.select_unspent_shnotes_and_ids::<SaplingDomain>();

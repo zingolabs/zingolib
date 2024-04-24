@@ -243,7 +243,7 @@ mod tests {
     };
 
     #[test]
-    fn get_individual_sapling_note() {
+    fn get_spendable_note() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
 
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn sapling_note_is_selected() {
+    fn select_spendable_notes() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
 
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn get_transparent_output() {
+    fn get_unspent_transparent_output() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
 
@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn select_transparent_outputs() {
+    fn get_unspent_transparent_outputs() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
 
