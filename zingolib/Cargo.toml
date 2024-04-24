@@ -82,6 +82,7 @@ serde = { version = "1.0.188", features = ["derive"] }
 sapling-crypto.workspace = true
 getset = "0.1.2"
 test-case = "3.3.1"
+proptest = "1.4.0"
 
 [dev-dependencies]
 portpicker = "0.1.0"
