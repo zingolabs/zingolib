@@ -218,7 +218,7 @@ pub mod mocks {
         diversifier: Option<sapling_crypto::Diversifier>,
         note: Option<SaplingCryptoNoteBuilder>,
         witnessed_position: Option<Option<Position>>,
-        output_index: Option<Option<u32>>,
+        output_index: Option<u32>,
         nullifier: Option<Option<sapling_crypto::Nullifier>>,
         spent: Option<Option<(TxId, u32)>>,
         unconfirmed_spent: Option<Option<(TxId, u32)>>,
@@ -249,7 +249,7 @@ pub mod mocks {
         build_method!(diversifier, sapling_crypto::Diversifier);
         build_method!(note, SaplingCryptoNoteBuilder);
         build_method!(witnessed_position, Option<Position>);
-        build_method!(output_index, Option<u32>);
+        build_method!(output_index, u32);
         build_method!(nullifier, Option<sapling_crypto::Nullifier>);
         build_method!(spent, Option<(TxId, u32)>);
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
@@ -280,7 +280,7 @@ pub mod mocks {
                 self.memo.unwrap(),
                 self.is_change.unwrap(),
                 self.have_spending_key.unwrap(),
-                self.output_index.unwrap(),
+                self.output_index,
             )
         }
     }
@@ -291,7 +291,7 @@ pub mod mocks {
                 .diversifier(sapling_crypto::Diversifier([0; 11]))
                 .note(crate::test_framework::mocks::SaplingCryptoNoteBuilder::default())
                 .witnessed_position(Some(Position::from(0)))
-                .output_index(Some(0))
+                .output_index(0)
                 .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))
                 .spent(None)
                 .unconfirmed_spent(None)

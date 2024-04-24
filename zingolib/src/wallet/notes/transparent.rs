@@ -206,7 +206,7 @@ pub mod mocks {
     pub struct TransparentOutputBuilder {
         address: Option<String>,
         txid: Option<TxId>,
-        output_index: Option<u64>,
+        output_index: Option<u32>,
         script: Option<Vec<u8>>,
         value: Option<u64>,
         spent: Option<Option<(TxId, u32)>>,
@@ -229,7 +229,7 @@ pub mod mocks {
         // Methods to set each field
         build_method!(address, String);
         build_method!(txid, TxId);
-        build_method!(output_index, u64);
+        build_method!(output_index, u32);
         build_method!(script, Vec<u8>);
         build_method!(value, u64);
         build_method!(spent, Option<(TxId, u32)>);
@@ -240,7 +240,7 @@ pub mod mocks {
             TransparentOutput::from_parts(
                 self.address.unwrap(),
                 self.txid.unwrap(),
-                self.output_index.unwrap(),
+                self.output_index.unwrap() as u64,
                 self.script.unwrap(),
                 self.value.unwrap(),
                 self.spent.unwrap(),
