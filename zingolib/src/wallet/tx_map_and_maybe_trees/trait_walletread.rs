@@ -108,12 +108,12 @@ impl WalletRead for TxMapAndMaybeTrees {
 
                 Ok(opt_max_downloaded_height
                     .map(|max_downloaded_height| max_downloaded_height + 1)
-                    .map(|next_block_height| {
+                    .map(|anticipated_next_block_height| {
                         (
-                            next_block_height,
+                            anticipated_next_block_height,
                             BlockHeight::from_u32(std::cmp::max(
                                 1,
-                                u32::from(next_block_height)
+                                u32::from(anticipated_next_block_height)
                                     .saturating_sub(u32::from(min_confirmations)),
                             )),
                         )
