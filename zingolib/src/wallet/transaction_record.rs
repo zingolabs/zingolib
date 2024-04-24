@@ -656,9 +656,7 @@ mod tests {
     use sapling_crypto::note_encryption::SaplingDomain;
     use test_case::test_matrix;
 
-    use crate::wallet::{
-        notes::query::OutputQuery, transaction_record::mocks::setup_mock_transaction_record,
-    };
+    use crate::wallet::notes::query::OutputQuery;
 
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     use crate::wallet::transaction_record::mocks::{
@@ -820,7 +818,7 @@ mod tests {
 
     #[test]
     fn select_unspent_shnotes_and_ids() {
-        let transaction_record = setup_mock_transaction_record();
+        let transaction_record = nine_note_transaction_record();
 
         let sapling_notes = transaction_record.select_unspent_shnotes_and_ids::<SaplingDomain>();
         assert_eq!(
@@ -831,6 +829,7 @@ mod tests {
                 .unwrap()
                 .sapling_crypto_note,
         );
+        assert_eq!(sapling_notes.len(), 1);
         let orchard_notes = transaction_record.select_unspent_shnotes_and_ids::<OrchardDomain>();
         assert_eq!(
             orchard_notes.first().unwrap().0,
@@ -840,6 +839,7 @@ mod tests {
                 .unwrap()
                 .orchard_crypto_note,
         );
+        assert_eq!(orchard_notes.len(), 1);
     }
 
     #[test]
