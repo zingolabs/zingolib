@@ -469,14 +469,9 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        test_framework::mocks::default_txid,
-        wallet::{
-            notes::{
-                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
-            },
-            transaction_record::mocks::{setup_mock_transaction_record, TransactionRecordBuilder},
-        },
+    use crate::wallet::{
+        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder},
+        transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
     };
 
     use super::TransactionRecordsById;
@@ -518,27 +513,30 @@ mod tests {
     #[test]
     fn get_received_note_from_identifier() {
         let mut trbid = TransactionRecordsById::new();
-        trbid.insert_transaction_record(setup_mock_transaction_record());
+        trbid.insert_transaction_record(nine_note_transaction_record());
 
-        let received_note = trbid.get_received_note_from_identifier::<SaplingDomain>(
-            crate::wallet::notes::ShNoteId {
-                txid: default_txid(),
-                shpool: ShieldedProtocol::Sapling,
-                index: 0,
-            },
-        );
+        for i in 0..3 {
+            let received_note = trbid.get_received_note_from_identifier::<SaplingDomain>(
+                crate::wallet::notes::ShNoteId {
+                    txid: *trbid.0.keys().next().unwrap(),
+                    shpool: ShieldedProtocol::Sapling,
+                    index: i,
+                },
+            );
 
-        assert_eq!(
-            received_note.unwrap().note(),
-            &trbid
-                .0
-                .values()
-                .next()
-                .unwrap()
-                .sapling_notes
-                .first()
-                .unwrap()
-                .sapling_crypto_note
-        )
+            assert_eq!(
+                received_note.unwrap().note(),
+                &trbid
+                    .0
+                    .values()
+                    .next()
+                    .unwrap()
+                    .sapling_notes
+                    .iter()
+                    .nth(i as usize)
+                    .unwrap()
+                    .sapling_crypto_note
+            )
+        }
     }
 }
