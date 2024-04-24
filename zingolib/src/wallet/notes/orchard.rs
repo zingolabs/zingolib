@@ -178,7 +178,7 @@ impl ShieldedNoteInterface for OrchardNote {
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;
-    use orchard::{keys::Diversifier, note::Nullifier};
+    use orchard::{keys::Diversifier, note::Nullifier, value::NoteValue};
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
     use crate::{
@@ -235,6 +235,13 @@ pub mod mocks {
             self
         }
         build_method!(have_spending_key, bool);
+        pub fn value(mut self, value: u64) -> Self {
+            self.note
+                .as_mut()
+                .unwrap()
+                .value(NoteValue::from_raw(value));
+            self
+        }
 
         /// builds a mock SaplingNote after all pieces are supplied
         pub fn build(self) -> OrchardNote {
