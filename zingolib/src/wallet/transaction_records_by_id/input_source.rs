@@ -126,13 +126,14 @@ impl InputSource for TransactionRecordsById {
         }
         let mut sapling_notes = Vec::<ReceivedNote<ShNoteId, sapling_crypto::Note>>::new();
         let mut orchard_notes = Vec::<ReceivedNote<ShNoteId, orchard::Note>>::new();
-        if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().rev(/*biggest first*/).try_fold(
+        if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
             Some(target_value),
             |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
                     sapling_notes.push(
-                        self.get(&noteref.txid).and_then(|tr| tr.get_received_note::<SaplingDomain>(noteref.index))
-                            .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
+                        self.get(&noteref.txid)
+                            .and_then(|tr| tr.get_received_note::<SaplingDomain>(noteref.index))
+                            .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?,
                     );
                     Ok(targ
                         - NonNegativeAmount::from_u64(note.value().inner())
@@ -141,21 +142,28 @@ impl InputSource for TransactionRecordsById {
                 None => Ok(None),
             },
         )? {
-            if let Some(missing_value_after_orchard) = orchard_note_noteref_pairs.into_iter().rev(/*biggest first*/).try_fold(
-            Some(missing_value_after_sapling),
-            |rolling_target, (note, noteref)| match rolling_target {
-                Some(targ) => {
-                    orchard_notes.push(
-                        self.get(&noteref.txid).and_then(|tr| tr.get_received_note::<OrchardDomain>(noteref.index))
-                            .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?
-                    );
-                    Ok(targ
-                        - NonNegativeAmount::from_u64(note.value().inner())
-                            .map_err(|e| ZingoLibError::Error(e.to_string()))?)
-                }
-                None => Ok(None),
-            },
-        )? {
+            if let Some(missing_value_after_orchard) =
+                orchard_note_noteref_pairs.into_iter().try_fold(
+                    Some(missing_value_after_sapling),
+                    |rolling_target, (note, noteref)| match rolling_target {
+                        Some(targ) => {
+                            orchard_notes.push(
+                                self.get(&noteref.txid)
+                                    .and_then(|tr| {
+                                        tr.get_received_note::<OrchardDomain>(noteref.index)
+                                    })
+                                    .ok_or_else(|| {
+                                        ZingoLibError::Error("missing note".to_string())
+                                    })?,
+                            );
+                            Ok(targ
+                                - NonNegativeAmount::from_u64(note.value().inner())
+                                    .map_err(|e| ZingoLibError::Error(e.to_string()))?)
+                        }
+                        None => Ok(None),
+                    },
+                )?
+            {
                 return ZingoLibResult::Err(ZingoLibError::Error(format!(
                     "insufficient funds, short {}",
                     missing_value_after_orchard.into_u64()
