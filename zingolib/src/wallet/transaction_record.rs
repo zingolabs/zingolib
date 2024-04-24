@@ -576,6 +576,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::proptest;
     use test_case::test_matrix;
 
     use crate::wallet::notes::query::OutputQuery;
@@ -726,18 +727,30 @@ mod tests {
         );
     }
 
-    #[test]
-    fn total_value_received() {
-        let transaction_record = nine_note_transaction_record(1, 2, 3, 4, 5, 6, 7, 8, 9); // proptest this when proptest merges
-        let old_total = transaction_record
-            .pool_value_received::<orchard::note_encryption::OrchardDomain>()
-            + transaction_record
-                .pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
-            + transaction_record
-                .transparent_outputs
-                .iter()
-                .map(|utxo| utxo.value)
-                .sum::<u64>();
-        assert_eq!(transaction_record.total_value_received(), old_total);
+    proptest! {
+        #[test]
+        fn total_value_received(
+            transparent_unspent: u32,
+            transparent_spent: u32,
+            transparent_semi_spent: u32,
+            sapling_unspent: u32,
+            sapling_spent: u32,
+            sapling_semi_spent: u32,
+            orchard_unspent: u32,
+            orchard_spent: u32,
+            orchard_semi_spent: u32,
+            ) {
+            let transaction_record = nine_note_transaction_record(transparent_unspent.into(), transparent_spent.into(), transparent_semi_spent.into(), sapling_unspent.into(), sapling_spent.into(), sapling_semi_spent.into(), orchard_unspent.into(), orchard_spent.into(), orchard_semi_spent.into());
+            let old_total = transaction_record
+                .pool_value_received::<orchard::note_encryption::OrchardDomain>()
+                + transaction_record
+                    .pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
+                + transaction_record
+                    .transparent_outputs
+                    .iter()
+                    .map(|utxo| utxo.value)
+                    .sum::<u64>();
+            assert_eq!(transaction_record.total_value_received(), old_total);
+        }
     }
 }
