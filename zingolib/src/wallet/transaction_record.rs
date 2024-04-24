@@ -448,15 +448,14 @@ pub mod mocks {
         test_framework::mocks::{build_method, build_method_push, build_push_list, random_txid},
         wallet::notes::{
             orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder, OrchardNote, SaplingNote,
-            TransparentOutput,
+            transparent::mocks::TransparentOutputBuilder,
         },
     };
 
     use super::TransactionRecord;
 
     /// to create a mock TransactionRecord
-    pub struct TransactionRecordBuilder {
+    pub(crate) struct TransactionRecordBuilder {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
@@ -559,9 +558,17 @@ pub mod mocks {
                     .unconfirmed_spent(semi_spend)
                     .value(sapling_semi_spent),
             )
-            .orchard_notes(OrchardNoteBuilder::default())
-            .orchard_notes(OrchardNoteBuilder::default().spent(spend))
-            .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(semi_spend))
+            .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent))
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .spent(spend)
+                    .value(orchard_spent),
+            )
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .unconfirmed_spent(semi_spend)
+                    .value(orchard_semi_spent),
+            )
             .randomize_txid()
             .build()
     }
@@ -649,7 +656,7 @@ mod tests {
         let expected = valid_spend_stati * valid_pools;
 
         assert_eq!(
-            nine_note_transaction_record()
+            nine_note_transaction_record(1, 2, 3, 4, 5, 6, 7, 8, 9)
                 .query_for_ids(OutputQuery::stipulations(
                     unspent,
                     pending_spent,
@@ -692,19 +699,22 @@ mod tests {
         //different pools have different mock values.
         let mut valid_pool_value = 0;
         if transparent {
-            valid_pool_value += 100000;
+            valid_pool_value += 100_000;
         }
         if sapling {
-            valid_pool_value += 200000;
+            valid_pool_value += 200_000;
         }
         if orchard {
-            valid_pool_value += 800000;
+            valid_pool_value += 800_000;
         }
 
         let expected = valid_spend_stati * valid_pool_value;
 
         assert_eq!(
-            nine_note_transaction_record().query_sum_value(OutputQuery::stipulations(
+            nine_note_transaction_record(
+                100_000, 100_000, 100_000, 200_000, 200_000, 200_000, 800_000, 800_000, 800_000
+            )
+            .query_sum_value(OutputQuery::stipulations(
                 unspent,
                 pending_spent,
                 spent,
@@ -718,7 +728,7 @@ mod tests {
 
     #[test]
     fn total_value_received() {
-        let transaction_record = nine_note_transaction_record();
+        let transaction_record = nine_note_transaction_record(1, 2, 3, 4, 5, 6, 7, 8, 9); // proptest this when proptest merges
         let old_total = transaction_record
             .pool_value_received::<orchard::note_encryption::OrchardDomain>()
             + transaction_record
