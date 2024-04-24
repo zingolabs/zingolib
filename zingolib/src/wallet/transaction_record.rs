@@ -489,6 +489,20 @@ pub mod mocks {
             self.txid(crate::test_framework::mocks::random_txid())
         }
 
+        /// Sets the output indexes of all contained notes
+        pub fn set_output_indexes(mut self) -> Self {
+            for (i, toutput) in self.transparent_outputs.iter_mut().enumerate() {
+                toutput.output_index = i as u64;
+            }
+            for (i, snote) in self.sapling_notes.iter_mut().enumerate() {
+                snote.output_index = Some(i as u32);
+            }
+            for (i, snote) in self.orchard_notes.iter_mut().enumerate() {
+                snote.output_index = Some(i as u32);
+            }
+            self
+        }
+
         /// builds a mock TransactionRecord after all pieces are supplied
         pub fn build(self) -> TransactionRecord {
             let mut transaction_record = TransactionRecord::new(
@@ -571,6 +585,7 @@ pub mod mocks {
                     .value(orchard_semi_spent),
             )
             .randomize_txid()
+            .set_output_indexes()
             .build()
     }
 }
