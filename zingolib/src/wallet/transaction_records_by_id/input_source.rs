@@ -16,11 +16,36 @@ use crate::{
     wallet::{notes::ShNoteId, transaction_records_by_id::TransactionRecordsById},
 };
 
+/// A trait representing the capability to query a data store for unspent transaction outputs
+/// belonging to a wallet.
 impl InputSource for TransactionRecordsById {
+    /// The type of errors produced by a wallet backend.
+    /// IMPL: zingolib's error type. This could
+    /// maybe more specific
     type Error = ZingoLibError;
+    /// Backend-specific account identifier.
+    ///
+    /// An account identifier corresponds to at most a single unified spending key's worth of spend
+    /// authority, such that both received notes and change spendable by that spending authority
+    /// will be interpreted as belonging to that account. This might be a database identifier type
+    /// or a UUID.
+    /// IMPL: We only use this as much as we are
+    /// forced to by the interface, zingo does
+    /// not support multiple accounts at present
     type AccountId = zcash_primitives::zip32::AccountId;
+    /// Backend-specific note identifier.
+    ///
+    /// For example, this might be a database identifier type or a UUID.
+    /// IMPL: We identify notes by
+    /// txid, domain, and index
     type NoteRef = ShNoteId;
 
+    /// Fetches a spendable note by indexing into a transaction's shielded outputs for the
+    /// specified shielded protocol.
+    ///
+    /// Returns `Ok(None)` if the note is not known to belong to the wallet or if the note
+    /// is not spendable.
+    /// IMPL: implemented and tested
     fn get_spendable_note(
         &self,
         txid: &zcash_primitives::transaction::TxId,
@@ -58,6 +83,10 @@ impl InputSource for TransactionRecordsById {
         }
     }
 
+    /// Returns a list of spendable notes sufficient to cover the specified target value, if
+    /// possible. Only spendable notes corresponding to the specified shielded protocol will
+    /// be included.
+    /// IMPL: implemented and tested
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
@@ -137,6 +166,11 @@ impl InputSource for TransactionRecordsById {
         Ok(SpendableNotes::new(sapling_notes, orchard_notes))
     }
 
+    /// Fetches a spendable transparent output.
+    ///
+    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
+    /// spendable.
+    /// IMPL: Implemented and tested
     fn get_unspent_transparent_output(
         &self,
         outpoint: &zcash_primitives::transaction::components::OutPoint,
@@ -172,6 +206,10 @@ impl InputSource for TransactionRecordsById {
             height,
         ))
     }
+    /// Returns a list of unspent transparent UTXOs that appear in the chain at heights up to and
+    /// including `max_height`.
+    /// IMPL: Implemented and tested. address is unused, we select all outputs
+    /// available to the wallet.
     fn get_unspent_transparent_outputs(
         &self,
         // I don't understand what this argument is for. Is the Trait's intent to only shield
