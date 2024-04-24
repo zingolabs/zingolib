@@ -178,17 +178,20 @@ impl ShieldedNoteInterface for OrchardNote {
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;
-    use orchard::{keys::Diversifier, note::Nullifier, Note};
+    use orchard::{keys::Diversifier, note::Nullifier};
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
-    use crate::{test_framework::mocks::build_method, wallet::notes::ShieldedNoteInterface};
+    use crate::{
+        test_framework::mocks::{build_method, orchard_note::OrchardCryptoNoteBuilder},
+        wallet::notes::ShieldedNoteInterface,
+    };
 
     use super::OrchardNote;
 
     /// to create a mock SaplingNote
     pub(crate) struct OrchardNoteBuilder {
         diversifier: Option<Diversifier>,
-        note: Option<Note>,
+        note: Option<OrchardCryptoNoteBuilder>,
         witnessed_position: Option<Option<Position>>,
         output_index: Option<Option<u32>>,
         nullifier: Option<Option<Nullifier>>,
@@ -219,7 +222,7 @@ pub mod mocks {
 
         // Methods to set each field
         build_method!(diversifier, Diversifier);
-        build_method!(note, Note);
+        build_method!(note, OrchardCryptoNoteBuilder);
         build_method!(witnessed_position, Option<Position>);
         build_method!(output_index, Option<u32>);
         build_method!(nullifier, Option<Nullifier>);
@@ -237,7 +240,7 @@ pub mod mocks {
         pub fn build(self) -> OrchardNote {
             OrchardNote::from_parts(
                 self.diversifier.unwrap(),
-                self.note.unwrap(),
+                self.note.unwrap().build(),
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
                 self.spent.unwrap(),
@@ -254,7 +257,7 @@ pub mod mocks {
         fn default() -> Self {
             OrchardNoteBuilder::new()
                 .diversifier(Diversifier::from_bytes([0; 11]))
-                .note(crate::test_framework::mocks::orchard_note::mock_random_orchard_note())
+                .note(OrchardCryptoNoteBuilder::default())
                 .witnessed_position(Some(Position::from(0)))
                 .output_index(Some(0))
                 .nullifier(Some(Nullifier::from_bytes(&[0u8; 32]).unwrap()))
