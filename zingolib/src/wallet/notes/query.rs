@@ -35,6 +35,7 @@ pub struct OutputPoolQuery {
 #[derive(Getters, Constructor, Clone, Copy)]
 pub struct OutputQuery {
     /// selects spend status properties
+    /// the query is expected to match note with ANY of the specified spend_stati AND ANY of the specified pools
     #[getset(get = "pub")]
     spend_status: OutputSpendStatusQuery,
     /// selects pools
