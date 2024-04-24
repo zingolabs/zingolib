@@ -101,6 +101,7 @@ mod sapling_crypto_note {
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
     /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::notes::SaplingNote`]. The latter wraps the former with some other attributes.
+    #[derive(Clone, Copy)]
     pub struct SaplingCryptoNoteBuilder {
         recipient: Option<PaymentAddress>,
         value: Option<NoteValue>,
@@ -155,55 +156,105 @@ pub mod orchard_note {
         keys::{FullViewingKey, SpendingKey},
         note::{RandomSeed, Rho},
         value::NoteValue,
-        Note,
+        Address, Note,
     };
     use rand::{rngs::OsRng, Rng};
     use zip32::Scope;
 
+    /// A struct to build a mock orchard::Note from scratch.
+    /// Distinguish [`orchard::Note`] from [`crate::wallet::notes::OrchardNote`]. The latter wraps the former with some other attributes.
+    #[derive(Clone, Copy)]
+    pub struct OrchardCryptoNoteBuilder {
+        recipient: Option<Address>,
+        value: Option<NoteValue>,
+        rho: Option<Rho>,
+        random_seed: Option<RandomSeed>,
+    }
+
+    impl OrchardCryptoNoteBuilder {
+        /// Instantiate an empty builder.
+        pub fn new() -> Self {
+            OrchardCryptoNoteBuilder {
+                recipient: None,
+                value: None,
+                rho: None,
+                random_seed: None,
+            }
+        }
+
+        // Methods to set each field
+        build_method!(recipient, Address);
+        build_method!(value, NoteValue);
+        build_method!(rho, Rho);
+        build_method!(random_seed, RandomSeed);
+
+        /// selects a random recipient address for the orchard note
+        pub fn randomize_recipient(self) -> Self {
+            let mut rng = OsRng;
+
+            let sk = {
+                loop {
+                    let mut bytes = [0; 32];
+                    rng.fill(&mut bytes);
+                    let sk = SpendingKey::from_bytes(bytes);
+                    if sk.is_some().into() {
+                        break sk.unwrap();
+                    }
+                }
+            };
+            let fvk: FullViewingKey = (&sk).into();
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            self.recipient(recipient)
+        }
+
+        /// selects a random nullifier for the orchard note
+        pub fn randomize_rho_and_rseed(self) -> Self {
+            let mut rng = OsRng;
+
+            let rho = {
+                loop {
+                    let mut bytes = [0u8; 32];
+                    rng.fill(&mut bytes);
+                    let rho = Rho::from_bytes(&bytes);
+                    if rho.is_some().into() {
+                        break rho.unwrap();
+                    }
+                }
+            };
+
+            let random_seed = {
+                loop {
+                    let mut bytes = [0; 32];
+                    rng.fill(&mut bytes);
+                    let random_seed = RandomSeed::from_bytes(bytes, &rho);
+                    if random_seed.is_some().into() {
+                        break random_seed.unwrap();
+                    }
+                }
+            };
+
+            self.rho(rho).random_seed(random_seed)
+        }
+
+        /// Build the note.
+        pub fn build(self) -> Note {
+            Note::from_parts(
+                self.recipient.unwrap(),
+                self.value.unwrap(),
+                self.rho.unwrap(),
+                self.random_seed.unwrap(),
+            )
+            .unwrap()
+        }
+    }
     /// mocks a random orchard note
-    pub fn mock_random_orchard_note() -> Note {
-        let mut rng = OsRng;
-
-        let sk = {
-            loop {
-                let mut bytes = [0; 32];
-                rng.fill(&mut bytes);
-                let sk = SpendingKey::from_bytes(bytes);
-                if sk.is_some().into() {
-                    break sk.unwrap();
-                }
-            }
-        };
-        let fvk: FullViewingKey = (&sk).into();
-        let recipient = fvk.address_at(0u32, Scope::External);
-
-        let value = NoteValue::from_raw(800000);
-        let rho = {
-            loop {
-                let mut bytes = [0u8; 32];
-                rng.fill(&mut bytes);
-                let rho = Rho::from_bytes(&bytes);
-                if rho.is_some().into() {
-                    break rho.unwrap();
-                }
-            }
-        };
-        let random_seed = {
-            loop {
-                let mut bytes = [0; 32];
-                rng.fill(&mut bytes);
-                let random_seed = RandomSeed::from_bytes(bytes, &rho);
-                if random_seed.is_some().into() {
-                    break random_seed.unwrap();
-                }
-            }
-        };
-
-        loop {
-            let note = Note::from_parts(recipient, value, rho, random_seed);
-            if note.is_some().into() {
-                break note.unwrap();
-            }
+    impl Default for OrchardCryptoNoteBuilder {
+        fn default() -> Self {
+            Self::new()
+                .randomize_recipient()
+                .randomize_rho_and_rseed()
+                .value(NoteValue::from_raw(800000))
         }
     }
 }
