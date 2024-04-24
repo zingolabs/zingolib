@@ -43,6 +43,26 @@ pub struct OutputQuery {
     pools: OutputPoolQuery,
 }
 
+pub(crate) struct QueryStipulations {
+    pub(crate) unspent: bool,
+    pub(crate) pending_spent: bool,
+    pub(crate) spent: bool,
+    pub(crate) transparent: bool,
+    pub(crate) sapling: bool,
+    pub(crate) orchard: bool,
+}
+impl QueryStipulations {
+    pub(crate) fn stipulate(self) -> OutputQuery {
+        OutputQuery::stipulations(
+            self.unspent,
+            self.pending_spent,
+            self.spent,
+            self.transparent,
+            self.sapling,
+            self.orchard,
+        )
+    }
+}
 impl OutputQuery {
     /// build a query, specifying each stipulation
     pub fn stipulations(
