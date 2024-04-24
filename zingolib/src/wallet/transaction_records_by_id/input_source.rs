@@ -141,7 +141,7 @@ impl InputSource for TransactionRecordsById {
         &self,
         outpoint: &zcash_primitives::transaction::components::OutPoint,
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        let Some((height, tnote)) = self.values().find_map(|transaction_record| {
+        let Some((height, output)) = self.values().find_map(|transaction_record| {
             transaction_record
                 .transparent_outputs
                 .iter()
@@ -158,11 +158,10 @@ impl InputSource for TransactionRecordsById {
         }) else {
             return Ok(None);
         };
-        let value = NonNegativeAmount::from_u64(tnote.value)
+        let value = NonNegativeAmount::from_u64(output.value)
             .map_err(|e| ZingoLibError::Error(e.to_string()))?;
 
-        let script_pubkey = Script::read(tnote.script.as_slice())
-            .map_err(|e| ZingoLibError::Error(e.to_string()))?;
+        let script_pubkey = Script(output.script.clone());
 
         Ok(WalletTransparentOutput::from_parts(
             outpoint.clone(),
@@ -251,9 +250,13 @@ mod tests {
         transaction_record
             .sapling_notes
             .push(SaplingNoteBuilder::default().build());
+        let transparent_output = TransparentOutputBuilder::default().build();
+        transaction_record
+            .transparent_outputs
+            .push(transparent_output.clone());
 
         let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert(transaction_record.txid, transaction_record);
+        transaction_records_by_id.insert_transaction_record(transaction_record);
         transaction_records_by_id
     }
 
@@ -294,28 +297,61 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            spendable_notes
-                .sapling()
-                .first()
-                .unwrap()
-                .note()
-                .value()
-                .inner(),
-            // Default mock sapling note value
-            1_000_000
+            spendable_notes.sapling().first().unwrap().note().value(),
+            SaplingCryptoNoteBuilder::default().build().value()
         )
     }
 
     #[test]
-    fn select_transparent_outputs() {
-        let mut transaction_record = TransactionRecordBuilder::default().build();
-        let transparent_output = TransparentOutputBuilder::default().build();
-        transaction_record
+    fn get_transparent_output() {
+        let transaction_records_by_id = setup_mock_trbid();
+        let transparent_output = transaction_records_by_id
+            .0
+            .values()
+            .next()
+            .unwrap()
             .transparent_outputs
-            .push(transparent_output.clone());
-        let record_height = transaction_record.status.get_confirmed_height();
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(transaction_record);
+            .first()
+            .unwrap();
+        let record_height = transaction_records_by_id
+            .0
+            .values()
+            .next()
+            .unwrap()
+            .status
+            .get_confirmed_height();
+
+        let wto = transaction_records_by_id
+            .get_unspent_transparent_output(
+                &TransparentOutputBuilder::default().build().to_outpoint(),
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(wto.outpoint(), &transparent_output.to_outpoint());
+        assert_eq!(wto.txout().value.into_u64(), transparent_output.value);
+        assert_eq!(wto.txout().script_pubkey.0, transparent_output.script);
+        assert_eq!(Some(wto.height()), record_height)
+    }
+
+    #[test]
+    fn select_transparent_outputs() {
+        let transaction_records_by_id = setup_mock_trbid();
+        let transparent_output = transaction_records_by_id
+            .0
+            .values()
+            .next()
+            .unwrap()
+            .transparent_outputs
+            .first()
+            .unwrap();
+        let record_height = transaction_records_by_id
+            .0
+            .values()
+            .next()
+            .unwrap()
+            .status
+            .get_confirmed_height();
 
         let selected_outputs = transaction_records_by_id
             .get_unspent_transparent_outputs(
