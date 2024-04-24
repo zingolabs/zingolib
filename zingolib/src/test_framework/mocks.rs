@@ -101,6 +101,7 @@ mod sapling_crypto_note {
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
     /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::notes::SaplingNote`]. The latter wraps the former with some other attributes.
+    #[derive(Clone, Copy)]
     pub struct SaplingCryptoNoteBuilder {
         recipient: Option<PaymentAddress>,
         value: Option<NoteValue>,
