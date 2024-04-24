@@ -9,9 +9,37 @@ use zcash_client_backend::{
 use zcash_primitives::consensus::BlockHeight;
 use zip32::AccountId;
 
-use crate::{error::ZingoLibError, wallet::notes::query::OutputQuery};
+use crate::wallet::notes::query::OutputQuery;
 
 use super::TxMapAndMaybeTrees;
+
+pub mod error {
+    use std::fmt::{Debug, Display, Formatter, Result};
+
+    #[derive(Debug, PartialEq)]
+    pub enum WalletReadError {
+        NoSpendCapability,
+    }
+
+    impl From<&WalletReadError> for String {
+        fn from(value: &WalletReadError) -> Self {
+            use WalletReadError::*;
+            let explanation = match value {
+                NoSpendCapability => {
+                    "No witness trees. This is viewkey watch, not a spendkey wallet.".to_string()
+                }
+            };
+            format!("{:#?} - {}", value, explanation)
+        }
+    }
+    impl Display for WalletReadError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(f, "{}", String::from(self))
+        }
+    }
+}
+
+use error::WalletReadError;
 
 /// This is a facade for using LRZ traits. In actuality, Zingo does not use multiple accounts in one wallet.
 pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);
@@ -35,8 +63,10 @@ impl Account<AccountId> for ZingoAccount {
 }
 
 /// some of these functions, initially those required for calculate_transaction, will be implemented
+/// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
+/// except those doc-comments starting with IMPL:
 impl WalletRead for TxMapAndMaybeTrees {
-    type Error = ZingoLibError;
+    type Error = WalletReadError;
     type AccountId = AccountId;
     type Account = ZingoAccount;
 
@@ -89,7 +119,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                         )
                     }))
             }
-            None => Err(ZingoLibError::UnknownError),
+            None => Err(WalletReadError::NoSpendCapability),
         }
     }
 
@@ -243,8 +273,7 @@ impl WalletRead for TxMapAndMaybeTrees {
     fn get_transaction(
         &self,
         _txid: zcash_primitives::transaction::TxId,
-    ) -> Result<std::option::Option<zcash_primitives::transaction::Transaction>, ZingoLibError>
-    {
+    ) -> Result<std::option::Option<zcash_primitives::transaction::Transaction>, Self::Error> {
         unimplemented!()
     }
     fn get_sapling_nullifiers(
@@ -288,6 +317,7 @@ mod tests {
     };
 
     use super::TxMapAndMaybeTrees;
+    use super::WalletReadError;
 
     #[test]
     fn get_target_and_anchor_heights() {
@@ -304,6 +334,29 @@ mod tests {
                 .unwrap()
                 .unwrap(),
             (BlockHeight::from_u32(8422), BlockHeight::from_u32(8412))
+        );
+    }
+
+    #[test]
+    fn get_target_and_anchor_heights_none() {
+        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+        assert_eq!(
+            transaction_records_and_maybe_trees
+                .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn get_target_and_anchor_heights_err() {
+        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_treeless();
+        assert_eq!(
+            transaction_records_and_maybe_trees
+                .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
+                .err()
+                .unwrap(),
+            WalletReadError::NoSpendCapability
         );
     }
 
