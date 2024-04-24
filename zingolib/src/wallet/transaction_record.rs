@@ -492,13 +492,13 @@ pub mod mocks {
         /// Sets the output indexes of all contained notes
         pub fn set_output_indexes(mut self) -> Self {
             for (i, toutput) in self.transparent_outputs.iter_mut().enumerate() {
-                toutput.output_index = i as u64;
+                toutput.output_index = Some(i as u64);
             }
             for (i, snote) in self.sapling_notes.iter_mut().enumerate() {
-                snote.output_index = Some(i as u32);
+                snote.output_index = Some(Some(i as u32));
             }
             for (i, snote) in self.orchard_notes.iter_mut().enumerate() {
-                snote.output_index = Some(i as u32);
+                snote.output_index = Some(Some(i as u32));
             }
             self
         }
