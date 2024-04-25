@@ -193,7 +193,7 @@ pub mod mocks {
         diversifier: Option<Diversifier>,
         note: Option<OrchardCryptoNoteBuilder>,
         witnessed_position: Option<Option<Position>>,
-        output_index: Option<Option<u32>>,
+        pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<Nullifier>>,
         spent: Option<Option<(TxId, u32)>>,
         unconfirmed_spent: Option<Option<(TxId, u32)>>,

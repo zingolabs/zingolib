@@ -533,21 +533,20 @@ pub mod mocks {
         test_framework::mocks::{build_method, build_method_push, build_push_list, random_txid},
         wallet::notes::{
             orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder, OrchardNote, SaplingNote,
-            TransparentOutput,
+            transparent::mocks::TransparentOutputBuilder,
         },
     };
 
     use super::TransactionRecord;
 
     /// to create a mock TransactionRecord
-    pub struct TransactionRecordBuilder {
+    pub(crate) struct TransactionRecordBuilder {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
-        transparent_outputs: Vec<TransparentOutput>,
-        sapling_notes: Vec<SaplingNote>,
-        orchard_notes: Vec<OrchardNote>,
+        transparent_outputs: Vec<TransparentOutputBuilder>,
+        sapling_notes: Vec<SaplingNoteBuilder>,
+        orchard_notes: Vec<OrchardNoteBuilder>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransactionRecordBuilder {
@@ -566,9 +565,9 @@ pub mod mocks {
         build_method!(status, ConfirmationStatus);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
-        build_method_push!(transparent_outputs, TransparentOutput);
-        build_method_push!(sapling_notes, SaplingNote);
-        build_method_push!(orchard_notes, OrchardNote);
+        build_method_push!(transparent_outputs, TransparentOutputBuilder);
+        build_method_push!(sapling_notes, SaplingNoteBuilder);
+        build_method_push!(orchard_notes, OrchardNoteBuilder);
 
         /// Use the mocery of random_txid to get one?
         pub fn randomize_txid(self) -> Self {
@@ -578,13 +577,13 @@ pub mod mocks {
         /// Sets the output indexes of all contained notes
         pub fn set_output_indexes(mut self) -> Self {
             for (i, toutput) in self.transparent_outputs.iter_mut().enumerate() {
-                toutput.output_index = i as u64;
+                toutput.output_index = Some(i as u64);
             }
             for (i, snote) in self.sapling_notes.iter_mut().enumerate() {
-                snote.output_index = Some(i as u32);
+                snote.output_index = Some(Some(i as u32));
             }
             for (i, snote) in self.orchard_notes.iter_mut().enumerate() {
-                snote.output_index = Some(i as u32);
+                snote.output_index = Some(Some(i as u32));
             }
             self
         }
@@ -620,32 +619,55 @@ pub mod mocks {
         }
     }
 
-    /// creates a TransactionRecord holding each type of note.
-    pub fn nine_note_transaction_record() -> TransactionRecord {
+    /// creates a TransactionRecord holding each type of note with custom values.
+    #[allow(clippy::too_many_arguments)]
+    pub fn nine_note_transaction_record(
+        transparent_unspent: u64,
+        transparent_spent: u64,
+        transparent_semi_spent: u64,
+        sapling_unspent: u64,
+        sapling_spent: u64,
+        sapling_semi_spent: u64,
+        orchard_unspent: u64,
+        orchard_spent: u64,
+        orchard_semi_spent: u64,
+    ) -> TransactionRecord {
         let spend = Some((random_txid(), 112358));
         let semi_spend = Some((random_txid(), 853211));
 
         TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentOutputBuilder::default().build())
-            .transparent_outputs(TransparentOutputBuilder::default().spent(spend).build())
+            .transparent_outputs(TransparentOutputBuilder::default().value(transparent_unspent))
+            .transparent_outputs(
+                TransparentOutputBuilder::default()
+                    .spent(spend)
+                    .value(transparent_spent),
+            )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .build(),
+                    .value(transparent_semi_spent),
             )
-            .sapling_notes(SaplingNoteBuilder::default().build())
-            .sapling_notes(SaplingNoteBuilder::default().spent(spend).build())
+            .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent))
+            .sapling_notes(
+                SaplingNoteBuilder::default()
+                    .spent(spend)
+                    .value(sapling_spent),
+            )
             .sapling_notes(
                 SaplingNoteBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .build(),
+                    .value(sapling_semi_spent),
             )
-            .orchard_notes(OrchardNoteBuilder::default().build())
-            .orchard_notes(OrchardNoteBuilder::default().spent(spend).build())
+            .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent))
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .spent(spend)
+                    .value(orchard_spent),
+            )
             .orchard_notes(
                 OrchardNoteBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .build(),
+                    .value(orchard_semi_spent),
             )
             .randomize_txid()
             .set_output_indexes()
@@ -665,6 +687,7 @@ pub mod mocks {
 #[cfg(test)]
 mod tests {
     use orchard::note_encryption::OrchardDomain;
+    use proptest::prelude::proptest;
     use sapling_crypto::note_encryption::SaplingDomain;
     use test_case::test_matrix;
 
@@ -700,7 +723,7 @@ mod tests {
     fn single_transparent_note_makes_is_incoming_true() {
         // A single transparent note makes is_incoming_transaction true.
         let transaction_record = TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentOutputBuilder::default().build())
+            .transparent_outputs(TransparentOutputBuilder::default())
             .build();
         assert!(transaction_record.is_incoming_transaction());
     }
@@ -745,7 +768,7 @@ mod tests {
         let expected = valid_spend_stati * valid_pools;
 
         assert_eq!(
-            nine_note_transaction_record()
+            nine_note_transaction_record(1, 2, 3, 4, 5, 6, 7, 8, 9)
                 .query_for_ids(OutputQuery::stipulations(
                     unspent,
                     pending_spent,
@@ -788,19 +811,22 @@ mod tests {
         //different pools have different mock values.
         let mut valid_pool_value = 0;
         if transparent {
-            valid_pool_value += 100000;
+            valid_pool_value += 100_000;
         }
         if sapling {
-            valid_pool_value += 200000;
+            valid_pool_value += 200_000;
         }
         if orchard {
-            valid_pool_value += 800000;
+            valid_pool_value += 800_000;
         }
 
         let expected = valid_spend_stati * valid_pool_value;
 
         assert_eq!(
-            nine_note_transaction_record().query_sum_value(OutputQuery::stipulations(
+            nine_note_transaction_record(
+                100_000, 100_000, 100_000, 200_000, 200_000, 200_000, 800_000, 800_000, 800_000
+            )
+            .query_sum_value(OutputQuery::stipulations(
                 unspent,
                 pending_spent,
                 spent,
@@ -812,19 +838,32 @@ mod tests {
         );
     }
 
-    #[test]
-    fn total_value_received() {
-        let transaction_record = nine_note_transaction_record();
-        let old_total = transaction_record
-            .pool_value_received::<orchard::note_encryption::OrchardDomain>()
-            + transaction_record
-                .pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
-            + transaction_record
-                .transparent_outputs
-                .iter()
-                .map(|utxo| utxo.value)
-                .sum::<u64>();
-        assert_eq!(transaction_record.total_value_received(), old_total);
+    proptest! {
+        #[test]
+        #[allow(clippy::too_many_arguments)]
+        fn total_value_received(
+            transparent_unspent: u32,
+            transparent_spent: u32,
+            transparent_semi_spent: u32,
+            sapling_unspent: u32,
+            sapling_spent: u32,
+            sapling_semi_spent: u32,
+            orchard_unspent: u32,
+            orchard_spent: u32,
+            orchard_semi_spent: u32,
+            ) {
+            let transaction_record = nine_note_transaction_record(transparent_unspent.into(), transparent_spent.into(), transparent_semi_spent.into(), sapling_unspent.into(), sapling_spent.into(), sapling_semi_spent.into(), orchard_unspent.into(), orchard_spent.into(), orchard_semi_spent.into());
+            let old_total = transaction_record
+                .pool_value_received::<orchard::note_encryption::OrchardDomain>()
+                + transaction_record
+                    .pool_value_received::<sapling_crypto::note_encryption::SaplingDomain>()
+                + transaction_record
+                    .transparent_outputs
+                    .iter()
+                    .map(|utxo| utxo.value)
+                    .sum::<u64>();
+            assert_eq!(transaction_record.total_value_received(), old_total);
+        }
     }
 
     #[test]
