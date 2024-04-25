@@ -52,7 +52,7 @@ impl TransactionRecordsById {
 
 /// Methods to query and modify the map.
 impl TransactionRecordsById {
-    pub fn get_received_note_from_identifier<D: DomainWalletExt>(
+    pub fn get_received_spendable_note_from_identifier<D: DomainWalletExt>(
         &self,
         note_record_reference: ShNoteId,
     ) -> Option<
@@ -68,7 +68,29 @@ impl TransactionRecordsById {
         let transaction = self.get(&note_record_reference.txid);
         if note_record_reference.shpool == D::SHIELDED_PROTOCOL {
             transaction.and_then(|transaction_record| {
-                transaction_record.get_received_note::<D>(note_record_reference.index)
+                D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
+                    .iter()
+                    .find(|note| note.output_index() == &Some(note_record_reference.index))
+                    .and_then(|note| {
+                        if note.spend_status_query(OutputSpendStatusQuery {
+                            unspent: true,
+                            pending_spent: false,
+                            spent: false,
+                        }) {
+                            note.witnessed_position().map(|pos| {
+                                zcash_client_backend::wallet::ReceivedNote::from_parts(
+                                    note_record_reference,
+                                    transaction_record.txid,
+                                    note_record_reference.index as u16,
+                                    note.note().clone(),
+                                    zip32::Scope::External,
+                                    pos,
+                                )
+                            })
+                        } else {
+                            None
+                        }
+                    })
             })
         } else {
             None
@@ -492,7 +514,7 @@ mod tests {
     use super::TransactionRecordsById;
 
     use sapling_crypto::note_encryption::SaplingDomain;
-    use zcash_client_backend::ShieldedProtocol;
+    use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
@@ -558,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn get_received_note_from_identifier() {
+    fn get_received_spendable_note_from_identifier() {
         let mut trbid = TransactionRecordsById::new();
         trbid.insert_transaction_record(nine_note_transaction_record(
             100_000_000,
@@ -573,26 +595,33 @@ mod tests {
         ));
 
         for i in 0..3 {
-            let received_note = trbid.get_received_note_from_identifier::<SaplingDomain>(
+            let (txid, record) = trbid.0.iter().next().unwrap();
+
+            let received_note = trbid.get_received_spendable_note_from_identifier::<SaplingDomain>(
                 crate::wallet::notes::ShNoteId {
-                    txid: *trbid.0.keys().next().unwrap(),
+                    txid: *txid,
                     shpool: ShieldedProtocol::Sapling,
-                    index: i,
+                    index: i as u32,
                 },
             );
 
             assert_eq!(
-                received_note.unwrap().note(),
-                &trbid
-                    .0
-                    .values()
-                    .next()
-                    .unwrap()
-                    .sapling_notes
-                    .iter()
-                    .nth(i as usize)
-                    .unwrap()
-                    .sapling_crypto_note
+                if record.sapling_notes[i].spend_status_query(OutputSpendStatusQuery {
+                    unspent: true,
+                    pending_spent: false,
+                    spent: false
+                }) {
+                    Some(zcash_client_backend::wallet::Note::Sapling(
+                        record.sapling_notes[i].sapling_crypto_note.clone(),
+                    ))
+                } else {
+                    None
+                },
+                received_note
+                    .as_ref()
+                    .map(ReceivedNote::note)
+                    .cloned()
+                    .map(zcash_client_backend::wallet::Note::Sapling),
             )
         }
     }

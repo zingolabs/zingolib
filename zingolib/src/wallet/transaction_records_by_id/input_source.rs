@@ -67,14 +67,14 @@ impl InputSource for TransactionRecordsById {
         };
         match protocol {
             ShieldedProtocol::Sapling => Ok(self
-                .get_received_note_from_identifier::<SaplingDomain>(note_record_reference)
+                .get_received_spendable_note_from_identifier::<SaplingDomain>(note_record_reference)
                 .map(|note| {
                     note.map_note(|note_inner| {
                         zcash_client_backend::wallet::Note::Sapling(note_inner)
                     })
                 })),
             ShieldedProtocol::Orchard => Ok(self
-                .get_received_note_from_identifier::<OrchardDomain>(note_record_reference)
+                .get_received_spendable_note_from_identifier::<OrchardDomain>(note_record_reference)
                 .map(|note| {
                     note.map_note(|note_inner| {
                         zcash_client_backend::wallet::Note::Orchard(note_inner)
@@ -311,7 +311,7 @@ mod tests {
 
         for i in 0..3 {
             let single_note = transaction_records_by_id
-                .get_spendable_note(txid, ShieldedProtocol::Sapling, 0)
+                .get_spendable_note(txid, ShieldedProtocol::Sapling, i as u32)
                 .unwrap();
             assert_eq!(
                 if record.sapling_notes[i].spend_status_query(OutputSpendStatusQuery {
