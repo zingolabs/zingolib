@@ -9,7 +9,7 @@ use zcash_client_backend::{
 use zcash_primitives::consensus::BlockHeight;
 use zip32::AccountId;
 
-use crate::wallet::notes::query::OutputQuery;
+use crate::wallet::notes::query::QueryStipulations;
 
 use super::TxMapAndMaybeTrees;
 
@@ -61,7 +61,23 @@ impl Account<AccountId> for ZingoAccount {
         unimplemented!()
     }
 }
-
+/// This is true iff there's at least one unspect shielded output in the transaction
+fn has_unspent_shielded_outputs(
+    transaction: &crate::wallet::transaction_record::TransactionRecord,
+) -> bool {
+    let unspent_shield_output_ids = transaction.query_for_ids(
+        QueryStipulations {
+            unspent: true,
+            pending_spent: false,
+            spent: false,
+            transparent: false,
+            sapling: true,
+            orchard: true,
+        }
+        .stipulate(),
+    );
+    !unspent_shield_output_ids.is_empty()
+}
 /// some of these functions, initially those required for calculate_transaction, will be implemented
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
 /// except those doc-comments starting with IMPL:
@@ -137,12 +153,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                     None => height_rolling_min,
                     Some(transaction_height) => {
                         // query for an unspent shielded output
-                        if !transaction
-                            .query_for_ids(OutputQuery::stipulations(
-                                true, false, false, false, true, true,
-                            ))
-                            .is_empty()
-                        {
+                        if has_unspent_shielded_outputs(transaction) {
                             Some(match height_rolling_min {
                                 None => transaction_height,
                                 Some(min_height) => std::cmp::min(min_height, transaction_height),

@@ -8,7 +8,6 @@ use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::PoolType;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::error::ZingoLibError;
 use crate::wallet::notes::interface::OutputInterface;
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::{
@@ -20,6 +19,7 @@ use crate::wallet::{
     },
     traits::DomainWalletExt,
 };
+use crate::{error::ZingoLibError, wallet::notes::query::QueryStipulations};
 
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
@@ -179,13 +179,6 @@ impl TransactionRecord {
         sum
     }
 
-    /// Sums all the received notes in the transaction.
-    pub fn total_value_received(&self) -> u64 {
-        self.query_sum_value(OutputQuery::stipulations(
-            true, true, true, true, true, true,
-        ))
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
     where
@@ -260,6 +253,21 @@ impl TransactionRecord {
     pub fn total_change_returned(&self) -> u64 {
         self.pool_change_returned::<sapling_crypto::note_encryption::SaplingDomain>()
             + self.pool_change_returned::<orchard::note_encryption::OrchardDomain>()
+    }
+
+    /// Sums all the received notes in the transaction.
+    pub fn total_value_received(&self) -> u64 {
+        self.query_sum_value(
+            QueryStipulations {
+                unspent: true,
+                pending_spent: true,
+                spent: true,
+                transparent: true,
+                sapling: true,
+                orchard: true,
+            }
+            .stipulate(),
+        )
     }
 
     /// TODO: Add Doc Comment Here!
