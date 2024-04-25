@@ -41,3 +41,5 @@ impl TxMapAndMaybeTrees {
         self.witness_trees.as_mut().map(WitnessTrees::clear);
     }
 }
+
+pub mod trait_walletread;
