@@ -13,7 +13,10 @@ use zip32::AccountId;
 
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
-    wallet::{notes::ShNoteId, transaction_records_by_id::TransactionRecordsById},
+    wallet::{
+        notes::{query::OutputSpendStatusQuery, OutputInterface, ShNoteId},
+        transaction_records_by_id::TransactionRecordsById,
+    },
 };
 
 /// A trait representing the capability to query a data store for unspent transaction outputs
@@ -197,6 +200,13 @@ impl InputSource for TransactionRecordsById {
                         None
                     }
                 })
+                .filter(|(_height, output)| {
+                    output.spend_status_query(OutputSpendStatusQuery {
+                        unspent: true,
+                        pending_spent: false,
+                        spent: false,
+                    })
+                })
         }) else {
             return Ok(None);
         };
@@ -242,6 +252,13 @@ impl InputSource for TransactionRecordsById {
                         exclude
                             .iter()
                             .all(|excluded| excluded != &output.to_outpoint())
+                    })
+                    .filter(|output| {
+                        output.spend_status_query(OutputSpendStatusQuery {
+                            unspent: true,
+                            pending_spent: false,
+                            spent: false,
+                        })
                     })
                     .filter_map(move |output| {
                         let value = match NonNegativeAmount::from_u64(output.value)
