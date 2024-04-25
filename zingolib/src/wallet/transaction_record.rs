@@ -16,8 +16,10 @@ use crate::{
         data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
         keys::unified::WalletCapability,
         notes::{
-            self, query::OutputQuery, OrchardNote, OutputId, OutputInterface as _, SaplingNote,
-            ShNoteId, ShieldedNoteInterface, TransparentOutput,
+            self,
+            query::{OutputQuery, QueryStipulations},
+            OrchardNote, OutputId, OutputInterface as _, SaplingNote, ShNoteId,
+            ShieldedNoteInterface, TransparentOutput,
         },
         traits::{DomainWalletExt, ReadableWriteable as _},
     },
@@ -182,6 +184,18 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
+    where
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
+    {
+        D::get_shnotes(self)
+            .iter()
+            .map(|note_and_metadata| note_and_metadata.value())
+            .sum()
+    }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_transparent_value_spent(&self) -> u64 {
         self.total_transparent_value_spent
     }
@@ -273,18 +287,6 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
-    where
-        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
-        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
-    {
-        D::get_shnotes(self)
-            .iter()
-            .map(|note_and_metadata| note_and_metadata.value())
-            .sum()
-    }
-
-    /// TODO: Add Doc Comment Here!
     pub fn total_change_returned(&self) -> u64 {
         self.pool_change_returned::<sapling_crypto::note_encryption::SaplingDomain>()
             + self.pool_change_returned::<orchard::note_encryption::OrchardDomain>()
@@ -292,9 +294,17 @@ impl TransactionRecord {
 
     /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
-        self.query_sum_value(OutputQuery::stipulations(
-            true, true, true, true, true, true,
-        ))
+        self.query_sum_value(
+            QueryStipulations {
+                unspent: true,
+                pending_spent: true,
+                spent: true,
+                transparent: true,
+                sapling: true,
+                orchard: true,
+            }
+            .stipulate(),
+        )
     }
 
     /// TODO: Add Doc Comment Here!
@@ -407,7 +417,9 @@ impl TransactionRecord {
         } else {
             vec![]
         };
+
         let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
+
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_orchard_value_spent = if version >= 22 {
@@ -657,7 +669,6 @@ mod tests {
     use test_case::test_matrix;
 
     use crate::wallet::notes::query::OutputQuery;
-
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, TransactionRecordBuilder,
