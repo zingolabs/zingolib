@@ -68,6 +68,8 @@ pub trait OutputInterface: Sized {
     fn query(&self, query: OutputQuery) -> bool {
         self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
+
+    // fn transaction_record_to_notes
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
