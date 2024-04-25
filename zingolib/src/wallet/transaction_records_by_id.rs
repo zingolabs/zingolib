@@ -485,7 +485,7 @@ mod tests {
                 transparent::mocks::TransparentOutputBuilder,
                 OutputInterface, SaplingNote,
             },
-            transaction_record::mocks::TransactionRecordBuilder,
+            transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
         },
     };
 

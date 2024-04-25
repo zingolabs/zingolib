@@ -286,7 +286,9 @@ mod tests {
             query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
             OutputInterface as _, ShNoteId,
         },
-        transaction_record::mocks::{nine_note_transaction_record, setup_mock_transaction_record},
+        transaction_record::mocks::{
+            nine_note_transaction_record, nine_note_transaction_record_default,
+        },
         transaction_records_by_id::TransactionRecordsById,
     };
 
@@ -420,7 +422,7 @@ mod tests {
     #[test]
     fn get_unspent_transparent_outputs() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
+        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record_default());
 
         let transparent_output = transaction_records_by_id
             .0
