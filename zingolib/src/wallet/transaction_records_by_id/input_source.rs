@@ -387,8 +387,10 @@ mod tests {
     #[test]
     fn get_unspent_transparent_output() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id
-            .insert_transaction_record(nine_note_transaction_record(1, 2, 3, 4, 5, 6, 7, 8, 9));
+
+        let transaction_record = nine_note_transaction_record_default();
+
+        transaction_records_by_id.insert_transaction_record(transaction_record);
 
         let transparent_output = transaction_records_by_id
             .0
@@ -447,6 +449,7 @@ mod tests {
                 &[],
             )
             .unwrap();
+        assert_eq!(selected_outputs.len(), 1);
         assert_eq!(
             selected_outputs.first().unwrap().outpoint(),
             &transparent_output.to_outpoint()
