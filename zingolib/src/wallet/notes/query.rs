@@ -17,6 +17,7 @@ pub struct OutputSpendStatusQuery {
     spent: bool,
 }
 impl OutputSpendStatusQuery {
+    /// a query that accepts notes of any spent status
     pub fn any() -> Self {
         Self {
             unspent: true,

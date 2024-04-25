@@ -5,6 +5,7 @@ use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
     super::{data::TransactionRecord, Pool},
+    query::OutputSpendStatusQuery,
     OutputInterface, ShieldedNoteInterface,
 };
 
@@ -85,6 +86,13 @@ impl OutputInterface for SaplingNote {
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
+    }
+
+    fn transaction_record_to_outputs_vec(
+        transaction_record: TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<Self> {
+        transaction_record.sapling_notes
     }
 }
 

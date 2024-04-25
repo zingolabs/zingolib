@@ -69,7 +69,11 @@ pub trait OutputInterface: Sized {
         self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
 
-    // fn transaction_record_to_notes
+    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn transaction_record_to_outputs_vec(
+        transaction_record: TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<Self>;
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
