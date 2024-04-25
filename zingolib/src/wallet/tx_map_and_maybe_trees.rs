@@ -42,4 +42,5 @@ impl TxMapAndMaybeTrees {
     }
 }
 
+pub mod trait_stub_inputsource;
 pub mod trait_walletread;
