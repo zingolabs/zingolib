@@ -62,20 +62,23 @@ impl Account<AccountId> for ZingoAccount {
     }
 }
 /// Helper to grab the set of unspent shielded OutputIds
-fn get_unspent_shielded_ids(
+fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
-) -> Vec<crate::wallet::notes::OutputId> {
-    transaction.query_for_ids(
-        QueryStipulations {
-            unspent: true,
-            pending_spent: false,
-            spent: false,
-            transparent: false,
-            sapling: true,
-            orchard: true,
-        }
-        .stipulate(),
-    )
+) -> bool {
+    transaction
+        .query_for_ids(
+            QueryStipulations {
+                unspent: true,
+                pending_spent: false,
+                spent: false,
+                transparent: false,
+                sapling: true,
+                orchard: true,
+            }
+            .stipulate(),
+        )
+        .len()
+        > 0
 }
 /// some of these functions, initially those required for calculate_transaction, will be implemented
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
@@ -152,7 +155,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                     None => height_rolling_min,
                     Some(transaction_height) => {
                         // query for an unspent shielded output
-                        if get_unspent_shielded_ids(transaction).len() > 0 {
+                        if has_unspent_shielded_outputs(transaction) {
                             Some(match height_rolling_min {
                                 None => transaction_height,
                                 Some(min_height) => std::cmp::min(min_height, transaction_height),
