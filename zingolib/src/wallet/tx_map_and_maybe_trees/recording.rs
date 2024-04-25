@@ -139,7 +139,7 @@ impl super::TxMapAndMaybeTrees {
             if let Some(transaction_spent_from) =
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
-                if let Some(confirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
+                if let Some(confirmed_spent_note) = D::get_shnotes_mut(transaction_spent_from)
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
@@ -158,7 +158,7 @@ impl super::TxMapAndMaybeTrees {
             if let Some(transaction_spent_from) =
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
-                if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
+                if let Some(unconfirmed_spent_note) = D::get_shnotes_mut(transaction_spent_from)
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
@@ -198,7 +198,7 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(maybe_note) = D::to_notes_vec_mut(transaction_metadata)
+        if let Some(maybe_note) = D::get_shnotes_mut(transaction_metadata)
             .iter_mut()
             .find_map(|nnmd| {
                 if nnmd.output_index().is_some() != output_index.is_some() {
@@ -245,7 +245,7 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.transaction_records_by_id.get_mut(&txid) {
-            if let Some(maybe_nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find_map(|nnmd| {
+            if let Some(maybe_nnmd) = &mut D::get_shnotes_mut(tmd).iter_mut().find_map(|nnmd| {
                 if nnmd.output_index().is_some() != output_index.is_some() {
                     return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
                 }

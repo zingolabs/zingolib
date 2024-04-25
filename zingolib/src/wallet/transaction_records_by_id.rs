@@ -124,7 +124,7 @@ impl TransactionRecordsById {
     {
         self.values_mut().for_each(|transaction_metadata| {
             // Update notes to rollback any spent notes
-            D::to_notes_vec_mut(transaction_metadata)
+            D::get_shnotes_mut(transaction_metadata)
                 .iter_mut()
                 .for_each(|nd| {
                     // Mark note as unspent if the txid being removed spent it.
@@ -322,7 +322,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        match D::to_notes_vec_mut(transaction_metadata)
+        match D::get_shnotes_mut(transaction_metadata)
             .iter_mut()
             .find(|n| n.note() == &note)
         {

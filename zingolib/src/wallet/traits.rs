@@ -536,7 +536,7 @@ where
     fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
 
     /// TODO: Add Doc Comment Here!
-    fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
+    fn get_shnotes_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
 
     /// TODO: Add Doc Comment Here!
     fn ua_from_contained_receiver<'a>(
@@ -603,7 +603,7 @@ impl DomainWalletExt for SaplingDomain {
         &transaction_md.sapling_notes
     }
 
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
+    fn get_shnotes_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
 
@@ -678,7 +678,7 @@ impl DomainWalletExt for OrchardDomain {
         &transaction_md.orchard_notes
     }
 
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
+    fn get_shnotes_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
 
