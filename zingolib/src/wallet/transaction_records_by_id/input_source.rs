@@ -269,6 +269,7 @@ impl InputSource for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
+    use proptest::{prop_assert_eq, proptest};
     use zcash_client_backend::{
         data_api::{InputSource as _, SpendableNotes},
         ShieldedProtocol,
@@ -283,30 +284,38 @@ mod tests {
         test_framework::mocks::{default_txid, SaplingCryptoNoteBuilder},
         wallet::{
             notes::{transparent::mocks::TransparentOutputBuilder, ShNoteId},
-            transaction_record::mocks::setup_mock_transaction_record,
+            transaction_record::mocks::{
+                nine_note_transaction_record, setup_mock_transaction_record,
+            },
             transaction_records_by_id::TransactionRecordsById,
         },
     };
 
+    proptest! {
     #[test]
-    fn get_spendable_note() {
+    fn get_spendable_note(
+        spent_val in 0..10_000_000,
+        unspent_val in 0..10_000_000,
+        unconf_spent_val in 0..10_000_000,
+    ) {
         let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
+        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record());
 
         let single_note_wrong_index = transaction_records_by_id
             .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 1)
             .unwrap();
-        assert_eq!(single_note_wrong_index, None);
+        prop_assert_eq!(single_note_wrong_index, None);
         let real_single_note = transaction_records_by_id
             .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 0)
             .unwrap()
             .unwrap();
-        assert_eq!(
+        prop_assert_eq!(
             real_single_note.note(),
             &zcash_client_backend::wallet::Note::Sapling(
                 SaplingCryptoNoteBuilder::default().build()
             )
         )
+    }
     }
 
     #[test]
