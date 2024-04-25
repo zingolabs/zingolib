@@ -454,9 +454,11 @@ mod tests {
         test_framework::mocks::random_txid,
         wallet::{
             notes::{
-                orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
-                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
-                OutputInterface,
+                orchard::mocks::OrchardNoteBuilder,
+                query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+                sapling::mocks::SaplingNoteBuilder,
+                transparent::mocks::TransparentOutputBuilder,
+                OutputInterface, SaplingNote,
             },
             transaction_record::mocks::TransactionRecordBuilder,
         },
@@ -486,9 +488,10 @@ mod tests {
             .orchard_notes(OrchardNoteBuilder::default().spent(Some((spending_txid, 15))))
             .sapling_notes(SaplingNoteBuilder::default().spent(Some((random_txid(), 15))))
             .orchard_notes(OrchardNoteBuilder::default())
+            .set_output_indexes()
             .build();
 
-        let txid_containing_valid_note_with_invalid_spend = transaction_record_early.txid;
+        let txid_containing_valid_note_with_invalid_spends = transaction_record_early.txid;
 
         let mut transaction_records_by_id = TransactionRecordsById::default();
         transaction_records_by_id.insert_transaction_record(transaction_record_early);
@@ -499,20 +502,27 @@ mod tests {
         transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
 
         assert_eq!(transaction_records_by_id.len(), 1);
-        let ssq = OutputSpendStatusQuery::new(true, false, false);
-        assert!(!transaction_records_by_id
-            .get(&txid_containing_valid_note_with_invalid_spend)
-            .unwrap()
-            .transparent_outputs
+        //^ the deleted tx is not around
+        let transaction_record_cvnwis = transaction_records_by_id
+            .get(&txid_containing_valid_note_with_invalid_spends)
+            .unwrap();
+
+        let query_for_spentish_notes = OutputSpendStatusQuery::new(false, true, true);
+        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(
+            OutputQuery::new(query_for_spentish_notes, OutputPoolQuery::any()),
+        );
+        assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
+        // ^ so there is one spent note still in this transaction
+        assert_ne!(
+            SaplingNote::transaction_record_to_outputs_vec_query(
+                transaction_record_cvnwis,
+                query_for_spentish_notes
+            )
             .first()
             .unwrap()
-            .spend_status_query(ssq));
-        assert!(!transaction_records_by_id
-            .get(&txid_containing_valid_note_with_invalid_spend)
-            .unwrap()
-            .sapling_notes
-            .first()
-            .unwrap()
-            .spend_status_query(ssq));
+            .spent(),
+            &Some((spending_txid, 15u32))
+        );
+        // ^ but it was not spent in the deleted txid
     }
 }
