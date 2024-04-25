@@ -450,9 +450,18 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet::{
-        notes::{sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder},
-        transaction_record::mocks::TransactionRecordBuilder,
+    use crate::{
+        test_framework::mocks::random_txid,
+        wallet::{
+            notes::{
+                orchard::mocks::OrchardNoteBuilder,
+                query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+                sapling::mocks::SaplingNoteBuilder,
+                transparent::mocks::TransparentOutputBuilder,
+                OutputInterface, SaplingNote,
+            },
+            transaction_record::mocks::TransactionRecordBuilder,
+        },
     };
 
     use super::TransactionRecordsById;
@@ -461,22 +470,28 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
-    fn invalidated_note_is_deleted() {
-        let mut transaction_record_early = TransactionRecordBuilder::default()
-            .randomize_txid()
-            .status(Confirmed(5.into()))
-            .build();
-        transaction_record_early
-            .transparent_outputs
-            .push(TransparentOutputBuilder::default().build());
-
-        let mut transaction_record_later = TransactionRecordBuilder::default()
+    fn invalidate_all_transactions_after_or_at_height() {
+        let transaction_record_later = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(15.into()))
+            .transparent_outputs(TransparentOutputBuilder::default())
             .build();
-        transaction_record_later
-            .sapling_notes
-            .push(SaplingNoteBuilder::default().build());
+        let spending_txid = transaction_record_later.txid;
+
+        let transaction_record_early = TransactionRecordBuilder::default()
+            .randomize_txid()
+            .status(Confirmed(5.into()))
+            .transparent_outputs(
+                TransparentOutputBuilder::default().spent(Some((spending_txid, 15))),
+            )
+            .sapling_notes(SaplingNoteBuilder::default().spent(Some((spending_txid, 15))))
+            .orchard_notes(OrchardNoteBuilder::default().spent(Some((spending_txid, 15))))
+            .sapling_notes(SaplingNoteBuilder::default().spent(Some((random_txid(), 15))))
+            .orchard_notes(OrchardNoteBuilder::default())
+            .set_output_indexes()
+            .build();
+
+        let txid_containing_valid_note_with_invalid_spends = transaction_record_early.txid;
 
         let mut transaction_records_by_id = TransactionRecordsById::default();
         transaction_records_by_id.insert_transaction_record(transaction_record_early);
@@ -487,5 +502,27 @@ mod tests {
         transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
 
         assert_eq!(transaction_records_by_id.len(), 1);
+        //^ the deleted tx is not around
+        let transaction_record_cvnwis = transaction_records_by_id
+            .get(&txid_containing_valid_note_with_invalid_spends)
+            .unwrap();
+
+        let query_for_spentish_notes = OutputSpendStatusQuery::new(false, true, true);
+        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(
+            OutputQuery::new(query_for_spentish_notes, OutputPoolQuery::any()),
+        );
+        assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
+        // ^ so there is one spent note still in this transaction
+        assert_ne!(
+            SaplingNote::transaction_record_to_outputs_vec_query(
+                transaction_record_cvnwis,
+                query_for_spentish_notes
+            )
+            .first()
+            .unwrap()
+            .spent(),
+            &Some((spending_txid, 15u32))
+        );
+        // ^ but it was not spent in the deleted txid
     }
 }
