@@ -61,7 +61,7 @@ impl Account<AccountId> for ZingoAccount {
         unimplemented!()
     }
 }
-/// Helper to grab the set of unspent shielded OutputIds
+/// This is true iff there's at least one unspect shielded output in the transaction
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
