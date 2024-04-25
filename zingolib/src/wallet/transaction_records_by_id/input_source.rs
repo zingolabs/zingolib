@@ -272,6 +272,7 @@ mod tests {
     use proptest::{prop_assert_eq, proptest};
     use zcash_client_backend::{
         data_api::{InputSource as _, SpendableNotes},
+        wallet::ReceivedNote,
         ShieldedProtocol,
     };
     use zcash_primitives::{
@@ -280,18 +281,13 @@ mod tests {
     };
     use zip32::AccountId;
 
-    use crate::{
-        test_framework::mocks::{default_txid, SaplingCryptoNoteBuilder},
-        wallet::{
-            notes::{
-                query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
-                OutputInterface as _, ShNoteId,
-            },
-            transaction_record::mocks::{
-                nine_note_transaction_record, setup_mock_transaction_record,
-            },
-            transaction_records_by_id::TransactionRecordsById,
+    use crate::wallet::{
+        notes::{
+            query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
+            OutputInterface as _, ShNoteId,
         },
+        transaction_record::mocks::{nine_note_transaction_record, setup_mock_transaction_record},
+        transaction_records_by_id::TransactionRecordsById,
     };
 
     #[test]
@@ -309,20 +305,28 @@ mod tests {
             400_000_000,
         ));
 
-        let single_note_wrong_index = transaction_records_by_id
-            .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 1)
-            .unwrap();
-        assert_eq!(single_note_wrong_index, None);
-        let real_single_note = transaction_records_by_id
-            .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            real_single_note.note(),
-            &zcash_client_backend::wallet::Note::Sapling(
-                SaplingCryptoNoteBuilder::default().build()
+        let (txid, record) = transaction_records_by_id.0.iter().next().unwrap();
+
+        for i in 0..3 {
+            let single_note = transaction_records_by_id
+                .get_spendable_note(txid, ShieldedProtocol::Sapling, 0)
+                .unwrap();
+            assert_eq!(
+                if record.sapling_notes[i].spend_status_query(OutputSpendStatusQuery {
+                    unspent: true,
+                    pending_spent: false,
+                    spent: false
+                }) {
+                    Some(zcash_client_backend::wallet::Note::Sapling(
+                        record.sapling_notes[i].sapling_crypto_note.clone(),
+                    ))
+                } else {
+                    None
+                }
+                .as_ref(),
+                single_note.as_ref().map(ReceivedNote::note)
             )
-        )
+        }
     }
 
     proptest! {
