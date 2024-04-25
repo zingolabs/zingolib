@@ -40,6 +40,16 @@ pub struct OutputPoolQuery {
     #[getset(get = "pub")]
     orchard: bool,
 }
+impl OutputPoolQuery {
+    /// a query that accepts notes from any pool.
+    pub fn any() -> Self {
+        Self {
+            transparent: true,
+            sapling: true,
+            orchard: true,
+        }
+    }
+}
 
 /// Selects received notes by any properties
 #[derive(Getters, Constructor, Clone, Copy)]
@@ -74,6 +84,13 @@ impl QueryStipulations {
     }
 }
 impl OutputQuery {
+    /// a query that accepts all notes.
+    pub fn any() -> Self {
+        Self {
+            spend_status: OutputSpendStatusQuery::any(),
+            pools: OutputPoolQuery::any(),
+        }
+    }
     /// build a query, specifying each stipulation
     pub fn stipulations(
         unspent: bool,
