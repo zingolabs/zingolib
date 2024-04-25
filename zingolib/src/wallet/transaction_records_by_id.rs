@@ -589,8 +589,7 @@ mod tests {
                     .next()
                     .unwrap()
                     .sapling_notes
-                    .iter()
-                    .nth(i as usize)
+                    .get(i as usize)
                     .unwrap()
                     .sapling_crypto_note
             )
