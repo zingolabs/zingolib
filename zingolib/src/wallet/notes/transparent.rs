@@ -6,7 +6,8 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
-use super::OutputInterface;
+use crate::wallet::notes::{query::OutputSpendStatusQuery, OutputInterface};
+use crate::wallet::transaction_record::TransactionRecord;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq)]
@@ -52,6 +53,35 @@ impl OutputInterface for TransparentOutput {
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
+    }
+
+    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+        transaction_record.transparent_outputs.iter().collect()
+    }
+    fn transaction_record_to_outputs_vec_query(
+        transaction_record: &TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self> {
+        transaction_record
+            .transparent_outputs
+            .iter()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
+    }
+    fn transaction_record_to_outputs_vec_mut(
+        transaction_record: &mut TransactionRecord,
+    ) -> Vec<&mut Self> {
+        transaction_record.transparent_outputs.iter_mut().collect()
+    }
+    fn transaction_record_to_outputs_vec_query_mut(
+        transaction_record: &mut TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&mut Self> {
+        transaction_record
+            .transparent_outputs
+            .iter_mut()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
     }
 }
 

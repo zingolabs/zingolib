@@ -16,6 +16,16 @@ pub struct OutputSpendStatusQuery {
     #[getset(get = "pub")]
     spent: bool,
 }
+impl OutputSpendStatusQuery {
+    /// a query that accepts notes of any spent status
+    pub fn any() -> Self {
+        Self {
+            unspent: true,
+            pending_spent: true,
+            spent: true,
+        }
+    }
+}
 
 /// Selects received notes by pool
 #[derive(Getters, Constructor, Clone, Copy)]

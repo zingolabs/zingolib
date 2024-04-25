@@ -17,6 +17,8 @@ use crate::wallet::{
     traits::{DomainWalletExt, Recipient},
 };
 
+use super::notes::query::OutputSpendStatusQuery;
+
 #[derive(Debug)]
 pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
 
@@ -124,21 +126,25 @@ impl TransactionRecordsById {
     {
         self.values_mut().for_each(|transaction_metadata| {
             // Update notes to rollback any spent notes
-            D::to_notes_vec_mut(transaction_metadata)
-                .iter_mut()
-                .for_each(|nd| {
-                    // Mark note as unspent if the txid being removed spent it.
-                    if nd.spent().is_some() && invalidated_txids.contains(&nd.spent().unwrap().0) {
-                        *nd.spent_mut() = None;
-                    }
+            // Select only spent or pending_spent notes.
+            D::WalletNote::transaction_record_to_outputs_vec_query_mut(
+                transaction_metadata,
+                OutputSpendStatusQuery::new(false, true, true),
+            )
+            .iter_mut()
+            .for_each(|nd| {
+                // Mark note as unspent if the txid being removed spent it.
+                if nd.spent().is_some() && invalidated_txids.contains(&nd.spent().unwrap().0) {
+                    *nd.spent_mut() = None;
+                }
 
-                    // Remove unconfirmed spends too
-                    if nd.pending_spent().is_some()
-                        && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
-                    {
-                        *nd.pending_spent_mut() = None;
-                    }
-                });
+                // Remove unconfirmed spends too
+                if nd.pending_spent().is_some()
+                    && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
+                {
+                    *nd.pending_spent_mut() = None;
+                }
+            });
         });
     }
 }
@@ -319,10 +325,10 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         D::Recipient: Recipient,
     {
         let status = zingo_status::confirmation_status::ConfirmationStatus::Broadcast(height);
-        let transaction_metadata =
+        let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        match D::to_notes_vec_mut(transaction_metadata)
+        match D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
@@ -341,7 +347,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
                     Some(output_index as u32),
                 );
 
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(nd);
             }
             Some(_) => {}
         }

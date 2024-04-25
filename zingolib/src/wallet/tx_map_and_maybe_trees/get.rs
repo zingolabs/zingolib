@@ -7,7 +7,7 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use crate::wallet::{
     data::{PoolNullifier, TransactionRecord},
     notes::OutputInterface,
-    notes::ShieldedNoteInterface,
+    notes::{query::OutputSpendStatusQuery, ShieldedNoteInterface},
     traits::{DomainWalletExt, Recipient},
 };
 
@@ -81,20 +81,28 @@ impl TxMapAndMaybeTrees {
     {
         self.transaction_records_by_id
             .iter()
-            .flat_map(|(_, transaction_metadata)| {
-                D::to_notes_vec(transaction_metadata)
-                    .iter()
-                    .filter(|unspent_note_data| unspent_note_data.spent().is_none())
-                    .filter_map(move |unspent_note_data| {
-                        unspent_note_data.nullifier().map(|unspent_nullifier| {
-                            (
-                                unspent_nullifier,
-                                unspent_note_data.value(),
-                                transaction_metadata.txid,
-                                *unspent_note_data.output_index(),
-                            )
-                        })
+            .flat_map(|(_, transaction_record)| {
+                D::WalletNote::transaction_record_to_outputs_vec_query(
+                    transaction_record,
+                    OutputSpendStatusQuery::new(true, false, false),
+                )
+                .iter()
+                .filter_map(move |unspent_note_data| {
+                    unspent_note_data.nullifier().map(|unspent_nullifier| {
+                        (
+                            unspent_nullifier,
+                            unspent_note_data.value(),
+                            transaction_record.txid,
+                            *unspent_note_data.output_index(),
+                        )
                     })
+                })
+                .collect::<Vec<(
+                    <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier,
+                    u64,
+                    TxId,
+                    Option<u32>,
+                )>>()
             })
             .collect()
     }

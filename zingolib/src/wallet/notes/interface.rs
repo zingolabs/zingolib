@@ -25,11 +25,6 @@ pub trait OutputInterface: Sized {
     fn spent(&self) -> &Option<(TxId, u32)>;
 
     /// TODO: Add Doc Comment Here!
-    fn is_spent(&self) -> bool {
-        Self::spent(self).is_some()
-    }
-
-    /// TODO: Add Doc Comment Here!
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
     /// TODO: Add Doc Comment Here!
@@ -40,12 +35,12 @@ pub trait OutputInterface: Sized {
 
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
-        Self::pending_spent(self).is_some()
+        self.pending_spent().is_some()
     }
 
-    /// Returns false if the note is spendable.
-    fn is_spent_or_pending_spent(&self) -> bool {
-        self.is_spent() || self.is_pending_spent()
+    /// returns true if the note is confirmed spent
+    fn is_spent(&self) -> bool {
+        self.spent().is_some()
     }
 
     /// Returns true if the note has one of the spend statuses enumerated by the query
@@ -53,6 +48,11 @@ pub trait OutputInterface: Sized {
         (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
             || (*query.pending_spent() && self.is_pending_spent())
             || (*query.spent() && self.is_spent())
+    }
+
+    /// Returns true if the note is unspent (spendable).
+    fn is_unspent(&self) -> bool {
+        self.spend_status_query(OutputSpendStatusQuery::new(true, false, false))
     }
 
     /// Returns true if the note is one of the pools enumerated by the query.
@@ -68,6 +68,23 @@ pub trait OutputInterface: Sized {
     fn query(&self, query: OutputQuery) -> bool {
         self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
+
+    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self>;
+    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn transaction_record_to_outputs_vec_query(
+        transaction_record: &TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self>;
+    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn transaction_record_to_outputs_vec_mut(
+        transaction_record: &mut TransactionRecord,
+    ) -> Vec<&mut Self>;
+    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn transaction_record_to_outputs_vec_query_mut(
+        transaction_record: &mut TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&mut Self>;
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
