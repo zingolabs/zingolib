@@ -16,7 +16,7 @@ use zcash_primitives::consensus::BlockHeight;
 
 use zcash_primitives::transaction::TxId;
 
-mod input_source;
+mod trait_inputsource;
 
 use super::notes::query::OutputSpendStatusQuery;
 

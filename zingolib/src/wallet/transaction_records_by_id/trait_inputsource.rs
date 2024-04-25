@@ -1,3 +1,5 @@
+//! this mod implements InputSource on TransactionRecordsById
+
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{
