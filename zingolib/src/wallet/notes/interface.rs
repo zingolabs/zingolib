@@ -25,11 +25,6 @@ pub trait OutputInterface: Sized {
     fn spent(&self) -> &Option<(TxId, u32)>;
 
     /// TODO: Add Doc Comment Here!
-    fn is_spent(&self) -> bool {
-        Self::spent(self).is_some()
-    }
-
-    /// TODO: Add Doc Comment Here!
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
     /// TODO: Add Doc Comment Here!
@@ -38,21 +33,26 @@ pub trait OutputInterface: Sized {
     /// TODO: Add Doc Comment Here!
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
-    /// Returns true if the note has been presumptively spent but the spent has not been validated.
-    fn is_pending_spent(&self) -> bool {
-        Self::pending_spent(self).is_some()
-    }
-
-    /// Returns false if the note is spendable.
-    fn is_spent_or_pending_spent(&self) -> bool {
-        self.is_spent() || self.is_pending_spent()
-    }
-
     /// Returns true if the note has one of the spend statuses enumerated by the query
     fn spend_status_query(&self, query: OutputSpendStatusQuery) -> bool {
         (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
             || (*query.pending_spent() && self.is_pending_spent())
             || (*query.spent() && self.is_spent())
+    }
+
+    /// Returns true if the note is unspent (spendable).
+    fn is_unspent(&self) -> bool {
+        self.spend_status_query(OutputSpendStatusQuery::new(true, false, false))
+    }
+
+    /// Returns true if the note has been presumptively spent but the spent has not been validated.
+    fn is_pending_spent(&self) -> bool {
+        self.spend_status_query(OutputSpendStatusQuery::new(false, true, false))
+    }
+
+    /// returns true if the note is confirmed spent
+    fn is_spent(&self) -> bool {
+        self.spend_status_query(OutputSpendStatusQuery::new(false, false, true))
     }
 
     /// Returns true if the note is one of the pools enumerated by the query.
