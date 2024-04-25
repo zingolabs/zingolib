@@ -69,10 +69,14 @@ impl OutputInterface for OrchardNote {
     }
 
     fn transaction_record_to_outputs_vec(
-        transaction_record: TransactionRecord,
+        transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
-    ) -> Vec<Self> {
-        transaction_record.orchard_notes
+    ) -> Vec<&mut Self> {
+        let mut vecrefmut = vec![];
+        for output in &mut transaction_record.orchard_notes {
+            vecrefmut.push(output);
+        }
+        vecrefmut
     }
 }
 

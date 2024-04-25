@@ -71,9 +71,9 @@ pub trait OutputInterface: Sized {
 
     /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
     fn transaction_record_to_outputs_vec(
-        transaction_record: TransactionRecord,
+        transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
-    ) -> Vec<Self>;
+    ) -> Vec<&mut Self>;
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
