@@ -598,6 +598,13 @@ pub mod mocks {
             .set_output_indexes()
             .build()
     }
+
+    /// default values are multiples of 10_000
+    pub fn nine_note_transaction_record_default() -> TransactionRecord {
+        nine_note_transaction_record(
+            10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 70_000, 80_000, 90_000,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -608,7 +615,8 @@ mod tests {
     use crate::wallet::notes::query::OutputQuery;
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     use crate::wallet::transaction_record::mocks::{
-        nine_note_transaction_record, TransactionRecordBuilder,
+        nine_note_transaction_record, nine_note_transaction_record_default,
+        TransactionRecordBuilder,
     };
 
     #[test]
@@ -682,7 +690,7 @@ mod tests {
         let expected = valid_spend_stati * valid_pools;
 
         assert_eq!(
-            nine_note_transaction_record(1, 2, 3, 4, 5, 6, 7, 8, 9)
+            nine_note_transaction_record_default()
                 .query_for_ids(OutputQuery::stipulations(
                     unspent,
                     pending_spent,
