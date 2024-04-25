@@ -33,6 +33,7 @@ use zcash_client_backend::{
         compact_formats::{CompactOrchardAction, CompactSaplingOutput, CompactTx},
         service::TreeState,
     },
+    ShieldedProtocol,
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
@@ -462,6 +463,8 @@ where
     const NU: NetworkUpgrade;
     /// TODO: Add Doc Comment Here!
     const NAME: &'static str;
+    /// The [zcash_client_backend::ShieldedProtocol] this domain represents
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
 
     /// TODO: Add Doc Comment Here!
     type Fvk: Clone
@@ -548,6 +551,7 @@ where
 impl DomainWalletExt for SaplingDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
     const NAME: &'static str = "sapling";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
     type Fvk = sapling_crypto::zip32::DiversifiableFullViewingKey;
 
@@ -615,6 +619,7 @@ impl DomainWalletExt for SaplingDomain {
 impl DomainWalletExt for OrchardDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
     const NAME: &'static str = "orchard";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
     type Fvk = orchard::keys::FullViewingKey;
 

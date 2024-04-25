@@ -1,6 +1,11 @@
-//! TODO: Add Mod Discription Here!
+//! The lookup for transaction id indexed data.  Currently this provides the
+//! transaction record.
 
-use crate::wallet::notes::interface::ShieldedNoteInterface;
+use crate::wallet::{
+    notes::{interface::ShieldedNoteInterface, OutputInterface as _, ShNoteId},
+    traits::{DomainWalletExt, Recipient},
+    transaction_record::TransactionRecord,
+};
 use std::collections::HashMap;
 
 use orchard::note_encryption::OrchardDomain;
@@ -11,14 +16,11 @@ use zcash_primitives::consensus::BlockHeight;
 
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::{
-    data::TransactionRecord,
-    notes::OutputInterface,
-    traits::{DomainWalletExt, Recipient},
-};
+mod input_source;
 
 use super::notes::query::OutputSpendStatusQuery;
 
+/// A convenience wrapper, to impl behavior on.
 #[derive(Debug)]
 pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
 
@@ -42,13 +44,58 @@ impl TransactionRecordsById {
     pub fn new() -> Self {
         TransactionRecordsById(HashMap::new())
     }
-    // Constructs a TransactionRecordMap from a HashMap
+    /// Constructs a TransactionRecordsById from a HashMap
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
 }
-/// Methods to modify the map.
+
+/// Methods to query and modify the map.
 impl TransactionRecordsById {
+    pub fn get_received_spendable_note_from_identifier<D: DomainWalletExt>(
+        &self,
+        note_record_reference: ShNoteId,
+    ) -> Option<
+        zcash_client_backend::wallet::ReceivedNote<
+            ShNoteId,
+            <D as zcash_note_encryption::Domain>::Note,
+        >,
+    >
+    where
+        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
+        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
+    {
+        let transaction = self.get(&note_record_reference.txid);
+        if note_record_reference.shpool == D::SHIELDED_PROTOCOL {
+            transaction.and_then(|transaction_record| {
+                D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
+                    .iter()
+                    .find(|note| note.output_index() == &Some(note_record_reference.index))
+                    .and_then(|note| {
+                        if note.spend_status_query(OutputSpendStatusQuery {
+                            unspent: true,
+                            pending_spent: false,
+                            spent: false,
+                        }) {
+                            note.witnessed_position().map(|pos| {
+                                zcash_client_backend::wallet::ReceivedNote::from_parts(
+                                    note_record_reference,
+                                    transaction_record.txid,
+                                    note_record_reference.index as u16,
+                                    note.note().clone(),
+                                    zip32::Scope::External,
+                                    pos,
+                                )
+                            })
+                        } else {
+                            None
+                        }
+                    })
+            })
+        } else {
+            None
+        }
+    }
     /// Adds a TransactionRecord to the hashmap, using its TxId as a key.
     pub fn insert_transaction_record(&mut self, transaction_record: TransactionRecord) {
         self.insert(transaction_record.txid, transaction_record);
@@ -460,12 +507,14 @@ mod tests {
                 transparent::mocks::TransparentOutputBuilder,
                 OutputInterface, SaplingNote,
             },
-            transaction_record::mocks::TransactionRecordBuilder,
+            transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
         },
     };
 
     use super::TransactionRecordsById;
 
+    use sapling_crypto::note_encryption::SaplingDomain;
+    use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
@@ -528,5 +577,52 @@ mod tests {
             &Some((spending_txid, 15u32))
         );
         // ^ but it was not spent in the deleted txid
+    }
+
+    #[test]
+    fn get_received_spendable_note_from_identifier() {
+        let mut trbid = TransactionRecordsById::new();
+        trbid.insert_transaction_record(nine_note_transaction_record(
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+        ));
+
+        for i in 0..3 {
+            let (txid, record) = trbid.0.iter().next().unwrap();
+
+            let received_note = trbid.get_received_spendable_note_from_identifier::<SaplingDomain>(
+                crate::wallet::notes::ShNoteId {
+                    txid: *txid,
+                    shpool: ShieldedProtocol::Sapling,
+                    index: i as u32,
+                },
+            );
+
+            assert_eq!(
+                if record.sapling_notes[i].spend_status_query(OutputSpendStatusQuery {
+                    unspent: true,
+                    pending_spent: false,
+                    spent: false
+                }) {
+                    Some(zcash_client_backend::wallet::Note::Sapling(
+                        record.sapling_notes[i].sapling_crypto_note.clone(),
+                    ))
+                } else {
+                    None
+                },
+                received_note
+                    .as_ref()
+                    .map(ReceivedNote::note)
+                    .cloned()
+                    .map(zcash_client_backend::wallet::Note::Sapling),
+            )
+        }
     }
 }
