@@ -61,6 +61,7 @@ impl Account<AccountId> for ZingoAccount {
         unimplemented!()
     }
 }
+/// Helper to grab the set of unspent shielded OutputIds
 fn get_unspent_shielded_ids(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> Vec<crate::wallet::notes::OutputId> {
