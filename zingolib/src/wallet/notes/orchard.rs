@@ -74,7 +74,9 @@ impl OutputInterface for OrchardNote {
     ) -> Vec<&mut Self> {
         let mut vecrefmut = vec![];
         for output in &mut transaction_record.orchard_notes {
-            vecrefmut.push(output);
+            if output.spend_status_query(spend_status_query) {
+                vecrefmut.push(output);
+            }
         }
         vecrefmut
     }

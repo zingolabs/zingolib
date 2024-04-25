@@ -59,12 +59,13 @@ impl OutputInterface for TransparentOutput {
         transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self> {
-        todo!();
-        // let mut vecrefmut = vec![];
-        // for mut output in &transaction_record.transparent_outputs {
-        //     vecrefmut.push(output);
-        // }
-        // vecrefmut
+        let mut vecrefmut = vec![];
+        for output in &mut transaction_record.transparent_outputs {
+            if output.spend_status_query(spend_status_query) {
+                vecrefmut.push(output);
+            }
+        }
+        vecrefmut
     }
 }
 
