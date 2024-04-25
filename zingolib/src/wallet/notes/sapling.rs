@@ -90,6 +90,15 @@ impl OutputInterface for SaplingNote {
 
     fn transaction_record_to_outputs_vec(
         transaction_record: &mut TransactionRecord,
+    ) -> Vec<&mut Self> {
+        let mut vecrefmut = vec![];
+        for output in &mut transaction_record.sapling_notes {
+            vecrefmut.push(output);
+        }
+        vecrefmut
+    }
+    fn transaction_record_to_outputs_vec_query(
+        transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self> {
         let mut vecrefmut = vec![];

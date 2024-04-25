@@ -12,7 +12,7 @@ use crate::{
     wallet::{
         data::PoolNullifier,
         notes::OutputInterface,
-        notes::{query::OutputSpendStatusQuery, ShieldedNoteInterface},
+        notes::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},
     },
 };
@@ -245,21 +245,19 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.transaction_records_by_id.get_mut(&txid) {
-            if let Some(maybe_nnmd) = &mut D::WalletNote::transaction_record_to_outputs_vec(
-                tmd,
-                OutputSpendStatusQuery::any(),
-            )
-            .iter_mut()
-            .find_map(|nnmd| {
-                if nnmd.output_index().is_some() != output_index.is_some() {
-                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
-                }
-                if *nnmd.output_index() == output_index {
-                    Some(Ok(nnmd))
-                } else {
-                    None
-                }
-            }) {
+            if let Some(maybe_nnmd) = &mut D::WalletNote::transaction_record_to_outputs_vec(tmd)
+                .iter_mut()
+                .find_map(|nnmd| {
+                    if nnmd.output_index().is_some() != output_index.is_some() {
+                        return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                    }
+                    if *nnmd.output_index() == output_index {
+                        Some(Ok(nnmd))
+                    } else {
+                        None
+                    }
+                })
+            {
                 match maybe_nnmd {
                     Ok(nnmd) => {
                         *nnmd.witnessed_position_mut() = Some(position);

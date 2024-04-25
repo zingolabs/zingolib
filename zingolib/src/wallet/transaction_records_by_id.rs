@@ -127,7 +127,7 @@ impl TransactionRecordsById {
         self.values_mut().for_each(|transaction_metadata| {
             // Update notes to rollback any spent notes
             // Select only spent or pending_spent notes.
-            D::WalletNote::transaction_record_to_outputs_vec(
+            D::WalletNote::transaction_record_to_outputs_vec_query(
                 transaction_metadata,
                 OutputSpendStatusQuery::new(false, true, true),
             )
@@ -325,10 +325,10 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         D::Recipient: Recipient,
     {
         let status = zingo_status::confirmation_status::ConfirmationStatus::Broadcast(height);
-        let transaction_metadata =
+        let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        match D::to_notes_vec_mut(transaction_metadata)
+        match D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
@@ -347,7 +347,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
                     Some(output_index as u32),
                 );
 
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(nd);
             }
             Some(_) => {}
         }
