@@ -17,7 +17,7 @@ use crate::{
         keys::unified::WalletCapability,
         notes::{
             self,
-            query::{OutputQuery, QueryStipulations},
+            query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
             OrchardNote, OutputId, OutputInterface as _, SaplingNote, ShNoteId,
             ShieldedNoteInterface, TransparentOutput,
         },
@@ -189,7 +189,7 @@ impl TransactionRecord {
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
         <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
-        D::get_shnotes(self)
+        D::WalletNote::transaction_record_to_outputs_vec(self)
             .iter()
             .map(|note_and_metadata| note_and_metadata.value())
             .sum()
@@ -231,24 +231,29 @@ impl TransactionRecord {
         <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
         let mut value_ref_pairs = Vec::new();
-        <D as DomainWalletExt>::get_shnotes(self)
-            .iter()
-            .for_each(|note| {
-                if !notes::OutputInterface::is_spent_or_pending_spent(note) {
-                    if let Some(index) = note.output_index() {
-                        let index = *index;
-                        let note_record_reference = ShNoteId {
-                            txid: self.txid,
-                            shpool: D::SHIELDED_PROTOCOL,
-                            index,
-                        };
-                        value_ref_pairs.push((
-                            notes::ShieldedNoteInterface::note(note).clone(),
-                            note_record_reference,
-                        ));
-                    }
-                }
-            });
+        <D as DomainWalletExt>::WalletNote::transaction_record_to_outputs_vec_query(
+            self,
+            OutputSpendStatusQuery {
+                unspent: true,
+                pending_spent: false,
+                spent: false,
+            },
+        )
+        .iter()
+        .for_each(|note| {
+            if let Some(index) = note.output_index() {
+                let index = *index;
+                let note_record_reference = ShNoteId {
+                    txid: self.txid,
+                    shpool: D::SHIELDED_PROTOCOL,
+                    index,
+                };
+                value_ref_pairs.push((
+                    notes::ShieldedNoteInterface::note(*note).clone(),
+                    note_record_reference,
+                ));
+            }
+        });
         value_ref_pairs
     }
 
@@ -343,8 +348,8 @@ impl TransactionRecord {
         D::Note: PartialEq + Clone,
         D::Recipient: super::traits::Recipient,
     {
-        let note = D::get_shnotes(self)
-            .iter()
+        let note = D::WalletNote::transaction_record_to_outputs_vec(self)
+            .into_iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
             let txid = self.txid;
@@ -677,9 +682,9 @@ pub mod mocks {
     /// each mock note type in it
     pub fn setup_mock_transaction_record() -> TransactionRecord {
         TransactionRecordBuilder::default()
-            .sapling_notes(SaplingNoteBuilder::default().build())
-            .transparent_outputs(TransparentOutputBuilder::default().build())
-            .orchard_notes(OrchardNoteBuilder::default().build())
+            .sapling_notes(SaplingNoteBuilder::default())
+            .transparent_outputs(TransparentOutputBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default())
             .build()
     }
 }

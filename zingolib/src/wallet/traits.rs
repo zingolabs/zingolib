@@ -489,8 +489,8 @@ where
     type Bundle: Bundle<Self>;
 
     /// TODO: Add Doc Comment Here!
-    fn sum_pool_change(transaction_record: &TransactionRecord) -> u64 {
-        Self::get_shnotes(transaction_record)
+    fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
+        Self::WalletNote::transaction_record_to_outputs_vec(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())
@@ -534,12 +534,6 @@ where
 
     /// TODO: Add Doc Comment Here!
     fn get_tree(tree_state: &TreeState) -> &String;
-
-    /// TODO: Add Doc Comment Here!
-    fn get_shnotes(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
-
-    /// TODO: Add Doc Comment Here!
-    fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
 
     /// TODO: Add Doc Comment Here!
     fn ua_from_contained_receiver<'a>(
@@ -601,14 +595,6 @@ impl DomainWalletExt for SaplingDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
-    }
-
-    fn get_shnotes(transaction_record: &TransactionRecord) -> &Vec<Self::WalletNote> {
-        &transaction_record.sapling_notes
-    }
-
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
-        &mut transaction.sapling_notes
     }
 
     fn ua_from_contained_receiver<'a>(
@@ -677,14 +663,6 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
-    }
-
-    fn get_shnotes(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
-        &transaction_md.orchard_notes
-    }
-
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
-        &mut transaction.orchard_notes
     }
 
     fn ua_from_contained_receiver<'a>(
