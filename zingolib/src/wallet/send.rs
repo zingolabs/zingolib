@@ -46,8 +46,9 @@ use zcash_primitives::{
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use crate::data::witness_trees::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+
 use super::data::SpendableOrchardNote;
-use super::data::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 
 use super::notes::ShieldedNoteInterface;
 use super::{notes, traits, LightWallet};

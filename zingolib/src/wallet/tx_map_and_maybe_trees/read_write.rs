@@ -8,7 +8,10 @@ use std::{
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability};
+use crate::{
+    data::witness_trees::WitnessTrees,
+    wallet::{data::TransactionRecord, keys::unified::WalletCapability},
+};
 
 use super::{TransactionRecordsById, TxMapAndMaybeTrees};
 impl TxMapAndMaybeTrees {
@@ -106,7 +109,7 @@ impl TxMapAndMaybeTrees {
         };
 
         if version >= 22 {
-            witness_trees = Optional::read(reader, |r| crate::wallet::data::WitnessTrees::read(r))?;
+            witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
         } else if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
             old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;

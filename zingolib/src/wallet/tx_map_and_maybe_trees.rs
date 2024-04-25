@@ -3,7 +3,9 @@
 //! implementations for TxMapAndMaybeTrees
 //! associated types for TxMapAndMaybeTrees that have no relevance elsewhere.
 
-use crate::wallet::{data::WitnessTrees, transaction_records_by_id::TransactionRecordsById};
+use crate::{
+    data::witness_trees::WitnessTrees, wallet::transaction_records_by_id::TransactionRecordsById,
+};
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
