@@ -21,7 +21,7 @@ macro_rules! build_method_push {
 macro_rules! build_push_list {
     ($name:ident, $builder:ident, $struct:ident) => {
         for i in $builder.$name {
-            $struct.$name.push(i);
+            $struct.$name.push(i.build());
         }
     };
 }
