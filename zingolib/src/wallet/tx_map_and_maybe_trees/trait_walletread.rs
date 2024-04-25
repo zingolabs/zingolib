@@ -9,7 +9,7 @@ use zcash_client_backend::{
 use zcash_primitives::consensus::BlockHeight;
 use zip32::AccountId;
 
-use crate::wallet::notes::query::OutputQuery;
+use crate::wallet::notes::query::QueryStipulations;
 
 use super::TxMapAndMaybeTrees;
 
@@ -138,9 +138,17 @@ impl WalletRead for TxMapAndMaybeTrees {
                     Some(transaction_height) => {
                         // query for an unspent shielded output
                         if !transaction
-                            .query_for_ids(OutputQuery::stipulations(
-                                true, false, false, false, true, true,
-                            ))
+                            .query_for_ids(
+                                QueryStipulations {
+                                    unspent: true,
+                                    pending_spent: false,
+                                    spent: false,
+                                    transparent: false,
+                                    sapling: true,
+                                    orchard: true,
+                                }
+                                .stipulate(),
+                            )
                             .is_empty()
                         {
                             Some(match height_rolling_min {
