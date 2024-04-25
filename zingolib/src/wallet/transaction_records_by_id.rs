@@ -507,7 +507,11 @@ mod tests {
             .get(&txid_containing_valid_note_with_invalid_spends)
             .unwrap();
 
-        let query_for_spentish_notes = OutputSpendStatusQuery::new(false, true, true);
+        let query_for_spentish_notes = OutputSpendStatusQuery {
+            unspent: false,
+            pending_spent: true,
+            spent: true,
+        };
         let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(
             OutputQuery::new(query_for_spentish_notes, OutputPoolQuery::any()),
         );
