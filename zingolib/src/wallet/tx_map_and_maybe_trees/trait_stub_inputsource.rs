@@ -1,23 +1,17 @@
 //! this mod brings input source functionality from transaction_records_by_id
 
-use orchard::note_encryption::OrchardDomain;
-use sapling_crypto::note_encryption::SaplingDomain;
+
+
 use zcash_client_backend::{
     data_api::{InputSource, SpendableNotes},
-    wallet::{ReceivedNote, WalletTransparentOutput},
-    ShieldedProtocol,
 };
-use zcash_primitives::{
-    legacy::Script,
-    transaction::components::{amount::NonNegativeAmount, TxOut},
-};
-use zip32::AccountId;
+
+
 
 use crate::{
-    error::{ZingoLibError, ZingoLibResult},
+    error::{ZingoLibError},
     wallet::{
-        notes::{query::OutputSpendStatusQuery, OutputInterface, ShNoteId},
-        transaction_records_by_id::TransactionRecordsById,
+        notes::{ShNoteId},
     },
 };
 
