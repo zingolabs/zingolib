@@ -1,31 +1,23 @@
 //! TODO: Add Mod Description Here!
-use super::traits::{self, DomainWalletExt, ToBytes};
-use crate::error::{ZingoLibError, ZingoLibResult};
+use super::traits::ToBytes;
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
+use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
-use incrementalmerkletree::{Address, Hashable, Level, Position};
-use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
+use incrementalmerkletree::{Hashable, Position};
+
 use prost::Message;
-use sapling_crypto::note_encryption::SaplingDomain;
-use sapling_crypto::Node;
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::store::{Checkpoint, ShardStore};
-use shardtree::LocatedPrunableTree;
-use shardtree::ShardTree;
+
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
+
 use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::Domain;
-use zcash_primitives::consensus::BlockHeight;
+
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
+use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::{memo::Memo, transaction::TxId};
-use zingoconfig::MAX_REORG;
 
 /// TODO: Add Doc Comment Here!
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
