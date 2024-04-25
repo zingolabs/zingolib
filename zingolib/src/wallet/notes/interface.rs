@@ -70,12 +70,18 @@ pub trait OutputInterface: Sized {
     }
 
     /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
-    fn transaction_record_to_outputs_vec(
-        transaction_record: &mut TransactionRecord,
-    ) -> Vec<&mut Self>;
-
+    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self>;
     /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
     fn transaction_record_to_outputs_vec_query(
+        transaction_record: &TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self>;
+    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn transaction_record_to_outputs_vec_mut(
+        transaction_record: &mut TransactionRecord,
+    ) -> Vec<&mut Self>;
+    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn transaction_record_to_outputs_vec_query_mut(
         transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self>;

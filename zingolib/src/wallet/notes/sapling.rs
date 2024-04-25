@@ -88,7 +88,26 @@ impl OutputInterface for SaplingNote {
         &mut self.unconfirmed_spent
     }
 
-    fn transaction_record_to_outputs_vec(
+    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+        let mut vecref = vec![];
+        for output in &transaction_record.sapling_notes {
+            vecref.push(output);
+        }
+        vecref
+    }
+    fn transaction_record_to_outputs_vec_query(
+        transaction_record: &TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self> {
+        let mut vecref = vec![];
+        for output in &transaction_record.sapling_notes {
+            if output.spend_status_query(spend_status_query) {
+                vecref.push(output);
+            }
+        }
+        vecref
+    }
+    fn transaction_record_to_outputs_vec_mut(
         transaction_record: &mut TransactionRecord,
     ) -> Vec<&mut Self> {
         let mut vecrefmut = vec![];
@@ -97,7 +116,7 @@ impl OutputInterface for SaplingNote {
         }
         vecrefmut
     }
-    fn transaction_record_to_outputs_vec_query(
+    fn transaction_record_to_outputs_vec_query_mut(
         transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self> {

@@ -487,7 +487,7 @@ where
 
     /// TODO: Add Doc Comment Here!
     fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
-        Self::to_notes_vec(transaction_md)
+        Self::WalletNote::transaction_record_to_outputs_vec(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())

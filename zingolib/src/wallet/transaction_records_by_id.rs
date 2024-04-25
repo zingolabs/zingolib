@@ -127,7 +127,7 @@ impl TransactionRecordsById {
         self.values_mut().for_each(|transaction_metadata| {
             // Update notes to rollback any spent notes
             // Select only spent or pending_spent notes.
-            D::WalletNote::transaction_record_to_outputs_vec_query(
+            D::WalletNote::transaction_record_to_outputs_vec_query_mut(
                 transaction_metadata,
                 OutputSpendStatusQuery::new(false, true, true),
             )
