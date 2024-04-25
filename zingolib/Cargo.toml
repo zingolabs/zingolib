@@ -24,19 +24,21 @@ zingo-netutils = { path = "../zingo-netutils" }
 
 http-body = { workspace = true }
 hyper = { workspace = true }
+hyper-rustls = { workspace = true }
+prost = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
-prost = { workspace = true }
+
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 incrementalmerkletree = { workspace = true, features = ["test-dependencies", "legacy-api"] }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
 zcash_encoding = { workspace = true }
+zcash_keys = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
-hyper-rustls = { workspace = true }
 zip32.workspace = true
 
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
@@ -80,6 +82,7 @@ derive_more = "0.99.17"
 either = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
 sapling-crypto.workspace = true
+secrecy = "0.8.0"
 getset = "0.1.2"
 test-case = "3.3.1"
 proptest = "1.4.0"
