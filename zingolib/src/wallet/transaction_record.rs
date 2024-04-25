@@ -185,7 +185,7 @@ impl TransactionRecord {
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
         <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
-        D::to_notes_vec(self)
+        D::WalletNote::transaction_record_to_outputs_vec(self)
             .iter()
             .map(|note_and_metadata| note_and_metadata.value())
             .sum()

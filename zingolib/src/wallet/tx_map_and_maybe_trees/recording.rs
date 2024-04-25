@@ -139,9 +139,10 @@ impl super::TxMapAndMaybeTrees {
             if let Some(transaction_spent_from) =
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
-                if let Some(confirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
-                    .iter_mut()
-                    .find(|note| note.nullifier() == Some(spent_nullifier))
+                if let Some(confirmed_spent_note) =
+                    D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_spent_from)
+                        .iter_mut()
+                        .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
                     *confirmed_spent_note.spent_mut() = Some((spending_txid, height.into()));
                     *confirmed_spent_note.pending_spent_mut() = None;
