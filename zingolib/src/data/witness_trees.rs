@@ -1,27 +1,23 @@
 //! TODO: Add Mod Description Here!
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::frontier::{NonEmptyFrontier};
+use std::io::{self, Read, Write};
 
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use incrementalmerkletree::frontier::NonEmptyFrontier;
 use incrementalmerkletree::{Address, Hashable, Level, Position};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
-
 use sapling_crypto::{note_encryption::SaplingDomain, Node};
 use shardtree::{
     store::{memory::MemoryShardStore, Checkpoint, ShardStore},
     LocatedPrunableTree, ShardTree,
 };
 
-use std::io::{self, Read, Write};
-
-
 use zcash_client_backend::proto::service::TreeState;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
-use zcash_encoding::{Vector};
+use zcash_encoding::Vector;
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
-
-use zcash_primitives::merkle_tree::{HashSer};
+use zcash_primitives::merkle_tree::HashSer;
 
 use zingoconfig::MAX_REORG;
 
@@ -48,6 +44,8 @@ pub struct WitnessTrees {
     /// TODO: Add Doc Comment Here!
     pub witness_tree_orchard: ShardTree<OrchStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
 }
+
+pub mod trait_walletcommitmenttrees;
 
 fn write_shards<W, H, C>(mut writer: W, store: &MemoryShardStore<H, C>) -> io::Result<()>
 where
