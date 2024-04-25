@@ -241,10 +241,10 @@ pub mod mocks {
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentOutput};
 
     /// to create a mock TransparentOutput
-    pub struct TransparentOutputBuilder {
+    pub(crate) struct TransparentOutputBuilder {
         address: Option<String>,
         txid: Option<TxId>,
-        output_index: Option<u64>,
+        pub output_index: Option<u64>,
         script: Option<Vec<u8>>,
         value: Option<u64>,
         spent: Option<Option<(TxId, u32)>>,

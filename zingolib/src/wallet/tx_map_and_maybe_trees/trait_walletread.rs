@@ -381,7 +381,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .transparent_outputs(TransparentOutputBuilder::default().build())
+                        .transparent_outputs(TransparentOutputBuilder::default())
                         .status(Confirmed(1000000.into()))
                         .build(),
                 );
@@ -390,7 +390,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .sapling_notes(SaplingNoteBuilder::default().spent(spend).build())
+                        .sapling_notes(SaplingNoteBuilder::default().spent(spend))
                         .status(Confirmed(2000000.into()))
                         .randomize_txid()
                         .build(),
@@ -399,7 +399,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend).build())
+                        .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend))
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
                         .build(),
@@ -410,7 +410,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .sapling_notes(SaplingNoteBuilder::default().build())
+                        .sapling_notes(SaplingNoteBuilder::default())
                         .status(Confirmed(sapling_height.into()))
                         .randomize_txid()
                         .build(),
@@ -419,7 +419,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().build())
+                        .orchard_notes(OrchardNoteBuilder::default())
                         .status(Confirmed(orchard_height.into()))
                         .randomize_txid()
                         .build(),

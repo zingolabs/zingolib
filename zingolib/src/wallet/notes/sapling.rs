@@ -256,7 +256,7 @@ pub mod mocks {
         diversifier: Option<sapling_crypto::Diversifier>,
         note: Option<SaplingCryptoNoteBuilder>,
         witnessed_position: Option<Option<Position>>,
-        output_index: Option<Option<u32>>,
+        pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<sapling_crypto::Nullifier>>,
         spent: Option<Option<(TxId, u32)>>,
         unconfirmed_spent: Option<Option<(TxId, u32)>>,
