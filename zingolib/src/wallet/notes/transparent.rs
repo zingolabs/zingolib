@@ -56,44 +56,32 @@ impl OutputInterface for TransparentOutput {
     }
 
     fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
-        let mut vecref = vec![];
-        for output in &transaction_record.transparent_outputs {
-            vecref.push(output);
-        }
-        vecref
+        transaction_record.transparent_outputs.iter().collect()
     }
     fn transaction_record_to_outputs_vec_query(
         transaction_record: &TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&Self> {
-        let mut vecref = vec![];
-        for output in &transaction_record.transparent_outputs {
-            if output.spend_status_query(spend_status_query) {
-                vecref.push(output);
-            }
-        }
-        vecref
+        transaction_record
+            .transparent_outputs
+            .iter()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
     }
     fn transaction_record_to_outputs_vec_mut(
         transaction_record: &mut TransactionRecord,
     ) -> Vec<&mut Self> {
-        let mut vecrefmut = vec![];
-        for output in &mut transaction_record.transparent_outputs {
-            vecrefmut.push(output);
-        }
-        vecrefmut
+        transaction_record.transparent_outputs.iter_mut().collect()
     }
     fn transaction_record_to_outputs_vec_query_mut(
         transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self> {
-        let mut vecrefmut = vec![];
-        for output in &mut transaction_record.transparent_outputs {
-            if output.spend_status_query(spend_status_query) {
-                vecrefmut.push(output);
-            }
-        }
-        vecrefmut
+        transaction_record
+            .transparent_outputs
+            .iter_mut()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
     }
 }
 
