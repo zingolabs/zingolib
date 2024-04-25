@@ -195,23 +195,24 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
-        let transaction_metadata = self
+        let transaction_record = self
             .transaction_records_by_id
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(maybe_note) = D::to_notes_vec_mut(transaction_metadata)
-            .iter_mut()
-            .find_map(|nnmd| {
-                if nnmd.output_index().is_some() != output_index.is_some() {
-                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
-                }
-                if *nnmd.output_index() == output_index {
-                    Some(Ok(nnmd))
-                } else {
-                    None
-                }
-            })
+        if let Some(maybe_note) =
+            D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_record)
+                .iter_mut()
+                .find_map(|nnmd| {
+                    if nnmd.output_index().is_some() != output_index.is_some() {
+                        return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                    }
+                    if *nnmd.output_index() == output_index {
+                        Some(Ok(nnmd))
+                    } else {
+                        None
+                    }
+                })
         {
             match maybe_note {
                 Ok(note_datum) => {
