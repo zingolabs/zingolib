@@ -873,7 +873,17 @@ mod tests {
 
     #[test]
     fn select_unspent_shnotes_and_ids() {
-        let transaction_record = nine_note_transaction_record();
+        let transaction_record = nine_note_transaction_record(
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+        );
 
         let sapling_notes = transaction_record.select_unspent_shnotes_and_ids::<SaplingDomain>();
         assert_eq!(
@@ -899,7 +909,17 @@ mod tests {
 
     #[test]
     fn get_received_note() {
-        let transaction_record = nine_note_transaction_record();
+        let transaction_record = nine_note_transaction_record(
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+        );
 
         for (i, value) in transaction_record
             .sapling_notes

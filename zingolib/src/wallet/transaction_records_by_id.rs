@@ -519,7 +519,17 @@ mod tests {
     #[test]
     fn get_received_note_from_identifier() {
         let mut trbid = TransactionRecordsById::new();
-        trbid.insert_transaction_record(nine_note_transaction_record());
+        trbid.insert_transaction_record(nine_note_transaction_record(
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+        ));
 
         for i in 0..3 {
             let received_note = trbid.get_received_note_from_identifier::<SaplingDomain>(

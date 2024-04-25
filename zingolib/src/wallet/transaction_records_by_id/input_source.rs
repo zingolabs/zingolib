@@ -283,7 +283,10 @@ mod tests {
     use crate::{
         test_framework::mocks::{default_txid, SaplingCryptoNoteBuilder},
         wallet::{
-            notes::{transparent::mocks::TransparentOutputBuilder, ShNoteId},
+            notes::{
+                query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
+                OutputInterface as _, ShNoteId,
+            },
             transaction_record::mocks::{
                 nine_note_transaction_record, setup_mock_transaction_record,
             },
@@ -291,54 +294,88 @@ mod tests {
         },
     };
 
-    proptest! {
     #[test]
-    fn get_spendable_note(
-        spent_val in 0..10_000_000,
-        unspent_val in 0..10_000_000,
-        unconf_spent_val in 0..10_000_000,
-    ) {
+    fn get_spendable_note() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record());
+        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+            100_000_000,
+            200_000_000,
+            400_000_000,
+        ));
 
         let single_note_wrong_index = transaction_records_by_id
             .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 1)
             .unwrap();
-        prop_assert_eq!(single_note_wrong_index, None);
+        assert_eq!(single_note_wrong_index, None);
         let real_single_note = transaction_records_by_id
             .get_spendable_note(&default_txid(), ShieldedProtocol::Sapling, 0)
             .unwrap()
             .unwrap();
-        prop_assert_eq!(
+        assert_eq!(
             real_single_note.note(),
             &zcash_client_backend::wallet::Note::Sapling(
                 SaplingCryptoNoteBuilder::default().build()
             )
         )
     }
-    }
 
-    #[test]
-    fn select_spendable_notes() {
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(setup_mock_transaction_record());
+    proptest! {
+        #[test]
+        fn select_spendable_notes( spent_val in 0..10_000_000i32,
+            unspent_val in 0..10_000_000i32,
+            unconf_spent_val in 0..10_000_000i32,
+        ) {
+            let mut transaction_records_by_id = TransactionRecordsById::new();
+            transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
+                spent_val as u64,
+                unspent_val as u64,
+                unconf_spent_val as u64,
+                spent_val as u64,
+                unspent_val as u64,
+                unconf_spent_val as u64,
+                spent_val as u64,
+                unspent_val as u64,
+                unconf_spent_val as u64,
+            ));
 
-        let target_value = NonNegativeAmount::const_from_u64(20000);
-        let anchor_height: BlockHeight = 10.into();
-        let spendable_notes: SpendableNotes<ShNoteId> =
-            zcash_client_backend::data_api::InputSource::select_spendable_notes(
-                &transaction_records_by_id,
-                AccountId::ZERO,
-                target_value,
-                &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
-                anchor_height,
-                &[],
+            let target_value = NonNegativeAmount::const_from_u64(20000);
+            let anchor_height: BlockHeight = 10.into();
+            let spendable_notes: SpendableNotes<ShNoteId> =
+                zcash_client_backend::data_api::InputSource::select_spendable_notes(
+                    &transaction_records_by_id,
+                    AccountId::ZERO,
+                    target_value,
+                    &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                    anchor_height,
+                    &[],
+                )
+                .unwrap();
+            prop_assert_eq!(
+                spendable_notes.sapling().first().unwrap().note().value(),
+                transaction_records_by_id
+                    .values()
+                    .next()
+                    .unwrap()
+                    .sapling_notes
+                    .iter()
+                    .find(|note| {
+                        note.spend_status_query(OutputSpendStatusQuery {
+                            unspent: true,
+                            pending_spent: false,
+                            spent: false,
+                        })
+                    })
+                    .unwrap()
+                    .sapling_crypto_note
+                    .value()
             )
-            .unwrap();
-        assert_eq!(
-            spendable_notes.sapling().first().unwrap().note().value(),
-            SaplingCryptoNoteBuilder::default().build().value()
-        )
+        }
     }
 
     #[test]
