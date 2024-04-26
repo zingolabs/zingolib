@@ -494,9 +494,9 @@ impl WalletCapability {
 
     /// TODO: Add Doc Comment Here!
     //TODO: NAME?????!!
-    pub fn get_trees_witness_trees(&self) -> Option<crate::wallet::data::WitnessTrees> {
+    pub fn get_trees_witness_trees(&self) -> Option<crate::data::witness_trees::WitnessTrees> {
         if self.can_spend_from_all_pools() {
-            Some(crate::wallet::data::WitnessTrees::default())
+            Some(crate::data::witness_trees::WitnessTrees::default())
         } else {
             None
         }
