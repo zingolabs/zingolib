@@ -1,5 +1,5 @@
 //! TODO: Add Mod Description Here!
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, ops::DerefMut};
 
 use log::debug;
 
@@ -68,7 +68,8 @@ impl LightClient {
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
     ) -> Result<crate::data::proposal::TransferProposal, String> {
-        let request = receivers_becomes_transaction_request(receivers)?;
+        let request =
+            receivers_becomes_transaction_request(receivers).map_err(|e| e.to_string())?;
 
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
@@ -81,7 +82,7 @@ impl LightClient {
             zcash_client_backend::fees::DustOutputPolicy::default(),
         );
 
-        let tmamt = self
+        let mut tmamt = self
             .wallet
             .transaction_context
             .transaction_metadata_set
@@ -94,14 +95,14 @@ impl LightClient {
             GISKit,
             ZingoLibError,
         >(
-            &mut tmamt,
+            tmamt.deref_mut(),
             &self.wallet.transaction_context.config.chain,
             zcash_primitives::zip32::AccountId::ZERO,
             &input_selector,
             request,
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
-        .map_err(|e| ZingoLibError::Error(format!("{}", e)))?;
+        .map_err(|e| ZingoLibError::Error(format!("error this function todo")))?;
 
         let mut latest_proposal_lock = self.latest_proposal.write().await;
         *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
