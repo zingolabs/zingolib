@@ -11,15 +11,50 @@ use zcash_primitives::{
     legacy::Script,
     transaction::components::{amount::NonNegativeAmount, TxOut},
 };
-use zip32::AccountId;
 
-use crate::{
-    error::{ZingoLibError, ZingoLibResult},
-    wallet::{
-        notes::{query::OutputSpendStatusQuery, OutputInterface},
-        transaction_records_by_id::TransactionRecordsById,
-    },
+use crate::wallet::{
+    notes::{query::OutputSpendStatusQuery, OutputInterface},
+    transaction_records_by_id::TransactionRecordsById,
 };
+
+use self::error::InputSourceError;
+
+pub mod error {
+    use std::fmt::{Debug, Display, Formatter, Result};
+
+    use zcash_client_backend::wallet::NoteId;
+    use zcash_primitives::transaction::components::amount::BalanceError;
+
+    #[derive(Debug, PartialEq)]
+    pub enum InputSourceError {
+        NoteCannotBeIdentified(NoteId),
+        OutputTooBig((u64, BalanceError)),
+        Shortfall(u64),
+    }
+
+    impl From<&InputSourceError> for String {
+        fn from(value: &InputSourceError) -> Self {
+            use InputSourceError::*;
+            let explanation = match value {
+                NoteCannotBeIdentified(id) => {
+                    format!("Note expected but not found: {:?}", id)
+                }
+                OutputTooBig((size, e)) => {
+                    format!("An output is this wallet is believed to contain {} zec. That is more than exist. {}", size, e)
+                }
+                Shortfall(shortfall) => {
+                    format!("Cannot send. Fund shortfall: {}", shortfall)
+                }
+            };
+            format!("{:#?} - {}", value, explanation)
+        }
+    }
+    impl Display for InputSourceError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(f, "{}", String::from(self))
+        }
+    }
+}
 
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
@@ -27,7 +62,7 @@ impl InputSource for TransactionRecordsById {
     /// The type of errors produced by a wallet backend.
     /// IMPL: zingolib's error type. This could
     /// maybe more specific
-    type Error = ZingoLibError;
+    type Error = InputSourceError;
     /// Backend-specific account identifier.
     ///
     /// An account identifier corresponds to at most a single unified spending key's worth of spend
@@ -89,19 +124,15 @@ impl InputSource for TransactionRecordsById {
     /// possible. Only spendable notes corresponding to the specified shielded protocol will
     /// be included.
     /// IMPL: implemented and tested
+    /// IMPL: _account skipped because Zingo uses 1 account.
     fn select_spendable_notes(
         &self,
-        account: Self::AccountId,
+        _account: Self::AccountId,
         target_value: zcash_primitives::transaction::components::amount::NonNegativeAmount,
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
-    ) -> Result<SpendableNotes<NoteId>, ZingoLibError> {
-        if account != AccountId::ZERO {
-            return Err(ZingoLibError::Error(
-                "we don't use non-zero accounts (yet?)".to_string(),
-            ));
-        }
+    ) -> Result<SpendableNotes<NoteId>, InputSourceError> {
         let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, NoteId)> = Vec::new();
         let mut orchard_note_noteref_pairs: Vec<(orchard::Note, NoteId)> = Vec::new();
         for transaction_record in self.values().filter(|transaction_record| {
@@ -130,18 +161,19 @@ impl InputSource for TransactionRecordsById {
         let mut orchard_notes = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
         if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
             Some(target_value),
-            |rolling_target, (note, noteref)| match rolling_target {
+            |rolling_target, (note, note_id)| match rolling_target {
                 Some(targ) => {
                     sapling_notes.push(
-                        self.get(noteref.txid())
+                        self.get(note_id.txid())
                             .and_then(|tr| {
-                                tr.get_received_note::<SaplingDomain>(noteref.output_index() as u32)
+                                tr.get_received_note::<SaplingDomain>(note_id.output_index() as u32)
                             })
-                            .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?,
+                            .ok_or_else(|| InputSourceError::NoteCannotBeIdentified(note_id))?,
                     );
                     Ok(targ
-                        - NonNegativeAmount::from_u64(note.value().inner())
-                            .map_err(|e| ZingoLibError::Error(e.to_string()))?)
+                        - NonNegativeAmount::from_u64(note.value().inner()).map_err(|e| {
+                            InputSourceError::OutputTooBig((note.value().inner(), e))
+                        })?)
                 }
                 None => Ok(None),
             },
@@ -149,31 +181,31 @@ impl InputSource for TransactionRecordsById {
             if let Some(missing_value_after_orchard) =
                 orchard_note_noteref_pairs.into_iter().try_fold(
                     Some(missing_value_after_sapling),
-                    |rolling_target, (note, noteref)| match rolling_target {
+                    |rolling_target, (note, note_id)| match rolling_target {
                         Some(targ) => {
                             orchard_notes.push(
-                                self.get(noteref.txid())
+                                self.get(note_id.txid())
                                     .and_then(|tr| {
                                         tr.get_received_note::<OrchardDomain>(
-                                            noteref.output_index() as u32,
+                                            note_id.output_index() as u32,
                                         )
                                     })
                                     .ok_or_else(|| {
-                                        ZingoLibError::Error("missing note".to_string())
+                                        InputSourceError::NoteCannotBeIdentified(note_id)
                                     })?,
                             );
                             Ok(targ
-                                - NonNegativeAmount::from_u64(note.value().inner())
-                                    .map_err(|e| ZingoLibError::Error(e.to_string()))?)
+                                - NonNegativeAmount::from_u64(note.value().inner()).map_err(
+                                    |e| InputSourceError::OutputTooBig((note.value().inner(), e)),
+                                )?)
                         }
                         None => Ok(None),
                     },
                 )?
             {
-                return ZingoLibResult::Err(ZingoLibError::Error(format!(
-                    "insufficient funds, short {}",
-                    missing_value_after_orchard.into_u64()
-                )));
+                return Err(InputSourceError::Shortfall(
+                    missing_value_after_orchard.into_u64(),
+                ));
             };
         };
 
@@ -214,7 +246,7 @@ impl InputSource for TransactionRecordsById {
             return Ok(None);
         };
         let value = NonNegativeAmount::from_u64(output.value)
-            .map_err(|e| ZingoLibError::Error(e.to_string()))?;
+            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))?;
 
         let script_pubkey = Script(output.script.clone());
 
@@ -229,8 +261,8 @@ impl InputSource for TransactionRecordsById {
     }
     /// Returns a list of unspent transparent UTXOs that appear in the chain at heights up to and
     /// including `max_height`.
-    /// IMPL: Implemented and tested. address is unused, we select all outputs
-    /// available to the wallet.
+    /// IMPL: Implemented and tested. address is unused, we select all outputs available to the wallet.
+    /// IMPL: _address skipped because Zingo uses 1 account.
     fn get_unspent_transparent_outputs(
         &self,
         // I don't understand what this argument is for. Is the Trait's intent to only shield
@@ -265,7 +297,7 @@ impl InputSource for TransactionRecordsById {
                     })
                     .filter_map(move |output| {
                         let value = match NonNegativeAmount::from_u64(output.value)
-                            .map_err(|e| ZingoLibError::Error(e.to_string()))
+                            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))
                         {
                             Ok(v) => v,
                             Err(e) => return Some(Err(e)),
