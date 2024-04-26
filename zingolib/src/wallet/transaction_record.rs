@@ -7,7 +7,7 @@ use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use zcash_client_backend::PoolType;
+use zcash_client_backend::{wallet::NoteId, PoolType};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::{
@@ -18,8 +18,8 @@ use crate::{
         notes::{
             self,
             query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
-            OrchardNote, OutputId, OutputInterface as _, SaplingNote, ShNoteId,
-            ShieldedNoteInterface, TransparentOutput,
+            OrchardNote, OutputId, OutputInterface as _, SaplingNote, ShieldedNoteInterface,
+            TransparentOutput,
         },
         traits::{DomainWalletExt, ReadableWriteable as _},
     },
@@ -224,7 +224,7 @@ impl TransactionRecord {
     /// and return the list
     pub fn select_unspent_shnotes_and_ids<D>(
         &self,
-    ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, ShNoteId)>
+    ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, NoteId)>
     where
         D: DomainWalletExt,
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
@@ -243,11 +243,8 @@ impl TransactionRecord {
         .for_each(|note| {
             if let Some(index) = note.output_index() {
                 let index = *index;
-                let note_record_reference = ShNoteId {
-                    txid: self.txid,
-                    shpool: D::SHIELDED_PROTOCOL,
-                    index,
-                };
+                let note_record_reference =
+                    NoteId::new(self.txid, D::SHIELDED_PROTOCOL, index as u16);
                 value_ref_pairs.push((
                     notes::ShieldedNoteInterface::note(*note).clone(),
                     note_record_reference,
@@ -339,7 +336,7 @@ impl TransactionRecord {
         index: u32,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            ShNoteId,
+            NoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
     >
@@ -353,11 +350,8 @@ impl TransactionRecord {
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
             let txid = self.txid;
-            let note_record_reference = ShNoteId {
-                txid,
-                shpool: note.to_zcb_note().protocol(),
-                index,
-            };
+            let note_record_reference =
+                NoteId::new(txid, note.to_zcb_note().protocol(), index as u16);
             note.witnessed_position().map(|pos| {
                 zcash_client_backend::wallet::ReceivedNote::from_parts(
                     note_record_reference,

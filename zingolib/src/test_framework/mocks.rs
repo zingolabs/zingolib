@@ -279,7 +279,7 @@ pub mod proposal {
         components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
-    use crate::wallet::notes::ShNoteId;
+    use zcash_client_backend::wallet::NoteId;
 
     use super::{default_txid, default_zaddr};
 
@@ -296,7 +296,7 @@ pub mod proposal {
     pub struct ProposalBuilder {
         fee_rule: Option<FeeRule>,
         min_target_height: Option<BlockHeight>,
-        steps: Option<NonEmpty<Step<ShNoteId>>>,
+        steps: Option<NonEmpty<Step<NoteId>>>,
     }
 
     #[allow(dead_code)]
@@ -312,7 +312,7 @@ pub mod proposal {
 
         build_method!(fee_rule, FeeRule);
         build_method!(min_target_height, BlockHeight);
-        build_method!(steps, NonEmpty<Step<ShNoteId>>);
+        build_method!(steps, NonEmpty<Step<NoteId>>);
 
         /// Builds a proposal after all fields have been set.
         ///
@@ -320,7 +320,7 @@ pub mod proposal {
         ///
         /// `build` will panic if any fields of the builder are `None` or if the build failed
         /// due to invalid values.
-        pub fn build(self) -> Proposal<FeeRule, ShNoteId> {
+        pub fn build(self) -> Proposal<FeeRule, NoteId> {
             let step = self.steps.unwrap().first().clone();
             Proposal::single_step(
                 step.transaction_request().clone(),
@@ -359,7 +359,7 @@ pub mod proposal {
         transaction_request: Option<TransactionRequest>,
         payment_pools: Option<BTreeMap<usize, PoolType>>,
         transparent_inputs: Option<Vec<WalletTransparentOutput>>,
-        shielded_inputs: Option<Option<ShieldedInputs<ShNoteId>>>,
+        shielded_inputs: Option<Option<ShieldedInputs<NoteId>>>,
         prior_step_inputs: Option<Vec<StepOutput>>,
         balance: Option<TransactionBalance>,
         is_shielding: Option<bool>,
@@ -383,7 +383,7 @@ pub mod proposal {
         build_method!(payment_pools, BTreeMap<usize, PoolType>
         );
         build_method!(transparent_inputs, Vec<WalletTransparentOutput>);
-        build_method!(shielded_inputs, Option<ShieldedInputs<ShNoteId>>);
+        build_method!(shielded_inputs, Option<ShieldedInputs<NoteId>>);
         build_method!(prior_step_inputs, Vec<StepOutput>);
         build_method!(balance, TransactionBalance);
         build_method!(is_shielding, bool);
@@ -395,7 +395,7 @@ pub mod proposal {
         /// `build` will panic if any fields of the builder are `None` or if the build failed
         /// due to invalid values.
         #[allow(dead_code)]
-        pub fn build(self) -> Step<ShNoteId> {
+        pub fn build(self) -> Step<NoteId> {
             Step::from_parts(
                 &[],
                 self.transaction_request.unwrap(),
@@ -429,12 +429,7 @@ pub mod proposal {
                 .shielded_inputs(Some(ShieldedInputs::from_parts(
                     BlockHeight::from_u32(1),
                     NonEmpty::singleton(ReceivedNote::from_parts(
-                        ShNoteId {
-                            txid,
-                            shpool: zcash_client_backend::ShieldedProtocol::Sapling,
-
-                            index: 0,
-                        },
+                        NoteId::new(txid, zcash_client_backend::ShieldedProtocol::Sapling, 0),
                         txid,
                         0,
                         zcash_client_backend::wallet::Note::Sapling(note),

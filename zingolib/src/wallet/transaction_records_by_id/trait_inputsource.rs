@@ -4,7 +4,7 @@ use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{
     data_api::{InputSource, SpendableNotes},
-    wallet::{ReceivedNote, WalletTransparentOutput},
+    wallet::{NoteId, ReceivedNote, WalletTransparentOutput},
     ShieldedProtocol,
 };
 use zcash_primitives::{
@@ -16,7 +16,7 @@ use zip32::AccountId;
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
-        notes::{query::OutputSpendStatusQuery, OutputInterface, ShNoteId},
+        notes::{query::OutputSpendStatusQuery, OutputInterface},
         transaction_records_by_id::TransactionRecordsById,
     },
 };
@@ -43,7 +43,7 @@ impl InputSource for TransactionRecordsById {
     /// For example, this might be a database identifier type or a UUID.
     /// IMPL: We identify notes by
     /// txid, domain, and index
-    type NoteRef = ShNoteId;
+    type NoteRef = NoteId;
 
     /// Fetches a spendable note by indexing into a transaction's shielded outputs for the
     /// specified shielded protocol.
@@ -65,11 +65,8 @@ impl InputSource for TransactionRecordsById {
         >,
         Self::Error,
     > {
-        let note_record_reference: <Self as InputSource>::NoteRef = ShNoteId {
-            txid: *txid,
-            shpool: protocol,
-            index,
-        };
+        let note_record_reference: <Self as InputSource>::NoteRef =
+            NoteId::new(*txid, protocol, index as u16);
         match protocol {
             ShieldedProtocol::Sapling => Ok(self
                 .get_received_spendable_note_from_identifier::<SaplingDomain>(note_record_reference)
@@ -99,14 +96,14 @@ impl InputSource for TransactionRecordsById {
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
-    ) -> Result<SpendableNotes<ShNoteId>, ZingoLibError> {
+    ) -> Result<SpendableNotes<NoteId>, ZingoLibError> {
         if account != AccountId::ZERO {
             return Err(ZingoLibError::Error(
                 "we don't use non-zero accounts (yet?)".to_string(),
             ));
         }
-        let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, ShNoteId)> = Vec::new();
-        let mut orchard_note_noteref_pairs: Vec<(orchard::Note, ShNoteId)> = Vec::new();
+        let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, NoteId)> = Vec::new();
+        let mut orchard_note_noteref_pairs: Vec<(orchard::Note, NoteId)> = Vec::new();
         for transaction_record in self.values().filter(|transaction_record| {
             transaction_record
                 .status
@@ -129,15 +126,17 @@ impl InputSource for TransactionRecordsById {
                 );
             }
         }
-        let mut sapling_notes = Vec::<ReceivedNote<ShNoteId, sapling_crypto::Note>>::new();
-        let mut orchard_notes = Vec::<ReceivedNote<ShNoteId, orchard::Note>>::new();
+        let mut sapling_notes = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
+        let mut orchard_notes = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
         if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
             Some(target_value),
             |rolling_target, (note, noteref)| match rolling_target {
                 Some(targ) => {
                     sapling_notes.push(
-                        self.get(&noteref.txid)
-                            .and_then(|tr| tr.get_received_note::<SaplingDomain>(noteref.index))
+                        self.get(noteref.txid())
+                            .and_then(|tr| {
+                                tr.get_received_note::<SaplingDomain>(noteref.output_index() as u32)
+                            })
                             .ok_or_else(|| ZingoLibError::Error("missing note".to_string()))?,
                     );
                     Ok(targ
@@ -153,9 +152,11 @@ impl InputSource for TransactionRecordsById {
                     |rolling_target, (note, noteref)| match rolling_target {
                         Some(targ) => {
                             orchard_notes.push(
-                                self.get(&noteref.txid)
+                                self.get(noteref.txid())
                                     .and_then(|tr| {
-                                        tr.get_received_note::<OrchardDomain>(noteref.index)
+                                        tr.get_received_note::<OrchardDomain>(
+                                            noteref.output_index() as u32,
+                                        )
                                     })
                                     .ok_or_else(|| {
                                         ZingoLibError::Error("missing note".to_string())
@@ -291,7 +292,7 @@ mod tests {
     use proptest::{prop_assert_eq, proptest};
     use zcash_client_backend::{
         data_api::{InputSource as _, SpendableNotes},
-        wallet::ReceivedNote,
+        wallet::{NoteId, ReceivedNote},
         ShieldedProtocol,
     };
     use zcash_primitives::{
@@ -303,7 +304,7 @@ mod tests {
     use crate::wallet::{
         notes::{
             query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
-            OutputInterface as _, ShNoteId,
+            OutputInterface,
         },
         transaction_record::mocks::{
             nine_note_transaction_record, nine_note_transaction_record_default,
@@ -371,7 +372,7 @@ mod tests {
 
             let target_value = NonNegativeAmount::const_from_u64(20000);
             let anchor_height: BlockHeight = 10.into();
-            let spendable_notes: SpendableNotes<ShNoteId> =
+            let spendable_notes: SpendableNotes<NoteId> =
                 zcash_client_backend::data_api::InputSource::select_spendable_notes(
                     &transaction_records_by_id,
                     AccountId::ZERO,
