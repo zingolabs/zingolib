@@ -132,7 +132,7 @@ impl InputSource for TransactionRecordsById {
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
-    ) -> Result<SpendableNotes<NoteId>, InputSourceError> {
+    ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, NoteId)> = Vec::new();
         let mut orchard_note_noteref_pairs: Vec<(orchard::Note, NoteId)> = Vec::new();
         for transaction_record in self.values().filter(|transaction_record| {
