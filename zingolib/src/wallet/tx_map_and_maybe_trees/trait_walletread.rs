@@ -11,35 +11,8 @@ use zip32::AccountId;
 
 use crate::wallet::notes::query::QueryStipulations;
 
+use super::error::TxMapAndMaybeTreesError;
 use super::TxMapAndMaybeTrees;
-
-pub mod error {
-    use std::fmt::{Debug, Display, Formatter, Result};
-
-    #[derive(Debug, PartialEq)]
-    pub enum WalletReadError {
-        NoSpendCapability,
-    }
-
-    impl From<&WalletReadError> for String {
-        fn from(value: &WalletReadError) -> Self {
-            use WalletReadError::*;
-            let explanation = match value {
-                NoSpendCapability => {
-                    "No witness trees. This is viewkey watch, not a spendkey wallet.".to_string()
-                }
-            };
-            format!("{:#?} - {}", value, explanation)
-        }
-    }
-    impl Display for WalletReadError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(f, "{}", String::from(self))
-        }
-    }
-}
-
-use error::WalletReadError;
 
 /// This is a facade for using LRZ traits. In actuality, Zingo does not use multiple accounts in one wallet.
 pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);
@@ -82,7 +55,7 @@ fn has_unspent_shielded_outputs(
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
 /// except those doc-comments starting with IMPL:
 impl WalletRead for TxMapAndMaybeTrees {
-    type Error = WalletReadError;
+    type Error = TxMapAndMaybeTreesError;
     type AccountId = AccountId;
     type Account = ZingoAccount;
 
@@ -135,7 +108,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                         )
                     }))
             }
-            None => Err(WalletReadError::NoSpendCapability),
+            None => Err(TxMapAndMaybeTreesError::NoSpendCapability),
         }
     }
 
@@ -328,7 +301,7 @@ mod tests {
     };
 
     use super::TxMapAndMaybeTrees;
-    use super::WalletReadError;
+    use super::TxMapAndMaybeTreesError;
 
     #[test]
     fn get_target_and_anchor_heights() {
@@ -367,7 +340,7 @@ mod tests {
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
                 .err()
                 .unwrap(),
-            WalletReadError::NoSpendCapability
+            TxMapAndMaybeTreesError::NoSpendCapability
         );
     }
 

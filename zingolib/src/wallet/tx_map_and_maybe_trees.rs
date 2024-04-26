@@ -44,5 +44,31 @@ impl TxMapAndMaybeTrees {
     }
 }
 
+pub mod error {
+    use std::fmt::{Debug, Display, Formatter, Result};
+
+    #[derive(Debug, PartialEq)]
+    pub enum TxMapAndMaybeTreesError {
+        NoSpendCapability,
+    }
+
+    impl From<&TxMapAndMaybeTreesError> for String {
+        fn from(value: &TxMapAndMaybeTreesError) -> Self {
+            use TxMapAndMaybeTreesError::*;
+            let explanation = match value {
+                NoSpendCapability => {
+                    "No witness trees. This is viewkey watch, not a spendkey wallet.".to_string()
+                }
+            };
+            format!("{:#?} - {}", value, explanation)
+        }
+    }
+    impl Display for TxMapAndMaybeTreesError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(f, "{}", String::from(self))
+        }
+    }
+}
+
 pub mod trait_stub_inputsource;
 pub mod trait_walletread;
