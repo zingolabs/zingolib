@@ -2,7 +2,7 @@
 //! transaction record.
 
 use crate::wallet::{
-    notes::{interface::ShieldedNoteInterface, OutputInterface as _, ShNoteId},
+    notes::{interface::ShieldedNoteInterface, OutputInterface},
     traits::{DomainWalletExt, Recipient},
     transaction_record::TransactionRecord,
 };
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 
+use zcash_client_backend::wallet::NoteId;
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 
@@ -54,10 +55,10 @@ impl TransactionRecordsById {
 impl TransactionRecordsById {
     pub fn get_received_spendable_note_from_identifier<D: DomainWalletExt>(
         &self,
-        note_record_reference: ShNoteId,
+        note_id: NoteId,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            ShNoteId,
+            NoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
     >
@@ -65,12 +66,12 @@ impl TransactionRecordsById {
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
         <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
     {
-        let transaction = self.get(&note_record_reference.txid);
-        if note_record_reference.shpool == D::SHIELDED_PROTOCOL {
+        let transaction = self.get(note_id.txid());
+        if note_id.protocol() == D::SHIELDED_PROTOCOL {
             transaction.and_then(|transaction_record| {
                 D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
                     .iter()
-                    .find(|note| note.output_index() == &Some(note_record_reference.index))
+                    .find(|note| note.output_index() == &Some(note_id.output_index() as u32))
                     .and_then(|note| {
                         if note.spend_status_query(OutputSpendStatusQuery {
                             unspent: true,
@@ -79,9 +80,9 @@ impl TransactionRecordsById {
                         }) {
                             note.witnessed_position().map(|pos| {
                                 zcash_client_backend::wallet::ReceivedNote::from_parts(
-                                    note_record_reference,
+                                    note_id,
                                     transaction_record.txid,
-                                    note_record_reference.index as u16,
+                                    note_id.output_index(),
                                     note.note().clone(),
                                     zip32::Scope::External,
                                     pos,
@@ -598,11 +599,11 @@ mod tests {
             let (txid, record) = trbid.0.iter().next().unwrap();
 
             let received_note = trbid.get_received_spendable_note_from_identifier::<SaplingDomain>(
-                crate::wallet::notes::ShNoteId {
-                    txid: *txid,
-                    shpool: ShieldedProtocol::Sapling,
-                    index: i as u32,
-                },
+                zcash_client_backend::wallet::NoteId::new(
+                    *txid,
+                    ShieldedProtocol::Sapling,
+                    i as u16,
+                ),
             );
 
             assert_eq!(
