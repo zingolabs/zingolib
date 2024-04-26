@@ -168,7 +168,7 @@ impl InputSource for TransactionRecordsById {
                             .and_then(|tr| {
                                 tr.get_received_note::<SaplingDomain>(note_id.output_index() as u32)
                             })
-                            .ok_or_else(|| InputSourceError::NoteCannotBeIdentified(note_id))?,
+                            .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
                     );
                     Ok(targ
                         - NonNegativeAmount::from_u64(note.value().inner()).map_err(|e| {
@@ -190,9 +190,7 @@ impl InputSource for TransactionRecordsById {
                                             note_id.output_index() as u32,
                                         )
                                     })
-                                    .ok_or_else(|| {
-                                        InputSourceError::NoteCannotBeIdentified(note_id)
-                                    })?,
+                                    .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
                             );
                             Ok(targ
                                 - NonNegativeAmount::from_u64(note.value().inner()).map_err(

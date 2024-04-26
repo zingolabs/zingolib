@@ -57,7 +57,7 @@ pub mod error {
             use TxMapAndMaybeTreesError::*;
             let explanation = match value {
                 NoSpendCapability => {
-                    format!("No witness trees. This is viewkey watch, not a spendkey wallet.")
+                    "No witness trees. This is viewkey watch, not a spendkey wallet.".to_string()
                 }
             };
             format!("{:#?} - {}", value, explanation)
