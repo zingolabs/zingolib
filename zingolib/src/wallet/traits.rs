@@ -1,17 +1,18 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
 use std::io::{self, Read, Write};
 
-use super::{
+use crate::data::witness_trees::WitnessTrees;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::{
     data::{
         PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
-        WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
     tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
-use crate::wallet::notes::OutputInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;

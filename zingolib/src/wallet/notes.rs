@@ -11,7 +11,7 @@ pub use orchard::OrchardNote;
 pub mod query;
 
 use zcash_client_backend::PoolType;
-use zcash_client_backend::ShieldedProtocol;
+
 use zcash_primitives::transaction::TxId;
 
 /// This triple of values uniquely identifies an entry on a zcash blockchain.
@@ -41,53 +41,22 @@ impl std::fmt::Display for OutputId {
     }
 }
 
-/// This triple of values uniquely identifies an entry on a zcash blockchain.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ShNoteId {
-    /// TODO: Add Doc Comment Here!
-    pub txid: TxId,
-    /// TODO: Add Doc Comment Here!
-    pub shpool: zcash_client_backend::ShieldedProtocol,
-    /// TODO: Add Doc Comment Here!
-    pub index: u32,
-}
-impl ShNoteId {
-    /// The primary constructor, note index means FLARRGGGLLLE!
-    pub fn from_parts(txid: TxId, shpool: ShieldedProtocol, index: u32) -> Self {
-        ShNoteId {
-            txid,
-            shpool,
-            index,
-        }
-    }
-}
-
-impl std::fmt::Display for ShNoteId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "txid {}, {:?}, index {}",
-            self.txid, self.shpool, self.index,
-        )
-    }
-}
-
 #[cfg(any(test, feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_client_backend::ShieldedProtocol;
+    use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
     use zcash_primitives::transaction::TxId;
 
     use crate::test_framework::mocks::{build_method, default_txid};
 
     /// to build a mock NoteRecordIdentifier
-    pub struct ShNoteIdBuilder {
+    pub struct NoteIdBuilder {
         txid: Option<TxId>,
         shpool: Option<ShieldedProtocol>,
-        index: Option<u32>,
+        index: Option<u16>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
-    impl ShNoteIdBuilder {
+    impl NoteIdBuilder {
         /// blank builder
         pub fn new() -> Self {
             Self {
@@ -99,7 +68,7 @@ pub mod mocks {
         // Methods to set each field
         build_method!(txid, TxId);
         build_method!(shpool, ShieldedProtocol);
-        build_method!(index, u32);
+        build_method!(index, u16);
 
         /// selects a random probablistically unique txid
         pub fn randomize_txid(self) -> Self {
@@ -107,8 +76,8 @@ pub mod mocks {
         }
 
         /// builds a mock NoteRecordIdentifier after all pieces are supplied
-        pub fn build(self) -> super::ShNoteId {
-            super::ShNoteId::from_parts(
+        pub fn build(self) -> NoteId {
+            NoteId::new(
                 self.txid.unwrap(),
                 self.shpool.unwrap(),
                 self.index.unwrap(),
@@ -116,7 +85,7 @@ pub mod mocks {
         }
     }
 
-    impl Default for ShNoteIdBuilder {
+    impl Default for NoteIdBuilder {
         fn default() -> Self {
             Self::new()
                 .txid(default_txid())
