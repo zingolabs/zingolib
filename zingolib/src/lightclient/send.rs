@@ -190,7 +190,18 @@ impl LightClient {
                                     zcash_primitives::transaction::fees::zip317::FeeError,
                                 >| e.to_string(),
                             )?;
-                        // here ingest it
+                        self.wallet
+                            .send_to_addresses_inner(
+                                step_result.transaction(),
+                                self.get_submission_height().await?,
+                                |transaction_bytes| {
+                                    crate::grpc_connector::send_transaction(
+                                        self.get_server_uri(),
+                                        transaction_bytes,
+                                    )
+                                },
+                            )
+                            .await?;
                         step_results.push((step, step_result));
                     }
                     Ok(vec![TxId::from_bytes([1u8; 32])])
