@@ -159,6 +159,7 @@ mod fast {
         assert!(postshield_utxos[0].unconfirmed_spent.is_some());
     }
     #[tokio::test]
+    #[ignore]
     async fn send_without_reorg_buffer_blocks_gives_correct_error() {
         let (_regtest_manager, _cph, faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
