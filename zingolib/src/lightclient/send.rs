@@ -51,6 +51,15 @@ pub fn receivers_becomes_transaction_request(
     TransactionRequest::new(payments)
 }
 
+use thiserror::Error;
+#[derive(Debug, Error)]
+pub enum DoProposeError {
+    #[error("{0}")]
+    Receiver(zcash_client_backend::zip321::Zip321Error),
+    #[error("{0}")]
+    Proposal(crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesError),
+}
+
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
         Ok(BlockHeight::from_u32(
