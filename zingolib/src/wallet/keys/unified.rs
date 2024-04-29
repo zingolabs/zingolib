@@ -754,25 +754,25 @@ impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
             (Capability::Spend(tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
                 let mut key_bytes = Vec::new();
                 // orchard Era usk
-                key_bytes.write_u32::<LittleEndian>(BranchId::Nu5.into());
+                key_bytes.write_u32::<LittleEndian>(BranchId::Nu5.into())?;
 
                 let okey_bytes = okey.to_bytes();
-                CompactSize::write(&mut key_bytes, u32::from(Typecode::Orchard) as usize);
-                CompactSize::write(&mut key_bytes, okey_bytes.len());
-                key_bytes.write(okey_bytes);
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::Orchard) as usize)?;
+                CompactSize::write(&mut key_bytes, okey_bytes.len())?;
+                key_bytes.write(okey_bytes)?;
 
                 let skey_bytes = skey.to_bytes();
-                CompactSize::write(&mut key_bytes, u32::from(Typecode::Sapling) as usize);
-                CompactSize::write(&mut key_bytes, skey_bytes.len());
-                key_bytes.write(&skey_bytes);
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::Sapling) as usize)?;
+                CompactSize::write(&mut key_bytes, skey_bytes.len())?;
+                key_bytes.write(&skey_bytes)?;
 
                 let mut tkey_bytes = Vec::new();
-                tkey_bytes.write(tkey.private_key.as_ref());
-                tkey_bytes.write(&tkey.chain_code);
+                tkey_bytes.write(tkey.private_key.as_ref())?;
+                tkey_bytes.write(&tkey.chain_code)?;
 
-                CompactSize::write(&mut key_bytes, u32::from(Typecode::P2pkh) as usize);
-                CompactSize::write(&mut key_bytes, tkey_bytes.len());
-                key_bytes.write(&tkey_bytes);
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::P2pkh) as usize)?;
+                CompactSize::write(&mut key_bytes, tkey_bytes.len())?;
+                key_bytes.write(&tkey_bytes)?;
 
                 UnifiedSpendingKey::from_bytes(Era::Orchard, &key_bytes).map_err(|e| {
                     io::Error::new(io::ErrorKind::InvalidInput, format!("bad usk: {e}"))
