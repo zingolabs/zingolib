@@ -882,7 +882,7 @@ impl Command for SendCommand {
         RT.block_on(async move {
             match lightclient.do_send(send_inputs).await {
                 Ok(txid) => {
-                    object! { "txid" => txid.to_string() }
+                    object! { "txid" => txid.first().to_string() }
                 }
                 Err(e) => {
                     object! { "error" => e }

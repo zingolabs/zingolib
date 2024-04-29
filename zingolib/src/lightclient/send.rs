@@ -1,4 +1,6 @@
 //! TODO: Add Mod Description Here!
+use nonempty::NonEmpty;
+
 use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
@@ -26,7 +28,7 @@ impl LightClient {
     pub async fn do_send(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-    ) -> Result<TxId, String> {
+    ) -> Result<NonEmpty<TxId>, String> {
         #[cfg(not(feature = "zip317"))]
         {
             let transaction_submission_height = self.get_submission_height().await?;
@@ -55,6 +57,7 @@ impl LightClient {
                     },
                 )
                 .await
+                .map(|txid| NonEmpty::singleton(txid))
         }
         #[cfg(feature = "zip317")]
         {
@@ -143,7 +146,7 @@ impl LightClient {
     #[cfg(feature = "zip317")]
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
-    pub async fn do_send_proposed(&self) -> Result<Vec<TxId>, String> {
+    pub async fn do_send_proposed(&self) -> Result<NonEmpty<TxId>, String> {
         use std::ops::DerefMut;
 
         use zcash_keys::keys::UnifiedSpendingKey;
@@ -204,7 +207,7 @@ impl LightClient {
                         step_results.push((step, step_result));
                         txids.push(txid);
                     }
-                    Ok(txids)
+                    Ok(NonEmpty::from_vec(txids).expect("we can toDO better than an expect error"))
                 }
                 crate::lightclient::ZingoProposal::Shield(_) => {
                     todo!();

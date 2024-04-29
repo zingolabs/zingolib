@@ -48,7 +48,9 @@ impl LightClient {
                 })
                 .collect();
 
-        self.do_send(receivers).await.map(|txid| txid.to_string())
+        self.do_send(receivers)
+            .await
+            .map(|txid| txid.first().to_string())
     }
 
     /// Test only lightclient method for calling `do_shield` with an address as &str
