@@ -48,7 +48,7 @@ impl LightClient {
                 })
                 .collect();
 
-        self.do_send(receivers).await
+        self.do_send(receivers).await.map(|txid| txid.to_string())
     }
 
     /// Test only lightclient method for calling `do_shield` with an address as &str
@@ -65,6 +65,8 @@ impl LightClient {
         let address = address.map(|addr| {
             address_from_str(addr, &self.config().chain).expect("should be a valid address")
         });
-        self.do_shield(pools_to_shield, address).await
+        self.do_shield(pools_to_shield, address)
+            .await
+            .map(|txid| txid.to_string())
     }
 }

@@ -6,6 +6,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
 use crate::utils::zatoshis_from_u64;
@@ -13,9 +14,6 @@ use crate::wallet::Pool;
 
 use super::LightClient;
 use super::LightWalletSendProgress;
-
-#[cfg(feature = "zip317")]
-use zcash_primitives::transaction::TxId;
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -30,7 +28,7 @@ impl LightClient {
     pub async fn do_send(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-    ) -> Result<String, String> {
+    ) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the consensus branch ID
         debug!("Creating transaction");
@@ -58,7 +56,6 @@ impl LightClient {
                 },
             )
             .await
-            .map(|txid| txid.to_string())
     }
 
     /// TODO: Add Doc Comment Here!
@@ -76,7 +73,7 @@ impl LightClient {
         &self,
         pools_to_shield: &[Pool],
         address: Option<Address>,
-    ) -> Result<String, String> {
+    ) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
                                           // as a fn of the transactions structure.
@@ -134,7 +131,6 @@ impl LightClient {
                 },
             )
             .await
-            .map(|txid| txid.to_string())
     }
 
     #[cfg(feature = "zip317")]

@@ -680,8 +680,8 @@ impl Command for ShieldCommand {
             };
         RT.block_on(async move {
             match lightclient.do_shield(&pools_to_shield, address).await {
-                Ok(transaction_id) => {
-                    object! { "txid" => transaction_id }
+                Ok(txid) => {
+                    object! { "txid" => txid.to_string() }
                 }
                 Err(e) => {
                     object! { "error" => e }
@@ -881,8 +881,8 @@ impl Command for SendCommand {
         };
         RT.block_on(async move {
             match lightclient.do_send(send_inputs).await {
-                Ok(transaction_id) => {
-                    object! { "txid" => transaction_id }
+                Ok(txid) => {
+                    object! { "txid" => txid.to_string() }
                 }
                 Err(e) => {
                     object! { "error" => e }
@@ -936,7 +936,7 @@ impl Command for QuickSendCommand {
                 return object! { "error" => e.to_string() }.pretty(2);
             };
             match lightclient
-                .do_send_proposal().await
+                .do_send_proposed().await
             {
                 Ok(txids) => {
                      object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
