@@ -536,6 +536,7 @@ impl LightClient {
         }
 
         // Ensure that the sapling params are stored on disk properly as well. Only on desktop
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         match self.config.get_zcash_params_path() {
             Ok(zcash_params_dir) => {
                 // Create the sapling output and spend params files
