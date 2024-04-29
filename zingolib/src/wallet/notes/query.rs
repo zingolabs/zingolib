@@ -8,13 +8,13 @@ use getset::Getters;
 pub struct OutputSpendStatusQuery {
     /// will the query include unspent notes?
     #[getset(get = "pub")]
-    unspent: bool,
+    pub unspent: bool,
     /// will the query include pending_spent notes?
     #[getset(get = "pub")]
-    pending_spent: bool,
+    pub pending_spent: bool,
     /// will the query include spent notes?
     #[getset(get = "pub")]
-    spent: bool,
+    pub spent: bool,
 }
 impl OutputSpendStatusQuery {
     /// a query that accepts notes of any spent status

@@ -3,7 +3,9 @@
 //! implementations for TxMapAndMaybeTrees
 //! associated types for TxMapAndMaybeTrees that have no relevance elsewhere.
 
-use crate::wallet::{data::WitnessTrees, transaction_records_by_id::TransactionRecordsById};
+use crate::{
+    data::witness_trees::WitnessTrees, wallet::transaction_records_by_id::TransactionRecordsById,
+};
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
@@ -39,6 +41,32 @@ impl TxMapAndMaybeTrees {
     pub fn clear(&mut self) {
         self.transaction_records_by_id.clear();
         self.witness_trees.as_mut().map(WitnessTrees::clear);
+    }
+}
+
+pub mod error {
+    use std::fmt::{Debug, Display, Formatter, Result};
+
+    #[derive(Debug, PartialEq)]
+    pub enum TxMapAndMaybeTreesError {
+        NoSpendCapability,
+    }
+
+    impl From<&TxMapAndMaybeTreesError> for String {
+        fn from(value: &TxMapAndMaybeTreesError) -> Self {
+            use TxMapAndMaybeTreesError::*;
+            let explanation = match value {
+                NoSpendCapability => {
+                    "No witness trees. This is viewkey watch, not a spendkey wallet.".to_string()
+                }
+            };
+            format!("{:#?} - {}", value, explanation)
+        }
+    }
+    impl Display for TxMapAndMaybeTreesError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(f, "{}", String::from(self))
+        }
     }
 }
 

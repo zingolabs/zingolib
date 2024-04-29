@@ -224,7 +224,7 @@ impl TransparentOutput {
 #[cfg(any(test, feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_primitives::transaction::TxId;
+    use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
 
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentOutput};
 
@@ -281,7 +281,7 @@ pub mod mocks {
                 .address("default_address".to_string())
                 .txid(TxId::from_bytes([0u8; 32]))
                 .output_index(0)
-                .script(vec![])
+                .script(TransparentAddress::ScriptHash([0; 20]).script().0)
                 .value(100000)
                 .spent(None)
                 .unconfirmed_spent(None)
