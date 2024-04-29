@@ -28,7 +28,6 @@ use std::sync::mpsc::channel;
 
 use zcash_client_backend::address;
 
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
@@ -43,6 +42,7 @@ use zcash_primitives::{
         fees::zip317::MINIMUM_FEE,
     },
 };
+use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -220,7 +220,7 @@ impl LightWallet {
         receivers: Receivers,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<String, String>
+    ) -> Result<TxId, String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -255,7 +255,7 @@ impl LightWallet {
             .await
         {
             Ok(transaction_id) => {
-                self.set_send_success(transaction_id.clone()).await;
+                self.set_send_success(transaction_id.to_string()).await;
                 Ok(transaction_id)
             }
             Err(e) => {
@@ -839,7 +839,7 @@ impl LightWallet {
         transaction: &Transaction,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<String, String>
+    ) -> Result<TxId, String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -864,7 +864,15 @@ impl LightWallet {
                 .await;
         }
 
-        Ok(transaction_id)
+        let txid = transaction.txid();
+        if !(txid.to_string() == transaction_id) {
+            return Err(format!(
+                "served txid {} does not match calulated txid {}",
+                transaction_id, txid,
+            ));
+        }
+
+        Ok(txid)
     }
 }
 

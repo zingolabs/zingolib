@@ -5,6 +5,7 @@ use zcash_client_backend::{
     address::Address,
     zip321::{Payment, TransactionRequest},
 };
+use zcash_primitives::transaction::TxId;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::MemoBytes,
@@ -22,7 +23,6 @@ use {
     zcash_client_backend::{
         data_api::wallet::input_selection::GreedyInputSelector, ShieldedProtocol,
     },
-    zcash_primitives::transaction::TxId,
     zingoconfig::ChainType,
 };
 
@@ -143,7 +143,7 @@ impl LightClient {
     pub async fn do_send(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-    ) -> Result<String, String> {
+    ) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the consensus branch ID
         debug!("Creating transaction");
@@ -188,7 +188,7 @@ impl LightClient {
         &self,
         pools_to_shield: &[Pool],
         address: Option<Address>,
-    ) -> Result<String, String> {
+    ) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
                                           // as a fn of the transactions structure.
