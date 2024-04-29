@@ -10,8 +10,6 @@ edition = "2021"
 deprecations = ["lightclient-deprecated"]
 test-features = ["lightclient-deprecated", "zingo-testvectors"]
 lightclient-deprecated = []
-default = ["embed_params"]
-embed_params = []
 darkside_tests = []
 zip317 = []
 
