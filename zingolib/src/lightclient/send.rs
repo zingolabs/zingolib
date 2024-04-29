@@ -166,6 +166,7 @@ impl LightClient {
                 crate::lightclient::ZingoProposal::Transfer(_) => {
                     let ct = zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
                         tmamt,
+                        &self.wallet.transaction_context.config.chain,
                     );
                     Ok(vec![TxId::from_bytes([1u8; 32])])
                 }
