@@ -10,7 +10,6 @@ use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::TxId;
 
 use zingoconfig::ChainType;
 
@@ -122,22 +121,5 @@ impl super::LightClient {
         _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<crate::data::proposal::ShieldProposal, String> {
         todo!()
-    }
-
-    /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
-    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-            match proposal {
-                crate::lightclient::ZingoProposal::Transfer(_) => {
-                    Ok(vec![TxId::from_bytes([1u8; 32])])
-                }
-                crate::lightclient::ZingoProposal::Shield(_) => {
-                    Ok(vec![TxId::from_bytes([222u8; 32])])
-                }
-            }
-        } else {
-            Err("No proposal. Call do_propose first.".to_string())
-        }
     }
 }

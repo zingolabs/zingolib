@@ -2,15 +2,20 @@
 use log::debug;
 
 use zcash_client_backend::address::Address;
-use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::MemoBytes,
-    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
-};
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_proofs::prover::LocalTxProver;
 
-use super::{LightClient, LightWalletSendProgress};
-use crate::{utils::zatoshis_from_u64, wallet::Pool};
+use crate::utils::zatoshis_from_u64;
+use crate::wallet::Pool;
+
+use super::LightClient;
+use super::LightWalletSendProgress;
+
+#[cfg(feature = "zip317")]
+use zcash_primitives::transaction::TxId;
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -136,5 +141,23 @@ impl LightClient {
         };
 
         result.map(|(transaction_id, _)| transaction_id)
+    }
+
+    #[cfg(feature = "zip317")]
+    /// Unstable function to expose the zip317 interface for development
+    // TODO: add correct functionality and doc comments / tests
+    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
+        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+            match proposal {
+                crate::lightclient::ZingoProposal::Transfer(_) => {
+                    Ok(vec![TxId::from_bytes([1u8; 32])])
+                }
+                crate::lightclient::ZingoProposal::Shield(_) => {
+                    Ok(vec![TxId::from_bytes([222u8; 32])])
+                }
+            }
+        } else {
+            Err("No proposal. Call do_propose first.".to_string())
+        }
     }
 }
