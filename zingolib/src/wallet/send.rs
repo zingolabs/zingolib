@@ -220,7 +220,7 @@ impl LightWallet {
         receivers: Receivers,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> Result<String, String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -254,9 +254,9 @@ impl LightWallet {
             .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
             .await
         {
-            Ok((transaction_id, raw_transaction)) => {
+            Ok(transaction_id) => {
                 self.set_send_success(transaction_id.clone()).await;
-                Ok((transaction_id, raw_transaction))
+                Ok(transaction_id)
             }
             Err(e) => {
                 self.set_send_error(e.to_string()).await;
@@ -839,7 +839,7 @@ impl LightWallet {
         transaction: &Transaction,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> Result<String, String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -864,7 +864,7 @@ impl LightWallet {
                 .await;
         }
 
-        Ok((transaction_id, raw_transaction))
+        Ok(transaction_id)
     }
 }
 

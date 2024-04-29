@@ -35,33 +35,29 @@ impl LightClient {
         // First, get the consensus branch ID
         debug!("Creating transaction");
 
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            // I am not clear on how long this operation may take, but it's
-            // clearly unnecessary in a send that doesn't include sapling
-            // TODO: Remove from sends that don't include Sapling
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+        let _lock = self.sync_lock.lock().await;
+        // I am not clear on how long this operation may take, but it's
+        // clearly unnecessary in a send that doesn't include sapling
+        // TODO: Remove from sends that don't include Sapling
+        let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
-                    // spend from transparent.
-                    receivers,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
+        self.wallet
+            .send_to_addresses(
+                sapling_prover,
+                vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
+                // spend from transparent.
+                receivers,
+                transaction_submission_height,
+                |transaction_bytes| {
+                    crate::grpc_connector::send_transaction(
+                        self.get_server_uri(),
+                        transaction_bytes,
+                    )
+                },
+            )
+            .await
     }
 
     /// TODO: Add Doc Comment Here!
@@ -118,29 +114,25 @@ impl LightClient {
             .expect("balance cannot be outside valid range of zatoshis");
         let receiver = vec![(address, amount, None)];
 
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+        let _lock = self.sync_lock.lock().await;
+        let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    pools_to_shield.to_vec(),
-                    receiver,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
+        self.wallet
+            .send_to_addresses(
+                sapling_prover,
+                pools_to_shield.to_vec(),
+                receiver,
+                transaction_submission_height,
+                |transaction_bytes| {
+                    crate::grpc_connector::send_transaction(
+                        self.get_server_uri(),
+                        transaction_bytes,
+                    )
+                },
+            )
+            .await
     }
 
     #[cfg(feature = "zip317")]
@@ -190,7 +182,8 @@ impl LightClient {
                                     zcash_primitives::transaction::fees::zip317::FeeError,
                                 >| e.to_string(),
                             )?;
-                        self.wallet
+                        let txid = self
+                            .wallet
                             .send_to_addresses_inner(
                                 step_result.transaction(),
                                 self.get_submission_height().await?,
