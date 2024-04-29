@@ -18,7 +18,7 @@ use crate::{
         notes::{
             self,
             query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
-            OrchardNote, OutputId, OutputInterface as _, SaplingNote, ShieldedNoteInterface,
+            OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
             TransparentOutput,
         },
         traits::{DomainWalletExt, ReadableWriteable as _},
