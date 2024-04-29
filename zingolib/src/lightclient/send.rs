@@ -58,6 +58,7 @@ impl LightClient {
                 },
             )
             .await
+            .map(|txid| txid.to_string())
     }
 
     /// TODO: Add Doc Comment Here!
@@ -133,6 +134,7 @@ impl LightClient {
                 },
             )
             .await
+            .map(|txid| txid.to_string())
     }
 
     #[cfg(feature = "zip317")]
@@ -150,6 +152,7 @@ impl LightClient {
             match transfer_proposal {
                 crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
                     let mut step_results = Vec::with_capacity(transfer_proposal.steps().len());
+                    let mut txids = Vec::with_capacity(transfer_proposal.steps().len());
                     for step in transfer_proposal.steps() {
                         let mut tmamt = self
                             .wallet
@@ -196,8 +199,9 @@ impl LightClient {
                             )
                             .await?;
                         step_results.push((step, step_result));
+                        txids.push(txid);
                     }
-                    Ok(vec![TxId::from_bytes([1u8; 32])])
+                    Ok(txids)
                 }
                 crate::lightclient::ZingoProposal::Shield(_) => {
                     //todo
