@@ -850,7 +850,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -885,16 +885,16 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "blake2b_simd",
 ]
 
 [[package]]
 name = "fastrand"
-version = "2.0.2"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658bd65b1cf4c852a3cc96f18a8ce7b5640f6b703f905c7d74532294c2a63984"
+checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
 name = "fd-lock"
@@ -1187,9 +1187,9 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
-version = "0.14.3"
+version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hdwallet"
@@ -1412,7 +1412,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.3",
+ "hashbrown 0.14.5",
 ]
 
 [[package]]
@@ -2819,9 +2819,9 @@ checksum = "92d43fe69e652f3df9bdc2b85b2854a0825b86e4fb76bc44d945137d053639ca"
 
 [[package]]
 name = "serde"
-version = "1.0.198"
+version = "1.0.199"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9846a40c979031340571da2545a4e5b7c4163bdae79b301d5f86d03979451fcc"
+checksum = "0c9f6e76df036c77cd94996771fb40db98187f096dd0b9af39c6c6e452ba966a"
 dependencies = [
  "serde_derive",
 ]
@@ -2838,9 +2838,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.198"
+version = "1.0.199"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e88edab869b01783ba905e7d0153f9fc1a6505a96e4ad3018011eedb838566d9"
+checksum = "11bd257a6541e141e42ca6d24ae26f7714887b47e89aa739099104c7e4d3b7fc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2970,9 +2970,9 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "socket2"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05ffd9c0a93b7543e062e759284fcf5f5e3b098501104bfbdde4d404db792871"
+checksum = "ce305eb0b4296696835b71df73eb912e0f1ffd2556a501fcede6e0c50349191c"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
@@ -3554,9 +3554,9 @@ checksum = "d4c87d22b6e3f4a18d4d40ef354e97c90fcb14dd91d7dc0aa9d8a1172ebf7202"
 
 [[package]]
 name = "unicode-width"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e51733f11c9c4f72aa0c160008246859e340b00807569a0da0e7a1079b27ba85"
+checksum = "68f5e5f3158ecfd4b8ff6fe086db7c8467a2dfdac97fe420f2b7c4aa97af66d6"
 
 [[package]]
 name = "universal-hash"
@@ -3994,7 +3994,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "bech32",
  "bs58",
@@ -4006,7 +4006,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -4048,7 +4048,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4057,7 +4057,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "bech32",
  "blake2b_simd",
@@ -4098,7 +4098,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "aes",
  "bip0039",
@@ -4136,7 +4136,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4158,7 +4158,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=4c67b47#4c67b473cf1acc45edf5619e2862f2f3f8775a7a"
 dependencies = [
  "document-features",
  "memuse",
