@@ -140,7 +140,7 @@ impl LightClient {
     #[cfg(feature = "zip317")]
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
-    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
+    pub async fn do_send_proposed(&self) -> Result<Vec<TxId>, String> {
         use std::ops::DerefMut;
 
         use zcash_keys::keys::UnifiedSpendingKey;
