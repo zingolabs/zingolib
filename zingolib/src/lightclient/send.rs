@@ -149,6 +149,8 @@ impl LightClient {
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
         use std::ops::DerefMut;
 
+        use zcash_keys::keys::UnifiedSpendingKey;
+
         let (sapling_output, sapling_spend) = self.read_sapling_params()?;
         let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let transaction_submission_height = self.get_submission_height().await?;
@@ -169,6 +171,8 @@ impl LightClient {
                         &self.wallet.transaction_context.config.chain,
                         &sapling_prover,
                         &sapling_prover,
+                        &UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
+                            .map_err(|e| e.to_string())?,
                     );
                     Ok(vec![TxId::from_bytes([1u8; 32])])
                 }
