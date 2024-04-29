@@ -31,7 +31,7 @@ impl InputSource for TxMapAndMaybeTrees {
     > {
         self.transaction_records_by_id
             .get_spendable_note(txid, protocol, index)
-            .map_err(|e| TxMapAndMaybeTreesError::InputSource(e))
+            .map_err(TxMapAndMaybeTreesError::InputSource)
     }
 
     fn select_spendable_notes(
@@ -44,7 +44,7 @@ impl InputSource for TxMapAndMaybeTrees {
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         self.transaction_records_by_id
             .select_spendable_notes(account, target_value, sources, anchor_height, exclude)
-            .map_err(|e| TxMapAndMaybeTreesError::InputSource(e))
+            .map_err(TxMapAndMaybeTreesError::InputSource)
     }
 
     fn get_unspent_transparent_output(
@@ -53,7 +53,7 @@ impl InputSource for TxMapAndMaybeTrees {
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.transaction_records_by_id
             .get_unspent_transparent_output(outpoint)
-            .map_err(|e| TxMapAndMaybeTreesError::InputSource(e))
+            .map_err(TxMapAndMaybeTreesError::InputSource)
     }
 
     fn get_unspent_transparent_outputs(
@@ -64,6 +64,6 @@ impl InputSource for TxMapAndMaybeTrees {
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.transaction_records_by_id
             .get_unspent_transparent_outputs(address, max_height, exclude)
-            .map_err(|e| TxMapAndMaybeTreesError::InputSource(e))
+            .map_err(TxMapAndMaybeTreesError::InputSource)
     }
 }

@@ -1,13 +1,9 @@
 //! TODO: Add Mod Description Here!
-use std::{num::NonZeroU32, ops::DerefMut};
-
 use log::debug;
 
 use zcash_client_backend::{
     address::Address,
-    data_api::wallet::input_selection::GreedyInputSelector,
     zip321::{Payment, TransactionRequest},
-    ShieldedProtocol,
 };
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -15,18 +11,22 @@ use zcash_primitives::{
     transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
 };
 use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::ChainType;
 
 use super::{LightClient, LightWalletSendProgress};
-use crate::{
-    error::ZingoLibError,
-    utils::zatoshis_from_u64,
-    wallet::{tx_map_and_maybe_trees::TxMapAndMaybeTrees, Pool},
+use crate::{utils::zatoshis_from_u64, wallet::Pool};
+
+#[cfg(feature = "zip317")]
+use {
+    crate::{error::ZingoLibError, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees},
+    std::{num::NonZeroU32, ops::DerefMut},
+    zcash_client_backend::{
+        data_api::wallet::input_selection::GreedyInputSelector, ShieldedProtocol,
+    },
+    zcash_primitives::transaction::TxId,
+    zingoconfig::ChainType,
 };
 
-// #[cfg(feature = "zip317")]
-use zcash_primitives::transaction::TxId;
-
+#[cfg(feature = "zip317")]
 type GISKit = GreedyInputSelector<
     TxMapAndMaybeTrees,
     zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
@@ -63,7 +63,7 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    // #[cfg(feature = "zip317")]
+    #[cfg(feature = "zip317")]
     pub async fn do_propose_spend(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
@@ -102,7 +102,7 @@ impl LightClient {
             request,
             NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
         )
-        .map_err(|e| ZingoLibError::Error(format!("error this function todo")))?;
+        .map_err(|e| ZingoLibError::Error(format!("error this function todo error {:?}", e)))?;
 
         let mut latest_proposal_lock = self.latest_proposal.write().await;
         *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
