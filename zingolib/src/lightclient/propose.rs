@@ -14,7 +14,7 @@ use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
 
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesError;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 
 type GISKit = GreedyInputSelector<
     TxMapAndMaybeTrees,
@@ -52,8 +52,8 @@ pub enum DoProposeError {
     #[error("{:?}", {0})]
     Proposal(
         zcash_client_backend::data_api::error::Error<
-            TxMapAndMaybeTreesError,
-            TxMapAndMaybeTreesError,
+            TxMapAndMaybeTreesTraitError,
+            TxMapAndMaybeTreesTraitError,
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
                 zcash_client_backend::wallet::NoteId,
@@ -96,7 +96,7 @@ impl super::LightClient {
             TxMapAndMaybeTrees,
             ChainType,
             GISKit,
-            TxMapAndMaybeTreesError,
+            TxMapAndMaybeTreesTraitError,
         >(
             tmamt.deref_mut(),
             &self.wallet.transaction_context.config.chain,

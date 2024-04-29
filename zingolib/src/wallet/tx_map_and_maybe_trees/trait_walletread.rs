@@ -11,7 +11,7 @@ use zip32::AccountId;
 
 use crate::wallet::notes::query::QueryStipulations;
 
-use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesError};
+use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 
 /// This is a facade for using LRZ traits. In actuality, Zingo does not use multiple accounts in one wallet.
 pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);
@@ -54,7 +54,7 @@ fn has_unspent_shielded_outputs(
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
 /// except those doc-comments starting with IMPL:
 impl WalletRead for TxMapAndMaybeTrees {
-    type Error = TxMapAndMaybeTreesError;
+    type Error = TxMapAndMaybeTreesTraitError;
     type AccountId = AccountId;
     type Account = ZingoAccount;
 
@@ -107,7 +107,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                         )
                     }))
             }
-            None => Err(TxMapAndMaybeTreesError::NoSpendCapability),
+            None => Err(TxMapAndMaybeTreesTraitError::NoSpendCapability),
         }
     }
 
@@ -300,7 +300,7 @@ mod tests {
     };
 
     use super::TxMapAndMaybeTrees;
-    use super::TxMapAndMaybeTreesError;
+    use super::TxMapAndMaybeTreesTraitError;
 
     #[test]
     fn get_target_and_anchor_heights() {
@@ -339,7 +339,7 @@ mod tests {
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
                 .err()
                 .unwrap(),
-            TxMapAndMaybeTreesError::NoSpendCapability
+            TxMapAndMaybeTreesTraitError::NoSpendCapability
         );
     }
 
