@@ -2,11 +2,8 @@
 
 use std::convert::Infallible;
 
-use incrementalmerkletree::Address;
 use shardtree::{error::ShardTreeError, ShardTree};
-use zcash_client_backend::data_api::{
-    chain::CommitmentTreeRoot, WalletCommitmentTrees, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
-};
+use zcash_client_backend::data_api::{chain::CommitmentTreeRoot, WalletCommitmentTrees};
 
 use crate::data::witness_trees::OrchStore;
 use crate::data::witness_trees::SapStore;
@@ -19,7 +16,7 @@ impl WalletCommitmentTrees for TxMapAndMaybeTrees {
     type SaplingShardStore<'a> = SapStore;
 
     // this code was copied from zcash_client_backend example
-    fn with_sapling_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
+    fn with_sapling_tree_mut<F, A, E>(&mut self, callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
             &'a mut ShardTree<
@@ -49,7 +46,7 @@ impl WalletCommitmentTrees for TxMapAndMaybeTrees {
     type OrchardShardStore<'a> = OrchStore;
 
     // this code was copied from zcash_client_backend example
-    fn with_orchard_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
+    fn with_orchard_tree_mut<F, A, E>(&mut self, callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
             &'a mut ShardTree<
