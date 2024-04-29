@@ -45,10 +45,9 @@ impl TxMapAndMaybeTrees {
 }
 
 use std::fmt::Debug;
-
 use thiserror::Error;
 
-use crate::wallet::transaction_records_by_id::trait_inputsource::error::InputSourceError;
+use crate::wallet::transaction_records_by_id::trait_inputsource::InputSourceError;
 
 #[derive(Debug, PartialEq, Error)]
 pub enum TxMapAndMaybeTreesError {
