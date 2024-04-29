@@ -11,8 +11,7 @@ use zip32::AccountId;
 
 use crate::wallet::notes::query::QueryStipulations;
 
-use super::error::TxMapAndMaybeTreesError;
-use super::TxMapAndMaybeTrees;
+use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesError};
 
 /// This is a facade for using LRZ traits. In actuality, Zingo does not use multiple accounts in one wallet.
 pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);

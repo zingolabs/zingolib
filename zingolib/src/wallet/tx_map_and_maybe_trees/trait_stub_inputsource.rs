@@ -5,7 +5,7 @@ use zcash_client_backend::{
     wallet::NoteId,
 };
 
-use super::{error::TxMapAndMaybeTreesError, TxMapAndMaybeTrees};
+use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesError};
 
 /// A trait representing the capability to query a data store for unspent transaction outputs belonging to a wallet.
 /// combining this with WalletRead unlocks propose_transaction
