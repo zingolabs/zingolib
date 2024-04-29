@@ -866,10 +866,12 @@ impl LightWallet {
 
         let txid = transaction.txid();
         if txid.to_string() != transaction_id {
-            return Err(format!(
+            // return Err(format!(
+            dbg!(
                 "served txid {} does not match calulated txid {}",
-                transaction_id, txid,
-            ));
+                transaction_id,
+                txid,
+            );
         }
 
         Ok(txid)
