@@ -25,7 +25,6 @@ pub mod test_framework;
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 
 /// TODO: Add Doc Comment Here!
-#[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
 pub struct SaplingParams;

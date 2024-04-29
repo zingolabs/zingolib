@@ -476,26 +476,23 @@ impl LightClient {
         Ok(array![new_address.encode(&self.config.chain)])
     }
 
-    #[cfg(not(feature = "embed_params"))]
-    fn read_sapling_params(&self) -> Result<(vec<u8>, vec<u8>), String> {
-        let path = self
-            .config
-            .get_zcash_params_path()
-            .map_err(|e| e.to_string())?;
-
-        let mut path_buf = path.to_path_buf();
-        path_buf.push("sapling-output.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
+    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+        use crate::SaplingParams;
         let mut sapling_output = vec![];
-        file.read_to_end(&mut sapling_output)
-            .map_err(|e| e.to_string())?;
+        sapling_output.extend_from_slice(
+            SaplingParams::get("sapling-output.params")
+                .unwrap()
+                .data
+                .as_ref(),
+        );
 
-        let mut path_buf = path.to_path_buf();
-        path_buf.push("sapling-spend.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
         let mut sapling_spend = vec![];
-        file.read_to_end(&mut sapling_spend)
-            .map_err(|e| e.to_string())?;
+        sapling_spend.extend_from_slice(
+            SaplingParams::get("sapling-spend.params")
+                .unwrap()
+                .data
+                .as_ref(),
+        );
 
         Ok((sapling_output, sapling_spend))
     }
@@ -535,6 +532,7 @@ impl LightClient {
         }
 
         // Ensure that the sapling params are stored on disk properly as well. Only on desktop
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         match self.config.get_zcash_params_path() {
             Ok(zcash_params_dir) => {
                 // Create the sapling output and spend params files
