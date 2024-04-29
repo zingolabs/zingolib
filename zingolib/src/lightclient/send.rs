@@ -29,43 +29,10 @@ impl LightClient {
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
     ) -> Result<NonEmpty<TxId>, String> {
-        #[cfg(not(feature = "zip317"))]
-        {
-            let transaction_submission_height = self.get_submission_height().await?;
-            // First, get the consensus branch ID
-
-            let _lock = self.sync_lock.lock().await;
-            // I am not clear on how long this operation may take, but it's
-            // clearly unnecessary in a send that doesn't include sapling
-            // TODO: Remove from sends that don't include Sapling
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
-
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
-                    // spend from transparent.
-                    receivers,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-                .map(|txid| NonEmpty::singleton(txid))
-        }
-        #[cfg(feature = "zip317")]
-        {
-            self.do_propose_spend(receivers)
-                .await
-                .map_err(|e| e.to_string())?;
-            self.do_send_proposed().await
-        }
+        self.do_propose_spend(receivers)
+            .await
+            .map_err(|e| e.to_string())?;
+        self.do_send_proposed().await
     }
 
     /// TODO: Add Doc Comment Here!
@@ -143,7 +110,6 @@ impl LightClient {
             .await
     }
 
-    #[cfg(feature = "zip317")]
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
     pub async fn do_send_proposed(&self) -> Result<NonEmpty<TxId>, String> {
