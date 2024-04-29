@@ -147,16 +147,30 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
+        use std::ops::DerefMut;
+
         let (sapling_output, sapling_spend) = self.read_sapling_params()?;
         let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let transaction_submission_height = self.get_submission_height().await?;
 
+        let mut tmamt = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await
+            .deref_mut();
+
         if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
             match proposal {
                 crate::lightclient::ZingoProposal::Transfer(_) => {
+                    let ct = zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                        tmamt,
+                    );
                     Ok(vec![TxId::from_bytes([1u8; 32])])
                 }
                 crate::lightclient::ZingoProposal::Shield(_) => {
+                    //todo
                     Ok(vec![TxId::from_bytes([222u8; 32])])
                 }
             }
