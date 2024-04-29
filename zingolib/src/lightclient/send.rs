@@ -163,19 +163,30 @@ impl LightClient {
             .await
             .deref_mut();
 
-        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-            match proposal {
+        if let Some(transfer_proposal) = self.latest_proposal.read().await.as_ref() {
+            match transfer_proposal {
                 crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
-                    let ct = zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                        tmamt,
-                        &self.wallet.transaction_context.config.chain,
-                        &sapling_prover,
-                        &sapling_prover,
-                        &UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
-                            .map_err(|e| e.to_string())?,
-                        zcash_client_backend::wallet::OvkPolicy::Sender,
-                        transfer_proposal.fee_rule(),
-                    );
+                    let mut step_results = Vec::with_capacity(transfer_proposal.steps().len());
+                    for step in transfer_proposal.steps() {
+                        let step_result =
+                            zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                                tmamt,
+                                &self.wallet.transaction_context.config.chain,
+                                &sapling_prover,
+                                &sapling_prover,
+                                &UnifiedSpendingKey::try_from(
+                                    self.wallet.wallet_capability().as_ref(),
+                                )
+                                .map_err(|e| e.to_string())?,
+                                zcash_client_backend::wallet::OvkPolicy::Sender,
+                                transfer_proposal.fee_rule(),
+                                transfer_proposal.min_target_height(),
+                                &step_results,
+                                step,
+                            )?;
+                        // here ingest it
+                        step_results.push((step, step_result));
+                    }
                     Ok(vec![TxId::from_bytes([1u8; 32])])
                 }
                 crate::lightclient::ZingoProposal::Shield(_) => {
