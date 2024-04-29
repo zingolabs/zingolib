@@ -200,8 +200,8 @@ impl LightClient {
                     Ok(txids)
                 }
                 crate::lightclient::ZingoProposal::Shield(_) => {
-                    //todo
-                    Ok(vec![TxId::from_bytes([222u8; 32])])
+                    todo!();
+                    // Ok(vec![TxId::from_bytes([222u8; 32])])
                 }
             }
         } else {
