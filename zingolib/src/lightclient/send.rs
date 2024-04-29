@@ -1,7 +1,10 @@
 //! TODO: Add Mod Description Here!
 use log::debug;
 
-use zcash_client_backend::address::Address;
+use zcash_client_backend::{
+    address::Address,
+    zip321::{Payment, TransactionRequest},
+};
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::MemoBytes,
@@ -13,7 +16,40 @@ use super::{LightClient, LightWalletSendProgress};
 use crate::{utils::zatoshis_from_u64, wallet::Pool};
 
 #[cfg(feature = "zip317")]
-use zcash_primitives::transaction::TxId;
+use {
+    crate::{error::ZingoLibError, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees},
+    std::{num::NonZeroU32, ops::DerefMut},
+    zcash_client_backend::{
+        data_api::wallet::input_selection::GreedyInputSelector, ShieldedProtocol,
+    },
+    zcash_primitives::transaction::TxId,
+    zingoconfig::ChainType,
+};
+
+#[cfg(feature = "zip317")]
+type GISKit = GreedyInputSelector<
+    TxMapAndMaybeTrees,
+    zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
+>;
+
+/// converts from raw receivers to TransactionRequest
+pub fn receivers_becomes_transaction_request(
+    receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+) -> Result<TransactionRequest, zcash_client_backend::zip321::Zip321Error> {
+    let mut payments = vec![];
+    for out in receivers.clone() {
+        payments.push(Payment {
+            recipient_address: out.0,
+            amount: out.1,
+            memo: out.2,
+            label: None,
+            message: None,
+            other_params: vec![],
+        });
+    }
+
+    TransactionRequest::new(payments)
+}
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -30,11 +66,44 @@ impl LightClient {
     #[cfg(feature = "zip317")]
     pub async fn do_propose_spend(
         &self,
-        _receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+        receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
     ) -> Result<crate::data::proposal::TransferProposal, String> {
-        use crate::test_framework::mocks::ProposalBuilder;
+        let request =
+            receivers_becomes_transaction_request(receivers).map_err(|e| e.to_string())?;
 
-        let proposal = ProposalBuilder::default().build();
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            None,
+            ShieldedProtocol::Orchard,
+        ); // review consider change strategy!
+
+        let input_selector = GISKit::new(
+            change_strategy,
+            zcash_client_backend::fees::DustOutputPolicy::default(),
+        );
+
+        let mut tmamt = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+
+        let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
+            TxMapAndMaybeTrees,
+            ChainType,
+            GISKit,
+            ZingoLibError,
+        >(
+            tmamt.deref_mut(),
+            &self.wallet.transaction_context.config.chain,
+            zcash_primitives::zip32::AccountId::ZERO,
+            &input_selector,
+            request,
+            NonZeroU32::MIN, //review! use custom constant?
+        )
+        .map_err(|e| ZingoLibError::Error(format!("error this function todo error {:?}", e)))?;
+
         let mut latest_proposal_lock = self.latest_proposal.write().await;
         *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
             proposal.clone(),
