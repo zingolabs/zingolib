@@ -153,24 +153,22 @@ impl LightClient {
 
         let (sapling_output, sapling_spend) = self.read_sapling_params()?;
         let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-        let transaction_submission_height = self.get_submission_height().await?;
-
-        let mut tmamt = self
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .deref_mut();
 
         if let Some(transfer_proposal) = self.latest_proposal.read().await.as_ref() {
             match transfer_proposal {
                 crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
                     let mut step_results = Vec::with_capacity(transfer_proposal.steps().len());
                     for step in transfer_proposal.steps() {
+                        let mut tmamt = self
+                            .wallet
+                            .transaction_context
+                            .transaction_metadata_set
+                            .write()
+                            .await;
+
                         let step_result =
                             zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                                tmamt,
+                                tmamt.deref_mut(),
                                 &self.wallet.transaction_context.config.chain,
                                 &sapling_prover,
                                 &sapling_prover,
@@ -183,6 +181,14 @@ impl LightClient {
                                 transfer_proposal.min_target_height(),
                                 &step_results,
                                 step,
+                            )
+                            .map_err(
+                                |e: zcash_client_backend::data_api::error::Error<
+                                    crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+                                    std::convert::Infallible,
+                                    std::convert::Infallible,
+                                    zcash_primitives::transaction::fees::zip317::FeeError,
+                                >| e.to_string(),
                             )?;
                         // here ingest it
                         step_results.push((step, step_result));
