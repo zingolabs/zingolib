@@ -167,6 +167,8 @@ impl LightClient {
                     let ct = zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
                         tmamt,
                         &self.wallet.transaction_context.config.chain,
+                        &sapling_prover,
+                        &sapling_prover,
                     );
                     Ok(vec![TxId::from_bytes([1u8; 32])])
                 }
