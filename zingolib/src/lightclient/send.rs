@@ -1,10 +1,7 @@
 //! TODO: Add Mod Description Here!
 use log::debug;
 
-use zcash_client_backend::{
-    address::Address,
-    zip321::{Payment, TransactionRequest},
-};
+use zcash_client_backend::address::Address;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::MemoBytes,
@@ -14,16 +11,6 @@ use zcash_proofs::prover::LocalTxProver;
 
 use super::{LightClient, LightWalletSendProgress};
 use crate::{utils::zatoshis_from_u64, wallet::Pool};
-
-use {
-    crate::{error::ZingoLibError, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees},
-    std::{num::NonZeroU32, ops::DerefMut},
-    zcash_client_backend::{
-        data_api::wallet::input_selection::GreedyInputSelector, ShieldedProtocol,
-    },
-    zcash_primitives::transaction::TxId,
-    zingoconfig::ChainType,
-};
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {

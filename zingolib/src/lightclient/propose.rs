@@ -1,30 +1,21 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
-use log::debug;
+use std::num::NonZeroU32;
+use std::ops::DerefMut;
 
-use zcash_client_backend::{
-    address::Address,
-    zip321::{Payment, TransactionRequest},
-};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::MemoBytes,
-    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
-};
-use zcash_proofs::prover::LocalTxProver;
+use zcash_client_backend::address::Address;
+use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
+use zcash_client_backend::zip321::Payment;
+use zcash_client_backend::zip321::TransactionRequest;
+use zcash_client_backend::ShieldedProtocol;
+use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::transaction::TxId;
 
-use crate::{utils::zatoshis_from_u64, wallet::Pool};
-use {
-    crate::{error::ZingoLibError, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees},
-    std::{num::NonZeroU32, ops::DerefMut},
-    zcash_client_backend::{
-        data_api::wallet::input_selection::GreedyInputSelector, ShieldedProtocol,
-    },
-    zcash_primitives::transaction::TxId,
-    zingoconfig::ChainType,
-};
+use zingoconfig::ChainType;
 
-use super::{LightClient, LightWalletSendProgress};
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesError;
 
 type GISKit = GreedyInputSelector<
     TxMapAndMaybeTrees,
@@ -55,10 +46,22 @@ use thiserror::Error;
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
 pub enum DoProposeError {
+    /// error in parsed addresses
     #[error("{0}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
-    #[error("{0}")]
-    Proposal(crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesError),
+    /// error in using trait to create proposal
+    #[error("{:?}", {0})]
+    Proposal(
+        zcash_client_backend::data_api::error::Error<
+            TxMapAndMaybeTreesError,
+            TxMapAndMaybeTreesError,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
+                zcash_primitives::transaction::fees::zip317::FeeError,
+                zcash_client_backend::wallet::NoteId,
+            >,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+        >,
+    ),
 }
 
 impl super::LightClient {
@@ -68,9 +71,9 @@ impl super::LightClient {
     pub async fn do_propose_spend(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-    ) -> Result<crate::data::proposal::TransferProposal, String> {
+    ) -> Result<crate::data::proposal::TransferProposal, DoProposeError> {
         let request =
-            receivers_becomes_transaction_request(receivers).map_err(|e| e.to_string())?;
+            receivers_becomes_transaction_request(receivers).map_err(DoProposeError::Receiver)?;
 
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
@@ -94,7 +97,7 @@ impl super::LightClient {
             TxMapAndMaybeTrees,
             ChainType,
             GISKit,
-            ZingoLibError,
+            TxMapAndMaybeTreesError,
         >(
             tmamt.deref_mut(),
             &self.wallet.transaction_context.config.chain,
@@ -103,7 +106,7 @@ impl super::LightClient {
             request,
             NonZeroU32::MIN, //review! use custom constant?
         )
-        .map_err(|e| ZingoLibError::Error(format!("error this function todo error {:?}", e)))?;
+        .map_err(DoProposeError::Proposal)?;
 
         let mut latest_proposal_lock = self.latest_proposal.write().await;
         *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
