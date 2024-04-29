@@ -165,7 +165,7 @@ impl LightClient {
 
         if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
             match proposal {
-                crate::lightclient::ZingoProposal::Transfer(_) => {
+                crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
                     let ct = zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
                         tmamt,
                         &self.wallet.transaction_context.config.chain,
@@ -174,6 +174,7 @@ impl LightClient {
                         &UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
                             .map_err(|e| e.to_string())?,
                         zcash_client_backend::wallet::OvkPolicy::Sender,
+                        transfer_proposal.fee_rule(),
                     );
                     Ok(vec![TxId::from_bytes([1u8; 32])])
                 }
