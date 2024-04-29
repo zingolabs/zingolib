@@ -147,6 +147,10 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
     pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
+        let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let transaction_submission_height = self.get_submission_height().await?;
+
         if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
             match proposal {
                 crate::lightclient::ZingoProposal::Transfer(_) => {
