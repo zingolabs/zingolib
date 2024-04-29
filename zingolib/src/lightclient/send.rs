@@ -173,6 +173,7 @@ impl LightClient {
                         &sapling_prover,
                         &UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
                             .map_err(|e| e.to_string())?,
+                        zcash_client_backend::wallet::OvkPolicy::Sender,
                     );
                     Ok(vec![TxId::from_bytes([1u8; 32])])
                 }
