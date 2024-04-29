@@ -64,7 +64,7 @@ impl LightClient {
             self.do_propose_spend(receivers)
                 .await
                 .map_err(|e| e.to_string())?;
-            todo!()
+            self.do_send_proposed().await
         }
     }
 
