@@ -100,7 +100,7 @@ impl LightClient {
             zcash_primitives::zip32::AccountId::ZERO,
             &input_selector,
             request,
-            NonZeroU32::new(1).expect("yeep yop"), //review! be more specific
+            NonZeroU32::MIN, //review! use custom constant?
         )
         .map_err(|e| ZingoLibError::Error(format!("error this function todo error {:?}", e)))?;
 
