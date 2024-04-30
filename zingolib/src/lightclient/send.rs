@@ -1,11 +1,15 @@
 //! TODO: Add Mod Description Here!
 use log::debug;
 
-use zcash_client_backend::address::Address;
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+use zcash_client_backend::{
+    address::Address,
+    zip321::{Payment, TransactionRequest},
+};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    memo::MemoBytes,
+    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
+};
 use zcash_proofs::prover::LocalTxProver;
 
 use crate::utils::zatoshis_from_u64;
@@ -15,6 +19,29 @@ use super::LightClient;
 use super::LightWalletSendProgress;
 
 #[cfg(feature = "zip317")]
+type GISKit = zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector<
+    crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
+>;
+
+/// converts from raw receivers to TransactionRequest
+pub fn receivers_becomes_transaction_request(
+    receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+) -> Result<TransactionRequest, zcash_client_backend::zip321::Zip321Error> {
+    let mut payments = vec![];
+    for out in receivers.clone() {
+        payments.push(Payment {
+            recipient_address: out.0,
+            amount: out.1,
+            memo: out.2,
+            label: None,
+            message: None,
+            other_params: vec![],
+        });
+    }
+
+    TransactionRequest::new(payments)
+}
 use zcash_primitives::transaction::TxId;
 
 impl LightClient {
@@ -30,38 +57,34 @@ impl LightClient {
     pub async fn do_send(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-    ) -> Result<String, String> {
+    ) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the consensus branch ID
         debug!("Creating transaction");
 
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            // I am not clear on how long this operation may take, but it's
-            // clearly unnecessary in a send that doesn't include sapling
-            // TODO: Remove from sends that don't include Sapling
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+        let _lock = self.sync_lock.lock().await;
+        // I am not clear on how long this operation may take, but it's
+        // clearly unnecessary in a send that doesn't include sapling
+        // TODO: Remove from sends that don't include Sapling
+        let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
-                    // spend from transparent.
-                    receivers,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
+        self.wallet
+            .send_to_addresses(
+                sapling_prover,
+                vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
+                // spend from transparent.
+                receivers,
+                transaction_submission_height,
+                |transaction_bytes| {
+                    crate::grpc_connector::send_transaction(
+                        self.get_server_uri(),
+                        transaction_bytes,
+                    )
+                },
+            )
+            .await
     }
 
     /// TODO: Add Doc Comment Here!
@@ -79,7 +102,7 @@ impl LightClient {
         &self,
         pools_to_shield: &[Pool],
         address: Option<Address>,
-    ) -> Result<String, String> {
+    ) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
                                           // as a fn of the transactions structure.
@@ -118,29 +141,25 @@ impl LightClient {
             .expect("balance cannot be outside valid range of zatoshis");
         let receiver = vec![(address, amount, None)];
 
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+        let _lock = self.sync_lock.lock().await;
+        let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    pools_to_shield.to_vec(),
-                    receiver,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
+        self.wallet
+            .send_to_addresses(
+                sapling_prover,
+                pools_to_shield.to_vec(),
+                receiver,
+                transaction_submission_height,
+                |transaction_bytes| {
+                    crate::grpc_connector::send_transaction(
+                        self.get_server_uri(),
+                        transaction_bytes,
+                    )
+                },
+            )
+            .await
     }
 
     #[cfg(feature = "zip317")]

@@ -28,7 +28,6 @@ use std::sync::mpsc::channel;
 
 use zcash_client_backend::address;
 
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
@@ -43,6 +42,7 @@ use zcash_primitives::{
         fees::zip317::MINIMUM_FEE,
     },
 };
+use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -220,7 +220,7 @@ impl LightWallet {
         receivers: Receivers,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> Result<TxId, String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -254,9 +254,9 @@ impl LightWallet {
             .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
             .await
         {
-            Ok((transaction_id, raw_transaction)) => {
-                self.set_send_success(transaction_id.clone()).await;
-                Ok((transaction_id, raw_transaction))
+            Ok(transaction_id) => {
+                self.set_send_success(transaction_id.to_string()).await;
+                Ok(transaction_id)
             }
             Err(e) => {
                 self.set_send_error(e.to_string()).await;
@@ -839,7 +839,7 @@ impl LightWallet {
         transaction: &Transaction,
         submission_height: BlockHeight,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> Result<TxId, String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -864,7 +864,17 @@ impl LightWallet {
                 .await;
         }
 
-        Ok((transaction_id, raw_transaction))
+        let txid = transaction.txid();
+        if txid.to_string() != transaction_id {
+            // return Err(format!(
+            dbg!(
+                "served txid {} does not match calulated txid {}",
+                transaction_id,
+                txid,
+            );
+        }
+
+        Ok(txid)
     }
 }
 
