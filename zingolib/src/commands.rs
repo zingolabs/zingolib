@@ -841,7 +841,7 @@ impl Command for ProposeCommand {
                     object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    object! { "error" => e.to_string() }
                 }
             }
             .pretty(2)
@@ -933,7 +933,7 @@ impl Command for QuickSendCommand {
                     send_inputs
                 )
                 .await {
-                return object! { "error" => e }.pretty(2);
+                return object! { "error" => e.to_string() }.pretty(2);
             };
             match lightclient
                 .do_send_proposal().await

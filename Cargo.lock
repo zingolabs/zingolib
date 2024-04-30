@@ -4352,6 +4352,7 @@ dependencies = [
  "subtle",
  "tempfile",
  "test-case",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",

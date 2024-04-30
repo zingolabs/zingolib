@@ -4,7 +4,7 @@ use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{
     data_api::{InputSource, SpendableNotes},
-    wallet::{NoteId, ReceivedNote, WalletTransparentOutput},
+    wallet::{ReceivedNote, WalletTransparentOutput},
     ShieldedProtocol,
 };
 use zcash_primitives::{
@@ -17,43 +17,21 @@ use crate::wallet::{
     transaction_records_by_id::TransactionRecordsById,
 };
 
-use self::error::InputSourceError;
+// error type
+use std::fmt::Debug;
+use thiserror::Error;
 
-pub mod error {
-    use std::fmt::{Debug, Display, Formatter, Result};
+use zcash_client_backend::wallet::NoteId;
+use zcash_primitives::transaction::components::amount::BalanceError;
 
-    use zcash_client_backend::wallet::NoteId;
-    use zcash_primitives::transaction::components::amount::BalanceError;
-
-    #[derive(Debug, PartialEq)]
-    pub enum InputSourceError {
-        NoteCannotBeIdentified(NoteId),
-        OutputTooBig((u64, BalanceError)),
-        Shortfall(u64),
-    }
-
-    impl From<&InputSourceError> for String {
-        fn from(value: &InputSourceError) -> Self {
-            use InputSourceError::*;
-            let explanation = match value {
-                NoteCannotBeIdentified(id) => {
-                    format!("Note expected but not found: {:?}", id)
-                }
-                OutputTooBig((size, e)) => {
-                    format!("An output is this wallet is believed to contain {} zec. That is more than exist. {}", size, e)
-                }
-                Shortfall(shortfall) => {
-                    format!("Cannot send. Fund shortfall: {}", shortfall)
-                }
-            };
-            format!("{:#?} - {}", value, explanation)
-        }
-    }
-    impl Display for InputSourceError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(f, "{}", String::from(self))
-        }
-    }
+#[derive(Debug, PartialEq, Error)]
+pub enum InputSourceError {
+    #[error("Note expected but not found: {:?}", {0})]
+    NoteCannotBeIdentified(NoteId),
+    #[error("An output is this wallet is believed to contain {} zec. That is more than exist. {}", {0}, {1})]
+    OutputTooBig((u64, BalanceError)),
+    #[error("Cannot send. Fund shortfall: {}", {0})]
+    Shortfall(u64),
 }
 
 /// A trait representing the capability to query a data store for unspent transaction outputs
