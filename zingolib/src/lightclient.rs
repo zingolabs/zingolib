@@ -396,6 +396,9 @@ pub mod sync;
 
 pub mod send;
 
+#[cfg(feature = "zip317")]
+pub mod propose;
+
 // other functions
 impl LightClient {
     /// TODO: Add Doc Comment Here!
