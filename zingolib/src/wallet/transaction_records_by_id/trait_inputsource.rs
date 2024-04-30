@@ -26,11 +26,11 @@ use zcash_primitives::transaction::components::amount::BalanceError;
 
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
-    #[error("Note expected but not found: {:?}", {0})]
+    #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
-    #[error("An output is this wallet is believed to contain {} zec. That is more than exist. {}", {0}, {1})]
-    OutputTooBig((u64, BalanceError)),
-    #[error("Cannot send. Fund shortfall: {}", {0})]
+    #[error("An output is too big: {0}")]
+    OutputAmount(BalanceError),
+    #[error("Cannot send. Fund shortfall: {0}")]
     Shortfall(u64),
 }
 
@@ -149,9 +149,8 @@ impl InputSource for TransactionRecordsById {
                             .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
                     );
                     Ok(targ
-                        - NonNegativeAmount::from_u64(note.value().inner()).map_err(|e| {
-                            InputSourceError::OutputTooBig((note.value().inner(), e))
-                        })?)
+                        - NonNegativeAmount::from_u64(note.value().inner())
+                            .map_err(InputSourceError::OutputAmount)?)
                 }
                 None => Ok(None),
             },
@@ -171,9 +170,8 @@ impl InputSource for TransactionRecordsById {
                                     .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
                             );
                             Ok(targ
-                                - NonNegativeAmount::from_u64(note.value().inner()).map_err(
-                                    |e| InputSourceError::OutputTooBig((note.value().inner(), e)),
-                                )?)
+                                - NonNegativeAmount::from_u64(note.value().inner())
+                                    .map_err(InputSourceError::OutputAmount)?)
                         }
                         None => Ok(None),
                     },
@@ -221,8 +219,8 @@ impl InputSource for TransactionRecordsById {
         }) else {
             return Ok(None);
         };
-        let value = NonNegativeAmount::from_u64(output.value)
-            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))?;
+        let value =
+            NonNegativeAmount::from_u64(output.value).map_err(InputSourceError::OutputAmount)?;
 
         let script_pubkey = Script(output.script.clone());
 
@@ -273,7 +271,7 @@ impl InputSource for TransactionRecordsById {
                     })
                     .filter_map(move |output| {
                         let value = match NonNegativeAmount::from_u64(output.value)
-                            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))
+                            .map_err(InputSourceError::OutputAmount)
                         {
                             Ok(v) => v,
                             Err(e) => return Some(Err(e)),
