@@ -169,6 +169,9 @@ impl LightClient {
                                 step,
                             )
                             .map_err(DoSendProposedError::Calculation)?;
+
+                        drop(tmamt);
+
                         let txid = self
                             .wallet
                             .send_to_addresses_inner(
