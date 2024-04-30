@@ -204,7 +204,7 @@ impl LightClient {
 
 use thiserror::Error;
 
-/// Errors that can result from do_propose
+/// Errors that can result from do_send_proposed
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, Error)]
 pub enum DoSendProposedError {
@@ -212,11 +212,11 @@ pub enum DoSendProposedError {
     NoSpendCapability,
     #[error("No proposal. Call do_propose first.")]
     NoProposal,
-    #[error("Cant get submission height. Server connection?: {}", {0})]
+    #[error("Cant get submission height. Server connection?: {0}")]
     SubmissionHeight(String),
-    #[error("Could not load sapling_params: {}", {0})]
+    #[error("Could not load sapling_params: {0}")]
     SaplingParams(String),
-    #[error("Could not find UnifiedSpendKey: {}", {0})]
+    #[error("Could not find UnifiedSpendKey: {0}")]
     UnifiedSpendKey(std::io::Error),
     #[error("No proposal. Call do_propose first.")]
     Calculation(
@@ -227,6 +227,16 @@ pub enum DoSendProposedError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("Broadcast failed: {}", {0})]
+    #[error("Broadcast failed: {0}")]
     Broadcast(String),
+}
+
+/// Errors that can result from do_quick_send
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, Error)]
+pub enum DoQuickSendProposedError {
+    #[error("propose {0}")]
+    Propose(crate::lightclient::propose::DoProposeError),
+    #[error("No proposal. Call do_propose first.")]
+    Send(DoSendProposedError),
 }

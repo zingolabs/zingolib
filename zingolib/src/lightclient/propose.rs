@@ -49,7 +49,7 @@ pub enum DoProposeError {
     #[error("{0}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
     /// error in using trait to create proposal
-    #[error("{:?}", {0})]
+    #[error("{0}")]
     Proposal(
         zcash_client_backend::data_api::error::Error<
             TxMapAndMaybeTreesTraitError,
