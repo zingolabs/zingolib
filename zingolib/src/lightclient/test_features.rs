@@ -48,7 +48,7 @@ impl LightClient {
                 })
                 .collect();
 
-        self.do_send(receivers)
+        self.do_quick_send(receivers)
             .await
             .map(|txid| txid.first().to_string())
     }

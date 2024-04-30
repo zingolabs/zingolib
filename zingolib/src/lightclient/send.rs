@@ -25,7 +25,7 @@ impl LightClient {
     }
 
     /// Send funds
-    pub async fn do_send(
+    pub async fn do_quick_send(
         &self,
         receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
     ) -> Result<NonEmpty<TxId>, String> {

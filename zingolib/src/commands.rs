@@ -648,50 +648,6 @@ impl Command for ExportUfvkCommand {
     }
 }
 
-struct ShieldCommand {}
-impl Command for ShieldCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Shield all your transparent and/or sapling funds
-            Usage:
-            shield ['transparent' or 'sapling' or 'all'] [optional address]
-
-            NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
-            Example:
-            shield all
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Shield your transparent and/or sapling ZEC into the orchard pool"
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (pools_to_shield, address) =
-            match utils::parse_shield_args(args, &lightclient.config().chain) {
-                Ok(args) => args,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help shield' for correct usage and examples.",
-                        e
-                    )
-                }
-            };
-        RT.block_on(async move {
-            match lightclient.do_shield(&pools_to_shield, address).await {
-                Ok(txid) => {
-                    object! { "txid" => txid.to_string() }
-                }
-                Err(e) => {
-                    object! { "error" => e }
-                }
-            }
-            .pretty(2)
-        })
-    }
-}
-
 struct EncryptMessageCommand {}
 impl Command for EncryptMessageCommand {
     fn help(&self) -> &'static str {
@@ -798,10 +754,8 @@ impl Command for DecryptMessageCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
-struct ProposeCommand {}
-#[cfg(feature = "zip317")]
-impl Command for ProposeCommand {
+struct ProposeSendCommand {}
+impl Command for ProposeSendCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Propose a transfer of ZEC to the given address(es) prior to sending.
@@ -849,40 +803,33 @@ impl Command for ProposeCommand {
     }
 }
 
-struct SendCommand {}
-impl Command for SendCommand {
+struct ProposeShieldCommand {}
+impl Command for ProposeShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Send ZEC to the given address(es).
-            The 10_000 zat fee required to send this transaction is additionally deducted from your balance.
-            Usage:
-                send <address> <amount in zatoshis> "<optional memo>"
-                OR
-                send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
-            Example:
-                send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
-
+            todo
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Send ZEC to the given address(es)."
+        "Shield your transparent and/or sapling ZEC into the orchard pool"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
-            Ok(args) => args,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    e
-                )
-            }
-        };
+        let (pools_to_shield, address) =
+            match utils::parse_shield_args(args, &lightclient.config().chain) {
+                Ok(args) => args,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help shield' for correct usage and examples.",
+                        e
+                    )
+                }
+            };
         RT.block_on(async move {
-            match lightclient.do_send(send_inputs).await {
+            match lightclient.do_shield(&pools_to_shield, address).await {
                 Ok(txid) => {
-                    object! { "txid" => txid.first().to_string() }
+                    object! { "txid" => txid.to_string() }
                 }
                 Err(e) => {
                     object! { "error" => e }
@@ -893,9 +840,34 @@ impl Command for SendCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
+struct SendProposedCommand {}
+impl Command for SendProposedCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            todo
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send ZEC to the given address(es)."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move {
+            match lightclient.do_send_proposed().await {
+                Ok(txids) => {
+                    object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
 struct QuickSendCommand {}
-#[cfg(feature = "zip317")]
 impl Command for QuickSendCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -928,10 +900,49 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
+            match lightclient
+                .do_quick_send(send_inputs).await
+            {
+                Ok(txids) => {
+                     object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct QuickShieldCommand {}
+impl Command for QuickShieldCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            todo!
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
+            Ok(args) => args,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        RT.block_on(async move {
             if let Err(e) = lightclient
                 .do_propose_spend(
                     send_inputs
                 )
+                // DO PROPOSE SHIELD!
                 .await {
                 return object! { "error" => e.to_string() }.pretty(2);
             };
@@ -942,7 +953,7 @@ impl Command for QuickSendCommand {
                      object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    object! { "error" => e.to_string() }
                 }
             }
             .pretty(2)
@@ -1518,8 +1529,13 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
-        ("send", Box::new(SendCommand {})),
-        ("shield", Box::new(ShieldCommand {})),
+        // send functions
+        ("propose_send", Box::new(ProposeSendCommand {})),
+        ("propose_shield", Box::new(ProposeShieldCommand {})),
+        ("send_proposed", Box::new(SendProposedCommand {})),
+        ("quicksend", Box::new(QuickSendCommand {})),
+        ("quickshield", Box::new(QuickShieldCommand {})),
+        //
         ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
@@ -1533,11 +1549,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     #[cfg(feature = "lightclient-deprecated")]
     {
         entries.push(("list", Box::new(TransactionsCommand {})));
-    }
-    #[cfg(feature = "zip317")]
-    {
-        entries.push(("propose", Box::new(ProposeCommand {})));
-        entries.push(("quicksend", Box::new(QuickSendCommand {})));
     }
     entries.into_iter().collect()
 }
