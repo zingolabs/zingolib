@@ -30,7 +30,7 @@ pub enum InputSourceError {
     NoteCannotBeIdentified(NoteId),
     #[error("An output is too big: {0}")]
     OutputAmount(BalanceError),
-    #[error("Cannot send. Fund shortfall: {0}")]
+    #[error("Cannot send. Fund shortfall: {0}. To send funds, first ensure they are shielded and confirmed.")]
     Shortfall(u64),
 }
 
