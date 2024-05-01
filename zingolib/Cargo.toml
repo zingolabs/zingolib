@@ -41,7 +41,7 @@ append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branc
 log = "0.4.14"
 http.workspace = true
 log4rs = "1.1.1"
-base64 = "0.13.0"
+base64 = "0.21.7"
 bytes = "0.4"
 rand = "0.8.5"
 hyper-rustls = { version = "0.23", features = ["http2"] }
