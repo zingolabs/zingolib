@@ -355,6 +355,7 @@ mod tests {
                     TransactionRecordBuilder::default()
                         .transparent_outputs(TransparentOutputBuilder::default())
                         .status(Confirmed(1000000.into()))
+                        .clone()
                         .build(),
                 );
             let spend = Some((default_txid(), 112358));
@@ -362,18 +363,20 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .sapling_notes(SaplingNoteBuilder::default().spent(spend))
+                        .sapling_notes(SaplingNoteBuilder::default().spent(spend).clone())
                         .status(Confirmed(2000000.into()))
                         .randomize_txid()
+                        .clone()
                         .build(),
                 );
             transaction_records_and_maybe_trees
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend))
+                        .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
+                        .clone()
                         .build(),
                 );
 
@@ -385,6 +388,7 @@ mod tests {
                         .sapling_notes(SaplingNoteBuilder::default())
                         .status(Confirmed(sapling_height.into()))
                         .randomize_txid()
+                        .clone()
                         .build(),
                 );
             transaction_records_and_maybe_trees
@@ -394,6 +398,7 @@ mod tests {
                         .orchard_notes(OrchardNoteBuilder::default())
                         .status(Confirmed(orchard_height.into()))
                         .randomize_txid()
+                        .clone()
                         .build(),
                 );
 
@@ -404,7 +409,9 @@ mod tests {
         fn get_tx_height(tx_height: u32) {
             let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
 
-            let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into())).build();
+            let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into()))
+            .clone()
+            .build();
 
             let txid = transaction_record.txid;
             // these first three outputs will not trigger min_unspent_note

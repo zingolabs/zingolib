@@ -418,9 +418,9 @@ mod tests {
             let mut transaction_records_by_id = TransactionRecordsById::new();
 
             let transaction_record = TransactionRecordBuilder::default()
-                .sapling_notes(SaplingNoteBuilder::default().value(20_000))
-                .orchard_notes(OrchardNoteBuilder::default().value(20_000))
-                .set_output_indexes()
+                .sapling_notes(SaplingNoteBuilder::default().value(20_000).clone())
+                .orchard_notes(OrchardNoteBuilder::default().value(20_000).clone())
+                .set_output_indexes().clone()
                 .build();
             transaction_records_by_id.insert_transaction_record(transaction_record);
 
@@ -437,11 +437,13 @@ mod tests {
                 );
             if feebits > 4 {
                 let spendable_notes_error: InputSourceError = spendable_notes_result.map(|_sn| "expected Shortfall error").unwrap_err();
-                assert_eq!(spendable_notes_error, InputSourceError::Shortfall(10_000));
+                prop_assert_eq!(spendable_notes_error, InputSourceError::Shortfall(10_000));
             } else {
                 let spendable_notes = spendable_notes_result.unwrap();
                 let expected_notes = ((feebits + 1) / 2) as usize;
-                assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_notes);
+                println!("sapling notes selected: {}", spendable_notes.sapling().len());
+                println!("orchard notes selected: {}", spendable_notes.orchard().len());
+                prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_notes);
             }
         }
     }
