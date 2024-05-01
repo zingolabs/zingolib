@@ -229,6 +229,7 @@ pub mod mocks {
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentOutput};
 
     /// to create a mock TransparentOutput
+    #[derive(Clone)]
     pub(crate) struct TransparentOutputBuilder {
         address: Option<String>,
         txid: Option<TxId>,
@@ -277,14 +278,16 @@ pub mod mocks {
 
     impl Default for TransparentOutputBuilder {
         fn default() -> Self {
-            Self::new()
+            let mut builder = Self::new();
+            builder
                 .address("default_address".to_string())
                 .txid(TxId::from_bytes([0u8; 32]))
                 .output_index(0)
                 .script(TransparentAddress::ScriptHash([0; 20]).script().0)
                 .value(100000)
                 .spent(None)
-                .unconfirmed_spent(None)
+                .unconfirmed_spent(None);
+            builder
         }
     }
 }
