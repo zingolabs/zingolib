@@ -140,6 +140,7 @@ impl InputSource for TransactionRecordsById {
         if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
             Some(target_value),
             |rolling_target, (note, note_id)| match rolling_target {
+                Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
                 Some(targ) => {
                     sapling_notes.push(
                         self.get(note_id.txid())
@@ -160,6 +161,7 @@ impl InputSource for TransactionRecordsById {
                 orchard_note_noteref_pairs.into_iter().try_fold(
                     Some(missing_value_after_sapling),
                     |rolling_target, (note, note_id)| match rolling_target {
+                        Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
                         Some(targ) => {
                             orchard_notes.push(
                                 self.get(note_id.txid())
@@ -179,9 +181,11 @@ impl InputSource for TransactionRecordsById {
                     },
                 )?
             {
-                return Err(InputSourceError::Shortfall(
-                    missing_value_after_orchard.into_u64(),
-                ));
+                if missing_value_after_orchard != NonNegativeAmount::ZERO {
+                    return Err(InputSourceError::Shortfall(
+                        missing_value_after_orchard.into_u64(),
+                    ));
+                }
             };
         };
 
