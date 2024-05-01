@@ -246,12 +246,6 @@ checksum = "5024ee8015f02155eee35c711107ddd9a9bf3cb689cf2a9089c97e79b6e1ae83"
 
 [[package]]
 name = "base64"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
-
-[[package]]
-name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
@@ -2447,7 +2441,7 @@ version = "0.11.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd67538700a17451e7cba03ac727fb961abb7607553461627b97de0b89cf4a62"
 dependencies = [
- "base64 0.21.7",
+ "base64",
  "bytes 1.6.0",
  "encoding_rs",
  "futures-core",
@@ -2635,7 +2629,7 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c74cae0a4cf6ccbbf5f359f08efdf8ee7e1dc532573bf0db71968cb56b1448c"
 dependencies = [
- "base64 0.21.7",
+ "base64",
 ]
 
 [[package]]
@@ -3315,7 +3309,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
- "base64 0.21.7",
+ "base64",
  "bytes 1.6.0",
  "h2",
  "http",
@@ -4008,7 +4002,7 @@ name = "zcash_client_backend"
 version = "0.12.1"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
 dependencies = [
- "base64 0.21.7",
+ "base64",
  "bech32",
  "bls12_381",
  "bs58",
@@ -4305,7 +4299,7 @@ version = "0.2.0"
 dependencies = [
  "append-only-vec",
  "base58",
- "base64 0.13.1",
+ "base64",
  "bech32",
  "bls12_381",
  "build_utils",
