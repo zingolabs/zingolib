@@ -1040,7 +1040,7 @@ mod slow {
                 watch_client
                     .do_send_test_only(vec![(testvectors::EXT_TADDR, 1000, None)])
                     .await,
-                Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
+                Err("The underlying datasource produced the following error: No witness trees. This is viewkey watch, not a spendkey wallet.".to_string())
             );
         }
     }
