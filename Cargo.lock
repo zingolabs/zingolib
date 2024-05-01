@@ -269,6 +269,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
 
 [[package]]
+name = "bech32"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
+
+[[package]]
 name = "bellman"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -650,7 +656,7 @@ dependencies = [
 name = "darkside-tests"
 version = "0.1.0"
 dependencies = [
- "bech32",
+ "bech32 0.11.0",
  "env_logger",
  "futures-util",
  "hex",
@@ -3996,7 +4002,7 @@ name = "zcash_address"
 version = "0.3.2"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
 dependencies = [
- "bech32",
+ "bech32 0.9.1",
  "bs58",
  "f4jumble",
  "zcash_encoding",
@@ -4009,7 +4015,7 @@ version = "0.12.1"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
 dependencies = [
  "base64 0.21.7",
- "bech32",
+ "bech32 0.9.1",
  "bls12_381",
  "bs58",
  "byteorder",
@@ -4059,7 +4065,7 @@ name = "zcash_keys"
 version = "0.2.0"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_backend-0.12.1-1-g11ce156b_avoid_wallet_write#1aa9455a49b13544b71fa071ada884854a7ae6ec"
 dependencies = [
- "bech32",
+ "bech32 0.9.1",
  "blake2b_simd",
  "bls12_381",
  "bs58",
@@ -4306,7 +4312,7 @@ dependencies = [
  "append-only-vec",
  "base58",
  "base64 0.13.1",
- "bech32",
+ "bech32 0.11.0",
  "bls12_381",
  "build_utils",
  "byteorder",
