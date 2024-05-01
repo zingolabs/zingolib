@@ -726,6 +726,18 @@ mod tests {
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
+    #[tokio::test]
+    async fn new_unconnected_client() {
+        let default_config = ZingoConfig::default();
+        let unconnected_client = LightClient::create_unconnected(
+            &default_config,
+            WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+            0,
+        )
+        .await
+        .unwrap();
+        dbg!(unconnected_client.wallet);
+    }
     #[test]
     fn new_wallet_from_phrase() {
         let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();

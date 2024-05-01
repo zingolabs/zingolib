@@ -196,6 +196,7 @@ impl WalletBase {
 }
 
 /// TODO: Add Doc Comment Here!
+#[derive(Debug)]
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.

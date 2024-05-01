@@ -10,6 +10,7 @@ use crate::{
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
+#[derive(Debug)]
 pub struct TxMapAndMaybeTrees {
     pub transaction_records_by_id: TransactionRecordsById,
     witness_trees: Option<WitnessTrees>,

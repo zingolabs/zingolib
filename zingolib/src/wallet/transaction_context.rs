@@ -8,7 +8,7 @@ use zingoconfig::ZingoConfig;
 use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
 /// TODO: Add Doc Comment Here!
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub config: ZingoConfig,
