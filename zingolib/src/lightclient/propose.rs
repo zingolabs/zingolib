@@ -35,6 +35,7 @@ pub enum RawToTransactionRequestError {
 }
 
 impl LightClient {
+    /// takes raw data as input (strings and numbers) and returns a TransactionRequest
     pub fn raw_to_transaction_request(
         &self,
         address_amount_memo_tuples: Vec<(String, u32, Option<String>)>,
