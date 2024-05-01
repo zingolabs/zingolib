@@ -18,12 +18,6 @@ use crate::wallet::Pool;
 use super::LightClient;
 use super::LightWalletSendProgress;
 
-#[cfg(feature = "zip317")]
-type GISKit = zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector<
-    crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees,
-    zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
->;
-
 /// converts from raw receivers to TransactionRequest
 pub fn receivers_becomes_transaction_request(
     receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,

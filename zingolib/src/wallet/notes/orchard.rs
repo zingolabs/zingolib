@@ -219,6 +219,7 @@ pub mod mocks {
     use super::OrchardNote;
 
     /// to create a mock SaplingNote
+    #[derive(Clone)]
     pub(crate) struct OrchardNoteBuilder {
         diversifier: Option<Diversifier>,
         note: Option<OrchardCryptoNoteBuilder>,
@@ -260,12 +261,12 @@ pub mod mocks {
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
-        pub fn set_change(mut self, is_change: bool) -> Self {
+        pub fn set_change(&mut self, is_change: bool) -> &mut Self {
             self.is_change = Some(is_change);
             self
         }
         build_method!(have_spending_key, bool);
-        pub fn value(mut self, value: u64) -> Self {
+        pub fn value(&mut self, value: u64) -> &mut Self {
             self.note
                 .as_mut()
                 .unwrap()
@@ -292,7 +293,8 @@ pub mod mocks {
 
     impl Default for OrchardNoteBuilder {
         fn default() -> Self {
-            OrchardNoteBuilder::new()
+            let mut builder = OrchardNoteBuilder::new();
+            builder
                 .diversifier(Diversifier::from_bytes([0; 11]))
                 .note(OrchardCryptoNoteBuilder::default())
                 .witnessed_position(Some(Position::from(0)))
@@ -302,7 +304,8 @@ pub mod mocks {
                 .unconfirmed_spent(None)
                 .memo(None)
                 .set_change(false)
-                .have_spending_key(true)
+                .have_spending_key(true);
+            builder
         }
     }
 }

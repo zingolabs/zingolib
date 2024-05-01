@@ -3,7 +3,7 @@
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         #[doc = "Set the $name field of the builder."]
-        pub fn $name(mut self, $name: $localtype) -> Self {
+        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
             self.$name = Some($name);
             self
         }
@@ -12,7 +12,7 @@ macro_rules! build_method {
 macro_rules! build_method_push {
     ($name:ident, $localtype:ty) => {
         #[doc = "Push a $ty to the builder."]
-        pub fn $name(mut self, $name: $localtype) -> Self {
+        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
             self.$name.push($name);
             self
         }
@@ -101,7 +101,7 @@ mod sapling_crypto_note {
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
     /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::notes::SaplingNote`]. The latter wraps the former with some other attributes.
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     pub struct SaplingCryptoNoteBuilder {
         recipient: Option<PaymentAddress>,
         value: Option<NoteValue>,
@@ -124,7 +124,7 @@ mod sapling_crypto_note {
         build_method!(rseed, Rseed);
 
         /// For any old zcaddr!
-        pub fn randomize_recipient(self) -> Self {
+        pub fn randomize_recipient(&mut self) -> &mut Self {
             let (_, _, address) = super::random_zaddr();
             self.recipient(address)
         }
@@ -141,10 +141,12 @@ mod sapling_crypto_note {
     impl Default for SaplingCryptoNoteBuilder {
         fn default() -> Self {
             let (_, _, address) = default_zaddr();
-            Self::new()
+            let mut builder = Self::new();
+            builder
                 .recipient(address)
                 .value(NoteValue::from_raw(200000))
-                .rseed(Rseed::AfterZip212([7; 32]))
+                .rseed(Rseed::AfterZip212([7; 32]));
+            builder
         }
     }
 }
@@ -163,7 +165,7 @@ pub mod orchard_note {
 
     /// A struct to build a mock orchard::Note from scratch.
     /// Distinguish [`orchard::Note`] from [`crate::wallet::notes::OrchardNote`]. The latter wraps the former with some other attributes.
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     pub struct OrchardCryptoNoteBuilder {
         recipient: Option<Address>,
         value: Option<NoteValue>,
@@ -189,7 +191,7 @@ pub mod orchard_note {
         build_method!(random_seed, RandomSeed);
 
         /// selects a random recipient address for the orchard note
-        pub fn randomize_recipient(self) -> Self {
+        pub fn randomize_recipient(&mut self) -> &mut Self {
             let mut rng = OsRng;
 
             let sk = {
@@ -209,7 +211,7 @@ pub mod orchard_note {
         }
 
         /// selects a random nullifier for the orchard note
-        pub fn randomize_rho_and_rseed(self) -> Self {
+        pub fn randomize_rho_and_rseed(&mut self) -> &mut Self {
             let mut rng = OsRng;
 
             let rho = {
@@ -255,6 +257,7 @@ pub mod orchard_note {
                 .randomize_recipient()
                 .randomize_rho_and_rseed()
                 .value(NoteValue::from_raw(800000))
+                .clone()
         }
     }
 }
@@ -339,10 +342,12 @@ pub mod proposal {
     impl Default for ProposalBuilder {
         /// Constructs a new [`ProposalBuilder`] where all fields are preset to default values.
         fn default() -> Self {
-            ProposalBuilder::new()
+            let mut builder = ProposalBuilder::new();
+            builder
                 .fee_rule(FeeRule::standard())
                 .min_target_height(BlockHeight::from_u32(1))
-                .steps(NonEmpty::singleton(StepBuilder::default().build()))
+                .steps(NonEmpty::singleton(StepBuilder::default().build()));
+            builder
         }
     }
 
@@ -421,7 +426,8 @@ pub mod proposal {
                 Rseed::AfterZip212([7; 32]),
             );
 
-            Self::new()
+            let mut builder = Self::new();
+            builder
                 .transaction_request(TransactionRequest::empty())
                 .payment_pools(BTreeMap::new())
                 .transparent_inputs(vec![])
@@ -442,7 +448,8 @@ pub mod proposal {
                     TransactionBalance::new(vec![], NonNegativeAmount::const_from_u64(20_000))
                         .unwrap(),
                 )
-                .is_shielding(false)
+                .is_shielding(false);
+            builder
         }
     }
 }
