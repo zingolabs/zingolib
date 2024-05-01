@@ -311,13 +311,15 @@ mod tests {
 
     use crate::wallet::{
         notes::{
-            query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
+            orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
+            sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
             OutputInterface,
         },
         transaction_record::mocks::{
             nine_note_transaction_record, nine_note_transaction_record_default,
+            TransactionRecordBuilder,
         },
-        transaction_records_by_id::TransactionRecordsById,
+        transaction_records_by_id::{trait_inputsource::InputSourceError, TransactionRecordsById},
     };
 
     #[test]
@@ -409,6 +411,38 @@ mod tests {
                     .sapling_crypto_note
                     .value()
             )
+        }
+
+        #[test]
+        fn select_spendable_notes_2(feebits in 0..5u64) {
+            let mut transaction_records_by_id = TransactionRecordsById::new();
+
+            let transaction_record = TransactionRecordBuilder::default()
+                .sapling_notes(SaplingNoteBuilder::default().value(20_000))
+                .orchard_notes(OrchardNoteBuilder::default().value(20_000))
+                .set_output_indexes()
+                .build();
+            transaction_records_by_id.insert_transaction_record(transaction_record);
+
+            let target_value = NonNegativeAmount::const_from_u64(feebits * 10_000);
+            let anchor_height: BlockHeight = 10.into();
+            let spendable_notes_result: Result<SpendableNotes<NoteId>, InputSourceError> =
+                zcash_client_backend::data_api::InputSource::select_spendable_notes(
+                    &transaction_records_by_id,
+                    AccountId::ZERO,
+                    target_value,
+                    &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                    anchor_height,
+                    &[],
+                );
+            if feebits > 4 {
+                let spendable_notes_error: InputSourceError = spendable_notes_result.map(|_sn| "expected Shortfall error").unwrap_err();
+                assert_eq!(spendable_notes_error, InputSourceError::Shortfall(10_000));
+            } else {
+                let spendable_notes = spendable_notes_result.unwrap();
+                let expected_notes = ((feebits + 1) / 2) as usize;
+                assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_notes);
+            }
         }
     }
 
