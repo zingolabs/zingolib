@@ -8,8 +8,6 @@ use zingolib::testvectors::seeds::DARKSIDE_SEED;
 use zingolib::{get_base_address, lightclient::PoolBalances};
 
 #[tokio::test]
-async fn unconnected_client() {}
-#[tokio::test]
 async fn simple_sync() {
     let darkside_handler = DarksideHandler::new(None);
 
