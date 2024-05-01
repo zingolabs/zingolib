@@ -71,7 +71,7 @@ pub mod mocks {
         build_method!(index, u16);
 
         /// selects a random probablistically unique txid
-        pub fn randomize_txid(self) -> Self {
+        pub fn randomize_txid(&mut self) -> &mut Self {
             self.txid(crate::test_framework::mocks::random_txid())
         }
 
@@ -87,10 +87,12 @@ pub mod mocks {
 
     impl Default for NoteIdBuilder {
         fn default() -> Self {
-            Self::new()
+            let mut builder = Self::new();
+            builder
                 .txid(default_txid())
                 .shpool(zcash_client_backend::ShieldedProtocol::Orchard)
-                .index(0)
+                .index(0);
+            builder
         }
     }
 }
@@ -114,13 +116,18 @@ pub mod tests {
         let transparent_unspent_note = TransparentOutputBuilder::default().build();
         let transparent_pending_spent_note = TransparentOutputBuilder::default()
             .unconfirmed_spent(spend)
+            .clone()
             .build();
-        let transparent_spent_note = TransparentOutputBuilder::default().spent(spend).build();
+        let transparent_spent_note = TransparentOutputBuilder::default()
+            .spent(spend)
+            .clone()
+            .build();
         let sapling_unspent_note = SaplingNoteBuilder::default().build();
         let sapling_pending_spent_note = SaplingNoteBuilder::default()
             .unconfirmed_spent(spend)
+            .clone()
             .build();
-        let sapling_spent_note = SaplingNoteBuilder::default().spent(spend).build();
+        let sapling_spent_note = SaplingNoteBuilder::default().spent(spend).clone().build();
 
         let unspent_query = OutputSpendStatusQuery::new(true, false, false);
         let pending_or_spent_query = OutputSpendStatusQuery::new(false, true, true);
