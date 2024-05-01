@@ -822,7 +822,7 @@ impl Command for ProposeCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -832,19 +832,20 @@ impl Command for ProposeCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient
-                .do_propose_spend(
-                    send_inputs
-                )
-                .await {
-                Ok(proposal) => {
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
-                }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
-            }
-            .pretty(2)
+            todo!()
+            // match lightclient
+            //     .do_propose_spend(
+            //         send_inputs
+            //     )
+            //     .await {
+            //     Ok(proposal) => {
+            //         object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+            //     }
+            //     Err(e) => {
+            //         object! { "error" => e.to_string() }
+            //     }
+            // }
+            // .pretty(2)
         })
     }
 }
@@ -918,7 +919,7 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -928,24 +929,25 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            if let Err(e) = lightclient
-                .do_propose_spend(
-                    send_inputs
-                )
-                .await {
-                return object! { "error" => e.to_string() }.pretty(2);
-            };
-            match lightclient
-                .do_send_proposal().await
-            {
-                Ok(txids) => {
-                     object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-                }
-                Err(e) => {
-                    object! { "error" => e }
-                }
-            }
-            .pretty(2)
+            todo!()
+            // if let Err(e) = lightclient
+            //     .do_propose_spend(
+            //         send_inputs
+            //     )
+            //     .await {
+            //     return object! { "error" => e.to_string() }.pretty(2);
+            // };
+            // match lightclient
+            //     .do_send_proposal().await
+            // {
+            //     Ok(txids) => {
+            //          object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+            //     }
+            //     Err(e) => {
+            //         object! { "error" => e }
+            //     }
+            // }
+            // .pretty(2)
         })
     }
 }
