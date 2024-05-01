@@ -1075,7 +1075,7 @@ mod slow {
             .do_send_test_only(vec![(testvectors::EXT_TADDR, sent_value, None)])
             .await
             .unwrap_err();
-        assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.");
+        assert_eq!(sent_transaction_error, "The underlying datasource produced the following error: Cannot send. Fund shortfall: 35000. To send funds, first ensure they are shielded and confirmed.");
     }
     #[tokio::test]
     async fn shield_sapling() {
