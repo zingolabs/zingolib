@@ -59,7 +59,7 @@ pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -
     [o_fvk, s_fvk, t_fvk]
 }
 
-/// TODO: Add Doc Comment Here!
+/// Build a client from an fvk, that's NOT connected to a lightwalletd
 pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<Ufvk as zcash_address::unified::Encoding>::try_from_items(

@@ -130,7 +130,7 @@ pub struct ZingoConfigBuilder {
 }
 
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ZingoConfig {
     /// TODO: Add Doc Comment Here!
     pub lightwalletd_uri: Arc<RwLock<http::Uri>>,
@@ -506,6 +506,13 @@ pub enum ChainType {
     Mainnet,
 }
 
+impl Default for ChainType {
+    fn default() -> Self {
+        // Provide a default RegtestNetwork value here
+        ChainType::Regtest(RegtestNetwork::default())
+    }
+}
+
 impl ChainType {
     /// TODO: Add Doc Comment Here!
     #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
@@ -566,6 +573,11 @@ pub struct RegtestNetwork {
     activation_heights: ActivationHeights,
 }
 
+impl Default for RegtestNetwork {
+    fn default() -> Self {
+        Self::new(0, 0, 0, 0, 0, 0)
+    }
+}
 impl RegtestNetwork {
     /// TODO: Add Doc Comment Here!
     pub fn new(
