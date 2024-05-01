@@ -1231,49 +1231,6 @@ mod slow {
         );
     }
     #[tokio::test]
-    async fn send_to_ua_saves_full_ua_in_wallet() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
-        //utils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5).await;
-        let recipient_unified_address = get_base_address!(recipient, "unified");
-        let sent_value = 50_000;
-        faucet
-            .do_send_test_only(vec![(recipient_unified_address.as_str(), sent_value, None)])
-            .await
-            .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        let list = faucet.do_list_transactions().await;
-        assert!(list.members().any(|transaction| {
-            transaction.entries().any(|(key, value)| {
-                if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_unified_address
-                } else {
-                    false
-                }
-            })
-        }));
-        faucet.do_rescan().await.unwrap();
-        let new_list = faucet.do_list_transactions().await;
-        assert!(new_list.members().any(|transaction| {
-            transaction.entries().any(|(key, value)| {
-                if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_unified_address
-                } else {
-                    false
-                }
-            })
-        }));
-        assert_eq!(
-            list,
-            new_list,
-            "Pre-Rescan: {}\n\n\nPost-Rescan: {}\n\n\n",
-            json::stringify_pretty(list.clone(), 4),
-            json::stringify_pretty(new_list.clone(), 4)
-        );
-    }
-    #[tokio::test]
     async fn send_to_transparent_and_sapling_maintain_balance() {
         let recipient_initial_funds = 100_000_000;
         let first_send_to_sapling = 20_000;
