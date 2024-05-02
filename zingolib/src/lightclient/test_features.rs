@@ -27,30 +27,28 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
+    /// ignores secondary
     pub async fn do_send_test_only(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
-        let receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)> =
-            address_amount_memo_tuples
-                .into_iter()
-                .map(|(address, amount, memo)| {
-                    let address = address_from_str(address, &self.config().chain)
-                        .expect("should be a valid address");
-                    let amount = zatoshis_from_u64(amount)
-                        .expect("should be inside the range of valid zatoshis");
-                    let memo = memo.map(|memo| {
-                        crate::wallet::utils::interpret_memo_string(memo.to_string())
-                            .expect("should be able to interpret memo")
-                    });
-
-                    (address, amount, memo)
-                })
-                .collect();
-
-        self.do_quick_send(receivers)
-            .await
-            .map(|txid| txid.first().to_string())
+        self.do_quick_send(
+            self.raw_to_transaction_request(
+                address_amount_memo_tuples
+                    .into_iter()
+                    .map(|(address, amount, memo)| {
+                        (
+                            address.to_string(),
+                            amount as u32,
+                            memo.map(|memo| memo.to_string()),
+                        )
+                    })
+                    .collect(),
+            )
+            .unwrap(),
+        )
+        .await
+        .map(|txid| txid.first().to_string())
     }
 
     /// Test only lightclient method for calling `do_shield` with an address as &str

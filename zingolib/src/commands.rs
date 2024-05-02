@@ -786,19 +786,20 @@ impl Command for ProposeSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient
-                .do_propose_spend(
-                    send_inputs
-                )
-                .await {
-                Ok(proposal) => {
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
-                }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
-            }
-            .pretty(2)
+            todo!()
+            // match lightclient
+            //     .do_propose_spend(
+            //         send_inputs
+            //     )
+            //     .await {
+            //     Ok(proposal) => {
+            //         object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+            //     }
+            //     Err(e) => {
+            //         object! { "error" => e.to_string() }
+            //     }
+            // }
+            // .pretty(2)
         })
     }
 }
@@ -900,17 +901,18 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient
-                .do_quick_send(send_inputs).await
-            {
-                Ok(txids) => {
-                     object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-                }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
-            }
-            .pretty(2)
+            todo!()
+            // match lightclient
+            //     .do_quick_send(send_inputs).await
+            // {
+            //     Ok(txids) => {
+            //          object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+            //     }
+            //     Err(e) => {
+            //         object! { "error" => e.to_string() }
+            //     }
+            // }
+            // .pretty(2)
         })
     }
 }
@@ -938,25 +940,26 @@ impl Command for QuickShieldCommand {
             }
         };
         RT.block_on(async move {
-            if let Err(e) = lightclient
-                .do_propose_spend(
-                    send_inputs
-                )
-                // DO PROPOSE SHIELD!
-                .await {
-                return object! { "error" => e.to_string() }.pretty(2);
-            };
-            match lightclient
-                .do_send_proposed().await
-            {
-                Ok(txids) => {
-                     object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-                }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
-            }
-            .pretty(2)
+            todo!()
+            // if let Err(e) = lightclient
+            //     .do_propose_spend(
+            //         send_inputs
+            //     )
+            //     // DO PROPOSE SHIELD!
+            //     .await {
+            //     return object! { "error" => e.to_string() }.pretty(2);
+            // };
+            // match lightclient
+            //     .do_send_proposed().await
+            // {
+            //     Ok(txids) => {
+            //          object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+            //     }
+            //     Err(e) => {
+            //         object! { "error" => e.to_string() }
+            //     }
+            // }
+            // .pretty(2)
         })
     }
 }
