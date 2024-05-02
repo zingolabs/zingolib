@@ -2,7 +2,7 @@
 
 use zcash_client_backend::{PoolType, ShieldedProtocol::Orchard};
 
-use crate::{get_base_address, lightclient::LightClient};
+use crate::{get_base_address, lightclient::LightClient, wallet::notes::query::OutputQuery};
 
 #[allow(async_fn_in_trait)]
 /// both lib-to-node and darkside can implement this.
@@ -38,4 +38,16 @@ where
         )
         .await
         .unwrap();
+
+    chain.bump_chain().await;
+
+    recipient.do_sync(false).await.unwrap();
+
+    let balance = recipient
+        .query_sum_value(OutputQuery::stipulations(
+            true, false, false, false, false, false,
+        ))
+        .await;
+
+    assert_eq!(balance, value as u64);
 }
