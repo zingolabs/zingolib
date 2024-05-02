@@ -373,20 +373,20 @@ mod tests {
         ) {
             let mut transaction_records_by_id = TransactionRecordsById::new();
             transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
-                spent_val as u64,
                 unspent_val as u64,
+                spent_val as u64,
                 unconf_spent_val as u64,
-                spent_val as u64,
                 unspent_val as u64,
+                spent_val as u64,
                 unconf_spent_val as u64,
-                spent_val as u64,
                 unspent_val as u64,
+                spent_val as u64,
                 unconf_spent_val as u64,
             ));
 
-            let target_value = NonNegativeAmount::const_from_u64(20000);
+            let target_value = NonNegativeAmount::const_from_u64(20_000);
             let anchor_height: BlockHeight = 10.into();
-            let spendable_notes: SpendableNotes<NoteId> =
+            let spendable_notes: Result<SpendableNotes<NoteId>, InputSourceError> =
                 zcash_client_backend::data_api::InputSource::select_spendable_notes(
                     &transaction_records_by_id,
                     AccountId::ZERO,
@@ -394,27 +394,37 @@ mod tests {
                     &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
                     anchor_height,
                     &[],
-                )
-                .unwrap();
-            prop_assert_eq!(
-                spendable_notes.sapling().first().unwrap().note().value(),
-                transaction_records_by_id
-                    .values()
-                    .next()
-                    .unwrap()
-                    .sapling_notes
-                    .iter()
-                    .find(|note| {
-                        note.spend_status_query(OutputSpendStatusQuery {
-                            unspent: true,
-                            pending_spent: false,
-                            spent: false,
+                );
+            if unspent_val >= 10_000 {
+                prop_assert_eq!(
+                    spendable_notes.unwrap().sapling().first().unwrap().note().value(),
+                    transaction_records_by_id
+                        .values()
+                        .next()
+                        .unwrap()
+                        .sapling_notes
+                        .iter()
+                        .find(|note| {
+                            note.spend_status_query(OutputSpendStatusQuery {
+                                unspent: true,
+                                pending_spent: false,
+                                spent: false,
+                            })
                         })
-                    })
-                    .unwrap()
-                    .sapling_crypto_note
-                    .value()
-            )
+                        .unwrap()
+                        .sapling_crypto_note
+                        .value()
+                )
+            } else {
+                let Err(notes) = spendable_notes else {
+                    proptest::prop_assert!(false, "should fail to select enough value");
+                    panic!();
+                };
+                assert_eq!(
+                    notes,
+                    InputSourceError::Shortfall(20_000 - (2 * unspent_val as u64))
+                )
+            }
         }
 
         #[test]
