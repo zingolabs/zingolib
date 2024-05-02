@@ -201,7 +201,12 @@ impl WalletRead for TxMapAndMaybeTrees {
     fn chain_height(
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
-        unimplemented!()
+        self.witness_trees()
+            .ok_or(TxMapAndMaybeTreesTraitError::NoSpendCapability)?
+            .witness_tree_orchard
+            .store()
+            .max_checkpoint_id()
+            .map_err(|e| match e {})
     }
     fn get_block_hash(
         &self,
