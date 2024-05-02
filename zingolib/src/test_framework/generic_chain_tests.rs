@@ -2,7 +2,7 @@
 
 use zcash_client_backend::{PoolType, ShieldedProtocol::Orchard};
 
-use crate::lightclient::LightClient;
+use crate::{get_base_address, lightclient::LightClient};
 
 #[allow(async_fn_in_trait)]
 /// both lib-to-node and darkside can implement this.
@@ -20,7 +20,22 @@ pub async fn send<CT>(chain: CT, value: u32)
 where
     CT: ChainTest,
 {
-    let sender = chain.build_client_and_fund(value * 2, PoolType::Shielded(Orchard));
+    let sender = chain
+        .build_client_and_fund(value * 2, PoolType::Shielded(Orchard))
+        .await;
 
-    let recipient = chain.build_client();
+    let recipient = chain.build_client().await;
+
+    sender
+        .do_quick_send(
+            sender
+                .raw_to_transaction_request(vec![(
+                    get_base_address!(recipient, "unified"),
+                    value,
+                    None,
+                )])
+                .unwrap(),
+        )
+        .await
+        .unwrap();
 }
