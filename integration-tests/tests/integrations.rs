@@ -124,6 +124,7 @@ fn check_view_capability_bounds(
 
 mod fast {
     use zcash_address::unified::Encoding;
+    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingolib::wallet::WalletBase;
 
     use super::*;
@@ -643,6 +644,40 @@ mod fast {
             .await
             .unwrap();
     }
+    #[tokio::test]
+    async fn mine_to_transparent_and_propose_shielding() {
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let (regtest_manager, _cph, faucet, _recipient) =
+            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        let proposal = faucet.do_propose_shield().await.unwrap();
+        let only_step = proposal.steps().first();
+
+        // Orchard action and dummy, plus 4 transparent inputs
+        let expected_fee = 30_000;
+
+        assert_eq!(proposal.steps().len(), 1);
+        assert_eq!(only_step.transparent_inputs().len(), 4);
+        assert_eq!(
+            only_step.balance().fee_required(),
+            NonNegativeAmount::const_from_u64(expected_fee)
+        );
+        // Only one change item. I guess change could be split between pools?
+        assert_eq!(only_step.balance().proposed_change().len(), 1);
+        assert_eq!(
+            only_step
+                .balance()
+                .proposed_change()
+                .first()
+                .unwrap()
+                .value(),
+            NonNegativeAmount::const_from_u64(
+                (testvectors::block_rewards::CANOPY * 4) - expected_fee
+            )
+        )
+    }
 }
 mod slow {
     use orchard::note_encryption::OrchardDomain;
@@ -669,7 +704,11 @@ mod slow {
             .await
             .unwrap();
         let _sent_transaction_id = recipient
-            .do_send_test_only(vec![(&get_base_address!(faucet, "unified"), 1000, None)])
+            .do_send_test_only(raw_to_transaction_request(vec![(
+                &get_base_address!(faucet, "unified"),
+                1000,
+                None,
+            )]))
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)

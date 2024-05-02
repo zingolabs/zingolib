@@ -1,10 +1,10 @@
 //! TODO: Add Mod Description Here!
 use nonempty::NonEmpty;
 
-use zcash_client_backend::address::Address;
+use zcash_client_backend::{address::Address, zip321::TransactionRequest};
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+
+
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
@@ -27,9 +27,9 @@ impl LightClient {
     /// Send funds
     pub async fn do_quick_send(
         &self,
-        receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+        request: TransactionRequest,
     ) -> Result<NonEmpty<TxId>, String> {
-        self.do_propose_spend(receivers)
+        self.do_propose_spend(request)
             .await
             .map_err(|e| e.to_string())?;
         self.do_send_proposed().await.map_err(|e| e.to_string())
