@@ -1,24 +1,22 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
-use std::num::NonZeroU32;
-use std::ops::DerefMut;
-
+use crate::{
+    lightclient::LightClient,
+    wallet::tx_map_and_maybe_trees::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
+};
+use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut};
 use thiserror::Error;
-
-use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
-use zcash_client_backend::zip321::Payment;
-use zcash_client_backend::zip321::TransactionRequest;
-use zcash_client_backend::ShieldedProtocol;
-use zcash_client_backend::{address::Address, zip321::Zip321Error};
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::{memo::MemoBytes, transaction::components::amount::BalanceError};
-
+use zcash_client_backend::{
+    data_api::wallet::input_selection::GreedyInputSelector,
+    zip321::{Payment, TransactionRequest, Zip321Error},
+    ShieldedProtocol,
+};
+use zcash_keys::address::Address;
+use zcash_primitives::{
+    memo::MemoBytes,
+    transaction::components::amount::{BalanceError, NonNegativeAmount},
+};
 use zingoconfig::ChainType;
-
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
-
-use super::LightClient;
 
 /// Errors that can result from do_propose
 #[allow(missing_docs)] // error types document themselves
@@ -83,7 +81,7 @@ pub enum DoProposeError {
     /// error in parsed addresses
     #[error("{0}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
-    /// error in using trait to create proposal
+    /// error in using trait to create spend proposal
     #[error("{:?}", {0})]
     Proposal(
         zcash_client_backend::data_api::error::Error<
@@ -92,6 +90,19 @@ pub enum DoProposeError {
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
                 zcash_client_backend::wallet::NoteId,
+            >,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+        >,
+    ),
+    #[error("{0:?}")]
+    /// error in using trait to create shielding proposal
+    ShieldProposal(
+        zcash_client_backend::data_api::error::Error<
+            TxMapAndMaybeTreesTraitError,
+            TxMapAndMaybeTreesTraitError,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
+                zcash_primitives::transaction::fees::zip317::FeeError,
+                Infallible,
             >,
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
@@ -150,8 +161,63 @@ impl LightClient {
     // TOdo: add correct functionality and doc comments / tests
     pub async fn do_propose_shield(
         &self,
-        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<crate::data::proposal::ShieldProposal, String> {
-        todo!()
+    ) -> Result<crate::data::proposal::ShieldProposal, DoProposeError> {
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            None,
+            ShieldedProtocol::Orchard,
+        ); // review consider change strategy!
+
+        let secp = secp256k1::Secp256k1::new();
+        let input_selector = GISKit::new(
+            change_strategy,
+            zcash_client_backend::fees::DustOutputPolicy::default(),
+        );
+
+        let mut tmamt = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+
+        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
+            TxMapAndMaybeTrees,
+            ChainType,
+            GISKit,
+            TxMapAndMaybeTreesTraitError,
+        >(
+            &mut tmamt,
+            &self.wallet.transaction_context.config.chain,
+            &input_selector,
+            // don't shield dust
+            NonNegativeAmount::const_from_u64(10_000),
+            &self
+                .wallet
+                .wallet_capability()
+                .transparent_child_keys()
+                .map_err(|_e| {
+                    DoProposeError::ShieldProposal(
+                        zcash_client_backend::data_api::error::Error::DataSource(
+                            TxMapAndMaybeTreesTraitError::NoSpendCapability,
+                        ),
+                    )
+                })?
+                .iter()
+                .map(|(_index, sk)| {
+                    #[allow(deprecated)]
+                    zcash_primitives::legacy::keys::pubkey_to_address(&sk.public_key(&secp))
+                })
+                .collect::<Vec<_>>(),
+            // review! do we want to require confirmations?
+            // make it configurable?
+            0,
+        )
+        .map_err(DoProposeError::ShieldProposal)?;
+
+        *self.latest_proposal.write().await = Some(crate::data::proposal::ZingoProposal::Shield(
+            proposed_shield.clone(),
+        ));
+        Ok(proposed_shield)
     }
 }
