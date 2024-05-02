@@ -82,7 +82,7 @@ pub enum DoProposeError {
     /// error in parsed addresses
     #[error("{0}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
-    /// error in using trait to create proposal
+    /// error in using trait to create spend proposal
     #[error("{:?}", {0})]
     Proposal(
         zcash_client_backend::data_api::error::Error<
@@ -96,6 +96,7 @@ pub enum DoProposeError {
         >,
     ),
     #[error("{0:?}")]
+    /// error in using trait to create shielding proposal
     ShieldProposal(
         zcash_client_backend::data_api::error::Error<
             TxMapAndMaybeTreesTraitError,
@@ -161,7 +162,6 @@ impl LightClient {
     // TOdo: add correct functionality and doc comments / tests
     pub async fn do_propose_shield(
         &self,
-        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<crate::data::proposal::ShieldProposal, DoProposeError> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
