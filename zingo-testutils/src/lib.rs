@@ -898,7 +898,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         unfunded_client(regtest_network).await
     }
 
@@ -934,7 +934,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         faucet(Pool::Orchard, regtest_network).await
     }
 
@@ -982,7 +982,7 @@ pub mod scenarios {
         LightClient,
         LightClient,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         faucet_recipient(Pool::Orchard, regtest_network).await
     }
 
@@ -1074,7 +1074,7 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (
             regtest_manager,
             cph,
@@ -1126,7 +1126,7 @@ pub mod scenarios {
         ClientBuilder,
         zingoconfig::RegtestNetwork,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (regtest_manager, cph, client_builder) =
             custom_clients(Pool::Orchard, regtest_network).await;
         (regtest_manager, cph, client_builder, regtest_network)
@@ -1134,7 +1134,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             None,
             None,
@@ -1150,7 +1150,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(Pool::Sapling),
             None,
@@ -1189,7 +1189,7 @@ pub mod scenarios {
     pub async fn funded_orchard_with_3_txs_mobileclient(
         value: u64,
     ) -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(Pool::Sapling),
             None,
@@ -1255,7 +1255,7 @@ pub mod scenarios {
     pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         value: u64,
     ) -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(Pool::Sapling),
             None,
@@ -1388,7 +1388,8 @@ pub mod scenarios {
 
         /// TODO: Add Doc Comment Here!
         pub async fn unsynced_basic() -> ChildProcessHandler {
-            let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+            let regtest_network =
+                zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                 .await
                 .child_process_handler
@@ -1402,7 +1403,8 @@ pub mod scenarios {
             LightClient,
             LightClient,
         ) {
-            let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+            let regtest_network =
+                zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
             let mut sb =
                 setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                     .await;
@@ -1427,7 +1429,8 @@ pub mod scenarios {
             LightClient,
             LightClient,
         ) {
-            let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+            let regtest_network =
+                zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
             let mut sb =
                 setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                     .await;

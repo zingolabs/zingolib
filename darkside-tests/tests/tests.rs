@@ -18,7 +18,7 @@ async fn simple_sync() {
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
     let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;
@@ -58,7 +58,7 @@ async fn reorg_away_receipt() {
         .await
         .unwrap();
 
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
     let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;
@@ -112,7 +112,7 @@ async fn sent_transaction_reorged_into_mempool() {
 
     let mut client_manager =
         ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
     let light_client = client_manager
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;

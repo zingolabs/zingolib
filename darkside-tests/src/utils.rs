@@ -530,7 +530,7 @@ pub mod scenarios {
                 darkside_connector.0.clone(),
                 darkside_handler.darkside_dir.clone(),
             );
-            let regtest_network = RegtestNetwork::all_upgrades_active();
+            let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
             DarksideScenario {
                 darkside_handler,
                 darkside_connector,

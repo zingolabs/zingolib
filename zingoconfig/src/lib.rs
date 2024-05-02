@@ -589,7 +589,7 @@ impl RegtestNetwork {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn all_upgrades_active() -> Self {
+    pub fn set_all_net_upgrades_to_active_at_1() -> Self {
         Self {
             activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
         }

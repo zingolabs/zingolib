@@ -34,7 +34,7 @@ async fn reorg_changes_incoming_tx_height() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
         )
         .await;
 
@@ -189,7 +189,7 @@ async fn reorg_changes_incoming_tx_index() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
         )
         .await;
 
@@ -344,7 +344,7 @@ async fn reorg_expires_incoming_tx() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
         )
         .await;
 
@@ -521,7 +521,7 @@ async fn reorg_changes_outgoing_tx_height() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
         )
         .await;
 
@@ -758,7 +758,7 @@ async fn reorg_expires_outgoing_tx_height() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
         )
         .await;
 
@@ -935,7 +935,7 @@ async fn reorg_changes_outgoing_tx_index() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
         )
         .await;
 

@@ -353,11 +353,13 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
+                "regtest" => ChainType::Regtest(
+                    zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
+                ),
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active())
+            ChainType::Regtest(zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1())
         } else {
             ChainType::Mainnet
         };

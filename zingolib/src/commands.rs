@@ -197,7 +197,7 @@ impl Command for ParseAddressCommand {
                     zingoconfig::ChainType::Mainnet,
                     zingoconfig::ChainType::Testnet,
                     zingoconfig::ChainType::Regtest(
-                        zingoconfig::RegtestNetwork::all_upgrades_active(),
+                        zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
                     ),
                 ]
                 .iter()

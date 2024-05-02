@@ -37,7 +37,7 @@ async fn interrupt_initial_tree_fetch() {
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
     let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;

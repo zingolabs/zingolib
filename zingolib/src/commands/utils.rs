@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn parse_shield_args() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let chain = ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
         let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let address = address_from_str(address_str, &chain).unwrap();
 
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn parse_send_args() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let chain = ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
         let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let address = address_from_str(address_str, &chain).unwrap();
         let value_str = "100000";
@@ -225,7 +225,8 @@ mod tests {
 
             #[test]
             fn empty_json_array() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let json = "[]";
                 assert!(matches!(
                     parse_send_args(&[json], &chain),
@@ -234,7 +235,8 @@ mod tests {
             }
             #[test]
             fn failed_json_parsing() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args = [r#"testaddress{{"#];
                 let result = parse_send_args(&args, &chain);
                 match result {
@@ -251,7 +253,8 @@ mod tests {
             }
             #[test]
             fn single_arg_not_an_array_unexpected_type() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args = ["1"];
                 let result = parse_send_args(&args, &chain);
                 match result {
@@ -261,7 +264,8 @@ mod tests {
             }
             #[test]
             fn no_address_missing_key() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args = ["[{\"amount\": 123, \"memo\": \"testmemo\"}]"];
                 let result = parse_send_args(&args, &chain);
                 match result {
@@ -271,7 +275,8 @@ mod tests {
             }
             #[test]
             fn no_amount_missing_key() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args = ["[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"memo\": \"testmemo\"}]"];
                 let result = parse_send_args(&args, &chain);
                 match result {
@@ -281,7 +286,8 @@ mod tests {
             }
             #[test]
             fn non_string_address() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args = ["[{\"address\": 1, \"amount\": 123, \"memo\": \"testmemo\"}]"];
                 let result = parse_send_args(&args, &chain);
                 match result {
@@ -293,7 +299,8 @@ mod tests {
             }
             #[test]
             fn non_u64_amount() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args =
                             ["[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": \"Oscar Pepper\", \"memo\": \"testmemo\"}]"];
                 let result = parse_send_args(&args, &chain);
@@ -309,7 +316,8 @@ mod tests {
             }
             #[test]
             fn invalid_memo() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let arg_contents =
                     "[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": 123, \"memo\": \"testmemo\"}]";
                 let long_513_byte_memo = &"a".repeat(513);
@@ -337,7 +345,8 @@ mod tests {
 
             #[test]
             fn two_args_wrong_amount() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "foo"];
                 let result = parse_send_args(&args, &chain);
                 match result {
@@ -352,14 +361,16 @@ mod tests {
             }
             #[test]
             fn wrong_number_of_args() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", "3", "4"];
                 let result = parse_send_args(&args, &chain);
                 assert!(matches!(result, Err(CommandError::InvalidArguments)));
             }
             #[test]
             fn invalid_memo() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+                let chain =
+                    ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
                 let long_513_byte_memo = &"a".repeat(513);
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", long_513_byte_memo];
 
@@ -382,7 +393,7 @@ mod tests {
 
     #[test]
     fn check_memo_compatibility() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let chain = ChainType::Regtest(RegtestNetwork::set_all_net_upgrades_to_active_at_1());
         let sapling_address = address_from_str("zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", &chain).unwrap();
         let transparent_address =
             address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd", &chain).unwrap();
