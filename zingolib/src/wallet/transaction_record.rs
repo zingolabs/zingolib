@@ -535,6 +535,7 @@ pub mod mocks {
     use super::TransactionRecord;
 
     /// to create a mock TransactionRecord
+    #[derive(Clone)]
     pub(crate) struct TransactionRecordBuilder {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
@@ -564,13 +565,13 @@ pub mod mocks {
         build_method_push!(sapling_notes, SaplingNoteBuilder);
         build_method_push!(orchard_notes, OrchardNoteBuilder);
 
-        /// Use the mocery of random_txid to get one?
-        pub fn randomize_txid(self) -> Self {
+        /// Use the mockery of random_txid to get one?
+        pub fn randomize_txid(&mut self) -> &mut Self {
             self.txid(crate::test_framework::mocks::random_txid())
         }
 
         /// Sets the output indexes of all contained notes
-        pub fn set_output_indexes(mut self) -> Self {
+        pub fn set_output_indexes(&mut self) -> &mut Self {
             for (i, toutput) in self.transparent_outputs.iter_mut().enumerate() {
                 toutput.output_index = Some(i as u64);
             }
@@ -631,41 +632,52 @@ pub mod mocks {
         let semi_spend = Some((random_txid(), 853211));
 
         TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentOutputBuilder::default().value(transparent_unspent))
+            .transparent_outputs(
+                TransparentOutputBuilder::default()
+                    .value(transparent_unspent)
+                    .clone(),
+            )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
                     .spent(spend)
-                    .value(transparent_spent),
+                    .value(transparent_spent)
+                    .clone(),
             )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .value(transparent_semi_spent),
+                    .value(transparent_semi_spent)
+                    .clone(),
             )
-            .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent))
+            .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent).clone())
             .sapling_notes(
                 SaplingNoteBuilder::default()
                     .spent(spend)
-                    .value(sapling_spent),
+                    .value(sapling_spent)
+                    .clone(),
             )
             .sapling_notes(
                 SaplingNoteBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .value(sapling_semi_spent),
+                    .value(sapling_semi_spent)
+                    .clone(),
             )
-            .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent))
+            .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent).clone())
             .orchard_notes(
                 OrchardNoteBuilder::default()
                     .spent(spend)
-                    .value(orchard_spent),
+                    .value(orchard_spent)
+                    .clone(),
             )
             .orchard_notes(
                 OrchardNoteBuilder::default()
                     .unconfirmed_spent(semi_spend)
-                    .value(orchard_semi_spent),
+                    .value(orchard_semi_spent)
+                    .clone(),
             )
             .randomize_txid()
             .set_output_indexes()
+            .clone()
             .build()
     }
 
@@ -719,6 +731,7 @@ mod tests {
         // A single transparent note makes is_incoming_transaction true.
         let transaction_record = TransactionRecordBuilder::default()
             .transparent_outputs(TransparentOutputBuilder::default())
+            .clone()
             .build();
         assert!(transaction_record.is_incoming_transaction());
     }

@@ -1,46 +1,80 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
-use std::ops::DerefMut;
-use std::{convert::Infallible, num::NonZeroU32};
-
-use zcash_client_backend::address::Address;
-use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
-use zcash_client_backend::zip321::Payment;
-use zcash_client_backend::zip321::TransactionRequest;
-use zcash_client_backend::ShieldedProtocol;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::{legacy::keys::pubkey_to_address, memo::MemoBytes};
-
+use crate::{
+    lightclient::LightClient,
+    wallet::tx_map_and_maybe_trees::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
+};
+use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut};
+use thiserror::Error;
+use zcash_client_backend::{
+    data_api::wallet::input_selection::GreedyInputSelector,
+    zip321::{Payment, TransactionRequest, Zip321Error},
+    ShieldedProtocol,
+};
+use zcash_keys::address::Address;
+use zcash_primitives::{
+    legacy::keys::pubkey_to_address,
+    memo::MemoBytes,
+    transaction::components::amount::{BalanceError, NonNegativeAmount},
+};
 use zingoconfig::ChainType;
 
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
+/// Errors that can result from do_propose
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, Error)]
+pub enum RawToTransactionRequestError {
+    #[error("Could not parse address.")]
+    Address,
+    #[error("Invalid amount: {0}")]
+    Amount(BalanceError),
+    #[error("Invalid memo: {0}")]
+    Memo(zcash_primitives::memo::Error),
+    #[error("Error requesting transaction: {0}")]
+    Zip321(Zip321Error),
+}
+
+impl LightClient {
+    /// takes raw data as input (strings and numbers) and returns a TransactionRequest
+    pub fn raw_to_transaction_request(
+        &self,
+        address_amount_memo_tuples: Vec<(String, u32, Option<String>)>,
+    ) -> Result<TransactionRequest, RawToTransactionRequestError> {
+        let mut payments = vec![];
+        for receiver in address_amount_memo_tuples {
+            let recipient_address = Address::decode(
+                &self.wallet.transaction_context.config.chain,
+                receiver.0.as_str(),
+            )
+            .ok_or(RawToTransactionRequestError::Address)?;
+
+            let amount = NonNegativeAmount::from_u64(receiver.1 as u64)
+                .map_err(RawToTransactionRequestError::Amount)?;
+
+            let memo = match receiver.2 {
+                None => None,
+                Some(memo_string) => Some(
+                    MemoBytes::from_bytes(memo_string.as_bytes())
+                        .map_err(RawToTransactionRequestError::Memo)?,
+                ),
+            };
+            payments.push(Payment {
+                recipient_address,
+                amount,
+                memo,
+                label: None,
+                message: None,
+                other_params: vec![],
+            });
+        }
+
+        TransactionRequest::new(payments).map_err(RawToTransactionRequestError::Zip321)
+    }
+}
 
 type GISKit = GreedyInputSelector<
     TxMapAndMaybeTrees,
     zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
 >;
-
-/// converts from raw receivers to TransactionRequest
-pub fn receivers_becomes_transaction_request(
-    receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-) -> Result<TransactionRequest, zcash_client_backend::zip321::Zip321Error> {
-    let mut payments = vec![];
-    for out in receivers.clone() {
-        payments.push(Payment {
-            recipient_address: out.0,
-            amount: out.1,
-            memo: out.2,
-            label: None,
-            message: None,
-            other_params: vec![],
-        });
-    }
-
-    TransactionRequest::new(payments)
-}
-
-use thiserror::Error;
 
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
@@ -75,17 +109,14 @@ pub enum DoProposeError {
     ),
 }
 
-impl super::LightClient {
+impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_propose_spend(
         &self,
-        receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+        request: TransactionRequest,
     ) -> Result<crate::data::proposal::TransferProposal, DoProposeError> {
-        let request =
-            receivers_becomes_transaction_request(receivers).map_err(DoProposeError::Receiver)?;
-
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,

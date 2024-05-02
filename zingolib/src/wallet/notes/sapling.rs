@@ -240,6 +240,7 @@ pub mod mocks {
     use super::SaplingNote;
 
     /// to create a mock SaplingNote
+    #[derive(Clone)]
     pub(crate) struct SaplingNoteBuilder {
         diversifier: Option<sapling_crypto::Diversifier>,
         note: Option<SaplingCryptoNoteBuilder>,
@@ -281,12 +282,12 @@ pub mod mocks {
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
-        pub fn set_change(mut self, is_change: bool) -> Self {
+        pub fn set_change(&mut self, is_change: bool) -> &mut Self {
             self.is_change = Some(is_change);
             self
         }
         build_method!(have_spending_key, bool);
-        pub fn value(mut self, value: u64) -> Self {
+        pub fn value(&mut self, value: u64) -> &mut Self {
             self.note
                 .as_mut()
                 .unwrap()
@@ -313,7 +314,8 @@ pub mod mocks {
 
     impl Default for SaplingNoteBuilder {
         fn default() -> Self {
-            SaplingNoteBuilder::new()
+            let mut builder = SaplingNoteBuilder::new();
+            builder
                 .diversifier(sapling_crypto::Diversifier([0; 11]))
                 .note(crate::test_framework::mocks::SaplingCryptoNoteBuilder::default())
                 .witnessed_position(Some(Position::from(0)))
@@ -323,7 +325,8 @@ pub mod mocks {
                 .unconfirmed_spent(None)
                 .memo(None)
                 .set_change(false)
-                .have_spending_key(true)
+                .have_spending_key(true);
+            builder
         }
     }
 }
