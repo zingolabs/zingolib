@@ -419,12 +419,13 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
-        let data = match base64::decode(enc_base64) {
-            Ok(v) => v,
-            Err(e) => {
-                return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
-            }
-        };
+        let data =
+            match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, enc_base64) {
+                Ok(v) => v,
+                Err(e) => {
+                    return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
+                }
+            };
 
         match self.wallet.decrypt_message(data).await {
             Ok(m) => {
@@ -453,7 +454,7 @@ impl LightClient {
 
         match Message::new(to, memo).encrypt() {
             Ok(v) => {
-                object! {"encrypted_base64" => base64::encode(v) }
+                object! {"encrypted_base64" => base64::Engine::encode(&base64::engine::general_purpose::STANDARD, v) }
             }
             Err(e) => {
                 object! {"error" => format!("Couldn't encrypt. Error was {}", e)}
