@@ -13,7 +13,6 @@ use zcash_client_backend::{
 };
 use zcash_keys::address::Address;
 use zcash_primitives::{
-    legacy::keys::pubkey_to_address,
     memo::MemoBytes,
     transaction::components::amount::{BalanceError, NonNegativeAmount},
 };
@@ -205,7 +204,10 @@ impl LightClient {
                     )
                 })?
                 .iter()
-                .map(|(_index, sk)| pubkey_to_address(&sk.public_key(&secp)))
+                .map(|(_index, sk)| {
+                    #[allow(deprecated)]
+                    zcash_primitives::legacy::keys::pubkey_to_address(&sk.public_key(&secp))
+                })
                 .collect::<Vec<_>>(),
             // review! do we want to require confirmations?
             // make it configurable?
