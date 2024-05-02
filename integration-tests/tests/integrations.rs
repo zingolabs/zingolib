@@ -287,9 +287,8 @@ mod fast {
 
     #[tokio::test]
     async fn unspent_notes_are_not_saved() {
-        let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient(Pool::Sapling, regtest_network).await;
+            scenarios::faucet_recipient(Pool::Sapling, None).await;
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -314,9 +313,11 @@ mod fast {
         let mut wallet_location = regtest_manager.zingo_datadir;
         wallet_location.pop();
         wallet_location.push("zingo_client_1");
-        let zingo_config = ZingoConfig::build(zingoconfig::ChainType::Regtest(regtest_network))
-            .set_wallet_dir(wallet_location.clone())
-            .create();
+        let zingo_config = ZingoConfig::build(zingoconfig::ChainType::Regtest(
+            zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
+        ))
+        .set_wallet_dir(wallet_location.clone())
+        .create();
         wallet_location.push("zingo-wallet.dat");
         let read_buffer = File::open(wallet_location.clone()).unwrap();
 
@@ -604,9 +605,8 @@ mod fast {
 
     #[tokio::test]
     async fn mine_to_transparent() {
-        let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(Pool::Transparent, None).await;
         check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
@@ -631,9 +631,8 @@ mod fast {
     #[ignore]
     #[tokio::test]
     async fn mine_to_transparent_and_shield() {
-        let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(Pool::Transparent, None).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
             .await
             .unwrap();
@@ -1660,7 +1659,7 @@ mod slow {
     async fn send_heartwood_sapling_funds() {
         let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
         let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient(Pool::Sapling, regtest_network).await;
+            scenarios::faucet_recipient(Pool::Sapling, Some(regtest_network)).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
@@ -1681,7 +1680,6 @@ mod slow {
     }
     #[tokio::test]
     async fn send_funds_to_all_pools() {
-        let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (
             _regtest_manager,
             _cph,
@@ -1695,7 +1693,7 @@ mod slow {
             Some(100_000),
             Some(100_000),
             Pool::Orchard,
-            regtest_network,
+            None,
         )
         .await;
         check_client_balances!(recipient, o: 100_000 s: 100_000 t: 100_000);
@@ -2339,16 +2337,8 @@ mod slow {
             }
         }
         let value = 100_000;
-        let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (regtest_manager, _cph, faucet, recipient, orig_transaction_id, _, _) =
-            scenarios::faucet_funded_recipient(
-                Some(value),
-                None,
-                None,
-                Pool::Sapling,
-                regtest_network,
-            )
-            .await;
+            scenarios::faucet_funded_recipient(Some(value), None, None, Pool::Sapling, None).await;
         let orig_transaction_id = orig_transaction_id.unwrap();
         assert_eq!(
             do_maybe_recent_txid(&recipient).await["last_txid"],
@@ -3122,9 +3112,8 @@ mod slow {
     }
     #[tokio::test]
     async fn dont_write_unconfirmed() {
-        let regtest_network = RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
+            scenarios::faucet_recipient(Pool::Orchard, None).await;
         faucet
             .do_send_test_only(vec![(
                 &get_base_address!(recipient, "unified"),

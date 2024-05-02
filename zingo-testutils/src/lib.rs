@@ -941,13 +941,17 @@ pub mod scenarios {
     /// TODO: Add Doc Comment Here!
     pub async fn faucet_recipient(
         mine_to_pool: Pool,
-        regtest_network: zingoconfig::RegtestNetwork,
+        regtest_network: Option<zingoconfig::RegtestNetwork>,
     ) -> (
         RegtestManager,
         ChildProcessHandler,
         LightClient,
         LightClient,
     ) {
+        let regtest_network = match regtest_network {
+            None => zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1(),
+            Some(network) => network,
+        };
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(mine_to_pool),
             None,
@@ -982,8 +986,7 @@ pub mod scenarios {
         LightClient,
         LightClient,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
-        faucet_recipient(Pool::Orchard, regtest_network).await
+        faucet_recipient(Pool::Orchard, None).await
     }
 
     /// TODO: Add Doc Comment Here!
@@ -992,7 +995,7 @@ pub mod scenarios {
         sapling_funds: Option<u64>,
         transparent_funds: Option<u64>,
         mine_to_pool: Pool,
-        regtest_network: zingoconfig::RegtestNetwork,
+        regtest_network: Option<zingoconfig::RegtestNetwork>,
     ) -> (
         RegtestManager,
         ChildProcessHandler,
@@ -1003,7 +1006,7 @@ pub mod scenarios {
         Option<String>,
     ) {
         let (regtest_manager, child_process_handler, faucet, recipient) =
-            faucet_recipient(mine_to_pool, regtest_network).await;
+            faucet_recipient(mine_to_pool, None).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -1074,7 +1077,6 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::set_all_net_upgrades_to_active_at_1();
         let (
             regtest_manager,
             cph,
@@ -1083,14 +1085,7 @@ pub mod scenarios {
             orchard_txid,
             _sapling_txid,
             _transparent_txid,
-        ) = faucet_funded_recipient(
-            Some(orchard_funds),
-            None,
-            None,
-            Pool::Orchard,
-            regtest_network,
-        )
-        .await;
+        ) = faucet_funded_recipient(Some(orchard_funds), None, None, Pool::Orchard, None).await;
         (
             regtest_manager,
             cph,
