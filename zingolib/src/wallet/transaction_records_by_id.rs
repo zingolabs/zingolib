@@ -2,7 +2,7 @@
 //! transaction record.
 
 use crate::wallet::{
-    notes::{interface::ShieldedNoteInterface, OutputInterface},
+    notes::{interface::ShieldedNoteInterface, query::OutputQuery, OutputInterface},
     traits::{DomainWalletExt, Recipient},
     transaction_record::TransactionRecord,
 };
@@ -53,6 +53,15 @@ impl TransactionRecordsById {
 
 /// Methods to query and modify the map.
 impl TransactionRecordsById {
+    /// Uses a query to select all notes across all transactions with specific properties and sum them
+    pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
+        self.0
+            .into_iter()
+            .fold(0, |partial_sum, transaction_record| {
+                partial_sum + transaction_record.1.query_sum_value(include_notes)
+            })
+    }
+
     pub fn get_received_spendable_note_from_identifier<D: DomainWalletExt>(
         &self,
         note_id: NoteId,
