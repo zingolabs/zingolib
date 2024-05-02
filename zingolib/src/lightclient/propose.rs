@@ -207,7 +207,9 @@ impl LightClient {
         )
         .map_err(DoProposeError::ShieldProposal)?;
 
-        //        *self.latest_proposal = Some(proposed_shield.clone());
+        *self.latest_proposal.write().await = Some(crate::data::proposal::ZingoProposal::Shield(
+            proposed_shield.clone(),
+        ));
         Ok(proposed_shield)
     }
 }
