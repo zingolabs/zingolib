@@ -191,13 +191,19 @@ impl LightClient {
             &mut tmamt,
             &self.wallet.transaction_context.config.chain,
             &input_selector,
-            //review! how much?? configurable?
+            // don't shield dust
             NonNegativeAmount::const_from_u64(10_000),
             &self
                 .wallet
                 .wallet_capability()
                 .transparent_child_keys()
-                .expect("review! fix this expect")
+                .map_err(|_e| {
+                    DoProposeError::ShieldProposal(
+                        zcash_client_backend::data_api::error::Error::DataSource(
+                            TxMapAndMaybeTreesTraitError::NoSpendCapability,
+                        ),
+                    )
+                })?
                 .iter()
                 .map(|(_index, sk)| pubkey_to_address(&sk.public_key(&secp)))
                 .collect::<Vec<_>>(),
