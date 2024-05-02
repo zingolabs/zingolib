@@ -1006,7 +1006,7 @@ pub mod scenarios {
         Option<String>,
     ) {
         let (regtest_manager, child_process_handler, faucet, recipient) =
-            faucet_recipient(mine_to_pool, None).await;
+            faucet_recipient(mine_to_pool, regtest_network).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
