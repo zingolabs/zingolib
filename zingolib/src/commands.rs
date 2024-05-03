@@ -823,7 +823,7 @@ impl Command for ProposeShieldCommand {
         "Shield your transparent and/or sapling ZEC into the orchard pool"
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_propose_shield().await {
                 Ok(proposal) => {
