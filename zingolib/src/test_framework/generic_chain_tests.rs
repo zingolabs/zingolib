@@ -10,7 +10,7 @@ pub trait ChainTest {
     /// set up the test chain
     async fn setup() -> Self;
     /// builds a client and funds it in a certain pool. may need sync before noticing its funds.
-    async fn build_client_and_fund(&self, funds: u32, pool: PoolType) -> LightClient;
+    async fn build_faucet(&mut self) -> LightClient;
     /// builds an empty client
     async fn build_client(&self) -> LightClient;
     /// moves the chain tip forward, confirming transactions that need to be confirmed
@@ -22,11 +22,11 @@ pub async fn simple_setup<CT>(value: u32)
 where
     CT: ChainTest,
 {
-    let chain = CT::setup().await;
+    let mut chain = CT::setup().await;
 
-    let sender = chain
-        .build_client_and_fund(value * 2, PoolType::Shielded(Orchard))
-        .await;
+    let sender = chain.build_faucet().await;
+
+    sender.do_sync(false).await.unwrap();
 
     sender
         .do_quick_send(
@@ -42,48 +42,38 @@ where
         .unwrap();
 }
 
-/// runs a send-to-self and receives it in a chain-generic context
-pub async fn simple<CT>(chain: CT, value: u32)
-where
-    CT: ChainTest,
-{
-    let xsender = chain
-        .build_client_and_fund(value * 2, PoolType::Shielded(Orchard))
-        .await;
-}
+// pub async fn send<CT>(chain: CT, value: u32)
+// where
+//     CT: ChainTest,
+// {
+//     let sender = chain
+//         .build_client_and_fund(value * 2, PoolType::Shielded(Orchard))
+//         .await;
 
-pub async fn send<CT>(chain: CT, value: u32)
-where
-    CT: ChainTest,
-{
-    let sender = chain
-        .build_client_and_fund(value * 2, PoolType::Shielded(Orchard))
-        .await;
+//     let recipient = chain.build_client().await;
 
-    let recipient = chain.build_client().await;
+//     sender
+//         .do_quick_send(
+//             sender
+//                 .raw_to_transaction_request(vec![(
+//                     get_base_address!(recipient, "unified"),
+//                     value,
+//                     None,
+//                 )])
+//                 .unwrap(),
+//         )
+//         .await
+//         .unwrap();
 
-    sender
-        .do_quick_send(
-            sender
-                .raw_to_transaction_request(vec![(
-                    get_base_address!(recipient, "unified"),
-                    value,
-                    None,
-                )])
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+//     chain.bump_chain().await;
 
-    chain.bump_chain().await;
+//     recipient.do_sync(false).await.unwrap();
 
-    recipient.do_sync(false).await.unwrap();
+//     let balance = recipient
+//         .query_sum_value(OutputQuery::stipulations(
+//             true, false, false, false, false, false,
+//         ))
+//         .await;
 
-    let balance = recipient
-        .query_sum_value(OutputQuery::stipulations(
-            true, false, false, false, false, false,
-        ))
-        .await;
-
-    assert_eq!(balance, value as u64);
-}
+//     assert_eq!(balance, value as u64);
+// }

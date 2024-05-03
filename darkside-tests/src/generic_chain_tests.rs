@@ -37,11 +37,7 @@ impl ChainTest for DarksideChain {
         }
     }
 
-    async fn build_client_and_fund(
-        &self,
-        funds: u32,
-        pool: zcash_client_backend::PoolType,
-    ) -> zingolib::lightclient::LightClient {
+    async fn build_faucet(&mut self) -> zingolib::lightclient::LightClient {
         ClientBuilder::new(
             self.server_id.clone(),
             self.darkside_handler.darkside_dir.clone(),

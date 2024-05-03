@@ -1,31 +1,33 @@
 #![cfg(feature = "generic_chain_tests")]
-use zingo_testutils::scenarios::setup;
+use zcash_client_backend::{PoolType, ShieldedProtocol::Sapling};
+use zingo_testutils::scenarios::setup::{self, ScenarioBuilder};
 use zingoconfig::RegtestNetwork;
-use zingolib::test_framework::generic_chain_tests::ChainTest;
+use zingolib::{test_framework::generic_chain_tests::ChainTest, wallet::notes::SaplingNote};
 
 struct LibtonodeChain {
     regtest_network: RegtestNetwork,
+    scenario_builder: ScenarioBuilder,
 }
 
 impl ChainTest for LibtonodeChain {
     async fn setup() -> Self {
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        LibtonodeChain { regtest_network }
-    }
-
-    async fn build_client_and_fund(
-        &self,
-        funds: u32,
-        pool: zcash_client_backend::PoolType,
-    ) -> zingolib::lightclient::LightClient {
-        let mut sb = setup::ScenarioBuilder::build_configure_launch(
-            Some(pool.into()),
+        let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            Some(PoolType::Shielded(Sapling).into()),
             None,
             None,
-            &self.regtest_network,
+            &regtest_network,
         )
         .await;
-        sb.client_builder
+        LibtonodeChain {
+            regtest_network,
+            scenario_builder,
+        }
+    }
+
+    async fn build_faucet(&mut self) -> zingolib::lightclient::LightClient {
+        self.scenario_builder
+            .client_builder
             .build_faucet(false, self.regtest_network)
             .await
     }
