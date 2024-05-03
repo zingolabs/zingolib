@@ -1,3 +1,4 @@
+#![cfg(feature = "generic_chain_tests")]
 use zingo_testutils::scenarios::setup;
 
 struct LibToNodeChain {

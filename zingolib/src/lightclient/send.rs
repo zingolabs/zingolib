@@ -4,7 +4,6 @@ use nonempty::NonEmpty;
 use zcash_client_backend::{address::Address, zip321::TransactionRequest};
 use zcash_primitives::consensus::BlockHeight;
 
-
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
