@@ -644,9 +644,8 @@ mod fast {
     }
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(Pool::Transparent, None).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
