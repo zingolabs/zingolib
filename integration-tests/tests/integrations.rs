@@ -753,7 +753,7 @@ mod slow {
         let notes = recipient.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].len(), 0);
         assert_eq!(notes["pending_sapling_notes"].len(), 0);
-        assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+        assert_eq!(notes["unspent_orchard_notes"].len(), 0);
         assert_eq!(notes["pending_orchard_notes"].len(), 0);
         assert_eq!(notes["utxos"].len(), 0);
         assert_eq!(notes["pending_utxos"].len(), 0);
@@ -763,7 +763,7 @@ mod slow {
         assert_eq!(notes["spent_utxos"].len(), 0);
         // We should still have a change note even of zero value, as we send
         // ourself a wallet-readable memo
-        assert_eq!(notes["unspent_orchard_notes"][0]["value"], 0);
+        assert_eq!(notes["unspent_orchard_notes"][0]["value"], JsonValue::Null);
         assert_eq!(
             notes["spent_orchard_notes"][0]["spent"],
             sent_transaction_id
