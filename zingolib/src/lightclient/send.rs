@@ -23,17 +23,6 @@ impl LightClient {
         ) + 1)
     }
 
-    /// Send funds
-    pub async fn do_quick_send(
-        &self,
-        request: TransactionRequest,
-    ) -> Result<NonEmpty<TxId>, String> {
-        self.do_propose_spend(request)
-            .await
-            .map_err(|e| e.to_string())?;
-        self.do_send_proposed().await.map_err(|e| e.to_string())
-    }
-
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
@@ -41,72 +30,6 @@ impl LightClient {
             progress: progress.clone(),
             interrupt_sync: *self.interrupt_sync.read().await,
         })
-    }
-
-    /// Shield funds. Send transparent or sapling funds to a unified address.
-    /// Defaults to the unified address of the capability if `address` is `None`.
-    pub async fn do_shield(
-        &self,
-        pools_to_shield: &[Pool],
-        address: Option<Address>,
-    ) -> Result<TxId, String> {
-        let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
-                                          // as a fn of the transactions structure.
-        let tbal = self
-            .wallet
-            .tbalance(None)
-            .await
-            .expect("to receive a balance");
-        let sapling_bal = self
-            .wallet
-            .spendable_sapling_balance(None)
-            .await
-            .unwrap_or(0);
-
-        // Make sure there is a balance, and it is greater than the amount
-        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
-            tbal
-        } else {
-            0
-        } + if pools_to_shield.contains(&Pool::Sapling) {
-            sapling_bal
-        } else {
-            0
-        };
-        if balance_to_shield <= fee {
-            return Err(format!(
-                "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                balance_to_shield, fee
-            ));
-        }
-
-        let address = address.unwrap_or(Address::from(
-            self.wallet.wallet_capability().addresses()[0].clone(),
-        ));
-        let amount = zatoshis_from_u64(balance_to_shield - fee)
-            .expect("balance cannot be outside valid range of zatoshis");
-        let receiver = vec![(address, amount, None)];
-
-        let _lock = self.sync_lock.lock().await;
-        let (sapling_output, sapling_spend) = self.read_sapling_params()?;
-
-        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-        self.wallet
-            .send_to_addresses(
-                sapling_prover,
-                pools_to_shield.to_vec(),
-                receiver,
-                transaction_submission_height,
-                |transaction_bytes| {
-                    crate::grpc_connector::send_transaction(
-                        self.get_server_uri(),
-                        transaction_bytes,
-                    )
-                },
-            )
-            .await
     }
 
     /// Unstable function to expose the zip317 interface for development
@@ -198,6 +121,23 @@ impl LightClient {
         } else {
             Err(DoSendProposedError::NoProposal)
         }
+    }
+
+    /// Send funds
+    pub async fn do_quick_send(
+        &self,
+        request: TransactionRequest,
+    ) -> Result<NonEmpty<TxId>, String> {
+        self.do_propose_spend(request)
+            .await
+            .map_err(|e| e.to_string())?;
+        self.do_send_proposed().await.map_err(|e| e.to_string())
+    }
+
+    /// Send funds
+    pub async fn do_quick_shield(&self) -> Result<NonEmpty<TxId>, String> {
+        self.do_propose_shield().await.map_err(|e| e.to_string())?;
+        self.do_send_proposed().await.map_err(|e| e.to_string())
     }
 }
 

@@ -1,6 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
+use crate::lightclient::propose::parsed_to_transaction_request;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -776,7 +777,7 @@ impl Command for ProposeSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -785,21 +786,27 @@ impl Command for ProposeSendCommand {
                 )
             }
         };
+        let request = match parsed_to_transaction_request(send_inputs) {
+            Ok(request) => request,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help propose' for correct usage and examples.",
+                    e
+                )
+            }
+        };
         RT.block_on(async move {
-            todo!()
-            // match lightclient
-            //     .do_propose_spend(
-            //         send_inputs
-            //     )
-            //     .await {
-            //     Ok(proposal) => {
-            //         object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
-            //     }
-            //     Err(e) => {
-            //         object! { "error" => e.to_string() }
-            //     }
-            // }
-            // .pretty(2)
+            match lightclient
+                .do_propose_spend(request)
+                .await {
+                Ok(proposal) => {
+                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
         })
     }
 }
@@ -817,23 +824,13 @@ impl Command for ProposeShieldCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (pools_to_shield, address) =
-            match utils::parse_shield_args(args, &lightclient.config().chain) {
-                Ok(args) => args,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help shield' for correct usage and examples.",
-                        e
-                    )
-                }
-            };
         RT.block_on(async move {
-            match lightclient.do_shield(&pools_to_shield, address).await {
-                Ok(txid) => {
-                    object! { "txid" => txid.to_string() }
+            match lightclient.do_propose_shield().await {
+                Ok(proposal) => {
+                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    object! { "error" => e.to_string() }
                 }
             }
             .pretty(2)
@@ -891,28 +888,43 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
-                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
+                    "Error: {}\nTry 'help propose' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        let request = match parsed_to_transaction_request(send_inputs) {
+            Ok(request) => request,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help propose' for correct usage and examples.",
                     e
                 )
             }
         };
         RT.block_on(async move {
-            todo!()
-            // match lightclient
-            //     .do_quick_send(send_inputs).await
-            // {
-            //     Ok(txids) => {
-            //          object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-            //     }
-            //     Err(e) => {
-            //         object! { "error" => e.to_string() }
-            //     }
-            // }
-            // .pretty(2)
+            match lightclient
+                .do_propose_spend(request)
+                .await {
+                Ok(_proposal) => {
+                    match lightclient.do_send_proposed().await {
+                        Ok(txids) => {
+                            object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+                        }
+                        Err(e) => {
+                            object! { "error" => e.to_string() }
+                        }
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
         })
     }
 }
@@ -940,26 +952,24 @@ impl Command for QuickShieldCommand {
             }
         };
         RT.block_on(async move {
-            todo!()
-            // if let Err(e) = lightclient
-            //     .do_propose_spend(
-            //         send_inputs
-            //     )
-            //     // DO PROPOSE SHIELD!
-            //     .await {
-            //     return object! { "error" => e.to_string() }.pretty(2);
-            // };
-            // match lightclient
-            //     .do_send_proposed().await
-            // {
-            //     Ok(txids) => {
-            //          object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-            //     }
-            //     Err(e) => {
-            //         object! { "error" => e.to_string() }
-            //     }
-            // }
-            // .pretty(2)
+            match lightclient
+                .do_propose_shield()
+                .await {
+                Ok(_proposal) => {
+                    match lightclient.do_send_proposed().await {
+                        Ok(txids) => {
+                            object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
+                        }
+                        Err(e) => {
+                            object! { "error" => e.to_string() }
+                        }
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
         })
     }
 }

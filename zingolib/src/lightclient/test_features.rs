@@ -55,11 +55,12 @@ impl LightClient {
         pools_to_shield: &[Pool],
         address: Option<&str>,
     ) -> Result<String, String> {
-        let address = address.map(|addr| {
-            address_from_str(addr, &self.config().chain).expect("should be a valid address")
-        });
-        self.do_shield(pools_to_shield, address)
-            .await
-            .map(|txid| txid.to_string())
+        todo!()
+        // let address = address.map(|addr| {
+        //     address_from_str(addr, &self.config().chain).expect("should be a valid address")
+        // });
+        // self.do_shield(pools_to_shield, address)
+        //     .await
+        //     .map(|txid| txid.to_string())
     }
 }

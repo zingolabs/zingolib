@@ -70,6 +70,25 @@ impl LightClient {
     }
 }
 
+/// takes parsed data as input (address, amount, option memo) and returns a TransactionRequest
+pub fn parsed_to_transaction_request(
+    address_amount_memo_tuples: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+) -> Result<TransactionRequest, Zip321Error> {
+    let mut payments = vec![];
+    for out in address_amount_memo_tuples.clone() {
+        payments.push(Payment {
+            recipient_address: out.0,
+            amount: out.1,
+            memo: out.2,
+            label: None,
+            message: None,
+            other_params: vec![],
+        });
+    }
+
+    TransactionRequest::new(payments)
+}
+
 type GISKit = GreedyInputSelector<
     TxMapAndMaybeTrees,
     zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
