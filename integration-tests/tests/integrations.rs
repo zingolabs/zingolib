@@ -704,11 +704,15 @@ mod slow {
             .await
             .unwrap();
         let _sent_transaction_id = recipient
-            .do_send_test_only(raw_to_transaction_request(vec![(
-                &get_base_address!(faucet, "unified"),
-                1000,
-                None,
-            )]))
+            .do_quick_send(
+                recipient
+                    .raw_to_transaction_request(vec![(
+                        get_base_address!(faucet, "unified"),
+                        1000,
+                        None,
+                    )])
+                    .unwrap(),
+            )
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
