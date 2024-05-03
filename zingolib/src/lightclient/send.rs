@@ -1,15 +1,16 @@
 //! TODO: Add Mod Description Here!
+use std::ops::DerefMut;
+
 use nonempty::NonEmpty;
 
-use zcash_client_backend::{zip321::TransactionRequest};
+use sapling_crypto::prover::OutputProver;
+use sapling_crypto::prover::SpendProver;
+use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::zip321::TransactionRequest;
+use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::consensus::BlockHeight;
-
-
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
-
-
-
 
 use super::LightClient;
 use super::LightWalletSendProgress;
@@ -32,6 +33,60 @@ impl LightClient {
         })
     }
 
+    async fn iterate_proposal_send_scan<NoteRef>(
+        &self,
+        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        sapling_prover: &(impl SpendProver + OutputProver),
+        unified_spend_key: &UnifiedSpendingKey,
+        submission_height: BlockHeight,
+    ) -> Result<NonEmpty<TxId>, DoSendProposedError> {
+        let mut step_results = Vec::with_capacity(proposal.steps().len());
+        let mut txids = Vec::with_capacity(proposal.steps().len());
+        for step in proposal.steps() {
+            let mut tmamt = self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .write()
+                .await;
+
+            let step_result =
+                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                    tmamt.deref_mut(),
+                    &self.wallet.transaction_context.config.chain,
+                    sapling_prover,
+                    sapling_prover,
+                    unified_spend_key,
+                    zcash_client_backend::wallet::OvkPolicy::Sender,
+                    proposal.fee_rule(),
+                    proposal.min_target_height(),
+                    &step_results,
+                    step,
+                )
+                .map_err(DoSendProposedError::Calculation)?;
+
+            drop(tmamt);
+
+            let txid = self
+                .wallet
+                .send_to_addresses_inner(
+                    step_result.transaction(),
+                    submission_height,
+                    |transaction_bytes| {
+                        crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            transaction_bytes,
+                        )
+                    },
+                )
+                .await
+                .map_err(DoSendProposedError::Broadcast)?;
+            step_results.push((step, step_result));
+            txids.push(txid);
+        }
+        Ok(NonEmpty::from_vec(txids).expect("nonempty"))
+    }
+
     /// Unstable function to expose the zip317 interface for development
     // TODO: add correct functionality and doc comments / tests
     pub async fn do_send_proposed(&self) -> Result<NonEmpty<TxId>, DoSendProposedError> {
@@ -46,10 +101,6 @@ impl LightClient {
         {
             return Err(DoSendProposedError::NoSpendCapability);
         }
-
-        use std::ops::DerefMut;
-
-        use zcash_keys::keys::UnifiedSpendingKey;
 
         if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
             let submission_height = self
@@ -67,55 +118,22 @@ impl LightClient {
 
             match proposal {
                 crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
-                    let mut step_results = Vec::with_capacity(transfer_proposal.steps().len());
-                    let mut txids = Vec::with_capacity(transfer_proposal.steps().len());
-                    for step in transfer_proposal.steps() {
-                        let mut tmamt = self
-                            .wallet
-                            .transaction_context
-                            .transaction_metadata_set
-                            .write()
-                            .await;
-
-                        let step_result =
-                            zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                                tmamt.deref_mut(),
-                                &self.wallet.transaction_context.config.chain,
-                                &sapling_prover,
-                                &sapling_prover,
-                                &unified_spend_key,
-                                zcash_client_backend::wallet::OvkPolicy::Sender,
-                                transfer_proposal.fee_rule(),
-                                transfer_proposal.min_target_height(),
-                                &step_results,
-                                step,
-                            )
-                            .map_err(DoSendProposedError::Calculation)?;
-
-                        drop(tmamt);
-
-                        let txid = self
-                            .wallet
-                            .send_to_addresses_inner(
-                                step_result.transaction(),
-                                submission_height,
-                                |transaction_bytes| {
-                                    crate::grpc_connector::send_transaction(
-                                        self.get_server_uri(),
-                                        transaction_bytes,
-                                    )
-                                },
-                            )
-                            .await
-                            .map_err(DoSendProposedError::Broadcast)?;
-                        step_results.push((step, step_result));
-                        txids.push(txid);
-                    }
-                    Ok(NonEmpty::from_vec(txids).expect("nonempty"))
+                    self.iterate_proposal_send_scan(
+                        transfer_proposal,
+                        &sapling_prover,
+                        &unified_spend_key,
+                        submission_height,
+                    )
+                    .await
                 }
-                crate::lightclient::ZingoProposal::Shield(_) => {
-                    todo!();
-                    // Ok(vec![TxId::from_bytes([222u8; 32])])
+                crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
+                    self.iterate_proposal_send_scan(
+                        shield_proposal,
+                        &sapling_prover,
+                        &unified_spend_key,
+                        submission_height,
+                    )
+                    .await
                 }
             }
         } else {
