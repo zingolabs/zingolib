@@ -157,8 +157,36 @@ impl LightClient {
         Ok(proposal)
     }
 
-    /// Unstable function to expose the zip317 interface for development
-    // TOdo: add correct functionality and doc comments / tests
+    fn get_transparent_addresses(
+        &self,
+    ) -> Result<Vec<zcash_primitives::legacy::TransparentAddress>, DoProposeError> {
+        let secp = secp256k1::Secp256k1::new();
+        Ok(self
+            .wallet
+            .wallet_capability()
+            .transparent_child_keys()
+            .map_err(|_e| {
+                DoProposeError::ShieldProposal(
+                    zcash_client_backend::data_api::error::Error::DataSource(
+                        TxMapAndMaybeTreesTraitError::NoSpendCapability,
+                    ),
+                )
+            })?
+            .iter()
+            .map(|(_index, sk)| {
+                #[allow(deprecated)]
+                zcash_primitives::legacy::keys::pubkey_to_address(&sk.public_key(&secp))
+            })
+            .collect::<Vec<_>>())
+    }
+    /// The shield operation consumes a proposal that transfers value
+    /// into the Orchard pool.
+    ///
+    /// The proposal is generated with this method, which operates on
+    /// the balances in the wallet pools, without other input.
+    /// In other words, shield does not take a user-specified amount
+    /// to shield, rather it consumes all transparent value in the wallet that
+    /// can be consumsed without costing more in zip317 fees than is being transferred.
     pub async fn do_propose_shield(
         &self,
     ) -> Result<crate::data::proposal::ShieldProposal, DoProposeError> {
@@ -168,7 +196,6 @@ impl LightClient {
             ShieldedProtocol::Orchard,
         ); // review consider change strategy!
 
-        let secp = secp256k1::Secp256k1::new();
         let input_selector = GISKit::new(
             change_strategy,
             zcash_client_backend::fees::DustOutputPolicy::default(),
@@ -192,23 +219,7 @@ impl LightClient {
             &input_selector,
             // don't shield dust
             NonNegativeAmount::const_from_u64(10_000),
-            &self
-                .wallet
-                .wallet_capability()
-                .transparent_child_keys()
-                .map_err(|_e| {
-                    DoProposeError::ShieldProposal(
-                        zcash_client_backend::data_api::error::Error::DataSource(
-                            TxMapAndMaybeTreesTraitError::NoSpendCapability,
-                        ),
-                    )
-                })?
-                .iter()
-                .map(|(_index, sk)| {
-                    #[allow(deprecated)]
-                    zcash_primitives::legacy::keys::pubkey_to_address(&sk.public_key(&secp))
-                })
-                .collect::<Vec<_>>(),
+            &self.get_transparent_addresses()?,
             // review! do we want to require confirmations?
             // make it configurable?
             0,
@@ -219,5 +230,29 @@ impl LightClient {
             proposed_shield.clone(),
         ));
         Ok(proposed_shield)
+    }
+}
+#[cfg(test)]
+mod shielding {
+    #[tokio::test]
+    async fn get_transparent_addresses() {
+        let client = crate::lightclient::LightClient::create_unconnected(
+            &zingoconfig::ZingoConfigBuilder::default().create(),
+            crate::wallet::WalletBase::MnemonicPhrase(
+                zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            ),
+            0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            client.get_transparent_addresses().unwrap(),
+            [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
+                [
+                    161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,
+                    255, 189, 198, 33
+                ]
+            )]
+        );
     }
 }
