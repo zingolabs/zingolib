@@ -8,9 +8,10 @@ struct LibtonodeChain {
 }
 
 impl ChainTest for LibtonodeChain {
-    // async fn setup() -> Self {
-    //     todo!()
-    // }
+    async fn setup() -> Self {
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        LibtonodeChain { regtest_network }
+    }
 
     async fn build_client_and_fund(
         &self,
@@ -40,8 +41,5 @@ impl ChainTest for LibtonodeChain {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-    let libtonode_chain = LibtonodeChain { regtest_network };
-
-    zingolib::test_framework::generic_chain_tests::simple(libtonode_chain, 40_000).await;
+    zingolib::test_framework::generic_chain_tests::simple_setup::<LibtonodeChain>(40_000).await;
 }

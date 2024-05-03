@@ -18,9 +18,24 @@ struct DarksideChain {
 }
 
 impl ChainTest for DarksideChain {
-    // async fn setup() -> Self {
-    //     todo!()
-    // }
+    async fn setup() -> Self {
+        let darkside_handler = DarksideHandler::new(None);
+
+        let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+            "http://127.0.0.1:{}",
+            darkside_handler.grpc_port
+        )));
+        prepare_darksidewalletd(server_id.clone(), true)
+            .await
+            .unwrap();
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+
+        DarksideChain {
+            server_id,
+            darkside_handler,
+            regtest_network,
+        }
+    }
 
     async fn build_client_and_fund(
         &self,
@@ -46,22 +61,5 @@ impl ChainTest for DarksideChain {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    let darkside_handler = DarksideHandler::new(None);
-
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
-    prepare_darksidewalletd(server_id.clone(), true)
-        .await
-        .unwrap();
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-
-    let darksidechain = DarksideChain {
-        server_id,
-        darkside_handler,
-        regtest_network,
-    };
-
-    zingolib::test_framework::generic_chain_tests::simple(darksidechain, 40_000).await;
+    zingolib::test_framework::generic_chain_tests::simple_setup::<DarksideChain>(40_000).await;
 }
