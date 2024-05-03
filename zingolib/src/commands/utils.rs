@@ -1,35 +1,13 @@
 // Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
-use crate::utils::{address_from_str, zatoshis_from_u64};
-use crate::wallet::{self, Pool};
+use crate::utils::address_from_str;
+use crate::utils::zatoshis_from_u64;
+use crate::wallet::utils::interpret_memo_string;
 use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
-
-pub(super) fn parse_shield_args(
-    args: &[&str],
-    chain: &ChainType,
-) -> Result<(Vec<Pool>, Option<Address>), CommandError> {
-    if args.is_empty() || args.len() > 2 {
-        return Err(CommandError::InvalidArguments);
-    }
-
-    let pools_to_shield: &[Pool] = match args[0] {
-        "transparent" => &[Pool::Transparent],
-        "sapling" => &[Pool::Sapling],
-        "all" => &[Pool::Sapling, Pool::Transparent],
-        _ => return Err(CommandError::InvalidPool),
-    };
-    let address = if args.len() == 2 {
-        Some(address_from_str(args[1], chain).map_err(CommandError::ConversionFailed)?)
-    } else {
-        None
-    };
-
-    Ok((pools_to_shield.to_vec(), address))
-}
 
 // Parse the send arguments for `do_propose`.
 // The send arguments have two possible formats:
@@ -79,10 +57,7 @@ pub(super) fn parse_send_args(
                     zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
 
                 let memo = if let Some(m) = j["memo"].as_str().map(|s| s.to_string()) {
-                    Some(
-                        wallet::utils::interpret_memo_string(m)
-                            .map_err(CommandError::InvalidMemo)?,
-                    )
+                    Some(interpret_memo_string(m).map_err(CommandError::InvalidMemo)?)
                 } else {
                     None
                 };
@@ -99,10 +74,7 @@ pub(super) fn parse_send_args(
             .map_err(CommandError::ParseIntFromString)?;
         let amount = zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
         let memo = if args.len() == 3 {
-            Some(
-                wallet::utils::interpret_memo_string(args[2].to_string())
-                    .map_err(CommandError::InvalidMemo)?,
-            )
+            Some(interpret_memo_string(args[2].to_string()).map_err(CommandError::InvalidMemo)?)
         } else {
             None
         };
@@ -139,34 +111,6 @@ mod tests {
         utils::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string, Pool},
     };
-
-    #[test]
-    fn parse_shield_args() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-        let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let address = address_from_str(address_str, &chain).unwrap();
-
-        // Shield all to default address
-        let shield_args = &["all"];
-        assert_eq!(
-            super::parse_shield_args(shield_args, &chain).unwrap(),
-            (vec![Pool::Sapling, Pool::Transparent], None)
-        );
-
-        // Shield all to given address
-        let shield_args = &["all", address_str];
-        assert_eq!(
-            super::parse_shield_args(shield_args, &chain).unwrap(),
-            (vec![Pool::Sapling, Pool::Transparent], Some(address))
-        );
-
-        // Invalid pool
-        let shield_args = &["invalid"];
-        assert!(matches!(
-            super::parse_shield_args(shield_args, &chain),
-            Err(CommandError::InvalidPool)
-        ));
-    }
 
     #[test]
     fn parse_send_args() {

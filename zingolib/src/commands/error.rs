@@ -13,7 +13,6 @@ pub(crate) enum CommandError {
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
     ConversionFailed(crate::utils::ConversionError),
-    InvalidPool,
 }
 
 impl fmt::Display for CommandError {
@@ -36,7 +35,6 @@ impl fmt::Display for CommandError {
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
             ConversionFailed(e) => write!(f, "conversion failed. {}", e),
-            InvalidPool => write!(f, "invalid pool."),
         }
     }
 }
