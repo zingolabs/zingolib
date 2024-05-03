@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
-use zcash_client_backend::proto::service::TreeState;
+use zcash_client_backend::{proto::service::TreeState, PoolType, ShieldedProtocol};
 use zcash_encoding::Optional;
 use zingoconfig::ZingoConfig;
 
@@ -71,6 +71,16 @@ pub enum Pool {
     Sapling,
     /// TODO: Add Doc Comment Here!
     Transparent,
+}
+
+impl From<PoolType> for Pool {
+    fn from(pool_type: PoolType) -> Self {
+        match pool_type {
+            PoolType::Transparent => Pool::Transparent,
+            PoolType::Shielded(ShieldedProtocol::Sapling) => Pool::Sapling,
+            PoolType::Shielded(ShieldedProtocol::Orchard) => Pool::Orchard,
+        }
+    }
 }
 
 /// TODO: Add Doc Comment Here!
