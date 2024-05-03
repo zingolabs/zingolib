@@ -48,4 +48,17 @@ where
         )
         .await
         .unwrap();
+
+    chain.bump_chain().await;
+
+    recipient.do_sync(false).await.unwrap();
+
+    assert_eq!(
+        recipient
+            .query_sum_value(OutputQuery::stipulations(
+                true, false, false, false, false, true
+            ))
+            .await,
+        dbg!(value as u64)
+    );
 }

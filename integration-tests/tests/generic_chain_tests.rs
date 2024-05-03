@@ -35,7 +35,23 @@ impl ChainTest for LibtonodeChain {
     }
 
     async fn bump_chain(&self) {
-        todo!()
+        let start_height = self
+            .scenario_builder
+            .regtest_manager
+            .get_current_height()
+            .unwrap();
+        let target = start_height + 1;
+        self.scenario_builder
+            .regtest_manager
+            .generate_n_blocks(1)
+            .expect("Called for side effect, failed!");
+        assert_eq!(
+            self.scenario_builder
+                .regtest_manager
+                .get_current_height()
+                .unwrap(),
+            target
+        );
     }
 }
 

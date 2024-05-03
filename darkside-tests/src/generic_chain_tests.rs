@@ -55,7 +55,19 @@ impl ChainTest for DarksideChain {
     }
 
     async fn bump_chain(&self) {
-        todo!()
+        let connector = DarksideConnector(self.server_id.clone());
+        let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
+        let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+        // There should only be one transaction incoming
+        assert!(streamed_raw_txns.message().await.unwrap().is_none());
+        connector
+            .stage_transactions_stream(vec![(raw_tx.data.clone(), 4)])
+            .await
+            .unwrap();
+        connector.stage_blocks_create(4, 1, 0).await.unwrap();
+        update_tree_states_for_transaction(&self.server_id, raw_tx.clone(), 4).await;
+        connector.apply_staged(4).await.unwrap();
+        sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
