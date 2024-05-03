@@ -109,7 +109,7 @@ mod tests {
     use crate::{
         commands::error::CommandError,
         utils::{address_from_str, zatoshis_from_u64},
-        wallet::{self, utils::interpret_memo_string, Pool},
+        wallet::{self, utils::interpret_memo_string},
     };
 
     #[test]
