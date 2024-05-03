@@ -1,12 +1,12 @@
 #![cfg(feature = "generic_chain_tests")]
-use zcash_client_backend::{PoolType, ShieldedProtocol::Sapling};
-use zingo_testutils::scenarios::setup::{self, ScenarioBuilder};
+use zcash_client_backend::PoolType;
+use zcash_client_backend::ShieldedProtocol::Sapling;
+
+use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
-use zingolib::{
-    lightclient::LightClient,
-    test_framework::generic_chain_tests::ChainTest,
-    wallet::{notes::SaplingNote, WalletBase},
-};
+use zingolib::lightclient::LightClient;
+use zingolib::test_framework::generic_chain_tests::ChainTest;
+use zingolib::wallet::WalletBase;
 
 struct LibtonodeChain {
     regtest_network: RegtestNetwork,
@@ -16,7 +16,7 @@ struct LibtonodeChain {
 impl ChainTest for LibtonodeChain {
     async fn setup() -> Self {
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+        let scenario_builder = ScenarioBuilder::build_configure_launch(
             Some(PoolType::Shielded(Sapling).into()),
             None,
             None,
