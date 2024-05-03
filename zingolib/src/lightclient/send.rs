@@ -43,14 +43,14 @@ impl LightClient {
         let mut step_results = Vec::with_capacity(proposal.steps().len());
         let mut txids = Vec::with_capacity(proposal.steps().len());
         for step in proposal.steps() {
-            let mut tmamt = self
-                .wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await;
+            let step_result = {
+                let mut tmamt = self
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .write()
+                    .await;
 
-            let step_result =
                 zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
                     tmamt.deref_mut(),
                     &self.wallet.transaction_context.config.chain,
@@ -63,9 +63,8 @@ impl LightClient {
                     &step_results,
                     step,
                 )
-                .map_err(DoSendProposedError::Calculation)?;
-
-            drop(tmamt);
+                .map_err(DoSendProposedError::Calculation)?
+            };
 
             let txid = self
                 .wallet
@@ -103,6 +102,7 @@ impl LightClient {
         }
 
         if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+            // fetch parameters for all outgoing transactions
             let submission_height = self
                 .get_submission_height()
                 .await
