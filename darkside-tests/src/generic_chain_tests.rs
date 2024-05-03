@@ -1,7 +1,10 @@
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
-use zingolib::{get_base_address, test_framework::generic_chain_tests::ChainTest};
+use zingolib::{
+    get_base_address, lightclient::LightClient, test_framework::generic_chain_tests::ChainTest,
+    wallet::WalletBase,
+};
 
 use crate::{
     constants::DARKSIDE_SEED,
@@ -15,6 +18,7 @@ struct DarksideChain {
     server_id: http::Uri,
     darkside_handler: DarksideHandler,
     regtest_network: RegtestNetwork,
+    client_builder: ClientBuilder,
 }
 
 impl ChainTest for DarksideChain {
@@ -30,24 +34,35 @@ impl ChainTest for DarksideChain {
             .unwrap();
         let regtest_network = RegtestNetwork::all_upgrades_active();
 
+        let client_builder =
+            ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
+
         DarksideChain {
             server_id,
             darkside_handler,
             regtest_network,
+            client_builder,
         }
     }
 
-    async fn build_faucet(&mut self) -> zingolib::lightclient::LightClient {
-        ClientBuilder::new(
-            self.server_id.clone(),
-            self.darkside_handler.darkside_dir.clone(),
-        )
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, self.regtest_network)
-        .await
+    async fn build_faucet(&mut self) -> LightClient {
+        self.client_builder
+            .build_client(DARKSIDE_SEED.to_string(), 0, true, self.regtest_network)
+            .await
     }
 
-    async fn build_client(&self) -> zingolib::lightclient::LightClient {
-        todo!()
+    async fn build_client(&mut self) -> LightClient {
+        let zingo_config = self
+            .client_builder
+            .make_unique_data_dir_and_load_config(self.regtest_network);
+        LightClient::create_from_wallet_base_async(
+            WalletBase::FreshEntropy,
+            &zingo_config,
+            0,
+            false,
+        )
+        .await
+        .unwrap()
     }
 
     async fn bump_chain(&self) {

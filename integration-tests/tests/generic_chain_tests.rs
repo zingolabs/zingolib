@@ -2,7 +2,11 @@
 use zcash_client_backend::{PoolType, ShieldedProtocol::Sapling};
 use zingo_testutils::scenarios::setup::{self, ScenarioBuilder};
 use zingoconfig::RegtestNetwork;
-use zingolib::{test_framework::generic_chain_tests::ChainTest, wallet::notes::SaplingNote};
+use zingolib::{
+    lightclient::LightClient,
+    test_framework::generic_chain_tests::ChainTest,
+    wallet::{notes::SaplingNote, WalletBase},
+};
 
 struct LibtonodeChain {
     regtest_network: RegtestNetwork,
@@ -25,15 +29,26 @@ impl ChainTest for LibtonodeChain {
         }
     }
 
-    async fn build_faucet(&mut self) -> zingolib::lightclient::LightClient {
+    async fn build_faucet(&mut self) -> LightClient {
         self.scenario_builder
             .client_builder
             .build_faucet(false, self.regtest_network)
             .await
     }
 
-    async fn build_client(&self) -> zingolib::lightclient::LightClient {
-        todo!()
+    async fn build_client(&mut self) -> LightClient {
+        let zingo_config = self
+            .scenario_builder
+            .client_builder
+            .make_unique_data_dir_and_load_config(self.regtest_network);
+        LightClient::create_from_wallet_base_async(
+            WalletBase::FreshEntropy,
+            &zingo_config,
+            0,
+            false,
+        )
+        .await
+        .unwrap()
     }
 
     async fn bump_chain(&self) {

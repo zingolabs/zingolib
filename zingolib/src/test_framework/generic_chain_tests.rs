@@ -12,7 +12,7 @@ pub trait ChainTest {
     /// builds a client and funds it in a certain pool. may need sync before noticing its funds.
     async fn build_faucet(&mut self) -> LightClient;
     /// builds an empty client
-    async fn build_client(&self) -> LightClient;
+    async fn build_client(&mut self) -> LightClient;
     /// moves the chain tip forward, confirming transactions that need to be confirmed
     async fn bump_chain(&self);
 }
@@ -25,6 +25,7 @@ where
     let mut chain = CT::setup().await;
 
     let sender = chain.build_faucet().await;
+    let recipient = chain.build_client().await;
 
     sender.do_sync(false).await.unwrap();
 
@@ -32,7 +33,7 @@ where
         .do_quick_send(
             sender
                 .raw_to_transaction_request(vec![(
-                    get_base_address!(sender, "unified"),
+                    get_base_address!(recipient, "unified"),
                     value,
                     None,
                 )])
