@@ -20,12 +20,11 @@ impl ChainTest for DarksideScenario {
     async fn setup() -> Self {
         let mut scenario = DarksideScenario::new(None).await;
         scenario
-            .stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
-            .await;
-        scenario
     }
 
     async fn create_faucet(&mut self) -> LightClient {
+        self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
+            .await;
         self.client_builder
             .build_client(DARKSIDE_SEED.to_string(), 0, true, self.regtest_network)
             .await
