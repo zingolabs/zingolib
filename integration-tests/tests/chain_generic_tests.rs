@@ -4,7 +4,7 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::LightClient;
-use zingolib::test_framework::generic_chain_tests::ChainTest;
+use zingolib::test_framework::chain_generic_tests::ChainTest;
 use zingolib::wallet::WalletBase;
 
 struct LibtonodeChain {
@@ -73,5 +73,5 @@ impl ChainTest for LibtonodeChain {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    zingolib::test_framework::generic_chain_tests::simple_send::<LibtonodeChain>(40_000).await;
+    zingolib::test_framework::chain_generic_tests::simple_send::<LibtonodeChain>(40_000).await;
 }
