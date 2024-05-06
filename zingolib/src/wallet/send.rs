@@ -852,7 +852,8 @@ impl LightWallet {
         let mut raw_transaction = vec![];
         transaction.write(&mut raw_transaction).unwrap();
 
-        let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
+        let serverz_transaction_id =
+            broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
 
         // Add this transaction to the mempool structure
         {
@@ -865,13 +866,20 @@ impl LightWallet {
         }
 
         let txid = transaction.txid();
-        if txid.to_string() != transaction_id {
-            // happens during darkside tests
-            dbg!(
-                "served txid {} does not match calulated txid {}",
-                transaction_id,
-                txid,
-            );
+
+        if let Ok(serverz_txid_bytes) = serverz_transaction_id.into_bytes().try_into() {
+            let serverz_txid = TxId::from_bytes(serverz_txid_bytes);
+            if txid != serverz_txid {
+                // happens during darkside tests
+                dbg!(
+                    "served txid {} does not match calulated txid {}",
+                    serverz_txid,
+                    txid,
+                );
+                if self.transaction_context.config.accept_server_txids {
+                    return Ok(serverz_txid);
+                }
+            }
         }
 
         Ok(txid)
