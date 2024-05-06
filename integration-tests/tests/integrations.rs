@@ -3978,3 +3978,5 @@ mod basic_transactions {
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
+
+pub mod chain_generic_tests;
