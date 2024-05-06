@@ -24,9 +24,6 @@ pub trait ChainTest {
         self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
-        dbg!(sender.query_sum_value(OutputQuery::any()).await);
-        dbg!(value);
-
         sender
             .do_quick_send(
                 sender
@@ -71,7 +68,7 @@ where
 
     let recipient = chain.create_client().await;
 
-    let _proposal = sender
+    let proposal = sender
         .do_propose_send(
             sender
                 .raw_to_transaction_request(vec![(
@@ -84,16 +81,16 @@ where
         .await
         .unwrap();
 
-    let _txids = sender.do_send_proposed().await.unwrap();
+    let txids = sender.do_send_proposed().await.unwrap();
 
     chain.bump_chain().await;
 
     recipient.do_sync(false).await.unwrap();
 
     // commented because this does not work in darkside right now.
-    // recipient
-    //     .check_chain_matches_proposal(proposal, txids, true)
-    //     .await;
+    recipient
+        .check_chain_matches_proposal(proposal, txids, true)
+        .await;
 
     assert_eq!(
         recipient
