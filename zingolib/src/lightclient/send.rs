@@ -158,12 +158,27 @@ impl LightClient {
         self.do_send_proposed().await.map_err(|e| e.to_string())
     }
 }
+#[cfg(test)]
+mod test {
+    use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingoconfig::ZingoConfigBuilder;
 
-use thiserror::Error;
+    use crate::lightclient::LightClient;
+
+    #[tokio::test]
+    async fn update_tmamt_and_return_step_result() {
+        let config = ZingoConfigBuilder::default().create();
+        let client = LightClient::create_unconnected(
+            &config,
+            crate::wallet::WalletBase::MnemonicPhrase(HOSPITAL_MUSEUM_SEED.to_string()),
+            0,
+        );
+    }
+}
 
 /// Errors that can result from do_send_proposed
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum DoSendProposedError {
     #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
     NoSpendCapability,
@@ -190,7 +205,7 @@ pub enum DoSendProposedError {
 
 /// Errors that can result from do_quick_send
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum DoQuickSendProposedError {
     #[error("propose {0}")]
     Propose(crate::lightclient::propose::DoProposeError),
