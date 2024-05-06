@@ -14,9 +14,6 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
-
-
-
 use super::LightClient;
 use super::LightWalletSendProgress;
 
