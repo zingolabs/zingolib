@@ -84,6 +84,7 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
+        accept_server_txids: false,
     };
 
     Ok(config)
@@ -127,6 +128,8 @@ pub struct ZingoConfigBuilder {
     pub wallet_name: Option<PathBuf>,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: Option<PathBuf>,
+    /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
+    pub accept_server_txids: bool,
 }
 
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
@@ -146,6 +149,8 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
+    /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
+    pub accept_server_txids: bool,
 }
 
 impl ZingoConfigBuilder {
@@ -205,6 +210,7 @@ impl ZingoConfigBuilder {
             wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            accept_server_txids: self.accept_server_txids,
         }
     }
 }
@@ -219,6 +225,7 @@ impl Default for ZingoConfigBuilder {
             wallet_name: None,
             logfile_name: None,
             chain: ChainType::Mainnet,
+            accept_server_txids: false,
         }
     }
 }
