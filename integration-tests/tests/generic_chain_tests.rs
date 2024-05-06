@@ -51,7 +51,7 @@ impl ChainTest for LibtonodeChain {
         .unwrap()
     }
 
-    async fn bump_chain(&self) {
+    async fn bump_chain(&mut self) {
         let start_height = self
             .scenario_builder
             .regtest_manager

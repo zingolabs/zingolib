@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
@@ -9,40 +11,18 @@ use zingolib::{
 use crate::{
     constants::DARKSIDE_SEED,
     utils::{
-        prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector,
-        DarksideHandler,
+        prepare_darksidewalletd, scenarios::DarksideScenario, update_tree_states_for_transaction,
+        DarksideConnector, DarksideHandler,
     },
 };
 
-struct DarksideChain {
-    server_id: http::Uri,
-    darkside_handler: DarksideHandler,
-    regtest_network: RegtestNetwork,
-    client_builder: ClientBuilder,
-}
-
-impl ChainTest for DarksideChain {
+impl ChainTest for DarksideScenario {
     async fn setup() -> Self {
-        let darkside_handler = DarksideHandler::new(None);
-
-        let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
-            "http://127.0.0.1:{}",
-            darkside_handler.grpc_port
-        )));
-        prepare_darksidewalletd(server_id.clone(), true)
+        let ds = DarksideScenario::default().await;
+        prepare_darksidewalletd(ds.darkside_connector.0.clone(), true)
             .await
             .unwrap();
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-
-        let client_builder =
-            ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
-
-        DarksideChain {
-            server_id,
-            darkside_handler,
-            regtest_network,
-            client_builder,
-        }
+        ds
     }
 
     async fn build_faucet(&mut self) -> LightClient {
@@ -65,24 +45,44 @@ impl ChainTest for DarksideChain {
         .unwrap()
     }
 
-    async fn bump_chain(&self) {
-        let connector = DarksideConnector(self.server_id.clone());
-        let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
-        let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
-        // There should only be one transaction incoming
-        assert!(streamed_raw_txns.message().await.unwrap().is_none());
-        connector
-            .stage_transactions_stream(vec![(raw_tx.data.clone(), 4)])
+    async fn bump_chain(&mut self) {
+        self.stage_blocks(u64::from(self.staged_blockheight) + 10, 0)
+            .await;
+        let mut streamed_raw_txns = self
+            .darkside_connector
+            .get_incoming_transactions()
             .await
             .unwrap();
-        connector.stage_blocks_create(4, 1, 0).await.unwrap();
-        update_tree_states_for_transaction(&self.server_id, raw_tx.clone(), 4).await;
-        connector.apply_staged(4).await.unwrap();
-        sleep(std::time::Duration::from_secs(1)).await;
+        self.darkside_connector
+            .clear_incoming_transactions()
+            .await
+            .unwrap();
+        loop {
+            let maybe_raw_tx = streamed_raw_txns.message().await.unwrap();
+            match maybe_raw_tx {
+                None => break,
+                Some(raw_tx) => {
+                    self.darkside_connector
+                        .stage_transactions_stream(vec![(
+                            dbg!(raw_tx.data.clone()),
+                            u64::from(self.staged_blockheight),
+                        )])
+                        .await
+                        .unwrap();
+                    self.tree_state = update_tree_states_for_transaction(
+                        &self.darkside_connector.0,
+                        raw_tx.clone(),
+                        u64::from(self.staged_blockheight),
+                    )
+                    .await;
+                }
+            }
+        }
+        self.apply_blocks(self.staged_blockheight.into()).await;
     }
 }
 
 #[tokio::test]
 async fn chain_generic_send() {
-    zingolib::test_framework::generic_chain_tests::simple_send::<DarksideChain>(40_000).await;
+    zingolib::test_framework::generic_chain_tests::simple_send::<DarksideScenario>(40_000).await;
 }

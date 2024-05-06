@@ -15,13 +15,14 @@ pub trait ChainTest {
     /// builds an empty client
     async fn build_client(&mut self) -> LightClient;
     /// moves the chain tip forward, confirming transactions that need to be confirmed
-    async fn bump_chain(&self);
+    async fn bump_chain(&mut self);
 
     /// builds a client and funds it in a certain pool. may need sync before noticing its funds.
     async fn fund_client(&mut self, value: u32) -> LightClient {
         let sender = self.build_faucet().await;
         let recipient = self.build_client().await;
 
+        self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
         sender
