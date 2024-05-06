@@ -29,14 +29,14 @@ impl ChainTest for LibtonodeChain {
         }
     }
 
-    async fn build_faucet(&mut self) -> LightClient {
+    async fn create_faucet(&mut self) -> LightClient {
         self.scenario_builder
             .client_builder
             .build_faucet(false, self.regtest_network)
             .await
     }
 
-    async fn build_client(&mut self) -> LightClient {
+    async fn create_client(&mut self) -> LightClient {
         let zingo_config = self
             .scenario_builder
             .client_builder

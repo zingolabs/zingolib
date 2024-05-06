@@ -11,17 +11,18 @@ pub trait ChainTest {
     /// set up the test chain
     async fn setup() -> Self;
     /// builds a faucet (funded from mining)
-    async fn build_faucet(&mut self) -> LightClient;
+    async fn create_faucet(&mut self) -> LightClient;
     /// builds an empty client
-    async fn build_client(&mut self) -> LightClient;
+    async fn create_client(&mut self) -> LightClient;
     /// moves the chain tip forward, confirming transactions that need to be confirmed
     async fn bump_chain(&mut self);
 
     /// builds a client and funds it in a certain pool. may need sync before noticing its funds.
     async fn fund_client(&mut self, value: u32) -> LightClient {
-        let sender = self.build_faucet().await;
-        let recipient = self.build_client().await;
+        let sender = self.create_faucet().await;
+        let recipient = self.create_client().await;
 
+        self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
         dbg!(sender.query_sum_value(OutputQuery::any()).await);
@@ -61,7 +62,7 @@ where
         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u32))
         .await;
 
-    let recipient = chain.build_client().await;
+    let recipient = chain.create_client().await;
 
     sender
         .do_quick_send(

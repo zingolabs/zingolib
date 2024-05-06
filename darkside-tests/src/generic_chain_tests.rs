@@ -18,23 +18,21 @@ use crate::{
 
 impl ChainTest for DarksideScenario {
     async fn setup() -> Self {
-        let ds = DarksideScenario::default().await;
-        prepare_darksidewalletd(ds.darkside_connector.0.clone(), false)
-            .await
-            .unwrap();
-        ds
+        DarksideScenario::default_faucet_recipient(zingolib::wallet::Pool::Sapling).await
+        // let ds = DarksideScenario::default().await;
+        // prepare_darksidewalletd(ds.darkside_connector.0.clone(), false)
+        //     .await
+        //     .unwrap();
+        // ds
     }
 
-    async fn build_faucet(&mut self) -> LightClient {
-        let faucet_funding_transaction = crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
-        self.stage_transaction(faucet_funding_transaction).await;
-        self.apply_blocks(1).await;
+    async fn create_faucet(&mut self) -> LightClient {
         self.client_builder
             .build_client(DARKSIDE_SEED.to_string(), 0, true, self.regtest_network)
             .await
     }
 
-    async fn build_client(&mut self) -> LightClient {
+    async fn create_client(&mut self) -> LightClient {
         let zingo_config = self
             .client_builder
             .make_unique_data_dir_and_load_config(self.regtest_network);
@@ -65,7 +63,7 @@ impl ChainTest for DarksideScenario {
                 Some(raw_tx) => {
                     self.darkside_connector
                         .stage_transactions_stream(vec![(
-                            dbg!(raw_tx.data.clone()),
+                            raw_tx.data.clone(),
                             u64::from(self.staged_blockheight),
                         )])
                         .await
