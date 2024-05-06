@@ -71,7 +71,7 @@ where
 
     let recipient = chain.create_client().await;
 
-    let proposal = sender
+    let _proposal = sender
         .do_propose_send(
             sender
                 .raw_to_transaction_request(vec![(
@@ -84,7 +84,7 @@ where
         .await
         .unwrap();
 
-    let txids = sender.do_send_proposed().await.unwrap();
+    let _txids = sender.do_send_proposed().await.unwrap();
 
     chain.bump_chain().await;
 

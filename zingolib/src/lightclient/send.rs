@@ -5,17 +5,17 @@ use nonempty::NonEmpty;
 
 use sapling_crypto::prover::OutputProver;
 use sapling_crypto::prover::SpendProver;
-use zcash_client_backend::address::Address;
+
 use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
-use crate::utils::zatoshis_from_u64;
-use crate::wallet::Pool;
+
+
 
 use super::LightClient;
 use super::LightWalletSendProgress;
