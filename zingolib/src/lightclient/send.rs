@@ -151,7 +151,7 @@ impl LightClient {
         &self,
         request: TransactionRequest,
     ) -> Result<NonEmpty<TxId>, String> {
-        self.do_propose_spend(request)
+        self.do_propose_send(request)
             .await
             .map_err(|e| e.to_string())?;
         self.do_send_proposed().await.map_err(|e| e.to_string())

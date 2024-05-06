@@ -72,7 +72,7 @@ where
     let recipient = chain.create_client().await;
 
     let proposal = sender
-        .do_propose_spend(
+        .do_propose_send(
             sender
                 .raw_to_transaction_request(vec![(
                     get_base_address!(recipient, "unified"),

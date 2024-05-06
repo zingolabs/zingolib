@@ -797,7 +797,7 @@ impl Command for ProposeSendCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .do_propose_spend(request)
+                .do_propose_send(request)
                 .await {
                 Ok(proposal) => {
                     object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
@@ -908,7 +908,7 @@ impl Command for QuickSendCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .do_propose_spend(request)
+                .do_propose_send(request)
                 .await {
                 Ok(_proposal) => {
                     match lightclient.do_send_proposed().await {
