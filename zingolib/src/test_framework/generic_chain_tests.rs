@@ -22,6 +22,7 @@ pub trait ChainTest {
         let sender = self.create_faucet().await;
         let recipient = self.create_client().await;
 
+        dbg!("bumping chain");
         self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
@@ -41,6 +42,7 @@ pub trait ChainTest {
             .await
             .unwrap();
 
+        dbg!("bumping chain");
         self.bump_chain().await;
 
         recipient.do_sync(false).await.unwrap();

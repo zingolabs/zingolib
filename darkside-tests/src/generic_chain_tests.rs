@@ -18,12 +18,16 @@ use crate::{
 
 impl ChainTest for DarksideScenario {
     async fn setup() -> Self {
-        DarksideScenario::default_faucet_recipient(zingolib::wallet::Pool::Sapling).await
-        // let ds = DarksideScenario::default().await;
-        // prepare_darksidewalletd(ds.darkside_connector.0.clone(), false)
-        //     .await
-        //     .unwrap();
-        // ds
+        let mut scenario = DarksideScenario::new(None).await;
+        scenario
+            .build_faucet(zingolib::wallet::Pool::Sapling)
+            .await
+            .build_client(
+                zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                4,
+            )
+            .await;
+        scenario
     }
 
     async fn create_faucet(&mut self) -> LightClient {
