@@ -867,7 +867,7 @@ impl LightWallet {
 
         let txid = transaction.txid();
 
-        if let Ok(serverz_txid_bytes) = serverz_transaction_id.into_bytes().try_into() {
+        if let Ok(serverz_txid_bytes) = dbg!(serverz_transaction_id).into_bytes().try_into() {
             let serverz_txid = TxId::from_bytes(serverz_txid_bytes);
             if txid != serverz_txid {
                 // happens during darkside tests
