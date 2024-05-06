@@ -163,7 +163,7 @@ mod test {
     use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingoconfig::ZingoConfigBuilder;
 
-    use crate::lightclient::LightClient;
+    use crate::{lightclient::LightClient, test_framework::mocks::ProposalBuilder};
 
     #[tokio::test]
     async fn update_tmamt_and_return_step_result() {
@@ -172,7 +172,14 @@ mod test {
             &config,
             crate::wallet::WalletBase::MnemonicPhrase(HOSPITAL_MUSEUM_SEED.to_string()),
             0,
-        );
+        )
+        .await
+        .expect("A client!");
+        let proposal = ProposalBuilder::new().build();
+        let step = zcash_client_backend::proposal::Step::from_parts();
+        let step_result = client
+            .update_tmamt_and_return_step_result(&proposal, step, step_results)
+            .await;
     }
 }
 
