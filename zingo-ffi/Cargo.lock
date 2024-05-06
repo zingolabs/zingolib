@@ -536,7 +536,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 
 [[package]]
 name = "bumpalo"
@@ -803,7 +803,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "bech32 0.11.0",
  "env_logger 0.11.3",
@@ -812,7 +812,7 @@ dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
- "itertools 0.10.5",
+ "itertools",
  "json",
  "log",
  "orchard",
@@ -1729,15 +1729,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2430,7 +2421,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9554e3ab233f0a932403704f1a1d08c30d5ccd931adfdfa1e8b5a19b52c1d55a"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.61",
@@ -4689,7 +4680,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4702,7 +4693,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
@@ -4720,7 +4711,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "serde_json",
  "zcash_primitives",
@@ -4729,7 +4720,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "futures",
  "http 0.2.12",
@@ -4756,7 +4747,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "zcash_primitives",
  "zingoconfig",
@@ -4765,7 +4756,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "dirs",
  "http 0.2.12",
@@ -4779,7 +4770,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#0d15e3202d4af32e5aab7465d8ccbe1298f81b9d"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
 dependencies = [
  "append-only-vec",
  "base58",
