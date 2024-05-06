@@ -22,7 +22,6 @@ pub trait ChainTest {
         let sender = self.create_faucet().await;
         let recipient = self.create_client().await;
 
-        dbg!("bumping chain");
         self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
@@ -42,13 +41,22 @@ pub trait ChainTest {
             .await
             .unwrap();
 
-        dbg!("bumping chain");
         self.bump_chain().await;
 
         recipient.do_sync(false).await.unwrap();
 
         recipient
     }
+
+    // async fn start_with_funds(value: u32) -> (LightClient, Self) {
+    //     let chain = Self::setup().await;
+
+    //     let starter = chain
+    //         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u32))
+    //         .await;
+
+    //     (starter, chain);
+    // }
 }
 
 /// runs a send-to-self and receives it in a chain-generic context
