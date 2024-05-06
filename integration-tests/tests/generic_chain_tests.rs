@@ -74,5 +74,5 @@ impl ChainTest for LibtonodeChain {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    zingolib::test_framework::generic_chain_tests::simple_setup::<LibtonodeChain>(40_000).await;
+    zingolib::test_framework::generic_chain_tests::simple_send::<LibtonodeChain>(40_000).await;
 }

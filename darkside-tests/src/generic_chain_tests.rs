@@ -84,5 +84,5 @@ impl ChainTest for DarksideChain {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    zingolib::test_framework::generic_chain_tests::simple_setup::<DarksideChain>(40_000).await;
+    zingolib::test_framework::generic_chain_tests::simple_send::<DarksideChain>(40_000).await;
 }
