@@ -24,15 +24,25 @@ impl ManageScenario for DarksideEnvironment {
     async fn create_faucet(&mut self) -> LightClient {
         self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
             .await;
-        self.client_builder
-            .build_client(DARKSIDE_SEED.to_string(), 0, true, self.regtest_network)
-            .await
+        let mut zingo_config = self
+            .client_builder
+            .make_unique_data_dir_and_load_config(self.regtest_network);
+        zingo_config.accept_server_txids = true;
+        LightClient::create_from_wallet_base_async(
+            WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
+            &zingo_config,
+            0,
+            true,
+        )
+        .await
+        .unwrap()
     }
 
     async fn create_client(&mut self) -> LightClient {
-        let zingo_config = self
+        let mut zingo_config = self
             .client_builder
             .make_unique_data_dir_and_load_config(self.regtest_network);
+        zingo_config.accept_server_txids = true;
         LightClient::create_from_wallet_base_async(
             WalletBase::FreshEntropy,
             &zingo_config,
