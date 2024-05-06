@@ -1,6 +1,5 @@
 //! tests that can be run either as lib-to-node or darkside.
 
-
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use crate::{get_base_address, lightclient::LightClient, wallet::notes::query::OutputQuery};
@@ -66,19 +65,14 @@ where
 {
     let mut chain = CT::setup().await;
 
-    dbg!("chain set up, funding client now");
-
     let sender = chain
         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u32))
         .await;
 
     let recipient = chain.create_client().await;
 
-    dbg!("ready to send");
-    dbg!(sender.query_sum_value(OutputQuery::any()).await);
-    dbg!(value);
-    sender
-        .do_quick_send(
+    let proposal = sender
+        .do_propose_spend(
             sender
                 .raw_to_transaction_request(vec![(
                     get_base_address!(recipient, "unified"),
@@ -90,9 +84,16 @@ where
         .await
         .unwrap();
 
+    let txids = sender.do_send_proposed().await.unwrap();
+
     chain.bump_chain().await;
 
     recipient.do_sync(false).await.unwrap();
+
+    // commented because this does not work in darkside right now.
+    // recipient
+    //     .check_chain_matches_proposal(proposal, txids, true)
+    //     .await;
 
     assert_eq!(
         recipient

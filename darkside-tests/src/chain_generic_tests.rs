@@ -79,7 +79,7 @@ impl ChainTest for DarksideScenario {
 }
 
 #[tokio::test]
-async fn chain_generic_send() {
+async fn chain_generic_darkside_send() {
     zingolib::test_framework::chain_generic_tests::simple_send::<DarksideScenario>(40_000).await;
 }
 
@@ -87,7 +87,7 @@ use proptest::proptest;
 use tokio::runtime::Runtime;
 proptest! {
     #[test]
-    fn chain_generic_send_proptest(value in 0..90_000u32) {
+    fn chain_generic_darkside_send_proptest(value in 0..90_000u32) {
         Runtime::new().unwrap().block_on(async {
     zingolib::test_framework::chain_generic_tests::simple_send::<DarksideScenario>(value).await;
         });

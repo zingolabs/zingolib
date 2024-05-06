@@ -1,5 +1,6 @@
 use crate::error::ZingoLibError;
 use crate::wallet::Pool;
+use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
 
@@ -67,10 +68,11 @@ impl LightClient {
         //     .map(|txid| txid.to_string())
     }
 
+    /// compares a proposal with a final transaction
     pub async fn check_chain_matches_proposal<T, U>(
         &self,
         proposal: Proposal<T, U>,
-        txids: Vec<TxId>,
+        txids: NonEmpty<TxId>,
         confirmed: bool,
         // total_balance_before: &mut u64,
     ) {

@@ -180,7 +180,7 @@ pub enum DoSendProposedError {
     SaplingParams(String),
     #[error("Could not find UnifiedSpendKey: {0}")]
     UnifiedSpendKey(std::io::Error),
-    #[error("No proposal. Call do_propose first.")]
+    #[error("Can't Calculate {0}")]
     Calculation(
         zcash_client_backend::data_api::error::Error<
             crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
