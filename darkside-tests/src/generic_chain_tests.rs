@@ -19,13 +19,16 @@ use crate::{
 impl ChainTest for DarksideScenario {
     async fn setup() -> Self {
         let ds = DarksideScenario::default().await;
-        prepare_darksidewalletd(ds.darkside_connector.0.clone(), true)
+        prepare_darksidewalletd(ds.darkside_connector.0.clone(), false)
             .await
             .unwrap();
         ds
     }
 
     async fn build_faucet(&mut self) -> LightClient {
+        let faucet_funding_transaction = crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
+        self.stage_transaction(faucet_funding_transaction).await;
+        self.apply_blocks(1).await;
         self.client_builder
             .build_client(DARKSIDE_SEED.to_string(), 0, true, self.regtest_network)
             .await
@@ -46,8 +49,6 @@ impl ChainTest for DarksideScenario {
     }
 
     async fn bump_chain(&mut self) {
-        self.stage_blocks(u64::from(self.staged_blockheight) + 10, 0)
-            .await;
         let mut streamed_raw_txns = self
             .darkside_connector
             .get_incoming_transactions()
@@ -78,6 +79,8 @@ impl ChainTest for DarksideScenario {
                 }
             }
         }
+        self.stage_blocks(u64::from(self.staged_blockheight) + 10, 0)
+            .await;
         self.apply_blocks(self.staged_blockheight.into()).await;
     }
 }

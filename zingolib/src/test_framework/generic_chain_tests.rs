@@ -22,8 +22,10 @@ pub trait ChainTest {
         let sender = self.build_faucet().await;
         let recipient = self.build_client().await;
 
-        self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
+
+        dbg!(sender.query_sum_value(OutputQuery::any()).await);
+        dbg!(value);
 
         sender
             .do_quick_send(
@@ -52,6 +54,8 @@ where
     CT: ChainTest,
 {
     let mut chain = CT::setup().await;
+
+    dbg!("chain set up, funding client now");
 
     let sender = chain
         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u32))
