@@ -941,16 +941,7 @@ impl Command for QuickShieldCommand {
         "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
-            Ok(args) => args,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
-                    e
-                )
-            }
-        };
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient
                 .do_propose_shield()
