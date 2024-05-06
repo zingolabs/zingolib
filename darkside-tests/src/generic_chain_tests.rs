@@ -18,8 +18,7 @@ use crate::{
 
 impl ChainTest for DarksideScenario {
     async fn setup() -> Self {
-        let mut scenario = DarksideScenario::new(None).await;
-        scenario
+        DarksideScenario::new(None).await
     }
 
     async fn create_faucet(&mut self) -> LightClient {
