@@ -9,7 +9,7 @@ use zingolib::{
 };
 
 use crate::{
-    constants::DARKSIDE_SEED,
+    constants::{ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT, DARKSIDE_SEED},
     utils::{
         prepare_darksidewalletd, scenarios::DarksideScenario, update_tree_states_for_transaction,
         DarksideConnector, DarksideHandler,
@@ -20,12 +20,7 @@ impl ChainTest for DarksideScenario {
     async fn setup() -> Self {
         let mut scenario = DarksideScenario::new(None).await;
         scenario
-            .build_faucet(zingolib::wallet::Pool::Sapling)
-            .await
-            .build_client(
-                zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-                4,
-            )
+            .stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
             .await;
         scenario
     }
