@@ -1,6 +1,6 @@
 //! tests that can be run either as lib-to-node or darkside.
 
-use zcash_client_backend::{PoolType, ShieldedProtocol::Orchard};
+
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use crate::{get_base_address, lightclient::LightClient, wallet::notes::query::OutputQuery};

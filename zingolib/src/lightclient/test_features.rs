@@ -1,4 +1,4 @@
-use crate::{error::ZingoLibError, utils::address_from_str, wallet::Pool};
+use crate::{error::ZingoLibError, wallet::Pool};
 
 use super::*;
 
@@ -52,8 +52,8 @@ impl LightClient {
     #[cfg(feature = "test-features")]
     pub async fn do_shield_test_only(
         &self,
-        pools_to_shield: &[Pool],
-        address: Option<&str>,
+        _pools_to_shield: &[Pool],
+        _address: Option<&str>,
     ) -> Result<String, String> {
         todo!()
         // let address = address.map(|addr| {

@@ -1,15 +1,15 @@
 //! TODO: Add Mod Description Here!
 use nonempty::NonEmpty;
 
-use zcash_client_backend::{address::Address, zip321::TransactionRequest};
+use zcash_client_backend::{zip321::TransactionRequest};
 use zcash_primitives::consensus::BlockHeight;
 
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
-use crate::utils::zatoshis_from_u64;
-use crate::wallet::Pool;
+
+
 
 use super::LightClient;
 use super::LightWalletSendProgress;
