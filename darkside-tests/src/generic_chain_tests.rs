@@ -44,7 +44,7 @@ impl ChainTest for DarksideScenario {
     }
 
     async fn bump_chain(&mut self) {
-        self.staged_blockheight = self.staged_blockheight + 10;
+        self.staged_blockheight = self.staged_blockheight + 1;
         let mut streamed_raw_txns = self
             .darkside_connector
             .get_incoming_transactions()
