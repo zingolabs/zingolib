@@ -29,18 +29,18 @@ pub trait ChainTest {
         dbg!(sender.query_sum_value(OutputQuery::any()).await);
         dbg!(value);
 
-        sender
-            .do_quick_send(
-                sender
-                    .raw_to_transaction_request(vec![(
-                        get_base_address!(recipient, "unified"),
-                        value,
-                        None,
-                    )])
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        // sender
+        //     .do_quick_send(
+        //         sender
+        //             .raw_to_transaction_request(vec![(
+        //                 get_base_address!(recipient, "unified"),
+        //                 value,
+        //                 None,
+        //             )])
+        //             .unwrap(),
+        //     )
+        //     .await
+        //     .unwrap();
 
         dbg!("bumping chain");
         self.bump_chain().await;
@@ -66,6 +66,9 @@ where
 
     let recipient = chain.create_client().await;
 
+    dbg!("ready to send");
+    dbg!(sender.query_sum_value(OutputQuery::any()).await);
+    dbg!(value);
     sender
         .do_quick_send(
             sender

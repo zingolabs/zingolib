@@ -44,7 +44,6 @@ impl ChainTest for DarksideScenario {
     }
 
     async fn bump_chain(&mut self) {
-        self.staged_blockheight = self.staged_blockheight + 1;
         let mut streamed_raw_txns = self
             .darkside_connector
             .get_incoming_transactions()
@@ -79,9 +78,12 @@ impl ChainTest for DarksideScenario {
                 }
             }
         }
-        self.stage_blocks(u64::from(self.staged_blockheight), 0)
-            .await;
-        self.apply_blocks(self.staged_blockheight.into()).await;
+        self.darkside_connector
+            .stage_blocks_create(u64::from(self.staged_blockheight) as i32, 1, 0)
+            .await
+            .unwrap();
+        self.staged_blockheight = dbg!(self.staged_blockheight + 1);
+        self.apply_blocks(u64::from(self.staged_blockheight)).await;
     }
 }
 
