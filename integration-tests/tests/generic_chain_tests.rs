@@ -1,4 +1,3 @@
-#![cfg(feature = "generic_chain_tests")]
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
