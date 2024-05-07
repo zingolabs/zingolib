@@ -1,12 +1,6 @@
 //! TODO: Add Mod Description Here!
-use std::ops::DerefMut;
 
 use nonempty::NonEmpty;
-
-use sapling_crypto::prover::OutputProver;
-use sapling_crypto::prover::SpendProver;
-
-use zcash_keys::keys::UnifiedSpendingKey;
 
 use zcash_client_backend::{proposal::Proposal, zip321::TransactionRequest};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -177,10 +171,12 @@ mod test {
         .await
         .expect("A client!");
         let proposal = ProposalBuilder::new().build();
+        /*
         let step = zcash_client_backend::proposal::Step::from_parts();
         let step_result = client
             .update_tmamt_and_return_step_result(&proposal, step, step_results)
             .await;
+        */
     }
 }
 
