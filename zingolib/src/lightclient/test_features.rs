@@ -1,5 +1,4 @@
 use crate::error::ZingoLibError;
-use crate::wallet::Pool;
 use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
@@ -54,18 +53,10 @@ impl LightClient {
     ///
     /// Panics if the address conversion fails.
     #[cfg(feature = "test-features")]
-    pub async fn do_shield_test_only(
-        &self,
-        _pools_to_shield: &[Pool],
-        _address: Option<&str>,
-    ) -> Result<String, String> {
-        todo!()
-        // let address = address.map(|addr| {
-        //     address_from_str(addr, &self.config().chain).expect("should be a valid address")
-        // });
-        // self.do_shield(pools_to_shield, address)
-        //     .await
-        //     .map(|txid| txid.to_string())
+    pub async fn do_shield_test_only(&self) -> Result<String, String> {
+        self.do_quick_shield()
+            .await
+            .map(|txid| txid.first().to_string())
     }
 
     /// compares a proposal with a final transaction

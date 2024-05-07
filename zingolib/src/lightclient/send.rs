@@ -6,12 +6,10 @@ use nonempty::NonEmpty;
 use sapling_crypto::prover::OutputProver;
 use sapling_crypto::prover::SpendProver;
 
-use zcash_client_backend::proposal::Proposal;
-use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::keys::UnifiedSpendingKey;
-use zcash_primitives::consensus::BlockHeight;
 
-use zcash_primitives::transaction::TxId;
+use zcash_client_backend::{proposal::Proposal, zip321::TransactionRequest};
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_proofs::prover::LocalTxProver;
 
 use super::LightClient;

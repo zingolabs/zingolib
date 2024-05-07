@@ -709,7 +709,6 @@ pub mod scenarios {
             // We can't just take a reference to a LightClient, as that might be a reference to
             // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
             sender: DarksideSender<'_>,
-            pool_to_shield: Pool,
         ) -> (&mut DarksideScenario, RawTransaction) {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
@@ -721,10 +720,7 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            lightclient
-                .do_shield_test_only(&[pool_to_shield], None)
-                .await
-                .unwrap();
+            lightclient.do_shield_test_only().await.unwrap();
             let mut streamed_raw_txns = self
                 .darkside_connector
                 .get_incoming_transactions()
@@ -763,10 +759,9 @@ pub mod scenarios {
             // We can't just take a reference to a LightClient, as that might be a reference to
             // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
             sender: DarksideSender<'_>,
-            pool_to_shield: Pool,
             chainbuild_file: &File,
         ) -> &mut DarksideScenario {
-            let (_, raw_tx) = self.shield_transaction(sender, pool_to_shield).await;
+            let (_, raw_tx) = self.shield_transaction(sender).await;
             write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
             self
         }

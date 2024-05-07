@@ -144,10 +144,7 @@ mod fast {
             .await
             .unwrap();
         let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
-        recipient
-            .do_shield_test_only(&[Pool::Transparent], None)
-            .await
-            .unwrap();
+        recipient.do_shield_test_only().await.unwrap();
         let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
         assert_eq!(preshield_utxos[0].address, postshield_utxos[0].address);
         assert_eq!(
@@ -629,21 +626,6 @@ mod fast {
             .unwrap();
     }
 
-    // test fails with error message: "66: tx unpaid action limit exceeded"
-    #[ignore]
-    #[tokio::test]
-    async fn mine_to_transparent_and_shield() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
-            .await
-            .unwrap();
-        faucet
-            .do_shield_test_only(&[Pool::Transparent], None)
-            .await
-            .unwrap();
-    }
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -1120,100 +1102,7 @@ mod slow {
             .unwrap_err();
         assert_eq!(sent_transaction_error, "The underlying datasource produced the following error: Cannot send. Fund shortfall: 35000. To send funds, first ensure they are shielded and confirmed.");
     }
-    #[tokio::test]
-    async fn shield_sapling() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
 
-        let sapling_dust = 100;
-        let _sent_transaction_id = faucet
-            .do_send_test_only(vec![(
-                &get_base_address!(recipient, "sapling"),
-                sapling_dust,
-                None,
-            )])
-            .await
-            .unwrap();
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
-
-        assert_eq!(
-            recipient.do_shield_test_only(&[Pool::Sapling], None).await,
-            Err(
-                "Not enough transparent/sapling balance to shield. Have 100 zats, \
-        need more than 10000 zats to cover tx fee"
-                    .to_string()
-            )
-        );
-
-        let sapling_enough_for_fee = 10_100;
-        faucet.do_sync(false).await.unwrap();
-        let _sent_transaction_id = faucet
-            .do_send_test_only(vec![(
-                &get_base_address!(recipient, "sapling"),
-                sapling_enough_for_fee,
-                None,
-            )])
-            .await
-            .unwrap();
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        recipient
-            .do_shield_test_only(&[Pool::Sapling, Pool::Transparent], None)
-            .await
-            .unwrap();
-
-        // The exact same thing again, but with pre-existing orchard funds
-        // already in the shielding wallet
-        faucet.do_sync(false).await.unwrap();
-        let _sent_transaction_id = faucet
-            .do_send_test_only(vec![(
-                &get_base_address!(recipient, "sapling"),
-                sapling_enough_for_fee,
-                None,
-            )])
-            .await
-            .unwrap();
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        recipient
-            .do_shield_test_only(&[Pool::Sapling, Pool::Transparent], None)
-            .await
-            .unwrap();
-
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
-    }
-    #[tokio::test]
-    async fn shield_heartwood_sapling_funds() {
-        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
-        let (regtest_manager, _cph, faucet) =
-            scenarios::faucet(Pool::Sapling, regtest_network).await;
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
-            .await
-            .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
-        faucet
-            .do_shield_test_only(&[Pool::Sapling], None)
-            .await
-            .unwrap();
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        check_client_balances!(faucet, o: 3_499_990_000u64 s: 625_010_000 t: 0);
-    }
     #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
         let transparent_funding = 100_000;
@@ -1221,7 +1110,7 @@ mod slow {
             scenarios::faucet_recipient_default().await;
         faucet
             .do_send_test_only(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address!(recipient, "transparent"),
                 transparent_funding,
                 None,
             )])
@@ -1230,10 +1119,7 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
-        recipient
-            .do_shield_test_only(&[Pool::Sapling, Pool::Transparent], None)
-            .await
-            .unwrap();
+        recipient.do_shield_test_only().await.unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
@@ -2964,10 +2850,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
-        pool_migration_client
-            .do_shield_test_only(&[Pool::Transparent], None)
-            .await
-            .unwrap();
+        pool_migration_client.do_shield_test_only().await.unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 2 Test of a send from a sapling only client to its own unified address
@@ -2978,7 +2861,11 @@ mod slow {
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
         pool_migration_client
-            .do_shield_test_only(&[Pool::Sapling], None)
+            .do_send_test_only(vec![(
+                &get_base_address!(pool_migration_client, "unified"),
+                80_000,
+                None,
+            )])
             .await
             .unwrap();
         bump_and_check!(o: 80_000 s: 0 t: 0);
@@ -3000,10 +2887,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
-        pool_migration_client
-            .do_shield_test_only(&[Pool::Transparent], None)
-            .await
-            .unwrap();
+        pool_migration_client.do_shield_test_only().await.unwrap();
         pool_migration_client
             .do_send_test_only(vec![(&pmc_unified, 20_000, None)])
             .await
@@ -3017,10 +2901,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
-        pool_migration_client
-            .do_shield_test_only(&[Pool::Transparent], None)
-            .await
-            .unwrap();
+        pool_migration_client.do_shield_test_only().await.unwrap();
         bump_and_check!(o: 20_000 s: 0 t: 0);
 
         // 6 sapling and orchard to orchard
@@ -3046,10 +2927,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
-        pool_migration_client
-            .do_shield_test_only(&[Pool::Transparent], None)
-            .await
-            .unwrap();
+        pool_migration_client.do_shield_test_only().await.unwrap();
         pool_migration_client
             .do_send_test_only(vec![(&pmc_unified, 40_000, None)])
             .await
@@ -3558,7 +3436,7 @@ mod basic_transactions {
     use std::cmp;
 
     use zingo_testutils::scenarios;
-    use zingolib::{get_base_address, wallet::Pool};
+    use zingolib::get_base_address;
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
@@ -3866,13 +3744,7 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
-        let txid1 = recipient
-            .do_shield_test_only(
-                &[Pool::Transparent],
-                Some(&get_base_address!(recipient, "unified")),
-            )
-            .await
-            .unwrap();
+        let txid1 = recipient.do_shield_test_only().await.unwrap();
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
@@ -3926,13 +3798,7 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
-        let txid2 = recipient
-            .do_shield_test_only(
-                &[Pool::Transparent],
-                Some(&get_base_address!(recipient, "sapling")),
-            )
-            .await
-            .unwrap();
+        let txid2 = recipient.do_shield_test_only().await.unwrap();
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await

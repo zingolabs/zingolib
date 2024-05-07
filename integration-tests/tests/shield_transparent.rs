@@ -1,5 +1,5 @@
 use zingo_testutils::scenarios::faucet_recipient_default;
-use zingolib::{get_base_address, wallet::Pool};
+use zingolib::get_base_address;
 
 #[tokio::test]
 async fn shield_transparent() {
@@ -41,10 +41,7 @@ async fn shield_transparent() {
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
     );
 
-    let shielding_proposal = recipient
-        .do_shield_test_only(&[Pool::Transparent], None)
-        .await
-        .unwrap();
+    let shielding_proposal = recipient.do_shield_test_only().await.unwrap();
 
     println!("Initial proposal {:?}", proposal);
     println!("Shielding proposal {:?}", shielding_proposal);
