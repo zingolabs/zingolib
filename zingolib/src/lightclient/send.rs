@@ -33,38 +33,57 @@ impl LightClient {
         })
     }
 
-    async fn iterate_proposal_send_scan<NoteRef>(
+    async fn update_tmamt_and_return_step_result<N>(
+        &self,
+        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
+        step: zcash_client_backend::proposal::Step<N>,
+        step_results: &Vec<(
+            &zcash_client_backend::proposal::Step<N>,
+            zcash_primitives::transaction::builder::BuildResult,
+        )>,
+    ) -> Result<zcash_primitives::transaction::builder::BuildResult, DoSendProposedError> {
+        let fee_rule = proposal.fee_rule();
+        let min_target_height = proposal.min_target_height();
+        let unified_spend_key = zcash_keys::keys::UnifiedSpendingKey::try_from(
+            self.wallet.wallet_capability().as_ref(),
+        )
+        .map_err(DoSendProposedError::UnifiedSpendKey)?;
+        let (sapling_output, sapling_spend) = self
+            .read_sapling_params()
+            .map_err(DoSendProposedError::SaplingParams)?;
+        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+            std::ops::DerefMut::deref_mut(
+                &mut self
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .write()
+                    .await,
+            ),
+            &self.wallet.transaction_context.config.chain,
+            &sapling_prover,
+            &sapling_prover,
+            &unified_spend_key,
+            zcash_client_backend::wallet::OvkPolicy::Sender,
+            fee_rule,
+            min_target_height,
+            &step_results,
+            &step,
+        )
+        .map_err(DoSendProposedError::Calculation)
+    }
+    async fn iterate_proposal_send_scan<NoteRef: Sized + Clone>(
         &self,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-        sapling_prover: &(impl SpendProver + OutputProver),
-        unified_spend_key: &UnifiedSpendingKey,
         submission_height: BlockHeight,
     ) -> Result<NonEmpty<TxId>, DoSendProposedError> {
         let mut step_results = Vec::with_capacity(proposal.steps().len());
         let mut txids = Vec::with_capacity(proposal.steps().len());
         for step in proposal.steps() {
-            let step_result = {
-                let mut tmamt = self
-                    .wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .write()
-                    .await;
-
-                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                    tmamt.deref_mut(),
-                    &self.wallet.transaction_context.config.chain,
-                    sapling_prover,
-                    sapling_prover,
-                    unified_spend_key,
-                    zcash_client_backend::wallet::OvkPolicy::Sender,
-                    proposal.fee_rule(),
-                    proposal.min_target_height(),
-                    &step_results,
-                    step,
-                )
-                .map_err(DoSendProposedError::Calculation)?
-            };
+            let step_result = self
+                .update_tmamt_and_return_step_result(proposal, step.clone(), &step_results)
+                .await?;
 
             let txid = self
                 .wallet
@@ -108,32 +127,14 @@ impl LightClient {
                 .await
                 .map_err(DoSendProposedError::SubmissionHeight)?;
 
-            let (sapling_output, sapling_spend) = self
-                .read_sapling_params()
-                .map_err(DoSendProposedError::SaplingParams)?;
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-            let unified_spend_key =
-                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
-                    .map_err(DoSendProposedError::UnifiedSpendKey)?;
-
             match proposal {
                 crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
-                    self.iterate_proposal_send_scan(
-                        transfer_proposal,
-                        &sapling_prover,
-                        &unified_spend_key,
-                        submission_height,
-                    )
-                    .await
+                    self.iterate_proposal_send_scan(transfer_proposal, submission_height)
+                        .await
                 }
                 crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
-                    self.iterate_proposal_send_scan(
-                        shield_proposal,
-                        &sapling_prover,
-                        &unified_spend_key,
-                        submission_height,
-                    )
-                    .await
+                    self.iterate_proposal_send_scan(shield_proposal, submission_height)
+                        .await
                 }
             }
         } else {
@@ -216,6 +217,6 @@ pub enum DoSendProposedError {
 pub enum DoQuickSendProposedError {
     #[error("propose {0}")]
     Propose(crate::lightclient::propose::DoProposeError),
-    #[error("No proposal. Call do_propose first.")]
+    #[error("Can't QuickSend! No proposal. Call do_propose first.")]
     Send(DoSendProposedError),
 }
