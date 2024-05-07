@@ -158,7 +158,10 @@ mod test {
     use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingoconfig::ZingoConfigBuilder;
 
-    use crate::{lightclient::LightClient, test_framework::mocks::ProposalBuilder};
+    use crate::{
+        lightclient::LightClient,
+        test_framework::mocks::{ProposalBuilder, StepBuilder},
+    };
 
     #[tokio::test]
     async fn update_tmamt_and_return_step_result() {
@@ -171,12 +174,14 @@ mod test {
         .await
         .expect("A client!");
         let proposal = ProposalBuilder::new().build();
-        /*
-        let step = zcash_client_backend::proposal::Step::from_parts();
+        let step = StepBuilder::new().build();
+        let step_results: Vec<(
+            &zcash_client_backend::proposal::Step<zcash_client_backend::wallet::NoteId>,
+            zcash_primitives::transaction::builder::BuildResult,
+        )> = vec![];
         let step_result = client
-            .update_tmamt_and_return_step_result(&proposal, step, step_results)
+            .update_tmamt_and_return_step_result(&proposal, step, &step_results)
             .await;
-        */
     }
 }
 
