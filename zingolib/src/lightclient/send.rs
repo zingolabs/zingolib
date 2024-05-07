@@ -137,7 +137,7 @@ impl LightClient {
                 }
             }
         } else {
-            Err(DoSendProposedError::NoProposal)
+            panic!("{:?}", DoSendProposedError::NoProposal)
         }
     }
 

@@ -1,6 +1,7 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
 use crate::{
+    data::proposal::ZingoProposal,
     lightclient::LightClient,
     wallet::tx_map_and_maybe_trees::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
 };
@@ -249,6 +250,11 @@ impl LightClient {
             proposed_shield.clone(),
         ));
         Ok(proposed_shield)
+    }
+    /// A helper method that standardizes latest_proposal update
+    async fn update_latest_proposal(&self, proposal: ZingoProposal) {
+        *(self.latest_proposal.write().await) = Some(proposal.clone());
+        assert!(self.latest_proposal.read().await.is_some());
     }
 }
 #[cfg(test)]
