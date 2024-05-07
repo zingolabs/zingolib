@@ -165,7 +165,9 @@ mod test {
 
     #[tokio::test]
     async fn update_tmamt_and_return_step_result() {
+        dbg!("Begin test fn 1");
         let config = ZingoConfigBuilder::default().create();
+        dbg!("Begin test fn 2");
         let client = LightClient::create_unconnected(
             &config,
             crate::wallet::WalletBase::MnemonicPhrase(HOSPITAL_MUSEUM_SEED.to_string()),
@@ -173,12 +175,16 @@ mod test {
         )
         .await
         .expect("A client!");
+        dbg!("Begin test fn 3");
         let proposal = ProposalBuilder::new().build();
+        dbg!("Begin test fn 4");
         let step = StepBuilder::new().build();
+        dbg!("Begin test fn 5");
         let step_results: Vec<(
             &zcash_client_backend::proposal::Step<zcash_client_backend::wallet::NoteId>,
             zcash_primitives::transaction::builder::BuildResult,
         )> = vec![];
+        dbg!("Here?");
         let step_result = client
             .update_tmamt_and_return_step_result(&proposal, step, &step_results)
             .await;

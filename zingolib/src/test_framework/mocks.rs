@@ -324,7 +324,9 @@ pub mod proposal {
         /// `build` will panic if any fields of the builder are `None` or if the build failed
         /// due to invalid values.
         pub fn build(self) -> Proposal<FeeRule, NoteId> {
+            dbg!("Inside Proposal Builder new");
             let step = self.steps.unwrap().first().clone();
+            dbg!("Ooopppsss!");
             Proposal::single_step(
                 step.transaction_request().clone(),
                 step.payment_pools().clone(),
@@ -401,6 +403,7 @@ pub mod proposal {
         /// due to invalid values.
         #[allow(dead_code)]
         pub fn build(self) -> Step<NoteId> {
+            dbg!("building!");
             Step::from_parts(
                 &[],
                 self.transaction_request.unwrap(),
