@@ -24,12 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `utils` mod
 - `lightclient::LightClient`:
   - `do_propose_spend` behind "zip317" feature
+  - `do_propose_spend_all` behind "zip317" feature
   - `do_send_proposal` behind "zip317" feature
-- `commands`:
-  - `ProposeCommand` struct and methods behind "zip317" feature
-  - `QuickSendCommand` struct and methods behind "zip317" feature
+- `commands::get_commands`:
+  - `propose` to `entries` behind "zip317" feature
+  - `proposeall` to `entries` behind "zip317" feature
+  - `quicksend` to `entries` behind "zip317" feature
 - `data::proposal` mod
-
 - `test_framework` mod behind "test-features" feature
 
 ### Changed
