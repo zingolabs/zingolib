@@ -4,7 +4,7 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::LightClient;
-use zingolib::test_framework::chain_generic_tests::TestEnvironment;
+use zingolib::test_framework::chain_generic_tests::OperateTestLightserver;
 use zingolib::wallet::WalletBase;
 
 struct LibtonodeEnvironment {
@@ -12,7 +12,7 @@ struct LibtonodeEnvironment {
     scenario_builder: ScenarioBuilder,
 }
 
-impl TestEnvironment for LibtonodeEnvironment {
+impl OperateTestLightserver for LibtonodeEnvironment {
     async fn setup() -> Self {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let scenario_builder = ScenarioBuilder::build_configure_launch(

@@ -12,7 +12,7 @@ use crate::{
 #[allow(opaque_hidden_inferred_bound)]
 /// both lib-to-node and darkside can implement this.
 /// implemented on LibtonodeChain and DarksideScenario respectively
-pub trait TestEnvironment {
+pub trait OperateTestLightserver {
     /// set up the test chain
     async fn setup() -> Self;
     /// builds a faucet (funded from mining)
@@ -73,7 +73,7 @@ pub trait TestEnvironment {
 /// runs a send-to-self and receives it in a chain-generic context
 pub async fn simple_send<TE>(value: u32)
 where
-    TE: TestEnvironment,
+    TE: OperateTestLightserver,
 {
     let mut environment = TE::setup().await;
 
