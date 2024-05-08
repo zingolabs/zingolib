@@ -25,17 +25,26 @@ pub trait ChainTest {
         sender.do_sync(false).await.unwrap();
 
         sender
-            .do_quick_send(
-                sender
-                    .raw_to_transaction_request(vec![(
-                        get_base_address!(recipient, "unified"),
-                        value,
-                        None,
-                    )])
-                    .unwrap(),
-            )
+            .do_send_test_only(vec![(
+                &get_base_address!(recipient, "unified").as_str(),
+                value as u64,
+                None,
+            )])
             .await
             .unwrap();
+
+        // sender
+        //     .do_quick_send(
+        //         sender
+        //             .raw_to_transaction_request(vec![(
+        //                 get_base_address!(recipient, "unified"),
+        //                 value,
+        //                 None,
+        //             )])
+        //             .unwrap(),
+        //     )
+        //     .await
+        //     .unwrap();
 
         self.bump_chain().await;
 
@@ -73,18 +82,28 @@ where
     dbg!("ready to send");
     dbg!(sender.query_sum_value(OutputQuery::any()).await);
     dbg!(value);
+
     sender
-        .do_quick_send(
-            sender
-                .raw_to_transaction_request(vec![(
-                    get_base_address!(recipient, "unified"),
-                    value,
-                    None,
-                )])
-                .unwrap(),
-        )
+        .do_send_test_only(vec![(
+            &get_base_address!(recipient, "unified").as_str(),
+            value as u64,
+            None,
+        )])
         .await
         .unwrap();
+
+    // sender
+    //     .do_quick_send(
+    //         sender
+    //             .raw_to_transaction_request(vec![(
+    //                 get_base_address!(recipient, "unified"),
+    //                 value,
+    //                 None,
+    //             )])
+    //             .unwrap(),
+    //     )
+    //     .await
+    //     .unwrap();
 
     chain.bump_chain().await;
 
