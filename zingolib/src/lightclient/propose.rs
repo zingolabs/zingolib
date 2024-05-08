@@ -157,6 +157,25 @@ impl LightClient {
         Ok(proposal)
     }
 
+    /// Unstable function to expose the zip317 interface for development
+    // TOdo: add correct functionality and doc comments / tests
+    // TODO: Add migrate_sapling_to_orchard argument
+    #[cfg(feature = "zip317")]
+    pub async fn do_propose_spend_all(
+        &self,
+        _address: Address,
+        _memo: Option<MemoBytes>,
+    ) -> Result<crate::data::proposal::TransferProposal, String> {
+        use crate::test_framework::mocks::ProposalBuilder;
+
+        let proposal = ProposalBuilder::default().build();
+        let mut latest_proposal_lock = self.latest_proposal.write().await;
+        *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
+            proposal.clone(),
+        ));
+        Ok(proposal)
+    }
+
     fn get_transparent_addresses(
         &self,
     ) -> Result<Vec<zcash_primitives::legacy::TransparentAddress>, DoProposeError> {
