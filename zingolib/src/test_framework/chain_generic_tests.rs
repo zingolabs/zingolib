@@ -7,6 +7,7 @@ use crate::{get_base_address, lightclient::LightClient, wallet::notes::query::Ou
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
 /// both lib-to-node and darkside can implement this.
+/// implemented on LibtonodeChain and DarksideScenario respectively
 pub trait ChainTest {
     /// set up the test chain
     async fn setup() -> Self;
