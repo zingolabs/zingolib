@@ -16,9 +16,11 @@ use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 use thiserror::Error;
 
-use crate::lightclient::LightClient;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
+use crate::{
+    data::proposal::ShieldProposal, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+};
+use crate::{data::proposal::TransferProposal, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::{data::proposal::ZingoProposal, lightclient::LightClient};
 use zingoconfig::ChainType;
 
 /// Errors that can result from do_propose
@@ -113,13 +115,17 @@ pub enum DoProposeError {
 }
 
 impl LightClient {
+    async fn store_proposal(&self, proposal: ZingoProposal) {
+        let mut latest_proposal_lock = self.latest_proposal.write().await;
+        *latest_proposal_lock = Some(proposal);
+    }
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub async fn do_propose_spend(
+    pub(crate) async fn do_propose_spend(
         &self,
         request: TransactionRequest,
-    ) -> Result<crate::data::proposal::TransferProposal, DoProposeError> {
+    ) -> Result<TransferProposal, DoProposeError> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,
@@ -153,10 +159,17 @@ impl LightClient {
         )
         .map_err(DoProposeError::Proposal)?;
 
-        let mut latest_proposal_lock = self.latest_proposal.write().await;
-        *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
-            proposal.clone(),
-        ));
+        Ok(proposal)
+    }
+
+    /// Unstable function to expose the zip317 interface for development
+    pub async fn do_propose_send_and_remember(
+        &self,
+        request: TransactionRequest,
+    ) -> Result<TransferProposal, DoProposeError> {
+        let proposal = self.do_propose_spend(request).await?;
+        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
+            .await;
         Ok(proposal)
     }
 
@@ -190,7 +203,7 @@ impl LightClient {
     /// In other words, shield does not take a user-specified amount
     /// to shield, rather it consumes all transparent value in the wallet that
     /// can be consumsed without costing more in zip317 fees than is being transferred.
-    pub async fn do_propose_shield(
+    pub(crate) async fn do_propose_shield(
         &self,
     ) -> Result<crate::data::proposal::ShieldProposal, DoProposeError> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
@@ -229,10 +242,15 @@ impl LightClient {
         )
         .map_err(DoProposeError::ShieldProposal)?;
 
-        *self.latest_proposal.write().await = Some(crate::data::proposal::ZingoProposal::Shield(
-            proposed_shield.clone(),
-        ));
         Ok(proposed_shield)
+    }
+
+    /// Unstable function to expose the zip317 interface for development
+    pub async fn do_propose_shield_and_remember(&self) -> Result<ShieldProposal, DoProposeError> {
+        let proposal = self.do_propose_shield().await?;
+        self.store_proposal(ZingoProposal::Shield(proposal.clone()))
+            .await;
+        Ok(proposal)
     }
 }
 #[cfg(test)]
