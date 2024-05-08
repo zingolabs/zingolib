@@ -82,12 +82,10 @@ type GISKit = GreedyInputSelector<
 
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
-pub enum DoProposeError {
-    /// error in parsed addresses
-    #[error("{0}")]
-    Receiver(zcash_client_backend::zip321::Zip321Error),
+pub enum ProposeSendError {
+    // todo: better display is possible if NoteId implements display. which i know is done in some fluidvanadium librustzcash branch
+    #[error("{0:?}")]
     /// error in using trait to create spend proposal
-    #[error("{:?}", {0})]
     Proposal(
         zcash_client_backend::data_api::error::Error<
             TxMapAndMaybeTreesTraitError,
@@ -99,6 +97,15 @@ pub enum DoProposeError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
+}
+
+/// Errors that can result from do_propose
+#[derive(Debug, Error)]
+pub enum ProposeShieldError {
+    /// error in parsed addresses
+    #[error("{0}")]
+    Receiver(zcash_client_backend::zip321::Zip321Error),
+    // todo: better display is possible if NoteId implements display. which i know is done in some fluidvanadium librustzcash branch
     #[error("{0:?}")]
     /// error in using trait to create shielding proposal
     ShieldProposal(
@@ -122,10 +129,10 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub(crate) async fn do_propose_send(
+    pub(crate) async fn propose_send(
         &self,
         request: TransactionRequest,
-    ) -> Result<TransferProposal, DoProposeError> {
+    ) -> Result<TransferProposal, ProposeSendError> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,
@@ -144,7 +151,7 @@ impl LightClient {
             .write()
             .await;
 
-        let proposal = zcash_client_backend::data_api::wallet::propose_transfer::<
+        zcash_client_backend::data_api::wallet::propose_transfer::<
             TxMapAndMaybeTrees,
             ChainType,
             GISKit,
@@ -157,17 +164,15 @@ impl LightClient {
             request,
             NonZeroU32::MIN, //review! use custom constant?
         )
-        .map_err(DoProposeError::Proposal)?;
-
-        Ok(proposal)
+        .map_err(ProposeSendError::Proposal)
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn do_propose_send_and_store(
+    pub async fn propose_send_and_store(
         &self,
         request: TransactionRequest,
-    ) -> Result<TransferProposal, DoProposeError> {
-        let proposal = self.do_propose_send(request).await?;
+    ) -> Result<TransferProposal, ProposeSendError> {
+        let proposal = self.propose_send(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)
@@ -175,14 +180,14 @@ impl LightClient {
 
     fn get_transparent_addresses(
         &self,
-    ) -> Result<Vec<zcash_primitives::legacy::TransparentAddress>, DoProposeError> {
+    ) -> Result<Vec<zcash_primitives::legacy::TransparentAddress>, ProposeShieldError> {
         let secp = secp256k1::Secp256k1::new();
         Ok(self
             .wallet
             .wallet_capability()
             .transparent_child_keys()
             .map_err(|_e| {
-                DoProposeError::ShieldProposal(
+                ProposeShieldError::ShieldProposal(
                     zcash_client_backend::data_api::error::Error::DataSource(
                         TxMapAndMaybeTreesTraitError::NoSpendCapability,
                     ),
@@ -203,9 +208,9 @@ impl LightClient {
     /// In other words, shield does not take a user-specified amount
     /// to shield, rather it consumes all transparent value in the wallet that
     /// can be consumsed without costing more in zip317 fees than is being transferred.
-    pub(crate) async fn do_propose_shield(
+    pub(crate) async fn propose_shield(
         &self,
-    ) -> Result<crate::data::proposal::ShieldProposal, DoProposeError> {
+    ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,
@@ -240,14 +245,14 @@ impl LightClient {
             // make it configurable?
             0,
         )
-        .map_err(DoProposeError::ShieldProposal)?;
+        .map_err(ProposeShieldError::ShieldProposal)?;
 
         Ok(proposed_shield)
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn do_propose_shield_and_store(&self) -> Result<ShieldProposal, DoProposeError> {
-        let proposal = self.do_propose_shield().await?;
+    pub async fn do_propose_shield_and_store(&self) -> Result<ShieldProposal, ProposeShieldError> {
+        let proposal = self.propose_shield().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))
             .await;
         Ok(proposal)

@@ -153,65 +153,114 @@ impl LightClient {
             )
             .await
     }
+}
 
-    #[cfg(feature = "zip317")]
-    /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
-    async fn do_send_proposal<NoteRef>(
-        &self,
-        _proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<NonEmpty<TxId>, String> {
-        Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
+#[cfg(feature = "zip317")]
+/// patterns for newfangled propose flow
+pub mod send_with_proposal {
+    use std::convert::Infallible;
+
+    use nonempty::NonEmpty;
+
+    use zcash_client_backend::proposal::Proposal;
+    use zcash_client_backend::wallet::NoteId;
+    use zcash_client_backend::zip321::TransactionRequest;
+    use zcash_primitives::transaction::TxId;
+
+    use thiserror::Error;
+
+    use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
+    use crate::lightclient::LightClient;
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum CompleteAndBroadcast {}
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum CompleteAndBroadcastStoredProposal {
+        #[error("No proposal. Call do_propose first.")]
+        NoStoredProposal,
+        #[error("send {0}")]
+        Send(CompleteAndBroadcast),
     }
 
-    #[cfg(feature = "zip317")]
-    /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
-    pub async fn do_send_stored_proposal(&self) -> Result<NonEmpty<TxId>, String> {
-        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-            match proposal {
-                crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
-                    self.do_send_proposal::<NoteId>(transfer_proposal).await
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum QuickSendError {
+        #[error("propose send {0}")]
+        Propose(ProposeSendError),
+        #[error("send {0}")]
+        Send(CompleteAndBroadcast),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum QuickShieldError {
+        #[error("propose shield {0}")]
+        Propose(ProposeShieldError),
+        #[error("send {0}")]
+        Send(CompleteAndBroadcast),
+    }
+
+    impl LightClient {
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        async fn complete_and_broadcast<NoteRef>(
+            &self,
+            _proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcast> {
+            //todo!();
+            Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
+        }
+
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        pub async fn complete_and_broadcast_stored_proposal(
+            &self,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposal> {
+            if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+                match proposal {
+                    crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
+                        self.complete_and_broadcast::<NoteId>(transfer_proposal)
+                            .await
+                    }
+                    crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
+                        self.complete_and_broadcast::<Infallible>(shield_proposal)
+                            .await
+                    }
                 }
-                crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
-                    self.do_send_proposal::<Infallible>(shield_proposal).await
-                }
+                .map_err(CompleteAndBroadcastStoredProposal::Send)
+            } else {
+                Err(CompleteAndBroadcastStoredProposal::NoStoredProposal)
             }
-        } else {
-            Err("No proposal. Call do_propose first.".to_string())
         }
-    }
 
-    #[cfg(feature = "zip317")]
-    /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
-    pub async fn do_quick_send(
-        &self,
-        request: TransactionRequest,
-    ) -> Result<NonEmpty<TxId>, String> {
-        if let Ok(proposal) = self.do_propose_send(request).await {
-            self.do_send_proposal::<NoteId>(&proposal).await
-        } else {
-            Err("No proposal. Call do_propose first.".to_string())
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        pub async fn quick_send(
+            &self,
+            request: TransactionRequest,
+        ) -> Result<NonEmpty<TxId>, QuickSendError> {
+            let proposal = self
+                .propose_send(request)
+                .await
+                .map_err(QuickSendError::Propose)?;
+            self.complete_and_broadcast::<NoteId>(&proposal)
+                .await
+                .map_err(QuickSendError::Send)
         }
-    }
 
-    #[cfg(feature = "zip317")]
-    /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
-    pub async fn do_quick_shield(&self) -> Result<NonEmpty<TxId>, String> {
-        if let Ok(proposal) = self.do_propose_shield().await {
-            self.do_send_proposal::<Infallible>(&proposal).await
-        } else {
-            Err("No proposal. Call do_propose first.".to_string())
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
+            let proposal = self
+                .propose_shield()
+                .await
+                .map_err(QuickShieldError::Propose)?;
+            self.complete_and_broadcast::<Infallible>(&proposal)
+                .await
+                .map_err(QuickShieldError::Send)
         }
     }
 }
-#[cfg(feature = "zip317")]
-use {
-    // crate::data::proposal::ShieldProposal, crate::data::proposal::TransferProposal,
-    nonempty::NonEmpty,
-    std::convert::Infallible,
-    zcash_client_backend::proposal::Proposal,
-    zcash_client_backend::wallet::NoteId,
-};
