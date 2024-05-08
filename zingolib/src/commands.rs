@@ -1594,6 +1594,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     #[cfg(feature = "zip317")]
     {
         entries.push(("propose", Box::new(ProposeCommand {})));
+        entries.push(("proposeall", Box::new(ProposeAllCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
     }
     entries.into_iter().collect()
