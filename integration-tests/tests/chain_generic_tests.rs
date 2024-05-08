@@ -4,15 +4,15 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::LightClient;
-use zingolib::test_framework::chain_generic_tests::ChainTest;
+use zingolib::test_framework::chain_generic_tests::TestEnvironment;
 use zingolib::wallet::WalletBase;
 
-struct LibtonodeChain {
+struct LibtonodeEnvironment {
     regtest_network: RegtestNetwork,
     scenario_builder: ScenarioBuilder,
 }
 
-impl ChainTest for LibtonodeChain {
+impl TestEnvironment for LibtonodeEnvironment {
     async fn setup() -> Self {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let scenario_builder = ScenarioBuilder::build_configure_launch(
@@ -22,7 +22,7 @@ impl ChainTest for LibtonodeChain {
             &regtest_network,
         )
         .await;
-        LibtonodeChain {
+        LibtonodeEnvironment {
             regtest_network,
             scenario_builder,
         }
@@ -73,5 +73,6 @@ impl ChainTest for LibtonodeChain {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    zingolib::test_framework::chain_generic_tests::simple_send::<LibtonodeChain>(40_000).await;
+    zingolib::test_framework::chain_generic_tests::simple_send::<LibtonodeEnvironment>(40_000)
+        .await;
 }

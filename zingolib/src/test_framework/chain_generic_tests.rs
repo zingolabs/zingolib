@@ -8,7 +8,7 @@ use crate::{get_base_address, lightclient::LightClient, wallet::notes::query::Ou
 #[allow(opaque_hidden_inferred_bound)]
 /// both lib-to-node and darkside can implement this.
 /// implemented on LibtonodeChain and DarksideScenario respectively
-pub trait ChainTest {
+pub trait TestEnvironment {
     /// set up the test chain
     async fn setup() -> Self;
     /// builds a faucet (funded from mining)
@@ -67,19 +67,19 @@ pub trait ChainTest {
 }
 
 /// runs a send-to-self and receives it in a chain-generic context
-pub async fn simple_send<CT>(value: u32)
+pub async fn simple_send<TE>(value: u32)
 where
-    CT: ChainTest,
+    TE: TestEnvironment,
 {
-    let mut chain = CT::setup().await;
+    let mut environment = TE::setup().await;
 
     dbg!("chain set up, funding client now");
 
-    let sender = chain
+    let sender = environment
         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u32))
         .await;
 
-    let recipient = chain.create_client().await;
+    let recipient = environment.create_client().await;
 
     dbg!("ready to send");
     dbg!(sender.query_sum_value(OutputQuery::any()).await);
@@ -107,7 +107,7 @@ where
     //     .await
     //     .unwrap();
 
-    chain.bump_chain().await;
+    environment.bump_chain().await;
 
     recipient.do_sync(false).await.unwrap();
 

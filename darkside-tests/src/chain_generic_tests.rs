@@ -1,5 +1,6 @@
 use zingolib::{
-    lightclient::LightClient, test_framework::chain_generic_tests::ChainTest, wallet::WalletBase,
+    lightclient::LightClient, test_framework::chain_generic_tests::TestEnvironment,
+    wallet::WalletBase,
 };
 
 use crate::{
@@ -7,7 +8,7 @@ use crate::{
     utils::{scenarios::DarksideScenario, update_tree_states_for_transaction},
 };
 
-impl ChainTest for DarksideScenario {
+impl TestEnvironment for DarksideScenario {
     async fn setup() -> Self {
         DarksideScenario::new(None).await
     }
