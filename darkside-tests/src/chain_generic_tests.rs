@@ -73,7 +73,7 @@ impl ChainTest for DarksideScenario {
             .stage_blocks_create(u64::from(self.staged_blockheight) as i32, 1, 0)
             .await
             .unwrap();
-        self.staged_blockheight = dbg!(self.staged_blockheight + 1);
+        self.staged_blockheight = self.staged_blockheight + 1;
         self.apply_blocks(u64::from(self.staged_blockheight)).await;
     }
 }

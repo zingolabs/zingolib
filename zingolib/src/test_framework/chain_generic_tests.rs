@@ -24,9 +24,6 @@ pub trait ChainTest {
         self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
-        dbg!(sender.query_sum_value(OutputQuery::any()).await);
-        dbg!(value);
-
         sender
             .do_quick_send(
                 sender
