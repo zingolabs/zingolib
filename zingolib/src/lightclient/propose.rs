@@ -1,21 +1,24 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
-use crate::{
-    lightclient::LightClient,
-    wallet::tx_map_and_maybe_trees::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
-};
-use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut};
-use thiserror::Error;
-use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector,
-    zip321::{Payment, TransactionRequest, Zip321Error},
-    ShieldedProtocol,
-};
+use std::convert::Infallible;
+use std::num::NonZeroU32;
+use std::ops::DerefMut;
+
+use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
+use zcash_client_backend::zip321::Payment;
+use zcash_client_backend::zip321::TransactionRequest;
+use zcash_client_backend::zip321::Zip321Error;
+use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::address::Address;
-use zcash_primitives::{
-    memo::MemoBytes,
-    transaction::components::amount::{BalanceError, NonNegativeAmount},
-};
+use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::transaction::components::amount::BalanceError;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+
+use thiserror::Error;
+
+use crate::lightclient::LightClient;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
 
 /// Errors that can result from do_propose
