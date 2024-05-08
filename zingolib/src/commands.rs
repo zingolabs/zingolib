@@ -918,7 +918,7 @@ impl Command for QuickSendCommand {
         "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
         todo!()
     }
 }
@@ -937,7 +937,7 @@ impl Command for QuickShieldCommand {
         "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
     }
 
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
         todo!()
     }
 }

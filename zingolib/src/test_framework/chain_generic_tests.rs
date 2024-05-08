@@ -5,6 +5,7 @@ use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use crate::{get_base_address, lightclient::LightClient, wallet::notes::query::OutputQuery};
 
 #[allow(async_fn_in_trait)]
+#[allow(opaque_hidden_inferred_bound)]
 /// both lib-to-node and darkside can implement this.
 pub trait ChainTest {
     /// set up the test chain
