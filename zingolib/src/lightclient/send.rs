@@ -2,12 +2,11 @@
 use log::debug;
 
 use zcash_client_backend::address::Address;
-use zcash_client_backend::zip321::Payment;
-use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
 use crate::utils::zatoshis_from_u64;
@@ -15,26 +14,6 @@ use crate::wallet::Pool;
 
 use super::LightClient;
 use super::LightWalletSendProgress;
-
-/// converts from raw receivers to TransactionRequest
-pub fn receivers_becomes_transaction_request(
-    receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-) -> Result<TransactionRequest, zcash_client_backend::zip321::Zip321Error> {
-    let mut payments = vec![];
-    for out in receivers.clone() {
-        payments.push(Payment {
-            recipient_address: out.0,
-            amount: out.1,
-            memo: out.2,
-            label: None,
-            message: None,
-            other_params: vec![],
-        });
-    }
-
-    TransactionRequest::new(payments)
-}
-use zcash_primitives::transaction::TxId;
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
