@@ -1,4 +1,4 @@
-use zcash_client_backend::address::Address;
+use zcash_keys::address::Address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 use crate::{
