@@ -4013,4 +4013,4 @@ async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
 
-pub mod generic_chain_tests;
+pub mod chain_generic_tests;

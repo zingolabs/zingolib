@@ -2,5 +2,5 @@
 pub(crate) mod macros;
 pub mod mocks;
 
-#[cfg(feature = "generic_chain_tests")]
-pub mod generic_chain_tests;
+#[cfg(feature = "chain_generic_tests")]
+pub mod chain_generic_tests;

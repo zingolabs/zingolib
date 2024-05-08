@@ -512,13 +512,13 @@ pub mod scenarios {
 
     pub struct DarksideScenario {
         darkside_handler: DarksideHandler,
-        darkside_connector: DarksideConnector,
-        client_builder: ClientBuilder,
-        regtest_network: RegtestNetwork,
+        pub(crate) darkside_connector: DarksideConnector,
+        pub(crate) client_builder: ClientBuilder,
+        pub(crate) regtest_network: RegtestNetwork,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
-        staged_blockheight: BlockHeight,
-        tree_state: TreeState,
+        pub(crate) staged_blockheight: BlockHeight,
+        pub(crate) tree_state: TreeState,
         transaction_set_index: u64,
     }
     impl DarksideScenario {

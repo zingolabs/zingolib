@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 zip317 = []
-generic_chain_tests = []
+chain_generic_tests = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
