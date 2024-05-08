@@ -834,7 +834,7 @@ impl Command for ProposeCommand {
         RT.block_on(async move {
             todo!()
             // match lightclient
-            //     .do_propose_spend(
+            //     .do_propose_send(
             //         send_inputs
             //     )
             //     .await {

@@ -122,7 +122,7 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub(crate) async fn do_propose_spend(
+    pub(crate) async fn do_propose_send(
         &self,
         request: TransactionRequest,
     ) -> Result<TransferProposal, DoProposeError> {
@@ -167,7 +167,7 @@ impl LightClient {
         &self,
         request: TransactionRequest,
     ) -> Result<TransferProposal, DoProposeError> {
-        let proposal = self.do_propose_spend(request).await?;
+        let proposal = self.do_propose_send(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)

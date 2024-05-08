@@ -189,7 +189,7 @@ impl LightClient {
         &self,
         request: TransactionRequest,
     ) -> Result<NonEmpty<TxId>, String> {
-        if let Ok(proposal) = self.do_propose_spend(request).await {
+        if let Ok(proposal) = self.do_propose_send(request).await {
             self.do_send_proposal::<NoteId>(&proposal).await
         } else {
             Err("No proposal. Call do_propose first.".to_string())
