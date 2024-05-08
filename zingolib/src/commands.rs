@@ -1,7 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::wallet::{MemoDownloadOption};
+use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
