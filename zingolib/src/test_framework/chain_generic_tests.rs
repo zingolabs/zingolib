@@ -2,7 +2,11 @@
 
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use crate::{get_base_address, lightclient::LightClient, wallet::notes::query::OutputQuery};
+use crate::{
+    get_base_address,
+    lightclient::LightClient,
+    wallet::notes::query::{OutputQuery, QueryStipulations},
+};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -113,9 +117,17 @@ where
 
     assert_eq!(
         recipient
-            .query_sum_value(OutputQuery::stipulations(
-                true, false, false, false, false, true
-            ))
+            .query_sum_value(
+                QueryStipulations {
+                    unspent: true,
+                    pending_spent: false,
+                    spent: false,
+                    transparent: false,
+                    sapling: false,
+                    orchard: true,
+                }
+                .stipulate()
+            )
             .await,
         value as u64
     );
