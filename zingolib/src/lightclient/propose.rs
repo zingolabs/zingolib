@@ -163,7 +163,7 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn do_propose_send_and_remember(
+    pub async fn do_propose_send_and_store(
         &self,
         request: TransactionRequest,
     ) -> Result<TransferProposal, DoProposeError> {
@@ -246,7 +246,7 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn do_propose_shield_and_remember(&self) -> Result<ShieldProposal, DoProposeError> {
+    pub async fn do_propose_shield_and_store(&self) -> Result<ShieldProposal, DoProposeError> {
         let proposal = self.do_propose_shield().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))
             .await;
