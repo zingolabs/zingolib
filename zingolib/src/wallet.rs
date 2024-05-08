@@ -7,7 +7,6 @@ use zcash_primitives::memo::Memo;
 
 use json::JsonValue;
 use log::{info, warn};
-use orchard::keys::SpendingKey as OrchardSpendingKey;
 use rand::rngs::OsRng;
 use rand::Rng;
 
@@ -26,7 +25,6 @@ use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 use zingoconfig::ZingoConfig;
 
-use self::data::WitnessTrees;
 use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
 
@@ -34,7 +32,7 @@ use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
 
 pub mod data;
@@ -45,7 +43,7 @@ pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub(crate) mod transaction_records_by_id;
-pub(crate) mod transactions;
+pub(crate) mod tx_map_and_maybe_trees;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
@@ -429,33 +427,6 @@ impl LightWallet {
 
         p.is_send_in_progress = false;
         p.last_transaction_id = Some(transaction_id);
-    }
-}
-
-//This function will likely be used again if/when we re-implement key import
-#[allow(dead_code)]
-fn decode_orchard_spending_key(
-    expected_hrp: &str,
-    s: &str,
-) -> Result<Option<OrchardSpendingKey>, String> {
-    match bech32::decode(s) {
-        Ok((hrp, bytes, variant)) => {
-            use bech32::FromBase32;
-            if hrp != expected_hrp {
-                return Err(format!(
-                    "invalid human-readable-part {hrp}, expected {expected_hrp}.",
-                ));
-            }
-            if variant != bech32::Variant::Bech32m {
-                return Err("Wrong encoding, expected bech32m".to_string());
-            }
-            match Vec::<u8>::from_base32(&bytes).map(<[u8; 32]>::try_from) {
-                Ok(Ok(b)) => Ok(OrchardSpendingKey::from_bytes(b).into()),
-                Ok(Err(e)) => Err(format!("key {s} decodes to {e:?}, which is not 32 bytes")),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-        Err(e) => Err(e.to_string()),
     }
 }
 

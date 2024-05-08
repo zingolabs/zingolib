@@ -1,3 +1,5 @@
+//! contains associated methods for writing TxMapAndMaybeTrees to disk and reading TxMapAndMaybeTrees from disk
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     collections::HashMap,
@@ -6,7 +8,10 @@ use std::{
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::{data::TransactionRecord, keys::unified::WalletCapability, WitnessTrees};
+use crate::{
+    data::witness_trees::WitnessTrees,
+    wallet::{data::TransactionRecord, keys::unified::WalletCapability},
+};
 
 use super::{TransactionRecordsById, TxMapAndMaybeTrees};
 impl TxMapAndMaybeTrees {

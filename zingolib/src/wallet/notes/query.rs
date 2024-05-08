@@ -8,13 +8,23 @@ use getset::Getters;
 pub struct OutputSpendStatusQuery {
     /// will the query include unspent notes?
     #[getset(get = "pub")]
-    unspent: bool,
+    pub unspent: bool,
     /// will the query include pending_spent notes?
     #[getset(get = "pub")]
-    pending_spent: bool,
+    pub pending_spent: bool,
     /// will the query include spent notes?
     #[getset(get = "pub")]
-    spent: bool,
+    pub spent: bool,
+}
+impl OutputSpendStatusQuery {
+    /// a query that accepts notes of any spent status
+    pub fn any() -> Self {
+        Self {
+            unspent: true,
+            pending_spent: true,
+            spent: true,
+        }
+    }
 }
 
 /// Selects received notes by pool
@@ -30,11 +40,22 @@ pub struct OutputPoolQuery {
     #[getset(get = "pub")]
     orchard: bool,
 }
+impl OutputPoolQuery {
+    /// a query that accepts notes from any pool.
+    pub fn any() -> Self {
+        Self {
+            transparent: true,
+            sapling: true,
+            orchard: true,
+        }
+    }
+}
 
 /// Selects received notes by any properties
 #[derive(Getters, Constructor, Clone, Copy)]
 pub struct OutputQuery {
     /// selects spend status properties
+    /// the query is expected to match note with ANY of the specified spend_stati AND ANY of the specified pools
     #[getset(get = "pub")]
     spend_status: OutputSpendStatusQuery,
     /// selects pools
@@ -42,7 +63,34 @@ pub struct OutputQuery {
     pools: OutputPoolQuery,
 }
 
+pub(crate) struct QueryStipulations {
+    pub(crate) unspent: bool,
+    pub(crate) pending_spent: bool,
+    pub(crate) spent: bool,
+    pub(crate) transparent: bool,
+    pub(crate) sapling: bool,
+    pub(crate) orchard: bool,
+}
+impl QueryStipulations {
+    pub(crate) fn stipulate(self) -> OutputQuery {
+        OutputQuery::stipulations(
+            self.unspent,
+            self.pending_spent,
+            self.spent,
+            self.transparent,
+            self.sapling,
+            self.orchard,
+        )
+    }
+}
 impl OutputQuery {
+    /// a query that accepts all notes.
+    pub fn any() -> Self {
+        Self {
+            spend_status: OutputSpendStatusQuery::any(),
+            pools: OutputPoolQuery::any(),
+        }
+    }
     /// build a query, specifying each stipulation
     pub fn stipulations(
         unspent: bool,

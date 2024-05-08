@@ -6,7 +6,8 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
-use super::OutputInterface;
+use crate::wallet::notes::{query::OutputSpendStatusQuery, OutputInterface};
+use crate::wallet::transaction_record::TransactionRecord;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq)]
@@ -52,6 +53,35 @@ impl OutputInterface for TransparentOutput {
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
+    }
+
+    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+        transaction_record.transparent_outputs.iter().collect()
+    }
+    fn transaction_record_to_outputs_vec_query(
+        transaction_record: &TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self> {
+        transaction_record
+            .transparent_outputs
+            .iter()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
+    }
+    fn transaction_record_to_outputs_vec_mut(
+        transaction_record: &mut TransactionRecord,
+    ) -> Vec<&mut Self> {
+        transaction_record.transparent_outputs.iter_mut().collect()
+    }
+    fn transaction_record_to_outputs_vec_query_mut(
+        transaction_record: &mut TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&mut Self> {
+        transaction_record
+            .transparent_outputs
+            .iter_mut()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
     }
 }
 
@@ -194,15 +224,16 @@ impl TransparentOutput {
 #[cfg(any(test, feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_primitives::transaction::TxId;
+    use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
 
     use crate::{test_framework::mocks::build_method, wallet::notes::TransparentOutput};
 
     /// to create a mock TransparentOutput
-    pub struct TransparentOutputBuilder {
+    #[derive(Clone)]
+    pub(crate) struct TransparentOutputBuilder {
         address: Option<String>,
         txid: Option<TxId>,
-        output_index: Option<u64>,
+        pub output_index: Option<u64>,
         script: Option<Vec<u8>>,
         value: Option<u64>,
         spent: Option<Option<(TxId, u32)>>,
@@ -247,14 +278,16 @@ pub mod mocks {
 
     impl Default for TransparentOutputBuilder {
         fn default() -> Self {
-            Self::new()
+            let mut builder = Self::new();
+            builder
                 .address("default_address".to_string())
                 .txid(TxId::from_bytes([0u8; 32]))
                 .output_index(0)
-                .script(vec![])
+                .script(TransparentAddress::ScriptHash([0; 20]).script().0)
                 .value(100000)
                 .spent(None)
-                .unconfirmed_spent(None)
+                .unconfirmed_spent(None);
+            builder
         }
     }
 }

@@ -10,8 +10,6 @@ edition = "2021"
 deprecations = ["lightclient-deprecated"]
 test-features = ["lightclient-deprecated", "zingo-testvectors"]
 lightclient-deprecated = []
-default = ["embed_params"]
-embed_params = []
 darkside_tests = []
 zip317 = []
 
@@ -24,19 +22,21 @@ zingo-netutils = { path = "../zingo-netutils" }
 
 http-body = { workspace = true }
 hyper = { workspace = true }
+hyper-rustls = { workspace = true }
+prost = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
-prost = { workspace = true }
+
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 incrementalmerkletree = { workspace = true, features = ["test-dependencies", "legacy-api"] }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
 zcash_encoding = { workspace = true }
+zcash_keys = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
-hyper-rustls = { workspace = true }
 zip32.workspace = true
 
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
@@ -50,7 +50,7 @@ rand = "0.8.5"
 serde_json = "1.0.82"
 tokio =  { version = "1.24.2", features = ["full"] }
 tokio-stream = "0.1.6"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 tower-http = { version = "0.2", features = ["add-extension"] }
 futures = { workspace = true }
 hex = { workspace = true }
@@ -62,7 +62,7 @@ secp256k1 = "=0.26.0"
 ripemd160 = "0.9.1"
 sha2 = "0.9.5"
 base58 = "0.1.0"
-bech32 = "0.9.0"
+bech32 = "0.11.0"
 sodiumoxide = "0.2.5"
 byteorder = "1"
 pairing = "0.23"
@@ -80,8 +80,11 @@ derive_more = "0.99.17"
 either = "1.8.1"
 serde = { version = "1.0.188", features = ["derive"] }
 sapling-crypto.workspace = true
+secrecy = "0.8.0"
 getset = "0.1.2"
 test-case = "3.3.1"
+proptest = "1.4.0"
+thiserror = "1.0.59"
 
 [dev-dependencies]
 portpicker = "0.1.0"

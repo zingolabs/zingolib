@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::{keys::unified::WalletCapability, transactions::TxMapAndMaybeTrees};
+use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
@@ -92,6 +92,8 @@ pub mod decrypt_transaction {
             // that don't belong to us as the outgoing metadata
             // the assumption is either we already decrypted a compact output and filled in some data
             // or transparent something
+
+            // in the send case, we already know the transaction is outgoing. however, this if clause will not trigger.
             if self
                 .transaction_metadata_set
                 .read()

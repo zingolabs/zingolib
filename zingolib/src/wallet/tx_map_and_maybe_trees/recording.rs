@@ -1,3 +1,5 @@
+//! contains associated methods for modifying and updating TxMapAndMaybeTrees
+
 use incrementalmerkletree::Position;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
@@ -137,9 +139,10 @@ impl super::TxMapAndMaybeTrees {
             if let Some(transaction_spent_from) =
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
-                if let Some(confirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
-                    .iter_mut()
-                    .find(|note| note.nullifier() == Some(spent_nullifier))
+                if let Some(confirmed_spent_note) =
+                    D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_spent_from)
+                        .iter_mut()
+                        .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
                     *confirmed_spent_note.spent_mut() = Some((spending_txid, height.into()));
                     *confirmed_spent_note.pending_spent_mut() = None;
@@ -156,9 +159,10 @@ impl super::TxMapAndMaybeTrees {
             if let Some(transaction_spent_from) =
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
-                if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
-                    .iter_mut()
-                    .find(|note| note.nullifier() == Some(spent_nullifier))
+                if let Some(unconfirmed_spent_note) =
+                    D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_spent_from)
+                        .iter_mut()
+                        .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
                     *unconfirmed_spent_note.pending_spent_mut() =
                         Some((spending_txid, u32::from(height)));
@@ -176,7 +180,7 @@ impl super::TxMapAndMaybeTrees {
 }
 
 // shardtree
-impl crate::wallet::transactions::TxMapAndMaybeTrees {
+impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(
@@ -191,23 +195,24 @@ impl crate::wallet::transactions::TxMapAndMaybeTrees {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
-        let transaction_metadata = self
+        let transaction_record = self
             .transaction_records_by_id
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(maybe_note) = D::to_notes_vec_mut(transaction_metadata)
-            .iter_mut()
-            .find_map(|nnmd| {
-                if nnmd.output_index().is_some() != output_index.is_some() {
-                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
-                }
-                if *nnmd.output_index() == output_index {
-                    Some(Ok(nnmd))
-                } else {
-                    None
-                }
-            })
+        if let Some(maybe_note) =
+            D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_record)
+                .iter_mut()
+                .find_map(|nnmd| {
+                    if nnmd.output_index().is_some() != output_index.is_some() {
+                        return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                    }
+                    if *nnmd.output_index() == output_index {
+                        Some(Ok(nnmd))
+                    } else {
+                        None
+                    }
+                })
         {
             match maybe_note {
                 Ok(note_datum) => {
@@ -243,16 +248,19 @@ impl crate::wallet::transactions::TxMapAndMaybeTrees {
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.transaction_records_by_id.get_mut(&txid) {
-            if let Some(maybe_nnmd) = &mut D::to_notes_vec_mut(tmd).iter_mut().find_map(|nnmd| {
-                if nnmd.output_index().is_some() != output_index.is_some() {
-                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
-                }
-                if *nnmd.output_index() == output_index {
-                    Some(Ok(nnmd))
-                } else {
-                    None
-                }
-            }) {
+            if let Some(maybe_nnmd) = &mut D::WalletNote::transaction_record_to_outputs_vec_mut(tmd)
+                .iter_mut()
+                .find_map(|nnmd| {
+                    if nnmd.output_index().is_some() != output_index.is_some() {
+                        return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                    }
+                    if *nnmd.output_index() == output_index {
+                        Some(Ok(nnmd))
+                    } else {
+                        None
+                    }
+                })
+            {
                 match maybe_nnmd {
                     Ok(nnmd) => {
                         *nnmd.witnessed_position_mut() = Some(position);

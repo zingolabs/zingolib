@@ -5,6 +5,7 @@ use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
     super::{data::TransactionRecord, Pool},
+    query::OutputSpendStatusQuery,
     OutputInterface, ShieldedNoteInterface,
 };
 
@@ -85,6 +86,35 @@ impl OutputInterface for SaplingNote {
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
+    }
+
+    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+        transaction_record.sapling_notes.iter().collect()
+    }
+    fn transaction_record_to_outputs_vec_query(
+        transaction_record: &TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self> {
+        transaction_record
+            .sapling_notes
+            .iter()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
+    }
+    fn transaction_record_to_outputs_vec_mut(
+        transaction_record: &mut TransactionRecord,
+    ) -> Vec<&mut Self> {
+        transaction_record.sapling_notes.iter_mut().collect()
+    }
+    fn transaction_record_to_outputs_vec_query_mut(
+        transaction_record: &mut TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&mut Self> {
+        transaction_record
+            .sapling_notes
+            .iter_mut()
+            .filter(|output| output.spend_status_query(spend_status_query))
+            .collect()
     }
 }
 
@@ -199,21 +229,23 @@ impl ShieldedNoteInterface for SaplingNote {
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;
+    use sapling_crypto::value::NoteValue;
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
     use crate::{
-        test_framework::mocks::build_method,
+        test_framework::mocks::{build_method, SaplingCryptoNoteBuilder},
         wallet::{notes::ShieldedNoteInterface, traits::FromBytes},
     };
 
     use super::SaplingNote;
 
     /// to create a mock SaplingNote
+    #[derive(Clone)]
     pub(crate) struct SaplingNoteBuilder {
         diversifier: Option<sapling_crypto::Diversifier>,
-        note: Option<sapling_crypto::Note>,
+        note: Option<SaplingCryptoNoteBuilder>,
         witnessed_position: Option<Option<Position>>,
-        output_index: Option<Option<u32>>,
+        pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<sapling_crypto::Nullifier>>,
         spent: Option<Option<(TxId, u32)>>,
         unconfirmed_spent: Option<Option<(TxId, u32)>>,
@@ -242,7 +274,7 @@ pub mod mocks {
 
         // Methods to set each field
         build_method!(diversifier, sapling_crypto::Diversifier);
-        build_method!(note, sapling_crypto::Note);
+        build_method!(note, SaplingCryptoNoteBuilder);
         build_method!(witnessed_position, Option<Position>);
         build_method!(output_index, Option<u32>);
         build_method!(nullifier, Option<sapling_crypto::Nullifier>);
@@ -250,17 +282,24 @@ pub mod mocks {
         build_method!(unconfirmed_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
-        pub fn set_change(mut self, is_change: bool) -> Self {
+        pub fn set_change(&mut self, is_change: bool) -> &mut Self {
             self.is_change = Some(is_change);
             self
         }
         build_method!(have_spending_key, bool);
+        pub fn value(&mut self, value: u64) -> &mut Self {
+            self.note
+                .as_mut()
+                .unwrap()
+                .value(NoteValue::from_raw(value));
+            self
+        }
 
         /// builds a mock SaplingNote after all pieces are supplied
         pub fn build(self) -> SaplingNote {
             SaplingNote::from_parts(
                 self.diversifier.unwrap(),
-                self.note.unwrap(),
+                self.note.unwrap().build(),
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
                 self.spent.unwrap(),
@@ -275,9 +314,10 @@ pub mod mocks {
 
     impl Default for SaplingNoteBuilder {
         fn default() -> Self {
-            SaplingNoteBuilder::new()
+            let mut builder = SaplingNoteBuilder::new();
+            builder
                 .diversifier(sapling_crypto::Diversifier([0; 11]))
-                .note(crate::test_framework::mocks::SaplingCryptoNoteBuilder::default().build())
+                .note(crate::test_framework::mocks::SaplingCryptoNoteBuilder::default())
                 .witnessed_position(Some(Position::from(0)))
                 .output_index(Some(0))
                 .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))
@@ -285,7 +325,8 @@ pub mod mocks {
                 .unconfirmed_spent(None)
                 .memo(None)
                 .set_change(false)
-                .have_spending_key(true)
+                .have_spending_key(true);
+            builder
         }
     }
 }

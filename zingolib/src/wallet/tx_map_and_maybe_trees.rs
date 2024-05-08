@@ -1,6 +1,11 @@
-//! Functionality for managing transactions
+//! This mod should be called tx_map_and_maybe_trees.rs. it contains
+//! struct TxMapAndMaybeTrees
+//! implementations for TxMapAndMaybeTrees
+//! associated types for TxMapAndMaybeTrees that have no relevance elsewhere.
 
-use crate::wallet::{data::WitnessTrees, transaction_records_by_id::TransactionRecordsById};
+use crate::{
+    data::witness_trees::WitnessTrees, wallet::transaction_records_by_id::TransactionRecordsById,
+};
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
@@ -38,3 +43,19 @@ impl TxMapAndMaybeTrees {
         self.witness_trees.as_mut().map(WitnessTrees::clear);
     }
 }
+
+use std::fmt::Debug;
+use thiserror::Error;
+
+use crate::wallet::transaction_records_by_id::trait_inputsource::InputSourceError;
+
+#[derive(Debug, PartialEq, Error)]
+pub enum TxMapAndMaybeTreesTraitError {
+    #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
+    NoSpendCapability,
+    #[error("{0}")]
+    InputSource(InputSourceError),
+}
+
+pub mod trait_stub_inputsource;
+pub mod trait_walletread;

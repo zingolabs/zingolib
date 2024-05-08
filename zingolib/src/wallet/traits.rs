@@ -1,17 +1,18 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
 use std::io::{self, Read, Write};
 
-use super::{
+use crate::data::witness_trees::WitnessTrees;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::{
     data::{
         PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
-        WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
-use crate::wallet::notes::OutputInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
@@ -33,6 +34,7 @@ use zcash_client_backend::{
         compact_formats::{CompactOrchardAction, CompactSaplingOutput, CompactTx},
         service::TreeState,
     },
+    ShieldedProtocol,
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
@@ -462,6 +464,8 @@ where
     const NU: NetworkUpgrade;
     /// TODO: Add Doc Comment Here!
     const NAME: &'static str;
+    /// The [zcash_client_backend::ShieldedProtocol] this domain represents
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
 
     /// TODO: Add Doc Comment Here!
     type Fvk: Clone
@@ -487,7 +491,7 @@ where
 
     /// TODO: Add Doc Comment Here!
     fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
-        Self::to_notes_vec(transaction_md)
+        Self::WalletNote::transaction_record_to_outputs_vec(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())
@@ -533,12 +537,6 @@ where
     fn get_tree(tree_state: &TreeState) -> &String;
 
     /// TODO: Add Doc Comment Here!
-    fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
-
-    /// TODO: Add Doc Comment Here!
-    fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
-
-    /// TODO: Add Doc Comment Here!
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -554,6 +552,7 @@ where
 impl DomainWalletExt for SaplingDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
     const NAME: &'static str = "sapling";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
     type Fvk = sapling_crypto::zip32::DiversifiableFullViewingKey;
 
@@ -599,14 +598,6 @@ impl DomainWalletExt for SaplingDomain {
         &tree_state.sapling_tree
     }
 
-    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
-        &transaction_md.sapling_notes
-    }
-
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
-        &mut transaction.sapling_notes
-    }
-
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -629,6 +620,7 @@ impl DomainWalletExt for SaplingDomain {
 impl DomainWalletExt for OrchardDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
     const NAME: &'static str = "orchard";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
     type Fvk = orchard::keys::FullViewingKey;
 
@@ -672,14 +664,6 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
-    }
-
-    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
-        &transaction_md.orchard_notes
-    }
-
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
-        &mut transaction.orchard_notes
     }
 
     fn ua_from_contained_receiver<'a>(

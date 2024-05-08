@@ -149,28 +149,6 @@ impl LightClient {
     pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
         *self.interrupt_sync.write().await = set_interrupt;
     }
-    #[cfg(feature = "embed_params")]
-    pub(super) fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
-        // Read Sapling Params
-        use crate::SaplingParams;
-        let mut sapling_output = vec![];
-        sapling_output.extend_from_slice(
-            SaplingParams::get("sapling-output.params")
-                .unwrap()
-                .data
-                .as_ref(),
-        );
-
-        let mut sapling_spend = vec![];
-        sapling_spend.extend_from_slice(
-            SaplingParams::get("sapling-spend.params")
-                .unwrap()
-                .data
-                .as_ref(),
-        );
-
-        Ok((sapling_output, sapling_spend))
-    }
 
     /// TODO: Add Doc Comment Here!
     pub fn start_mempool_monitor(lc: Arc<LightClient>) {

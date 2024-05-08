@@ -24,12 +24,23 @@ use crate::{
             TransactionRecord,
         },
         keys::address_from_pubkeyhash,
-        notes::OutputInterface,
+        notes::{query::OutputQuery, OutputInterface},
         LightWallet, Pool,
     },
 };
 
 impl LightClient {
+    /// Uses a query to select all notes across all transactions with specific properties and sum them
+    pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .query_sum_value(include_notes)
+    }
+
     /// TODO: Add Doc Comment Here!
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
