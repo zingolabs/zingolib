@@ -1,11 +1,4 @@
-use zcash_client_backend::address::Address;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-
-use crate::{
-    error::ZingoLibError,
-    utils::{address_from_str, zatoshis_from_u64},
-    wallet::Pool,
-};
+use crate::{error::ZingoLibError, utils::address_from_str, wallet::Pool};
 
 use super::*;
 

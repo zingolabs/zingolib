@@ -1,8 +1,9 @@
 //! TODO: Add Mod Description Here!
 use log::debug;
 
+use zcash_client_backend::address::Address;
+use zcash_client_backend::zip321::Payment;
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_client_backend::{address::Address, zip321::Payment};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;

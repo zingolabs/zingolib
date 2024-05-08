@@ -1,7 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::wallet::MemoDownloadOption;
+use crate::wallet::{send::build_transaction_request_from_receivers, MemoDownloadOption};
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
@@ -919,36 +919,26 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
-            Ok(args) => args,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
-                    e
-                )
-            }
-        };
-        RT.block_on(async move {
-            todo!()
-            // if let Err(e) = lightclient
-            //     .do_propose_spend(
-            //         send_inputs
-            //     )
-            //     .await {
-            //     return object! { "error" => e.to_string() }.pretty(2);
-            // };
-            // match lightclient
-            //     .do_send_proposal().await
-            // {
-            //     Ok(txids) => {
-            //          object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-            //     }
-            //     Err(e) => {
-            //         object! { "error" => e }
-            //     }
-            // }
-            // .pretty(2)
-        })
+        todo!()
+    }
+}
+
+#[cfg(feature = "zip317")]
+struct QuickShieldCommand {}
+#[cfg(feature = "zip317")]
+impl Command for QuickShieldCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            todo!
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        todo!()
     }
 }
 
