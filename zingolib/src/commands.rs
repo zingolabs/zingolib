@@ -1530,6 +1530,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     {
         entries.push(("propose", Box::new(ProposeCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
+        entries.push(("quickshield", Box::new(QuickShieldCommand {})));
     }
     entries.into_iter().collect()
 }
