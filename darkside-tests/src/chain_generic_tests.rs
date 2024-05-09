@@ -1,10 +1,17 @@
-use zingolib::{lightclient::LightClient, wallet::WalletBase};
+use proptest::proptest;
+use tokio::runtime::Runtime;
 
-use crate::{
-    constants::{ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT, DARKSIDE_SEED},
-    utils::{scenarios::DarksideEnvironment, update_tree_states_for_transaction},
-};
+use zcash_client_backend::{PoolType::Shielded, ShieldedProtocol::Orchard};
+
+use zingo_testutils::chain_generic_tests::send_value_to_pool;
 use zingo_testutils::chain_generic_tests::ManageScenario;
+use zingolib::lightclient::LightClient;
+use zingolib::wallet::WalletBase;
+
+use crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
+use crate::constants::DARKSIDE_SEED;
+use crate::utils::scenarios::DarksideEnvironment;
+use crate::utils::update_tree_states_for_transaction;
 
 impl ManageScenario for DarksideEnvironment {
     async fn setup() -> Self {
@@ -78,18 +85,16 @@ impl ManageScenario for DarksideEnvironment {
 }
 
 #[tokio::test]
-async fn chain_generic_send() {
-    zingo_testutils::chain_generic_tests::simple_send::<DarksideEnvironment>(40_000).await;
+async fn darkside_send_40_000_to_orchard() {
+    send_value_to_pool::<DarksideEnvironment>(40_000, Shielded(Orchard)).await;
 }
 
-use proptest::proptest;
-use tokio::runtime::Runtime;
 proptest! {
     #[test]
     #[ignore]
     fn chain_generic_send_proptest(value in 0..90_000u32) {
         Runtime::new().unwrap().block_on(async {
-    zingo_testutils::chain_generic_tests::simple_send::<DarksideEnvironment>(value).await;
+    send_value_to_pool::<DarksideEnvironment>(value, Shielded(Orchard)).await;
         });
      }
 }
