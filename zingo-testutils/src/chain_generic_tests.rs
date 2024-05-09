@@ -2,7 +2,7 @@
 
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use crate::{
+use zingolib::{
     get_base_address,
     lightclient::LightClient,
     wallet::notes::query::{OutputQuery, QueryStipulations},
@@ -32,7 +32,7 @@ pub trait OperateTestLightserver {
 
         sender
             .do_send_test_only(vec![(
-                &get_base_address!(recipient, "unified").as_str(),
+                (get_base_address!(recipient, "unified")).as_str(),
                 value as u64,
                 None,
             )])
@@ -91,7 +91,7 @@ where
 
     sender
         .do_send_test_only(vec![(
-            &get_base_address!(recipient, "unified").as_str(),
+            (get_base_address!(recipient, "unified")).as_str(),
             value as u64,
             None,
         )])
