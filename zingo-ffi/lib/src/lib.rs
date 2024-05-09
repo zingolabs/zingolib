@@ -199,6 +199,8 @@ pub fn save_to_b64() -> String {
         lightclient = lc.borrow().as_ref().unwrap().clone();
     };
 
+    // we need to use STANDARD because swift is expecting the encoded String with padding
+    // I tried with STANDARD_NO_PAD and the decoding return `nil`.
     match lightclient.export_save_buffer_runtime() {
         Ok(buf) => STANDARD.encode(&buf),
         Err(e) => {
