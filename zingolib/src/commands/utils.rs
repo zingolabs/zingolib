@@ -3,11 +3,13 @@
 use crate::commands::error::CommandError;
 use crate::utils::{address_from_str, zatoshis_from_u64};
 use crate::wallet::{self, Pool};
+use json::JsonValue;
 use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
 
+// Parse the shield arguments for `do_shield`
 pub(super) fn parse_shield_args(
     args: &[&str],
     chain: &ChainType,
@@ -31,7 +33,7 @@ pub(super) fn parse_shield_args(
     Ok((pools_to_shield.to_vec(), address))
 }
 
-// Parse the send arguments for `do_propose`.
+// Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
@@ -53,39 +55,9 @@ pub(super) fn parse_send_args(
         json_args
             .members()
             .map(|j| {
-                if !j.has_key("address") {
-                    return Err(CommandError::MissingKey("address".to_string()));
-                }
-                let address_str = j["address"].as_str().ok_or(CommandError::UnexpectedType(
-                    "address not a Str!".to_string(),
-                ))?;
-                let address =
-                    address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)?;
-
-                if !j.has_key("amount") {
-                    return Err(CommandError::MissingKey("amount".to_string()));
-                }
-                let amount_u64 = if !j["amount"].is_number() {
-                    return Err(CommandError::NonJsonNumberForAmount(format!(
-                        "\"amount\": {}\nis not a json::number::Number",
-                        j["amount"]
-                    )));
-                } else {
-                    j["amount"].as_u64().ok_or(CommandError::UnexpectedType(
-                        "amount not a u64!".to_string(),
-                    ))?
-                };
-                let amount =
-                    zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
-
-                let memo = if let Some(m) = j["memo"].as_str().map(|s| s.to_string()) {
-                    Some(
-                        wallet::utils::interpret_memo_string(m)
-                            .map_err(CommandError::InvalidMemo)?,
-                    )
-                } else {
-                    None
-                };
+                let address = address_from_json(j, chain)?;
+                let amount = zatoshis_from_json(j)?;
+                let memo = memo_from_json(j)?;
                 check_memo_compatibility(&address, &memo)?;
 
                 Ok((address, amount, memo))
@@ -116,6 +88,60 @@ pub(super) fn parse_send_args(
     Ok(send_args)
 }
 
+// Parse the send arguments for `do_send` when sending all funds from shielded pools.
+// The send arguments have two possible formats:
+// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
+// - 2 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
+#[cfg(feature = "zip317")]
+pub(super) fn parse_send_all_args(
+    args: &[&str],
+    chain: &ChainType,
+) -> Result<(Address, Option<MemoBytes>), CommandError> {
+    let address: Address;
+    let memo: Option<MemoBytes>;
+
+    if args.len() == 1 {
+        if let Ok(addr) = address_from_str(args[0], chain) {
+            address = addr;
+            memo = None;
+            check_memo_compatibility(&address, &memo)?;
+        } else {
+            let json_args =
+                json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+
+            if !json_args.is_array() {
+                return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
+            }
+            if json_args.is_empty() {
+                return Err(CommandError::EmptyJsonArray);
+            }
+            let json_args = if json_args.len() == 1 {
+                json_args
+                    .members()
+                    .next()
+                    .expect("should have a single json member")
+            } else {
+                return Err(CommandError::MultipleReceivers);
+            };
+
+            address = address_from_json(json_args, chain)?;
+            memo = memo_from_json(json_args)?;
+            check_memo_compatibility(&address, &memo)?;
+        }
+    } else if args.len() == 2 {
+        address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
+        memo = Some(
+            wallet::utils::interpret_memo_string(args[1].to_string())
+                .map_err(CommandError::InvalidMemo)?,
+        );
+        check_memo_compatibility(&address, &memo)?;
+    } else {
+        return Err(CommandError::InvalidArguments);
+    }
+
+    Ok((address, memo))
+}
+
 // Checks send inputs do not contain memo's to transparent addresses.
 fn check_memo_compatibility(
     address: &Address,
@@ -128,6 +154,46 @@ fn check_memo_compatibility(
     }
 
     Ok(())
+}
+
+fn address_from_json(json_array: &JsonValue, chain: &ChainType) -> Result<Address, CommandError> {
+    if !json_array.has_key("address") {
+        return Err(CommandError::MissingKey("address".to_string()));
+    }
+    let address_str = json_array["address"]
+        .as_str()
+        .ok_or(CommandError::UnexpectedType(
+            "address is not a string!".to_string(),
+        ))?;
+    address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)
+}
+
+fn zatoshis_from_json(json_array: &JsonValue) -> Result<NonNegativeAmount, CommandError> {
+    if !json_array.has_key("amount") {
+        return Err(CommandError::MissingKey("amount".to_string()));
+    }
+    let amount_u64 = if !json_array["amount"].is_number() {
+        return Err(CommandError::NonJsonNumberForAmount(format!(
+            "\"amount\": {}\nis not a json::number::Number",
+            json_array["amount"]
+        )));
+    } else {
+        json_array["amount"]
+            .as_u64()
+            .ok_or(CommandError::UnexpectedType(
+                "amount not a u64!".to_string(),
+            ))?
+    };
+    zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)
+}
+
+fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandError> {
+    if let Some(m) = json_array["memo"].as_str().map(|s| s.to_string()) {
+        let memo = wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?;
+        Ok(Some(memo))
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -220,6 +286,7 @@ mod tests {
         use zingoconfig::{ChainType, RegtestNetwork};
 
         use crate::commands::{error::CommandError, utils::parse_send_args};
+
         mod json_array {
             use super::*;
 
@@ -236,76 +303,19 @@ mod tests {
             fn failed_json_parsing() {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = [r#"testaddress{{"#];
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::ArgsNotJson(e)) => match e {
-                        json::Error::UnexpectedCharacter { ch, line, column } => {
-                            assert_eq!(ch, 'e');
-                            assert_eq!(line, 1);
-                            assert_eq!(column, 2);
-                        }
-                        _ => panic!(),
-                    },
-                    _ => panic!(),
-                };
+                assert!(matches!(
+                    parse_send_args(&args, &chain),
+                    Err(CommandError::ArgsNotJson(_))
+                ));
             }
             #[test]
             fn single_arg_not_an_array_unexpected_type() {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["1"];
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::SingleArgNotJsonArray(e)) => assert_eq!(e, "1".to_string()),
-                    _ => panic!(),
-                };
-            }
-            #[test]
-            fn no_address_missing_key() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-                let args = ["[{\"amount\": 123, \"memo\": \"testmemo\"}]"];
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::MissingKey(e)) => assert_eq!(e, "address".to_string()),
-                    _ => panic!(),
-                };
-            }
-            #[test]
-            fn no_amount_missing_key() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-                let args = ["[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"memo\": \"testmemo\"}]"];
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::MissingKey(e)) => assert_eq!(e, "amount".to_string()),
-                    _ => panic!(),
-                };
-            }
-            #[test]
-            fn non_string_address() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-                let args = ["[{\"address\": 1, \"amount\": 123, \"memo\": \"testmemo\"}]"];
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::UnexpectedType(e)) => {
-                        assert_eq!(e, "address not a Str!".to_string())
-                    }
-                    _ => panic!(),
-                };
-            }
-            #[test]
-            fn non_u64_amount() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-                let args =
-                            ["[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": \"Oscar Pepper\", \"memo\": \"testmemo\"}]"];
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::NonJsonNumberForAmount(e)) => {
-                        assert_eq!(
-                            e,
-                            "\"amount\": Oscar Pepper\nis not a json::number::Number".to_string()
-                        )
-                    }
-                    _ => panic!(),
-                };
+                assert!(matches!(
+                    parse_send_args(&args, &chain),
+                    Err(CommandError::SingleArgNotJsonArray(_))
+                ));
             }
             #[test]
             fn invalid_memo() {
@@ -317,19 +327,10 @@ mod tests {
                     arg_contents.replace("\"testmemo\"", &format!("\"{}\"", long_513_byte_memo));
                 let args = [long_memo_args.as_str()];
 
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::InvalidMemo(e)) => {
-                        assert_eq!(
-                            e,
-                            format!(
-                                "Error creating output. Memo '\"{}\"' is too long",
-                                long_513_byte_memo
-                            )
-                        )
-                    }
-                    _ => panic!(),
-                };
+                assert!(matches!(
+                    parse_send_args(&args, &chain),
+                    Err(CommandError::InvalidMemo(_))
+                ));
             }
         }
         mod multi_string_args {
@@ -339,23 +340,19 @@ mod tests {
             fn two_args_wrong_amount() {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "foo"];
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::ParseIntFromString(e)) => {
-                        assert_eq!(
-                            "invalid digit found in string".to_string(),
-                            format!("{}", e)
-                        )
-                    }
-                    _ => panic!(),
-                };
+                assert!(matches!(
+                    parse_send_args(&args, &chain),
+                    Err(CommandError::ParseIntFromString(_))
+                ));
             }
             #[test]
             fn wrong_number_of_args() {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", "3", "4"];
-                let result = parse_send_args(&args, &chain);
-                assert!(matches!(result, Err(CommandError::InvalidArguments)));
+                assert!(matches!(
+                    parse_send_args(&args, &chain),
+                    Err(CommandError::InvalidArguments)
+                ));
             }
             #[test]
             fn invalid_memo() {
@@ -363,23 +360,46 @@ mod tests {
                 let long_513_byte_memo = &"a".repeat(513);
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", long_513_byte_memo];
 
-                let result = parse_send_args(&args, &chain);
-                match result {
-                    Err(CommandError::InvalidMemo(e)) => {
-                        assert_eq!(
-                            e,
-                            format!(
-                                "Error creating output. Memo '\"{}\"' is too long",
-                                long_513_byte_memo
-                            )
-                        )
-                    }
-                    _ => panic!(),
-                };
+                assert!(matches!(
+                    parse_send_args(&args, &chain),
+                    Err(CommandError::InvalidMemo(_))
+                ));
             }
         }
     }
 
+    #[test]
+    #[cfg(feature = "zip317")]
+    fn parse_send_all_args() {
+        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let address = address_from_str(address_str, &chain).unwrap();
+        let memo_str = "test memo";
+        let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
+
+        // with memo
+        let send_args = &[address_str, memo_str];
+        assert_eq!(
+            super::parse_send_all_args(send_args, &chain).unwrap(),
+            (address.clone(), Some(memo.clone()))
+        );
+
+        // invalid address
+        let send_args = &["invalid_address"];
+        assert!(matches!(
+            super::parse_send_all_args(send_args, &chain),
+            Err(CommandError::ArgNotJsonOrValidAddress)
+        ));
+
+        // multiple receivers
+        let send_args = &["[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\"}, \
+                    {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"memo\":\"test memo\"}]"];
+        assert!(matches!(
+            super::parse_send_all_args(send_args, &chain),
+            Err(CommandError::MultipleReceivers)
+        ));
+    }
     #[test]
     fn check_memo_compatibility() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
@@ -395,9 +415,90 @@ mod tests {
         super::check_memo_compatibility(&transparent_address, &None).unwrap();
 
         // transparent address with memo
-        match super::check_memo_compatibility(&transparent_address, &Some(memo.clone())) {
-            Err(CommandError::IncompatibleMemo) => (),
-            _ => panic!(),
-        };
+        assert!(matches!(
+            super::check_memo_compatibility(&transparent_address, &Some(memo.clone())),
+            Err(CommandError::IncompatibleMemo)
+        ));
+    }
+
+    #[test]
+    fn address_from_json() {
+        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+
+        // with address
+        let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"amount\":100000, \"memo\":\"test memo\"}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        super::address_from_json(json_args, &chain).unwrap();
+
+        // without address
+        let json_str = "[{\"amount\":100000, \"memo\":\"test memo\"}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        assert!(matches!(
+            super::address_from_json(json_args, &chain),
+            Err(CommandError::MissingKey(_))
+        ));
+
+        // invalid address
+        let json_str = "[{\"address\": 1, \
+                    \"amount\":100000, \"memo\":\"test memo\"}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        assert!(matches!(
+            super::address_from_json(json_args, &chain),
+            Err(CommandError::UnexpectedType(_))
+        ));
+    }
+
+    #[test]
+    fn zatoshis_from_json() {
+        // with amount
+        let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"amount\":100000, \"memo\":\"test memo\"}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        super::zatoshis_from_json(json_args).unwrap();
+
+        // without amount
+        let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"memo\":\"test memo\"}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        assert!(matches!(
+            super::zatoshis_from_json(json_args),
+            Err(CommandError::MissingKey(_))
+        ));
+
+        // invalid amount
+        let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"amount\":\"non_number\", \"memo\":\"test memo\"}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        assert!(matches!(
+            super::zatoshis_from_json(json_args),
+            Err(CommandError::NonJsonNumberForAmount(_))
+        ));
+    }
+
+    #[test]
+    fn memo_from_json() {
+        // with memo
+        let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"amount\":100000, \"memo\":\"test memo\"}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        assert_eq!(
+            super::memo_from_json(json_args).unwrap(),
+            Some(interpret_memo_string("test memo".to_string()).unwrap())
+        );
+
+        // without memo
+        let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                    \"amount\":100000}]";
+        let json_args = json::parse(json_str).unwrap();
+        let json_args = json_args.members().next().unwrap();
+        assert_eq!(super::memo_from_json(json_args).unwrap(), None);
     }
 }

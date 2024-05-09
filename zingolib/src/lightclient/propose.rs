@@ -178,6 +178,23 @@ impl LightClient {
         Ok(proposal)
     }
 
+    /// Unstable function to expose the zip317 interface for development
+    // TOdo: add correct functionality and doc comments / tests
+    // TODO: Add migrate_sapling_to_orchard argument
+    #[cfg(feature = "zip317")]
+    pub async fn propose_send_all_and_store(
+        &self,
+        _address: Address,
+        _memo: Option<MemoBytes>,
+    ) -> Result<crate::data::proposal::TransferProposal, String> {
+        use crate::test_framework::mocks::ProposalBuilder;
+
+        let proposal = ProposalBuilder::default().build();
+        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
+            .await;
+        Ok(proposal)
+    }
+
     fn get_transparent_addresses(
         &self,
     ) -> Result<Vec<zcash_primitives::legacy::TransparentAddress>, ProposeShieldError> {
@@ -251,7 +268,7 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn do_propose_shield_and_store(&self) -> Result<ShieldProposal, ProposeShieldError> {
+    pub async fn propose_shield_and_store(&self) -> Result<ShieldProposal, ProposeShieldError> {
         let proposal = self.propose_shield().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))
             .await;

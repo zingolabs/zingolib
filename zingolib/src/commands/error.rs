@@ -3,6 +3,8 @@ use std::fmt;
 #[derive(Debug)]
 pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
+    #[cfg(feature = "zip317")]
+    ArgNotJsonOrValidAddress,
     SingleArgNotJsonArray(String),
     EmptyJsonArray,
     ParseIntFromString(std::num::ParseIntError),
@@ -14,6 +16,8 @@ pub(crate) enum CommandError {
     NonJsonNumberForAmount(String),
     ConversionFailed(crate::utils::ConversionError),
     InvalidPool,
+    #[cfg(feature = "zip317")]
+    MultipleReceivers,
 }
 
 impl fmt::Display for CommandError {
@@ -22,6 +26,11 @@ impl fmt::Display for CommandError {
 
         match self {
             ArgsNotJson(e) => write!(f, "failed to parse argument. {}", e),
+            #[cfg(feature = "zip317")]
+            ArgNotJsonOrValidAddress => write!(
+                f,
+                "argument cannot be converted to a valid address or parsed as json."
+            ),
             SingleArgNotJsonArray(e) => {
                 write!(f, "argument cannot be parsed to a json array. {}", e)
             }
@@ -37,6 +46,8 @@ impl fmt::Display for CommandError {
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
             ConversionFailed(e) => write!(f, "conversion failed. {}", e),
             InvalidPool => write!(f, "invalid pool."),
+            #[cfg(feature = "zip317")]
+            MultipleReceivers => write!(f, "'send all' can only accept one receiver."),
         }
     }
 }
