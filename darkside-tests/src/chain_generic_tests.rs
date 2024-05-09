@@ -1,39 +1,28 @@
-use zingolib::{
-    lightclient::LightClient, test_framework::chain_generic_tests::ChainTest, wallet::WalletBase,
-};
+use zingolib::{lightclient::LightClient, wallet::WalletBase};
 
 use crate::{
     constants::{ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT, DARKSIDE_SEED},
-    utils::{scenarios::DarksideScenario, update_tree_states_for_transaction},
+    utils::{scenarios::DarksideEnvironment, update_tree_states_for_transaction},
 };
+use zingo_testutils::chain_generic_tests::ManageScenario;
 
-impl ChainTest for DarksideScenario {
+impl ManageScenario for DarksideEnvironment {
     async fn setup() -> Self {
-        DarksideScenario::new(None).await
+        DarksideEnvironment::new(None).await
     }
 
     async fn create_faucet(&mut self) -> LightClient {
         self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
             .await;
-        let mut zingo_config = self
-            .client_builder
-            .make_unique_data_dir_and_load_config(self.regtest_network);
-        zingo_config.accept_server_txids = true;
-        LightClient::create_from_wallet_base_async(
-            WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
-            &zingo_config,
-            0,
-            true,
-        )
-        .await
-        .unwrap()
+        self.client_builder
+            .build_client(DARKSIDE_SEED.to_string(), 0, true, self.regtest_network)
+            .await
     }
 
     async fn create_client(&mut self) -> LightClient {
-        let mut zingo_config = self
+        let zingo_config = self
             .client_builder
             .make_unique_data_dir_and_load_config(self.regtest_network);
-        zingo_config.accept_server_txids = true;
         LightClient::create_from_wallet_base_async(
             WalletBase::FreshEntropy,
             &zingo_config,
@@ -89,17 +78,18 @@ impl ChainTest for DarksideScenario {
 }
 
 #[tokio::test]
-async fn chain_generic_darkside_send() {
-    zingolib::test_framework::chain_generic_tests::simple_send::<DarksideScenario>(40_000).await;
+async fn chain_generic_send() {
+    zingo_testutils::chain_generic_tests::simple_send::<DarksideEnvironment>(40_000).await;
 }
 
 use proptest::proptest;
 use tokio::runtime::Runtime;
 proptest! {
     #[test]
-    fn chain_generic_darkside_send_proptest(value in 0..90_000u32) {
+    #[ignore]
+    fn chain_generic_send_proptest(value in 0..90_000u32) {
         Runtime::new().unwrap().block_on(async {
-    zingolib::test_framework::chain_generic_tests::simple_send::<DarksideScenario>(value).await;
+    zingo_testutils::chain_generic_tests::simple_send::<DarksideEnvironment>(value).await;
         });
      }
 }

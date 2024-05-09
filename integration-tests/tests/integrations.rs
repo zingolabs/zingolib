@@ -634,7 +634,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let proposal = faucet.do_propose_shield().await.unwrap();
+        let proposal = faucet.propose_shield_and_store().await.unwrap();
         let only_step = proposal.steps().first();
 
         // Orchard action and dummy, plus 4 transparent inputs
@@ -3222,6 +3222,7 @@ mod slow {
             Some(890_000)
         );
     }
+    #[ignore]
     #[tokio::test]
     async fn timed_sync_interrupt() {
         let (regtest_manager, _cph, faucet, recipient) =

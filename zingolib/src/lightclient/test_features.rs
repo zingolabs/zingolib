@@ -1,7 +1,21 @@
-use crate::error::ZingoLibError;
 use nonempty::NonEmpty;
+use zcash_client_backend::address::Address;
 use zcash_client_backend::proposal::Proposal;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::TxId;
+
+use crate::{
+    error::ZingoLibError,
+    utils::{address_from_str, zatoshis_from_u64},
+    wallet::Pool,
+};
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+
+use crate::{
+    error::ZingoLibError,
+    utils::{address_from_str, zatoshis_from_u64},
+    wallet::Pool,
+};
 
 use super::*;
 

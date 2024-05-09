@@ -2,7 +2,16 @@
 
 use nonempty::NonEmpty;
 
+use zcash_client_backend::{
+    address::Address,
+    zip321::{Payment, TransactionRequest},
+};
 use zcash_client_backend::{proposal::Proposal, zip321::TransactionRequest};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    memo::MemoBytes,
+    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
+};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_proofs::prover::LocalTxProver;
 
