@@ -153,7 +153,10 @@ pub mod send_with_proposal {
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
-    pub enum CompleteAndBroadcastError {}
+    pub enum CompleteAndBroadcastError {
+        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
+        NoSpendCapability,
+    }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
@@ -189,6 +192,17 @@ pub mod send_with_proposal {
             &self,
             _proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            if self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .witness_trees()
+                .is_none()
+            {
+                return Err(CompleteAndBroadcastError::NoSpendCapability);
+            }
             //todo!();
             Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
         }
