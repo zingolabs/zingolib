@@ -850,6 +850,61 @@ impl Command for ProposeCommand {
     }
 }
 
+#[cfg(feature = "zip317")]
+struct ProposeAllCommand {}
+#[cfg(feature = "zip317")]
+impl Command for ProposeAllCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Propose to transfer all ZEC from shielded pools to a given address prior to sending.
+            The fee required to send this transaction will be added to the proposal and displayed to the user.
+
+            Warning:
+                Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.
+            Usage:
+                proposeall <address> "<optional memo>"
+                OR
+                proposeall '[{"address":"<address>", "memo":"<optional memo>"}]'
+            Example:
+                proposeall ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
+                send
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Propose to transfer all ZEC from shielded pools to a given address prior to sending."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let (address, memo) = match utils::parse_send_all_args(args, &lightclient.config().chain) {
+            Ok(args) => args,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        RT.block_on(async move {
+            match lightclient
+                .propose_send_all_and_store(address, memo)
+                .await {
+                Ok(proposal) => {
+                    object! {
+                        "amount" => proposal.steps().iter().fold(0, |acc, step| acc + step.shielded_inputs().unwrap().notes().iter().fold(0, |acc, note| acc + u64::from(note.note().value()))),
+                        "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())),
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
 struct SendCommand {}
 impl Command for SendCommand {
     fn help(&self) -> &'static str {
@@ -1529,6 +1584,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     #[cfg(feature = "zip317")]
     {
         entries.push(("propose", Box::new(ProposeCommand {})));
+        entries.push(("proposeall", Box::new(ProposeAllCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
         entries.push(("quickshield", Box::new(QuickShieldCommand {})));
     }
