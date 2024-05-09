@@ -1,15 +1,12 @@
 //! TODO: Add Mod Description Here!
 use log::debug;
 
-use zcash_client_backend::{
-    address::Address,
-    zip321::{Payment, TransactionRequest},
-};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::MemoBytes,
-    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
-};
+use zcash_client_backend::address::Address;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
 use crate::utils::zatoshis_from_u64;
@@ -17,26 +14,6 @@ use crate::wallet::Pool;
 
 use super::LightClient;
 use super::LightWalletSendProgress;
-
-/// converts from raw receivers to TransactionRequest
-pub fn receivers_becomes_transaction_request(
-    receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-) -> Result<TransactionRequest, zcash_client_backend::zip321::Zip321Error> {
-    let mut payments = vec![];
-    for out in receivers.clone() {
-        payments.push(Payment {
-            recipient_address: out.0,
-            amount: out.1,
-            memo: out.2,
-            label: None,
-            message: None,
-            other_params: vec![],
-        });
-    }
-
-    TransactionRequest::new(payments)
-}
-use zcash_primitives::transaction::TxId;
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -155,22 +132,114 @@ impl LightClient {
             )
             .await
     }
+}
 
-    #[cfg(feature = "zip317")]
-    /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
-    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-            match proposal {
-                crate::lightclient::ZingoProposal::Transfer(_) => {
-                    Ok(vec![TxId::from_bytes([1u8; 32])])
+#[cfg(feature = "zip317")]
+/// patterns for newfangled propose flow
+pub mod send_with_proposal {
+    use std::convert::Infallible;
+
+    use nonempty::NonEmpty;
+
+    use zcash_client_backend::proposal::Proposal;
+    use zcash_client_backend::wallet::NoteId;
+    use zcash_client_backend::zip321::TransactionRequest;
+    use zcash_primitives::transaction::TxId;
+
+    use thiserror::Error;
+
+    use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
+    use crate::lightclient::LightClient;
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum CompleteAndBroadcast {}
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum CompleteAndBroadcastStoredProposal {
+        #[error("No proposal. Call do_propose first.")]
+        NoStoredProposal,
+        #[error("send {0}")]
+        Send(CompleteAndBroadcast),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum QuickSendError {
+        #[error("propose send {0}")]
+        Propose(ProposeSendError),
+        #[error("send {0}")]
+        Send(CompleteAndBroadcast),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum QuickShieldError {
+        #[error("propose shield {0}")]
+        Propose(ProposeShieldError),
+        #[error("send {0}")]
+        Send(CompleteAndBroadcast),
+    }
+
+    impl LightClient {
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        async fn complete_and_broadcast<NoteRef>(
+            &self,
+            _proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcast> {
+            //todo!();
+            Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
+        }
+
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        pub async fn complete_and_broadcast_stored_proposal(
+            &self,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposal> {
+            if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+                match proposal {
+                    crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
+                        self.complete_and_broadcast::<NoteId>(transfer_proposal)
+                            .await
+                    }
+                    crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
+                        self.complete_and_broadcast::<Infallible>(shield_proposal)
+                            .await
+                    }
                 }
-                crate::lightclient::ZingoProposal::Shield(_) => {
-                    Ok(vec![TxId::from_bytes([222u8; 32])])
-                }
+                .map_err(CompleteAndBroadcastStoredProposal::Send)
+            } else {
+                Err(CompleteAndBroadcastStoredProposal::NoStoredProposal)
             }
-        } else {
-            Err("No proposal. Call do_propose first.".to_string())
+        }
+
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        pub async fn quick_send(
+            &self,
+            request: TransactionRequest,
+        ) -> Result<NonEmpty<TxId>, QuickSendError> {
+            let proposal = self
+                .propose_send(request)
+                .await
+                .map_err(QuickSendError::Propose)?;
+            self.complete_and_broadcast::<NoteId>(&proposal)
+                .await
+                .map_err(QuickSendError::Send)
+        }
+
+        /// Unstable function to expose the zip317 interface for development
+        // TODO: add correct functionality and doc comments / tests
+        pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
+            let proposal = self
+                .propose_shield()
+                .await
+                .map_err(QuickShieldError::Propose)?;
+            self.complete_and_broadcast::<Infallible>(&proposal)
+                .await
+                .map_err(QuickShieldError::Send)
         }
     }
 }

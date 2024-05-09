@@ -651,7 +651,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let proposal = faucet.do_propose_shield().await.unwrap();
+        let proposal = faucet.do_propose_shield_and_store().await.unwrap();
         let only_step = proposal.steps().first();
 
         // Orchard action and dummy, plus 4 transparent inputs
@@ -4012,3 +4012,5 @@ mod basic_transactions {
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
+
+pub mod chain_generic_tests;
