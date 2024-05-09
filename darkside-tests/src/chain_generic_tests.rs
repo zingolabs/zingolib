@@ -4,9 +4,9 @@ use crate::{
     constants::{ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT, DARKSIDE_SEED},
     utils::{scenarios::DarksideEnvironment, update_tree_states_for_transaction},
 };
-use zingo_testutils::chain_generic_tests::TestEnvironment;
+use zingo_testutils::chain_generic_tests::ManageScenario;
 
-impl TestEnvironment for DarksideEnvironment {
+impl ManageScenario for DarksideEnvironment {
     async fn setup() -> Self {
         DarksideEnvironment::new(None).await
     }
