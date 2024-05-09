@@ -1,10 +1,10 @@
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
+use zingo_testutils::chain_generic_tests::OperateTestLightserver;
 use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::LightClient;
-use zingolib::test_framework::chain_generic_tests::OperateTestLightserver;
 use zingolib::wallet::WalletBase;
 
 struct LibtonodeEnvironment {
@@ -73,6 +73,5 @@ impl OperateTestLightserver for LibtonodeEnvironment {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    zingolib::test_framework::chain_generic_tests::simple_send::<LibtonodeEnvironment>(40_000)
-        .await;
+    zingo_testutils::chain_generic_tests::simple_send::<LibtonodeEnvironment>(40_000).await;
 }

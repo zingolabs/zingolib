@@ -9,7 +9,7 @@ chain_generic_tests = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { path = "../zingolib", features = ["test-features", "darkside_tests", "chain_generic_tests"] }
+zingolib = { path = "../zingolib", features = ["test-features", "darkside_tests"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingoconfig = { path = "../zingoconfig" }
 

@@ -63,16 +63,24 @@ pub struct OutputQuery {
     pools: OutputPoolQuery,
 }
 
-pub(crate) struct QueryStipulations {
-    pub(crate) unspent: bool,
-    pub(crate) pending_spent: bool,
-    pub(crate) spent: bool,
-    pub(crate) transparent: bool,
-    pub(crate) sapling: bool,
-    pub(crate) orchard: bool,
+/// A type that exposes bool field names
+pub struct QueryStipulations {
+    /// existence of an unspent
+    pub unspent: bool,
+    /// existence of a pending unspent
+    pub pending_spent: bool,
+    /// existence of a spent
+    pub spent: bool,
+    /// existence of transparent value
+    pub transparent: bool,
+    /// existence of sapling value
+    pub sapling: bool,
+    /// existence of orchard value
+    pub orchard: bool,
 }
 impl QueryStipulations {
-    pub(crate) fn stipulate(self) -> OutputQuery {
+    /// Explicitly stipulate conditions
+    pub fn stipulate(self) -> OutputQuery {
         OutputQuery::stipulations(
             self.unspent,
             self.pending_spent,
