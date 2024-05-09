@@ -3,6 +3,12 @@
 use derive_more::Constructor;
 use getset::Getters;
 
+use zcash_client_backend::PoolType;
+use zcash_client_backend::PoolType::Shielded;
+use zcash_client_backend::PoolType::Transparent;
+use zcash_client_backend::ShieldedProtocol::Orchard;
+use zcash_client_backend::ShieldedProtocol::Sapling;
+
 /// Selects received notes by how they been spent
 #[derive(Getters, Constructor, Clone, Copy)]
 pub struct OutputSpendStatusQuery {
@@ -47,6 +53,26 @@ impl OutputPoolQuery {
             transparent: true,
             sapling: true,
             orchard: true,
+        }
+    }
+    /// a query that will match only a specific pool.
+    pub fn one_pool(pool_type: PoolType) -> Self {
+        match pool_type {
+            Transparent => Self {
+                transparent: true,
+                sapling: false,
+                orchard: false,
+            },
+            Shielded(Sapling) => Self {
+                transparent: false,
+                sapling: true,
+                orchard: false,
+            },
+            Shielded(Orchard) => Self {
+                transparent: false,
+                sapling: false,
+                orchard: true,
+            },
         }
     }
 }
