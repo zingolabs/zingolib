@@ -1,12 +1,12 @@
 //! tests that can be run either as lib-to-node or darkside.
 
+use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use zingolib::{
-    get_base_address,
-    lightclient::LightClient,
-    wallet::notes::query::{OutputQuery, QueryStipulations},
-};
+use zingolib::lightclient::LightClient;
+use zingolib::wallet::notes::query::OutputQuery;
+use zingolib::wallet::notes::query::OutputSpendStatusQuery;
+use zingolib::{get_base_address, wallet::notes::query::OutputPoolQuery};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -39,19 +39,6 @@ pub trait ManageScenario {
             .await
             .unwrap();
 
-        // sender
-        //     .do_quick_send(
-        //         sender
-        //             .raw_to_transaction_request(vec![(
-        //                 get_base_address!(recipient, "unified"),
-        //                 value,
-        //                 None,
-        //             )])
-        //             .unwrap(),
-        //     )
-        //     .await
-        //     .unwrap();
-
         self.bump_chain().await;
 
         recipient.do_sync(false).await.unwrap();
@@ -71,7 +58,7 @@ pub trait ManageScenario {
 }
 
 /// runs a send-to-self and receives it in a chain-generic context
-pub async fn simple_send<TE>(value: u32)
+pub async fn send_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
 where
     TE: ManageScenario,
 {
@@ -80,36 +67,27 @@ where
     dbg!("chain set up, funding client now");
 
     let sender = environment
-        .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u32))
+        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u32))
         .await;
 
-    let recipient = environment.create_client().await;
-
-    dbg!("ready to send");
+    dbg!("client is ready to send");
     dbg!(sender.query_sum_value(OutputQuery::any()).await);
-    dbg!(value);
+    dbg!(send_value);
+
+    let recipient = environment.create_client().await;
+    let recipient_address = recipient.get_base_address(pooltype).await;
+
+    dbg!("recipient ready");
+    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
     sender
         .do_send_test_only(vec![(
-            (get_base_address!(recipient, "unified")).as_str(),
-            value as u64,
+            dbg!(recipient_address).as_str(),
+            send_value as u64,
             None,
         )])
         .await
         .unwrap();
-
-    // sender
-    //     .do_quick_send(
-    //         sender
-    //             .raw_to_transaction_request(vec![(
-    //                 get_base_address!(recipient, "unified"),
-    //                 value,
-    //                 None,
-    //             )])
-    //             .unwrap(),
-    //     )
-    //     .await
-    //     .unwrap();
 
     environment.bump_chain().await;
 
@@ -117,18 +95,15 @@ where
 
     assert_eq!(
         recipient
-            .query_sum_value(
-                QueryStipulations {
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery {
                     unspent: true,
                     pending_spent: false,
                     spent: false,
-                    transparent: false,
-                    sapling: false,
-                    orchard: true,
-                }
-                .stipulate()
-            )
+                },
+                pools: OutputPoolQuery::one_pool(pooltype),
+            })
             .await,
-        value as u64
+        send_value as u64
     );
 }
