@@ -1,7 +1,10 @@
 use proptest::proptest;
 use tokio::runtime::Runtime;
 
-use zcash_client_backend::{PoolType::Shielded, ShieldedProtocol::Orchard};
+use zcash_client_backend::PoolType::Shielded;
+use zcash_client_backend::PoolType::Transparent;
+use zcash_client_backend::ShieldedProtocol::Orchard;
+use zcash_client_backend::ShieldedProtocol::Sapling;
 
 use zingo_testutils::chain_generic_tests::send_value_to_pool;
 use zingo_testutils::chain_generic_tests::ManageScenario;
@@ -85,16 +88,24 @@ impl ManageScenario for DarksideEnvironment {
 }
 
 #[tokio::test]
+// #[ignore] // darkside cant handle transparent?
+async fn darkside_send_40_000_to_transparent() {
+    send_value_to_pool::<DarksideEnvironment>(40_000, Transparent).await;
+}
+#[tokio::test]
+async fn darkside_send_40_000_to_sapling() {
+    send_value_to_pool::<DarksideEnvironment>(40_000, Shielded(Sapling)).await;
+}
+#[tokio::test]
 async fn darkside_send_40_000_to_orchard() {
     send_value_to_pool::<DarksideEnvironment>(40_000, Shielded(Orchard)).await;
 }
 
 proptest! {
     #[test]
-    #[ignore]
-    fn chain_generic_send_proptest(value in 0..90_000u32) {
+    fn darkside_send_pvalue_to_orchard(value in 0..90u32) {
         Runtime::new().unwrap().block_on(async {
-    send_value_to_pool::<DarksideEnvironment>(value, Shielded(Orchard)).await;
+    send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Orchard)).await;
         });
      }
 }

@@ -3,11 +3,10 @@
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use zingolib::{
-    get_base_address,
-    lightclient::LightClient,
-    wallet::notes::query::{OutputQuery, QueryStipulations},
-};
+use zingolib::lightclient::LightClient;
+use zingolib::wallet::notes::query::OutputQuery;
+use zingolib::wallet::notes::query::OutputSpendStatusQuery;
+use zingolib::{get_base_address, wallet::notes::query::OutputPoolQuery};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -39,19 +38,6 @@ pub trait ManageScenario {
             )])
             .await
             .unwrap();
-
-        // sender
-        //     .do_quick_send(
-        //         sender
-        //             .raw_to_transaction_request(vec![(
-        //                 get_base_address!(recipient, "unified"),
-        //                 value,
-        //                 None,
-        //             )])
-        //             .unwrap(),
-        //     )
-        //     .await
-        //     .unwrap();
 
         self.bump_chain().await;
 
@@ -91,23 +77,17 @@ where
     let recipient = environment.create_client().await;
     let recipient_address = recipient.get_base_address(pooltype).await;
 
+    dbg!("recipient ready");
+    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
+
     sender
-        .do_send_test_only(vec![(recipient_address.as_str(), send_value as u64, None)])
+        .do_send_test_only(vec![(
+            dbg!(recipient_address).as_str(),
+            send_value as u64,
+            None,
+        )])
         .await
         .unwrap();
-
-    // sender
-    //     .do_quick_send(
-    //         sender
-    //             .raw_to_transaction_request(vec![(
-    //                 get_base_address!(recipient, "unified"),
-    //                 value,
-    //                 None,
-    //             )])
-    //             .unwrap(),
-    //     )
-    //     .await
-    //     .unwrap();
 
     environment.bump_chain().await;
 
@@ -115,17 +95,14 @@ where
 
     assert_eq!(
         recipient
-            .query_sum_value(
-                QueryStipulations {
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery {
                     unspent: true,
                     pending_spent: false,
                     spent: false,
-                    transparent: false,
-                    sapling: false,
-                    orchard: true,
-                }
-                .stipulate()
-            )
+                },
+                pools: OutputPoolQuery::one_pool(pooltype),
+            })
             .await,
         send_value as u64
     );

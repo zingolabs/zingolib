@@ -1,6 +1,10 @@
+use zcash_client_backend::PoolType;
+use zcash_client_backend::PoolType::Shielded;
+use zcash_client_backend::PoolType::Transparent;
+use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
-use zcash_client_backend::{PoolType, ShieldedProtocol};
 
+use zingo_testutils::chain_generic_tests::send_value_to_pool;
 use zingo_testutils::chain_generic_tests::ManageScenario;
 use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
@@ -72,10 +76,14 @@ impl ManageScenario for LibtonodeEnvironment {
 }
 
 #[tokio::test]
+async fn libtonode_send_40_000_to_transparent() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+}
+#[tokio::test]
+async fn libtonode_send_40_000_to_sapling() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
+}
+#[tokio::test]
 async fn libtonode_send_40_000_to_orchard() {
-    zingo_testutils::chain_generic_tests::send_value_to_pool::<LibtonodeEnvironment>(
-        40_000,
-        PoolType::Shielded(ShieldedProtocol::Orchard),
-    )
-    .await;
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
 }
