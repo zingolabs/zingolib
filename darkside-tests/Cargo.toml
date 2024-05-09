@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+chain_generic_tests = []
 
 [dependencies]
-zingolib = { path = "../zingolib", features = ["test-features", "darkside_tests"] }
+zingolib = { path = "../zingolib", features = ["test-features", "darkside_tests", "chain_generic_tests"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingoconfig = { path = "../zingoconfig" }
 tokio = { version = "1.25.0", features = ["full"] }
@@ -38,6 +40,7 @@ zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
 serde_json = "1.0.107"
 sapling-crypto.workspace = true
+proptest = "1.4.0"
 
 [build-dependencies]
 tonic-build = { workspace = true }

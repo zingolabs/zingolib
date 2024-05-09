@@ -1,7 +1,7 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
-use crate::wallet::data::SpendableSaplingNote;
 use crate::wallet::notes::OutputInterface;
 use crate::wallet::now;
+use crate::{data::receivers::Receivers, wallet::data::SpendableSaplingNote};
 
 use futures::Future;
 
@@ -18,7 +18,6 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::error::{QueryError, ShardTreeError};
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
-use zcash_client_backend::zip321::{Payment, TransactionRequest, Zip321Error};
 use zcash_note_encryption::Domain;
 
 use std::cmp;
@@ -88,28 +87,6 @@ impl SendProgress {
             last_transaction_id: None,
         }
     }
-}
-
-type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
-
-/// TODO: Add Doc Comment Here!
-// review! unit test this
-pub fn build_transaction_request_from_receivers(
-    receivers: Receivers,
-) -> Result<TransactionRequest, Zip321Error> {
-    let mut payments = vec![];
-    for out in receivers.clone() {
-        payments.push(Payment {
-            recipient_address: out.0,
-            amount: out.1,
-            memo: out.2,
-            label: None,
-            message: None,
-            other_params: vec![],
-        });
-    }
-
-    TransactionRequest::new(payments)
 }
 
 fn add_notes_to_total<D: DomainWalletExt>(
@@ -866,7 +843,7 @@ impl LightWallet {
 
         let txid = transaction.txid();
         if txid.to_string() != transaction_id {
-            // return Err(format!(
+            // happens during darkside tests
             dbg!(
                 "served txid {} does not match calulated txid {}",
                 transaction_id,
@@ -889,7 +866,7 @@ mod tests {
     };
     use zingoconfig::ChainType;
 
-    use super::{build_transaction_request_from_receivers, Receivers};
+    use crate::data::receivers::{build_transaction_request_from_receivers, Receivers};
 
     #[test]
     fn test_build_request() {

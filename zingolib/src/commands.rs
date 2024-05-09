@@ -834,7 +834,7 @@ impl Command for ProposeCommand {
         RT.block_on(async move {
             todo!()
             // match lightclient
-            //     .do_propose_spend(
+            //     .do_propose_send(
             //         send_inputs
             //     )
             //     .await {
@@ -918,37 +918,27 @@ impl Command for QuickSendCommand {
         "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
-            Ok(args) => args,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
-                    e
-                )
-            }
-        };
-        RT.block_on(async move {
-            todo!()
-            // if let Err(e) = lightclient
-            //     .do_propose_spend(
-            //         send_inputs
-            //     )
-            //     .await {
-            //     return object! { "error" => e.to_string() }.pretty(2);
-            // };
-            // match lightclient
-            //     .do_send_proposal().await
-            // {
-            //     Ok(txids) => {
-            //          object! { "txids" =>  txids.iter().map(|txid| txid.to_string()).collect::<Vec<String>>()}
-            //     }
-            //     Err(e) => {
-            //         object! { "error" => e }
-            //     }
-            // }
-            // .pretty(2)
-        })
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        todo!()
+    }
+}
+
+#[cfg(feature = "zip317")]
+struct QuickShieldCommand {}
+#[cfg(feature = "zip317")]
+impl Command for QuickShieldCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            todo!
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send ZEC to the given address(es). Combines `Propose` and `Send` into a single command."
+    }
+
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        todo!()
     }
 }
 
@@ -1540,6 +1530,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     {
         entries.push(("propose", Box::new(ProposeCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
+        entries.push(("quickshield", Box::new(QuickShieldCommand {})));
     }
     entries.into_iter().collect()
 }
