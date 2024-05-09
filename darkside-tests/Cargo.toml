@@ -8,7 +8,7 @@ edition = "2021"
 chain_generic_tests = []
 
 [dependencies]
-zingolib = { path = "../zingolib", features = ["test-features", "darkside_tests", "chain_generic_tests"] }
+zingolib = { path = "../zingolib", features = ["test-features", "darkside_tests"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingoconfig = { path = "../zingoconfig" }
 tokio = { version = "1.25.0", features = ["full"] }

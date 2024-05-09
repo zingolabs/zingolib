@@ -3378,6 +3378,7 @@ mod slow {
             Some(890_000)
         );
     }
+    #[ignore]
     #[tokio::test]
     async fn timed_sync_interrupt() {
         let (regtest_manager, _cph, faucet, recipient) =

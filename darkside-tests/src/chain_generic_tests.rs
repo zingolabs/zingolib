@@ -1,12 +1,10 @@
-use zingolib::{
-    lightclient::LightClient, test_framework::chain_generic_tests::OperateTestLightserver,
-    wallet::WalletBase,
-};
+use zingolib::{lightclient::LightClient, wallet::WalletBase};
 
 use crate::{
     constants::{ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT, DARKSIDE_SEED},
     utils::{scenarios::DarksideScenario, update_tree_states_for_transaction},
 };
+use zingo_testutils::chain_generic_tests::OperateTestLightserver;
 
 impl OperateTestLightserver for DarksideScenario {
     async fn setup() -> Self {
@@ -81,7 +79,7 @@ impl OperateTestLightserver for DarksideScenario {
 
 #[tokio::test]
 async fn chain_generic_send() {
-    zingolib::test_framework::chain_generic_tests::simple_send::<DarksideScenario>(40_000).await;
+    zingo_testutils::chain_generic_tests::simple_send::<DarksideScenario>(40_000).await;
 }
 
 use proptest::proptest;
@@ -91,7 +89,7 @@ proptest! {
     #[ignore]
     fn chain_generic_send_proptest(value in 0..90_000u32) {
         Runtime::new().unwrap().block_on(async {
-    zingolib::test_framework::chain_generic_tests::simple_send::<DarksideScenario>(value).await;
+    zingo_testutils::chain_generic_tests::simple_send::<DarksideScenario>(value).await;
         });
      }
 }
