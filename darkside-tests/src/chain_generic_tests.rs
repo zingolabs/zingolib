@@ -88,7 +88,7 @@ impl ManageScenario for DarksideEnvironment {
 }
 
 #[tokio::test]
-// #[ignore] // darkside cant handle transparent?
+#[ignore] // darkside cant handle transparent?
 async fn darkside_send_40_000_to_transparent() {
     send_value_to_pool::<DarksideEnvironment>(40_000, Transparent).await;
 }
