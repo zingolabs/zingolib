@@ -289,6 +289,7 @@ mod shielding {
     #[tokio::test]
     async fn propose_shield() {
         let basic_client = create_basic_client().await;
+        basic_client.propose_shield();
     }
     #[tokio::test]
     async fn get_transparent_addresses() {
