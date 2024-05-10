@@ -236,7 +236,7 @@ pub mod send_with_proposal {
             request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self
-                .propose_send(request)
+                .create_send_proposal(request)
                 .await
                 .map_err(QuickSendError::ProposeSend)?;
             self.complete_and_broadcast::<NoteId>(&proposal)
@@ -248,7 +248,7 @@ pub mod send_with_proposal {
         // TODO: add correct functionality and doc comments / tests
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self
-                .propose_shield()
+                .create_shield_proposal()
                 .await
                 .map_err(QuickShieldError::Propose)?;
             self.complete_and_broadcast::<Infallible>(&proposal)
