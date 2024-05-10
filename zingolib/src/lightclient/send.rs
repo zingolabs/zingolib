@@ -234,7 +234,6 @@ pub mod send_with_proposal {
                     .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
 
             let mut step_results = Vec::with_capacity(proposal.steps().len());
-            let mut txids = Vec::with_capacity(proposal.steps().len());
             for step in proposal.steps() {
                 let step_result = {
                     let mut tmamt = self
@@ -259,8 +258,10 @@ pub mod send_with_proposal {
                     .map_err(CompleteAndBroadcastError::Calculation)?
                 };
 
-                let txid = self
-                    .wallet
+                step_results.push((step, step_result));
+            }
+            for (_step, step_result) in step_results {
+                self.wallet
                     .send_to_addresses_inner(
                         step_result.transaction(),
                         submission_height,
@@ -273,8 +274,6 @@ pub mod send_with_proposal {
                     )
                     .await
                     .map_err(CompleteAndBroadcastError::Broadcast)?;
-                step_results.push((step, step_result));
-                txids.push(txid);
             }
             //todo!();
             Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
