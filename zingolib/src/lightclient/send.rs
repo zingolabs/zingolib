@@ -133,15 +133,17 @@ impl LightClient {
 #[cfg(feature = "zip317")]
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
-    use std::convert::Infallible;
+    use std::{convert::Infallible, ops::DerefMut as _};
 
     use nonempty::NonEmpty;
 
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
+    use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
+    use zcash_proofs::prover::LocalTxProver;
 
     use crate::data::receivers::Receivers;
     use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
@@ -186,7 +188,7 @@ pub mod send_with_proposal {
         // TODO: add correct functionality and doc comments / tests
         async fn complete_and_broadcast<NoteRef>(
             &self,
-            _proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+            proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
             if self
                 .wallet
@@ -198,6 +200,62 @@ pub mod send_with_proposal {
                 .is_none()
             {
                 return Err(CompleteAndBroadcastError::NoSpendCapability);
+            }
+            let submission_height = self
+                .get_submission_height()
+                .await
+                .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
+
+            let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) = self
+                .read_sapling_params()
+                .map_err(CompleteAndBroadcastError::SaplingParams)?;
+            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let unified_spend_key =
+                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
+                    .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
+
+            let mut step_results = Vec::with_capacity(proposal.steps().len());
+            let mut txids = Vec::with_capacity(proposal.steps().len());
+            for step in proposal.steps() {
+                let step_result = {
+                    let mut tmamt = self
+                        .wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .write()
+                        .await;
+
+                    zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                        tmamt.deref_mut(),
+                        &self.wallet.transaction_context.config.chain,
+                        &sapling_prover,
+                        &sapling_prover,
+                        &unified_spend_key,
+                        zcash_client_backend::wallet::OvkPolicy::Sender,
+                        proposal.fee_rule(),
+                        proposal.min_target_height(),
+                        &step_results,
+                        step,
+                    )
+                    .map_err(DoSendProposedError::Calculation)?
+                };
+
+                let txid = self
+                    .wallet
+                    .send_to_addresses_inner(
+                        step_result.transaction(),
+                        submission_height,
+                        |transaction_bytes| {
+                            crate::grpc_connector::send_transaction(
+                                self.get_server_uri(),
+                                transaction_bytes,
+                            )
+                        },
+                    )
+                    .await
+                    .map_err(DoSendProposedError::Broadcast)?;
+                step_results.push((step, step_result));
+                txids.push(txid);
             }
             //todo!();
             Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
