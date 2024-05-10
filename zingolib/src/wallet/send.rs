@@ -842,24 +842,32 @@ impl LightWallet {
                 .await;
         }
 
-        let txid = transaction.txid();
+        let calculated_txid = transaction.txid();
 
-        if let Ok(serverz_txid_bytes) = serverz_transaction_id.into_bytes().try_into() {
-            let serverz_txid = TxId::from_bytes(serverz_txid_bytes);
-            if txid != serverz_txid {
-                // happens during darkside tests
-                dbg!(
-                    "served txid {} does not match calulated txid {}",
-                    serverz_txid,
-                    txid,
-                );
+        let accepted_txid = match crate::utils::conversion::txid_from_hex_encoded_str(
+            serverz_transaction_id.as_str(),
+        ) {
+            Ok(serverz_txid) => {
+                if calculated_txid != serverz_txid {
+                    // happens during darkside tests
+                    error!(
+                        "served txid {} does not match calulated txid {}",
+                        serverz_txid, calculated_txid,
+                    );
+                };
                 if self.transaction_context.config.accept_server_txids {
-                    return Ok(serverz_txid);
+                    serverz_txid
+                } else {
+                    calculated_txid
                 }
             }
-        }
+            Err(e) => {
+                error!("server returned invalid txid {}", e);
+                calculated_txid
+            }
+        };
 
-        Ok(txid)
+        Ok(accepted_txid)
     }
 }
 
