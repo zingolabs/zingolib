@@ -1,3 +1,5 @@
+use zcash_client_backend::{PoolType, ShieldedProtocol};
+
 use crate::{
     error::ZingoLibError,
     utils::conversion::{address_from_str, testing::receivers_from_send_inputs},
@@ -63,5 +65,21 @@ impl LightClient {
         self.do_shield(pools_to_shield, address)
             .await
             .map(|txid| txid.to_string())
+    }
+
+    /// gets the first address that will allow a sender to send to a specific pool, as a string
+    pub async fn get_base_address(&self, pooltype: PoolType) -> String {
+        match pooltype {
+            PoolType::Transparent => self.do_addresses().await[0]["receivers"]["transparent"]
+                .clone()
+                .to_string(),
+            PoolType::Shielded(ShieldedProtocol::Sapling) => self.do_addresses().await[0]
+                ["receivers"]["sapling"]
+                .clone()
+                .to_string(),
+            PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                self.do_addresses().await[0]["address"].take().to_string()
+            }
+        }
     }
 }

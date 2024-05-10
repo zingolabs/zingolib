@@ -3,6 +3,12 @@
 use derive_more::Constructor;
 use getset::Getters;
 
+use zcash_client_backend::PoolType;
+use zcash_client_backend::PoolType::Shielded;
+use zcash_client_backend::PoolType::Transparent;
+use zcash_client_backend::ShieldedProtocol::Orchard;
+use zcash_client_backend::ShieldedProtocol::Sapling;
+
 /// Selects received notes by how they been spent
 #[derive(Getters, Constructor, Clone, Copy)]
 pub struct OutputSpendStatusQuery {
@@ -49,6 +55,26 @@ impl OutputPoolQuery {
             orchard: true,
         }
     }
+    /// a query that will match only a specific pool.
+    pub fn one_pool(pool_type: PoolType) -> Self {
+        match pool_type {
+            Transparent => Self {
+                transparent: true,
+                sapling: false,
+                orchard: false,
+            },
+            Shielded(Sapling) => Self {
+                transparent: false,
+                sapling: true,
+                orchard: false,
+            },
+            Shielded(Orchard) => Self {
+                transparent: false,
+                sapling: false,
+                orchard: true,
+            },
+        }
+    }
 }
 
 /// Selects received notes by any properties
@@ -57,10 +83,10 @@ pub struct OutputQuery {
     /// selects spend status properties
     /// the query is expected to match note with ANY of the specified spend_stati AND ANY of the specified pools
     #[getset(get = "pub")]
-    spend_status: OutputSpendStatusQuery,
+    pub spend_status: OutputSpendStatusQuery,
     /// selects pools
     #[getset(get = "pub")]
-    pools: OutputPoolQuery,
+    pub pools: OutputPoolQuery,
 }
 
 /// A type that exposes bool field names
