@@ -106,7 +106,7 @@ pub enum ProposeShieldError {
     Receiver(zcash_client_backend::zip321::Zip321Error),
     #[error("{0}")]
     /// error in using trait to create shielding proposal
-    ShieldProposal(
+    Component(
         zcash_client_backend::data_api::error::Error<
             TxMapAndMaybeTreesTraitError,
             TxMapAndMaybeTreesTraitError,
@@ -202,7 +202,7 @@ impl LightClient {
             .wallet_capability()
             .transparent_child_keys()
             .map_err(|_e| {
-                ProposeShieldError::ShieldProposal(
+                ProposeShieldError::Component(
                     zcash_client_backend::data_api::error::Error::DataSource(
                         TxMapAndMaybeTreesTraitError::NoSpendCapability,
                     ),
@@ -260,7 +260,7 @@ impl LightClient {
             // make it configurable?
             0,
         )
-        .map_err(ProposeShieldError::ShieldProposal)?;
+        .map_err(ProposeShieldError::Component)?;
 
         Ok(proposed_shield)
     }
@@ -275,6 +275,8 @@ impl LightClient {
 }
 #[cfg(test)]
 mod shielding {
+    use crate::lightclient::propose::ProposeShieldError;
+
     async fn create_basic_client() -> crate::lightclient::LightClient {
         crate::lightclient::LightClient::create_unconnected(
             &zingoconfig::ZingoConfigBuilder::default().create(),
@@ -287,9 +289,15 @@ mod shielding {
         .unwrap()
     }
     #[tokio::test]
-    async fn propose_shield() {
+    async fn propose_shield_missing_scan_prerequisite() {
         let basic_client = create_basic_client().await;
-        basic_client.propose_shield();
+        let propose_shield_result = basic_client.propose_shield().await;
+        match propose_shield_result {
+            Err(ProposeShieldError::Component(
+                zcash_client_backend::data_api::error::Error::ScanRequired,
+            )) => true,
+            _ => panic!("Unexpected error state!"),
+        };
     }
     #[tokio::test]
     async fn get_transparent_addresses() {
