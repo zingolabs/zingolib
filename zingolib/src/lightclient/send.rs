@@ -3,12 +3,11 @@ use log::debug;
 
 use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
+use crate::data::receivers::Receivers;
 use crate::utils::conversion::zatoshis_from_u64;
 use crate::wallet::Pool;
 
@@ -25,10 +24,7 @@ impl LightClient {
     }
 
     /// Send funds
-    pub async fn do_send(
-        &self,
-        receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-    ) -> Result<TxId, String> {
+    pub async fn do_send(&self, receivers: Receivers) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the consensus branch ID
         debug!("Creating transaction");
@@ -143,13 +139,11 @@ pub mod send_with_proposal {
 
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
-    use zcash_keys::address::Address;
-    use zcash_primitives::memo::MemoBytes;
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
-    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
+    use crate::data::receivers::Receivers;
     use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
     use crate::lightclient::LightClient;
 
@@ -235,7 +229,7 @@ pub mod send_with_proposal {
         // TODO: add correct functionality and doc comments / tests
         pub async fn quick_send(
             &self,
-            receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+            receivers: Receivers,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self
                 .propose_send(receivers)

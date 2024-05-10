@@ -14,22 +14,21 @@ pub mod receivers {
 
     pub(crate) type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
 
-    /// TODO: Add Doc Comment Here!
-    // review! unit test this
-    pub fn build_transaction_request_from_receivers(
+    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
+    pub(crate) fn transaction_request_from_receivers(
         receivers: Receivers,
     ) -> Result<TransactionRequest, Zip321Error> {
-        let mut payments = vec![];
-        for out in receivers.clone() {
-            payments.push(Payment {
-                recipient_address: out.0,
-                amount: out.1,
-                memo: out.2,
+        let payments = receivers
+            .into_iter()
+            .map(|receiver| Payment {
+                recipient_address: receiver.0,
+                amount: receiver.1,
+                memo: receiver.2,
                 label: None,
                 message: None,
                 other_params: vec![],
-            });
-        }
+            })
+            .collect();
 
         TransactionRequest::new(payments)
     }

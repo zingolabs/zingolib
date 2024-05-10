@@ -5,8 +5,6 @@ use std::num::NonZeroU32;
 use std::ops::DerefMut;
 
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
-use zcash_client_backend::zip321::Payment;
-use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::zip321::Zip321Error;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::address::Address;
@@ -15,6 +13,7 @@ use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 use thiserror::Error;
 
+use crate::data::receivers::{transaction_request_from_receivers, Receivers};
 use crate::{
     data::proposal::ShieldProposal, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
 };
@@ -82,9 +81,10 @@ impl LightClient {
     // TODO: Add migrate_sapling_to_orchard argument
     pub(crate) async fn propose_send(
         &self,
-        receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+        receivers: Receivers,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let request = transaction_request_from_receivers(receivers)?;
+        let request = transaction_request_from_receivers(receivers)
+            .map_err(ProposeSendError::TransactionRequestFailed)?;
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,
@@ -122,7 +122,7 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     pub async fn propose_send_and_store(
         &self,
-        receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
+        receivers: Receivers,
     ) -> Result<TransferProposal, ProposeSendError> {
         let proposal = self.propose_send(receivers).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
@@ -227,25 +227,6 @@ impl LightClient {
             .await;
         Ok(proposal)
     }
-}
-
-/// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
-fn transaction_request_from_receivers(
-    receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
-) -> Result<TransactionRequest, ProposeSendError> {
-    let payments = receivers
-        .into_iter()
-        .map(|receiver| Payment {
-            recipient_address: receiver.0,
-            amount: receiver.1,
-            memo: receiver.2,
-            label: None,
-            message: None,
-            other_params: vec![],
-        })
-        .collect();
-
-    TransactionRequest::new(payments).map_err(ProposeSendError::TransactionRequestFailed)
 }
 
 #[cfg(test)]
