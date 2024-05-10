@@ -14,7 +14,7 @@ pub(crate) enum CommandError {
     IncompatibleMemo,
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
-    ConversionFailed(crate::utils::ConversionError),
+    ConversionFailed(crate::utils::error::ConversionError),
     InvalidPool,
     #[cfg(feature = "zip317")]
     MultipleReceivers,

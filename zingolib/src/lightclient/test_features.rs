@@ -1,9 +1,6 @@
-use zcash_keys::address::Address;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-
 use crate::{
     error::ZingoLibError,
-    utils::{address_from_str, zatoshis_from_u64},
+    utils::conversion::{address_from_str, testing::send_inputs_to_receivers},
     wallet::Pool,
 };
 
@@ -22,6 +19,19 @@ impl LightClient {
         .map_err(ZingoLibError::CantReadWallet)
     }
 
+    /// Test only lightclient method for calling `do_propose` with primitive rust types
+    ///
+    /// # Panics
+    ///
+    /// Panics if the address, amount or memo conversion fails.
+    pub async fn do_propose_test_only(
+        &self,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<String, String> {
+        let _receivers = send_inputs_to_receivers(address_amount_memo_tuples, &self.config().chain);
+        unimplemented!()
+    }
+
     /// Test only lightclient method for calling `do_send` with primitive rust types
     ///
     /// # Panics
@@ -31,23 +41,7 @@ impl LightClient {
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
-        let receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)> =
-            address_amount_memo_tuples
-                .into_iter()
-                .map(|(address, amount, memo)| {
-                    let address = address_from_str(address, &self.config().chain)
-                        .expect("should be a valid address");
-                    let amount = zatoshis_from_u64(amount)
-                        .expect("should be inside the range of valid zatoshis");
-                    let memo = memo.map(|memo| {
-                        crate::wallet::utils::interpret_memo_string(memo.to_string())
-                            .expect("should be able to interpret memo")
-                    });
-
-                    (address, amount, memo)
-                })
-                .collect();
-
+        let receivers = send_inputs_to_receivers(address_amount_memo_tuples, &self.config().chain);
         self.do_send(receivers).await.map(|txid| txid.to_string())
     }
 
@@ -56,7 +50,6 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address conversion fails.
-    #[cfg(feature = "test-features")]
     pub async fn do_shield_test_only(
         &self,
         pools_to_shield: &[Pool],

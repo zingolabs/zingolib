@@ -37,6 +37,8 @@ use zingolib::{
     },
 };
 
+pub mod chain_generic_tests;
+
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
     *note
@@ -766,7 +768,7 @@ mod slow {
     async fn witness_clearing() {
         let (regtest_manager, _cph, faucet, recipient, txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
-        let txid = utils::txid_from_hex_encoded_str(&txid).unwrap();
+        let txid = utils::conversion::txid_from_hex_encoded_str(&txid).unwrap();
 
         // 3. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
@@ -4013,5 +4015,3 @@ mod basic_transactions {
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
-
-pub mod chain_generic_tests;
