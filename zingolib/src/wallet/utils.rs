@@ -65,3 +65,56 @@ pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
         }
     }
 }
+pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
+    use crate::SaplingParams;
+    let mut sapling_output = vec![];
+    sapling_output.extend_from_slice(
+        SaplingParams::get("sapling-output.params")
+            .unwrap()
+            .data
+            .as_ref(),
+    );
+
+    let mut sapling_spend = vec![];
+    sapling_spend.extend_from_slice(
+        SaplingParams::get("sapling-spend.params")
+            .unwrap()
+            .data
+            .as_ref(),
+    );
+
+    Ok((sapling_output, sapling_spend))
+}
+
+/// TODO: Add Doc Comment Here!
+pub fn set_sapling_params(sapling_output: &[u8], sapling_spend: &[u8]) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+
+    // The hashes of the params need to match
+    const SAPLING_OUTPUT_HASH: &str =
+        "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
+    const SAPLING_SPEND_HASH: &str =
+        "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+
+    if !sapling_output.is_empty()
+        && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output))
+    {
+        return Err(format!(
+            "sapling-output hash didn't match. expected {}, found {}",
+            SAPLING_OUTPUT_HASH,
+            hex::encode(Sha256::digest(sapling_output))
+        ));
+    }
+
+    if !sapling_spend.is_empty()
+        && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend))
+    {
+        return Err(format!(
+            "sapling-spend hash didn't match. expected {}, found {}",
+            SAPLING_SPEND_HASH,
+            hex::encode(Sha256::digest(sapling_spend))
+        ));
+    }
+
+    Ok(())
+}
