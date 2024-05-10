@@ -4,23 +4,24 @@ use std::convert::Infallible;
 use std::num::NonZeroU32;
 use std::ops::DerefMut;
 
+use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
+use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::zip321::{Payment, Zip321Error};
 use zcash_client_backend::ShieldedProtocol;
-use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector, zip321::TransactionRequest,
-};
 use zcash_keys::address::Address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::{memo::MemoBytes, transaction::components::amount::BalanceError};
 
 use thiserror::Error;
 
-use crate::data::receivers::{transaction_request_from_receivers, Receivers};
-use crate::{
-    data::proposal::ShieldProposal, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
-};
-use crate::{data::proposal::TransferProposal, wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees};
-use crate::{data::proposal::ZingoProposal, lightclient::LightClient};
+use crate::data::proposal::ShieldProposal;
+use crate::data::proposal::TransferProposal;
+use crate::data::proposal::ZingoProposal;
+use crate::data::receivers::transaction_request_from_receivers;
+use crate::data::receivers::Receivers;
+use crate::lightclient::LightClient;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
 
 type GISKit = GreedyInputSelector<
