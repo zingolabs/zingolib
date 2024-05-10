@@ -179,7 +179,6 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    #[cfg(feature = "zip317")]
     pub async fn propose_send_all_and_store(
         &self,
         _address: Address,
