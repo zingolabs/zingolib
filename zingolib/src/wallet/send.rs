@@ -351,7 +351,8 @@ impl LightWallet {
         let mut tx_builder;
         let mut proposed_fee = MINIMUM_FEE;
         let mut total_value_covered_by_selected;
-        let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
+        let total_earmarked_for_recipients: u64 =
+            receivers.iter().map(|to| u64::from(to.amount)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_earmarked_for_recipients,
@@ -506,7 +507,12 @@ impl LightWallet {
             orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
 
         let mut total_shielded_receivers = 0u32;
-        for (recipient_address, value, memo) in receivers {
+        for crate::data::receivers::Receiver {
+            recipient_address,
+            amount,
+            memo,
+        } in receivers
+        {
             // Compute memo if it exists
             let validated_memo = match memo {
                 None => MemoBytes::from(Memo::Empty),
@@ -515,11 +521,11 @@ impl LightWallet {
 
             if let Err(e) = match recipient_address {
                 address::Address::Transparent(to) => tx_builder
-                    .add_transparent_output(&to, value)
+                    .add_transparent_output(&to, amount)
                     .map_err(transaction::builder::Error::TransparentBuild),
                 address::Address::Sapling(to) => {
                     total_shielded_receivers += 1;
-                    tx_builder.add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
+                    tx_builder.add_sapling_output(Some(sapling_ovk), to, amount, validated_memo)
                 }
                 address::Address::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
@@ -527,7 +533,7 @@ impl LightWallet {
                         tx_builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
-                            u64::from(value),
+                            u64::from(amount),
                             validated_memo,
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
@@ -535,7 +541,7 @@ impl LightWallet {
                         tx_builder.add_sapling_output(
                             Some(sapling_ovk),
                             *sapling_addr,
-                            value,
+                            amount,
                             validated_memo,
                         )
                     } else {
@@ -686,7 +692,7 @@ impl LightWallet {
     ) -> Result<TxBuilder<'a>, String> {
         let destination_uas = receivers
             .iter()
-            .filter_map(|receiver| match receiver.0 {
+            .filter_map(|receiver| match receiver.recipient_address {
                 address::Address::Sapling(_) => None,
                 address::Address::Transparent(_) => None,
                 address::Address::Unified(ref ua) => Some(ua.clone()),
@@ -899,8 +905,16 @@ mod tests {
         ));
 
         let rec: Receivers = vec![
-            (recipient_address_1, amount_1, memo_1),
-            (recipient_address_2, amount_2, memo_2),
+            crate::data::receivers::Receiver {
+                recipient_address: recipient_address_1,
+                amount: amount_1,
+                memo: memo_1,
+            },
+            crate::data::receivers::Receiver {
+                recipient_address: recipient_address_2,
+                amount: amount_2,
+                memo: memo_2,
+            },
         ];
         let request: TransactionRequest =
             transaction_request_from_receivers(rec).expect("rec can requestify");
