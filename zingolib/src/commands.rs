@@ -822,7 +822,7 @@ impl Command for ProposeCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let _send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
             Ok(args) => args,
             Err(e) => {
                 return format!(
@@ -832,20 +832,19 @@ impl Command for ProposeCommand {
             }
         };
         RT.block_on(async move {
-            todo!()
-            // match lightclient
-            //     .do_propose_send(
-            //         send_inputs
-            //     )
-            //     .await {
-            //     Ok(proposal) => {
-            //         object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
-            //     }
-            //     Err(e) => {
-            //         object! { "error" => e.to_string() }
-            //     }
-            // }
-            // .pretty(2)
+            match lightclient
+                .propose_send(
+                    receivers
+                )
+                .await {
+                Ok(proposal) => {
+                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
         })
     }
 }
