@@ -77,7 +77,13 @@ impl ManageScenario for LibtonodeEnvironment {
 
 #[tokio::test]
 async fn libtonode_send_40_000_to_transparent() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+    let client = zingo_testutils::chain_generic_tests::get_funded_client::<LibtonodeEnvironment>(
+        40_000,
+        Transparent,
+    )
+    .await;
+    let shield_prop = client.propose_shield().await.expect("An Ok");
+    dbg!(shield_prop);
 }
 #[tokio::test]
 async fn libtonode_send_40_000_to_sapling() {

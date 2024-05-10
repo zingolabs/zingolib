@@ -223,7 +223,7 @@ impl LightClient {
     /// In other words, shield does not take a user-specified amount
     /// to shield, rather it consumes all transparent value in the wallet that
     /// can be consumsed without costing more in zip317 fees than is being transferred.
-    pub(crate) async fn propose_shield(
+    pub async fn propose_shield(
         &self,
     ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(

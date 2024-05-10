@@ -57,8 +57,8 @@ pub trait ManageScenario {
     // }
 }
 
-/// runs a send-to-self and receives it in a chain-generic context
-pub async fn send_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
+/// Get a client with send_value in a single pool
+pub async fn get_funded_client<TE>(send_value: u32, pooltype: PoolType) -> LightClient
 where
     TE: ManageScenario,
 {
@@ -92,7 +92,14 @@ where
     environment.bump_chain().await;
 
     recipient.do_sync(false).await.unwrap();
-
+    recipient
+}
+/// runs a send-to-self and receives it in a chain-generic context
+pub async fn send_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
+where
+    TE: ManageScenario,
+{
+    let recipient = get_funded_client::<TE>(send_value, pooltype).await;
     assert_eq!(
         recipient
             .query_sum_value(OutputQuery {
