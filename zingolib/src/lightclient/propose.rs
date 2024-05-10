@@ -17,8 +17,6 @@ use thiserror::Error;
 use crate::data::proposal::ShieldProposal;
 use crate::data::proposal::TransferProposal;
 use crate::data::proposal::ZingoProposal;
-use crate::data::receivers::transaction_request_from_receivers;
-use crate::data::receivers::Receivers;
 use crate::lightclient::LightClient;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
@@ -132,10 +130,8 @@ impl LightClient {
     // TODO: Add migrate_sapling_to_orchard argument
     pub(crate) async fn create_send_proposal(
         &self,
-        receivers: Receivers,
+        request: TransactionRequest,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let request = transaction_request_from_receivers(receivers)
-            .map_err(ProposeSendError::TransactionRequestFailed)?;
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,
@@ -173,9 +169,9 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     pub async fn propose_send(
         &self,
-        receivers: Receivers,
+        request: TransactionRequest,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let proposal = self.create_send_proposal(receivers).await?;
+        let proposal = self.create_send_proposal(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)
