@@ -57,7 +57,7 @@ pub trait ManageScenario {
     // }
 }
 
-/// runs a send-to-receiver and receives it in a chain-generic context
+/// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
 pub async fn send_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
 where
     TE: ManageScenario,
