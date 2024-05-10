@@ -9,7 +9,7 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
-use crate::utils::zatoshis_from_u64;
+use crate::utils::conversion::zatoshis_from_u64;
 use crate::wallet::Pool;
 
 use super::LightClient;
