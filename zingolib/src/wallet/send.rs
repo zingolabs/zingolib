@@ -511,7 +511,6 @@ impl LightWallet {
             recipient_address,
             amount,
             memo,
-            ..
         } in receivers
         {
             // Compute memo if it exists
