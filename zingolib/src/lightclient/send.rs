@@ -139,11 +139,11 @@ pub mod send_with_proposal {
 
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
+    use zcash_client_backend::zip321::TransactionRequest;
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
 
-    use crate::data::receivers::Receivers;
     use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
     use crate::lightclient::LightClient;
 
@@ -229,10 +229,10 @@ pub mod send_with_proposal {
         // TODO: add correct functionality and doc comments / tests
         pub async fn quick_send(
             &self,
-            receivers: Receivers,
+            request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self
-                .create_send_proposal(receivers)
+                .create_send_proposal(request)
                 .await
                 .map_err(QuickSendError::ProposeSend)?;
             self.complete_and_broadcast::<NoteId>(&proposal)
