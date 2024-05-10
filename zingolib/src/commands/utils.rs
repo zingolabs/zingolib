@@ -1,6 +1,7 @@
 // Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
+use crate::data::receivers::Receivers;
 use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
 use crate::wallet::{self, Pool};
 use json::JsonValue;
@@ -37,10 +38,7 @@ pub(super) fn parse_shield_args(
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
-pub(super) fn parse_send_args(
-    args: &[&str],
-    chain: &ChainType,
-) -> Result<Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>, CommandError> {
+pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receivers, CommandError> {
     // Check for a single argument that can be parsed as JSON
     let send_args = if args.len() == 1 {
         let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;
@@ -62,7 +60,7 @@ pub(super) fn parse_send_args(
 
                 Ok((address, amount, memo))
             })
-            .collect::<Result<Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>, CommandError>>()
+            .collect::<Result<Receivers, CommandError>>()
     } else if args.len() == 2 || args.len() == 3 {
         let address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
         let amount_u64 = args[1]

@@ -31,9 +31,9 @@ pub(crate) fn zatoshis_from_u64(amount: u64) -> Result<NonNegativeAmount, Conver
 /// Conversions for use in testing only
 #[cfg(feature = "test-features")]
 pub mod testing {
-    use zcash_client_backend::address::Address;
-    use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
     use zingoconfig::ChainType;
+
+    use crate::data::receivers::Receivers;
 
     use super::{address_from_str, zatoshis_from_u64};
 
@@ -45,7 +45,7 @@ pub mod testing {
     pub fn receivers_from_send_inputs(
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
         chain: &ChainType,
-    ) -> Vec<(Address, NonNegativeAmount, Option<MemoBytes>)> {
+    ) -> Receivers {
         address_amount_memo_tuples
             .into_iter()
             .map(|(address, amount, memo)| {
