@@ -15,7 +15,7 @@ pub mod receivers {
     /// A list of Receivers
     pub type Receivers = Vec<Receiver>;
 
-    /// The superficial representation of the the consumers intended receiver
+    /// The superficial representation of the the consumer's intended receiver
     #[derive(Clone, Debug, PartialEq)]
     pub struct Receiver {
         pub(crate) recipient_address: address::Address,

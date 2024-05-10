@@ -209,6 +209,7 @@ mod tests {
 
     use crate::{
         commands::error::CommandError,
+        data::receivers::Receiver,
         utils::conversion::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string, Pool},
     };
@@ -266,7 +267,11 @@ mod tests {
         let send_args = &[address_str, value_str, memo_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![(recipient_address.clone(), value, Some(memo.clone()))]
+            vec![Receiver {
+                recipient_address: recipient_address.clone(),
+                amount,
+                memo: Some(memo.clone())
+            }]
         );
 
         // Json
@@ -276,12 +281,20 @@ mod tests {
         assert_eq!(
             super::parse_send_args(&[json], &chain).unwrap(),
             vec![
-                (
-                    address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd", &chain).unwrap(),
-                    zatoshis_from_u64(50_000).unwrap(),
-                    None
-                ),
-                (recipient_address.clone(), value, Some(memo.clone()))
+                Receiver {
+                    recipient_address: address_from_str(
+                        "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        &chain
+                    )
+                    .unwrap(),
+                    amount: zatoshis_from_u64(50_000).unwrap(),
+                    memo: None
+                },
+                Receiver {
+                    recipient_address: recipient_address.clone(),
+                    amount,
+                    memo: Some(memo.clone())
+                }
             ]
         );
 
@@ -289,11 +302,11 @@ mod tests {
         let send_args = &[address_str, "1 ", memo_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![(
+            vec![Receiver {
                 recipient_address,
-                zatoshis_from_u64(1).unwrap(),
-                Some(memo.clone())
-            )]
+                amount: zatoshis_from_u64(1).unwrap(),
+                memo: Some(memo.clone())
+            }]
         );
     }
 
