@@ -83,8 +83,7 @@ type GISKit = GreedyInputSelector<
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
 pub enum ProposeSendError {
-    // todo: better display is possible if NoteId implements display. which i know is done in some fluidvanadium librustzcash branch
-    #[error("{0:?}")]
+    #[error("{0}")]
     /// error in using trait to create spend proposal
     Proposal(
         zcash_client_backend::data_api::error::Error<
@@ -105,8 +104,7 @@ pub enum ProposeShieldError {
     /// error in parsed addresses
     #[error("{0}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
-    // todo: better display is possible if NoteId implements display. which i know is done in some fluidvanadium librustzcash branch
-    #[error("{0:?}")]
+    #[error("{0}")]
     /// error in using trait to create shielding proposal
     ShieldProposal(
         zcash_client_backend::data_api::error::Error<
