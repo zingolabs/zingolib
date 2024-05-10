@@ -79,7 +79,7 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub(crate) async fn propose_send(
+    pub(crate) async fn create_send_proposal(
         &self,
         receivers: Receivers,
     ) -> Result<TransferProposal, ProposeSendError> {
@@ -120,11 +120,11 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn propose_send_and_store(
+    pub async fn propose_send(
         &self,
         receivers: Receivers,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let proposal = self.propose_send(receivers).await?;
+        let proposal = self.create_send_proposal(receivers).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)
@@ -133,7 +133,7 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub async fn propose_send_all_and_store(
+    pub async fn propose_send_all(
         &self,
         _address: Address,
         _memo: Option<MemoBytes>,
@@ -177,7 +177,7 @@ impl LightClient {
     /// In other words, shield does not take a user-specified amount
     /// to shield, rather it consumes all transparent value in the wallet that
     /// can be consumsed without costing more in zip317 fees than is being transferred.
-    pub(crate) async fn propose_shield(
+    pub(crate) async fn create_shield_proposal(
         &self,
     ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
@@ -220,8 +220,8 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn propose_shield_and_store(&self) -> Result<ShieldProposal, ProposeShieldError> {
-        let proposal = self.propose_shield().await?;
+    pub async fn propose_shield(&self) -> Result<ShieldProposal, ProposeShieldError> {
+        let proposal = self.create_shield_proposal().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))
             .await;
         Ok(proposal)
@@ -246,7 +246,7 @@ mod shielding {
     #[tokio::test]
     async fn propose_shield_missing_scan_prerequisite() {
         let basic_client = create_basic_client().await;
-        let propose_shield_result = basic_client.propose_shield().await;
+        let propose_shield_result = basic_client.create_shield_proposal().await;
         match propose_shield_result {
             Err(ProposeShieldError::Component(
                 zcash_client_backend::data_api::error::Error::ScanRequired,

@@ -887,7 +887,7 @@ impl Command for ProposeAllCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send_all_and_store(address, memo)
+                .propose_send_all(address, memo)
                 .await {
                 Ok(proposal) => {
                     object! {
