@@ -822,8 +822,16 @@ impl Command for ProposeCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
-            Ok(args) => args,
+        let request = match utils::parse_send_args(args, &lightclient.config().chain) {
+            Ok(args) => match crate::data::receivers::transaction_request_from_receivers(args) {
+                Ok(request) => request,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help propose' for correct usage and examples.",
+                        e
+                    )
+                }
+            },
             Err(e) => {
                 return format!(
                     "Error: {}\nTry 'help propose' for correct usage and examples.",
@@ -834,7 +842,7 @@ impl Command for ProposeCommand {
         RT.block_on(async move {
             match lightclient
                 .propose_send(
-                    receivers
+                    request
                 )
                 .await {
                 Ok(proposal) => {

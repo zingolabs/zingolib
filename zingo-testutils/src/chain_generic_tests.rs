@@ -135,7 +135,7 @@ where
     dbg!(recipient.query_sum_value(OutputQuery::any()).await);
     dbg!(request.clone());
 
-    sender.propose_send_and_store(request).await.unwrap();
+    sender.propose_send(request).await.unwrap();
     sender
         .complete_and_broadcast_stored_proposal()
         .await
