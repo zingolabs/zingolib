@@ -70,7 +70,7 @@ pub trait ManageScenario {
     // }
 }
 
-/// runs a send-to-self and receives it in a chain-generic context
+/// runs a send-to-receiver and receives it in a chain-generic context
 pub async fn simple_send<TE>(value: u32)
 where
     TE: ManageScenario,
