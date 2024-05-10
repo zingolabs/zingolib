@@ -230,7 +230,7 @@ impl LightClient {
 }
 
 /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
-pub fn transaction_request_from_receivers(
+fn transaction_request_from_receivers(
     receivers: Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>,
 ) -> Result<TransactionRequest, ProposeSendError> {
     let payments = receivers
