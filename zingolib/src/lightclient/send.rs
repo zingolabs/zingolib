@@ -9,7 +9,7 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
-use crate::utils::zatoshis_from_u64;
+use crate::utils::conversion::zatoshis_from_u64;
 use crate::wallet::Pool;
 
 use super::LightClient;
@@ -153,7 +153,10 @@ pub mod send_with_proposal {
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
-    pub enum CompleteAndBroadcast {}
+    pub enum CompleteAndBroadcastError {
+        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
+        NoSpendCapability,
+    }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
@@ -161,16 +164,16 @@ pub mod send_with_proposal {
         #[error("No proposal. Call do_propose first.")]
         NoStoredProposal,
         #[error("send {0}")]
-        Send(CompleteAndBroadcast),
+        CompleteAndBroadcast(CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
     pub enum QuickSendError {
         #[error("propose send {0}")]
-        Propose(ProposeSendError),
+        ProposeSend(ProposeSendError),
         #[error("send {0}")]
-        Send(CompleteAndBroadcast),
+        CompleteAndBroadcast(CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -179,7 +182,7 @@ pub mod send_with_proposal {
         #[error("propose shield {0}")]
         Propose(ProposeShieldError),
         #[error("send {0}")]
-        Send(CompleteAndBroadcast),
+        CompleteAndBroadcast(CompleteAndBroadcastError),
     }
 
     impl LightClient {
@@ -188,7 +191,18 @@ pub mod send_with_proposal {
         async fn complete_and_broadcast<NoteRef>(
             &self,
             _proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcast> {
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            if self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .witness_trees()
+                .is_none()
+            {
+                return Err(CompleteAndBroadcastError::NoSpendCapability);
+            }
             //todo!();
             Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
         }
@@ -209,7 +223,7 @@ pub mod send_with_proposal {
                             .await
                     }
                 }
-                .map_err(CompleteAndBroadcastStoredProposal::Send)
+                .map_err(CompleteAndBroadcastStoredProposal::CompleteAndBroadcast)
             } else {
                 Err(CompleteAndBroadcastStoredProposal::NoStoredProposal)
             }
@@ -224,10 +238,10 @@ pub mod send_with_proposal {
             let proposal = self
                 .propose_send(request)
                 .await
-                .map_err(QuickSendError::Propose)?;
+                .map_err(QuickSendError::ProposeSend)?;
             self.complete_and_broadcast::<NoteId>(&proposal)
                 .await
-                .map_err(QuickSendError::Send)
+                .map_err(QuickSendError::CompleteAndBroadcast)
         }
 
         /// Unstable function to expose the zip317 interface for development
@@ -239,7 +253,7 @@ pub mod send_with_proposal {
                 .map_err(QuickShieldError::Propose)?;
             self.complete_and_broadcast::<Infallible>(&proposal)
                 .await
-                .map_err(QuickShieldError::Send)
+                .map_err(QuickShieldError::CompleteAndBroadcast)
         }
     }
 }

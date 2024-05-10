@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `export_save_buffer_runtime`
   - `get_wallet_file_location`
   - `get_wallet_dir_location`
+  - `do_propose_test_only` behind `test-features` flag
   - `do_send_test_only` behind `test-features` flag
   - `do_shield_test_only` behind `test-features` flag
 - `wallet::notes::NoteRecordIdentifier` struct

@@ -1,7 +1,7 @@
 // Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
-use crate::utils::{address_from_str, zatoshis_from_u64};
+use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
 use crate::wallet::{self, Pool};
 use json::JsonValue;
 use zcash_client_backend::address::Address;
@@ -202,7 +202,7 @@ mod tests {
 
     use crate::{
         commands::error::CommandError,
-        utils::{address_from_str, zatoshis_from_u64},
+        utils::conversion::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string, Pool},
     };
 

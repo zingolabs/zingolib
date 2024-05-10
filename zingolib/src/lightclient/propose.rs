@@ -83,8 +83,7 @@ type GISKit = GreedyInputSelector<
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
 pub enum ProposeSendError {
-    // todo: better display is possible if NoteId implements display. which i know is done in some fluidvanadium librustzcash branch
-    #[error("{0:?}")]
+    #[error("{0}")]
     /// error in using trait to create spend proposal
     Proposal(
         zcash_client_backend::data_api::error::Error<
@@ -105,10 +104,9 @@ pub enum ProposeShieldError {
     /// error in parsed addresses
     #[error("{0}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
-    // todo: better display is possible if NoteId implements display. which i know is done in some fluidvanadium librustzcash branch
-    #[error("{0:?}")]
+    #[error("{0}")]
     /// error in using trait to create shielding proposal
-    ShieldProposal(
+    Component(
         zcash_client_backend::data_api::error::Error<
             TxMapAndMaybeTreesTraitError,
             TxMapAndMaybeTreesTraitError,
@@ -204,7 +202,7 @@ impl LightClient {
             .wallet_capability()
             .transparent_child_keys()
             .map_err(|_e| {
-                ProposeShieldError::ShieldProposal(
+                ProposeShieldError::Component(
                     zcash_client_backend::data_api::error::Error::DataSource(
                         TxMapAndMaybeTreesTraitError::NoSpendCapability,
                     ),
@@ -262,7 +260,7 @@ impl LightClient {
             // make it configurable?
             0,
         )
-        .map_err(ProposeShieldError::ShieldProposal)?;
+        .map_err(ProposeShieldError::Component)?;
 
         Ok(proposed_shield)
     }
@@ -277,9 +275,10 @@ impl LightClient {
 }
 #[cfg(test)]
 mod shielding {
-    #[tokio::test]
-    async fn get_transparent_addresses() {
-        let client = crate::lightclient::LightClient::create_unconnected(
+    use crate::lightclient::propose::ProposeShieldError;
+
+    async fn create_basic_client() -> crate::lightclient::LightClient {
+        crate::lightclient::LightClient::create_unconnected(
             &zingoconfig::ZingoConfigBuilder::default().create(),
             crate::wallet::WalletBase::MnemonicPhrase(
                 zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
@@ -287,9 +286,24 @@ mod shielding {
             0,
         )
         .await
-        .unwrap();
+        .unwrap()
+    }
+    #[tokio::test]
+    async fn propose_shield_missing_scan_prerequisite() {
+        let basic_client = create_basic_client().await;
+        let propose_shield_result = basic_client.propose_shield().await;
+        match propose_shield_result {
+            Err(ProposeShieldError::Component(
+                zcash_client_backend::data_api::error::Error::ScanRequired,
+            )) => true,
+            _ => panic!("Unexpected error state!"),
+        };
+    }
+    #[tokio::test]
+    async fn get_transparent_addresses() {
+        let basic_client = create_basic_client().await;
         assert_eq!(
-            client.get_transparent_addresses().unwrap(),
+            basic_client.get_transparent_addresses().unwrap(),
             [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
                 [
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,
