@@ -12,22 +12,33 @@ pub mod receivers {
     use zcash_primitives::memo::MemoBytes;
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
-    pub(crate) type Receivers = Vec<(address::Address, NonNegativeAmount, Option<MemoBytes>)>;
+    pub(crate) type Receivers = Vec<Receiver>;
 
+    #[derive(Clone)]
+    pub(crate) struct Receiver {
+        pub(crate) recipient_address: address::Address,
+        pub(crate) amount: NonNegativeAmount,
+        pub(crate) memo: Option<MemoBytes>,
+    }
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
+    impl From<Receiver> for Payment {
+        fn from(receiver: Receiver) -> Self {
+            Self {
+                recipient_address: receiver.recipient_address,
+                amount: receiver.amount,
+                memo: receiver.memo,
+                label: None,
+                message: None,
+                other_params: vec![],
+            }
+        }
+    }
     pub(crate) fn transaction_request_from_receivers(
         receivers: Receivers,
     ) -> Result<TransactionRequest, Zip321Error> {
         let payments = receivers
             .into_iter()
-            .map(|receiver| Payment {
-                recipient_address: receiver.0,
-                amount: receiver.1,
-                memo: receiver.2,
-                label: None,
-                message: None,
-                other_params: vec![],
-            })
+            .map(|receiver| receiver.into())
             .collect();
 
         TransactionRequest::new(payments)

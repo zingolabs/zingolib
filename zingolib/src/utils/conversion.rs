@@ -49,7 +49,8 @@ pub mod testing {
         address_amount_memo_tuples
             .into_iter()
             .map(|(address, amount, memo)| {
-                let address = address_from_str(address, chain).expect("should be a valid address");
+                let recipient_address =
+                    address_from_str(address, chain).expect("should be a valid address");
                 let amount = zatoshis_from_u64(amount)
                     .expect("should be inside the range of valid zatoshis");
                 let memo = memo.map(|memo| {
@@ -57,7 +58,11 @@ pub mod testing {
                         .expect("should be able to interpret memo")
                 });
 
-                (address, amount, memo)
+                crate::data::receivers::Receiver {
+                    recipient_address,
+                    amount,
+                    memo,
+                }
             })
             .collect()
     }
