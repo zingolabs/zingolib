@@ -139,13 +139,13 @@ pub mod send_with_proposal {
 
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
+    use zcash_client_backend::zip321::TransactionRequest;
     use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
     use zcash_proofs::prover::LocalTxProver;
 
-    use crate::data::receivers::Receivers;
     use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
     use crate::lightclient::LightClient;
 
@@ -154,6 +154,25 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastError {
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
+        #[error("No proposal. Call do_propose first.")]
+        NoProposal,
+        #[error("Cant get submission height. Server connection?: {0}")]
+        SubmissionHeight(String),
+        #[error("Could not load sapling_params: {0}")]
+        SaplingParams(String),
+        #[error("Could not find UnifiedSpendKey: {0}")]
+        UnifiedSpendKey(std::io::Error),
+        #[error("Can't Calculate {0}")]
+        Calculation(
+            zcash_client_backend::data_api::error::Error<
+                crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+                std::convert::Infallible,
+                std::convert::Infallible,
+                zcash_primitives::transaction::fees::zip317::FeeError,
+            >,
+        ),
+        #[error("Broadcast failed: {0}")]
+        Broadcast(String),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -237,7 +256,7 @@ pub mod send_with_proposal {
                         &step_results,
                         step,
                     )
-                    .map_err(DoSendProposedError::Calculation)?
+                    .map_err(CompleteAndBroadcastError::Calculation)?
                 };
 
                 let txid = self
@@ -253,7 +272,7 @@ pub mod send_with_proposal {
                         },
                     )
                     .await
-                    .map_err(DoSendProposedError::Broadcast)?;
+                    .map_err(CompleteAndBroadcastError::Broadcast)?;
                 step_results.push((step, step_result));
                 txids.push(txid);
             }
@@ -287,10 +306,10 @@ pub mod send_with_proposal {
         // TODO: add correct functionality and doc comments / tests
         pub async fn quick_send(
             &self,
-            receivers: Receivers,
+            request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self
-                .create_send_proposal(receivers)
+                .create_send_proposal(request)
                 .await
                 .map_err(QuickSendError::ProposeSend)?;
             self.complete_and_broadcast::<NoteId>(&proposal)
