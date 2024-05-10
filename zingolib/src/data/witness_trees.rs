@@ -33,8 +33,8 @@ use crate::wallet::{
     traits::{self, DomainWalletExt},
 };
 
-type SapStore = MemoryShardStore<Node, BlockHeight>;
-type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+pub(crate) type SapStore = MemoryShardStore<Node, BlockHeight>;
+pub(crate) type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug)]
