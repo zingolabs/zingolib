@@ -173,6 +173,8 @@ pub mod send_with_proposal {
         ),
         #[error("Broadcast failed: {0}")]
         Broadcast(String),
+        #[error("Sending to exchange addresses is not supported yet!")]
+        ExchangeAddressesNotSupported,
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -233,50 +235,48 @@ pub mod send_with_proposal {
                 UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
                     .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
 
-            let mut step_results = Vec::with_capacity(proposal.steps().len());
-            for step in proposal.steps() {
-                let step_result = {
-                    let mut tmamt = self
-                        .wallet
+            // We don't support zip320 yet. Only one step.
+            if proposal.steps().len() != 1 {
+                return Err(CompleteAndBroadcastError::ExchangeAddressesNotSupported);
+            }
+
+            let step = proposal.steps().first();
+
+            let build_result =
+                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                    self.wallet
                         .transaction_context
                         .transaction_metadata_set
                         .write()
-                        .await;
+                        .await
+                        .deref_mut(),
+                    &self.wallet.transaction_context.config.chain,
+                    &sapling_prover,
+                    &sapling_prover,
+                    &unified_spend_key,
+                    zcash_client_backend::wallet::OvkPolicy::Sender,
+                    proposal.fee_rule(),
+                    proposal.min_target_height(),
+                    &[],
+                    step,
+                )
+                .map_err(CompleteAndBroadcastError::Calculation)?;
+            let txid = self
+                .wallet
+                .send_to_addresses_inner(
+                    build_result.transaction(),
+                    submission_height,
+                    |transaction_bytes| {
+                        crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            transaction_bytes,
+                        )
+                    },
+                )
+                .await
+                .map_err(CompleteAndBroadcastError::Broadcast)?;
 
-                    zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                        tmamt.deref_mut(),
-                        &self.wallet.transaction_context.config.chain,
-                        &sapling_prover,
-                        &sapling_prover,
-                        &unified_spend_key,
-                        zcash_client_backend::wallet::OvkPolicy::Sender,
-                        proposal.fee_rule(),
-                        proposal.min_target_height(),
-                        &step_results,
-                        step,
-                    )
-                    .map_err(CompleteAndBroadcastError::Calculation)?
-                };
-
-                step_results.push((step, step_result));
-            }
-            for (_step, step_result) in step_results {
-                self.wallet
-                    .send_to_addresses_inner(
-                        step_result.transaction(),
-                        submission_height,
-                        |transaction_bytes| {
-                            crate::grpc_connector::send_transaction(
-                                self.get_server_uri(),
-                                transaction_bytes,
-                            )
-                        },
-                    )
-                    .await
-                    .map_err(CompleteAndBroadcastError::Broadcast)?;
-            }
-            //todo!();
-            Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
+            Ok(NonEmpty::singleton(txid))
         }
 
         /// Unstable function to expose the zip317 interface for development
