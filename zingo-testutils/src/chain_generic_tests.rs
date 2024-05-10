@@ -107,3 +107,55 @@ where
         send_value as u64
     );
 }
+
+/// runs a send-to-receiver and receives it in a chain-generic context
+pub async fn propose_and_broadcast_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
+where
+    TE: ManageScenario,
+{
+    let mut environment = TE::setup().await;
+
+    dbg!("chain set up, funding client now");
+
+    let sender = environment
+        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u32))
+        .await;
+
+    dbg!("client is ready to send");
+    dbg!(sender.query_sum_value(OutputQuery::any()).await);
+    dbg!(send_value);
+
+    let recipient = environment.create_client().await;
+    let recipient_address = recipient.get_base_address(pooltype).await;
+    let request = recipient
+        .raw_to_transaction_request(vec![(dbg!(recipient_address), send_value, None)])
+        .unwrap();
+
+    dbg!("recipient ready");
+    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
+    dbg!(request.clone());
+
+    sender.propose_send_and_store(request).await.unwrap();
+    sender
+        .complete_and_broadcast_stored_proposal()
+        .await
+        .unwrap();
+
+    environment.bump_chain().await;
+
+    recipient.do_sync(false).await.unwrap();
+
+    assert_eq!(
+        recipient
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery {
+                    unspent: true,
+                    pending_spent: false,
+                    spent: false,
+                },
+                pools: OutputPoolQuery::one_pool(pooltype),
+            })
+            .await,
+        send_value as u64
+    );
+}
