@@ -14,7 +14,7 @@ async fn shield_transparent() {
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
     );
     let proposal = faucet
-        .do_send_test_only(vec![(
+        .send_test_only(vec![(
             &get_base_address!(recipient, "transparent"),
             transparent_funds,
             None,
@@ -42,7 +42,7 @@ async fn shield_transparent() {
     );
 
     let shielding_proposal = recipient
-        .do_shield_test_only(&[Pool::Transparent], None)
+        .shield_test_only(&[Pool::Transparent], None)
         .await
         .unwrap();
 

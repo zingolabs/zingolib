@@ -556,7 +556,7 @@ async fn reorg_changes_outgoing_tx_height() {
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
     let sent_tx_id = light_client
-        .do_send_test_only([(recipient_string, amount, None)].to_vec())
+        .send_test_only([(recipient_string, amount, None)].to_vec())
         .await
         .unwrap();
 
@@ -792,7 +792,7 @@ async fn reorg_expires_outgoing_tx_height() {
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
     let sent_tx_id = light_client
-        .do_send_test_only([(recipient_string, amount, None)].to_vec())
+        .send_test_only([(recipient_string, amount, None)].to_vec())
         .await
         .unwrap();
 
@@ -970,7 +970,7 @@ async fn reorg_changes_outgoing_tx_index() {
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
     let sent_tx_id = light_client
-        .do_send_test_only([(recipient_string, amount, None)].to_vec())
+        .send_test_only([(recipient_string, amount, None)].to_vec())
         .await
         .unwrap();
 

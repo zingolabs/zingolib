@@ -833,7 +833,7 @@ impl Command for ProposeCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send(
+                .propose_send_and_store(
                     receivers
                 )
                 .await {
