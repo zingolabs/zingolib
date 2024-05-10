@@ -275,9 +275,8 @@ impl LightClient {
 }
 #[cfg(test)]
 mod shielding {
-    #[tokio::test]
-    async fn get_transparent_addresses() {
-        let client = crate::lightclient::LightClient::create_unconnected(
+    async fn create_basic_client() -> crate::lightclient::LightClient {
+        crate::lightclient::LightClient::create_unconnected(
             &zingoconfig::ZingoConfigBuilder::default().create(),
             crate::wallet::WalletBase::MnemonicPhrase(
                 zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
@@ -285,9 +284,17 @@ mod shielding {
             0,
         )
         .await
-        .unwrap();
+        .unwrap()
+    }
+    #[tokio::test]
+    async fn propose_shield() {
+        let basic_client = create_basic_client().await;
+    }
+    #[tokio::test]
+    async fn get_transparent_addresses() {
+        let basic_client = create_basic_client().await;
         assert_eq!(
-            client.get_transparent_addresses().unwrap(),
+            basic_client.get_transparent_addresses().unwrap(),
             [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
                 [
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,
