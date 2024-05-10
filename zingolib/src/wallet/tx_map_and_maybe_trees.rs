@@ -58,4 +58,5 @@ pub enum TxMapAndMaybeTreesTraitError {
 }
 
 pub mod trait_stub_inputsource;
+pub mod trait_stub_walletcommitmenttrees;
 pub mod trait_walletread;
