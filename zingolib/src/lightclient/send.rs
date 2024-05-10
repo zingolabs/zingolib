@@ -34,7 +34,6 @@ impl LightClient {
         // clearly unnecessary in a send that doesn't include sapling
         // TODO: Remove from sends that don't include Sapling
         let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()?;
-
         let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
         self.wallet
