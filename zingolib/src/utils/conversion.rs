@@ -42,7 +42,7 @@ pub mod testing {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub fn send_inputs_to_receivers(
+    pub fn receivers_from_send_inputs(
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
         chain: &ChainType,
     ) -> Vec<(Address, NonNegativeAmount, Option<MemoBytes>)> {

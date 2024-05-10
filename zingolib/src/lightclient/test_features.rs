@@ -1,6 +1,6 @@
 use crate::{
     error::ZingoLibError,
-    utils::conversion::{address_from_str, testing::send_inputs_to_receivers},
+    utils::conversion::{address_from_str, testing::receivers_from_send_inputs},
     wallet::Pool,
 };
 
@@ -28,7 +28,8 @@ impl LightClient {
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
-        let _receivers = send_inputs_to_receivers(address_amount_memo_tuples, &self.config().chain);
+        let _receivers =
+            receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
         unimplemented!()
     }
 
@@ -41,7 +42,8 @@ impl LightClient {
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
-        let receivers = send_inputs_to_receivers(address_amount_memo_tuples, &self.config().chain);
+        let receivers =
+            receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
         self.do_send(receivers).await.map(|txid| txid.to_string())
     }
 
