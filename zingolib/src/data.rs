@@ -12,10 +12,12 @@ pub mod receivers {
     use zcash_primitives::memo::MemoBytes;
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
-    pub(crate) type Receivers = Vec<Receiver>;
+    /// A list of Receivers
+    pub type Receivers = Vec<Receiver>;
 
-    #[derive(Clone)]
-    pub(crate) struct Receiver {
+    /// The superficial representation of the the consumers intended receiver
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Receiver {
         pub(crate) recipient_address: address::Address,
         pub(crate) amount: NonNegativeAmount,
         pub(crate) memo: Option<MemoBytes>,

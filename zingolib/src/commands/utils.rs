@@ -53,16 +53,21 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
         json_args
             .members()
             .map(|j| {
-                let address = address_from_json(j, chain)?;
+                let recipient_address = address_from_json(j, chain)?;
                 let amount = zatoshis_from_json(j)?;
                 let memo = memo_from_json(j)?;
-                check_memo_compatibility(&address, &memo)?;
+                check_memo_compatibility(&recipient_address, &memo)?;
 
-                Ok((address, amount, memo))
+                Ok(crate::data::receivers::Receiver {
+                    recipient_address,
+                    amount,
+                    memo,
+                })
             })
             .collect::<Result<Receivers, CommandError>>()
     } else if args.len() == 2 || args.len() == 3 {
-        let address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
+        let recipient_address =
+            address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
         let amount_u64 = args[1]
             .trim()
             .parse::<u64>()
@@ -76,9 +81,13 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
         } else {
             None
         };
-        check_memo_compatibility(&address, &memo)?;
+        check_memo_compatibility(&recipient_address, &memo)?;
 
-        Ok(vec![(address, amount, memo)])
+        Ok(vec![crate::data::receivers::Receiver {
+            recipient_address,
+            amount,
+            memo,
+        }])
     } else {
         return Err(CommandError::InvalidArguments);
     }?;
@@ -236,9 +245,9 @@ mod tests {
     fn parse_send_args() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
         let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let address = address_from_str(address_str, &chain).unwrap();
+        let recipient_address = address_from_str(address_str, &chain).unwrap();
         let value_str = "100000";
-        let value = zatoshis_from_u64(100_000).unwrap();
+        let amount = zatoshis_from_u64(100_000).unwrap();
         let memo_str = "test memo";
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
@@ -246,14 +255,18 @@ mod tests {
         let send_args = &[address_str, value_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![(address.clone(), value, None)]
+            vec![crate::data::receivers::Receiver {
+                recipient_address: recipient_address.clone(),
+                amount,
+                memo: None
+            }]
         );
 
         // Memo
         let send_args = &[address_str, value_str, memo_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![(address.clone(), value, Some(memo.clone()))]
+            vec![(recipient_address.clone(), value, Some(memo.clone()))]
         );
 
         // Json
@@ -268,7 +281,7 @@ mod tests {
                     zatoshis_from_u64(50_000).unwrap(),
                     None
                 ),
-                (address.clone(), value, Some(memo.clone()))
+                (recipient_address.clone(), value, Some(memo.clone()))
             ]
         );
 
@@ -276,7 +289,11 @@ mod tests {
         let send_args = &[address_str, "1 ", memo_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![(address, zatoshis_from_u64(1).unwrap(), Some(memo.clone()))]
+            vec![(
+                recipient_address,
+                zatoshis_from_u64(1).unwrap(),
+                Some(memo.clone())
+            )]
         );
     }
 
