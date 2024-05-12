@@ -7,7 +7,7 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
 use zingo_testutils::chain_generic_tests::send_value_to_pool;
-use zingo_testutils::chain_generic_tests::ManageScenario;
+use zingo_testutils::chain_generic_tests::ConductChain;
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::WalletBase;
 
@@ -16,7 +16,7 @@ use crate::constants::DARKSIDE_SEED;
 use crate::utils::scenarios::DarksideEnvironment;
 use crate::utils::update_tree_states_for_transaction;
 
-impl ManageScenario for DarksideEnvironment {
+impl ConductChain for DarksideEnvironment {
     async fn setup() -> Self {
         DarksideEnvironment::new(None).await
     }

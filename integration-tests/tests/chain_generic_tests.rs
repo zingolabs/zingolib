@@ -5,7 +5,7 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
 use zingo_testutils::chain_generic_tests::send_value_to_pool;
-use zingo_testutils::chain_generic_tests::ManageScenario;
+use zingo_testutils::chain_generic_tests::ConductChain;
 use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::LightClient;
@@ -16,7 +16,7 @@ struct LibtonodeEnvironment {
     scenario_builder: ScenarioBuilder,
 }
 
-impl ManageScenario for LibtonodeEnvironment {
+impl ConductChain for LibtonodeEnvironment {
     async fn setup() -> Self {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let scenario_builder = ScenarioBuilder::build_configure_launch(
