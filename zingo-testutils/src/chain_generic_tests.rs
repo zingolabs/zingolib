@@ -24,7 +24,7 @@ pub trait ConductChain {
     /// moves the chain tip forward, confirming transactions that need to be confirmed
     async fn bump_chain(&mut self);
 
-    /// builds a client and funds it in a certain pool. may need sync before noticing its funds.
+    /// builds a client and funds it in orchard and syncs it
     async fn fund_client(&mut self, value: u32) -> LightClient {
         let sender = self.create_faucet().await;
         let recipient = self.create_client().await;
