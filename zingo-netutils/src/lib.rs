@@ -103,8 +103,8 @@ impl GrpcConnector {
                 let client = Box::new(hyper::Client::builder().build(connector));
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
-                        let path_and_query = req
+                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
+                        let path_and_query = request
                             .uri()
                             .path_and_query()
                             .cloned()
@@ -118,8 +118,8 @@ impl GrpcConnector {
                             .build()
                             .unwrap();
 
-                        *req.uri_mut() = uri;
-                        req
+                        *request.uri_mut() = uri;
+                        request
                     })
                     .service(client);
 
@@ -129,8 +129,8 @@ impl GrpcConnector {
                 let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
-                        let path_and_query = req
+                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
+                        let path_and_query = request
                             .uri()
                             .path_and_query()
                             .cloned()
@@ -144,8 +144,8 @@ impl GrpcConnector {
                             .build()
                             .unwrap();
 
-                        *req.uri_mut() = uri;
-                        req
+                        *request.uri_mut() = uri;
+                        request
                     })
                     .service(client);
 
