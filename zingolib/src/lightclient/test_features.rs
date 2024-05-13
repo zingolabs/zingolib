@@ -1,12 +1,13 @@
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 
 use crate::{
+    data::{proposal::TransferProposal, receivers::transaction_request_from_receivers},
     error::ZingoLibError,
     utils::conversion::{address_from_str, testing::receivers_from_send_inputs},
     wallet::Pool,
 };
 
-use super::*;
+use super::{propose::ProposeSendError, *};
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!
@@ -26,13 +27,15 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub async fn do_propose_test_only(
+    pub async fn propose_send_test_only(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<String, String> {
-        let _receivers =
+    ) -> Result<TransferProposal, ProposeSendError> {
+        let receivers =
             receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
-        unimplemented!()
+        let request = transaction_request_from_receivers(receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        self.propose_send(request).await
     }
 
     /// Test only lightclient method for calling `do_send` with primitive rust types
@@ -40,7 +43,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub async fn do_send_test_only(
+    pub async fn send_test_only(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
@@ -54,7 +57,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address conversion fails.
-    pub async fn do_shield_test_only(
+    pub async fn shield_test_only(
         &self,
         pools_to_shield: &[Pool],
         address: Option<&str>,
