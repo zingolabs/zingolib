@@ -26,7 +26,9 @@ use regtest::RegtestManager;
 use tokio::time::sleep;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
+
 pub mod chain_generic_tests;
+pub mod proposal_comparisons;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 

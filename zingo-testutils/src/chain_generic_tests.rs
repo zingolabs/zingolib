@@ -94,6 +94,7 @@ where
     println!("recipient ready");
 
     let proposal = sender.propose_send(request).await.unwrap();
+
     assert_eq!(proposal.steps().len(), 1);
     assert_eq!(
         proposal.steps().first().balance().fee_required().into_u64(),
@@ -105,23 +106,66 @@ where
         .await
         .unwrap();
 
+    // tx is sent. assertions about the pending tx
+    assert!(
+        sender
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery {
+                    unspent: false,
+                    pending_spent: true,
+                    spent: false,
+                },
+                pools: OutputPoolQuery::any(),
+            })
+            .await
+            >= send_value + expected_fee
+    );
     let txid = one_txid.first();
-    let read_lock = sender
-        .wallet
-        .transaction_context
-        .transaction_metadata_set
-        .read()
-        .await;
-    let transaction_record = read_lock
-        .transaction_records_by_id
-        .get(txid)
-        .expect("sender must recognize txid");
-
-    assert!(!transaction_record.status.is_confirmed());
+    {
+        let read_lock = sender
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let transaction_record = read_lock
+            .transaction_records_by_id
+            .get(txid)
+            .expect("sender must recognize txid");
+        assert!(!transaction_record.status.is_confirmed());
+    }
+    // end assert block
 
     environment.bump_chain().await;
 
+    sender.do_sync(false).await.unwrap();
+    {
+        let read_lock = sender
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let transaction_record = read_lock
+            .transaction_records_by_id
+            .get(txid)
+            .expect("sender must recognize txid");
+        assert!(transaction_record.status.is_confirmed());
+    }
     recipient.do_sync(false).await.unwrap();
+    {
+        let read_lock = recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let transaction_record = read_lock
+            .transaction_records_by_id
+            .get(txid)
+            .expect("sender must recognize txid");
+        assert!(transaction_record.status.is_confirmed());
+    }
 
     assert_eq!(
         recipient
