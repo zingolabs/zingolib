@@ -27,7 +27,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub async fn propose_test_only(
+    pub async fn propose_send_test_only(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<TransferProposal, ProposeSendError> {
