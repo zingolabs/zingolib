@@ -93,11 +93,28 @@ where
 
     println!("recipient ready");
 
-    sender.propose_send(request).await.unwrap();
-    sender
+    let proposal = sender.propose_send(request).await.unwrap();
+    assert_eq!(proposal.steps().len(), 1);
+    assert_eq!(
+        proposal.steps().first().balance().fee_required().into_u64(),
+        expected_fee
+    );
+
+    let one_txid = sender
         .complete_and_broadcast_stored_proposal()
         .await
         .unwrap();
+
+    let txid = one_txid.first();
+    let transaction_record = sender
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id
+        .get(txid)
+        .expect("sender must recognize txid");
 
     environment.bump_chain().await;
 
