@@ -653,7 +653,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let proposal = faucet.propose_shield_and_store().await.unwrap();
+        let proposal = faucet.propose_shield().await.unwrap();
         let only_step = proposal.steps().first();
 
         // Orchard action and dummy, plus 4 transparent inputs
