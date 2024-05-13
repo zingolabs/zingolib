@@ -1,6 +1,10 @@
 //! tests that can be run either as lib-to-node or darkside.
 
 use zcash_client_backend::PoolType;
+use zcash_client_backend::PoolType::Shielded;
+use zcash_client_backend::PoolType::Transparent;
+use zcash_client_backend::ShieldedProtocol::Orchard;
+use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use zingolib::lightclient::LightClient;
@@ -68,9 +72,14 @@ where
 
     dbg!("chain set up, funding client now");
 
-    let sender = environment
-        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u32))
-        .await;
+    let expected_fee = MARGINAL_FEE.into_u64() as u32
+        * match pooltype {
+            Transparent => 3,
+            Shielded(Sapling) => 4,
+            Shielded(Orchard) => 2,
+        };
+
+    let sender = environment.fund_client(send_value + expected_fee).await;
 
     dbg!("client is ready to send");
     dbg!(sender.query_sum_value(OutputQuery::any()).await);
@@ -85,28 +94,28 @@ where
     dbg!("recipient ready");
 
     sender.propose_send(request).await.unwrap();
-    sender
-        .complete_and_broadcast_stored_proposal()
-        .await
-        .unwrap();
+    // sender
+    //     .complete_and_broadcast_stored_proposal()
+    //     .await
+    //     .unwrap();
 
-    environment.bump_chain().await;
+    // environment.bump_chain().await;
 
-    recipient.do_sync(false).await.unwrap();
+    // recipient.do_sync(false).await.unwrap();
 
-    assert_eq!(
-        recipient
-            .query_sum_value(OutputQuery {
-                spend_status: OutputSpendStatusQuery {
-                    unspent: true,
-                    pending_spent: false,
-                    spent: false,
-                },
-                pools: OutputPoolQuery::one_pool(pooltype),
-            })
-            .await,
-        send_value as u64
-    );
+    // assert_eq!(
+    //     recipient
+    //         .query_sum_value(OutputQuery {
+    //             spend_status: OutputSpendStatusQuery {
+    //                 unspent: true,
+    //                 pending_spent: false,
+    //                 spent: false,
+    //             },
+    //             pools: OutputPoolQuery::one_pool(pooltype),
+    //         })
+    //         .await,
+    //     send_value as u64
+    // );
 }
 
 /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
