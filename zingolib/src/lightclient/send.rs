@@ -334,4 +334,26 @@ pub mod send_with_proposal {
                 .map_err(QuickShieldError::CompleteAndBroadcast)
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use zingo_testvectors::seeds::ABANDON_ART_SEED;
+        use zingoconfig::ZingoConfigBuilder;
+
+        use crate::{lightclient::LightClient, test_framework::mocks::ProposalBuilder};
+
+        #[tokio::test]
+        #[should_panic = "called `Option::unwrap()` on a `None` value"]
+        async fn complete_and_broadcast() {
+            let lc = LightClient::create_unconnected(
+                &ZingoConfigBuilder::default().create(),
+                crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+                1,
+            )
+            .await
+            .unwrap();
+            let proposal = ProposalBuilder::default().build();
+            lc.complete_and_broadcast(&proposal).await.unwrap();
+        }
+    }
 }
