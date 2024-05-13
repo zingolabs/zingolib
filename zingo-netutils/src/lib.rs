@@ -10,6 +10,7 @@ use tower::ServiceExt;
 use http::Uri;
 use http_body::combinators::UnsyncBoxBody;
 use hyper::client::HttpConnector;
+use thiserror::Error;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
 use tower::util::BoxCloneService;
@@ -20,6 +21,17 @@ type UnderlyingService = BoxCloneService<
     http::Response<hyper::Body>,
     hyper::Error,
 >;
+
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, Error)]
+pub enum GetClientError {
+    #[error("bad uri: invalid scheme")]
+    InvalidScheme,
+    #[error("bad uri: invalid authority")]
+    InvalidAuthority,
+    #[error("bad uri: invalid path and/or query")]
+    InvalidPathAndQuery,
+}
 
 /// The connector, containing the URI to connect to.
 /// This type is mostly an interface to the get_client method,
@@ -47,12 +59,21 @@ impl GrpcConnector {
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<CompactTxStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+        Output = Result<CompactTxStreamerClient<UnderlyingService>, GetClientError>,
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
+            let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();
+            let authority = uri
+                .authority()
+                .ok_or(GetClientError::InvalidAuthority)?
+                .clone();
+            let path_and_query = uri
+                .path_and_query()
+                .ok_or(GetClientError::InvalidPathAndQuery)?
+                .clone();
             if uri.scheme_str() == Some("https") {
                 let mut roots = RootCertStore::empty();
                 roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
@@ -84,16 +105,15 @@ impl GrpcConnector {
                     })
                     .service(http_connector);
                 let client = Box::new(hyper::Client::builder().build(connector));
-                let uri = uri.clone();
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
                         let uri = Uri::builder()
-                            .scheme(uri.scheme().unwrap().clone())
-                            .authority(uri.authority().unwrap().clone())
+                            .scheme(scheme.clone())
+                            .authority(authority.clone())
                             //here. The Request's uri contains the path to the GRPC sever and
                             //the method being called
-                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .path_and_query(path_and_query.clone())
                             .build()
                             .unwrap();
 
@@ -106,16 +126,15 @@ impl GrpcConnector {
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
                 let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
-                let uri = uri.clone();
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
                         let uri = Uri::builder()
-                            .scheme(uri.scheme().unwrap().clone())
-                            .authority(uri.authority().unwrap().clone())
+                            .scheme(scheme.clone())
+                            .authority(authority.clone())
                             //here. The Request's uri contains the path to the GRPC sever and
                             //the method being called
-                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .path_and_query(path_and_query.clone())
                             .build()
                             .unwrap();
 

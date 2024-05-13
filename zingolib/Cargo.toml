@@ -84,7 +84,7 @@ secrecy = "0.8.0"
 getset = "0.1.2"
 test-case = "3.3.1"
 proptest = "1.4.0"
-thiserror = "1.0.59"
+thiserror = { workspace = true }
 
 [dev-dependencies]
 portpicker = "0.1.0"
