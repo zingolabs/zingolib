@@ -7,7 +7,7 @@ use crate::{
     wallet::Pool,
 };
 
-use super::{propose::ProposeSendError, *};
+use super::{propose::ProposeSendError, LightClient};
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!
