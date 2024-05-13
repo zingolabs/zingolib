@@ -42,7 +42,7 @@ proptest! {
 ///   - transparent sends do not work
 ///   - txids are regenerated randomly. zingo can optionally accept_server_txid
 /// these tests cannot portray the full range of network weather.
-pub mod impl_conduct_chain_for_darkside_environment {
+pub(crate) mod impl_conduct_chain_for_darkside_environment {
     use proptest::proptest;
     use tokio::runtime::Runtime;
 
