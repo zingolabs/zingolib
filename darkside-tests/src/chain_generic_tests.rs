@@ -42,83 +42,102 @@ proptest! {
 ///   - transparent sends do not work
 ///   - txids are regenerated randomly. zingo can optionally accept_server_txid
 /// these tests cannot portray the full range of network weather.
-impl ConductChain for DarksideEnvironment {
-    async fn setup() -> Self {
-        DarksideEnvironment::new(None).await
-    }
+pub mod impl_conduct_chain_for_darkside_environment {
+    use proptest::proptest;
+    use tokio::runtime::Runtime;
 
-    async fn create_faucet(&mut self) -> LightClient {
-        self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
-            .await;
-        let mut zingo_config = self
-            .client_builder
-            .make_unique_data_dir_and_load_config(self.regtest_network);
-        zingo_config.accept_server_txids = true;
-        LightClient::create_from_wallet_base_async(
-            WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
-            &zingo_config,
-            0,
-            true,
-        )
-        .await
-        .unwrap()
-    }
+    use zcash_client_backend::PoolType::Shielded;
+    use zcash_client_backend::PoolType::Transparent;
+    use zcash_client_backend::ShieldedProtocol::Orchard;
+    use zcash_client_backend::ShieldedProtocol::Sapling;
 
-    async fn create_client(&mut self) -> LightClient {
-        let mut zingo_config = self
-            .client_builder
-            .make_unique_data_dir_and_load_config(self.regtest_network);
-        zingo_config.accept_server_txids = true;
-        LightClient::create_from_wallet_base_async(
-            WalletBase::FreshEntropy,
-            &zingo_config,
-            0,
-            false,
-        )
-        .await
-        .unwrap()
-    }
+    use zingo_testutils::chain_generic_tests::send_value_to_pool;
+    use zingo_testutils::chain_generic_tests::ConductChain;
+    use zingolib::lightclient::LightClient;
+    use zingolib::wallet::WalletBase;
 
-    async fn bump_chain(&mut self) {
-        let mut streamed_raw_txns = self
-            .darkside_connector
-            .get_incoming_transactions()
+    use crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
+    use crate::constants::DARKSIDE_SEED;
+    use crate::utils::scenarios::DarksideEnvironment;
+    use crate::utils::update_tree_states_for_transaction;
+    impl ConductChain for DarksideEnvironment {
+        async fn setup() -> Self {
+            DarksideEnvironment::new(None).await
+        }
+
+        async fn create_faucet(&mut self) -> LightClient {
+            self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
+                .await;
+            let mut zingo_config = self
+                .client_builder
+                .make_unique_data_dir_and_load_config(self.regtest_network);
+            zingo_config.accept_server_txids = true;
+            LightClient::create_from_wallet_base_async(
+                WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
+                &zingo_config,
+                0,
+                true,
+            )
             .await
-            .unwrap();
-        self.darkside_connector
-            .clear_incoming_transactions()
+            .unwrap()
+        }
+
+        async fn create_client(&mut self) -> LightClient {
+            let mut zingo_config = self
+                .client_builder
+                .make_unique_data_dir_and_load_config(self.regtest_network);
+            zingo_config.accept_server_txids = true;
+            LightClient::create_from_wallet_base_async(
+                WalletBase::FreshEntropy,
+                &zingo_config,
+                0,
+                false,
+            )
             .await
-            .unwrap();
-        loop {
-            let maybe_raw_tx = streamed_raw_txns.message().await.unwrap();
-            match maybe_raw_tx {
-                None => break,
-                Some(raw_tx) => {
-                    self.darkside_connector
-                        .stage_transactions_stream(vec![(
-                            raw_tx.data.clone(),
+            .unwrap()
+        }
+
+        async fn bump_chain(&mut self) {
+            let mut streamed_raw_txns = self
+                .darkside_connector
+                .get_incoming_transactions()
+                .await
+                .unwrap();
+            self.darkside_connector
+                .clear_incoming_transactions()
+                .await
+                .unwrap();
+            loop {
+                let maybe_raw_tx = streamed_raw_txns.message().await.unwrap();
+                match maybe_raw_tx {
+                    None => break,
+                    Some(raw_tx) => {
+                        self.darkside_connector
+                            .stage_transactions_stream(vec![(
+                                raw_tx.data.clone(),
+                                u64::from(self.staged_blockheight),
+                            )])
+                            .await
+                            .unwrap();
+                        self.tree_state = update_tree_states_for_transaction(
+                            &self.darkside_connector.0,
+                            raw_tx.clone(),
                             u64::from(self.staged_blockheight),
-                        )])
-                        .await
-                        .unwrap();
-                    self.tree_state = update_tree_states_for_transaction(
-                        &self.darkside_connector.0,
-                        raw_tx.clone(),
-                        u64::from(self.staged_blockheight),
-                    )
-                    .await;
-                    self.darkside_connector
-                        .add_tree_state(self.tree_state.clone())
-                        .await
-                        .unwrap();
+                        )
+                        .await;
+                        self.darkside_connector
+                            .add_tree_state(self.tree_state.clone())
+                            .await
+                            .unwrap();
+                    }
                 }
             }
+            self.darkside_connector
+                .stage_blocks_create(u64::from(self.staged_blockheight) as i32, 1, 0)
+                .await
+                .unwrap();
+            self.staged_blockheight = self.staged_blockheight + 1;
+            self.apply_blocks(u64::from(self.staged_blockheight)).await;
         }
-        self.darkside_connector
-            .stage_blocks_create(u64::from(self.staged_blockheight) as i32, 1, 0)
-            .await
-            .unwrap();
-        self.staged_blockheight = self.staged_blockheight + 1;
-        self.apply_blocks(u64::from(self.staged_blockheight)).await;
     }
 }
