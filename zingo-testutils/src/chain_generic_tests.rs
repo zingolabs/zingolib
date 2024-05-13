@@ -8,11 +8,65 @@ use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 use zingolib::{get_base_address, wallet::notes::query::OutputPoolQuery};
 
+/// runs a send-to-receiver and receives it in a chain-generic context
+pub async fn propose_and_broadcast_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
+where
+    TE: ConductChain,
+{
+    let mut environment = TE::setup().await;
+
+    dbg!("chain set up, funding client now");
+
+    let sender = environment
+        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u32))
+        .await;
+
+    dbg!("client is ready to send");
+    dbg!(sender.query_sum_value(OutputQuery::any()).await);
+    dbg!(send_value);
+
+    let recipient = environment.create_client().await;
+    let recipient_address = recipient.get_base_address(pooltype).await;
+    let request = recipient
+        .raw_to_transaction_request(vec![(dbg!(recipient_address), send_value, None)])
+        .unwrap();
+
+    dbg!("recipient ready");
+    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
+    dbg!(request.clone());
+
+    sender.propose_send(request).await.unwrap();
+    sender
+        .complete_and_broadcast_stored_proposal()
+        .await
+        .unwrap();
+
+    environment.bump_chain().await;
+
+    recipient.do_sync(false).await.unwrap();
+
+    assert_eq!(
+        recipient
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery {
+                    unspent: true,
+                    pending_spent: false,
+                    spent: false,
+                },
+                pools: OutputPoolQuery::one_pool(pooltype),
+            })
+            .await,
+        send_value as u64
+    );
+}
+
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
-/// both lib-to-node and darkside can implement this.
-/// implemented on LibtonodeChain and DarksideScenario respectively
-pub trait ManageScenario {
+/// A Lightclient test may involve hosting a server to send data to the LightClient. This trait can be asked to set simple scenarios where a mock LightServer sends data showing a note to a LightClient, the LightClient updates and responds by sending the note, and the Lightserver accepts the transaction and rebroadcasts it...
+/// The initial two implementors are
+/// lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
+/// darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
+pub trait ConductChain {
     /// set up the test chain
     async fn setup() -> Self;
     /// builds a faucet (funded from mining)
@@ -60,7 +114,7 @@ pub trait ManageScenario {
 /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
 pub async fn send_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
 where
-    TE: ManageScenario,
+    TE: ConductChain,
 {
     let mut environment = TE::setup().await;
 
@@ -86,58 +140,6 @@ where
             send_value as u64,
             None,
         )])
-        .await
-        .unwrap();
-
-    environment.bump_chain().await;
-
-    recipient.do_sync(false).await.unwrap();
-
-    assert_eq!(
-        recipient
-            .query_sum_value(OutputQuery {
-                spend_status: OutputSpendStatusQuery {
-                    unspent: true,
-                    pending_spent: false,
-                    spent: false,
-                },
-                pools: OutputPoolQuery::one_pool(pooltype),
-            })
-            .await,
-        send_value as u64
-    );
-}
-
-/// runs a send-to-receiver and receives it in a chain-generic context
-pub async fn propose_and_broadcast_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
-where
-    TE: ManageScenario,
-{
-    let mut environment = TE::setup().await;
-
-    dbg!("chain set up, funding client now");
-
-    let sender = environment
-        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u32))
-        .await;
-
-    dbg!("client is ready to send");
-    dbg!(sender.query_sum_value(OutputQuery::any()).await);
-    dbg!(send_value);
-
-    let recipient = environment.create_client().await;
-    let recipient_address = recipient.get_base_address(pooltype).await;
-    let request = recipient
-        .raw_to_transaction_request(vec![(dbg!(recipient_address), send_value, None)])
-        .unwrap();
-
-    dbg!("recipient ready");
-    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
-    dbg!(request.clone());
-
-    sender.propose_send(request).await.unwrap();
-    sender
-        .complete_and_broadcast_stored_proposal()
         .await
         .unwrap();
 

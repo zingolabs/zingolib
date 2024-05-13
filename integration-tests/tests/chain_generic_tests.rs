@@ -5,18 +5,33 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
 use zingo_testutils::chain_generic_tests::send_value_to_pool;
-use zingo_testutils::chain_generic_tests::ManageScenario;
+use zingo_testutils::chain_generic_tests::ConductChain;
 use zingo_testutils::scenarios::setup::ScenarioBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::WalletBase;
+
+#[tokio::test]
+async fn libtonode_send_40_000_to_transparent() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+}
+#[tokio::test]
+async fn libtonode_send_40_000_to_sapling() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
+}
+#[tokio::test]
+async fn libtonode_send_40_000_to_orchard() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+}
 
 struct LibtonodeEnvironment {
     regtest_network: RegtestNetwork,
     scenario_builder: ScenarioBuilder,
 }
 
-impl ManageScenario for LibtonodeEnvironment {
+/// known issues include --slow
+/// these tests cannot portray the full range of network weather.
+impl ConductChain for LibtonodeEnvironment {
     async fn setup() -> Self {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let scenario_builder = ScenarioBuilder::build_configure_launch(
@@ -73,17 +88,4 @@ impl ManageScenario for LibtonodeEnvironment {
             target
         );
     }
-}
-
-#[tokio::test]
-async fn libtonode_send_40_000_to_transparent() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
-}
-#[tokio::test]
-async fn libtonode_send_40_000_to_sapling() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
-}
-#[tokio::test]
-async fn libtonode_send_40_000_to_orchard() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
 }
