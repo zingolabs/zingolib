@@ -85,15 +85,24 @@ impl GrpcConnector {
                     .service(http_connector);
                 let client = Box::new(hyper::Client::builder().build(connector));
                 let uri = uri.clone();
+                let scheme = uri.scheme().ok_or("No valid scheme".to_string())?.clone();
+                let authority = uri
+                    .authority()
+                    .ok_or("No valid authority".to_string())?
+                    .clone();
+                let path_and_query = uri
+                    .path_and_query()
+                    .ok_or("No valid path_and_query".to_string())?
+                    .clone();
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
                         let uri = Uri::builder()
-                            .scheme(uri.scheme().unwrap().clone())
-                            .authority(uri.authority().unwrap().clone())
+                            .scheme(scheme.clone())
+                            .authority(authority.clone())
                             //here. The Request's uri contains the path to the GRPC sever and
                             //the method being called
-                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .path_and_query(path_and_query.clone())
                             .build()
                             .unwrap();
 
@@ -107,15 +116,24 @@ impl GrpcConnector {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
                 let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
                 let uri = uri.clone();
+                let scheme = uri.scheme().ok_or("No valid scheme".to_string())?.clone();
+                let authority = uri
+                    .authority()
+                    .ok_or("No valid authority".to_string())?
+                    .clone();
+                let path_and_query = uri
+                    .path_and_query()
+                    .ok_or("No valid path_and_query".to_string())?
+                    .clone();
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
                         let uri = Uri::builder()
-                            .scheme(uri.scheme().unwrap().clone())
-                            .authority(uri.authority().unwrap().clone())
+                            .scheme(scheme.clone())
+                            .authority(authority.clone())
                             //here. The Request's uri contains the path to the GRPC sever and
                             //the method being called
-                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .path_and_query(path_and_query.clone())
                             .build()
                             .unwrap();
 
