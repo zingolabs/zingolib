@@ -29,7 +29,7 @@ pub trait ConductChain {
     async fn bump_chain(&mut self);
 
     /// builds a client and funds it in orchard and syncs it
-    async fn fund_client(&mut self, value: u32) -> LightClient {
+    async fn fund_client(&mut self, value: u64) -> LightClient {
         let sender = self.create_faucet().await;
         let recipient = self.create_client().await;
 
@@ -52,11 +52,11 @@ pub trait ConductChain {
         recipient
     }
 
-    // async fn start_with_funds(value: u32) -> (LightClient, Self) {
+    // async fn start_with_funds(value: u64) -> (LightClient, Self) {
     //     let chain = Self::setup().await;
 
     //     let starter = chain
-    //         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u32))
+    //         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u64))
     //         .await;
 
     //     (starter, chain);
@@ -64,7 +64,7 @@ pub trait ConductChain {
 }
 
 /// runs a send-to-receiver and receives it in a chain-generic context
-pub async fn propose_and_broadcast_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
+pub async fn propose_and_broadcast_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
 where
     TE: ConductChain,
 {
@@ -72,7 +72,7 @@ where
 
     dbg!("chain set up, funding client now");
 
-    let expected_fee = MARGINAL_FEE.into_u64() as u32
+    let expected_fee = MARGINAL_FEE.into_u64() as u64
         * match pooltype {
             Transparent => 3,
             Shielded(Sapling) => 4,
@@ -119,7 +119,7 @@ where
 }
 
 /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
-pub async fn send_value_to_pool<TE>(send_value: u32, pooltype: PoolType)
+pub async fn send_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
 where
     TE: ConductChain,
 {
@@ -128,7 +128,7 @@ where
     dbg!("chain set up, funding client now");
 
     let sender = environment
-        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u32))
+        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u64))
         .await;
 
     dbg!("client is ready to send");

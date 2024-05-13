@@ -86,7 +86,7 @@ impl LightClient {
     /// takes raw data as input (strings and numbers) and returns a TransactionRequest
     pub fn raw_to_transaction_request(
         &self,
-        address_amount_memo_tuples: Vec<(String, u32, Option<String>)>,
+        address_amount_memo_tuples: Vec<(String, u64, Option<String>)>,
     ) -> Result<TransactionRequest, RawToTransactionRequestError> {
         let mut payments = vec![];
         for receiver in address_amount_memo_tuples {
