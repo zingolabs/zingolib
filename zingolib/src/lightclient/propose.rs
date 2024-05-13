@@ -96,7 +96,7 @@ impl LightClient {
             )
             .ok_or(RawToTransactionRequestError::Address)?;
 
-            let amount = NonNegativeAmount::from_u64(receiver.1 as u64)
+            let amount = NonNegativeAmount::from_u64(receiver.1)
                 .map_err(RawToTransactionRequestError::Amount)?;
 
             let memo = match receiver.2 {

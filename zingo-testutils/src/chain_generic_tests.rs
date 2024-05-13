@@ -39,7 +39,7 @@ pub trait ConductChain {
         sender
             .send_test_only(vec![(
                 (get_base_address!(recipient, "unified")).as_str(),
-                value as u64,
+                value,
                 None,
             )])
             .await
@@ -70,9 +70,9 @@ where
 {
     let mut environment = TE::setup().await;
 
-    dbg!("chain set up, funding client now");
+    println!("chain set up, funding client now");
 
-    let expected_fee = MARGINAL_FEE.into_u64() as u64
+    let expected_fee = MARGINAL_FEE.into_u64()
         * match pooltype {
             Transparent => 3,
             Shielded(Sapling) => 4,
@@ -81,7 +81,7 @@ where
 
     let sender = environment.fund_client(send_value + expected_fee).await;
 
-    dbg!("client is ready to send");
+    println!("client is ready to send");
     dbg!(sender.query_sum_value(OutputQuery::any()).await);
     dbg!(send_value);
 
@@ -91,7 +91,7 @@ where
         .raw_to_transaction_request(vec![(dbg!(recipient_address), send_value, None)])
         .unwrap();
 
-    dbg!("recipient ready");
+    println!("recipient ready");
 
     sender.propose_send(request).await.unwrap();
     sender
@@ -114,7 +114,7 @@ where
                 pools: OutputPoolQuery::one_pool(pooltype),
             })
             .await,
-        send_value as u64
+        send_value
     );
 }
 
@@ -128,7 +128,7 @@ where
     dbg!("chain set up, funding client now");
 
     let sender = environment
-        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u64))
+        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64()))
         .await;
 
     dbg!("client is ready to send");
@@ -142,11 +142,7 @@ where
     dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
     sender
-        .send_test_only(vec![(
-            dbg!(recipient_address).as_str(),
-            send_value as u64,
-            None,
-        )])
+        .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
         .await
         .unwrap();
 
@@ -165,6 +161,6 @@ where
                 pools: OutputPoolQuery::one_pool(pooltype),
             })
             .await,
-        send_value as u64
+        send_value
     );
 }
