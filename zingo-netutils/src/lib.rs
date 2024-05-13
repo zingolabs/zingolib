@@ -65,15 +65,6 @@ impl GrpcConnector {
         async move {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
-            let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();
-            let authority = uri
-                .authority()
-                .ok_or(GetClientError::InvalidAuthority)?
-                .clone();
-            let path_and_query = uri
-                .path_and_query()
-                .ok_or(GetClientError::InvalidPathAndQuery)?
-                .clone();
             if uri.scheme_str() == Some("https") {
                 let mut roots = RootCertStore::empty();
                 roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
@@ -105,6 +96,15 @@ impl GrpcConnector {
                     })
                     .service(http_connector);
                 let client = Box::new(hyper::Client::builder().build(connector));
+                let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();
+                let authority = uri
+                    .authority()
+                    .ok_or(GetClientError::InvalidAuthority)?
+                    .clone();
+                let path_and_query = uri
+                    .path_and_query()
+                    .ok_or(GetClientError::InvalidPathAndQuery)?
+                    .clone();
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
@@ -126,6 +126,15 @@ impl GrpcConnector {
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
                 let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+                let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();
+                let authority = uri
+                    .authority()
+                    .ok_or(GetClientError::InvalidAuthority)?
+                    .clone();
+                let path_and_query = uri
+                    .path_and_query()
+                    .ok_or(GetClientError::InvalidPathAndQuery)?
+                    .clone();
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
