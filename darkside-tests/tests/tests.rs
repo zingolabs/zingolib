@@ -141,7 +141,7 @@ async fn sent_transaction_reorged_into_mempool() {
         }
     );
     let txid = light_client
-        .do_send_test_only(vec![(
+        .send_test_only(vec![(
             &get_base_address!(recipient, "unified"),
             10_000,
             None,

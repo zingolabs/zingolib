@@ -822,16 +822,17 @@ impl Command for ProposeCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let request = match utils::parse_send_args(args, &lightclient.config().chain) {
-            Ok(args) => match crate::data::receivers::transaction_request_from_receivers(args) {
-                Ok(request) => request,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help propose' for correct usage and examples.",
-                        e
-                    )
-                }
-            },
+        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+            Ok(receivers) => receivers,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help propose' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
+            Ok(request) => request,
             Err(e) => {
                 return format!(
                     "Error: {}\nTry 'help propose' for correct usage and examples.",

@@ -33,7 +33,7 @@ pub trait ConductChain {
         sender.do_sync(false).await.unwrap();
 
         sender
-            .do_send_test_only(vec![(
+            .send_test_only(vec![(
                 (get_base_address!(recipient, "unified")).as_str(),
                 value as u64,
                 None,
@@ -135,7 +135,7 @@ where
     dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
     sender
-        .do_send_test_only(vec![(
+        .send_test_only(vec![(
             dbg!(recipient_address).as_str(),
             send_value as u64,
             None,
