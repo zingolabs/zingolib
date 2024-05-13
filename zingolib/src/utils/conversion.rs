@@ -1,17 +1,30 @@
 //! Conversion specific utilities
 
+use thiserror::Error;
+
 use zcash_client_backend::address::Address;
 use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
+
 use zingoconfig::ChainType;
 
 use super::error::ConversionError;
 
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, Error)]
+pub enum TxIdFromHexEncodedStrError {
+    #[error("{0}")]
+    Decode(hex::FromHexError),
+    #[error("{0:?}")]
+    Code(Vec<u8>),
+}
+
 /// Converts txid from hex-encoded `&str` to `zcash_primitives::transaction::TxId`.
 ///
 /// TxId byte order is displayed in the reverse order to how it's encoded.
-pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, ConversionError> {
-    let txid_bytes = hex::decode(txid).unwrap();
-    let mut txid_bytes = <[u8; 32]>::try_from(txid_bytes).unwrap();
+pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, TxIdFromHexEncodedStrError> {
+    let txid_bytes = hex::decode(txid).map_err(TxIdFromHexEncodedStrError::Decode)?;
+    let mut txid_bytes =
+        <[u8; 32]>::try_from(txid_bytes).map_err(TxIdFromHexEncodedStrError::Code)?;
     txid_bytes.reverse();
     Ok(TxId::from_bytes(txid_bytes))
 }
@@ -49,7 +62,8 @@ pub mod testing {
         address_amount_memo_tuples
             .into_iter()
             .map(|(address, amount, memo)| {
-                let address = address_from_str(address, chain).expect("should be a valid address");
+                let recipient_address =
+                    address_from_str(address, chain).expect("should be a valid address");
                 let amount = zatoshis_from_u64(amount)
                     .expect("should be inside the range of valid zatoshis");
                 let memo = memo.map(|memo| {
@@ -57,7 +71,11 @@ pub mod testing {
                         .expect("should be able to interpret memo")
                 });
 
-                (address, amount, memo)
+                crate::data::receivers::Receiver {
+                    recipient_address,
+                    amount,
+                    memo,
+                }
             })
             .collect()
     }

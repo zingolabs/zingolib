@@ -78,7 +78,7 @@ tracing = "0.1.36"
 indoc = "2.0.1"
 derive_more = "0.99.17"
 either = "1.8.1"
-serde = { version = "1.0.188", features = ["derive"] }
+serde = { version = "1.0.201", features = ["derive"] }
 sapling-crypto.workspace = true
 secrecy = "0.8.0"
 getset = "0.1.2"

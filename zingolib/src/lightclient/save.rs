@@ -4,7 +4,7 @@ use log::error;
 
 use std::{
     fs::{remove_file, File},
-    io::{self, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
 use tokio::runtime::Runtime;
@@ -86,18 +86,6 @@ impl LightClient {
             .unwrap()
             .block_on(async move { self.export_save_buffer_async().await })
             .map_err(String::from)
-    }
-
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    pub(super) fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
-        let mut file_path = dir.to_path_buf();
-        file_path.push(name);
-        if !file_path.exists() {
-            let mut file = File::create(&file_path)?;
-            file.write_all(bytes)?;
-        }
-
-        Ok(())
     }
 
     /// Only relevant in non-mobile, this function removes the save file.
