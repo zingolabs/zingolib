@@ -94,28 +94,28 @@ where
     dbg!("recipient ready");
 
     sender.propose_send(request).await.unwrap();
-    // sender
-    //     .complete_and_broadcast_stored_proposal()
-    //     .await
-    //     .unwrap();
+    sender
+        .complete_and_broadcast_stored_proposal()
+        .await
+        .unwrap();
 
-    // environment.bump_chain().await;
+    environment.bump_chain().await;
 
-    // recipient.do_sync(false).await.unwrap();
+    recipient.do_sync(false).await.unwrap();
 
-    // assert_eq!(
-    //     recipient
-    //         .query_sum_value(OutputQuery {
-    //             spend_status: OutputSpendStatusQuery {
-    //                 unspent: true,
-    //                 pending_spent: false,
-    //                 spent: false,
-    //             },
-    //             pools: OutputPoolQuery::one_pool(pooltype),
-    //         })
-    //         .await,
-    //     send_value as u64
-    // );
+    assert_eq!(
+        recipient
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery {
+                    unspent: true,
+                    pending_spent: false,
+                    spent: false,
+                },
+                pools: OutputPoolQuery::one_pool(pooltype),
+            })
+            .await,
+        send_value as u64
+    );
 }
 
 /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
