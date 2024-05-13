@@ -150,8 +150,11 @@ pub mod send_with_proposal {
     use thiserror::Error;
     use zcash_proofs::prover::LocalTxProver;
 
-    use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
     use crate::lightclient::LightClient;
+    use crate::{
+        lightclient::propose::{ProposeSendError, ProposeShieldError},
+        wallet::utils::read_sapling_params,
+    };
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
@@ -231,9 +234,8 @@ pub mod send_with_proposal {
                 .await
                 .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
 
-            let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) = self
-                .read_sapling_params()
-                .map_err(CompleteAndBroadcastError::SaplingParams)?;
+            let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+                read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
             let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
             let unified_spend_key =
                 UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
