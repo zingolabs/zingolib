@@ -25,13 +25,13 @@ async fn darkside_send_40_000_to_transparent() {
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
     #[test]
-    fn send_pvalue_to_orchard(value in 0..90u32) {
+    fn send_pvalue_to_orchard(value in 0..90u64) {
         Runtime::new().unwrap().block_on(async {
     send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Orchard)).await;
         });
      }
     #[test]
-    fn send_pvalue_to_sapling(value in 0..90u32) {
+    fn send_pvalue_to_sapling(value in 0..90u64) {
         Runtime::new().unwrap().block_on(async {
     send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Sapling)).await;
         });
