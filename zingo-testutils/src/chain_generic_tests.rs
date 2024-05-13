@@ -60,7 +60,7 @@ where
                 pools: OutputPoolQuery::one_pool(pooltype),
             })
             .await,
-        send_value as u64
+        send_value
     );
 }
 
@@ -91,7 +91,7 @@ pub trait ConductChain {
         sender
             .send_test_only(vec![(
                 (get_base_address!(recipient, "unified")).as_str(),
-                value as u64,
+                value,
                 None,
             )])
             .await
@@ -139,11 +139,7 @@ where
     dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
     sender
-        .send_test_only(vec![(
-            dbg!(recipient_address).as_str(),
-            send_value as u64,
-            None,
-        )])
+        .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
         .await
         .unwrap();
 
@@ -162,6 +158,6 @@ where
                 pools: OutputPoolQuery::one_pool(pooltype),
             })
             .await,
-        send_value as u64
+        send_value
     );
 }
