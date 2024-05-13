@@ -24,9 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils` mod
 - `lightclient::LightClient`:
-  - `propose_send_and_store` behind "zip317" feature
-  - `propose_send_all_and_store` behind "zip317" feature
-  - `propose_shield_and_store` behind "zip317" feature
+  - `propose_send` behind "zip317" feature
+  - `propose_send_all` behind "zip317" feature
+  - `propose_shield` behind "zip317" feature
   - `send_proposal` behind "zip317" feature
 - `commands::get_commands`:
   - `propose` to `entries` behind "zip317" feature

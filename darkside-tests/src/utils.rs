@@ -677,7 +677,7 @@ pub mod scenarios {
                 DarksideSender::ExternalClient(lc) => lc,
             };
             lightclient
-                .do_send_test_only(vec![(receiver_address, value, None)])
+                .send_test_only(vec![(receiver_address, value, None)])
                 .await
                 .unwrap();
             let mut streamed_raw_txns = self
@@ -726,7 +726,7 @@ pub mod scenarios {
                 DarksideSender::ExternalClient(lc) => lc,
             };
             lightclient
-                .do_shield_test_only(&[pool_to_shield], None)
+                .shield_test_only(&[pool_to_shield], None)
                 .await
                 .unwrap();
             let mut streamed_raw_txns = self

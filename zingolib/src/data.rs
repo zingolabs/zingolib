@@ -22,7 +22,6 @@ pub mod receivers {
         pub(crate) amount: NonNegativeAmount,
         pub(crate) memo: Option<MemoBytes>,
     }
-    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
     impl From<Receiver> for Payment {
         fn from(receiver: Receiver) -> Self {
             Self {
@@ -35,6 +34,7 @@ pub mod receivers {
             }
         }
     }
+    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
     pub(crate) fn transaction_request_from_receivers(
         receivers: Receivers,
     ) -> Result<TransactionRequest, Zip321Error> {
