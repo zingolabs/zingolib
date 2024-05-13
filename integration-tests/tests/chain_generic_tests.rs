@@ -1,15 +1,9 @@
-use zcash_client_backend::PoolType;
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::PoolType::Transparent;
 use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
 use zingo_testutils::chain_generic_tests::send_value_to_pool;
-use zingo_testutils::chain_generic_tests::ConductChain;
-use zingo_testutils::scenarios::setup::ScenarioBuilder;
-use zingoconfig::RegtestNetwork;
-use zingolib::lightclient::LightClient;
-use zingolib::wallet::WalletBase;
 
 use libtonode_environment::LibtonodeEnvironment;
 
@@ -28,12 +22,9 @@ async fn libtonode_send_40_000_to_orchard() {
 
 pub(crate) mod libtonode_environment {
     use zcash_client_backend::PoolType;
-    use zcash_client_backend::PoolType::Shielded;
-    use zcash_client_backend::PoolType::Transparent;
-    use zcash_client_backend::ShieldedProtocol::Orchard;
+
     use zcash_client_backend::ShieldedProtocol::Sapling;
 
-    use zingo_testutils::chain_generic_tests::send_value_to_pool;
     use zingo_testutils::chain_generic_tests::ConductChain;
     use zingo_testutils::scenarios::setup::ScenarioBuilder;
     use zingoconfig::RegtestNetwork;
