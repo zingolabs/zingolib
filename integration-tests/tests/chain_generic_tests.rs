@@ -11,6 +11,19 @@ use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::WalletBase;
 
+#[tokio::test]
+async fn libtonode_send_40_000_to_transparent() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+}
+#[tokio::test]
+async fn libtonode_send_40_000_to_sapling() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
+}
+#[tokio::test]
+async fn libtonode_send_40_000_to_orchard() {
+    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+}
+
 struct LibtonodeEnvironment {
     regtest_network: RegtestNetwork,
     scenario_builder: ScenarioBuilder,
@@ -73,17 +86,4 @@ impl ConductChain for LibtonodeEnvironment {
             target
         );
     }
-}
-
-#[tokio::test]
-async fn libtonode_send_40_000_to_transparent() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
-}
-#[tokio::test]
-async fn libtonode_send_40_000_to_sapling() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
-}
-#[tokio::test]
-async fn libtonode_send_40_000_to_orchard() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
 }

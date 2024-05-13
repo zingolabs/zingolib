@@ -16,6 +16,28 @@ use crate::constants::DARKSIDE_SEED;
 use crate::utils::scenarios::DarksideEnvironment;
 use crate::utils::update_tree_states_for_transaction;
 
+#[tokio::test]
+#[ignore] // darkside cant handle transparent?
+async fn darkside_send_40_000_to_transparent() {
+    send_value_to_pool::<DarksideEnvironment>(40_000, Transparent).await;
+}
+
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(4))]
+    #[test]
+    fn send_pvalue_to_orchard(value in 0..90u32) {
+        Runtime::new().unwrap().block_on(async {
+    send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Orchard)).await;
+        });
+     }
+    #[test]
+    fn send_pvalue_to_sapling(value in 0..90u32) {
+        Runtime::new().unwrap().block_on(async {
+    send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Sapling)).await;
+        });
+     }
+}
+
 impl ConductChain for DarksideEnvironment {
     async fn setup() -> Self {
         DarksideEnvironment::new(None).await
@@ -85,26 +107,4 @@ impl ConductChain for DarksideEnvironment {
         self.staged_blockheight = self.staged_blockheight + 1;
         self.apply_blocks(u64::from(self.staged_blockheight)).await;
     }
-}
-
-#[tokio::test]
-#[ignore] // darkside cant handle transparent?
-async fn darkside_send_40_000_to_transparent() {
-    send_value_to_pool::<DarksideEnvironment>(40_000, Transparent).await;
-}
-
-proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_cases(4))]
-    #[test]
-    fn send_pvalue_to_orchard(value in 0..90u32) {
-        Runtime::new().unwrap().block_on(async {
-    send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Orchard)).await;
-        });
-     }
-    #[test]
-    fn send_pvalue_to_sapling(value in 0..90u32) {
-        Runtime::new().unwrap().block_on(async {
-    send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Sapling)).await;
-        });
-     }
 }
