@@ -106,15 +106,18 @@ where
         .unwrap();
 
     let txid = one_txid.first();
-    let transaction_record = sender
+    let read_lock = sender
         .wallet
         .transaction_context
         .transaction_metadata_set
         .read()
-        .await
+        .await;
+    let transaction_record = read_lock
         .transaction_records_by_id
         .get(txid)
         .expect("sender must recognize txid");
+
+    assert!(!transaction_record.status.is_confirmed());
 
     environment.bump_chain().await;
 
