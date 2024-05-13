@@ -111,7 +111,6 @@ impl InputSource for TransactionRecordsById {
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        dbg!(target_value);
         let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, NoteId)> = Vec::new();
         let mut orchard_note_noteref_pairs: Vec<(orchard::Note, NoteId)> = Vec::new();
         for transaction_record in self.values().filter(|transaction_record| {
@@ -138,32 +137,28 @@ impl InputSource for TransactionRecordsById {
         }
         let mut sapling_notes = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut orchard_notes = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
-        if let Some(missing_value_after_sapling) =
-            dbg!(sapling_note_noteref_pairs.into_iter().try_fold(
-                Some(target_value),
-                |rolling_target, (note, note_id)| match rolling_target {
-                    Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
-                    Some(targ) => {
-                        sapling_notes.push(
-                            self.get(note_id.txid())
-                                .and_then(|tr| {
-                                    tr.get_received_note::<SaplingDomain>(
-                                        note_id.output_index() as u32
-                                    )
-                                })
-                                .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
-                        );
-                        Ok(targ
-                            - NonNegativeAmount::from_u64(note.value().inner()).map_err(|e| {
-                                InputSourceError::OutputTooBig((note.value().inner(), e))
-                            })?)
-                    }
-                    None => Ok(None),
-                },
-            ))?
-        {
+        if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
+            Some(target_value),
+            |rolling_target, (note, note_id)| match rolling_target {
+                Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
+                Some(targ) => {
+                    sapling_notes.push(
+                        self.get(note_id.txid())
+                            .and_then(|tr| {
+                                tr.get_received_note::<SaplingDomain>(note_id.output_index() as u32)
+                            })
+                            .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
+                    );
+                    Ok(targ
+                        - NonNegativeAmount::from_u64(note.value().inner()).map_err(|e| {
+                            InputSourceError::OutputTooBig((note.value().inner(), e))
+                        })?)
+                }
+                None => Ok(None),
+            },
+        )? {
             if let Some(missing_value_after_orchard) =
-                dbg!(orchard_note_noteref_pairs.into_iter().try_fold(
+                orchard_note_noteref_pairs.into_iter().try_fold(
                     Some(missing_value_after_sapling),
                     |rolling_target, (note, note_id)| match rolling_target {
                         Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
@@ -184,7 +179,7 @@ impl InputSource for TransactionRecordsById {
                         }
                         None => Ok(None),
                     },
-                ))?
+                )?
             {
                 if missing_value_after_orchard != NonNegativeAmount::ZERO {
                     return Err(InputSourceError::Shortfall(
