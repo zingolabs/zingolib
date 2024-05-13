@@ -38,6 +38,10 @@ proptest! {
      }
 }
 
+/// known issues include
+///   - transparent sends do not work
+///   - txids are regenerated randomly. zingo can optionally accept_server_txid
+/// these tests cannot portray the full range of network weather.
 impl ConductChain for DarksideEnvironment {
     async fn setup() -> Self {
         DarksideEnvironment::new(None).await

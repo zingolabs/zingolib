@@ -29,6 +29,8 @@ struct LibtonodeEnvironment {
     scenario_builder: ScenarioBuilder,
 }
 
+/// known issues include --slow
+/// these tests cannot portray the full range of network weather.
 impl ConductChain for LibtonodeEnvironment {
     async fn setup() -> Self {
         let regtest_network = RegtestNetwork::all_upgrades_active();
