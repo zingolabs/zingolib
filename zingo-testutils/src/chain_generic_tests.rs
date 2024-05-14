@@ -51,16 +51,6 @@ pub trait ConductChain {
 
         recipient
     }
-
-    // async fn start_with_funds(value: u64) -> (LightClient, Self) {
-    //     let chain = Self::setup().await;
-
-    //     let starter = chain
-    //         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u64))
-    //         .await;
-
-    //     (starter, chain);
-    // }
 }
 
 /// runs a send-to-receiver and receives it in a chain-generic context
@@ -88,7 +78,7 @@ where
     let recipient = environment.create_client().await;
     let recipient_address = recipient.get_base_address(pooltype).await;
     let request = recipient
-        .raw_to_transaction_request(vec![(dbg!(recipient_address), send_value, None)])
+        .transaction_request_from_send_inputs(vec![(recipient_address.as_str(), send_value, None)])
         .unwrap();
 
     println!("recipient ready");

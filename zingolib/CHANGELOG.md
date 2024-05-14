@@ -18,9 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `export_save_buffer_runtime`
   - `get_wallet_file_location`
   - `get_wallet_dir_location`
-  - `do_propose_test_only` behind `test-features` flag
-  - `do_send_test_only` behind `test-features` flag
-  - `do_shield_test_only` behind `test-features` flag
+  - `propose_test_only` behind `test-features` flag
+  - `send_test_only` behind `test-features` flag
+  - `shield_test_only` behind `test-features` flag
+  - `transaction_request_from_send_inputs` behind `test-features` flag
 - `wallet::notes::NoteRecordIdentifier` struct
 - `utils` mod
 - `lightclient::LightClient`:
