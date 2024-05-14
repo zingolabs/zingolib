@@ -8,9 +8,9 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use zingolib::lightclient::LightClient;
+use zingolib::wallet::notes::query::OutputPoolQuery;
 use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
-use zingolib::{get_base_address, wallet::notes::query::OutputPoolQuery};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -36,14 +36,11 @@ pub trait ConductChain {
         self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
-        sender
-            .send_test_only(vec![(
-                (get_base_address!(recipient, "unified")).as_str(),
-                value,
-                None,
-            )])
-            .await
+        let recipient_address = recipient.get_base_address(Shielded(Orchard)).await;
+        let request = recipient
+            .raw_to_transaction_request(vec![(recipient_address, value, None)])
             .unwrap();
+        let _one_txid = sender.quick_send(request).await.unwrap();
 
         self.bump_chain().await;
 
@@ -163,7 +160,7 @@ where
 
     println!("recipient ready");
 
-    let one_txid = sender.quick_send(request).await.unwrap();
+    let _one_txid = sender.quick_send(request).await.unwrap();
 
     environment.bump_chain().await;
 
