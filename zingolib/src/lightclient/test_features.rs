@@ -1,4 +1,7 @@
-use zcash_client_backend::{zip321::TransactionRequest, PoolType, ShieldedProtocol};
+use zcash_client_backend::{
+    zip321::{TransactionRequest, Zip321Error},
+    PoolType, ShieldedProtocol,
+};
 
 use crate::{
     data::{proposal::TransferProposal, receivers::transaction_request_from_receivers},
@@ -31,7 +34,9 @@ impl LightClient {
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let request = self.transaction_request_from_send_inputs(address_amount_memo_tuples);
+        let request = self
+            .transaction_request_from_send_inputs(address_amount_memo_tuples)
+            .expect("should be able to create a transaction request as receivers are valid.");
         self.propose_send(request).await
     }
 
@@ -87,10 +92,9 @@ impl LightClient {
     pub fn transaction_request_from_send_inputs(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
-    ) -> TransactionRequest {
+    ) -> Result<TransactionRequest, Zip321Error> {
         let receivers =
             receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
         transaction_request_from_receivers(receivers)
-            .expect("should be able to create a transaction request as receivers are valid.")
     }
 }

@@ -29,11 +29,9 @@ where
     let recipient_address = recipient.get_base_address(pooltype).await;
     println!("{}", recipient_address);
 
-    let request = recipient.transaction_request_from_send_inputs(vec![(
-        &recipient_address,
-        send_value,
-        None,
-    )]);
+    let request = recipient
+        .transaction_request_from_send_inputs(vec![(&recipient_address, send_value, None)])
+        .unwrap();
 
     dbg!("recipient ready");
     dbg!(recipient.query_sum_value(OutputQuery::any()).await);
