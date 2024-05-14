@@ -32,11 +32,11 @@ proptest! {
      }
 }
 
-/// known issues include
-///   - transparent sends do not work
-///   - txids are regenerated randomly. zingo can optionally accept_server_txid
-/// these tests cannot portray the full range of network weather.
 pub(crate) mod impl_conduct_chain_for_darkside_environment {
+    //! known issues include
+    //!   - transparent sends do not work
+    //!   - txids are regenerated randomly. zingo can optionally accept_server_txid
+    //! these tests cannot portray the full range of network weather.
 
     use zingo_testutils::chain_generic_tests::ConductChain;
     use zingolib::lightclient::LightClient;

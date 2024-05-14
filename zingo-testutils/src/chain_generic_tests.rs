@@ -1,6 +1,10 @@
 //! tests that can be run either as lib-to-node or darkside.
 
 use zcash_client_backend::PoolType;
+use zcash_client_backend::PoolType::Shielded;
+use zcash_client_backend::PoolType::Transparent;
+use zcash_client_backend::ShieldedProtocol::Orchard;
+use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use zingolib::lightclient::LightClient;
@@ -47,16 +51,6 @@ pub trait ConductChain {
 
         recipient
     }
-
-    // async fn start_with_funds(value: u64) -> (LightClient, Self) {
-    //     let chain = Self::setup().await;
-
-    //     let starter = chain
-    //         .fund_client(value + 2 * (MARGINAL_FEE.into_u64()))
-    //         .await;
-
-    //     (starter, chain);
-    // }
 }
 
 /// runs a send-to-receiver and receives it in a chain-generic context
@@ -66,13 +60,18 @@ where
 {
     let mut environment = TE::setup().await;
 
-    dbg!("chain set up, funding client now");
+    println!("chain set up, funding client now");
 
-    let sender = environment
-        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64()))
-        .await;
+    let expected_fee = MARGINAL_FEE.into_u64()
+        * match pooltype {
+            Transparent => 3,
+            Shielded(Sapling) => 4,
+            Shielded(Orchard) => 2,
+        };
 
-    dbg!("client is ready to send");
+    let sender = environment.fund_client(send_value + expected_fee).await;
+
+    println!("client is ready to send");
     dbg!(sender.query_sum_value(OutputQuery::any()).await);
     dbg!(send_value);
 
@@ -82,9 +81,7 @@ where
         .transaction_request_from_send_inputs(vec![(recipient_address.as_str(), send_value, None)])
         .unwrap();
 
-    dbg!("recipient ready");
-    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
-    dbg!(request.clone());
+    println!("recipient ready");
 
     sender.propose_send(request).await.unwrap();
     sender
