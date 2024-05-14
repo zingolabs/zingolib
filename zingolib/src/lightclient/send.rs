@@ -137,25 +137,51 @@ impl LightClient {
 #[cfg(feature = "zip317")]
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
-    use std::convert::Infallible;
+    use std::{convert::Infallible, ops::DerefMut as _};
 
     use nonempty::NonEmpty;
 
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
+    use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
+    use zcash_proofs::prover::LocalTxProver;
 
-    use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
     use crate::lightclient::LightClient;
+    use crate::{
+        lightclient::propose::{ProposeSendError, ProposeShieldError},
+        wallet::utils::read_sapling_params,
+    };
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
     pub enum CompleteAndBroadcastError {
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
+        #[error("No proposal. Call do_propose first.")]
+        NoProposal,
+        #[error("Cant get submission height. Server connection?: {0}")]
+        SubmissionHeight(String),
+        #[error("Could not load sapling_params: {0}")]
+        SaplingParams(String),
+        #[error("Could not find UnifiedSpendKey: {0}")]
+        UnifiedSpendKey(std::io::Error),
+        #[error("Can't Calculate {0}")]
+        Calculation(
+            zcash_client_backend::data_api::error::Error<
+                crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+                std::convert::Infallible,
+                std::convert::Infallible,
+                zcash_primitives::transaction::fees::zip317::FeeError,
+            >,
+        ),
+        #[error("Broadcast failed: {0}")]
+        Broadcast(String),
+        #[error("Sending to exchange addresses is not supported yet!")]
+        ExchangeAddressesNotSupported,
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -190,7 +216,7 @@ pub mod send_with_proposal {
         // TODO: add correct functionality and doc comments / tests
         async fn complete_and_broadcast<NoteRef>(
             &self,
-            _proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+            proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
             if self
                 .wallet
@@ -203,8 +229,60 @@ pub mod send_with_proposal {
             {
                 return Err(CompleteAndBroadcastError::NoSpendCapability);
             }
-            //todo!();
-            Ok(NonEmpty::singleton(TxId::from_bytes([222u8; 32])))
+            let submission_height = self
+                .get_submission_height()
+                .await
+                .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
+
+            let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+                read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
+            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let unified_spend_key =
+                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
+                    .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
+
+            // We don't support zip320 yet. Only one step.
+            if proposal.steps().len() != 1 {
+                return Err(CompleteAndBroadcastError::ExchangeAddressesNotSupported);
+            }
+
+            let step = proposal.steps().first();
+
+            let build_result =
+                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .write()
+                        .await
+                        .deref_mut(),
+                    &self.wallet.transaction_context.config.chain,
+                    &sapling_prover,
+                    &sapling_prover,
+                    &unified_spend_key,
+                    zcash_client_backend::wallet::OvkPolicy::Sender,
+                    proposal.fee_rule(),
+                    proposal.min_target_height(),
+                    &[],
+                    step,
+                )
+                .map_err(CompleteAndBroadcastError::Calculation)?;
+            let txid = self
+                .wallet
+                .send_to_addresses_inner(
+                    build_result.transaction(),
+                    submission_height,
+                    |transaction_bytes| {
+                        crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            transaction_bytes,
+                        )
+                    },
+                )
+                .await
+                .map_err(CompleteAndBroadcastError::Broadcast)?;
+
+            Ok(NonEmpty::singleton(txid))
         }
 
         /// Unstable function to expose the zip317 interface for development
@@ -254,6 +332,28 @@ pub mod send_with_proposal {
             self.complete_and_broadcast::<Infallible>(&proposal)
                 .await
                 .map_err(QuickShieldError::CompleteAndBroadcast)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use zingo_testvectors::seeds::ABANDON_ART_SEED;
+        use zingoconfig::ZingoConfigBuilder;
+
+        use crate::{lightclient::LightClient, test_framework::mocks::ProposalBuilder};
+
+        #[tokio::test]
+        #[should_panic = "called `Option::unwrap()` on a `None` value"]
+        async fn complete_and_broadcast() {
+            let lc = LightClient::create_unconnected(
+                &ZingoConfigBuilder::default().create(),
+                crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+                1,
+            )
+            .await
+            .unwrap();
+            let proposal = ProposalBuilder::default().build();
+            lc.complete_and_broadcast(&proposal).await.unwrap();
         }
     }
 }

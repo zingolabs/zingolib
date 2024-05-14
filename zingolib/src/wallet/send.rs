@@ -817,7 +817,7 @@ impl LightWallet {
         Ok(tx_builder)
     }
 
-    async fn send_to_addresses_inner<F, Fut>(
+    pub(crate) async fn send_to_addresses_inner<F, Fut>(
         &self,
         transaction: &Transaction,
         submission_height: BlockHeight,
