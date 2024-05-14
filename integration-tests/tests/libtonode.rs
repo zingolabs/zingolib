@@ -37,8 +37,6 @@ use zingolib::{
     },
 };
 
-pub mod chain_generic_tests;
-
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
     *note
