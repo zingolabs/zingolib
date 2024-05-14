@@ -35,7 +35,7 @@ pub trait ConductChain {
         sender
             .send_test_only(vec![(
                 (get_base_address!(recipient, "unified")).as_str(),
-                value as u64,
+                value,
                 None,
             )])
             .await
@@ -52,7 +52,7 @@ pub trait ConductChain {
     //     let chain = Self::setup().await;
 
     //     let starter = chain
-    //         .fund_client(value + 2 * (MARGINAL_FEE.into_u64() as u64))
+    //         .fund_client(value + 2 * (MARGINAL_FEE.into_u64()))
     //         .await;
 
     //     (starter, chain);
@@ -107,7 +107,7 @@ where
                 pools: OutputPoolQuery::one_pool(pooltype),
             })
             .await,
-        send_value as u64
+        send_value
     );
 }
 
@@ -121,7 +121,7 @@ where
     dbg!("chain set up, funding client now");
 
     let sender = environment
-        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64() as u64))
+        .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64()))
         .await;
 
     dbg!("client is ready to send");
@@ -135,11 +135,7 @@ where
     dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
     sender
-        .send_test_only(vec![(
-            dbg!(recipient_address).as_str(),
-            send_value as u64,
-            None,
-        )])
+        .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
         .await
         .unwrap();
 
@@ -158,6 +154,6 @@ where
                 pools: OutputPoolQuery::one_pool(pooltype),
             })
             .await,
-        send_value as u64
+        send_value
     );
 }
