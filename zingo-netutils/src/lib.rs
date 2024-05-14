@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use tower::ServiceExt;
 
-use http::Uri;
+use http::{uri::PathAndQuery, Uri};
 use http_body::combinators::UnsyncBoxBody;
 use hyper::client::HttpConnector;
 use thiserror::Error;
@@ -70,10 +70,6 @@ impl GrpcConnector {
                 .authority()
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
-            let path_and_query = uri
-                .path_and_query()
-                .ok_or(GetClientError::InvalidPathAndQuery)?
-                .clone();
             if uri.scheme_str() == Some("https") {
                 let mut roots = RootCertStore::empty();
                 roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
@@ -107,18 +103,23 @@ impl GrpcConnector {
                 let client = Box::new(hyper::Client::builder().build(connector));
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
+                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
+                        let path_and_query = request
+                            .uri()
+                            .path_and_query()
+                            .cloned()
+                            .unwrap_or(PathAndQuery::from_static("/"));
                         let uri = Uri::builder()
                             .scheme(scheme.clone())
                             .authority(authority.clone())
                             //here. The Request's uri contains the path to the GRPC sever and
                             //the method being called
-                            .path_and_query(path_and_query.clone())
+                            .path_and_query(path_and_query)
                             .build()
                             .unwrap();
 
-                        *req.uri_mut() = uri;
-                        req
+                        *request.uri_mut() = uri;
+                        request
                     })
                     .service(client);
 
@@ -128,18 +129,23 @@ impl GrpcConnector {
                 let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
+                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
+                        let path_and_query = request
+                            .uri()
+                            .path_and_query()
+                            .cloned()
+                            .unwrap_or(PathAndQuery::from_static("/"));
                         let uri = Uri::builder()
                             .scheme(scheme.clone())
                             .authority(authority.clone())
                             //here. The Request's uri contains the path to the GRPC sever and
                             //the method being called
-                            .path_and_query(path_and_query.clone())
+                            .path_and_query(path_and_query)
                             .build()
                             .unwrap();
 
-                        *req.uri_mut() = uri;
-                        req
+                        *request.uri_mut() = uri;
+                        request
                     })
                     .service(client);
 
