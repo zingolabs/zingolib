@@ -370,9 +370,13 @@ impl LightWallet {
             ));
         };
         let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees(
+                wc.transparent_child_addresses().clone(),
+            )))
         } else {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless(
+                wc.transparent_child_addresses().clone(),
+            )))
         };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
