@@ -180,7 +180,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -217,7 +217,7 @@ checksum = "16e62a023e7c117e27523144c5d2459f4397fcc3cab0085af8e2224f643a0193"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -228,7 +228,7 @@ checksum = "c6fa2087f2753a7da8cc1c0dbfcf89579dd57458e36769de5ac750b4671737ca"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -536,7 +536,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 
 [[package]]
 name = "bumpalo"
@@ -698,7 +698,7 @@ dependencies = [
  "heck 0.5.0",
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -803,7 +803,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "bech32 0.11.0",
  "env_logger 0.11.3",
@@ -812,11 +812,12 @@ dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
- "itertools",
+ "itertools 0.10.5",
  "json",
  "log",
  "orchard",
  "portpicker",
+ "proptest",
  "prost",
  "rand 0.8.5",
  "sapling-crypto",
@@ -992,7 +993,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -1017,7 +1018,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1166,7 +1167,7 @@ checksum = "87750cf4b7a4c0625b1529e4c543c2182106e4dedc60a2a6455e00d212c489ac"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -1729,6 +1730,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2106,7 +2116,7 @@ checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -2285,7 +2295,7 @@ checksum = "2f38a4412a78282e09a2cf38d195ea5420d15ba0602cb375210efbc877243965"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -2351,7 +2361,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f12335488a2f3b0a83b14edad48dca9879ce89b2edd10e80237e4e852dd645e"
 dependencies = [
  "proc-macro2",
- "syn 2.0.61",
+ "syn 2.0.63",
+]
+
+[[package]]
+name = "proc-macro-error"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
+dependencies = [
+ "proc-macro-error-attr",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "version_check",
+]
+
+[[package]]
+name = "proc-macro-error-attr"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "version_check",
 ]
 
 [[package]]
@@ -2400,7 +2434,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes 1.6.0",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.12.1",
  "log",
  "multimap",
@@ -2410,7 +2444,7 @@ dependencies = [
  "prost",
  "prost-types",
  "regex",
- "syn 2.0.61",
+ "syn 2.0.63",
  "tempfile",
 ]
 
@@ -2421,10 +2455,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9554e3ab233f0a932403704f1a1d08c30d5ccd931adfdfa1e8b5a19b52c1d55a"
 dependencies = [
  "anyhow",
- "itertools",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -2792,7 +2826,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rust-embed-utils",
- "syn 2.0.61",
+ "syn 2.0.63",
  "walkdir",
 ]
 
@@ -2832,22 +2866,6 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "rustlib"
-version = "1.0.1"
-dependencies = [
- "android_logger",
- "base64 0.22.1",
- "http",
- "lazy_static",
- "log",
- "tokio",
- "uniffi",
- "uniffi_build",
- "zingoconfig",
- "zingolib",
 ]
 
 [[package]]
@@ -2907,9 +2925,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.5.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "beb461507cee2c2ff151784c52762cf4d9ff6a61f3e80968600ed24fa837fa54"
+checksum = "976295e77ce332211c0d24d92c0e83e50f5c5f046d11082cea19f3df13a3562d"
 
 [[package]]
 name = "rustls-webpki"
@@ -3018,7 +3036,7 @@ checksum = "7f81c2fde025af7e69b1d1420531c8a8811ca898919db177141a85313b1cb932"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3117,7 +3135,7 @@ checksum = "c5e405930b9796f1c00bee880d03fc7e0bb4b9a11afc776885ffe84320da2865"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3139,7 +3157,7 @@ checksum = "6c64451ba24fc7a6a2d60fc75dd9c83c90903b19028d4eff35e88fc1e86564e9"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3333,9 +3351,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.61"
+version = "2.0.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c993ed8ccba56ae856363b1845da7266a7cb78e1d146c8a32d54b45a8b831fc9"
+checksum = "bf5be731623ca1a1fb7d8be6f261a3be6d3e2337b8a1f97be944d020c8fcb704"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3424,7 +3442,7 @@ dependencies = [
  "cfg-if",
  "proc-macro2",
  "quote",
- "syn 2.0.60",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3435,7 +3453,7 @@ checksum = "5c89e72a01ed4c579669add59014b9a524d609c0c88c6a585ce37485879f6ffb"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.60",
+ "syn 2.0.63",
  "test-case-core",
 ]
 
@@ -3467,7 +3485,7 @@ checksum = "e2470041c06ec3ac1ab38d0356a6119054dedaea53e12fbefc0de730a1c08524"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3573,7 +3591,7 @@ checksum = "5b8a1e28f2deaa14e508979454cb3a223b10b938b45af148bc0986de36f1923b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3682,7 +3700,7 @@ dependencies = [
  "proc-macro2",
  "prost-build",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3755,7 +3773,7 @@ checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3958,7 +3976,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae7e5a6c33b1dec3f255f57ec0b6af0f0b2bb3021868be1d5eec7a38e2905ebc"
 dependencies = [
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
 ]
 
 [[package]]
@@ -3990,7 +4008,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "syn 2.0.61",
+ "syn 2.0.63",
  "toml",
  "uniffi_meta",
 ]
@@ -4160,7 +4178,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
  "wasm-bindgen-shared",
 ]
 
@@ -4194,7 +4212,7 @@ checksum = "e94f17b526d0a461a191c78ea52bbce64071ed5c04c9ffe424dcb38f74171bb7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -4478,7 +4496,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "bech32 0.9.1",
  "bs58",
@@ -4490,7 +4508,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "base64 0.21.7",
  "bech32 0.9.1",
@@ -4532,7 +4550,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4541,7 +4559,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "bech32 0.9.1",
  "blake2b_simd",
@@ -4582,7 +4600,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "aes",
  "bip0039",
@@ -4620,7 +4638,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4642,7 +4660,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?rev=84469ad71a3f389aaf839e2d4c40e612fa8b64a0#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
 dependencies = [
  "document-features",
  "memuse",
@@ -4674,13 +4692,29 @@ checksum = "ce36e65b0d2999d2aafac989fb249189a141aee1f53c612c1f37d72631959f69"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 2.0.63",
+]
+
+[[package]]
+name = "zingo"
+version = "1.0.1"
+dependencies = [
+ "android_logger",
+ "base64 0.22.1",
+ "http 0.2.12",
+ "lazy_static",
+ "log",
+ "tokio",
+ "uniffi",
+ "uniffi_build",
+ "zingoconfig",
+ "zingolib",
 ]
 
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4693,7 +4727,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
@@ -4711,7 +4745,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "serde_json",
  "zcash_primitives",
@@ -4720,7 +4754,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "futures",
  "http 0.2.12",
@@ -4747,7 +4781,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "zcash_primitives",
  "zingoconfig",
@@ -4756,7 +4790,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "dirs",
  "http 0.2.12",
@@ -4770,7 +4804,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/fluidvanadium/zingolib?branch=send_proposed_transactions#7f66447da0768dd6c1de04260d19d327808b5a51"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#0fe7bad3c964213bddd334c7c046af7d1cda32dd"
 dependencies = [
  "append-only-vec",
  "base58",
