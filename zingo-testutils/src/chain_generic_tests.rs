@@ -72,11 +72,11 @@ pub mod fixtures {
     use crate::chain_generic_tests::conduct_chain::ConductChain;
 
     /// runs a send-to-receiver and receives it in a chain-generic context
-    pub async fn propose_and_broadcast_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
+    pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
     where
-        TE: ConductChain,
+        CC: ConductChain,
     {
-        let mut environment = TE::setup().await;
+        let mut environment = CC::setup().await;
 
         println!("chain set up, funding client now");
 
@@ -130,12 +130,23 @@ pub mod fixtures {
         );
     }
 
-    /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
-    pub async fn send_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
+    /// sends back and forth several times, including sends to transparent
+    pub async fn send_shield_cycle<CC>(n: u64)
     where
-        TE: ConductChain,
+        CC: ConductChain,
     {
-        let mut environment = TE::setup().await;
+        let mut environment = CC::setup().await;
+        let primary = environment
+            .fund_client(1_000_000 + (n + 6) * MARGINAL_FEE.into_u64())
+            .await;
+    }
+
+    /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
+    pub async fn send_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
 
         dbg!("chain set up, funding client now");
 
