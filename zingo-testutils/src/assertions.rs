@@ -26,25 +26,17 @@ pub async fn assert_client_matches_proposal<NoteId>(
         .get(txid)
         .expect("sender must recognize txid");
 
-    let status = transaction_record.status;
-
     //multi-step proposals are not yet supported
     assert_eq!(proposal.steps().len(), 1);
     let step: &Step<NoteId> = proposal.steps().first();
     for (_, payment) in step.transaction_request().payments().into_iter() {
-        // assert_client_matches_payment(client, payment, status);
+        // if wallet_includes_address(payment.recipient_address) {}
     }
 
-    step.transparent_inputs();
-    step.shielded_inputs();
-    step.balance();
-}
+    for transparent_input in step.transparent_inputs() {}
+    if let Some(shielded_inputs) = step.shielded_inputs() {
+        for shielded_input in shielded_inputs.notes() {}
+    }
 
-/// checks that a client has recorded a payment, given a certain status
-pub async fn assert_client_matches_payment<NoteId>(
-    client: &LightClient,
-    payment: Payment,
-    // status: ConfirmationStatus,
-) {
-    // if client.includes_address(payment.address()
+    step.balance();
 }
