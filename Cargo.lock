@@ -4483,7 +4483,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tonic-build",
  "tower",
  "tower-http",
  "tracing",
