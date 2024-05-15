@@ -72,6 +72,7 @@ getset = "0.1.2"
 test-case = "3.3.1"
 proptest = "1.4.0"
 thiserror = { workspace = true }
+hdwallet = "0.4.1"
 
 [dev-dependencies]
 portpicker = "0.1.0"
