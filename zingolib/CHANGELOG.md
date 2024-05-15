@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys::is_shielded_address` takes a `&ChainType` instead of a `&ZingoConfig`
 - `wallet::transaction_record_map::TransactionRecordMap` -> `wallet::transaction_records_by_id::TransactionRecordsById`
 - `commands`:
-  - `get_commands` added propose and quicksend to entries behind "zip317" feature
+  - `get_commands` added sendall, quicksend and quickshield to entries behind "zip317" feature
   - `SendCommand::help` formatting
 - `lightclient::LightClient`:
   - `do_send` inputs from `Vec<(&str, u64, Option<MemoBytes>)>` to `Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>`
