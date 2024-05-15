@@ -25,7 +25,6 @@ hyper = { workspace = true }
 hyper-rustls = { workspace = true }
 prost = { workspace = true }
 tonic = { workspace = true }
-tower = { workspace = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
