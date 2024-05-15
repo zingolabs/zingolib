@@ -133,7 +133,7 @@ mod fast {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "transparent"),
                 100_000,
                 None,
@@ -145,7 +145,7 @@ mod fast {
             .unwrap();
         let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
         recipient
-            .shield_test_only(&[Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Transparent], None)
             .await
             .unwrap();
         let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
@@ -174,7 +174,7 @@ mod fast {
         );
         assert_eq!(
         recipient
-            .send_test_only
+            .send_test_from_send_inputs
             (vec![(&get_base_address!(faucet, "unified"), 100_000, None)])
             .await
             .unwrap_err(),
@@ -297,7 +297,7 @@ mod fast {
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "unified").as_str(),
                 5_000,
                 Some("this note never makes it to the wallet! or chain"),
@@ -365,7 +365,7 @@ mod fast {
             .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
             .collect::<Vec<(&str, u64, Option<&str>)>>();
         faucet
-            .send_test_only(address_5000_nonememo_tuples)
+            .send_test_from_send_inputs(address_5000_nonememo_tuples)
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
@@ -639,7 +639,7 @@ mod fast {
             .await
             .unwrap();
         faucet
-            .shield_test_only(&[Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Transparent], None)
             .await
             .unwrap();
     }
@@ -691,7 +691,7 @@ mod slow {
 
         let sent_value = 0;
         let _sent_transaction_id = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 sent_value,
                 None,
@@ -703,7 +703,7 @@ mod slow {
             .await
             .unwrap();
         let _sent_transaction_id = recipient
-            .send_test_only(vec![(&get_base_address!(faucet, "unified"), 1000, None)])
+            .send_test_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 1000, None)])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
@@ -729,7 +729,7 @@ mod slow {
 
         let sent_value = value - u64::from(MINIMUM_FEE);
         let sent_transaction_id = recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 sent_value,
                 None,
@@ -775,7 +775,7 @@ mod slow {
         let faucet_ua = get_base_address!(faucet, "unified");
 
         let _sent_transaction_id = recipient
-            .send_test_only(vec![(&faucet_ua, sent_value, Some(outgoing_memo))])
+            .send_test_from_send_inputs(vec![(&faucet_ua, sent_value, Some(outgoing_memo))])
             .await
             .unwrap();
 
@@ -956,7 +956,7 @@ mod slow {
 
         // Interrupt generating send
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 10_000,
                 Some("Interrupting sync!!"),
@@ -1009,7 +1009,10 @@ mod slow {
             .await
             .unwrap();
         // 2. send a transaction containing all types of outputs
-        faucet.send_test_only(addr_amount_memos).await.unwrap();
+        faucet
+            .send_test_from_send_inputs(addr_amount_memos)
+            .await
+            .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(
             &regtest_manager,
             &original_recipient,
@@ -1072,7 +1075,7 @@ mod slow {
             watch_client.do_rescan().await.unwrap();
             assert_eq!(
                 watch_client
-                    .send_test_only(vec![(testvectors::EXT_TADDR, 1000, None)])
+                    .send_test_from_send_inputs(vec![(testvectors::EXT_TADDR, 1000, None)])
                     .await,
                 Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
             );
@@ -1088,7 +1091,7 @@ mod slow {
         let value = 100_000;
 
         faucet
-            .send_test_only(vec![(taddr.as_str(), value, None)])
+            .send_test_from_send_inputs(vec![(taddr.as_str(), value, None)])
             .await
             .unwrap();
 
@@ -1106,7 +1109,7 @@ mod slow {
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
         let sent_transaction_error = recipient
-            .send_test_only(vec![(testvectors::EXT_TADDR, sent_value, None)])
+            .send_test_from_send_inputs(vec![(testvectors::EXT_TADDR, sent_value, None)])
             .await
             .unwrap_err();
         assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.");
@@ -1118,7 +1121,7 @@ mod slow {
 
         let sapling_dust = 100;
         let _sent_transaction_id = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 sapling_dust,
                 None,
@@ -1135,7 +1138,9 @@ mod slow {
         );
 
         assert_eq!(
-            recipient.shield_test_only(&[Pool::Sapling], None).await,
+            recipient
+                .shield_from_shield_inputs(&[Pool::Sapling], None)
+                .await,
             Err(
                 "Not enough transparent/sapling balance to shield. Have 100 zats, \
         need more than 10000 zats to cover tx fee"
@@ -1146,7 +1151,7 @@ mod slow {
         let sapling_enough_for_fee = 10_100;
         faucet.do_sync(false).await.unwrap();
         let _sent_transaction_id = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 sapling_enough_for_fee,
                 None,
@@ -1158,7 +1163,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .shield_test_only(&[Pool::Sapling, Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Sapling, Pool::Transparent], None)
             .await
             .unwrap();
 
@@ -1166,7 +1171,7 @@ mod slow {
         // already in the shielding wallet
         faucet.do_sync(false).await.unwrap();
         let _sent_transaction_id = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 sapling_enough_for_fee,
                 None,
@@ -1178,7 +1183,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .shield_test_only(&[Pool::Sapling, Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Sapling, Pool::Transparent], None)
             .await
             .unwrap();
 
@@ -1197,7 +1202,7 @@ mod slow {
             .unwrap();
         check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         faucet
-            .shield_test_only(&[Pool::Sapling], None)
+            .shield_from_shield_inputs(&[Pool::Sapling], None)
             .await
             .unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
@@ -1211,7 +1216,7 @@ mod slow {
         let (ref regtest_manager, _cph, faucet, ref recipient) =
             scenarios::faucet_recipient_default().await;
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 transparent_funding,
                 None,
@@ -1222,7 +1227,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .shield_test_only(&[Pool::Sapling, Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Sapling, Pool::Transparent], None)
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
@@ -1272,7 +1277,11 @@ mod slow {
         let recipient_unified_address = get_base_address!(recipient, "unified");
         let sent_value = 50_000;
         faucet
-            .send_test_only(vec![(recipient_unified_address.as_str(), sent_value, None)])
+            .send_test_from_send_inputs(vec![(
+                recipient_unified_address.as_str(),
+                sent_value,
+                None,
+            )])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
@@ -1368,7 +1377,7 @@ mod slow {
     ).unwrap();
 
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "sapling"),
                 first_send_to_sapling,
                 None,
@@ -1379,7 +1388,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "transparent"),
                 first_send_to_transparent,
                 None,
@@ -1419,7 +1428,7 @@ mod slow {
 
         faucet.do_sync(false).await.unwrap();
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 recipient_second_wave,
                 Some("Second wave incoming"),
@@ -1430,7 +1439,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "transparent"),
                 second_send_to_transparent,
                 None,
@@ -1438,7 +1447,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "sapling"),
                 second_send_to_sapling,
                 None,
@@ -1450,7 +1459,7 @@ mod slow {
             .unwrap();
 
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "transparent"),
                 third_send_to_transparent,
                 None,
@@ -1608,7 +1617,7 @@ mod slow {
 
         // post transfer to recipient, and verify
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 faucet_to_recipient_amount,
                 Some("Orcharding"),
@@ -1637,7 +1646,7 @@ mod slow {
 
         // post half back to faucet, and verify
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 recipient_to_faucet_amount,
                 Some("Sending back"),
@@ -1672,7 +1681,7 @@ mod slow {
             scenarios::faucet(Pool::Sapling, regtest_network).await;
         let amount_to_send = 5_000;
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(faucet, "unified").as_str(),
                 amount_to_send,
                 Some("Scenario test: engage!"),
@@ -1701,7 +1710,7 @@ mod slow {
             .unwrap();
         check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 3_499_990_000u64,
                 None,
@@ -1742,7 +1751,11 @@ mod slow {
         let recipient_unified_address = get_base_address!(recipient, "unified");
         let sent_value = 50_000;
         faucet
-            .send_test_only(vec![(recipient_unified_address.as_str(), sent_value, None)])
+            .send_test_from_send_inputs(vec![(
+                recipient_unified_address.as_str(),
+                sent_value,
+                None,
+            )])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
@@ -1754,14 +1767,14 @@ mod slow {
         let sent_to_zaddr_value = 11_000;
         let sent_to_self_orchard_value = 1_000;
         recipient
-            .send_test_only(vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)])
+            .send_test_from_send_inputs(vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         recipient
-            .send_test_only(vec![
+            .send_test_from_send_inputs(vec![
                 (recipient_taddr.as_str(), sent_to_taddr_value, None),
                 (recipient_zaddr.as_str(), sent_to_zaddr_value, Some("foo")),
                 (
@@ -1774,7 +1787,7 @@ mod slow {
             .unwrap();
         faucet.do_sync(false).await.unwrap();
         faucet
-            .send_test_only(vec![
+            .send_test_from_send_inputs(vec![
                 (recipient_taddr.as_str(), sent_to_taddr_value, None),
                 (recipient_zaddr.as_str(), sent_to_zaddr_value, Some("foo2")),
                 (
@@ -1844,7 +1857,7 @@ mod slow {
         // Construct transaction to wallet-external recipient-address.
         let exit_zaddr = get_base_address!(faucet, "sapling");
         let spent_txid = recipient
-            .send_test_only(vec![(&exit_zaddr, spent_value, None)])
+            .send_test_from_send_inputs(vec![(&exit_zaddr, spent_value, None)])
             .await
             .unwrap();
 
@@ -1878,7 +1891,7 @@ mod slow {
 
         // 2. Send an incoming transaction to fill the wallet
         let faucet_funding_txid = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 value,
                 None,
@@ -1932,7 +1945,7 @@ mod slow {
         let outgoing_memo = "Outgoing Memo";
 
         let sent_transaction_id = recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "sapling"),
                 sent_value,
                 Some(outgoing_memo),
@@ -2072,7 +2085,7 @@ mod slow {
         let for_orchard = dbg!(fee * 10);
         let for_sapling = dbg!(fee / 10);
         faucet
-            .send_test_only(vec![
+            .send_test_from_send_inputs(vec![
                 (&recipient_unified, for_orchard, Some("Plenty for orchard.")),
                 (&recipient_sapling, for_sapling, Some("Dust for sapling.")),
             ])
@@ -2084,7 +2097,7 @@ mod slow {
         check_client_balances!(recipient, o: for_orchard s: for_sapling t: 0 );
 
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 fee * 5,
                 Some("Five times fee."),
@@ -2119,14 +2132,14 @@ mod slow {
 
         println!("creating vec");
         faucet
-            .send_test_only(vec![(&get_base_address!(faucet, "unified"), 10, None); 15])
+            .send_test_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 10, None); 15])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
             .await
             .unwrap();
         recipient
-            .send_test_only(vec![(&get_base_address!(faucet, "unified"), 10, None)])
+            .send_test_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 10, None)])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
@@ -2165,7 +2178,7 @@ mod slow {
         let sapling_addr = get_base_address!(faucet, "sapling");
         for memo in [None, Some("foo")] {
             faucet
-                .send_test_only(vec![(
+                .send_test_from_send_inputs(vec![(
                     sapling_addr.as_str(),
                     {
                         let balance = faucet.do_balance().await;
@@ -2209,7 +2222,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "sapling").as_str(),
                 1_000,
                 Some("foo"),
@@ -2243,7 +2256,7 @@ mod slow {
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
         faucet
-            .send_test_only(
+            .send_test_from_send_inputs(
                 (1..=3)
                     .map(|n| {
                         (
@@ -2264,7 +2277,7 @@ mod slow {
         // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
         // plus the transaction fee.
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 30000,
                 Some("Sending back, should have 2 inputs"),
@@ -2341,7 +2354,7 @@ mod slow {
         let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
             scenarios::faucet_funded_recipient_default(inital_value).await;
         recipient
-            .send_test_only(vec![
+            .send_test_from_send_inputs(vec![
                 (&get_base_address!(faucet, "unified"), 10_000, None);
                 2
             ])
@@ -2467,7 +2480,7 @@ mod slow {
         let outgoing_memo = "Outgoing Memo";
 
         let sent_transaction_id = recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "sapling"),
                 sent_value,
                 Some(outgoing_memo),
@@ -2667,7 +2680,7 @@ mod slow {
         let outgoing_memo = "Outgoing Memo";
 
         let _sent_transaction_id = recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 sent_value,
                 Some(outgoing_memo),
@@ -2838,7 +2851,7 @@ mod slow {
         };
         assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
         recipient
-            .send_test_only(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
+            .send_test_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
             .await
             .unwrap();
     }
@@ -2883,7 +2896,7 @@ mod slow {
             );
             let recipient1_diversified_addr = recipient1.do_new_address("tz").await.unwrap();
             faucet
-                .send_test_only(vec![(
+                .send_test_from_send_inputs(vec![(
                     recipient1_diversified_addr[0].as_str().unwrap(),
                     14_000,
                     Some("foo"),
@@ -2950,7 +2963,11 @@ mod slow {
             //The first address in a wallet should always contain all three currently extant
             //receiver types.
             recipient_restored
-                .send_test_only(vec![(&get_base_address!(faucet, "sapling"), 4_000, None)])
+                .send_test_from_send_inputs(vec![(
+                    &get_base_address!(faucet, "sapling"),
+                    4_000,
+                    None,
+                )])
                 .await
                 .unwrap();
             let sender_balance = faucet.do_balance().await;
@@ -2993,40 +3010,40 @@ mod slow {
     }
 
         sapling_faucet
-            .send_test_only(vec![(&pmc_taddr, 50_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
         pool_migration_client
-            .shield_test_only(&[Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Transparent], None)
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 2 Test of a send from a sapling only client to its own unified address
         sapling_faucet
-            .send_test_only(vec![(&pmc_sapling, 50_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
         pool_migration_client
-            .shield_test_only(&[Pool::Sapling], None)
+            .shield_from_shield_inputs(&[Pool::Sapling], None)
             .await
             .unwrap();
         bump_and_check!(o: 80_000 s: 0 t: 0);
 
         // 3 Test of an orchard-only client to itself
         pool_migration_client
-            .send_test_only(vec![(&pmc_unified, 70_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_unified, 70_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 70_000 s: 0 t: 0);
 
         // 4 tz transparent and sapling to orchard
         pool_migration_client
-            .send_test_only(vec![
+            .send_test_from_send_inputs(vec![
                 (&pmc_taddr, 30_000, None),
                 (&pmc_sapling, 30_000, None),
             ])
@@ -3035,44 +3052,44 @@ mod slow {
         bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
         pool_migration_client
-            .shield_test_only(&[Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Transparent], None)
             .await
             .unwrap();
         pool_migration_client
-            .send_test_only(vec![(&pmc_unified, 20_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 5 to transparent and orchard to orchard
         pool_migration_client
-            .send_test_only(vec![(&pmc_taddr, 20_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_taddr, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
         pool_migration_client
-            .shield_test_only(&[Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Transparent], None)
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 0 t: 0);
 
         // 6 sapling and orchard to orchard
         sapling_faucet
-            .send_test_only(vec![(&pmc_sapling, 20_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_sapling, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 20_000 t: 0);
 
         pool_migration_client
-            .send_test_only(vec![(&pmc_unified, 30_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
 
         // 7 tzo --> o
         sapling_faucet
-            .send_test_only(vec![
+            .send_test_from_send_inputs(vec![
                 (&pmc_taddr, 20_000, None),
                 (&pmc_sapling, 20_000, None),
             ])
@@ -3081,24 +3098,24 @@ mod slow {
         bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
         pool_migration_client
-            .shield_test_only(&[Pool::Transparent], None)
+            .shield_from_shield_inputs(&[Pool::Transparent], None)
             .await
             .unwrap();
         pool_migration_client
-            .send_test_only(vec![(&pmc_unified, 40_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_unified, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 50_000 s: 0 t: 0);
 
         // Send from Sapling into empty Orchard pool
         pool_migration_client
-            .send_test_only(vec![(&pmc_sapling, 40_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_sapling, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 40_000 t: 0);
 
         pool_migration_client
-            .send_test_only(vec![(&pmc_unified, 30_000, None)])
+            .send_test_from_send_inputs(vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
@@ -3121,7 +3138,7 @@ mod slow {
             .await
             .unwrap();
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "transparent"),
                 1_000u64,
                 None,
@@ -3137,7 +3154,7 @@ mod slow {
         // Send of less that transaction fee
         let sent_value = 1000;
         let _sent_transaction_id = recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 sent_value,
                 None,
@@ -3161,7 +3178,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 100_000,
                 Some("funding to be received by the recipient"),
@@ -3188,7 +3205,7 @@ mod slow {
             }
         );
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 25_000,
                 Some("an unconfirmed transaction, that shall not be synced"),
@@ -3221,11 +3238,11 @@ mod slow {
             faucet.do_list_notes(true).await.pretty(4)
         );
         faucet
-            .send_test_only(vec![(&base_uaddress, 1_000u64, Some("1"))])
+            .send_test_from_send_inputs(vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
         faucet
-            .send_test_only(vec![(&base_uaddress, 1_000u64, Some("1"))])
+            .send_test_from_send_inputs(vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .expect(
                 "We only have sapling notes, plus a pending orchard note from the \
@@ -3237,7 +3254,7 @@ mod slow {
             "2".to_string()
         );
         faucet
-            .send_test_only(vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
+            .send_test_from_send_inputs(vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
             .await
             .unwrap();
         assert_eq!(
@@ -3258,7 +3275,7 @@ mod slow {
         let sent_zvalue = 80_000;
         let sent_zmemo = "Ext z";
         let sent_transaction_id = recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(faucet, "sapling"),
                 sent_zvalue,
                 Some(sent_zmemo),
@@ -3355,7 +3372,7 @@ mod slow {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(1_000_000).await;
         recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 100_000,
                 None,
@@ -3386,7 +3403,7 @@ mod slow {
         for i in 1..4 {
             let _ = faucet.do_sync(false).await;
             faucet
-                .send_test_only(vec![(
+                .send_test_from_send_inputs(vec![(
                     &get_base_address!(recipient, "sapling"),
                     10_100,
                     None,
@@ -3398,7 +3415,7 @@ mod slow {
             zingo_testutils::increase_server_height(&regtest_manager, chainwait).await;
             let _ = recipient.do_sync(false).await;
             recipient
-                .send_test_only(vec![(
+                .send_test_from_send_inputs(vec![(
                     &get_base_address!(recipient, "unified"),
                     amount,
                     None,
@@ -3521,12 +3538,16 @@ mod slow {
         assert_eq!(balance.orchard_balance, Some(expected_balance));
         if expected_balance > 0 {
             let _ = client
-                .send_test_only(vec![(&get_base_address!(client, "sapling"), 11011, None)])
+                .send_test_from_send_inputs(vec![(
+                    &get_base_address!(client, "sapling"),
+                    11011,
+                    None,
+                )])
                 .await
                 .unwrap();
             let _ = client.do_sync(true).await.unwrap();
             let _ = client
-                .send_test_only(vec![(
+                .send_test_from_send_inputs(vec![(
                     &get_base_address!(client, "transparent"),
                     28000,
                     None,
@@ -3610,7 +3631,7 @@ mod basic_transactions {
 
         for _ in 0..2 {
             faucet
-                .send_test_only(vec![(recipient_addr_ua.as_str(), 40_000, None)])
+                .send_test_from_send_inputs(vec![(recipient_addr_ua.as_str(), 40_000, None)])
                 .await
                 .unwrap();
         }
@@ -3623,7 +3644,7 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
 
         recipient
-            .send_test_only(vec![(faucet_addr_ua.as_str(), 50_000, None)])
+            .send_test_from_send_inputs(vec![(faucet_addr_ua.as_str(), 50_000, None)])
             .await
             .unwrap();
 
@@ -3641,7 +3662,7 @@ mod basic_transactions {
             scenarios::faucet_recipient_default().await;
 
         let txid1 = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "unified").as_str(),
                 40_000,
                 None,
@@ -3650,7 +3671,7 @@ mod basic_transactions {
             .unwrap();
 
         let txid2 = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "sapling").as_str(),
                 40_000,
                 None,
@@ -3659,7 +3680,7 @@ mod basic_transactions {
             .unwrap();
 
         let txid3 = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "transparent").as_str(),
                 40_000,
                 None,
@@ -3777,7 +3798,7 @@ mod basic_transactions {
         assert_eq!(calculated_fee_txid3, expected_fee_txid3 as u64);
 
         let txid4 = recipient
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(faucet, "transparent").as_str(),
                 60_000,
                 None,
@@ -3833,7 +3854,7 @@ mod basic_transactions {
             scenarios::faucet_recipient_default().await;
 
         let txid1 = faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "unified").as_str(),
                 0,
                 None,
@@ -3888,7 +3909,7 @@ mod basic_transactions {
             scenarios::faucet_recipient_default().await;
 
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "transparent").as_str(),
                 40_000,
                 None,
@@ -3904,7 +3925,7 @@ mod basic_transactions {
         recipient.do_sync(true).await.unwrap();
 
         let txid1 = recipient
-            .shield_test_only(
+            .shield_from_shield_inputs(
                 &[Pool::Transparent],
                 Some(&get_base_address!(recipient, "unified")),
             )
@@ -3948,7 +3969,7 @@ mod basic_transactions {
         assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
 
         faucet
-            .send_test_only(vec![(
+            .send_test_from_send_inputs(vec![(
                 get_base_address!(recipient, "transparent").as_str(),
                 40_000,
                 None,
@@ -3964,7 +3985,7 @@ mod basic_transactions {
         recipient.do_sync(true).await.unwrap();
 
         let txid2 = recipient
-            .shield_test_only(
+            .shield_from_shield_inputs(
                 &[Pool::Transparent],
                 Some(&get_base_address!(recipient, "sapling")),
             )
