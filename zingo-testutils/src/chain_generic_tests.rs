@@ -144,13 +144,14 @@ where
 
     let recipient = environment.create_client().await;
     let recipient_address = recipient.get_base_address(pooltype).await;
-    let request = recipient
-        .transaction_request_from_send_inputs(vec![(&recipient_address, send_value, None)])
+
+    dbg!("recipient ready");
+    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
+
+    sender
+        .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
+        .await
         .unwrap();
-
-    println!("recipient ready");
-
-    let _one_txid = sender.quick_send(request).await.unwrap();
 
     environment.bump_chain().await;
 
