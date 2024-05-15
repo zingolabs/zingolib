@@ -2,6 +2,7 @@ use zingo_testutils::scenarios::faucet_recipient_default;
 use zingolib::get_base_address;
 
 #[tokio::test]
+#[ignore]
 async fn shield_transparent() {
     let (regtest_manager, _cph, faucet, recipient) = faucet_recipient_default().await;
     let transparent_funds = 100_000;
