@@ -10,7 +10,7 @@ use zingolib::lightclient::LightClient;
 
 /// call this after calling complete_and_broadcast_proposalx
 /// and again after bumping the chain and syncing
-pub async fn assert_client_matches_proposal<NoteId>(
+pub async fn assert_sender_understands_proposal<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txid: &TxId,
