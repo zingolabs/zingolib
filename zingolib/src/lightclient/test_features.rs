@@ -1,7 +1,9 @@
+use nonempty::NonEmpty;
 use zcash_client_backend::{
     zip321::{TransactionRequest, Zip321Error},
     PoolType, ShieldedProtocol,
 };
+use zcash_primitives::transaction::TxId;
 
 use crate::{
     data::{proposal::TransferProposal, receivers::transaction_request_from_receivers},
@@ -10,7 +12,7 @@ use crate::{
     wallet::Pool,
 };
 
-use super::{propose::ProposeSendError, LightClient};
+use super::{propose::ProposeSendError, send::send_with_proposal::QuickSendError, LightClient};
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!
@@ -25,7 +27,7 @@ impl LightClient {
         .map_err(ZingoLibError::CantReadWallet)
     }
 
-    /// Test only lightclient method for calling `do_propose` with primitive rust types
+    /// Test only lightclient method for calling `propose_send` with primitive rust types
     ///
     /// # Panics
     ///
@@ -38,6 +40,21 @@ impl LightClient {
             .transaction_request_from_send_inputs(address_amount_memo_tuples)
             .expect("should be able to create a transaction request as receivers are valid.");
         self.propose_send(request).await
+    }
+
+    /// Test only lightclient method for calling `quick_send` with primitive rust types
+    ///
+    /// # Panics
+    ///
+    /// Panics if the address, amount or memo conversion fails.
+    pub async fn quick_send_test_only(
+        &self,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<NonEmpty<TxId>, QuickSendError> {
+        let request = self
+            .transaction_request_from_send_inputs(address_amount_memo_tuples)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        self.quick_send(request).await
     }
 
     /// Test only lightclient method for calling `do_send` with primitive rust types
