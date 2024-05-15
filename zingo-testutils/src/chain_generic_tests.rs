@@ -38,7 +38,7 @@ pub mod conduct_chain {
             sender.do_sync(false).await.unwrap();
 
             sender
-                .send_test_only(vec![(
+                .send_from_send_inputs(vec![(
                     (get_base_address!(recipient, "unified")).as_str(),
                     value,
                     None,
@@ -146,7 +146,7 @@ pub mod fixtures {
 
         for _ in 0..n {
             primary
-                .send_test_only(vec![(secondary_address.as_str(), 100_000, None)])
+                .send_from_send_inputs(vec![(secondary_address.as_str(), 100_000, None)])
                 .await
                 .unwrap();
             environment.bump_chain().await;
@@ -157,7 +157,7 @@ pub mod fixtures {
             secondary.do_sync(false).await.unwrap();
             dbg!(secondary.do_balance().await);
             secondary
-                .send_test_only(vec![(primary_address.as_str(), 50_000, None)])
+                .send_from_send_inputs(vec![(primary_address.as_str(), 50_000, None)])
                 .await
                 .unwrap();
             primary.do_sync(false).await.unwrap();
@@ -189,7 +189,7 @@ pub mod fixtures {
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
         sender
-            .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
+            .send_from_send_inputs(vec![(dbg!(recipient_address).as_str(), send_value, None)])
             .await
             .unwrap();
 
