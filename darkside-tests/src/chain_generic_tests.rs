@@ -6,7 +6,7 @@ use zcash_client_backend::PoolType::Transparent;
 use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
-use zingo_testutils::chain_generic_tests::send_value_to_pool;
+use zingo_testutils::chain_generic_tests::fixtures::send_value_to_pool;
 
 use crate::utils::scenarios::DarksideEnvironment;
 
@@ -38,7 +38,7 @@ pub(crate) mod impl_conduct_chain_for_darkside_environment {
     //!   - txids are regenerated randomly. zingo can optionally accept_server_txid
     //! these tests cannot portray the full range of network weather.
 
-    use zingo_testutils::chain_generic_tests::ConductChain;
+    use zingo_testutils::chain_generic_tests::conduct_chain::ConductChain;
     use zingolib::lightclient::LightClient;
     use zingolib::wallet::WalletBase;
 

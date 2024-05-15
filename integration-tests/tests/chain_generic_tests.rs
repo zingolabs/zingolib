@@ -3,9 +3,8 @@ use zcash_client_backend::PoolType::Transparent;
 use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
-use zingo_testutils::chain_generic_tests::{
-    propose_and_broadcast_value_to_pool, send_value_to_pool,
-};
+use zingo_testutils::chain_generic_tests::fixtures::propose_and_broadcast_value_to_pool;
+use zingo_testutils::chain_generic_tests::fixtures::send_value_to_pool;
 
 use libtonode_environment::LibtonodeEnvironment;
 
@@ -40,7 +39,7 @@ pub(crate) mod libtonode_environment {
 
     use zcash_client_backend::ShieldedProtocol::Sapling;
 
-    use zingo_testutils::chain_generic_tests::ConductChain;
+    use zingo_testutils::chain_generic_tests::conduct_chain::ConductChain;
     use zingo_testutils::scenarios::setup::ScenarioBuilder;
     use zingoconfig::RegtestNetwork;
     use zingolib::lightclient::LightClient;
