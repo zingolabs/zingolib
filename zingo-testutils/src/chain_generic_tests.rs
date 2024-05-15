@@ -38,7 +38,7 @@ pub mod conduct_chain {
             sender.do_sync(false).await.unwrap();
 
             sender
-                .send_test_only(vec![(
+                .send_from_send_inputs(vec![(
                     (get_base_address!(recipient, "unified")).as_str(),
                     value,
                     None,
@@ -72,11 +72,11 @@ pub mod fixtures {
     use crate::chain_generic_tests::conduct_chain::ConductChain;
 
     /// runs a send-to-receiver and receives it in a chain-generic context
-    pub async fn propose_and_broadcast_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
+    pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
     where
-        TE: ConductChain,
+        CC: ConductChain,
     {
-        let mut environment = TE::setup().await;
+        let mut environment = CC::setup().await;
 
         println!("chain set up, funding client now");
 
@@ -130,12 +130,47 @@ pub mod fixtures {
         );
     }
 
-    /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
-    pub async fn send_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
+    /// sends back and forth several times, including sends to transparent
+    pub async fn send_shield_cycle<CC>(n: u64)
     where
-        TE: ConductChain,
+        CC: ConductChain,
     {
-        let mut environment = TE::setup().await;
+        let mut environment = CC::setup().await;
+        let primary = environment
+            .fund_client(1_000_000 + (n + 6) * MARGINAL_FEE.into_u64())
+            .await;
+        let primary_address = primary.get_base_address(Shielded(Orchard)).await;
+
+        let secondary = environment.create_client().await;
+        let secondary_address = secondary.get_base_address(Transparent).await;
+
+        for _ in 0..n {
+            primary
+                .send_from_send_inputs(vec![(secondary_address.as_str(), 100_000, None)])
+                .await
+                .unwrap();
+            environment.bump_chain().await;
+            secondary.do_sync(false).await.unwrap();
+            dbg!(secondary.do_balance().await);
+            secondary.quick_shield().await.unwrap();
+            environment.bump_chain().await;
+            secondary.do_sync(false).await.unwrap();
+            dbg!(secondary.do_balance().await);
+            secondary
+                .send_from_send_inputs(vec![(primary_address.as_str(), 50_000, None)])
+                .await
+                .unwrap();
+            primary.do_sync(false).await.unwrap();
+            dbg!(primary.do_balance().await);
+        }
+    }
+
+    /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
+    pub async fn send_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
 
         dbg!("chain set up, funding client now");
 
@@ -154,7 +189,7 @@ pub mod fixtures {
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
         sender
-            .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
+            .send_from_send_inputs(vec![(dbg!(recipient_address).as_str(), send_value, None)])
             .await
             .unwrap();
 
