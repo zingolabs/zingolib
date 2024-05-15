@@ -62,7 +62,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub async fn send_test_from_send_inputs(
+    pub async fn send_from_send_inputs(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
