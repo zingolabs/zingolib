@@ -38,7 +38,7 @@ pub trait ConductChain {
 
         let recipient_address = recipient.get_base_address(Shielded(Orchard)).await;
         let request = recipient
-            .raw_to_transaction_request(vec![(recipient_address, value, None)])
+            .transaction_request_from_send_inputs(vec![(&recipient_address, value, None)])
             .unwrap();
         let _one_txid = sender.quick_send(request).await.unwrap();
 
@@ -145,7 +145,7 @@ where
     let recipient = environment.create_client().await;
     let recipient_address = recipient.get_base_address(pooltype).await;
     let request = recipient
-        .raw_to_transaction_request(vec![(dbg!(recipient_address), send_value, None)])
+        .transaction_request_from_send_inputs(vec![(&recipient_address, send_value, None)])
         .unwrap();
 
     println!("recipient ready");
