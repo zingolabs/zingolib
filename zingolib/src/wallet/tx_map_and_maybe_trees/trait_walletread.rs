@@ -287,6 +287,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         unimplemented!()
     }
 
+    /// Our receivers are all externally scoped, which will need to be reevaluated for zip320
     fn get_transparent_receivers(
         &self,
         _account: Self::AccountId,
