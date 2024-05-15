@@ -38,13 +38,13 @@ impl OutputSpendStatusQuery {
 pub struct OutputPoolQuery {
     /// will the query include transparent notes? (coins)
     #[getset(get = "pub")]
-    transparent: bool,
+    pub transparent: bool,
     /// will the query include sapling notes?
     #[getset(get = "pub")]
-    sapling: bool,
+    pub sapling: bool,
     /// will the query include orchard notes?
     #[getset(get = "pub")]
-    orchard: bool,
+    pub orchard: bool,
 }
 impl OutputPoolQuery {
     /// a query that accepts notes from any pool.
