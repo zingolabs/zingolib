@@ -69,6 +69,7 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
+    use crate::assertions::assert_client_matches_proposal;
     use crate::chain_generic_tests::conduct_chain::ConductChain;
 
     /// runs a send-to-receiver and receives it in a chain-generic context
@@ -111,7 +112,11 @@ pub mod fixtures {
             .await
             .unwrap();
 
+        assert_client_matches_proposal(&sender, &proposal, one_txid.first()).await;
+
         environment.bump_chain().await;
+
+        assert_client_matches_proposal(&sender, &proposal, one_txid.first()).await;
 
         recipient.do_sync(false).await.unwrap();
 
