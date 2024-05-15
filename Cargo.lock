@@ -276,12 +276,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
 
 [[package]]
-name = "bech32"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
-
-[[package]]
 name = "bellman"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -663,34 +657,23 @@ dependencies = [
 name = "darkside-tests"
 version = "0.1.0"
 dependencies = [
- "bech32 0.11.0",
- "env_logger",
  "futures-util",
  "hex",
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
- "itertools 0.10.5",
  "json",
- "log",
  "orchard",
  "portpicker",
  "proptest",
  "prost",
- "rand 0.8.5",
  "sapling-crypto",
  "serde_json",
- "shardtree",
  "tempdir",
  "tokio",
  "tonic",
  "tonic-build",
  "tower",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "tracing-test",
- "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
  "zingo-testutils",
@@ -809,15 +792,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ed25519"
-version = "1.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91cff35c70bba8a626e3185d8cd48cc11b5437e1a5bcd15b9b5fa3c64b6dfee7"
-dependencies = [
- "signature",
-]
-
-[[package]]
 name = "either"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -837,29 +811,6 @@ name = "endian-type"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
-
-[[package]]
-name = "env_filter"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a009aa4810eb158359dda09d0c87378e4bbb89b5a801f016885a4707ba24f7ea"
-dependencies = [
- "log",
- "regex",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38b35839ba51819680ba087cd351788c9a3c476841207e0b8cee0b04722343b9"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "humantime",
- "log",
-]
 
 [[package]]
 name = "equihash"
@@ -1330,12 +1281,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "http-range-header"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "add0ab9360ddbd88cfeb3bd9574a1d85cfdfa14db10b3e21d3700dbc4328758f"
-
-[[package]]
 name = "httparse"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1676,18 +1621,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libsodium-sys"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b779387cd56adfbc02ea4a668e704f729be8d6a6abd2c27ca5ee537849a92fd"
-dependencies = [
- "cc",
- "libc",
- "pkg-config",
- "walkdir",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1750,15 +1683,6 @@ dependencies = [
  "thread-id",
  "typemap-ors",
  "winapi",
-]
-
-[[package]]
-name = "matchers"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
-dependencies = [
- "regex-automata 0.1.10",
 ]
 
 [[package]]
@@ -2266,7 +2190,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha",
  "rand_xorshift",
- "regex-syntax 0.8.3",
+ "regex-syntax",
  "rusty-fork",
  "tempfile",
  "unarray",
@@ -2511,17 +2435,8 @@ checksum = "c117dbdfde9c8308975b6a18d71f3f385c89461f7b3fb054288ecf2a2058ba4c"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.6",
- "regex-syntax 0.8.3",
-]
-
-[[package]]
-name = "regex-automata"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
-dependencies = [
- "regex-syntax 0.6.29",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -2532,14 +2447,8 @@ checksum = "86b83b8b9847f9bf95ef68afb0b8e6cdb80f498442f5179a29fad448fcc1eaea"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.8.3",
+ "regex-syntax",
 ]
-
-[[package]]
-name = "regex-syntax"
-version = "0.6.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
@@ -3081,12 +2990,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "signature"
-version = "1.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74233d3b3b2f6d4b006dc19dee745e73e2a6bfb6f93607cd3b02bd5b00797d7c"
-
-[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3109,18 +3012,6 @@ checksum = "ce305eb0b4296696835b71df73eb912e0f1ffd2556a501fcede6e0c50349191c"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "sodiumoxide"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e26be3acb6c2d9a7aac28482586a7856436af4cfe7100031d219de2d2ecb0028"
-dependencies = [
- "ed25519",
- "libc",
- "libsodium-sys",
- "serde",
 ]
 
 [[package]]
@@ -3504,24 +3395,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tower-http"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aba3f3efabf7fb41fae8534fc20a817013dd1c12cb45441efb6c82e6556b4cd8"
-dependencies = [
- "bitflags 1.3.2",
- "bytes 1.6.0",
- "futures-core",
- "futures-util",
- "http 0.2.12",
- "http-body 0.4.6",
- "http-range-header",
- "pin-project-lite",
- "tower-layer",
- "tower-service",
-]
-
-[[package]]
 name = "tower-layer"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3583,39 +3456,12 @@ version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad0f048c97dbd9faa9b7df56362b8ebcaa52adb06b498c050d2f4e32f90a7a8b"
 dependencies = [
- "matchers",
  "nu-ansi-term",
- "once_cell",
- "regex",
  "sharded-slab",
  "smallvec",
  "thread_local",
- "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "tracing-test"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a2c0ff408fe918a94c428a3f2ad04e4afd5c95bbc08fcf868eff750c15728a4"
-dependencies = [
- "lazy_static",
- "tracing-core",
- "tracing-subscriber",
- "tracing-test-macro",
-]
-
-[[package]]
-name = "tracing-test-macro"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "258bc1c4f8e2e73a977812ab339d503e6feeb92700f6d07a6de4d321522d5c08"
-dependencies = [
- "lazy_static",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -4128,7 +3974,7 @@ name = "zcash_address"
 version = "0.3.2"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=custom_notusk_to_taddr-1-g239c894b#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
- "bech32 0.9.1",
+ "bech32",
  "bs58",
  "f4jumble",
  "zcash_encoding",
@@ -4141,7 +3987,7 @@ version = "0.12.1"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=custom_notusk_to_taddr-1-g239c894b#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "base64 0.21.7",
- "bech32 0.9.1",
+ "bech32",
  "bls12_381",
  "bs58",
  "byteorder",
@@ -4191,7 +4037,7 @@ name = "zcash_keys"
 version = "0.2.0"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=custom_notusk_to_taddr-1-g239c894b#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
- "bech32 0.9.1",
+ "bech32",
  "blake2b_simd",
  "bls12_381",
  "bs58",
@@ -4330,18 +4176,11 @@ name = "zingo-cli"
 version = "0.2.0"
 dependencies = [
  "clap",
- "futures",
  "http 0.2.12",
- "hyper-rustls",
  "json",
  "log",
- "rustls-pemfile 1.0.4",
  "rustyline",
  "shellwords",
- "tokio",
- "tokio-rustls 0.23.4",
- "tokio-stream",
- "webpki-roots 0.25.4",
  "zingo-testutils",
  "zingoconfig",
  "zingolib",
@@ -4355,7 +4194,6 @@ dependencies = [
  "zcash_client_backend",
  "zcash_encoding",
  "zcash_keys",
- "zcash_note_encryption",
  "zcash_primitives",
 ]
 
@@ -4381,7 +4219,6 @@ dependencies = [
 name = "zingo-status"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "zcash_primitives",
 ]
 
@@ -4389,20 +4226,15 @@ dependencies = [
 name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
- "futures",
  "http 0.2.12",
  "incrementalmerkletree",
  "json",
  "log",
  "orchard",
  "portpicker",
- "serde",
- "serde_json",
  "tempdir",
  "tokio",
  "tonic",
- "tonic-build",
- "tracing",
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
@@ -4428,7 +4260,6 @@ dependencies = [
  "log",
  "log4rs",
  "tempdir",
- "zcash_address",
  "zcash_primitives",
 ]
 
@@ -4439,14 +4270,12 @@ dependencies = [
  "append-only-vec",
  "base58",
  "base64 0.13.1",
- "bech32 0.11.0",
  "bls12_381",
  "build_utils",
  "byteorder",
  "bytes 0.4.12",
  "concat-idents",
  "derive_more",
- "either",
  "ff",
  "futures",
  "getset",
@@ -4454,19 +4283,14 @@ dependencies = [
  "hdwallet",
  "hex",
  "http 0.2.12",
- "http-body 0.4.6",
- "hyper 0.14.28",
- "hyper-rustls",
  "incrementalmerkletree",
  "indoc",
  "json",
  "jubjub",
  "lazy_static",
  "log",
- "log4rs",
  "nonempty",
  "orchard",
- "pairing",
  "portpicker",
  "proptest",
  "prost",
@@ -4482,20 +4306,13 @@ dependencies = [
  "serde_json",
  "sha2 0.9.9",
  "shardtree",
- "sodiumoxide",
  "subtle",
  "tempfile",
  "test-case",
  "thiserror",
  "tokio",
- "tokio-stream",
  "tonic",
- "tonic-build",
- "tower",
- "tower-http",
- "tracing",
  "tracing-subscriber",
- "webpki-roots 0.25.4",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
