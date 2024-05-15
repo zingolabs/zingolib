@@ -105,8 +105,8 @@ pub mod fixtures {
 
         println!("recipient ready");
 
-        sender.propose_send(request).await.unwrap();
-        sender
+        let proposal = sender.propose_send(request).await.unwrap();
+        let one_txid = sender
             .complete_and_broadcast_stored_proposal()
             .await
             .unwrap();
