@@ -6,14 +6,14 @@ use zcash_client_backend::PoolType::Transparent;
 use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
-use zingo_testutils::chain_generic_tests::send_value_to_pool;
+use zingo_testutils::chain_generic_tests::old_send_value_to_pool;
 
 use crate::utils::scenarios::DarksideEnvironment;
 
 #[tokio::test]
 #[ignore] // darkside cant handle transparent?
 async fn darkside_send_40_000_to_transparent() {
-    send_value_to_pool::<DarksideEnvironment>(40_000, Transparent).await;
+    old_send_value_to_pool::<DarksideEnvironment>(40_000, Transparent).await;
 }
 
 proptest! {
@@ -21,13 +21,13 @@ proptest! {
     #[test]
     fn darkside_send_pvalue_to_orchard(value in 0..90u64) {
         Runtime::new().unwrap().block_on(async {
-    send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Orchard)).await;
+    old_send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Orchard)).await;
         });
      }
     #[test]
     fn darkside_send_pvalue_to_sapling(value in 0..90u64) {
         Runtime::new().unwrap().block_on(async {
-    send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Sapling)).await;
+    old_send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Sapling)).await;
         });
      }
 }

@@ -126,7 +126,7 @@ where
 }
 
 /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
-pub async fn send_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
+pub async fn old_send_value_to_pool<TE>(send_value: u64, pooltype: PoolType)
 where
     TE: ConductChain,
 {

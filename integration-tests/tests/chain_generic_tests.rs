@@ -4,22 +4,22 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
 use zingo_testutils::chain_generic_tests::{
-    propose_and_broadcast_value_to_pool, send_value_to_pool,
+    old_send_value_to_pool, propose_and_broadcast_value_to_pool,
 };
 
 use libtonode_environment::LibtonodeEnvironment;
 
 #[tokio::test]
 async fn libtonode_send_40_000_to_transparent() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+    old_send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
 }
 #[tokio::test]
 async fn libtonode_send_40_000_to_sapling() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
+    old_send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
 }
 #[tokio::test]
 async fn libtonode_send_40_000_to_orchard() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+    old_send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
 }
 
 #[tokio::test]
