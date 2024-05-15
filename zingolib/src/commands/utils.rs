@@ -3,14 +3,18 @@
 use crate::commands::error::CommandError;
 use crate::data::receivers::Receivers;
 use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
-use crate::wallet::{self, Pool};
+use crate::wallet;
 use json::JsonValue;
 use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
 
+#[cfg(not(feature = "zip317"))]
+use crate::wallet::Pool;
+
 // Parse the shield arguments for `do_shield`
+#[cfg(not(feature = "zip317"))]
 pub(super) fn parse_shield_args(
     args: &[&str],
     chain: &ChainType,
@@ -211,9 +215,13 @@ mod tests {
         commands::error::CommandError,
         data::receivers::Receiver,
         utils::conversion::{address_from_str, zatoshis_from_u64},
-        wallet::{self, utils::interpret_memo_string, Pool},
+        wallet::{self, utils::interpret_memo_string},
     };
 
+    #[cfg(not(feature = "zip317"))]
+    use crate::wallet::Pool;
+
+    #[cfg(not(feature = "zip317"))]
     #[test]
     fn parse_shield_args() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
