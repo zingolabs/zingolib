@@ -139,6 +139,30 @@ pub mod fixtures {
         let primary = environment
             .fund_client(1_000_000 + (n + 6) * MARGINAL_FEE.into_u64())
             .await;
+        let primary_address = primary.get_base_address(Shielded(Orchard)).await;
+
+        let secondary = environment.create_client().await;
+        let secondary_address = secondary.get_base_address(Transparent).await;
+
+        for _ in 0..n {
+            primary
+                .send_test_only(vec![(secondary_address.as_str(), 100_000, None)])
+                .await
+                .unwrap();
+            environment.bump_chain().await;
+            secondary.do_sync(false).await.unwrap();
+            dbg!(secondary.do_balance().await);
+            secondary.quick_shield().await.unwrap();
+            environment.bump_chain().await;
+            secondary.do_sync(false).await.unwrap();
+            dbg!(secondary.do_balance().await);
+            secondary
+                .send_test_only(vec![(primary_address.as_str(), 50_000, None)])
+                .await
+                .unwrap();
+            primary.do_sync(false).await.unwrap();
+            dbg!(primary.do_balance().await);
+        }
     }
 
     /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
