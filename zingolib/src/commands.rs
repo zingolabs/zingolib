@@ -892,9 +892,7 @@ impl Command for SendCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send(
-                    request
-                )
+                .propose_send(request)
                 .await {
                 Ok(proposal) => {
                     object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
@@ -1049,14 +1047,13 @@ impl Command for ShieldCommand {
         if !args.is_empty() {
             return format!(
                 "Error: {}\nTry 'help shield' for correct usage and examples.",
-                error::CommandError::InvalidArguments.to_string()
+                error::CommandError::InvalidArguments
             );
         }
 
         RT.block_on(async move {
             match lightclient
-                .propose_shield(
-                )
+                .propose_shield()
                 .await {
                 Ok(proposal) => {
                     // TODO: return amount to be shielded also?
@@ -1095,14 +1092,13 @@ impl Command for QuickShieldCommand {
         if !args.is_empty() {
             return format!(
                 "Error: {}\nTry 'help shield' for correct usage and examples.",
-                error::CommandError::InvalidArguments.to_string()
+                error::CommandError::InvalidArguments
             );
         }
 
         RT.block_on(async move {
             match lightclient
-                .quick_shield(
-                )
+                .quick_shield()
                 .await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
@@ -1136,21 +1132,20 @@ impl Command for ConfirmCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Shield transparent funds to the orchard pool. Combines `shield` and `confirm` into a single command."
+        "Confirms the latest proposal, completing and broadcasting the transaction(s)."
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         if !args.is_empty() {
             return format!(
-                "Error: {}\nTry 'help shield' for correct usage and examples.",
-                error::CommandError::InvalidArguments.to_string()
+                "Error: {}\nTry 'help confirm' for correct usage and examples.",
+                error::CommandError::InvalidArguments
             );
         }
 
         RT.block_on(async move {
             match lightclient
-                .quick_shield(
-                )
+                .complete_and_broadcast_stored_proposal()
                 .await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
