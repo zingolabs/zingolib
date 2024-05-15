@@ -26,10 +26,11 @@ use regtest::RegtestManager;
 use tokio::time::sleep;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
-pub mod chain_generic_tests;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
+pub mod assertions;
+pub mod chain_generic_tests;
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
 /// TODO: Add Doc Comment Here!
