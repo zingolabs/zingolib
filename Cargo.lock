@@ -864,7 +864,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -899,7 +899,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "blake2b_simd",
 ]
@@ -4126,7 +4126,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "bech32 0.9.1",
  "bs58",
@@ -4138,7 +4138,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "base64 0.21.7",
  "bech32 0.9.1",
@@ -4180,7 +4180,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4189,7 +4189,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "bech32 0.9.1",
  "blake2b_simd",
@@ -4230,7 +4230,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "aes",
  "bip0039",
@@ -4268,7 +4268,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4290,7 +4290,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=calculate_tx_async#84469ad71a3f389aaf839e2d4c40e612fa8b64a0"
+source = "git+https://github.com/zingolabs/librustzcash.git?rev=239c894b1572be4be2c7aace87c3afac08889620#239c894b1572be4be2c7aace87c3afac08889620"
 dependencies = [
  "document-features",
  "memuse",
@@ -4451,6 +4451,7 @@ dependencies = [
  "futures",
  "getset",
  "group",
+ "hdwallet",
  "hex",
  "http 0.2.12",
  "http-body 0.4.6",

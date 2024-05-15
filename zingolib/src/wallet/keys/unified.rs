@@ -215,7 +215,7 @@ impl WalletCapability {
         {
             return Err("addresses_write_lock collision!".to_string());
         }
-        let previous_num_addresses = self.addresses.len();
+        let previous_num_addresses = dbg!(self.addresses.len());
         let orchard_receiver = if desired_receivers.orchard {
             let fvk: orchard::keys::FullViewingKey = match self.try_into() {
                 Ok(viewkey) => viewkey,
