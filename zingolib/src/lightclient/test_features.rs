@@ -32,7 +32,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub async fn propose_send_test_only(
+    pub async fn propose_send_from_send_inputs(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<TransferProposal, ProposeSendError> {
@@ -47,7 +47,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub async fn quick_send_test_only(
+    pub async fn quick_send_from_send_inputs(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<NonEmpty<TxId>, QuickSendError> {
@@ -62,7 +62,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address, amount or memo conversion fails.
-    pub async fn send_test_only(
+    pub async fn send_from_send_inputs(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
@@ -76,7 +76,7 @@ impl LightClient {
     /// # Panics
     ///
     /// Panics if the address conversion fails.
-    pub async fn shield_test_only(
+    pub async fn shield_from_shield_inputs(
         &self,
         pools_to_shield: &[Pool],
         address: Option<&str>,
