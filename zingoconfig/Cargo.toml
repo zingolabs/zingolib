@@ -12,3 +12,4 @@ http.workspace = true
 log4rs = "1.1.1"
 log = "0.4.14"
 dirs = "5.0"
+tempdir.workspace = true
