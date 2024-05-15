@@ -8,9 +8,9 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use zingolib::lightclient::LightClient;
+use zingolib::wallet::notes::query::OutputPoolQuery;
 use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
-use zingolib::{get_base_address, wallet::notes::query::OutputPoolQuery};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -36,14 +36,11 @@ pub trait ConductChain {
         self.bump_chain().await;
         sender.do_sync(false).await.unwrap();
 
-        sender
-            .send_test_only(vec![(
-                (get_base_address!(recipient, "unified")).as_str(),
-                value,
-                None,
-            )])
-            .await
+        let recipient_address = recipient.get_base_address(Shielded(Orchard)).await;
+        let request = recipient
+            .raw_to_transaction_request(vec![(recipient_address, value, None)])
             .unwrap();
+        let _one_txid = sender.quick_send(request).await.unwrap();
 
         self.bump_chain().await;
 
@@ -83,11 +80,31 @@ where
 
     println!("recipient ready");
 
-    sender.propose_send(request).await.unwrap();
-    sender
+    let proposal = sender.propose_send(request).await.unwrap();
+    assert_eq!(proposal.steps().len(), 1);
+    assert_eq!(
+        proposal.steps().first().balance().fee_required().into_u64(),
+        expected_fee
+    );
+
+    let one_txid = sender
         .complete_and_broadcast_stored_proposal()
         .await
         .unwrap();
+
+    let txid = one_txid.first();
+    let read_lock = sender
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await;
+    let transaction_record = read_lock
+        .transaction_records_by_id
+        .get(txid)
+        .expect("sender must recognize txid");
+
+    assert!(!transaction_record.status.is_confirmed());
 
     environment.bump_chain().await;
 
@@ -127,14 +144,13 @@ where
 
     let recipient = environment.create_client().await;
     let recipient_address = recipient.get_base_address(pooltype).await;
-
-    dbg!("recipient ready");
-    dbg!(recipient.query_sum_value(OutputQuery::any()).await);
-
-    sender
-        .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
-        .await
+    let request = recipient
+        .raw_to_transaction_request(vec![(dbg!(recipient_address), send_value, None)])
         .unwrap();
+
+    println!("recipient ready");
+
+    let _one_txid = sender.quick_send(request).await.unwrap();
 
     environment.bump_chain().await;
 
