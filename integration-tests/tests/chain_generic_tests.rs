@@ -3,7 +3,8 @@ use zcash_client_backend::PoolType::Transparent;
 use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
-use zingo_testutils::chain_generic_tests::send_value_to_pool;
+use zingo_testutils::chain_generic_tests::fixtures::propose_and_broadcast_value_to_pool;
+use zingo_testutils::chain_generic_tests::fixtures::send_value_to_pool;
 
 use libtonode_environment::LibtonodeEnvironment;
 
@@ -20,12 +21,25 @@ async fn libtonode_send_40_000_to_orchard() {
     send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
 }
 
+#[tokio::test]
+async fn libtonode_propose_and_broadcast_40_000_to_transparent() {
+    propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+}
+#[tokio::test]
+async fn libtonode_propose_and_broadcast_40_000_to_sapling() {
+    propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
+}
+#[tokio::test]
+async fn libtonode_propose_and_broadcast_40_000_to_orchard() {
+    propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+}
+
 pub(crate) mod libtonode_environment {
     use zcash_client_backend::PoolType;
 
     use zcash_client_backend::ShieldedProtocol::Sapling;
 
-    use zingo_testutils::chain_generic_tests::ConductChain;
+    use zingo_testutils::chain_generic_tests::conduct_chain::ConductChain;
     use zingo_testutils::scenarios::setup::ScenarioBuilder;
     use zingoconfig::RegtestNetwork;
     use zingolib::lightclient::LightClient;

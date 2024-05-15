@@ -15,6 +15,7 @@ pub(crate) enum CommandError {
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
     ConversionFailed(crate::utils::error::ConversionError),
+    #[cfg(not(feature = "zip317"))]
     InvalidPool,
     #[cfg(feature = "zip317")]
     MultipleReceivers,
@@ -45,6 +46,7 @@ impl fmt::Display for CommandError {
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
             ConversionFailed(e) => write!(f, "conversion failed. {}", e),
+            #[cfg(not(feature = "zip317"))]
             InvalidPool => write!(f, "invalid pool."),
             #[cfg(feature = "zip317")]
             MultipleReceivers => write!(f, "'send all' can only accept one receiver."),
