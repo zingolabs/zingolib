@@ -85,7 +85,7 @@ impl TxMapAndMaybeTrees {
 pub enum TxMapAndMaybeTreesTraitError {
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,
-    #[error("{0}")]
+    #[error("{0:?}")]
     InputSource(InputSourceError),
 }
 
