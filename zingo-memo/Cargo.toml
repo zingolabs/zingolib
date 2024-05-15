@@ -8,5 +8,4 @@ zcash_address.workspace = true
 zcash_client_backend.workspace = true
 zcash_encoding.workspace = true
 zcash_keys.workspace = true
-zcash_note_encryption.workspace = true
 zcash_primitives.workspace = true
