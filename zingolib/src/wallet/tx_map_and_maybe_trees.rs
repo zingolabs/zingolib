@@ -72,7 +72,7 @@ impl TxMapAndMaybeTrees {
         }
     }
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
-    pub(crate) fn new_with_treeless_address_free() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_treeless_address_free() -> TxMapAndMaybeTrees {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             witness_trees: None,

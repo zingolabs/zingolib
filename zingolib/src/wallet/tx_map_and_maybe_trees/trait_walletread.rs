@@ -385,8 +385,7 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights_err() {
-        let transaction_records_and_maybe_trees =
-            TxMapAndMaybeTrees::new_with_treeless_address_free();
+        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_treeless_address_free();
         assert_eq!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())

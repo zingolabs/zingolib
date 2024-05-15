@@ -136,7 +136,7 @@ impl TxMapAndMaybeTrees {
 
 #[test]
 fn test_get_some_txid_from_highest_wallet_block() {
-    let mut tms = TxMapAndMaybeTrees::new_with_treeless_address_free();
+    let mut tms = TxMapAndMaybeTrees::new_treeless_address_free();
     assert_eq!(tms.get_some_txid_from_highest_wallet_block(), None);
     let txid_bytes_1 = [0u8; 32];
     let txid_bytes_2 = [1u8; 32];
