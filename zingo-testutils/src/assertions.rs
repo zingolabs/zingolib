@@ -2,10 +2,7 @@
 
 use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::proposal::Step;
-use zcash_client_backend::wallet::WalletTransparentOutput;
-use zcash_client_backend::PoolType;
-use zcash_client_backend::PoolType::Shielded;
-use zcash_client_backend::PoolType::Transparent;
+
 use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::TxId;
@@ -14,7 +11,6 @@ use zingolib::lightclient::LightClient;
 use zingolib::wallet::notes::query::OutputPoolQuery;
 use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
-use zingolib::wallet::notes::TransparentOutput;
 
 /// call this after calling complete_and_broadcast_proposalx
 /// and again after bumping the chain and syncing
@@ -62,7 +58,7 @@ pub async fn assert_sender_understands_proposal<NoteId>(
 
     // assert that shielded inputs are marked as spent.
     if let Some(shielded_inputs) = step.shielded_inputs() {
-        for shielded_input in shielded_inputs.notes() {}
+        for _shielded_input in shielded_inputs.notes() {}
     }
 
     let balance = step.balance();
@@ -91,9 +87,8 @@ pub async fn assert_sender_understands_proposal<NoteId>(
                 }
             })
     );
-    assert!(balance
+    assert!(!balance
         .proposed_change()
         .iter()
-        .find(|change_value| change_value.output_pool() == Sapling)
-        .is_none()); // no expected sapling change
+        .any(|change_value| change_value.output_pool() == Sapling)); // no expected sapling change
 }
