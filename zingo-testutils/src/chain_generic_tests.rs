@@ -38,7 +38,7 @@ pub mod conduct_chain {
             sender.do_sync(false).await.unwrap();
 
             sender
-                .send_test_only(vec![(
+                .send_from_send_inputs(vec![(
                     (get_base_address!(recipient, "unified")).as_str(),
                     value,
                     None,
@@ -154,7 +154,7 @@ pub mod fixtures {
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
         sender
-            .send_test_only(vec![(dbg!(recipient_address).as_str(), send_value, None)])
+            .send_from_send_inputs(vec![(dbg!(recipient_address).as_str(), send_value, None)])
             .await
             .unwrap();
 
