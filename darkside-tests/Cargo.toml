@@ -43,4 +43,4 @@ sapling-crypto.workspace = true
 proptest = "1.4.0"
 
 [build-dependencies]
-tonic-build = { workspace = true }
+tonic-build = "0.10"

@@ -4396,7 +4396,6 @@ dependencies = [
  "tempdir",
  "tokio",
  "tonic",
- "tonic-build",
  "tracing",
  "zcash_address",
  "zcash_client_backend",
