@@ -1121,7 +1121,7 @@ impl Command for ConfirmCommand {
             Confirms the latest proposal, completing and broadcasting the transaction(s).
             Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
             Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
-            
+
             Usage:
                 confirm
             Example:
@@ -1750,6 +1750,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         entries.push(("sendall", Box::new(SendAllCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
         entries.push(("quickshield", Box::new(QuickShieldCommand {})));
+        entries.push(("confirm", Box::new(ConfirmCommand {})));
     }
     entries.into_iter().collect()
 }
