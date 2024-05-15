@@ -139,11 +139,13 @@ impl LightClient {
 pub mod send_with_proposal {
     use std::{convert::Infallible, ops::DerefMut as _};
 
+    use hdwallet::traits::Deserialize as _;
     use nonempty::NonEmpty;
 
-    use zcash_client_backend::proposal::Proposal;
+    use secp256k1::SecretKey;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
+    use zcash_client_backend::{proposal::Proposal, wallet::TransparentAddressMetadata};
     use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_primitives::transaction::TxId;
 
@@ -248,6 +250,17 @@ pub mod send_with_proposal {
 
             let step = proposal.steps().first();
 
+            fn usk_to_tkey(
+                unified_spend_key: &UnifiedSpendingKey,
+                t_metadata: &TransparentAddressMetadata,
+            ) -> SecretKey {
+                hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
+                    .expect("This a hack to do a type conversion, and will not fail")
+                    .derive_private_key(t_metadata.address_index().into())
+                    .expect("check this expect, maybe this fn should be fallible")
+                    .private_key
+            }
+
             let build_result =
                 zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
                     self.wallet
@@ -265,6 +278,7 @@ pub mod send_with_proposal {
                     proposal.min_target_height(),
                     &[],
                     step,
+                    Some(usk_to_tkey),
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
             let txid = self
