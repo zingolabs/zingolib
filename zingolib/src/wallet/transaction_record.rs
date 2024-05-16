@@ -518,7 +518,7 @@ impl TransactionRecord {
     }
 }
 
-#[cfg(any(test, feature = "test-features"))]
+#[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;

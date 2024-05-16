@@ -906,6 +906,7 @@ impl Command for SendCommand {
     }
 }
 
+/*
 // Unimplemented
 #[cfg(feature = "zip317")]
 struct SendAllCommand {}
@@ -962,7 +963,7 @@ impl Command for SendAllCommand {
         })
     }
 }
-
+*/
 #[cfg(feature = "zip317")]
 struct QuickSendCommand {}
 #[cfg(feature = "zip317")]
@@ -1747,7 +1748,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     }
     #[cfg(feature = "zip317")]
     {
-        entries.push(("sendall", Box::new(SendAllCommand {})));
+        //entries.push(("sendall", Box::new(SendAllCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
         entries.push(("quickshield", Box::new(QuickShieldCommand {})));
         entries.push(("confirm", Box::new(ConfirmCommand {})));

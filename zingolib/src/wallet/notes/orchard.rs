@@ -204,7 +204,7 @@ impl ShieldedNoteInterface for OrchardNote {
     }
 }
 
-#[cfg(any(test, feature = "test-features"))]
+#[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;

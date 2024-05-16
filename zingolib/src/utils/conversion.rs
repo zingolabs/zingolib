@@ -42,7 +42,7 @@ pub(crate) fn zatoshis_from_u64(amount: u64) -> Result<NonNegativeAmount, Conver
 }
 
 /// Conversions for use in testing only
-#[cfg(feature = "test-features")]
+#[cfg(test)]
 pub mod testing {
     use zingoconfig::ChainType;
 

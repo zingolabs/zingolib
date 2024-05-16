@@ -16,7 +16,7 @@ pub mod lightclient;
 pub mod utils;
 pub mod wallet;
 
-#[cfg(feature = "test-features")]
+#[cfg(test)]
 pub mod test_framework;
 
 // This line includes the generated `git_description()` function directly into this scope.
