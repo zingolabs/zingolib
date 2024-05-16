@@ -5,9 +5,13 @@ use shardtree::store::ShardStore;
 use zcash_client_backend::{
     data_api::{Account, WalletRead},
     keys::UnifiedFullViewingKey,
+    wallet::TransparentAddressMetadata,
 };
-use zcash_primitives::consensus::BlockHeight;
-use zip32::AccountId;
+use zcash_primitives::{
+    consensus::BlockHeight,
+    legacy::keys::{NonHardenedChildIndex, TransparentKeyScope},
+};
+use zip32::{AccountId, Scope};
 
 use crate::wallet::notes::query::QueryStipulations;
 
@@ -282,6 +286,48 @@ impl WalletRead for TxMapAndMaybeTrees {
     ) -> Result<zcash_client_backend::data_api::SeedRelevance<Self::AccountId>, Self::Error> {
         unimplemented!()
     }
+
+    /// Our receivers are all externally scoped, which will need to be reevaluated for zip320
+    fn get_transparent_receivers(
+        &self,
+        _account: Self::AccountId,
+    ) -> Result<
+        std::collections::HashMap<
+            zcash_primitives::legacy::TransparentAddress,
+            Option<zcash_client_backend::wallet::TransparentAddressMetadata>,
+        >,
+        Self::Error,
+    > {
+        Ok(self
+            .transparent_child_addresses
+            .iter()
+            .map(|(index, taddr)| {
+                (
+                    *taddr,
+                    NonHardenedChildIndex::from_index(*index as u32).map(|nhc_index| {
+                        TransparentAddressMetadata::new(
+                            TransparentKeyScope::from(Scope::External),
+                            nhc_index,
+                        )
+                    }),
+                )
+            })
+            .collect())
+    }
+
+    fn get_transparent_balances(
+        &self,
+        _account: Self::AccountId,
+        _max_height: BlockHeight,
+    ) -> Result<
+        std::collections::HashMap<
+            zcash_primitives::legacy::TransparentAddress,
+            zcash_primitives::transaction::components::amount::NonNegativeAmount,
+        >,
+        Self::Error,
+    > {
+        Ok(std::collections::HashMap::new())
+    }
 }
 
 #[cfg(test)]
@@ -309,7 +355,8 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights() {
-        let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+        let mut transaction_records_and_maybe_trees =
+            TxMapAndMaybeTrees::new_with_witness_trees_address_free();
         transaction_records_and_maybe_trees
             .witness_trees
             .as_mut()
@@ -327,7 +374,8 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights_none() {
-        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+        let transaction_records_and_maybe_trees =
+            TxMapAndMaybeTrees::new_with_witness_trees_address_free();
         assert_eq!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
@@ -338,7 +386,7 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights_err() {
-        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_treeless();
+        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_treeless_address_free();
         assert_eq!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
@@ -351,7 +399,7 @@ mod tests {
     proptest! {
         #[test]
         fn get_min_unspent_height(sapling_height: u32, orchard_height: u32) {
-            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
 
             // these first three outputs will not trigger min_unspent_note
             transaction_records_and_maybe_trees
@@ -412,7 +460,7 @@ mod tests {
 
         #[test]
         fn get_tx_height(tx_height: u32) {
-            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees();
+            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
 
             let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into()))
             .clone()

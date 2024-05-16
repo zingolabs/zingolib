@@ -10,15 +10,8 @@ zingo-testutils = { path = "../zingo-testutils" }
 
 clap = { workspace = true }
 http = { workspace = true }
-hyper-rustls = { workspace = true }
 
 rustyline = "11.0.0"
 log = "0.4.17"
 shellwords = "1.1.0"
-futures = "0.3.15"
-rustls-pemfile = "1.0.0"
-tokio =  { version = "1.24.2", features = ["full"] }
-tokio-stream = "0.1.6"
-tokio-rustls = { workspace = true }
-webpki-roots.workspace = true
 json = "0.12.4"

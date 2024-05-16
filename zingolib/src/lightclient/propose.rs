@@ -30,7 +30,7 @@ type GISKit = GreedyInputSelector<
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
 pub enum ProposeSendError {
-    #[error("{0}")]
+    #[error("{0:?}")]
     /// error in using trait to create spend proposal
     Proposal(
         zcash_client_backend::data_api::error::Error<
@@ -43,7 +43,7 @@ pub enum ProposeSendError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("{0}")]
+    #[error("{0:?}")]
     /// failed to construct a transaction request
     TransactionRequestFailed(Zip321Error),
 }
@@ -52,9 +52,9 @@ pub enum ProposeSendError {
 #[derive(Debug, Error)]
 pub enum ProposeShieldError {
     /// error in parsed addresses
-    #[error("{0}")]
+    #[error("{0:?}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
-    #[error("{0}")]
+    #[error("{0:?}")]
     /// error in using trait to create shielding proposal
     Component(
         zcash_client_backend::data_api::error::Error<
@@ -145,27 +145,13 @@ impl LightClient {
         Ok(proposal)
     }
 
-    fn get_transparent_addresses(
-        &self,
-    ) -> Result<Vec<zcash_primitives::legacy::TransparentAddress>, ProposeShieldError> {
-        let secp = secp256k1::Secp256k1::new();
-        Ok(self
-            .wallet
+    fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
+        self.wallet
             .wallet_capability()
-            .transparent_child_keys()
-            .map_err(|_e| {
-                ProposeShieldError::Component(
-                    zcash_client_backend::data_api::error::Error::DataSource(
-                        TxMapAndMaybeTreesTraitError::NoSpendCapability,
-                    ),
-                )
-            })?
+            .transparent_child_addresses()
             .iter()
-            .map(|(_index, sk)| {
-                #[allow(deprecated)]
-                zcash_primitives::legacy::keys::pubkey_to_address(&sk.public_key(&secp))
-            })
-            .collect::<Vec<_>>())
+            .map(|(_index, sk)| *sk)
+            .collect::<Vec<_>>()
     }
 
     /// The shield operation consumes a proposal that transfers value
@@ -208,7 +194,7 @@ impl LightClient {
             &input_selector,
             // don't shield dust
             NonNegativeAmount::const_from_u64(10_000),
-            &self.get_transparent_addresses()?,
+            &self.get_transparent_addresses(),
             // review! do we want to require confirmations?
             // make it configurable?
             0,
@@ -257,7 +243,7 @@ mod shielding {
     async fn get_transparent_addresses() {
         let basic_client = create_basic_client().await;
         assert_eq!(
-            basic_client.get_transparent_addresses().unwrap(),
+            basic_client.get_transparent_addresses(),
             [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
                 [
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,

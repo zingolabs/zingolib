@@ -6,11 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zcash_address.workspace = true
 zcash_primitives.workspace = true
-tempdir.workspace = true
 http.workspace = true
 
 log4rs = "1.1.1"
 log = "0.4.14"
 dirs = "5.0"
+tempdir.workspace = true
