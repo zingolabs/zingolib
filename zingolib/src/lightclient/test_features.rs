@@ -22,10 +22,6 @@ use zingoconfig::ChainType;
 
 use crate::data::receivers::Receivers;
 
-/// Converts primitive rust types to zcash receiver types for constructing transaction requests.
-///
-/// # Panics
-///
 /// Panics if the address, amount or memo conversion fails.
 pub fn receivers_from_send_inputs(
     raw_receivers: Vec<(&str, u64, Option<&str>)>,
