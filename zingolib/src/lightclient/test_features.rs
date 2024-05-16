@@ -28,10 +28,10 @@ use crate::data::receivers::Receivers;
 ///
 /// Panics if the address, amount or memo conversion fails.
 pub fn receivers_from_send_inputs(
-    address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+    raw_receivers: Vec<(&str, u64, Option<&str>)>,
     chain: &ChainType,
 ) -> Receivers {
-    address_amount_memo_tuples
+    raw_receivers
         .into_iter()
         .map(|(address, amount, memo)| {
             let recipient_address =
