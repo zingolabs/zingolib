@@ -38,11 +38,15 @@ pub mod conduct_chain {
             sender.do_sync(false).await.unwrap();
 
             sender
-                .send_from_send_inputs(vec![(
-                    (get_base_address!(recipient, "unified")).as_str(),
-                    value,
-                    None,
-                )])
+                .quick_send(
+                    sender
+                        .transaction_request_from_send_inputs(vec![(
+                            (get_base_address!(recipient, "unified")).as_str(),
+                            value,
+                            None,
+                        )])
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
 
