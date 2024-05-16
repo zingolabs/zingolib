@@ -553,19 +553,19 @@ pub mod scenarios {
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::increase_height_and_wait_for_client;
-    use zingolib::testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
+    use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
     /// TODO: Add Doc Comment Here!
     pub mod setup {
         use super::BASE_HEIGHT;
-        use zingolib::testvectors::{
+        use zingo_testvectors::{
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
         };
 
         use super::super::paths::get_regtest_dir;
-        use super::{testvectors, ChildProcessHandler, RegtestManager};
+        use super::{ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use tokio::time::sleep;
         use zingolib::wallet::Pool;
@@ -819,12 +819,12 @@ pub mod scenarios {
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) -> PathBuf {
                 let config = match mine_to_address {
-                    Some(address) => testvectors::config_template_fillers::zcashd::funded(
+                    Some(address) => zingo_testvectors::config_template_fillers::zcashd::funded(
                         address,
                         &self.zcashd_rpcservice_port,
                         regtest_network,
                     ),
-                    None => testvectors::config_template_fillers::zcashd::basic(
+                    None => zingo_testvectors::config_template_fillers::zcashd::basic(
                         &self.zcashd_rpcservice_port,
                         regtest_network,
                         "",
@@ -837,7 +837,7 @@ pub mod scenarios {
             pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
                 self.write_contents_and_return_path(
                     "lightwalletd",
-                    testvectors::config_template_fillers::lightwalletd::basic(
+                    zingo_testvectors::config_template_fillers::lightwalletd::basic(
                         &self.lightwalletd_rpcservice_port,
                     ),
                 )
