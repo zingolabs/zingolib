@@ -165,13 +165,13 @@ pub mod send_with_proposal {
         NoSpendCapability,
         #[error("No proposal. Call do_propose first.")]
         NoProposal,
-        #[error("Cant get submission height. Server connection?: {0}")]
+        #[error("Cant get submission height. Server connection?: {0:?}")]
         SubmissionHeight(String),
-        #[error("Could not load sapling_params: {0}")]
+        #[error("Could not load sapling_params: {0:?}")]
         SaplingParams(String),
-        #[error("Could not find UnifiedSpendKey: {0}")]
+        #[error("Could not find UnifiedSpendKey: {0:?}")]
         UnifiedSpendKey(std::io::Error),
-        #[error("Can't Calculate {0}")]
+        #[error("Can't Calculate {0:?}")]
         Calculation(
             zcash_client_backend::data_api::error::Error<
                 crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
@@ -180,7 +180,7 @@ pub mod send_with_proposal {
                 zcash_primitives::transaction::fees::zip317::FeeError,
             >,
         ),
-        #[error("Broadcast failed: {0}")]
+        #[error("Broadcast failed: {0:?}")]
         Broadcast(String),
         #[error("Sending to exchange addresses is not supported yet!")]
         ExchangeAddressesNotSupported,
@@ -191,25 +191,25 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastStoredProposal {
         #[error("No proposal. Call do_propose first.")]
         NoStoredProposal,
-        #[error("send {0}")]
+        #[error("send {0:?}")]
         CompleteAndBroadcast(CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
     pub enum QuickSendError {
-        #[error("propose send {0}")]
+        #[error("propose send {0:?}")]
         ProposeSend(ProposeSendError),
-        #[error("send {0}")]
+        #[error("send {0:?}")]
         CompleteAndBroadcast(CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
     pub enum QuickShieldError {
-        #[error("propose shield {0}")]
+        #[error("propose shield {0:?}")]
         Propose(ProposeShieldError),
-        #[error("send {0}")]
+        #[error("send {0:?}")]
         CompleteAndBroadcast(CompleteAndBroadcastError),
     }
 

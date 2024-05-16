@@ -30,7 +30,7 @@ type GISKit = GreedyInputSelector<
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
 pub enum ProposeSendError {
-    #[error("{0}")]
+    #[error("{0:?}")]
     /// error in using trait to create spend proposal
     Proposal(
         zcash_client_backend::data_api::error::Error<
@@ -43,7 +43,7 @@ pub enum ProposeSendError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("{0}")]
+    #[error("{0:?}")]
     /// failed to construct a transaction request
     TransactionRequestFailed(Zip321Error),
 }
@@ -52,9 +52,9 @@ pub enum ProposeSendError {
 #[derive(Debug, Error)]
 pub enum ProposeShieldError {
     /// error in parsed addresses
-    #[error("{0}")]
+    #[error("{0:?}")]
     Receiver(zcash_client_backend::zip321::Zip321Error),
-    #[error("{0}")]
+    #[error("{0:?}")]
     /// error in using trait to create shielding proposal
     Component(
         zcash_client_backend::data_api::error::Error<
