@@ -2,20 +2,19 @@
 
 use secrecy::SecretVec;
 use shardtree::store::ShardStore;
-use zcash_client_backend::{
-    data_api::{Account, WalletRead},
-    keys::UnifiedFullViewingKey,
-    wallet::TransparentAddressMetadata,
-};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    legacy::keys::{NonHardenedChildIndex, TransparentKeyScope},
-};
-use zip32::{AccountId, Scope};
+use zcash_client_backend::data_api::Account;
+use zcash_client_backend::data_api::WalletRead;
+use zcash_client_backend::keys::UnifiedFullViewingKey;
+use zcash_client_backend::wallet::TransparentAddressMetadata;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::legacy::keys::NonHardenedChildIndex;
+use zcash_primitives::legacy::keys::TransparentKeyScope;
+use zip32::AccountId;
+use zip32::Scope;
 
 use crate::wallet::notes::query::QueryStipulations;
-
-use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 
 /// This is a facade for using LRZ traits. In actuality, Zingo does not use multiple accounts in one wallet.
 pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);
@@ -335,9 +334,9 @@ mod tests {
     use proptest::prelude::proptest;
     use std::num::NonZeroU32;
 
+    use crate::data::confirmation_status::ConfirmationStatus::Confirmed;
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
-    use crate::data::confirmation_status::ConfirmationStatus::Confirmed;
 
     use crate::{
         test_framework::mocks::default_txid,

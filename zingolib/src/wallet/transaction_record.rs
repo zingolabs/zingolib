@@ -1,29 +1,39 @@
 //! An (incomplete) representation of what the Zingo instance "knows" about a transaction
 //! conspicuously absent is the set of transparent inputs to the transaction.
-//! by its`nature this evolves through, different states of completeness.
+//! by itz nature this evolves through different states of completeness.
 
-use std::io::{self, Read, Write};
+use std::io;
+use std::io::Read;
+use std::io::Write;
 
-use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
+use byteorder::LittleEndian;
+use byteorder::ReadBytesExt as _;
+use byteorder::WriteBytesExt as _;
+
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use zcash_client_backend::{wallet::NoteId, PoolType};
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_client_backend::wallet::NoteId;
+use zcash_client_backend::PoolType;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::TxId;
 
-use crate::{
-    error::ZingoLibError,
-    wallet::{
-        data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
-        keys::unified::WalletCapability,
-        notes::{
-            self,
-            query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
-            OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
-            TransparentOutput,
-        },
-        traits::{DomainWalletExt, ReadableWriteable as _},
-    },
-};
+use crate::error::ZingoLibError;
+use crate::wallet::data::OutgoingTxData;
+use crate::wallet::data::PoolNullifier;
+use crate::wallet::data::COMMITMENT_TREE_LEVELS;
+use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::notes::query::OutputQuery;
+use crate::wallet::notes::query::OutputSpendStatusQuery;
+use crate::wallet::notes::query::QueryStipulations;
+use crate::wallet::notes::OrchardNote;
+use crate::wallet::notes::OutputId;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::SaplingNote;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::notes::TransparentOutput;
+use crate::wallet::notes::{self};
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::ReadableWriteable as _;
 
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
@@ -521,8 +531,8 @@ impl TransactionRecord {
 #[cfg(any(test, feature = "test-features"))]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_primitives::transaction::TxId;
     use crate::data::confirmation_status::ConfirmationStatus;
+    use zcash_primitives::transaction::TxId;
 
     use crate::{
         test_framework::mocks::{build_method, build_method_push, build_push_list, random_txid},

@@ -5,7 +5,8 @@ use tokio::sync::RwLock;
 
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
@@ -62,6 +63,7 @@ pub mod decrypt_transaction {
     use sapling_crypto::note_encryption::SaplingDomain;
     use std::{collections::HashSet, convert::TryInto};
 
+    use crate::data::confirmation_status::ConfirmationStatus;
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::try_output_recovery_with_ovk;
     use zcash_primitives::{
@@ -69,7 +71,6 @@ pub mod decrypt_transaction {
         transaction::{Transaction, TxId},
     };
     use zingo_memo::{parse_zingo_memo, ParsedMemo};
-    use crate::data::confirmation_status::ConfirmationStatus;
 
     use super::TransactionContext;
 

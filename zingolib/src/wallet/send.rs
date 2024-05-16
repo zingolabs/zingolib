@@ -1,60 +1,62 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
-use crate::wallet::notes::OutputInterface;
-use crate::wallet::now;
-use crate::{data::receivers::Receivers, wallet::data::SpendableSaplingNote};
 
 use futures::Future;
-
-use log::{error, info};
-
-use orchard::note_encryption::OrchardDomain;
-
+use log::error;
+use log::info;
 use rand::rngs::OsRng;
-
-use sapling_crypto::note_encryption::SaplingDomain;
-use sapling_crypto::prover::{OutputProver, SpendProver};
-
-use orchard::tree::MerkleHashOrchard;
-use shardtree::error::{QueryError, ShardTreeError};
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
-use zcash_note_encryption::Domain;
-
 use std::cmp;
 use std::convert::Infallible;
 use std::ops::Add;
 use std::sync::mpsc::channel;
 
+use orchard::note_encryption::OrchardDomain;
+use orchard::tree::MerkleHashOrchard;
+use sapling_crypto::note_encryption::SaplingDomain;
+use sapling_crypto::prover::OutputProver;
+use sapling_crypto::prover::SpendProver;
+use shardtree::error::QueryError;
+use shardtree::error::ShardTreeError;
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::ShardTree;
 use zcash_client_backend::address;
-
-use zcash_primitives::transaction::builder::{BuildResult, Progress};
+use zcash_note_encryption::Domain;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::legacy::Script;
+use zcash_primitives::memo::Memo;
+use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::transaction::builder::BuildResult;
+use zcash_primitives::transaction::builder::Builder;
+use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::transaction::components::Amount;
+use zcash_primitives::transaction::components::OutPoint;
+use zcash_primitives::transaction::components::TxOut;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
-use zcash_primitives::transaction::{self, Transaction};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    legacy::Script,
-    memo::Memo,
-    transaction::{
-        builder::Builder,
-        components::{Amount, OutPoint, TxOut},
-        fees::zip317::MINIMUM_FEE,
-    },
-};
-use zcash_primitives::{memo::MemoBytes, transaction::TxId};
+use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::TxId;
+use zcash_primitives::transaction::{self};
+
 use zingo_memo::create_wallet_internal_memo_version_0;
+
 use crate::data::confirmation_status::ConfirmationStatus;
-
-use crate::data::witness_trees::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
-
-use super::data::SpendableOrchardNote;
-
-use super::notes::ShieldedNoteInterface;
-use super::{notes, traits, LightWallet};
-
-use super::traits::{DomainWalletExt, Recipient, SpendableNote};
-use super::utils::get_price;
-use super::Pool;
+use crate::data::receivers::Receivers;
+use crate::data::witness_trees::WitnessTrees;
+use crate::data::witness_trees::COMMITMENT_TREE_LEVELS;
+use crate::data::witness_trees::MAX_SHARD_LEVEL;
+use crate::wallet::data::SpendableOrchardNote;
+use crate::wallet::data::SpendableSaplingNote;
+use crate::wallet::notes;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::now;
+use crate::wallet::traits;
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::Recipient;
+use crate::wallet::traits::SpendableNote;
+use crate::wallet::utils::get_price;
+use crate::wallet::LightWallet;
+use crate::wallet::Pool;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]

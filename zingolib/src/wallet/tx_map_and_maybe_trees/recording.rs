@@ -4,18 +4,19 @@ use incrementalmerkletree::Position;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::Domain;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use crate::data::confirmation_status::ConfirmationStatus;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::TxId;
 
-use crate::{
-    error::{ZingoLibError, ZingoLibResult},
-    wallet::{
-        data::PoolNullifier,
-        notes::OutputInterface,
-        notes::ShieldedNoteInterface,
-        traits::{self, DomainWalletExt, Nullifier, Recipient},
-    },
-};
+use crate::data::confirmation_status::ConfirmationStatus;
+use crate::error::ZingoLibError;
+use crate::error::ZingoLibResult;
+use crate::wallet::data::PoolNullifier;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::Nullifier;
+use crate::wallet::traits::Recipient;
+use crate::wallet::traits::{self};
 
 /// Witness tree requiring methods, each method is noted with *HOW* it requires witness trees.
 impl super::TxMapAndMaybeTrees {

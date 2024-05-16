@@ -3,16 +3,15 @@
 //! implementations for TxMapAndMaybeTrees
 //! associated types for TxMapAndMaybeTrees that have no relevance elsewhere.
 
-use crate::{
-    data::witness_trees::WitnessTrees,
-    wallet::transaction_records_by_id::{
-        trait_inputsource::InputSourceError, TransactionRecordsById,
-    },
-};
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
+use std::sync::Arc;
 use thiserror::Error;
+
 use zcash_primitives::legacy::TransparentAddress;
 
+use crate::data::witness_trees::WitnessTrees;
+use crate::wallet::transaction_records_by_id::trait_inputsource::InputSourceError;
+use crate::wallet::transaction_records_by_id::TransactionRecordsById;
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.

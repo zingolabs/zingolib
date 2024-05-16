@@ -1,25 +1,24 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::{
-    notes::{interface::ShieldedNoteInterface, query::OutputQuery, OutputInterface},
-    traits::{DomainWalletExt, Recipient},
-    transaction_record::TransactionRecord,
-};
 use std::collections::HashMap;
 
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-
 use zcash_client_backend::wallet::NoteId;
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
-
 use zcash_primitives::transaction::TxId;
 
-pub mod trait_inputsource;
+use crate::wallet::notes::interface::ShieldedNoteInterface;
+use crate::wallet::notes::query::OutputQuery;
+use crate::wallet::notes::query::OutputSpendStatusQuery;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::Recipient;
+use crate::wallet::transaction_record::TransactionRecord;
 
-use super::notes::query::OutputSpendStatusQuery;
+pub mod trait_inputsource;
 
 /// A convenience wrapper, to impl behavior on.
 #[derive(Debug)]
@@ -521,10 +520,10 @@ mod tests {
 
     use super::TransactionRecordsById;
 
+    use crate::data::confirmation_status::ConfirmationStatus::Confirmed;
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::consensus::BlockHeight;
-    use crate::data::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
     fn invalidate_all_transactions_after_or_at_height() {
