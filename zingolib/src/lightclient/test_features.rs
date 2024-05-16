@@ -1,3 +1,9 @@
+//! As indicated by this file being behind the test-features flag, this is test-only functionality
+//! In this context a "raw_receiver" is a 3 element stuple organizes primitives (e.g. from the command line)
+//! into the components of a transaction receiver
+//! raw_receiver.0:   A &str representing the receiver address
+//! raw_receiver.1:   A u64 representing the number of zats to be sent
+//! raw_receiver.2:   An Option<&str> that contains memo data if not None
 use nonempty::NonEmpty;
 use zcash_client_backend::{
     zip321::{TransactionRequest, Zip321Error},
@@ -27,54 +33,46 @@ impl LightClient {
         .map_err(ZingoLibError::CantReadWallet)
     }
 
-    /// Test only lightclient method for calling `propose_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose_send_from_send_inputs(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<TransferProposal, ProposeSendError> {
         let request = self
-            .transaction_request_from_send_inputs(address_amount_memo_tuples)
+            .transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         self.propose_send(request).await
     }
 
-    /// Test only lightclient method for calling `quick_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send_from_send_inputs(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<NonEmpty<TxId>, QuickSendError> {
         let request = self
-            .transaction_request_from_send_inputs(address_amount_memo_tuples)
+            .transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         self.quick_send(request).await
     }
 
-    /// Test only lightclient method for calling `do_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
     /// Panics if the address, amount or memo conversion fails.
     pub async fn send_from_send_inputs(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
-        let receivers =
-            receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
+        let receivers = receivers_from_send_inputs(raw_receivers, &self.config().chain);
         self.do_send(receivers).await.map(|txid| txid.to_string())
     }
 
-    /// Test only lightclient method for calling `do_shield` with an address as &str
-    ///
-    /// # Panics
-    ///
+    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
+    pub fn transaction_request_from_send_inputs(
+        &self,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<TransactionRequest, Zip321Error> {
+        let receivers = receivers_from_send_inputs(raw_receivers, &self.config().chain);
+        transaction_request_from_receivers(receivers)
+    }
+
     /// Panics if the address conversion fails.
     pub async fn shield_from_shield_inputs(
         &self,
@@ -103,15 +101,5 @@ impl LightClient {
                 self.do_addresses().await[0]["address"].take().to_string()
             }
         }
-    }
-
-    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
-    pub fn transaction_request_from_send_inputs(
-        &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<TransactionRequest, Zip321Error> {
-        let receivers =
-            receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
-        transaction_request_from_receivers(receivers)
     }
 }
