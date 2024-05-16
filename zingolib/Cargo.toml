@@ -16,7 +16,6 @@ zip317 = []
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
-zingo-status = { path = "../zingo-status" }
 zingo-testvectors = { path = "../zingo-testvectors", optional = true }
 zingo-netutils = { path = "../zingo-netutils" }
 

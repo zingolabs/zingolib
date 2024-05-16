@@ -1,7 +1,0 @@
-[package]
-name = "zingo-status"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-zcash_primitives = { workspace = true }

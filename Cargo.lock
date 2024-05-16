@@ -4216,13 +4216,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-status"
-version = "0.1.0"
-dependencies = [
- "zcash_primitives",
-]
-
-[[package]]
 name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
@@ -4322,7 +4315,6 @@ dependencies = [
  "zcash_proofs",
  "zingo-memo",
  "zingo-netutils",
- "zingo-status",
  "zingo-testvectors",
  "zingoconfig",
  "zip32",
