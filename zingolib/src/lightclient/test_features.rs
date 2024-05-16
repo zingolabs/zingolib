@@ -11,7 +11,6 @@ use zcash_client_backend::{
 
 use crate::{
     data::receivers::transaction_request_from_receivers,
-    error::ZingoLibError,
     utils::conversion::{address_from_str, zatoshis_from_u64},
     wallet::Pool,
 };
@@ -48,18 +47,6 @@ pub fn receivers_from_send_inputs(
         .collect()
 }
 impl LightClient {
-    /// TODO: Add Doc Comment Here!
-    pub async fn new_client_from_save_buffer(&self) -> Result<Self, ZingoLibError> {
-        self.save_internal_buffer().await?;
-
-        LightClient::read_wallet_from_buffer_async(
-            &self.config,
-            self.save_buffer.buffer.read().await.as_slice(),
-        )
-        .await
-        .map_err(ZingoLibError::CantReadWallet)
-    }
-
     /// Panics if the address, amount or memo conversion fails.
     pub async fn send_from_send_inputs(
         &self,

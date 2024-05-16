@@ -203,7 +203,9 @@ async fn sent_transaction_reorged_into_mempool() {
         "Sender post-reorg: {}",
         light_client.do_list_transactions().await.pretty(2)
     );
-    let loaded_client = light_client.new_client_from_save_buffer().await.unwrap();
+    let loaded_client = zingo_testutils::lightclient::new_client_from_save_buffer(&light_client)
+        .await
+        .unwrap();
     loaded_client.do_sync(false).await.unwrap();
     println!(
         "Sender post-load: {}",
