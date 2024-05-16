@@ -15,8 +15,6 @@ pub mod grpc_connector;
 pub mod lightclient;
 pub mod utils;
 pub mod wallet;
-#[cfg(feature = "test-features")]
-pub use zingo_testvectors as testvectors;
 
 #[cfg(feature = "test-features")]
 pub mod test_framework;
