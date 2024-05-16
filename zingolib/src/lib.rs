@@ -17,7 +17,7 @@ pub mod utils;
 pub mod wallet;
 
 #[cfg(test)]
-pub mod test_framework;
+pub mod mocks;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

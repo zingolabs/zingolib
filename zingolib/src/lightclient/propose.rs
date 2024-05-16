@@ -136,7 +136,7 @@ impl LightClient {
         _address: zcash_keys::address::Address,
         _memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<crate::data::proposal::TransferProposal, String> {
-        use crate::test_framework::mocks::ProposalBuilder;
+        use crate::mocks::ProposalBuilder;
 
         let proposal = ProposalBuilder::default().build();
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))

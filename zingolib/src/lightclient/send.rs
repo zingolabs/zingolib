@@ -361,7 +361,7 @@ pub mod send_with_proposal {
 
         use crate::{
             lightclient::{send::send_with_proposal::CompleteAndBroadcastError, LightClient},
-            test_framework::mocks::ProposalBuilder,
+            mocks::ProposalBuilder,
         };
 
         #[tokio::test]

@@ -47,7 +47,7 @@ pub mod mocks {
     use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
     use zcash_primitives::transaction::TxId;
 
-    use crate::test_framework::mocks::{build_method, default_txid};
+    use crate::mocks::{build_method, default_txid};
 
     /// to build a mock NoteRecordIdentifier
     pub struct NoteIdBuilder {
@@ -72,7 +72,7 @@ pub mod mocks {
 
         /// selects a random probablistically unique txid
         pub fn randomize_txid(&mut self) -> &mut Self {
-            self.txid(crate::test_framework::mocks::random_txid())
+            self.txid(crate::mocks::random_txid())
         }
 
         /// builds a mock NoteRecordIdentifier after all pieces are supplied
@@ -100,7 +100,7 @@ pub mod mocks {
 #[cfg(test)]
 pub mod tests {
     use crate::{
-        test_framework::mocks::default_txid,
+        mocks::default_txid,
         wallet::notes::{
             query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
             transparent::mocks::TransparentOutputBuilder, OutputInterface,
