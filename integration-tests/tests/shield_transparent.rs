@@ -1,5 +1,4 @@
-use zingo_testutils::scenarios::faucet_recipient_default;
-use zingolib::get_base_address;
+use zingo_testutils::{get_base_address, scenarios::faucet_recipient_default};
 
 #[tokio::test]
 #[ignore]
