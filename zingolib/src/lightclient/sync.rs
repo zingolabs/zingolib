@@ -1,10 +1,9 @@
 //! TODO: Add Mod Description Here!
 
 use futures::future::join_all;
-
-use log::{debug, error, warn};
-
-use crate::data::confirmation_status::ConfirmationStatus;
+use log::debug;
+use log::error;
+use log::warn;
 use std::cmp::{self};
 use std::io::{self};
 use std::sync::Arc;
@@ -15,6 +14,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::oneshot;
 use tokio::task::yield_now;
 use tokio::time::sleep;
+
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::consensus::BranchId;
@@ -22,20 +22,21 @@ use zcash_primitives::transaction::Transaction;
 
 use zingoconfig::MAX_REORG;
 
-static LOG_INIT: std::sync::Once = std::sync::Once::new();
+use crate::blaze::block_management_reorg_detection::BlockManagementData;
+use crate::blaze::fetch_compact_blocks::FetchCompactBlocks;
+use crate::blaze::fetch_taddr_transactions::FetchTaddrTransactions;
+use crate::blaze::sync_status::BatchSyncStatus;
+use crate::blaze::trial_decryptions::TrialDecryptions;
+use crate::blaze::update_notes::UpdateNotes;
+use crate::data::confirmation_status::ConfirmationStatus;
+use crate::grpc_connector::GrpcConnector;
+use crate::lightclient::LightClient;
+use crate::lightclient::SyncResult;
+use crate::wallet::now;
+use crate::wallet::transaction_context::TransactionContext;
+use crate::wallet::utils::get_price;
 
-use super::LightClient;
-use super::SyncResult;
-use crate::{
-    blaze::{
-        block_management_reorg_detection::BlockManagementData,
-        fetch_compact_blocks::FetchCompactBlocks, fetch_taddr_transactions::FetchTaddrTransactions,
-        sync_status::BatchSyncStatus, trial_decryptions::TrialDecryptions,
-        update_notes::UpdateNotes,
-    },
-    grpc_connector::GrpcConnector,
-    wallet::{now, transaction_context::TransactionContext, utils::get_price},
-};
+static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!
