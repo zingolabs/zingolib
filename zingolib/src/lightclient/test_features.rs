@@ -4,21 +4,19 @@
 //! raw_receiver.0:   A &str representing the receiver address
 //! raw_receiver.1:   A u64 representing the number of zats to be sent
 //! raw_receiver.2:   An Option<&str> that contains memo data if not None
-use nonempty::NonEmpty;
 use zcash_client_backend::{
     zip321::{TransactionRequest, Zip321Error},
     PoolType, ShieldedProtocol,
 };
-use zcash_primitives::transaction::TxId;
 
 use crate::{
-    data::{proposal::TransferProposal, receivers::transaction_request_from_receivers},
+    data::receivers::transaction_request_from_receivers,
     error::ZingoLibError,
     utils::conversion::{address_from_str, zatoshis_from_u64},
     wallet::Pool,
 };
 
-use super::{propose::ProposeSendError, send::send_with_proposal::QuickSendError, LightClient};
+use crate::lightclient::LightClient;
 
 use zingoconfig::ChainType;
 
@@ -64,28 +62,6 @@ impl LightClient {
         )
         .await
         .map_err(ZingoLibError::CantReadWallet)
-    }
-
-    /// Panics if the address, amount or memo conversion fails.
-    pub async fn propose_send_from_send_inputs(
-        &self,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<TransferProposal, ProposeSendError> {
-        let request = self
-            .transaction_request_from_send_inputs(raw_receivers)
-            .expect("should be able to create a transaction request as receivers are valid.");
-        self.propose_send(request).await
-    }
-
-    /// Panics if the address, amount or memo conversion fails.
-    pub async fn quick_send_from_send_inputs(
-        &self,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<NonEmpty<TxId>, QuickSendError> {
-        let request = self
-            .transaction_request_from_send_inputs(raw_receivers)
-            .expect("should be able to create a transaction request as receivers are valid.");
-        self.quick_send(request).await
     }
 
     /// Panics if the address, amount or memo conversion fails.
