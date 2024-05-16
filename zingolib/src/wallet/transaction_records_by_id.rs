@@ -263,7 +263,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
     pub(crate) fn create_modify_get_transaction_metadata(
         &mut self,
         txid: &TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: crate::data::confirmation_status::ConfirmationStatus,
         datetime: u64,
     ) -> &'_ mut TransactionRecord {
         self.entry(*txid)
@@ -279,7 +279,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: crate::data::confirmation_status::ConfirmationStatus,
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
@@ -296,7 +296,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         spent_txid: TxId,
         output_num: u32,
         source_txid: TxId,
-        spending_tx_status: zingo_status::confirmation_status::ConfirmationStatus,
+        spending_tx_status: crate::data::confirmation_status::ConfirmationStatus,
     ) -> u64 {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.get_mut(&spent_txid) {
@@ -334,7 +334,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         &mut self,
         txid: TxId,
         taddr: String,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: crate::data::confirmation_status::ConfirmationStatus,
         timestamp: u64,
         vout: &zcash_primitives::transaction::components::TxOut,
         output_num: u32,
@@ -379,7 +379,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let status = zingo_status::confirmation_status::ConfirmationStatus::Broadcast(height);
+        let status = crate::data::confirmation_status::ConfirmationStatus::Broadcast(height);
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
@@ -411,7 +411,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: crate::data::confirmation_status::ConfirmationStatus,
         timestamp: u64,
         note: <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Note,
         to: D::Recipient,
@@ -524,7 +524,7 @@ mod tests {
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::consensus::BlockHeight;
-    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use crate::data::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
     fn invalidate_all_transactions_after_or_at_height() {

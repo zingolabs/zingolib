@@ -5,7 +5,7 @@ use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zingo_status::confirmation_status::ConfirmationStatus;
+use crate::data::confirmation_status::ConfirmationStatus;
 
 use crate::{
     error::{ZingoLibError, ZingoLibResult},

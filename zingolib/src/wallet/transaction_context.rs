@@ -69,7 +69,7 @@ pub mod decrypt_transaction {
         transaction::{Transaction, TxId},
     };
     use zingo_memo::{parse_zingo_memo, ParsedMemo};
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use crate::data::confirmation_status::ConfirmationStatus;
 
     use super::TransactionContext;
 

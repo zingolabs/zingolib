@@ -1,25 +1,22 @@
-use super::syncdata::BlazeSyncData;
+use futures::future::join_all;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
+use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
+
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::TxId;
+
+use crate::blaze::syncdata::BlazeSyncData;
+use crate::data::confirmation_status::ConfirmationStatus;
 use crate::wallet::transaction_context::TransactionContext;
-use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
-
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
-use tokio::{
-    sync::{
-        mpsc::{unbounded_channel, UnboundedSender},
-        oneshot, RwLock,
-    },
-    task::JoinHandle,
-};
-
-use zcash_primitives::{
-    consensus::BlockHeight,
-    transaction::{Transaction, TxId},
-};
-
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 pub async fn start(
     transaction_context: TransactionContext,

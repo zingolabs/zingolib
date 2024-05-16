@@ -3,41 +3,46 @@
 //! note with each of their keys to determine if they are the recipient.
 //! This process is called: `trial_decryption`.
 
-use crate::error::ZingoLibResult;
-
-use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
-use crate::wallet::notes::ShieldedNoteInterface;
-use crate::wallet::{
-    data::PoolNullifier,
-    keys::unified::WalletCapability,
-    traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
-    utils::txid_from_slice,
-    MemoDownloadOption,
-};
-use futures::{stream::FuturesUnordered, StreamExt};
-use incrementalmerkletree::{Position, Retention};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use log::debug;
+use std::sync::Arc;
+use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
+use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
+
+use incrementalmerkletree::Position;
+use incrementalmerkletree::Retention;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-use std::sync::Arc;
-use tokio::{
-    sync::{
-        mpsc::{unbounded_channel, UnboundedSender},
-        oneshot, RwLock,
-    },
-    task::JoinHandle,
-};
-use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
+use zcash_client_backend::proto::compact_formats::CompactTx;
 use zcash_note_encryption::Domain;
-use zcash_primitives::{
-    consensus::{BlockHeight, Parameters},
-    transaction::{Transaction, TxId},
-};
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::consensus::Parameters;
+use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::TxId;
+
 use zingoconfig::ZingoConfig;
 
-use super::syncdata::BlazeSyncData;
+use crate::blaze::syncdata::BlazeSyncData;
+use crate::data::confirmation_status::ConfirmationStatus;
+use crate::error::ZingoLibResult;
+use crate::wallet::data::PoolNullifier;
+use crate::wallet::keys::unified::External;
+use crate::wallet::keys::unified::Fvk as _;
+use crate::wallet::keys::unified::Ivk;
+use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::traits::CompactOutput as _;
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::FromCommitment;
+use crate::wallet::traits::Recipient;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
+use crate::wallet::utils::txid_from_slice;
+use crate::wallet::MemoDownloadOption;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,

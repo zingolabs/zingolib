@@ -337,7 +337,7 @@ mod tests {
 
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
-    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use crate::data::confirmation_status::ConfirmationStatus::Confirmed;
 
     use crate::{
         test_framework::mocks::default_txid,

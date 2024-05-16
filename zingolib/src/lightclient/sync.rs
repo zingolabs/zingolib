@@ -4,27 +4,21 @@ use futures::future::join_all;
 
 use log::{debug, error, warn};
 
-use std::{
-    cmp::{self},
-    io::{self},
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{
-    join,
-    runtime::Runtime,
-    sync::{mpsc::unbounded_channel, oneshot},
-    task::yield_now,
-    time::sleep,
-};
-
-use zingo_status::confirmation_status::ConfirmationStatus;
-
+use crate::data::confirmation_status::ConfirmationStatus;
+use std::cmp::{self};
+use std::io::{self};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::join;
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::oneshot;
+use tokio::task::yield_now;
+use tokio::time::sleep;
 use zcash_client_backend::proto::service::RawTransaction;
-use zcash_primitives::{
-    consensus::{BlockHeight, BranchId},
-    transaction::Transaction,
-};
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::consensus::BranchId;
+use zcash_primitives::transaction::Transaction;
 
 use zingoconfig::MAX_REORG;
 

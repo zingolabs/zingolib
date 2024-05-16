@@ -29,7 +29,7 @@ use crate::{
 #[derive(Debug)]
 pub struct TransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
-    pub status: zingo_status::confirmation_status::ConfirmationStatus,
+    pub status: crate::data::confirmation_status::ConfirmationStatus,
 
     /// Timestamp of Tx. Added in v4
     pub datetime: u64,
@@ -73,7 +73,7 @@ pub struct TransactionRecord {
 impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     pub fn new(
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: crate::data::confirmation_status::ConfirmationStatus,
         datetime: u64,
         transaction_id: &TxId,
     ) -> Self {
@@ -454,7 +454,7 @@ impl TransactionRecord {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
+        let status = crate::data::confirmation_status::ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
         Ok(Self {
             status,
             datetime,
@@ -522,7 +522,7 @@ impl TransactionRecord {
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use crate::data::confirmation_status::ConfirmationStatus;
 
     use crate::{
         test_framework::mocks::{build_method, build_method_push, build_push_list, random_txid},
@@ -602,7 +602,7 @@ pub mod mocks {
         fn default() -> Self {
             Self {
                 status: Some(
-                    zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                    crate::data::confirmation_status::ConfirmationStatus::Confirmed(
                         zcash_primitives::consensus::BlockHeight::from_u32(5),
                     ),
                 ),

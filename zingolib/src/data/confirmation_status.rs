@@ -30,7 +30,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
@@ -49,7 +49,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Broadcast(10.into());
@@ -68,7 +68,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
@@ -91,7 +91,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
@@ -116,7 +116,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
@@ -139,7 +139,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
@@ -162,7 +162,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(16.into());
@@ -185,7 +185,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(16.into());
@@ -205,7 +205,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(16.into());
@@ -224,7 +224,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use crate::data::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(15.into());

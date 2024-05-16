@@ -1,22 +1,23 @@
-use crate::error::ZingoLibResult;
-use crate::wallet::MemoDownloadOption;
-use crate::wallet::{
-    data::PoolNullifier, tx_map_and_maybe_trees::TxMapAndMaybeTrees, utils::txid_from_slice,
-};
-use std::sync::Arc;
-
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use std::sync::Arc;
 use tokio::join;
+use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
-use tokio::sync::{mpsc::unbounded_channel, RwLock};
-use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
+use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::syncdata::BlazeSyncData;
+use crate::blaze::syncdata::BlazeSyncData;
+use crate::data::confirmation_status::ConfirmationStatus;
+use crate::error::ZingoLibResult;
+use crate::wallet::data::PoolNullifier;
+use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
+use crate::wallet::utils::txid_from_slice;
+use crate::wallet::MemoDownloadOption;
 
 /// A processor to update notes that we have received in the wallet.
 /// We need to identify if this note has been spent in future blocks.

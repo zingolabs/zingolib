@@ -2,14 +2,16 @@
 //! Does not contain trait implementations
 
 use zcash_note_encryption::Domain;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::TxId;
 
-use crate::wallet::{
-    data::{PoolNullifier, TransactionRecord},
-    notes::OutputInterface,
-    notes::{query::OutputSpendStatusQuery, ShieldedNoteInterface},
-    traits::{DomainWalletExt, Recipient},
-};
+use crate::wallet::data::PoolNullifier;
+use crate::wallet::data::TransactionRecord;
+use crate::wallet::notes::query::OutputSpendStatusQuery;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::Recipient;
 
 use super::TxMapAndMaybeTrees;
 
@@ -146,7 +148,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
     let txid_3 = TxId::from_bytes(txid_bytes_3);
     tms.transaction_records_by_id
         .insert_transaction_record(TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
+            crate::data::confirmation_status::ConfirmationStatus::Broadcast(
                 BlockHeight::from_u32(3_200_000),
             ),
             100,
@@ -154,7 +156,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
         ));
     tms.transaction_records_by_id
         .insert_transaction_record(TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+            crate::data::confirmation_status::ConfirmationStatus::Confirmed(
                 BlockHeight::from_u32(3_000_069),
             ),
             0,
@@ -162,7 +164,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
         ));
     tms.transaction_records_by_id
         .insert_transaction_record(TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+            crate::data::confirmation_status::ConfirmationStatus::Confirmed(
                 BlockHeight::from_u32(2_650_000),
             ),
             0,

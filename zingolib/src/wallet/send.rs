@@ -43,7 +43,7 @@ use zcash_primitives::{
 };
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 use zingo_memo::create_wallet_internal_memo_version_0;
-use zingo_status::confirmation_status::ConfirmationStatus;
+use crate::data::confirmation_status::ConfirmationStatus;
 
 use crate::data::witness_trees::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 
