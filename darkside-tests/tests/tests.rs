@@ -148,7 +148,7 @@ async fn sent_transaction_reorged_into_mempool() {
         )])
         .await
         .unwrap();
-    println!("{}", txid);
+    println!("{}", txid.first().to_string());
     recipient.do_sync(false).await.unwrap();
     println!("{}", recipient.do_list_transactions().await.pretty(2));
 

@@ -153,7 +153,7 @@ pub async fn send_value_between_clients_and_sync(
         .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
     recipient.do_sync(false).await?;
-    Ok(txid)
+    Ok(txid.first().to_string())
 }
 
 /// This function increases the chain height reliably (with polling) but
@@ -988,6 +988,7 @@ pub mod scenarios {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: Change to return vecs of TxIds in stead of a String of the first one for each pool
     pub async fn faucet_funded_recipient(
         orchard_funds: Option<u64>,
         sapling_funds: Option<u64>,
@@ -1008,7 +1009,7 @@ pub mod scenarios {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let orchard_txid = if let Some(funds) = orchard_funds {
+        let orchard_txids = if let Some(funds) = orchard_funds {
             Some(
                 faucet
                     .quick_send_from_send_inputs(vec![(
@@ -1022,7 +1023,7 @@ pub mod scenarios {
         } else {
             None
         };
-        let sapling_txid = if let Some(funds) = sapling_funds {
+        let sapling_txids = if let Some(funds) = sapling_funds {
             Some(
                 faucet
                     .quick_send_from_send_inputs(vec![(
@@ -1036,7 +1037,7 @@ pub mod scenarios {
         } else {
             None
         };
-        let transparent_txid = if let Some(funds) = transparent_funds {
+        let transparent_txids = if let Some(funds) = transparent_funds {
             Some(
                 faucet
                     .quick_send_from_send_inputs(vec![(
@@ -1059,9 +1060,9 @@ pub mod scenarios {
             child_process_handler,
             faucet,
             recipient,
-            orchard_txid,
-            sapling_txid,
-            transparent_txid,
+            orchard_txids.map(|txid| txid.first().to_string()),
+            sapling_txids.map(|txid| txid.first().to_string()),
+            transparent_txids.map(|txid| txid.first().to_string()),
         )
     }
 
