@@ -57,11 +57,15 @@ pub async fn assert_sender_understands_proposal<NoteId>(
     // }
 
     // assert that shielded inputs are marked as spent.
-    if let Some(shielded_inputs) = step.shielded_inputs() {
-        for _shielded_input in shielded_inputs.notes() {}
-    }
+    // if let Some(shielded_inputs) = step.shielded_inputs() {
+    //     for _shielded_input in shielded_inputs.notes() {}
+    // }
 
     let balance = step.balance();
+    assert_eq!(
+        transaction_record.get_transaction_fee().unwrap(),
+        balance.fee_required().into_u64()
+    );
 
     assert_eq!(
         transaction_record.query_sum_value(OutputQuery::new(
