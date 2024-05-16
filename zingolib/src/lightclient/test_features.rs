@@ -1,3 +1,4 @@
+//! As indicated by
 use nonempty::NonEmpty;
 use zcash_client_backend::{
     zip321::{TransactionRequest, Zip321Error},
@@ -70,6 +71,15 @@ impl LightClient {
         self.do_send(receivers).await.map(|txid| txid.to_string())
     }
 
+    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
+    pub fn transaction_request_from_send_inputs(
+        &self,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<TransactionRequest, Zip321Error> {
+        let receivers = receivers_from_send_inputs(raw_receivers, &self.config().chain);
+        transaction_request_from_receivers(receivers)
+    }
+
     /// Test only lightclient method for calling `do_shield` with an address as &str
     ///
     /// # Panics
@@ -102,14 +112,5 @@ impl LightClient {
                 self.do_addresses().await[0]["address"].take().to_string()
             }
         }
-    }
-
-    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
-    pub fn transaction_request_from_send_inputs(
-        &self,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<TransactionRequest, Zip321Error> {
-        let receivers = receivers_from_send_inputs(raw_receivers, &self.config().chain);
-        transaction_request_from_receivers(receivers)
     }
 }
