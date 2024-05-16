@@ -34,10 +34,10 @@ impl LightClient {
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose_send_from_send_inputs(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<TransferProposal, ProposeSendError> {
         let request = self
-            .transaction_request_from_send_inputs(address_amount_memo_tuples)
+            .transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         self.propose_send(request).await
     }
@@ -49,10 +49,10 @@ impl LightClient {
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send_from_send_inputs(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<NonEmpty<TxId>, QuickSendError> {
         let request = self
-            .transaction_request_from_send_inputs(address_amount_memo_tuples)
+            .transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         self.quick_send(request).await
     }
@@ -64,10 +64,9 @@ impl LightClient {
     /// Panics if the address, amount or memo conversion fails.
     pub async fn send_from_send_inputs(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
-        let receivers =
-            receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
+        let receivers = receivers_from_send_inputs(raw_receivers, &self.config().chain);
         self.do_send(receivers).await.map(|txid| txid.to_string())
     }
 
@@ -108,10 +107,9 @@ impl LightClient {
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
     pub fn transaction_request_from_send_inputs(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<TransactionRequest, Zip321Error> {
-        let receivers =
-            receivers_from_send_inputs(address_amount_memo_tuples, &self.config().chain);
+        let receivers = receivers_from_send_inputs(raw_receivers, &self.config().chain);
         transaction_request_from_receivers(receivers)
     }
 }
