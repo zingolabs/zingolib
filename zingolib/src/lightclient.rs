@@ -697,5 +697,5 @@ mod tests {
 mod deprecated;
 
 /// Help functions that enable testing
-#[cfg(test)]
+#[cfg(any(test, feature = "test-features"))]
 pub mod test_features;
