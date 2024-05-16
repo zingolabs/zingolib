@@ -32,6 +32,8 @@ use crate::scenarios::setup::TestEnvironmentGenerator;
 
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
+/// lightclient helpers
+pub mod lightclient;
 /// macros to help test
 pub mod macros;
 /// TODO: Add Doc Comment Here!

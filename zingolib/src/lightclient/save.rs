@@ -18,7 +18,7 @@ impl LightClient {
     /// Called internally at sync checkpoints to save state. Should not be called midway through sync.
     pub(super) async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
         match self.save_internal_buffer().await {
-            Ok(()) => {
+            Ok(_vu8) => {
                 // Save_internal_buffer ran without error. At this point, we assume that the save buffer is good to go. Depending on operating system, we may be able to write it to disk. (Otherwise, we wait for the FFI to offer save export.
 
                 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -38,14 +38,15 @@ impl LightClient {
         }
     }
 
-    pub(super) async fn save_internal_buffer(&self) -> ZingoLibResult<()> {
+    /// write down the state of the lightclient as a Vec<u8>
+    pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet
             .write(&mut buffer)
             .await
             .map_err(ZingoLibError::InternalWriteBufferError)?;
-        *self.save_buffer.buffer.write().await = buffer;
-        Ok(())
+        *self.save_buffer.buffer.write().await = buffer.clone();
+        Ok(buffer)
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]

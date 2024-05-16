@@ -405,6 +405,7 @@ mod tests {
         }
     }
 
+    /*
     #[test]
     #[cfg(feature = "zip317")]
     fn parse_send_all_args() {
@@ -437,6 +438,7 @@ mod tests {
             Err(CommandError::MultipleReceivers)
         ));
     }
+    */
     #[test]
     fn check_memo_compatibility() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());

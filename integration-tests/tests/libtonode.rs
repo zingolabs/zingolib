@@ -3207,7 +3207,9 @@ mod slow {
             65_000
         );
 
-        let loaded_client = recipient.new_client_from_save_buffer().await.unwrap();
+        let loaded_client = zingo_testutils::lightclient::new_client_from_save_buffer(&recipient)
+            .await
+            .unwrap();
         let loaded_balance = loaded_client.do_balance().await;
         assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
         check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
