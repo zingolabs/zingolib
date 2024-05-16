@@ -1,4 +1,9 @@
-//! As indicated by
+//! As indicated by this file being behind the test-features flag, this is test-only functionality
+//! In this context a "raw_receiver" is a 3 element stuple organizes primitives (e.g. from the command line)
+//! into the components of a transaction receiver
+//! raw_receiver.0:   A &str representing the receiver address
+//! raw_receiver.1:   A u64 representing the number of zats to be sent
+//! raw_receiver.2:   An Option<&str> that contains memo data if not None
 use nonempty::NonEmpty;
 use zcash_client_backend::{
     zip321::{TransactionRequest, Zip321Error},
@@ -28,10 +33,6 @@ impl LightClient {
         .map_err(ZingoLibError::CantReadWallet)
     }
 
-    /// Test only lightclient method for calling `propose_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose_send_from_send_inputs(
         &self,
@@ -43,10 +44,6 @@ impl LightClient {
         self.propose_send(request).await
     }
 
-    /// Test only lightclient method for calling `quick_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send_from_send_inputs(
         &self,
@@ -58,10 +55,6 @@ impl LightClient {
         self.quick_send(request).await
     }
 
-    /// Test only lightclient method for calling `do_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
     /// Panics if the address, amount or memo conversion fails.
     pub async fn send_from_send_inputs(
         &self,
@@ -80,10 +73,6 @@ impl LightClient {
         transaction_request_from_receivers(receivers)
     }
 
-    /// Test only lightclient method for calling `do_shield` with an address as &str
-    ///
-    /// # Panics
-    ///
     /// Panics if the address conversion fails.
     pub async fn shield_from_shield_inputs(
         &self,
