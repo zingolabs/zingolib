@@ -26,11 +26,13 @@ use zcash_primitives::transaction::components::amount::BalanceError;
 
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
-    #[error("Note expected but not found: {:?}", {0})]
+    #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
-    #[error("An output is this wallet is believed to contain {} zec. That is more than exist. {}", {0}, {1})]
+    #[error(
+        "An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}"
+    )]
     OutputTooBig((u64, BalanceError)),
-    #[error("Cannot send. Fund shortfall: {}", {0})]
+    #[error("Cannot send. Fund shortfall: {0:?}")]
     Shortfall(u64),
 }
 
