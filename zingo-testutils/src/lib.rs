@@ -144,7 +144,7 @@ pub async fn send_value_between_clients_and_sync(
         &recipient.do_addresses().await[0]["address"]
     );
     let txid = sender
-        .send_from_send_inputs(vec![(
+        .quick_send_from_send_inputs(vec![(
             &zingolib::get_base_address!(recipient, address_type),
             value,
             None,
@@ -1011,7 +1011,7 @@ pub mod scenarios {
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
                 faucet
-                    .send_from_send_inputs(vec![(
+                    .quick_send_from_send_inputs(vec![(
                         &get_base_address!(recipient, "unified"),
                         funds,
                         None,
@@ -1025,7 +1025,7 @@ pub mod scenarios {
         let sapling_txid = if let Some(funds) = sapling_funds {
             Some(
                 faucet
-                    .send_from_send_inputs(vec![(
+                    .quick_send_from_send_inputs(vec![(
                         &get_base_address!(recipient, "sapling"),
                         funds,
                         None,
@@ -1039,7 +1039,7 @@ pub mod scenarios {
         let transparent_txid = if let Some(funds) = transparent_funds {
             Some(
                 faucet
-                    .send_from_send_inputs(vec![(
+                    .quick_send_from_send_inputs(vec![(
                         &get_base_address!(recipient, "transparent"),
                         funds,
                         None,
@@ -1169,7 +1169,7 @@ pub mod scenarios {
             .await;
         faucet.do_sync(false).await.unwrap();
         faucet
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 value,
                 None,
@@ -1211,7 +1211,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet
         faucet
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 value,
                 None,
@@ -1223,7 +1223,7 @@ pub mod scenarios {
             .unwrap();
         // send to a faucet
         recipient
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -1235,7 +1235,7 @@ pub mod scenarios {
             .unwrap();
         // send to self sapling
         recipient
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -1277,7 +1277,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet to orchard
         faucet
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 value.checked_div(2).unwrap(),
                 None,
@@ -1289,7 +1289,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet to sapling
         faucet
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 value.checked_div(4).unwrap(),
                 None,
@@ -1301,7 +1301,7 @@ pub mod scenarios {
             .unwrap();
         // received from a faucet to transparent
         faucet
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "transparent"),
                 value.checked_div(4).unwrap(),
                 None,
@@ -1313,7 +1313,7 @@ pub mod scenarios {
             .unwrap();
         // send to a faucet
         recipient
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(faucet, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -1325,7 +1325,7 @@ pub mod scenarios {
             .unwrap();
         // send to self orchard
         recipient
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -1337,7 +1337,7 @@ pub mod scenarios {
             .unwrap();
         // send to self sapling
         recipient
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "sapling"),
                 value.checked_div(10).unwrap(),
                 None,
@@ -1349,7 +1349,7 @@ pub mod scenarios {
             .unwrap();
         // send to self transparent
         recipient
-            .send_from_send_inputs(vec![(
+            .quick_send_from_send_inputs(vec![(
                 &get_base_address!(recipient, "transparent"),
                 value.checked_div(10).unwrap(),
                 None,

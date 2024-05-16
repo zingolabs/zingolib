@@ -38,7 +38,7 @@ pub(super) fn parse_shield_args(
     Ok((pools_to_shield.to_vec(), address))
 }
 
-// Parse the send arguments for `do_send`.
+// Parse the send arguments to receivers for sending.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
