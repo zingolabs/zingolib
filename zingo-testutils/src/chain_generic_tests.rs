@@ -151,11 +151,9 @@ pub mod fixtures {
                 .unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
-            dbg!(secondary.do_balance().await);
             secondary.quick_shield().await.unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
-            dbg!(secondary.do_balance().await);
             secondary
                 .send_from_send_inputs(vec![(primary_address.as_str(), 100_000, None)])
                 .await
