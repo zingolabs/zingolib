@@ -2,10 +2,10 @@ use darkside_tests::utils::{
     prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector, DarksideHandler,
 };
 use tokio::time::sleep;
-use zingo_testutils::scenarios::setup::ClientBuilder;
+use zingo_testutils::{get_base_address, scenarios::setup::ClientBuilder};
 use zingo_testvectors::seeds::DARKSIDE_SEED;
 use zingoconfig::RegtestNetwork;
-use zingolib::{get_base_address, lightclient::PoolBalances};
+use zingolib::lightclient::PoolBalances;
 
 #[tokio::test]
 async fn simple_sync() {

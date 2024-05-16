@@ -32,6 +32,8 @@ use crate::scenarios::setup::TestEnvironmentGenerator;
 
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
+/// macros to help test
+pub mod macros;
 /// TODO: Add Doc Comment Here!
 pub mod paths;
 /// TODO: Add Doc Comment Here!
@@ -145,7 +147,7 @@ pub async fn send_value_between_clients_and_sync(
     );
     let txid = sender
         .send_from_send_inputs(vec![(
-            &zingolib::get_base_address!(recipient, address_type),
+            &crate::get_base_address!(recipient, address_type),
             value,
             None,
         )])
@@ -552,9 +554,9 @@ pub mod scenarios {
     //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
-    use crate::increase_height_and_wait_for_client;
+    use crate::{get_base_address, increase_height_and_wait_for_client};
     use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-    use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
+    use zingolib::{lightclient::LightClient, wallet::Pool};
 
     /// TODO: Add Doc Comment Here!
     pub mod setup {
