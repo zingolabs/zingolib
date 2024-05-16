@@ -1360,18 +1360,17 @@ pub mod scenarios {
             .await
             .unwrap();
         // shield transparent
-        recipient
-            .shield_from_shield_inputs(&[Pool::Transparent], None)
-            .await
-            .unwrap();
+        recipient.quick_shield().await.unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        // upgrade sapling
+        /*
+        // upgrade sapling NOT IMPLEMENTED YET
         recipient
             .shield_from_shield_inputs(&[Pool::Sapling], None)
             .await
             .unwrap();
+        */
         // end
         scenario_builder
             .regtest_manager

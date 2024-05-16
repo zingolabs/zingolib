@@ -105,11 +105,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
             .await;
         scenario.get_lightclient(0).do_sync(false).await.unwrap();
         scenario
-            .shield_and_write_transaction(
-                DarksideSender::IndexedClient(0),
-                Pool::Sapling,
-                &chainbuild_file,
-            )
+            .shield_and_write_transaction(DarksideSender::IndexedClient(0), &chainbuild_file)
             .await;
     }
 
