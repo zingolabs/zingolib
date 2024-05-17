@@ -12,7 +12,9 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingo_testutils::{paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder};
+use zingo_testutils::{
+    lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
+};
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 use zingolib::wallet::data::summaries::ValueTransferKind;
@@ -555,8 +557,7 @@ async fn reorg_changes_outgoing_tx_height() {
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
-    let sent_tx_id = light_client
-        .send_from_send_inputs([(recipient_string, amount, None)].to_vec())
+    let sent_tx_id = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
         .await
         .unwrap();
 
@@ -791,8 +792,7 @@ async fn reorg_expires_outgoing_tx_height() {
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
-    let sent_tx_id = light_client
-        .send_from_send_inputs([(recipient_string, amount, None)].to_vec())
+    let sent_tx_id = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
         .await
         .unwrap();
 
@@ -969,8 +969,7 @@ async fn reorg_changes_outgoing_tx_index() {
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
-    let sent_tx_id = light_client
-        .send_from_send_inputs([(recipient_string, amount, None)].to_vec())
+    let sent_tx_id = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
         .await
         .unwrap();
 

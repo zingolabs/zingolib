@@ -2,7 +2,9 @@ use darkside_tests::utils::{
     prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector, DarksideHandler,
 };
 use tokio::time::sleep;
-use zingo_testutils::{get_base_address_macro, scenarios::setup::ClientBuilder};
+use zingo_testutils::{
+    get_base_address_macro, lightclient::from_inputs, scenarios::setup::ClientBuilder,
+};
 use zingo_testvectors::seeds::DARKSIDE_SEED;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
@@ -140,14 +142,12 @@ async fn sent_transaction_reorged_into_mempool() {
             transparent_balance: Some(0)
         }
     );
-    let txid = light_client
-        .send_from_send_inputs(vec![(
-            &get_base_address_macro!(recipient, "unified"),
-            10_000,
-            None,
-        )])
-        .await
-        .unwrap();
+    let txid = from_inputs::send(
+        &light_client,
+        vec![(&get_base_address_macro!(recipient, "unified"), 10_000, None)],
+    )
+    .await
+    .unwrap();
     println!("{}", txid);
     recipient.do_sync(false).await.unwrap();
     println!("{}", recipient.do_list_transactions().await.pretty(2));
