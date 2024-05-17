@@ -1,17 +1,9 @@
 //! contains functions that compare structs to see if they match
 
-use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::proposal::Step;
 
 use zcash_client_backend::wallet::NoteId;
-use zcash_client_backend::ShieldedProtocol::Orchard;
-use zcash_client_backend::ShieldedProtocol::Sapling;
-use zcash_primitives::transaction::TxId;
 
-use zingolib::lightclient::LightClient;
-use zingolib::wallet::notes::query::OutputPoolQuery;
-use zingolib::wallet::notes::query::OutputQuery;
-use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 use zingolib::wallet::transaction_record::TransactionRecord;
 
 /// does this record match this step?
