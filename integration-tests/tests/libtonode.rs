@@ -3580,23 +3580,19 @@ mod slow {
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(expected_balance));
         if expected_balance > 0 {
-            let _ = client
-                .send_from_send_inputs(vec![(
-                    &get_base_address_macro!(client, "sapling"),
-                    11011,
-                    None,
-                )])
-                .await
-                .unwrap();
+            let _ = from_inputs::send(
+                &client,
+                vec![(&get_base_address_macro!(client, "sapling"), 11011, None)],
+            )
+            .await
+            .unwrap();
             let _ = client.do_sync(true).await.unwrap();
-            let _ = client
-                .send_from_send_inputs(vec![(
-                    &get_base_address_macro!(client, "transparent"),
-                    28000,
-                    None,
-                )])
-                .await
-                .unwrap();
+            let _ = from_inputs::send(
+                &client,
+                vec![(&get_base_address_macro!(client, "transparent"), 28000, None)],
+            )
+            .await
+            .unwrap();
         }
     }
 
