@@ -127,6 +127,7 @@ impl LightClient {
         Ok(proposal)
     }
 
+    /*
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
@@ -143,6 +144,7 @@ impl LightClient {
             .await;
         Ok(proposal)
     }
+    */
 
     fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
         self.wallet
