@@ -1082,9 +1082,11 @@ mod slow {
 
             watch_client.do_rescan().await.unwrap();
             assert_eq!(
-                watch_client
-                    .send_from_send_inputs(vec![(zingo_testvectors::EXT_TADDR, 1000, None)])
-                    .await,
+                from_inputs::send(
+                    &watch_client,
+                    vec![(zingo_testvectors::EXT_TADDR, 1000, None)]
+                )
+                .await,
                 Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
             );
         }
