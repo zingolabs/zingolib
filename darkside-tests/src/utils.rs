@@ -723,10 +723,14 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            lightclient
-                .shield_from_shield_inputs(&[pool_to_shield], None)
-                .await
-                .unwrap();
+            // upgrade sapling
+            zingo_testutils::lightclient::from_inputs::shield(
+                &lightclient,
+                &[pool_to_shield],
+                None,
+            )
+            .await
+            .unwrap();
             let mut streamed_raw_txns = self
                 .darkside_connector
                 .get_incoming_transactions()
