@@ -148,7 +148,7 @@ pub async fn send_value_between_clients_and_sync(
         &recipient.do_addresses().await[0]["address"]
     );
     let txid = crate::lightclient::from_inputs::send(
-        &sender,
+        sender,
         vec![(
             &crate::get_base_address_macro!(recipient, address_type),
             value,

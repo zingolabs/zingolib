@@ -7,7 +7,7 @@ pub async fn new_client_from_save_buffer(
 ) -> Result<LightClient, ZingoLibError> {
     let buffer = template_client.save_internal_buffer().await?;
 
-    LightClient::read_wallet_from_buffer_async(&template_client.config(), buffer.as_slice())
+    LightClient::read_wallet_from_buffer_async(template_client.config(), buffer.as_slice())
         .await
         .map_err(ZingoLibError::CantReadWallet)
 }

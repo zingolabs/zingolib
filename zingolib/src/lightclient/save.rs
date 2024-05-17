@@ -45,7 +45,7 @@ impl LightClient {
             .write(&mut buffer)
             .await
             .map_err(ZingoLibError::InternalWriteBufferError)?;
-        *self.save_buffer.buffer.write().await = buffer.clone();
+        (self.save_buffer.buffer.write().await).clone_from(&buffer);
         Ok(buffer)
     }
 
