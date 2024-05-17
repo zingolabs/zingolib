@@ -17,10 +17,11 @@ use darkside_tests::{
 };
 use json::JsonValue;
 use tokio::time::sleep;
-use zingo_testutils::{scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient};
+use zingo_testutils::{
+    get_base_address, scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient,
+};
 use zingoconfig::RegtestNetwork;
 use zingolib::{
-    get_base_address,
     lightclient::PoolBalances,
     wallet::{data::summaries::ValueTransferKind, Pool},
 };

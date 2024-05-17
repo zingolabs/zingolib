@@ -13,8 +13,8 @@ use zcash_primitives::{
     transaction::fees::zip317::MINIMUM_FEE,
 };
 use zingo_testutils::{
-    self, build_fvk_client, check_transaction_equality, increase_height_and_wait_for_client,
-    paths::get_cargo_manifest_dir, scenarios,
+    self, build_fvk_client, check_client_balances, check_transaction_equality, get_base_address,
+    increase_height_and_wait_for_client, paths::get_cargo_manifest_dir, scenarios,
 };
 
 use zingo_testvectors::{
@@ -24,7 +24,6 @@ use zingo_testvectors::{
 };
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
-    check_client_balances, get_base_address,
     lightclient::{LightClient, PoolBalances},
     utils,
     wallet::{
@@ -3595,8 +3594,8 @@ mod slow {
 }
 
 mod basic_transactions {
-    use zingo_testutils::scenarios;
-    use zingolib::{get_base_address, wallet::Pool};
+    use zingo_testutils::{get_base_address, scenarios};
+    use zingolib::wallet::Pool;
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
