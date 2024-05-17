@@ -71,9 +71,9 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
-    use crate::chain_generic_tests::conduct_chain::ConductChain;
     use crate::lightclient::from_inputs;
     use crate::{assertions::assert_record_matches_step, lightclient::get_base_address};
+    use crate::{chain_generic_tests::conduct_chain::ConductChain, check_client_balances};
 
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
@@ -165,6 +165,8 @@ pub mod fixtures {
         let secondary = environment.create_client().await;
         let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
 
+        check_client_balances!(primary, o: 1_050_000 s: 0 t: 0);
+        check_client_balances!(secondary, o: 0 s: 0 t: 0);
         for _ in 0..n {
             from_inputs::quick_send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
                 .await
@@ -174,13 +176,13 @@ pub mod fixtures {
             secondary.quick_shield().await.unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
-            dbg!(secondary.do_balance().await);
             from_inputs::quick_send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
                 .await
                 .unwrap();
             primary.do_sync(false).await.unwrap();
-            dbg!(primary.do_balance().await);
         }
+        check_client_balances!(primary, o: 740_000 s: 0 t: 0);
+        check_client_balances!(secondary, o: 100_000 s: 0 t: 0);
     }
 
     /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
