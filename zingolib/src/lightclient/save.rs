@@ -38,7 +38,7 @@ impl LightClient {
         }
     }
 
-    /// write down the state of the lightclient as a Vec<u8>
+    /// write down the state of the lightclient as a `Vec<u8>`
     pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet
