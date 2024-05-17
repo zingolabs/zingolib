@@ -3017,14 +3017,12 @@ mod slow {
 
             //The first address in a wallet should always contain all three currently extant
             //receiver types.
-            recipient_restored
-                .send_from_send_inputs(vec![(
-                    &get_base_address_macro!(faucet, "sapling"),
-                    4_000,
-                    None,
-                )])
-                .await
-                .unwrap();
+            from_inputs::send(
+                &recipient_restored,
+                vec![(&get_base_address_macro!(faucet, "sapling"), 4_000, None)],
+            )
+            .await
+            .unwrap();
             let sender_balance = faucet.do_balance().await;
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
