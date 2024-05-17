@@ -8,7 +8,6 @@ edition = "2021"
 
 [features]
 deprecations = ["lightclient-deprecated"]
-test-features = ["lightclient-deprecated"]
 lightclient-deprecated = []
 darkside_tests = []
 zip317 = []

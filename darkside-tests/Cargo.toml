@@ -8,7 +8,7 @@ edition = "2021"
 chain_generic_tests = []
 
 [dependencies]
-zingolib = { path = "../zingolib", features = ["test-features", "darkside_tests"] }
+zingolib = { path = "../zingolib", features = ["darkside_tests"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingo-testvectors = { path = "../zingo-testvectors" }
 zingoconfig = { path = "../zingoconfig" }
