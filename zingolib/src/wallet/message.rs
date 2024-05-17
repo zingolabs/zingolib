@@ -213,7 +213,7 @@ mod tests {
     use ff::Field;
     use zcash_note_encryption::OUT_PLAINTEXT_SIZE;
 
-    use crate::test_framework::mocks::random_zaddr;
+    use crate::mocks::random_zaddr;
 
     use super::*;
 

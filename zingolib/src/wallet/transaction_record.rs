@@ -518,14 +518,14 @@ impl TransactionRecord {
     }
 }
 
-#[cfg(any(test, feature = "test-features"))]
+#[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
-        test_framework::mocks::{build_method, build_method_push, build_push_list, random_txid},
+        mocks::{build_method, build_method_push, build_push_list, random_txid},
         wallet::notes::{
             orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
             transparent::mocks::TransparentOutputBuilder,
@@ -567,7 +567,7 @@ pub mod mocks {
 
         /// Use the mockery of random_txid to get one?
         pub fn randomize_txid(&mut self) -> &mut Self {
-            self.txid(crate::test_framework::mocks::random_txid())
+            self.txid(crate::mocks::random_txid())
         }
 
         /// Sets the output indexes of all contained notes
@@ -607,7 +607,7 @@ pub mod mocks {
                     ),
                 ),
                 datetime: Some(1705077003),
-                txid: Some(crate::test_framework::mocks::default_txid()),
+                txid: Some(crate::mocks::default_txid()),
                 transparent_outputs: vec![],
                 sapling_notes: vec![],
                 orchard_notes: vec![],

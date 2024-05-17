@@ -1,25 +1,56 @@
 //! As indicated by this file being behind the test-features flag, this is test-only functionality
-//! In this context a "raw_receiver" is a 3 element stuple organizes primitives (e.g. from the command line)
+//! In this context a "raw_receiver" is a 3 element tuple organizes primitives
 //! into the components of a transaction receiver
 //! raw_receiver.0:   A &str representing the receiver address
 //! raw_receiver.1:   A u64 representing the number of zats to be sent
 //! raw_receiver.2:   An Option<&str> that contains memo data if not None
-use nonempty::NonEmpty;
 use zcash_client_backend::{
     zip321::{TransactionRequest, Zip321Error},
     PoolType, ShieldedProtocol,
 };
-use zcash_primitives::transaction::TxId;
 
 use crate::{
-    data::{proposal::TransferProposal, receivers::transaction_request_from_receivers},
+    data::receivers::transaction_request_from_receivers,
     error::ZingoLibError,
-    utils::conversion::{address_from_str, testing::receivers_from_send_inputs},
+    utils::conversion::{address_from_str, zatoshis_from_u64},
     wallet::Pool,
 };
 
-use super::{propose::ProposeSendError, send::send_with_proposal::QuickSendError, LightClient};
+use crate::lightclient::LightClient;
 
+use zingoconfig::ChainType;
+
+use crate::data::receivers::Receivers;
+
+/// Converts primitive rust types to zcash receiver types for constructing transaction requests.
+///
+/// # Panics
+///
+/// Panics if the address, amount or memo conversion fails.
+pub fn receivers_from_send_inputs(
+    address_amount_memo_tuples: Vec<(&str, u64, Option<&str>)>,
+    chain: &ChainType,
+) -> Receivers {
+    address_amount_memo_tuples
+        .into_iter()
+        .map(|(address, amount, memo)| {
+            let recipient_address =
+                address_from_str(address, chain).expect("should be a valid address");
+            let amount =
+                zatoshis_from_u64(amount).expect("should be inside the range of valid zatoshis");
+            let memo = memo.map(|memo| {
+                crate::wallet::utils::interpret_memo_string(memo.to_string())
+                    .expect("should be able to interpret memo")
+            });
+
+            crate::data::receivers::Receiver {
+                recipient_address,
+                amount,
+                memo,
+            }
+        })
+        .collect()
+}
 impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn new_client_from_save_buffer(&self) -> Result<Self, ZingoLibError> {
@@ -31,28 +62,6 @@ impl LightClient {
         )
         .await
         .map_err(ZingoLibError::CantReadWallet)
-    }
-
-    /// Panics if the address, amount or memo conversion fails.
-    pub async fn propose_send_from_send_inputs(
-        &self,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<TransferProposal, ProposeSendError> {
-        let request = self
-            .transaction_request_from_send_inputs(raw_receivers)
-            .expect("should be able to create a transaction request as receivers are valid.");
-        self.propose_send(request).await
-    }
-
-    /// Panics if the address, amount or memo conversion fails.
-    pub async fn quick_send_from_send_inputs(
-        &self,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<NonEmpty<TxId>, QuickSendError> {
-        let request = self
-            .transaction_request_from_send_inputs(raw_receivers)
-            .expect("should be able to create a transaction request as receivers are valid.");
-        self.quick_send(request).await
     }
 
     /// Panics if the address, amount or memo conversion fails.

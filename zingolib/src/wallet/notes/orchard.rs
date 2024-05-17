@@ -204,7 +204,7 @@ impl ShieldedNoteInterface for OrchardNote {
     }
 }
 
-#[cfg(any(test, feature = "test-features"))]
+#[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;
@@ -212,7 +212,7 @@ pub mod mocks {
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
     use crate::{
-        test_framework::mocks::{build_method, orchard_note::OrchardCryptoNoteBuilder},
+        mocks::{build_method, orchard_note::OrchardCryptoNoteBuilder},
         wallet::notes::ShieldedNoteInterface,
     };
 

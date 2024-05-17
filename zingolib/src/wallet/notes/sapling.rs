@@ -225,7 +225,7 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 }
 
-#[cfg(any(test, feature = "test-features"))]
+#[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;
@@ -233,7 +233,7 @@ pub mod mocks {
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
     use crate::{
-        test_framework::mocks::{build_method, SaplingCryptoNoteBuilder},
+        mocks::{build_method, SaplingCryptoNoteBuilder},
         wallet::{notes::ShieldedNoteInterface, traits::FromBytes},
     };
 
@@ -317,7 +317,7 @@ pub mod mocks {
             let mut builder = SaplingNoteBuilder::new();
             builder
                 .diversifier(sapling_crypto::Diversifier([0; 11]))
-                .note(crate::test_framework::mocks::SaplingCryptoNoteBuilder::default())
+                .note(crate::mocks::SaplingCryptoNoteBuilder::default())
                 .witnessed_position(Some(Position::from(0)))
                 .output_index(Some(0))
                 .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))

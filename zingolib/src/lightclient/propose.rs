@@ -8,8 +8,6 @@ use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::zip321::Zip321Error;
 use zcash_client_backend::ShieldedProtocol;
-use zcash_keys::address::Address;
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 use thiserror::Error;
@@ -129,21 +127,24 @@ impl LightClient {
         Ok(proposal)
     }
 
+    /*
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
+    #[cfg(test)]
     pub async fn propose_send_all(
         &self,
-        _address: Address,
-        _memo: Option<MemoBytes>,
+        _address: zcash_keys::address::Address,
+        _memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<crate::data::proposal::TransferProposal, String> {
-        use crate::test_framework::mocks::ProposalBuilder;
+        use crate::mocks::ProposalBuilder;
 
         let proposal = ProposalBuilder::default().build();
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)
     }
+    */
 
     fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
         self.wallet

@@ -4,6 +4,7 @@ use std::fmt;
 pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
     #[cfg(feature = "zip317")]
+    #[allow(dead_code)]
     ArgNotJsonOrValidAddress,
     SingleArgNotJsonArray(String),
     EmptyJsonArray,
@@ -18,6 +19,7 @@ pub(crate) enum CommandError {
     #[cfg(not(feature = "zip317"))]
     InvalidPool,
     #[cfg(feature = "zip317")]
+    #[allow(dead_code)]
     MultipleReceivers,
 }
 

@@ -221,12 +221,12 @@ impl TransparentOutput {
     }
 }
 
-#[cfg(any(test, feature = "test-features"))]
+#[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
 
-    use crate::{test_framework::mocks::build_method, wallet::notes::TransparentOutput};
+    use crate::{mocks::build_method, wallet::notes::TransparentOutput};
 
     /// to create a mock TransparentOutput
     #[derive(Clone)]
