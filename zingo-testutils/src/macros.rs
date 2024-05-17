@@ -2,7 +2,7 @@
 /// of a UA.  Legacy addresses can be extracted from the receivers, per:
 /// <https://zips.z.cash/zip-0316>
 #[macro_export]
-macro_rules! get_base_address {
+macro_rules! get_base_address_macro {
     ($client:expr, $address_protocol:expr) => {
         match $address_protocol {
             "unified" => $client.do_addresses().await[0]["address"]

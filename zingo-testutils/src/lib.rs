@@ -149,7 +149,7 @@ pub async fn send_value_between_clients_and_sync(
     );
     let txid = sender
         .send_from_send_inputs(vec![(
-            &crate::get_base_address!(recipient, address_type),
+            &crate::get_base_address_macro!(recipient, address_type),
             value,
             None,
         )])
@@ -556,7 +556,7 @@ pub mod scenarios {
     //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
-    use crate::{get_base_address, increase_height_and_wait_for_client};
+    use crate::{get_base_address_macro, increase_height_and_wait_for_client};
     use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use zingolib::{lightclient::LightClient, wallet::Pool};
 
@@ -1016,7 +1016,7 @@ pub mod scenarios {
             Some(
                 faucet
                     .send_from_send_inputs(vec![(
-                        &get_base_address!(recipient, "unified"),
+                        &get_base_address_macro!(recipient, "unified"),
                         funds,
                         None,
                     )])
@@ -1030,7 +1030,7 @@ pub mod scenarios {
             Some(
                 faucet
                     .send_from_send_inputs(vec![(
-                        &get_base_address!(recipient, "sapling"),
+                        &get_base_address_macro!(recipient, "sapling"),
                         funds,
                         None,
                     )])
@@ -1044,7 +1044,7 @@ pub mod scenarios {
             Some(
                 faucet
                     .send_from_send_inputs(vec![(
-                        &get_base_address!(recipient, "transparent"),
+                        &get_base_address_macro!(recipient, "transparent"),
                         funds,
                         None,
                     )])
@@ -1174,7 +1174,7 @@ pub mod scenarios {
         faucet.do_sync(false).await.unwrap();
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 value,
                 None,
             )])
@@ -1216,7 +1216,7 @@ pub mod scenarios {
         // received from a faucet
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 value,
                 None,
             )])
@@ -1228,7 +1228,7 @@ pub mod scenarios {
         // send to a faucet
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
             )])
@@ -1240,7 +1240,7 @@ pub mod scenarios {
         // send to self sapling
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 value.checked_div(10).unwrap(),
                 None,
             )])
@@ -1282,7 +1282,7 @@ pub mod scenarios {
         // received from a faucet to orchard
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 value.checked_div(2).unwrap(),
                 None,
             )])
@@ -1294,7 +1294,7 @@ pub mod scenarios {
         // received from a faucet to sapling
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 value.checked_div(4).unwrap(),
                 None,
             )])
@@ -1306,7 +1306,7 @@ pub mod scenarios {
         // received from a faucet to transparent
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "transparent"),
+                &get_base_address_macro!(recipient, "transparent"),
                 value.checked_div(4).unwrap(),
                 None,
             )])
@@ -1318,7 +1318,7 @@ pub mod scenarios {
         // send to a faucet
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
             )])
@@ -1330,7 +1330,7 @@ pub mod scenarios {
         // send to self orchard
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 value.checked_div(10).unwrap(),
                 None,
             )])
@@ -1342,7 +1342,7 @@ pub mod scenarios {
         // send to self sapling
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 value.checked_div(10).unwrap(),
                 None,
             )])
@@ -1354,7 +1354,7 @@ pub mod scenarios {
         // send to self transparent
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "transparent"),
+                &get_base_address_macro!(recipient, "transparent"),
                 value.checked_div(10).unwrap(),
                 None,
             )])

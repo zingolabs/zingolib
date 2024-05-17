@@ -1,4 +1,4 @@
-use zingo_testutils::{get_base_address, scenarios::faucet_recipient_default};
+use zingo_testutils::{get_base_address_macro, scenarios::faucet_recipient_default};
 
 #[tokio::test]
 #[ignore]
@@ -15,7 +15,7 @@ async fn shield_transparent() {
     );
     let proposal = faucet
         .send_from_send_inputs(vec![(
-            &get_base_address!(recipient, "transparent"),
+            &get_base_address_macro!(recipient, "transparent"),
             transparent_funds,
             None,
         )])

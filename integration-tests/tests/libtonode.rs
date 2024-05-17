@@ -13,8 +13,9 @@ use zcash_primitives::{
     transaction::fees::zip317::MINIMUM_FEE,
 };
 use zingo_testutils::{
-    self, build_fvk_client, check_client_balances, check_transaction_equality, get_base_address,
-    increase_height_and_wait_for_client, paths::get_cargo_manifest_dir, scenarios,
+    self, build_fvk_client, check_client_balances, check_transaction_equality,
+    get_base_address_macro, increase_height_and_wait_for_client, paths::get_cargo_manifest_dir,
+    scenarios,
 };
 
 use zingo_testvectors::{
@@ -133,7 +134,7 @@ mod fast {
             scenarios::faucet_recipient_default().await;
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "transparent"),
+                &get_base_address_macro!(recipient, "transparent"),
                 100_000,
                 None,
             )])
@@ -174,7 +175,7 @@ mod fast {
         assert_eq!(
         recipient
             .send_from_send_inputs
-            (vec![(&get_base_address!(faucet, "unified"), 100_000, None)])
+            (vec![(&get_base_address_macro!(faucet, "unified"), 100_000, None)])
             .await
             .unwrap_err(),
         "The reorg buffer offset has been set to 4 but there are only 1 blocks in the wallet. Please sync at least 4 more blocks before trying again"
@@ -297,7 +298,7 @@ mod fast {
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
         faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "unified").as_str(),
+                get_base_address_macro!(recipient, "unified").as_str(),
                 5_000,
                 Some("this note never makes it to the wallet! or chain"),
             )])
@@ -401,13 +402,13 @@ mod fast {
             .await;
         let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
         assert_eq!(
-            &get_base_address!(recipient1, "transparent"),
+            &get_base_address_macro!(recipient1, "transparent"),
             &base_transparent_receiver
         );
         let base_sapling_receiver = "\
         zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw";
         assert_eq!(
-            &get_base_address!(recipient1, "sapling"),
+            &get_base_address_macro!(recipient1, "sapling"),
             &base_sapling_receiver
         );
         // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
@@ -416,7 +417,7 @@ mod fast {
         edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhj\
         nfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
         assert_eq!(
-            &get_base_address!(recipient1, "unified"),
+            &get_base_address_macro!(recipient1, "unified"),
             &base_unified_address
         );
 
@@ -477,7 +478,7 @@ mod fast {
             .await;
 
         assert_eq!(
-            get_base_address!(client_b, "transparent"),
+            get_base_address_macro!(client_b, "transparent"),
             transparent_address
         );
     }
@@ -691,7 +692,7 @@ mod slow {
         let sent_value = 0;
         let _sent_transaction_id = faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 sent_value,
                 None,
             )])
@@ -702,7 +703,11 @@ mod slow {
             .await
             .unwrap();
         let _sent_transaction_id = recipient
-            .send_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 1000, None)])
+            .send_from_send_inputs(vec![(
+                &get_base_address_macro!(faucet, "unified"),
+                1000,
+                None,
+            )])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
@@ -729,7 +734,7 @@ mod slow {
         let sent_value = value - u64::from(MINIMUM_FEE);
         let sent_transaction_id = recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 sent_value,
                 None,
             )])
@@ -771,7 +776,7 @@ mod slow {
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo";
 
-        let faucet_ua = get_base_address!(faucet, "unified");
+        let faucet_ua = get_base_address_macro!(faucet, "unified");
 
         let _sent_transaction_id = recipient
             .send_from_send_inputs(vec![(&faucet_ua, sent_value, Some(outgoing_memo))])
@@ -956,7 +961,7 @@ mod slow {
         // Interrupt generating send
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 10_000,
                 Some("Interrupting sync!!"),
             )])
@@ -994,9 +999,9 @@ mod slow {
         .unwrap();
 
         let (recipient_taddr, recipient_sapling, recipient_unified) = (
-            get_base_address!(original_recipient, "transparent"),
-            get_base_address!(original_recipient, "sapling"),
-            get_base_address!(original_recipient, "unified"),
+            get_base_address_macro!(original_recipient, "transparent"),
+            get_base_address_macro!(original_recipient, "sapling"),
+            get_base_address_macro!(original_recipient, "unified"),
         );
         let addr_amount_memos = vec![
             (recipient_taddr.as_str(), 1_000u64, None),
@@ -1086,7 +1091,7 @@ mod slow {
             scenarios::faucet_recipient_default().await;
 
         // 2. Get an incoming transaction to a t address
-        let taddr = get_base_address!(recipient, "transparent");
+        let taddr = get_base_address_macro!(recipient, "transparent");
         let value = 100_000;
 
         faucet
@@ -1121,7 +1126,7 @@ mod slow {
         let sapling_dust = 100;
         let _sent_transaction_id = faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 sapling_dust,
                 None,
             )])
@@ -1151,7 +1156,7 @@ mod slow {
         faucet.do_sync(false).await.unwrap();
         let _sent_transaction_id = faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 sapling_enough_for_fee,
                 None,
             )])
@@ -1171,7 +1176,7 @@ mod slow {
         faucet.do_sync(false).await.unwrap();
         let _sent_transaction_id = faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 sapling_enough_for_fee,
                 None,
             )])
@@ -1216,7 +1221,7 @@ mod slow {
             scenarios::faucet_recipient_default().await;
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 transparent_funding,
                 None,
             )])
@@ -1273,7 +1278,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         //utils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5).await;
-        let recipient_unified_address = get_base_address!(recipient, "unified");
+        let recipient_unified_address = get_base_address_macro!(recipient, "unified");
         let sent_value = 50_000;
         faucet
             .send_from_send_inputs(vec![(recipient_unified_address.as_str(), sent_value, None)])
@@ -1373,7 +1378,7 @@ mod slow {
 
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "sapling"),
+                &get_base_address_macro!(faucet, "sapling"),
                 first_send_to_sapling,
                 None,
             )])
@@ -1384,7 +1389,7 @@ mod slow {
             .unwrap();
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "transparent"),
+                &get_base_address_macro!(faucet, "transparent"),
                 first_send_to_transparent,
                 None,
             )])
@@ -1424,7 +1429,7 @@ mod slow {
         faucet.do_sync(false).await.unwrap();
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 recipient_second_wave,
                 Some("Second wave incoming"),
             )])
@@ -1435,7 +1440,7 @@ mod slow {
             .unwrap();
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "transparent"),
+                &get_base_address_macro!(faucet, "transparent"),
                 second_send_to_transparent,
                 None,
             )])
@@ -1443,7 +1448,7 @@ mod slow {
             .unwrap();
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "sapling"),
+                &get_base_address_macro!(faucet, "sapling"),
                 second_send_to_sapling,
                 None,
             )])
@@ -1455,7 +1460,7 @@ mod slow {
 
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "transparent"),
+                &get_base_address_macro!(faucet, "transparent"),
                 third_send_to_transparent,
                 None,
             )])
@@ -1613,7 +1618,7 @@ mod slow {
         // post transfer to recipient, and verify
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 faucet_to_recipient_amount,
                 Some("Orcharding"),
             )])
@@ -1642,7 +1647,7 @@ mod slow {
         // post half back to faucet, and verify
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 recipient_to_faucet_amount,
                 Some("Sending back"),
             )])
@@ -1677,7 +1682,7 @@ mod slow {
         let amount_to_send = 5_000;
         faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(faucet, "unified").as_str(),
+                get_base_address_macro!(faucet, "unified").as_str(),
                 amount_to_send,
                 Some("Scenario test: engage!"),
             )])
@@ -1706,7 +1711,7 @@ mod slow {
         check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 3_499_990_000u64,
                 None,
             )])
@@ -1743,7 +1748,7 @@ mod slow {
     async fn self_send_to_t_displays_as_one_transaction() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        let recipient_unified_address = get_base_address!(recipient, "unified");
+        let recipient_unified_address = get_base_address_macro!(recipient, "unified");
         let sent_value = 50_000;
         faucet
             .send_from_send_inputs(vec![(recipient_unified_address.as_str(), sent_value, None)])
@@ -1752,8 +1757,8 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        let recipient_taddr = get_base_address!(recipient, "transparent");
-        let recipient_zaddr = get_base_address!(recipient, "sapling");
+        let recipient_taddr = get_base_address_macro!(recipient, "transparent");
+        let recipient_zaddr = get_base_address_macro!(recipient, "sapling");
         let sent_to_taddr_value = 5_000;
         let sent_to_zaddr_value = 11_000;
         let sent_to_self_orchard_value = 1_000;
@@ -1846,7 +1851,7 @@ mod slow {
         let spent_value = 250;
 
         // Construct transaction to wallet-external recipient-address.
-        let exit_zaddr = get_base_address!(faucet, "sapling");
+        let exit_zaddr = get_base_address_macro!(faucet, "sapling");
         let spent_txid = recipient
             .send_from_send_inputs(vec![(&exit_zaddr, spent_value, None)])
             .await
@@ -1883,7 +1888,7 @@ mod slow {
         // 2. Send an incoming transaction to fill the wallet
         let faucet_funding_txid = faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 value,
                 None,
             )])
@@ -1937,7 +1942,7 @@ mod slow {
 
         let sent_transaction_id = recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "sapling"),
+                &get_base_address_macro!(faucet, "sapling"),
                 sent_value,
                 Some(outgoing_memo),
             )])
@@ -1990,7 +1995,7 @@ mod slow {
 
         assert_eq!(
             send_transaction["outgoing_metadata"][0]["address"],
-            get_base_address!(faucet, "sapling")
+            get_base_address_macro!(faucet, "sapling")
         );
         assert_eq!(
             send_transaction["outgoing_metadata"][0]["memo"],
@@ -2069,8 +2074,8 @@ mod slow {
     async fn sapling_dust_fee_collection() {
         let (regtest_manager, __cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        let recipient_sapling = get_base_address!(recipient, "sapling");
-        let recipient_unified = get_base_address!(recipient, "unified");
+        let recipient_sapling = get_base_address_macro!(recipient, "sapling");
+        let recipient_unified = get_base_address_macro!(recipient, "unified");
         check_client_balances!(recipient, o: 0 s: 0 t: 0);
         let fee = u64::from(MINIMUM_FEE);
         let for_orchard = dbg!(fee * 10);
@@ -2089,7 +2094,7 @@ mod slow {
 
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 fee * 5,
                 Some("Five times fee."),
             )])
@@ -2123,14 +2128,21 @@ mod slow {
 
         println!("creating vec");
         faucet
-            .send_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 10, None); 15])
+            .send_from_send_inputs(vec![
+                (&get_base_address_macro!(faucet, "unified"), 10, None);
+                15
+            ])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
             .await
             .unwrap();
         recipient
-            .send_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 10, None)])
+            .send_from_send_inputs(vec![(
+                &get_base_address_macro!(faucet, "unified"),
+                10,
+                None,
+            )])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
@@ -2166,7 +2178,7 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let sapling_addr = get_base_address!(faucet, "sapling");
+        let sapling_addr = get_base_address_macro!(faucet, "sapling");
         for memo in [None, Some("foo")] {
             faucet
                 .send_from_send_inputs(vec![(
@@ -2214,7 +2226,7 @@ mod slow {
             scenarios::faucet_recipient_default().await;
         faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "sapling").as_str(),
+                get_base_address_macro!(recipient, "sapling").as_str(),
                 1_000,
                 Some("foo"),
             )])
@@ -2241,7 +2253,7 @@ mod slow {
             .await
             .unwrap();
 
-        let client_2_saplingaddress = get_base_address!(recipient, "sapling");
+        let client_2_saplingaddress = get_base_address_macro!(recipient, "sapling");
         // Send three transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
@@ -2269,7 +2281,7 @@ mod slow {
         // plus the transaction fee.
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 30000,
                 Some("Sending back, should have 2 inputs"),
             )])
@@ -2346,7 +2358,11 @@ mod slow {
             scenarios::faucet_funded_recipient_default(inital_value).await;
         recipient
             .send_from_send_inputs(vec![
-                (&get_base_address!(faucet, "unified"), 10_000, None);
+                (
+                    &get_base_address_macro!(faucet, "unified"),
+                    10_000,
+                    None
+                );
                 2
             ])
             .await
@@ -2472,7 +2488,7 @@ mod slow {
 
         let sent_transaction_id = recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "sapling"),
+                &get_base_address_macro!(faucet, "sapling"),
                 sent_value,
                 Some(outgoing_memo),
             )])
@@ -2672,7 +2688,7 @@ mod slow {
 
         let _sent_transaction_id = recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 sent_value,
                 Some(outgoing_memo),
             )])
@@ -2842,7 +2858,11 @@ mod slow {
         };
         assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
         recipient
-            .send_from_send_inputs(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
+            .send_from_send_inputs(vec![(
+                &get_base_address_macro!(faucet, "unified"),
+                14000,
+                None,
+            )])
             .await
             .unwrap();
     }
@@ -2882,7 +2902,7 @@ mod slow {
         hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
         let seed_of_recipient = {
             assert_eq!(
-                &get_base_address!(recipient1, "unified"),
+                &get_base_address_macro!(recipient1, "unified"),
                 &original_recipient_address
             );
             let recipient1_diversified_addr = recipient1.do_new_address("tz").await.unwrap();
@@ -2954,7 +2974,11 @@ mod slow {
             //The first address in a wallet should always contain all three currently extant
             //receiver types.
             recipient_restored
-                .send_from_send_inputs(vec![(&get_base_address!(faucet, "sapling"), 4_000, None)])
+                .send_from_send_inputs(vec![(
+                    &get_base_address_macro!(faucet, "sapling"),
+                    4_000,
+                    None,
+                )])
                 .await
                 .unwrap();
             let sender_balance = faucet.do_balance().await;
@@ -2981,9 +3005,9 @@ mod slow {
         let pool_migration_client = client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
-        let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
-        let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
-        let pmc_unified = get_base_address!(pool_migration_client, "unified");
+        let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
+        let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
+        let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
             .await
@@ -3126,7 +3150,7 @@ mod slow {
             .unwrap();
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "transparent"),
+                &get_base_address_macro!(recipient, "transparent"),
                 1_000u64,
                 None,
             )])
@@ -3142,7 +3166,7 @@ mod slow {
         let sent_value = 1000;
         let _sent_transaction_id = recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 sent_value,
                 None,
             )])
@@ -3166,7 +3190,7 @@ mod slow {
             scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
         faucet
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "unified"),
+                &get_base_address_macro!(recipient, "unified"),
                 100_000,
                 Some("funding to be received by the recipient"),
             )])
@@ -3193,7 +3217,7 @@ mod slow {
         );
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 25_000,
                 Some("an unconfirmed transaction, that shall not be synced"),
             )])
@@ -3218,7 +3242,7 @@ mod slow {
     async fn by_address_finsight() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        let base_uaddress = get_base_address!(recipient, "unified");
+        let base_uaddress = get_base_address_macro!(recipient, "unified");
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
             .await
             .unwrap();
@@ -3265,7 +3289,7 @@ mod slow {
         let sent_zmemo = "Ext z";
         let sent_transaction_id = recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(faucet, "sapling"),
+                &get_base_address_macro!(faucet, "sapling"),
                 sent_zvalue,
                 Some(sent_zmemo),
             )])
@@ -3362,7 +3386,7 @@ mod slow {
             scenarios::faucet_funded_recipient_default(1_000_000).await;
         recipient
             .send_from_send_inputs(vec![(
-                &get_base_address!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "sapling"),
                 100_000,
                 None,
             )])
@@ -3393,7 +3417,7 @@ mod slow {
             let _ = faucet.do_sync(false).await;
             faucet
                 .send_from_send_inputs(vec![(
-                    &get_base_address!(recipient, "sapling"),
+                    &get_base_address_macro!(recipient, "sapling"),
                     10_100,
                     None,
                 )])
@@ -3405,7 +3429,7 @@ mod slow {
             let _ = recipient.do_sync(false).await;
             recipient
                 .send_from_send_inputs(vec![(
-                    &get_base_address!(recipient, "unified"),
+                    &get_base_address_macro!(recipient, "unified"),
                     amount,
                     None,
                 )])
@@ -3527,13 +3551,17 @@ mod slow {
         assert_eq!(balance.orchard_balance, Some(expected_balance));
         if expected_balance > 0 {
             let _ = client
-                .send_from_send_inputs(vec![(&get_base_address!(client, "sapling"), 11011, None)])
+                .send_from_send_inputs(vec![(
+                    &get_base_address_macro!(client, "sapling"),
+                    11011,
+                    None,
+                )])
                 .await
                 .unwrap();
             let _ = client.do_sync(true).await.unwrap();
             let _ = client
                 .send_from_send_inputs(vec![(
-                    &get_base_address!(client, "transparent"),
+                    &get_base_address_macro!(client, "transparent"),
                     28000,
                     None,
                 )])
@@ -3596,7 +3624,7 @@ mod slow {
 }
 
 mod basic_transactions {
-    use zingo_testutils::{get_base_address, scenarios};
+    use zingo_testutils::{get_base_address_macro, scenarios};
     use zingolib::wallet::Pool;
 
     #[tokio::test]
@@ -3604,8 +3632,8 @@ mod basic_transactions {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        let recipient_addr_ua = get_base_address!(recipient, "unified");
-        let faucet_addr_ua = get_base_address!(faucet, "unified");
+        let recipient_addr_ua = get_base_address_macro!(recipient, "unified");
+        let faucet_addr_ua = get_base_address_macro!(faucet, "unified");
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 2)
             .await
@@ -3648,7 +3676,7 @@ mod basic_transactions {
 
         let txid1 = faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "unified").as_str(),
+                get_base_address_macro!(recipient, "unified").as_str(),
                 40_000,
                 None,
             )])
@@ -3657,7 +3685,7 @@ mod basic_transactions {
 
         let txid2 = faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "sapling").as_str(),
+                get_base_address_macro!(recipient, "sapling").as_str(),
                 40_000,
                 None,
             )])
@@ -3666,7 +3694,7 @@ mod basic_transactions {
 
         let txid3 = faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "transparent").as_str(),
+                get_base_address_macro!(recipient, "transparent").as_str(),
                 40_000,
                 None,
             )])
@@ -3784,7 +3812,7 @@ mod basic_transactions {
 
         let txid4 = recipient
             .send_from_send_inputs(vec![(
-                get_base_address!(faucet, "transparent").as_str(),
+                get_base_address_macro!(faucet, "transparent").as_str(),
                 60_000,
                 None,
             )])
@@ -3840,7 +3868,7 @@ mod basic_transactions {
 
         let txid1 = faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "unified").as_str(),
+                get_base_address_macro!(recipient, "unified").as_str(),
                 0,
                 None,
             )])
@@ -3895,7 +3923,7 @@ mod basic_transactions {
 
         faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "transparent").as_str(),
+                get_base_address_macro!(recipient, "transparent").as_str(),
                 40_000,
                 None,
             )])
@@ -3912,7 +3940,7 @@ mod basic_transactions {
         let txid1 = recipient
             .shield_from_shield_inputs(
                 &[Pool::Transparent],
-                Some(&get_base_address!(recipient, "unified")),
+                Some(&get_base_address_macro!(recipient, "unified")),
             )
             .await
             .unwrap();
@@ -3955,7 +3983,7 @@ mod basic_transactions {
 
         faucet
             .send_from_send_inputs(vec![(
-                get_base_address!(recipient, "transparent").as_str(),
+                get_base_address_macro!(recipient, "transparent").as_str(),
                 40_000,
                 None,
             )])
@@ -3972,7 +4000,7 @@ mod basic_transactions {
         let txid2 = recipient
             .shield_from_shield_inputs(
                 &[Pool::Transparent],
-                Some(&get_base_address!(recipient, "sapling")),
+                Some(&get_base_address_macro!(recipient, "sapling")),
             )
             .await
             .unwrap();

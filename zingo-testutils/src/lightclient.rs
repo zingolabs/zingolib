@@ -1,3 +1,4 @@
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zingolib::{error::ZingoLibError, lightclient::LightClient};
 
 /// Create a lightclient from the buffer of another
@@ -10,7 +11,22 @@ pub async fn new_client_from_save_buffer(
         .await
         .map_err(ZingoLibError::CantReadWallet)
 }
-mod from_inputs {
+/// gets the first address that will allow a sender to send to a specific pool, as a string
+pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
+    match pooltype {
+        PoolType::Transparent => client.do_addresses().await[0]["receivers"]["transparent"]
+            .clone()
+            .to_string(),
+        PoolType::Shielded(ShieldedProtocol::Sapling) => client.do_addresses().await[0]
+            ["receivers"]["sapling"]
+            .clone()
+            .to_string(),
+        PoolType::Shielded(ShieldedProtocol::Orchard) => {
+            client.do_addresses().await[0]["address"].take().to_string()
+        }
+    }
+}
+pub(crate) mod from_inputs {
     /// Panics if the address, amount or memo conversion fails.
     pub fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,

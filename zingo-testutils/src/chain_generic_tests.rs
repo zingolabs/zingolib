@@ -9,7 +9,7 @@
 /// lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 /// darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 pub mod conduct_chain {
-    use crate::get_base_address;
+    use crate::get_base_address_macro;
     use zingolib::lightclient::LightClient;
 
     #[allow(async_fn_in_trait)]
@@ -39,7 +39,7 @@ pub mod conduct_chain {
 
             sender
                 .send_from_send_inputs(vec![(
-                    (get_base_address!(recipient, "unified")).as_str(),
+                    (get_base_address_macro!(recipient, "unified")).as_str(),
                     value,
                     None,
                 )])
@@ -94,14 +94,12 @@ pub mod fixtures {
         dbg!(send_value);
 
         let recipient = environment.create_client().await;
-        let recipient_address = recipient.get_base_address(pooltype).await;
-        let request = recipient
-            .transaction_request_from_send_inputs(vec![(
-                recipient_address.as_str(),
-                send_value,
-                None,
-            )])
-            .unwrap();
+        let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
+        let request = crate::lightclient::from_inputs::transaction_request_from_send_inputs(
+            &recipient,
+            vec![(recipient_address.as_str(), send_value, None)],
+        )
+        .unwrap();
 
         println!("recipient ready");
 
@@ -139,10 +137,11 @@ pub mod fixtures {
         let primary = environment
             .fund_client(1_000_000 + (n + 6) * MARGINAL_FEE.into_u64())
             .await;
-        let primary_address = primary.get_base_address(Shielded(Orchard)).await;
+        let primary_address =
+            crate::lightclient::get_base_address(&primary, Shielded(Orchard)).await;
 
         let secondary = environment.create_client().await;
-        let secondary_address = secondary.get_base_address(Transparent).await;
+        let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
 
         for _ in 0..n {
             primary
@@ -183,7 +182,7 @@ pub mod fixtures {
         dbg!(send_value);
 
         let recipient = environment.create_client().await;
-        let recipient_address = recipient.get_base_address(pooltype).await;
+        let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
 
         dbg!("recipient ready");
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
