@@ -1053,12 +1053,24 @@ impl Command for ShieldCommand {
         }
 
         RT.block_on(async move {
-            match lightclient
-                .propose_shield()
-                .await {
+            match lightclient.propose_shield().await {
                 Ok(proposal) => {
                     // TODO: return amount to be shielded also?
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                    let step = proposal.steps().first();
+                    let value_to_shield = step
+                        .transparent_inputs()
+                        .iter()
+                        .fold(0, |acc, transparent_output| {
+                            transparent_output.value().into_u64() + acc
+                        });
+                    if proposal.steps().len() != 1 {
+                        object! {"error" => "zip320 transactions not yet supported"}
+                    } else {
+                        object! {
+                            "fee" => step.balance().fee_required().into_u64(),
+                            "value_to_shield" => value_to_shield
+                        }
+                    }
                 }
                 Err(e) => {
                     object! { "error" => e.to_string() }
