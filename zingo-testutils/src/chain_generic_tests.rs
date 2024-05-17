@@ -37,14 +37,16 @@ pub mod conduct_chain {
             self.bump_chain().await;
             sender.do_sync(false).await.unwrap();
 
-            sender
-                .send_from_send_inputs(vec![(
+            crate::lightclient::from_inputs::send(
+                &sender,
+                vec![(
                     (get_base_address_macro!(recipient, "unified")).as_str(),
                     value,
                     None,
-                )])
-                .await
-                .unwrap();
+                )],
+            )
+            .await
+            .unwrap();
 
             self.bump_chain().await;
 
@@ -144,10 +146,12 @@ pub mod fixtures {
         let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
 
         for _ in 0..n {
-            primary
-                .send_from_send_inputs(vec![(secondary_address.as_str(), 100_000, None)])
-                .await
-                .unwrap();
+            crate::lightclient::from_inputs::send(
+                &primary,
+                vec![(secondary_address.as_str(), 100_000, None)],
+            )
+            .await
+            .unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
             dbg!(secondary.do_balance().await);
@@ -155,10 +159,12 @@ pub mod fixtures {
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
             dbg!(secondary.do_balance().await);
-            secondary
-                .send_from_send_inputs(vec![(primary_address.as_str(), 50_000, None)])
-                .await
-                .unwrap();
+            crate::lightclient::from_inputs::send(
+                &secondary,
+                vec![(primary_address.as_str(), 100_000, None)],
+            )
+            .await
+            .unwrap();
             primary.do_sync(false).await.unwrap();
             dbg!(primary.do_balance().await);
         }
@@ -187,10 +193,12 @@ pub mod fixtures {
         dbg!("recipient ready");
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
-        sender
-            .send_from_send_inputs(vec![(dbg!(recipient_address).as_str(), send_value, None)])
-            .await
-            .unwrap();
+        crate::lightclient::from_inputs::send(
+            &sender,
+            vec![(dbg!(recipient_address).as_str(), send_value, None)],
+        )
+        .await
+        .unwrap();
 
         environment.bump_chain().await;
 
