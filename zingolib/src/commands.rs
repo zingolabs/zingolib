@@ -906,6 +906,7 @@ impl Command for SendCommand {
     }
 }
 
+/*
 // Unimplemented
 #[cfg(feature = "zip317")]
 struct SendAllCommand {}
@@ -962,7 +963,7 @@ impl Command for SendAllCommand {
         })
     }
 }
-
+*/
 #[cfg(feature = "zip317")]
 struct QuickSendCommand {}
 #[cfg(feature = "zip317")]
@@ -1052,12 +1053,24 @@ impl Command for ShieldCommand {
         }
 
         RT.block_on(async move {
-            match lightclient
-                .propose_shield()
-                .await {
+            match lightclient.propose_shield().await {
                 Ok(proposal) => {
                     // TODO: return amount to be shielded also?
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                    let step = proposal.steps().first();
+                    let value_to_shield = step
+                        .transparent_inputs()
+                        .iter()
+                        .fold(0, |acc, transparent_output| {
+                            transparent_output.value().into_u64() + acc
+                        });
+                    if proposal.steps().len() != 1 {
+                        object! {"error" => "zip320 transactions not yet supported"}
+                    } else {
+                        object! {
+                            "fee" => step.balance().fee_required().into_u64(),
+                            "value_to_shield" => value_to_shield
+                        }
+                    }
                 }
                 Err(e) => {
                     object! { "error" => e.to_string() }
@@ -1747,7 +1760,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     }
     #[cfg(feature = "zip317")]
     {
-        entries.push(("sendall", Box::new(SendAllCommand {})));
+        //entries.push(("sendall", Box::new(SendAllCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
         entries.push(("quickshield", Box::new(QuickShieldCommand {})));
         entries.push(("confirm", Box::new(ConfirmCommand {})));

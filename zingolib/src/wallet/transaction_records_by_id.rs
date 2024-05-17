@@ -506,7 +506,7 @@ impl Default for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
     use crate::{
-        test_framework::mocks::random_txid,
+        mocks::random_txid,
         wallet::{
             notes::{
                 orchard::mocks::OrchardNoteBuilder,

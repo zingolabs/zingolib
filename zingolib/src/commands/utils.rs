@@ -99,6 +99,7 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
     Ok(send_args)
 }
 
+/*
 // Parse the send arguments for `do_send` when sending all funds from shielded pools.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
@@ -152,7 +153,7 @@ pub(super) fn parse_send_all_args(
 
     Ok((address, memo))
 }
-
+*/
 // Checks send inputs do not contain memo's to transparent addresses.
 fn check_memo_compatibility(
     address: &Address,
@@ -404,6 +405,7 @@ mod tests {
         }
     }
 
+    /*
     #[test]
     #[cfg(feature = "zip317")]
     fn parse_send_all_args() {
@@ -436,6 +438,7 @@ mod tests {
             Err(CommandError::MultipleReceivers)
         ));
     }
+    */
     #[test]
     fn check_memo_compatibility() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());

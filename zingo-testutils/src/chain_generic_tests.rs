@@ -9,7 +9,7 @@
 /// lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 /// darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 pub mod conduct_chain {
-    use zingolib::get_base_address;
+    use crate::{get_base_address_macro, lightclient::from_inputs};
     use zingolib::lightclient::LightClient;
 
     #[allow(async_fn_in_trait)]
@@ -37,18 +37,16 @@ pub mod conduct_chain {
             self.bump_chain().await;
             sender.do_sync(false).await.unwrap();
 
-            sender
-                .quick_send(
-                    sender
-                        .transaction_request_from_send_inputs(vec![(
-                            (get_base_address!(recipient, "unified")).as_str(),
-                            value,
-                            None,
-                        )])
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
+            from_inputs::send(
+                &sender,
+                vec![(
+                    (get_base_address_macro!(recipient, "unified")).as_str(),
+                    value,
+                    None,
+                )],
+            )
+            .await
+            .unwrap();
 
             self.bump_chain().await;
 
@@ -74,6 +72,8 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
     use crate::chain_generic_tests::conduct_chain::ConductChain;
+    use crate::lightclient::from_inputs;
+    use crate::{assertions::assert_record_matches_step, lightclient::get_base_address};
 
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
@@ -98,24 +98,41 @@ pub mod fixtures {
         dbg!(send_value);
 
         let recipient = environment.create_client().await;
-        let recipient_address = recipient.get_base_address(pooltype).await;
-        let request = recipient
-            .transaction_request_from_send_inputs(vec![(
-                recipient_address.as_str(),
-                send_value,
-                None,
-            )])
-            .unwrap();
+        let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
+        let request = crate::lightclient::from_inputs::transaction_request_from_send_inputs(
+            &recipient,
+            vec![(recipient_address.as_str(), send_value, None)],
+        )
+        .unwrap();
 
         println!("recipient ready");
 
-        sender.propose_send(request).await.unwrap();
-        sender
+        let proposal = sender.propose_send(request).await.unwrap();
+        let one_txid = sender
             .complete_and_broadcast_stored_proposal()
             .await
             .unwrap();
 
         environment.bump_chain().await;
+
+        sender.do_sync(false).await.unwrap();
+        let txid = one_txid.first();
+
+        let read_lock = sender
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+
+        let record = read_lock
+            .transaction_records_by_id
+            .get(txid)
+            .expect("sender must recognize txid");
+
+        let step = proposal.steps().first();
+
+        assert_record_matches_step(record, step).await;
 
         recipient.do_sync(false).await.unwrap();
 
@@ -143,14 +160,13 @@ pub mod fixtures {
         let primary = environment
             .fund_client(1_000_000 + (n + 6) * MARGINAL_FEE.into_u64())
             .await;
-        let primary_address = primary.get_base_address(Shielded(Sapling)).await;
+        let primary_address = get_base_address(&primary, Shielded(Orchard)).await;
 
         let secondary = environment.create_client().await;
-        let secondary_address = secondary.get_base_address(Transparent).await;
+        let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
 
         for _ in 0..n {
-            primary
-                .send_from_send_inputs(vec![(secondary_address.as_str(), 300_000, None)])
+            from_inputs::send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
                 .await
                 .unwrap();
             environment.bump_chain().await;
@@ -158,16 +174,8 @@ pub mod fixtures {
             secondary.quick_shield().await.unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
-            secondary
-                .quick_send(
-                    secondary
-                        .transaction_request_from_send_inputs(vec![(
-                            primary_address.as_str(),
-                            100_000,
-                            None,
-                        )])
-                        .unwrap(),
-                )
+            dbg!(secondary.do_balance().await);
+            from_inputs::send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
                 .await
                 .unwrap();
             primary.do_sync(false).await.unwrap();
@@ -193,15 +201,17 @@ pub mod fixtures {
         dbg!(send_value);
 
         let recipient = environment.create_client().await;
-        let recipient_address = recipient.get_base_address(pooltype).await;
+        let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
 
         dbg!("recipient ready");
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
-        sender
-            .send_from_send_inputs(vec![(dbg!(recipient_address).as_str(), send_value, None)])
-            .await
-            .unwrap();
+        crate::lightclient::from_inputs::send(
+            &sender,
+            vec![(dbg!(recipient_address).as_str(), send_value, None)],
+        )
+        .await
+        .unwrap();
 
         environment.bump_chain().await;
 

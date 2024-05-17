@@ -17,10 +17,11 @@ use darkside_tests::{
 };
 use json::JsonValue;
 use tokio::time::sleep;
-use zingo_testutils::{scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient};
+use zingo_testutils::{
+    get_base_address_macro, scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient,
+};
 use zingoconfig::RegtestNetwork;
 use zingolib::{
-    get_base_address,
     lightclient::PoolBalances,
     wallet::{data::summaries::ValueTransferKind, Pool},
 };
@@ -95,7 +96,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
         scenario
             .send_and_write_transaction(
                 DarksideSender::Faucet,
-                &get_base_address!(scenario.get_lightclient(0), "sapling"),
+                &get_base_address_macro!(scenario.get_lightclient(0), "sapling"),
                 50_000,
                 &chainbuild_file,
             )

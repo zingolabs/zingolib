@@ -340,7 +340,7 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     use crate::{
-        test_framework::mocks::default_txid,
+        mocks::default_txid,
         wallet::{
             notes::{
                 orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
