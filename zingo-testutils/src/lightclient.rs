@@ -30,10 +30,6 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
 pub mod from_inputs {
     use zingolib::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
 
-    /// Test only lightclient method for calling `quick_send` with primitive rust types
-    ///
-    /// # Panics
-    ///
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send(
         quick_sender: &zingolib::lightclient::LightClient,
@@ -99,5 +95,15 @@ pub mod from_inputs {
     > {
         let receivers = receivers_from_send_inputs(raw_receivers, &requester.config().chain);
         zingolib::data::receivers::transaction_request_from_receivers(receivers)
+    }
+    /// Panics if the address, amount or memo conversion fails.
+    pub async fn propose(
+        proposer: &LightClient,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<TransferProposal, ProposeSendError> {
+        let request = proposer
+            .transaction_request_from_send_inputs(raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        proposer.propose_send(request).await
     }
 }
