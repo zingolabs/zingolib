@@ -28,3 +28,4 @@ log = "0.4.19"
 tokio = "1.28.2"
 http.workspace = true
 tonic = { workspace = true, optional = true }
+nonempty.workspace = true
