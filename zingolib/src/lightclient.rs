@@ -695,7 +695,3 @@ mod tests {
 
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
-
-/// Help functions that enable testing
-#[cfg(feature = "test-features")]
-pub mod test_features;

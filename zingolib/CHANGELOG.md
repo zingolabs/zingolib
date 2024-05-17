@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `test-features` feature gate
 - `load_clientconfig` moved to zingoconfig crate
 - `lightclient::LightClient`:
   - `do_save`

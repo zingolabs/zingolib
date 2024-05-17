@@ -1,3 +1,5 @@
+//! This mod is mostly to take inputs, raw data amd comvert it into lightclient actions
+//! (obvisouly) in a test environment.
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zingolib::{error::ZingoLibError, lightclient::LightClient};
 
@@ -39,6 +41,7 @@ pub mod from_inputs {
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender.quick_send(request).await
     }
+
     /// Panics if the address, amount or memo conversion fails.
     pub fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
@@ -61,6 +64,7 @@ pub mod from_inputs {
             })
             .collect()
     }
+
     /// In a test give sender a raw_receiver to encode and send to
     pub async fn send(
         sender: &zingolib::lightclient::LightClient,
@@ -69,6 +73,7 @@ pub mod from_inputs {
         let receivers = receivers_from_send_inputs(raw_receivers, &sender.config().chain);
         sender.do_send(receivers).await.map(|txid| txid.to_string())
     }
+
     /// Panics if the address conversion fails.
     pub async fn shield(
         shielder: &LightClient,
@@ -96,13 +101,16 @@ pub mod from_inputs {
         let receivers = receivers_from_send_inputs(raw_receivers, &requester.config().chain);
         zingolib::data::receivers::transaction_request_from_receivers(receivers)
     }
+
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose(
         proposer: &LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<TransferProposal, ProposeSendError> {
-        let request = proposer
-            .transaction_request_from_send_inputs(raw_receivers)
+    ) -> Result<
+        zingolib::data::proposal::TransferProposal,
+        zingolib::lightclient::propose::ProposeSendError,
+    > {
+        let request = transaction_request_from_send_inputs(proposer, raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request).await
     }

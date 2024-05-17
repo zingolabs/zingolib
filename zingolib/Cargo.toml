@@ -8,7 +8,6 @@ edition = "2021"
 
 [features]
 deprecations = ["lightclient-deprecated"]
-test-features = ["lightclient-deprecated"]
 lightclient-deprecated = []
 darkside_tests = []
 zip317 = []
@@ -60,7 +59,7 @@ bls12_381 = "0.8"
 group = "0.13"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 subtle = "2.4.1"
-nonempty = "0.7"
+nonempty.workspace = true
 tracing-subscriber = "0.3.15"
 indoc = "2.0.1"
 derive_more = "0.99.17"

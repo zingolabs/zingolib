@@ -1,4 +1,6 @@
-use zingo_testutils::{get_base_address, scenarios::faucet_recipient_default};
+use zingo_testutils::{
+    get_base_address_macro, lightclient::from_inputs, scenarios::faucet_recipient_default,
+};
 
 #[tokio::test]
 #[ignore]
@@ -13,14 +15,16 @@ async fn shield_transparent() {
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
     );
-    let proposal = faucet
-        .send_from_send_inputs(vec![(
-            &get_base_address!(recipient, "transparent"),
+    let proposal = from_inputs::send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "transparent"),
             transparent_funds,
             None,
-        )])
-        .await
-        .unwrap();
+        )],
+    )
+    .await
+    .unwrap();
 
     println!(
         "sent to recipient
