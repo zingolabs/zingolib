@@ -3073,7 +3073,7 @@ mod slow {
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 2 Test of a send from a sapling only client to its own unified address
-        sapling_from_inputs::send(&faucet, vec![(&pmc_sapling, 50_000, None)])
+        from_inputs::send(&sapling_faucet, vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
@@ -3650,7 +3650,7 @@ mod slow {
 }
 
 mod basic_transactions {
-    use zingo_testutils::{get_base_address_macro, scenarios};
+    use zingo_testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
     use zingolib::wallet::Pool;
 
     #[tokio::test]
@@ -3973,7 +3973,7 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
-        let txid1 = lightclient::from_inputs::shield(
+        let txid1 = from_inputs::shield(
             &recipient,
             &[Pool::Transparent],
             Some(&get_base_address_macro!(recipient, "unified")),
@@ -4035,7 +4035,7 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
         recipient.do_sync(true).await.unwrap();
 
-        let txid2 = lightclient::from_inputs::shield(
+        let txid2 = from_inputs::shield(
             &recipient,
             &[Pool::Transparent],
             Some(&get_base_address_macro!(recipient, "sapling")),
