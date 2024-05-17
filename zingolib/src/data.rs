@@ -50,7 +50,7 @@ pub mod receivers {
     }
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
-    pub(crate) fn transaction_request_from_receivers(
+    pub fn transaction_request_from_receivers(
         receivers: Receivers,
     ) -> Result<TransactionRequest, Zip321Error> {
         let payments = receivers

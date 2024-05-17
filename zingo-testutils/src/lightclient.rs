@@ -40,4 +40,16 @@ mod from_inputs {
         let receivers = receivers_from_send_inputs(raw_receivers, &sender.config().chain);
         sender.do_send(receivers).await.map(|txid| txid.to_string())
     }
+
+    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
+    pub fn transaction_request_from_send_inputs(
+        requester: &zingolib::lightclient::LightClient,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<
+        zcash_client_backend::zip321::TransactionRequest,
+        zcash_client_backend::zip321::Zip321Error,
+    > {
+        let receivers = receivers_from_send_inputs(raw_receivers, &requester.config().chain);
+        zingolib::data::receivers::transaction_request_from_receivers(receivers)
+    }
 }
