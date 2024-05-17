@@ -38,11 +38,7 @@ pub fn receivers_from_send_inputs(
                     .expect("should be able to interpret memo")
             });
 
-            crate::data::receivers::Receiver {
-                recipient_address,
-                amount,
-                memo,
-            }
+            crate::data::receivers::Receiver::new(recipient_address, amount, memo)
         })
         .collect()
 }
