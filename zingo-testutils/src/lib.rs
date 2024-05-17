@@ -28,8 +28,8 @@ use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 pub mod chain_generic_tests;
 
+use crate::lightclient::from_inputs;
 use crate::scenarios::setup::TestEnvironmentGenerator;
-
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
 /// lightclient helpers
@@ -147,7 +147,7 @@ pub async fn send_value_between_clients_and_sync(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
     );
-    let txid = crate::lightclient::from_inputs::send(
+    let txid = from_inputs::send(
         sender,
         vec![(
             &crate::get_base_address_macro!(recipient, address_type),
@@ -159,7 +159,7 @@ pub async fn send_value_between_clients_and_sync(
     .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
     recipient.do_sync(false).await?;
-    Ok(txid)
+    Ok(txid.first().to_string())
 }
 
 /// This function increases the chain height reliably (with polling) but
@@ -558,7 +558,9 @@ pub mod scenarios {
     //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
-    use crate::{get_base_address_macro, increase_height_and_wait_for_client};
+    use crate::{
+        get_base_address_macro, increase_height_and_wait_for_client, lightclient::from_inputs,
+    };
     use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use zingolib::{lightclient::LightClient, wallet::Pool};
 
@@ -994,6 +996,7 @@ pub mod scenarios {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: Change to return vecs of TxIds in stead of a String of the first one for each pool
     pub async fn faucet_funded_recipient(
         orchard_funds: Option<u64>,
         sapling_funds: Option<u64>,
@@ -1014,9 +1017,9 @@ pub mod scenarios {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let orchard_txid = if let Some(funds) = orchard_funds {
+        let orchard_txids = if let Some(funds) = orchard_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                from_inputs::send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
                 )
@@ -1026,9 +1029,9 @@ pub mod scenarios {
         } else {
             None
         };
-        let sapling_txid = if let Some(funds) = sapling_funds {
+        let sapling_txids = if let Some(funds) = sapling_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                from_inputs::send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
                 )
@@ -1038,9 +1041,9 @@ pub mod scenarios {
         } else {
             None
         };
-        let transparent_txid = if let Some(funds) = transparent_funds {
+        let transparent_txids = if let Some(funds) = transparent_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                from_inputs::send(
                     &faucet,
                     vec![(
                         &get_base_address_macro!(recipient, "transparent"),
@@ -1063,9 +1066,9 @@ pub mod scenarios {
             child_process_handler,
             faucet,
             recipient,
-            orchard_txid,
-            sapling_txid,
-            transparent_txid,
+            orchard_txids.map(|txid| txid.first().to_string()),
+            sapling_txids.map(|txid| txid.first().to_string()),
+            transparent_txids.map(|txid| txid.first().to_string()),
         )
     }
 
@@ -1172,7 +1175,7 @@ pub mod scenarios {
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1212,7 +1215,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1222,7 +1225,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1236,7 +1239,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1280,7 +1283,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to orchard
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1294,7 +1297,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to sapling
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1308,7 +1311,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to transparent
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1322,7 +1325,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1336,7 +1339,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self orchard
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1350,7 +1353,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1364,7 +1367,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self transparent
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1378,16 +1381,12 @@ pub mod scenarios {
             .await
             .unwrap();
         // shield transparent
-        crate::lightclient::from_inputs::shield(&recipient, &[Pool::Transparent], None)
-            .await
-            .unwrap();
+        recipient.quick_shield().await.unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
         // upgrade sapling
-        crate::lightclient::from_inputs::shield(&recipient, &[Pool::Sapling], None)
-            .await
-            .unwrap();
+        from_inputs::shield(&recipient, &[Pool::Sapling], None);
         // end
         scenario_builder
             .regtest_manager

@@ -10,6 +10,7 @@
 /// darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 pub mod conduct_chain {
     use crate::get_base_address_macro;
+    use crate::lightclient::from_inputs;
     use zingolib::lightclient::LightClient;
 
     #[allow(async_fn_in_trait)]
@@ -37,7 +38,7 @@ pub mod conduct_chain {
             self.bump_chain().await;
             sender.do_sync(false).await.unwrap();
 
-            crate::lightclient::from_inputs::send(
+            from_inputs::send(
                 &sender,
                 vec![(
                     (get_base_address_macro!(recipient, "unified")).as_str(),
@@ -188,7 +189,7 @@ pub mod fixtures {
         dbg!("recipient ready");
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
-        crate::lightclient::from_inputs::send(
+        from_inputs::send(
             &sender,
             vec![(dbg!(recipient_address).as_str(), send_value, None)],
         )

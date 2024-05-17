@@ -142,6 +142,7 @@ async fn sent_transaction_reorged_into_mempool() {
             transparent_balance: Some(0)
         }
     );
+    // TODO: convert to from_inputs::quicksend
     let txid = from_inputs::send(
         &light_client,
         vec![(&get_base_address_macro!(recipient, "unified"), 10_000, None)],
