@@ -14,6 +14,7 @@ pub async fn new_client_from_save_buffer(
         .map_err(ZingoLibError::CantReadWallet)
 }
 /// gets the first address that will allow a sender to send to a specific pool, as a string
+/// calling \[0] on json may panic? not sure -fv
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
         PoolType::Transparent => client.do_addresses().await[0]["receivers"]["transparent"]
