@@ -112,6 +112,9 @@ pub mod fixtures {
             .await
             .unwrap();
 
+        environment.bump_chain().await;
+
+        sender.do_sync(false).await.unwrap();
         let txid = one_txid.first();
 
         let read_lock = sender
@@ -127,10 +130,6 @@ pub mod fixtures {
             .expect("sender must recognize txid");
 
         let step = proposal.steps().first();
-
-        assert_record_matches_step(record, step).await;
-
-        environment.bump_chain().await;
 
         assert_record_matches_step(record, step).await;
 
