@@ -147,7 +147,7 @@ mod fast {
             .await
             .unwrap();
         let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
-        lightclient::from_inputs::shield(&recipient, &[Pool::Transparent], None)
+        from_inputs::shield(&recipient, &[Pool::Transparent], None)
             .await
             .unwrap();
         let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
@@ -175,9 +175,7 @@ mod fast {
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
         );
         assert_eq!(
-        recipient
-            .send_from_send_inputs
-            (vec![(&get_base_address_macro!(faucet, "unified"), 100_000, None)])
+        from_inputs::send(&recipient, vec![(&get_base_address_macro!(faucet, "unified"), 100_000, None)])
             .await
             .unwrap_err(),
         "The reorg buffer offset has been set to 4 but there are only 1 blocks in the wallet. Please sync at least 4 more blocks before trying again"
@@ -641,8 +639,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
             .await
             .unwrap();
-        faucet
-            .shield_from_shield_inputs(&[Pool::Transparent], None)
+        from_inputs::shield(&faucet, &[Pool::Transparent], None)
             .await
             .unwrap();
     }
@@ -1215,8 +1212,7 @@ mod slow {
             .await
             .unwrap();
         check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
-        faucet
-            .shield_from_shield_inputs(&[Pool::Sapling], None)
+        from_inputs::shield(&faucet, &[Pool::Sapling], None)
             .await
             .unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
