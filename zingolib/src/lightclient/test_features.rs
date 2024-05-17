@@ -1,5 +1,5 @@
 //! As indicated by this file being behind the test-features flag, this is test-only functionality
-//! In this context a "raw_receiver" is a 3 element stuple organizes primitives (e.g. from the command line)
+//! In this context a "raw_receiver" is a 3 element tuple organizes primitives
 //! into the components of a transaction receiver
 //! raw_receiver.0:   A &str representing the receiver address
 //! raw_receiver.1:   A u64 representing the number of zats to be sent
