@@ -147,7 +147,7 @@ pub async fn send_value_between_clients_and_sync(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
     );
-    let txid = from_inputs::send(
+    let txid = from_inputs::quick_send(
         sender,
         vec![(
             &crate::get_base_address_macro!(recipient, address_type),
@@ -1019,7 +1019,7 @@ pub mod scenarios {
             .unwrap();
         let orchard_txids = if let Some(funds) = orchard_funds {
             Some(
-                from_inputs::send(
+                from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
                 )
@@ -1031,7 +1031,7 @@ pub mod scenarios {
         };
         let sapling_txids = if let Some(funds) = sapling_funds {
             Some(
-                from_inputs::send(
+                from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
                 )
@@ -1043,7 +1043,7 @@ pub mod scenarios {
         };
         let transparent_txids = if let Some(funds) = transparent_funds {
             Some(
-                from_inputs::send(
+                from_inputs::quick_send(
                     &faucet,
                     vec![(
                         &get_base_address_macro!(recipient, "transparent"),
@@ -1386,7 +1386,9 @@ pub mod scenarios {
             .await
             .unwrap();
         // upgrade sapling
-        from_inputs::shield(&recipient, &[Pool::Sapling], None);
+        from_inputs::shield(&recipient, &[Pool::Sapling], None)
+            .await
+            .unwrap();
         // end
         scenario_builder
             .regtest_manager
