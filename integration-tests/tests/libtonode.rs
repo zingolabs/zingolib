@@ -3084,34 +3084,30 @@ mod slow {
         bump_and_check!(o: 80_000 s: 0 t: 0);
 
         // 3 Test of an orchard-only client to itself
-        pool_migration_client
-            .send_from_send_inputs(vec![(&pmc_unified, 70_000, None)])
+        from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 70_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 70_000 s: 0 t: 0);
 
         // 4 tz transparent and sapling to orchard
-        pool_migration_client
-            .send_from_send_inputs(vec![
-                (&pmc_taddr, 30_000, None),
-                (&pmc_sapling, 30_000, None),
-            ])
-            .await
-            .unwrap();
+        from_inputs::send(
+            &pool_migration_client,
+            vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
+        )
+        .await
+        .unwrap();
         bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
         from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
             .await
             .unwrap();
-        pool_migration_client
-            .send_from_send_inputs(vec![(&pmc_unified, 20_000, None)])
+        from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 5 to transparent and orchard to orchard
-        pool_migration_client
-            .send_from_send_inputs(vec![(&pmc_taddr, 20_000, None)])
+        from_inputs::send(&pool_migration_client, vec![(&pmc_taddr, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
@@ -3122,20 +3118,19 @@ mod slow {
         bump_and_check!(o: 20_000 s: 0 t: 0);
 
         // 6 sapling and orchard to orchard
-        sapling_from_inputs::send(&faucet, vec![(&pmc_sapling, 20_000, None)])
+        from_inputs::send(&sapling_faucet, vec![(&pmc_sapling, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 20_000 t: 0);
 
-        pool_migration_client
-            .send_from_send_inputs(vec![(&pmc_unified, 30_000, None)])
+        from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
 
         // 7 tzo --> o
-        sapling_from_inputs::send(
-            &faucet,
+        from_inputs::send(
+            &sapling_faucet,
             vec![(&pmc_taddr, 20_000, None), (&pmc_sapling, 20_000, None)],
         )
         .await
@@ -3145,21 +3140,18 @@ mod slow {
         from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
             .await
             .unwrap();
-        pool_migration_client
-            .send_from_send_inputs(vec![(&pmc_unified, 40_000, None)])
+        from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 50_000 s: 0 t: 0);
 
         // Send from Sapling into empty Orchard pool
-        pool_migration_client
-            .send_from_send_inputs(vec![(&pmc_sapling, 40_000, None)])
+        from_inputs::send(&pool_migration_client, vec![(&pmc_sapling, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 40_000 t: 0);
 
-        pool_migration_client
-            .send_from_send_inputs(vec![(&pmc_unified, 30_000, None)])
+        from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
