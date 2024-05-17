@@ -674,10 +674,12 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            lightclient
-                .send_from_send_inputs(vec![(receiver_address, value, None)])
-                .await
-                .unwrap();
+            zingo_testutils::lightclient::from_inputs::send(
+                &lightclient,
+                vec![(receiver_address, value, None)],
+            )
+            .await
+            .unwrap();
             let mut streamed_raw_txns = self
                 .darkside_connector
                 .get_incoming_transactions()
