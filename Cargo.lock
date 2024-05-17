@@ -677,6 +677,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_primitives",
  "zingo-testutils",
+ "zingo-testvectors",
  "zingoconfig",
  "zingolib",
 ]
@@ -1502,6 +1503,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_primitives",
  "zingo-testutils",
+ "zingo-testvectors",
  "zingoconfig",
  "zingolib",
 ]
@@ -4239,6 +4241,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_primitives",
  "zingo-netutils",
+ "zingo-testvectors",
  "zingoconfig",
  "zingolib",
 ]

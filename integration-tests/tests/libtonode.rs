@@ -17,15 +17,15 @@ use zingo_testutils::{
     paths::get_cargo_manifest_dir, scenarios,
 };
 
+use zingo_testvectors::{
+    block_rewards,
+    seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+    BASE_HEIGHT,
+};
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
     lightclient::{LightClient, PoolBalances},
-    testvectors::{
-        self, block_rewards,
-        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
-        BASE_HEIGHT,
-    },
     utils,
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
@@ -673,7 +673,7 @@ mod fast {
                 .unwrap()
                 .value(),
             NonNegativeAmount::const_from_u64(
-                (testvectors::block_rewards::CANOPY * 4) - expected_fee
+                (zingo_testvectors::block_rewards::CANOPY * 4) - expected_fee
             )
         )
     }
@@ -1075,7 +1075,7 @@ mod slow {
             watch_client.do_rescan().await.unwrap();
             assert_eq!(
                 watch_client
-                    .send_from_send_inputs(vec![(testvectors::EXT_TADDR, 1000, None)])
+                    .send_from_send_inputs(vec![(zingo_testvectors::EXT_TADDR, 1000, None)])
                     .await,
                 Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
             );
@@ -1109,7 +1109,7 @@ mod slow {
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
         let sent_transaction_error = recipient
-            .send_from_send_inputs(vec![(testvectors::EXT_TADDR, sent_value, None)])
+            .send_from_send_inputs(vec![(zingo_testvectors::EXT_TADDR, sent_value, None)])
             .await
             .unwrap_err();
         assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.");
