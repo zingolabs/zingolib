@@ -30,15 +30,15 @@ pub mod conduct_chain {
         async fn bump_chain(&mut self);
 
         /// builds a client and funds it in orchard and syncs it
-        async fn fund_client(&mut self, value: u64) -> LightClient {
-            let sender = self.create_faucet().await;
+        async fn fund_client_orchard(&mut self, value: u64) -> LightClient {
+            let faucet = self.create_faucet().await;
             let recipient = self.create_client().await;
 
             self.bump_chain().await;
-            sender.do_sync(false).await.unwrap();
+            faucet.do_sync(false).await.unwrap();
 
             from_inputs::quick_send(
-                &sender,
+                &faucet,
                 vec![(
                     (get_base_address_macro!(recipient, "unified")).as_str(),
                     value,
@@ -91,7 +91,9 @@ pub mod fixtures {
                 Shielded(Orchard) => 2,
             };
 
-        let sender = environment.fund_client(send_value + expected_fee).await;
+        let sender = environment
+            .fund_client_orchard(send_value + expected_fee)
+            .await;
 
         println!("client is ready to send");
         dbg!(sender.query_sum_value(OutputQuery::any()).await);
@@ -159,7 +161,7 @@ pub mod fixtures {
         let mut environment = CC::setup().await;
         let mut primary_fund = 1_000_000 + (n + 6) * MARGINAL_FEE.into_u64();
         let mut secondary_fund = 0u64;
-        let primary = environment.fund_client(primary_fund).await;
+        let primary = environment.fund_client_orchard(primary_fund).await;
         let primary_address = get_base_address(&primary, Shielded(Orchard)).await;
 
         let secondary = environment.create_client().await;
@@ -197,12 +199,17 @@ pub mod fixtures {
     where
         CC: ConductChain,
     {
+        let multiple = match pooltype {
+            PoolType::Shielded(Orchard) => 2u64,
+            PoolType::Shielded(Sapling) => 4u64,
+            PoolType::Transparent => 3u64,
+        };
         let mut environment = CC::setup().await;
 
         dbg!("chain set up, funding client now");
 
         let sender = environment
-            .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64()))
+            .fund_client_orchard(send_value + multiple * (MARGINAL_FEE.into_u64()))
             .await;
 
         dbg!("client is ready to send");
