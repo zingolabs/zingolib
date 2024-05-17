@@ -1016,42 +1016,40 @@ pub mod scenarios {
             .unwrap();
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
-                faucet
-                    .send_from_send_inputs(vec![(
-                        &get_base_address_macro!(recipient, "unified"),
-                        funds,
-                        None,
-                    )])
-                    .await
-                    .unwrap(),
+                crate::lightclient::from_inputs::send(
+                    &faucet,
+                    vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
+                )
+                .await
+                .unwrap(),
             )
         } else {
             None
         };
         let sapling_txid = if let Some(funds) = sapling_funds {
             Some(
-                faucet
-                    .send_from_send_inputs(vec![(
-                        &get_base_address_macro!(recipient, "sapling"),
-                        funds,
-                        None,
-                    )])
-                    .await
-                    .unwrap(),
+                crate::lightclient::from_inputs::send(
+                    &faucet,
+                    vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
+                )
+                .await
+                .unwrap(),
             )
         } else {
             None
         };
         let transparent_txid = if let Some(funds) = transparent_funds {
             Some(
-                faucet
-                    .send_from_send_inputs(vec![(
+                crate::lightclient::from_inputs::send(
+                    &faucet,
+                    vec![(
                         &get_base_address_macro!(recipient, "transparent"),
                         funds,
                         None,
-                    )])
-                    .await
-                    .unwrap(),
+                    )],
+                )
+                .await
+                .unwrap(),
             )
         } else {
             None
@@ -1174,14 +1172,12 @@ pub mod scenarios {
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
-        faucet
-            .send_from_send_inputs(vec![(
-                &get_base_address_macro!(recipient, "unified"),
-                value,
-                None,
-            )])
-            .await
-            .unwrap();
+        crate::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+        )
+        .await
+        .unwrap();
         scenario_builder
             .regtest_manager
             .generate_n_blocks(1)
@@ -1216,14 +1212,12 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet
-        faucet
-            .send_from_send_inputs(vec![(
-                &get_base_address_macro!(recipient, "unified"),
-                value,
-                None,
-            )])
-            .await
-            .unwrap();
+        crate::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+        )
+        .await
+        .unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
@@ -1282,38 +1276,44 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to orchard
-        faucet
-            .send_from_send_inputs(vec![(
+        crate::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 value.checked_div(2).unwrap(),
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
             .unwrap();
         // received from a faucet to sapling
-        faucet
-            .send_from_send_inputs(vec![(
+        crate::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "sapling"),
                 value.checked_div(4).unwrap(),
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
             .unwrap();
         // received from a faucet to transparent
-        faucet
-            .send_from_send_inputs(vec![(
+        crate::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "transparent"),
                 value.checked_div(4).unwrap(),
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
