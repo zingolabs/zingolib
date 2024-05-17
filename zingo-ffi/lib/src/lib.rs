@@ -1,4 +1,4 @@
-uniffi::include_scaffolding!("rustlib");
+uniffi::include_scaffolding!("zingo");
 
 #[macro_use]
 extern crate lazy_static;
@@ -242,3 +242,6 @@ pub fn get_latest_block_server(server_uri: String) -> String {
     }
 }
 
+pub fn get_developer_donation_address() -> String {
+    zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string()
+}
