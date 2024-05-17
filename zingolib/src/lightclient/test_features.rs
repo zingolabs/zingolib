@@ -46,6 +46,7 @@ pub fn receivers_from_send_inputs(
         })
         .collect()
 }
+
 impl LightClient {
     /// Panics if the address, amount or memo conversion fails.
     pub async fn send_from_send_inputs(

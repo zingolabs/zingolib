@@ -18,10 +18,15 @@ pub mod receivers {
     /// The superficial representation of the the consumer's intended receiver
     #[derive(Clone, Debug, PartialEq)]
     pub struct Receiver {
-        pub(crate) recipient_address: address::Address,
-        pub(crate) amount: NonNegativeAmount,
-        pub(crate) memo: Option<MemoBytes>,
+        recipient_address: address::Address,
+        amount: NonNegativeAmount,
+        memo: Option<MemoBytes>,
     }
+    pub fn new(receiver_address: address::Address, amount: NonNegativeAmount, memo: Option<MemoBytes>) -> Self {
+        Self {receiver_address, amount, memo}
+    }
+
+}
     impl From<Receiver> for Payment {
         fn from(receiver: Receiver) -> Self {
             Self {
