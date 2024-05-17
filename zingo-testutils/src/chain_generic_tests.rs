@@ -72,6 +72,7 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
     use crate::chain_generic_tests::conduct_chain::ConductChain;
+    use crate::lightclient::from_inputs;
 
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
@@ -146,12 +147,9 @@ pub mod fixtures {
         let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
 
         for _ in 0..n {
-            crate::lightclient::from_inputs::send(
-                &primary,
-                vec![(secondary_address.as_str(), 100_000, None)],
-            )
-            .await
-            .unwrap();
+            from_inputs::send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
+                .await
+                .unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
             dbg!(secondary.do_balance().await);
@@ -159,12 +157,9 @@ pub mod fixtures {
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
             dbg!(secondary.do_balance().await);
-            crate::lightclient::from_inputs::send(
-                &secondary,
-                vec![(primary_address.as_str(), 100_000, None)],
-            )
-            .await
-            .unwrap();
+            from_inputs::send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
+                .await
+                .unwrap();
             primary.do_sync(false).await.unwrap();
             dbg!(primary.do_balance().await);
         }
