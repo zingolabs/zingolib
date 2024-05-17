@@ -28,8 +28,21 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
 }
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
-    use zingolib::lightclient::LightClient;
+    use zingolib::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
 
+    /// Test only lightclient method for calling `quick_send` with primitive rust types
+    ///
+    /// # Panics
+    ///
+    /// Panics if the address, amount or memo conversion fails.
+    pub async fn quick_send(
+        quick_sender: &zingolib::lightclient::LightClient,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
+        let request = transaction_request_from_send_inputs(quick_sender, raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        quick_sender.quick_send(request).await
+    }
     /// Panics if the address, amount or memo conversion fails.
     pub fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
