@@ -132,14 +132,16 @@ mod fast {
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "transparent"),
                 100_000,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
@@ -296,14 +298,16 @@ mod fast {
             .unwrap();
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "unified").as_str(),
                 5_000,
                 Some("this note never makes it to the wallet! or chain"),
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
@@ -364,8 +368,7 @@ mod fast {
             .members()
             .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
             .collect::<Vec<(&str, u64, Option<&str>)>>();
-        faucet
-            .send_from_send_inputs(address_5000_nonememo_tuples)
+        zingo_testutils::lightclient::from_inputs::send(&faucet, address_5000_nonememo_tuples)
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
@@ -690,14 +693,16 @@ mod slow {
             scenarios::faucet_funded_recipient_default(100_000).await;
 
         let sent_value = 0;
-        let _sent_transaction_id = faucet
-            .send_from_send_inputs(vec![(
+        let _sent_transaction_id = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 sent_value,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
@@ -959,14 +964,16 @@ mod slow {
         assert_eq!(client_wallet_height.as_fixed_point_u64(0).unwrap(), 8);
 
         // Interrupt generating send
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 10_000,
                 Some("Interrupting sync!!"),
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
     }
     #[tokio::test]
     async fn test_scanning_in_watch_only_mode() {
@@ -1013,8 +1020,7 @@ mod slow {
             .await
             .unwrap();
         // 2. send a transaction containing all types of outputs
-        faucet
-            .send_from_send_inputs(addr_amount_memos)
+        zingo_testutils::lightclient::from_inputs::send(&faucet, addr_amount_memos)
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(
@@ -1094,10 +1100,12 @@ mod slow {
         let taddr = get_base_address_macro!(recipient, "transparent");
         let value = 100_000;
 
-        faucet
-            .send_from_send_inputs(vec![(taddr.as_str(), value, None)])
-            .await
-            .unwrap();
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(taddr.as_str(), value, None)],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -1124,14 +1132,16 @@ mod slow {
             scenarios::faucet_recipient_default().await;
 
         let sapling_dust = 100;
-        let _sent_transaction_id = faucet
-            .send_from_send_inputs(vec![(
+        let _sent_transaction_id = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "sapling"),
                 sapling_dust,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -1154,14 +1164,16 @@ mod slow {
 
         let sapling_enough_for_fee = 10_100;
         faucet.do_sync(false).await.unwrap();
-        let _sent_transaction_id = faucet
-            .send_from_send_inputs(vec![(
+        let _sent_transaction_id = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "sapling"),
                 sapling_enough_for_fee,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -1174,14 +1186,16 @@ mod slow {
         // The exact same thing again, but with pre-existing orchard funds
         // already in the shielding wallet
         faucet.do_sync(false).await.unwrap();
-        let _sent_transaction_id = faucet
-            .send_from_send_inputs(vec![(
+        let _sent_transaction_id = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "sapling"),
                 sapling_enough_for_fee,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -1219,14 +1233,16 @@ mod slow {
         let transparent_funding = 100_000;
         let (ref regtest_manager, _cph, faucet, ref recipient) =
             scenarios::faucet_recipient_default().await;
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "sapling"),
                 transparent_funding,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
@@ -1280,10 +1296,12 @@ mod slow {
         //utils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5).await;
         let recipient_unified_address = get_base_address_macro!(recipient, "unified");
         let sent_value = 50_000;
-        faucet
-            .send_from_send_inputs(vec![(recipient_unified_address.as_str(), sent_value, None)])
-            .await
-            .unwrap();
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(recipient_unified_address.as_str(), sent_value, None)],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -1427,14 +1445,16 @@ mod slow {
         }
 
         faucet.do_sync(false).await.unwrap();
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 recipient_second_wave,
                 Some("Second wave incoming"),
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
@@ -1616,14 +1636,16 @@ mod slow {
         check_client_balances!(faucet, o: three_blocks_reward s: 0 t: 0);
 
         // post transfer to recipient, and verify
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 faucet_to_recipient_amount,
                 Some("Orcharding"),
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         let orch_change =
             block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
@@ -1680,14 +1702,16 @@ mod slow {
         let (regtest_manager, _cph, faucet) =
             scenarios::faucet(Pool::Sapling, regtest_network).await;
         let amount_to_send = 5_000;
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(faucet, "unified").as_str(),
                 amount_to_send,
                 Some("Scenario test: engage!"),
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -1709,14 +1733,16 @@ mod slow {
             .await
             .unwrap();
         check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 3_499_990_000u64,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         check_client_balances!(faucet, o: 0 s: 0 t: 0);
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -1750,10 +1776,12 @@ mod slow {
             scenarios::faucet_recipient_default().await;
         let recipient_unified_address = get_base_address_macro!(recipient, "unified");
         let sent_value = 50_000;
-        faucet
-            .send_from_send_inputs(vec![(recipient_unified_address.as_str(), sent_value, None)])
-            .await
-            .unwrap();
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(recipient_unified_address.as_str(), sent_value, None)],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
@@ -1782,8 +1810,9 @@ mod slow {
             .await
             .unwrap();
         faucet.do_sync(false).await.unwrap();
-        faucet
-            .send_from_send_inputs(vec![
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![
                 (recipient_taddr.as_str(), sent_to_taddr_value, None),
                 (recipient_zaddr.as_str(), sent_to_zaddr_value, Some("foo2")),
                 (
@@ -1791,9 +1820,10 @@ mod slow {
                     sent_to_self_orchard_value,
                     Some("bar2"),
                 ),
-            ])
-            .await
-            .unwrap();
+            ],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
@@ -1886,14 +1916,12 @@ mod slow {
         let value = 100_000;
 
         // 2. Send an incoming transaction to fill the wallet
-        let faucet_funding_txid = faucet
-            .send_from_send_inputs(vec![(
-                &get_base_address_macro!(recipient, "sapling"),
-                value,
-                None,
-            )])
-            .await
-            .unwrap();
+        let faucet_funding_txid = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&get_base_address_macro!(recipient, "sapling"), value, None)],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
@@ -2080,13 +2108,15 @@ mod slow {
         let fee = u64::from(MINIMUM_FEE);
         let for_orchard = dbg!(fee * 10);
         let for_sapling = dbg!(fee / 10);
-        faucet
-            .send_from_send_inputs(vec![
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![
                 (&recipient_unified, for_orchard, Some("Plenty for orchard.")),
                 (&recipient_sapling, for_sapling, Some("Dust for sapling.")),
-            ])
-            .await
-            .unwrap();
+            ],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
@@ -2127,13 +2157,12 @@ mod slow {
         );
 
         println!("creating vec");
-        faucet
-            .send_from_send_inputs(vec![
-                (&get_base_address_macro!(faucet, "unified"), 10, None);
-                15
-            ])
-            .await
-            .unwrap();
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&get_base_address_macro!(faucet, "unified"), 10, None); 15],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
             .await
             .unwrap();
@@ -2180,8 +2209,9 @@ mod slow {
             .unwrap();
         let sapling_addr = get_base_address_macro!(faucet, "sapling");
         for memo in [None, Some("foo")] {
-            faucet
-                .send_from_send_inputs(vec![(
+            zingo_testutils::lightclient::from_inputs::send(
+                &faucet,
+                vec![(
                     sapling_addr.as_str(),
                     {
                         let balance = faucet.do_balance().await;
@@ -2189,9 +2219,10 @@ mod slow {
                             + balance.spendable_orchard_balance.unwrap()
                     } - u64::from(MINIMUM_FEE),
                     memo,
-                )])
-                .await
-                .unwrap();
+                )],
+            )
+            .await
+            .unwrap();
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
@@ -2224,14 +2255,16 @@ mod slow {
     async fn rescan_still_have_outgoing_metadata() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "sapling").as_str(),
                 1_000,
                 Some("foo"),
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -2258,20 +2291,20 @@ mod slow {
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
-        faucet
-            .send_from_send_inputs(
-                (1..=3)
-                    .map(|n| {
-                        (
-                            client_2_saplingaddress.as_str(),
-                            n * 10000,
-                            Some(memos[(n - 1) as usize]),
-                        )
-                    })
-                    .collect(),
-            )
-            .await
-            .unwrap();
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            (1..=3)
+                .map(|n| {
+                    (
+                        client_2_saplingaddress.as_str(),
+                        n * 10000,
+                        Some(memos[(n - 1) as usize]),
+                    )
+                })
+                .collect(),
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
@@ -2906,14 +2939,16 @@ mod slow {
                 &original_recipient_address
             );
             let recipient1_diversified_addr = recipient1.do_new_address("tz").await.unwrap();
-            faucet
-                .send_from_send_inputs(vec![(
+            zingo_testutils::lightclient::from_inputs::send(
+                &faucet,
+                vec![(
                     recipient1_diversified_addr[0].as_str().unwrap(),
                     14_000,
                     Some("foo"),
-                )])
-                .await
-                .unwrap();
+                )],
+            )
+            .await
+            .unwrap();
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
@@ -3020,10 +3055,12 @@ mod slow {
         };
     }
 
-        sapling_faucet
-            .send_from_send_inputs(vec![(&pmc_taddr, 50_000, None)])
-            .await
-            .unwrap();
+        sapling_zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&pmc_taddr, 50_000, None)],
+        )
+        .await
+        .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
         pool_migration_client
@@ -3033,10 +3070,12 @@ mod slow {
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 2 Test of a send from a sapling only client to its own unified address
-        sapling_faucet
-            .send_from_send_inputs(vec![(&pmc_sapling, 50_000, None)])
-            .await
-            .unwrap();
+        sapling_zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&pmc_sapling, 50_000, None)],
+        )
+        .await
+        .unwrap();
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
         pool_migration_client
@@ -3086,10 +3125,12 @@ mod slow {
         bump_and_check!(o: 20_000 s: 0 t: 0);
 
         // 6 sapling and orchard to orchard
-        sapling_faucet
-            .send_from_send_inputs(vec![(&pmc_sapling, 20_000, None)])
-            .await
-            .unwrap();
+        sapling_zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&pmc_sapling, 20_000, None)],
+        )
+        .await
+        .unwrap();
         bump_and_check!(o: 20_000 s: 20_000 t: 0);
 
         pool_migration_client
@@ -3099,13 +3140,12 @@ mod slow {
         bump_and_check!(o: 30_000 s: 0 t: 0);
 
         // 7 tzo --> o
-        sapling_faucet
-            .send_from_send_inputs(vec![
-                (&pmc_taddr, 20_000, None),
-                (&pmc_sapling, 20_000, None),
-            ])
-            .await
-            .unwrap();
+        sapling_zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&pmc_taddr, 20_000, None), (&pmc_sapling, 20_000, None)],
+        )
+        .await
+        .unwrap();
         bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
         pool_migration_client
@@ -3148,14 +3188,16 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
             .await
             .unwrap();
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "transparent"),
                 1_000u64,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
     }
     #[tokio::test]
     async fn dust_sends_change_correctly() {
@@ -3188,14 +3230,16 @@ mod slow {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 100_000,
                 Some("funding to be received by the recipient"),
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
             .await
@@ -3250,26 +3294,32 @@ mod slow {
             "faucet notes: {}",
             faucet.do_list_notes(true).await.pretty(4)
         );
-        faucet
-            .send_from_send_inputs(vec![(&base_uaddress, 1_000u64, Some("1"))])
-            .await
-            .unwrap();
-        faucet
-            .send_from_send_inputs(vec![(&base_uaddress, 1_000u64, Some("1"))])
-            .await
-            .expect(
-                "We only have sapling notes, plus a pending orchard note from the \
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&base_uaddress, 1_000u64, Some("1"))],
+        )
+        .await
+        .unwrap();
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&base_uaddress, 1_000u64, Some("1"))],
+        )
+        .await
+        .expect(
+            "We only have sapling notes, plus a pending orchard note from the \
             previous send. If we're allowed to select pending notes, we'll attempt \
             to select that one, and this will fail",
-            );
+        );
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
             "2".to_string()
         );
-        faucet
-            .send_from_send_inputs(vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
-            .await
-            .unwrap();
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(&base_uaddress, 1_000u64, Some("aaaa"))],
+        )
+        .await
+        .unwrap();
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
             "6".to_string()
@@ -3415,14 +3465,12 @@ mod slow {
             scenarios::faucet_recipient_default().await;
         for i in 1..4 {
             let _ = faucet.do_sync(false).await;
-            faucet
-                .send_from_send_inputs(vec![(
-                    &get_base_address_macro!(recipient, "sapling"),
-                    10_100,
-                    None,
-                )])
-                .await
-                .unwrap();
+            zingo_testutils::lightclient::from_inputs::send(
+                &faucet,
+                vec![(&get_base_address_macro!(recipient, "sapling"), 10_100, None)],
+            )
+            .await
+            .unwrap();
             let chainwait: u32 = 6;
             let amount: u64 = u64::from(chainwait * i);
             zingo_testutils::increase_server_height(&regtest_manager, chainwait).await;
@@ -3643,10 +3691,12 @@ mod basic_transactions {
         faucet.do_sync(true).await.unwrap();
 
         for _ in 0..2 {
-            faucet
-                .send_from_send_inputs(vec![(recipient_addr_ua.as_str(), 40_000, None)])
-                .await
-                .unwrap();
+            zingo_testutils::lightclient::from_inputs::send(
+                &faucet,
+                vec![(recipient_addr_ua.as_str(), 40_000, None)],
+            )
+            .await
+            .unwrap();
         }
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
@@ -3674,32 +3724,38 @@ mod basic_transactions {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        let txid1 = faucet
-            .send_from_send_inputs(vec![(
+        let txid1 = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "unified").as_str(),
                 40_000,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
-        let txid2 = faucet
-            .send_from_send_inputs(vec![(
+        let txid2 = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "sapling").as_str(),
                 40_000,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
-        let txid3 = faucet
-            .send_from_send_inputs(vec![(
+        let txid3 = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "transparent").as_str(),
                 40_000,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
@@ -3866,14 +3922,16 @@ mod basic_transactions {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        let txid1 = faucet
-            .send_from_send_inputs(vec![(
+        let txid1 = zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "unified").as_str(),
                 0,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
@@ -3921,14 +3979,16 @@ mod basic_transactions {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "transparent").as_str(),
                 40_000,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
@@ -3981,14 +4041,16 @@ mod basic_transactions {
 
         assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
 
-        faucet
-            .send_from_send_inputs(vec![(
+        zingo_testutils::lightclient::from_inputs::send(
+            &faucet,
+            vec![(
                 get_base_address_macro!(recipient, "transparent").as_str(),
                 40_000,
                 None,
-            )])
-            .await
-            .unwrap();
+            )],
+        )
+        .await
+        .unwrap();
 
         zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
