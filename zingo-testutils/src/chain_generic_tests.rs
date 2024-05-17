@@ -69,7 +69,7 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
-    use crate::assertions::assert_sender_understands_proposal;
+    use crate::assertions::assert_record_matches_step;
     use crate::chain_generic_tests::conduct_chain::ConductChain;
 
     /// runs a send-to-receiver and receives it in a chain-generic context
@@ -112,11 +112,27 @@ pub mod fixtures {
             .await
             .unwrap();
 
-        assert_sender_understands_proposal(&sender, &proposal, one_txid.first()).await;
+        let txid = one_txid.first();
+
+        let read_lock = sender
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+
+        let record = read_lock
+            .transaction_records_by_id
+            .get(txid)
+            .expect("sender must recognize txid");
+
+        let step = proposal.steps().first();
+
+        assert_record_matches_step(record, step).await;
 
         environment.bump_chain().await;
 
-        assert_sender_understands_proposal(&sender, &proposal, one_txid.first()).await;
+        assert_record_matches_step(record, step).await;
 
         recipient.do_sync(false).await.unwrap();
 
