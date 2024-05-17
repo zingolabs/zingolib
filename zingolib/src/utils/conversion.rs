@@ -29,13 +29,13 @@ pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, TxIdFromHexEncodedS
     Ok(TxId::from_bytes(txid_bytes))
 }
 
-/// Coverrt a &str to an Adddress
+/// Convert a &str to an Adddress
 pub fn address_from_str(address: &str, chain: &ChainType) -> Result<Address, ConversionError> {
     Address::decode(chain, address)
         .ok_or_else(|| ConversionError::InvalidAddress(address.to_string()))
 }
 
-/// Have a u64?  Need Zatoshis?
+/// Convery a valid u64 into Zatoshis.
 pub fn zatoshis_from_u64(amount: u64) -> Result<NonNegativeAmount, ConversionError> {
     NonNegativeAmount::from_u64(amount).map_err(|_e| ConversionError::OutsideValidRange)
 }
