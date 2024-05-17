@@ -37,7 +37,7 @@ pub mod conduct_chain {
             self.bump_chain().await;
             sender.do_sync(false).await.unwrap();
 
-            from_inputs::send(
+            from_inputs::quick_send(
                 &sender,
                 vec![(
                     (get_base_address_macro!(recipient, "unified")).as_str(),
@@ -99,7 +99,7 @@ pub mod fixtures {
 
         let recipient = environment.create_client().await;
         let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
-        let request = crate::lightclient::from_inputs::transaction_request_from_send_inputs(
+        let request = from_inputs::transaction_request_from_send_inputs(
             &recipient,
             vec![(recipient_address.as_str(), send_value, None)],
         )
@@ -166,7 +166,7 @@ pub mod fixtures {
         let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
 
         for _ in 0..n {
-            from_inputs::send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
+            from_inputs::quick_send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
                 .await
                 .unwrap();
             environment.bump_chain().await;
@@ -175,7 +175,7 @@ pub mod fixtures {
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
             dbg!(secondary.do_balance().await);
-            from_inputs::send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
+            from_inputs::quick_send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
                 .await
                 .unwrap();
             primary.do_sync(false).await.unwrap();
@@ -206,7 +206,7 @@ pub mod fixtures {
         dbg!("recipient ready");
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
-        crate::lightclient::from_inputs::send(
+        from_inputs::quick_send(
             &sender,
             vec![(dbg!(recipient_address).as_str(), send_value, None)],
         )
