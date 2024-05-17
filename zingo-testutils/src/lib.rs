@@ -147,14 +147,16 @@ pub async fn send_value_between_clients_and_sync(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
     );
-    let txid = sender
-        .send_from_send_inputs(vec![(
+    let txid = crate::lightclient::from_inputs::send(
+        &sender,
+        vec![(
             &crate::get_base_address_macro!(recipient, address_type),
             value,
             None,
-        )])
-        .await
-        .unwrap();
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
     recipient.do_sync(false).await?;
     Ok(txid)
