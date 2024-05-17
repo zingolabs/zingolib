@@ -3062,13 +3062,12 @@ mod slow {
         };
     }
 
-        sapling_from_inputs::send(&faucet, vec![(&pmc_taddr, 50_000, None)])
+        from_inputs::send(&sapling_faucet, vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
-        pool_migration_client
-            .shield_from_shield_inputs(&[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
@@ -3079,8 +3078,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
-        pool_migration_client
-            .shield_from_shield_inputs(&[Pool::Sapling], None)
+        from_inputs::shield(&pool_migration_client, &[Pool::Sapling], None)
             .await
             .unwrap();
         bump_and_check!(o: 80_000 s: 0 t: 0);
@@ -3102,8 +3100,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
-        pool_migration_client
-            .shield_from_shield_inputs(&[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
             .await
             .unwrap();
         pool_migration_client
@@ -3119,8 +3116,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
-        pool_migration_client
-            .shield_from_shield_inputs(&[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 0 t: 0);
@@ -3146,8 +3142,7 @@ mod slow {
         .unwrap();
         bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
-        pool_migration_client
-            .shield_from_shield_inputs(&[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
             .await
             .unwrap();
         pool_migration_client
