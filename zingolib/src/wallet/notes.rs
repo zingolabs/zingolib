@@ -14,7 +14,7 @@ use zcash_client_backend::PoolType;
 
 use zcash_primitives::transaction::TxId;
 
-/// This triple of values uniquely identifies an entry on a zcash blockchain.
+/// This triple of values uniquely identifies a value transfer on a zcash blockchain.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct OutputId {
     /// TODO: Add Doc Comment Here!
