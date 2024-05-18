@@ -173,20 +173,22 @@ pub mod fixtures {
         fn per_cycle_secondary_credit(start: u64) -> u64 {
             start + 25_000u64
         }
-        for _ in 0..n {
+        for i in 0..n {
+            dbg!(i);
             from_inputs::quick_send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
                 .await
                 .unwrap();
             environment.bump_chain().await;
-            secondary.do_sync(false).await.unwrap();
+            dbg!(secondary.do_sync(true).await.unwrap());
             secondary.quick_shield().await.unwrap();
             environment.bump_chain().await;
-            secondary.do_sync(false).await.unwrap();
+            dbg!(secondary.do_sync(true).await.unwrap());
             from_inputs::quick_send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
                 .await
                 .unwrap();
             environment.bump_chain().await;
-            primary.do_sync(false).await.unwrap();
+            dbg!(primary.do_sync(true).await.unwrap());
+            dbg!(secondary.do_sync(true).await.unwrap());
             primary_fund = per_cycle_primary_debit(primary_fund);
             secondary_fund = per_cycle_secondary_credit(secondary_fund);
             check_client_balances!(primary, o: primary_fund s: 0 t: 0);

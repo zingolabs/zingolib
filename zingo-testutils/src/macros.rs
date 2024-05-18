@@ -30,6 +30,7 @@ macro_rules! check_client_balances {
             .iter()
             .map(|transfer| transfer.balance_delta())
             .sum::<i64>();
+        dbg!($client.do_list_txsummaries().await);
         assert_eq!(
             (balance.orchard_balance.unwrap_or(0)
                 + balance.sapling_balance.unwrap_or(0)
