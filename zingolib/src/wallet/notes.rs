@@ -17,11 +17,13 @@ use zcash_primitives::transaction::TxId;
 /// This triple of values uniquely identifies a value transfer on a zcash blockchain.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct OutputId {
-    /// TODO: Add Doc Comment Here!
+    /// A unique ID of the transaction.  For v5 protocol and later, to enforce
+    /// non-malleability it is derived exclusively from effecting data
+    /// (data that is necessary for transaction validity.
     pub txid: TxId,
-    /// TODO: Add Doc Comment Here!
+    /// Shielded (two kinds) or Transparent
     pub pool: PoolType,
-    /// TODO: Add Doc Comment Here!
+    /// The unique position of this value transfer in the transaction.
     pub index: u32,
 }
 impl OutputId {
