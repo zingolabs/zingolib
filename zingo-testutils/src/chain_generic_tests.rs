@@ -9,7 +9,7 @@
 /// lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 /// darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 pub mod conduct_chain {
-    use crate::get_base_address_macro;
+    use crate::{get_base_address_macro, lightclient::from_inputs};
     use zingolib::lightclient::LightClient;
 
     #[allow(async_fn_in_trait)]
@@ -30,15 +30,15 @@ pub mod conduct_chain {
         async fn bump_chain(&mut self);
 
         /// builds a client and funds it in orchard and syncs it
-        async fn fund_client(&mut self, value: u64) -> LightClient {
-            let sender = self.create_faucet().await;
+        async fn fund_client_orchard(&mut self, value: u64) -> LightClient {
+            let faucet = self.create_faucet().await;
             let recipient = self.create_client().await;
 
             self.bump_chain().await;
-            sender.do_sync(false).await.unwrap();
+            faucet.do_sync(false).await.unwrap();
 
-            crate::lightclient::from_inputs::send(
-                &sender,
+            from_inputs::quick_send(
+                &faucet,
                 vec![(
                     (get_base_address_macro!(recipient, "unified")).as_str(),
                     value,
@@ -71,9 +71,9 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
-    use crate::assertions::assert_record_matches_step;
-    use crate::chain_generic_tests::conduct_chain::ConductChain;
     use crate::lightclient::from_inputs;
+    use crate::{assertions::assert_record_matches_step, lightclient::get_base_address};
+    use crate::{chain_generic_tests::conduct_chain::ConductChain, check_client_balances};
 
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
@@ -91,7 +91,9 @@ pub mod fixtures {
                 Shielded(Orchard) => 2,
             };
 
-        let sender = environment.fund_client(send_value + expected_fee).await;
+        let sender = environment
+            .fund_client_orchard(send_value + expected_fee)
+            .await;
 
         println!("client is ready to send");
         dbg!(sender.query_sum_value(OutputQuery::any()).await);
@@ -99,7 +101,7 @@ pub mod fixtures {
 
         let recipient = environment.create_client().await;
         let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
-        let request = crate::lightclient::from_inputs::transaction_request_from_send_inputs(
+        let request = from_inputs::transaction_request_from_send_inputs(
             &recipient,
             vec![(recipient_address.as_str(), send_value, None)],
         )
@@ -157,31 +159,38 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let primary = environment
-            .fund_client(1_000_000 + (n + 6) * MARGINAL_FEE.into_u64())
-            .await;
-        let primary_address =
-            crate::lightclient::get_base_address(&primary, Shielded(Orchard)).await;
+        let mut primary_fund = 1_000_000 + (n + 6) * MARGINAL_FEE.into_u64();
+        let mut secondary_fund = 0u64;
+        let primary = environment.fund_client_orchard(primary_fund).await;
+        let primary_address = get_base_address(&primary, Shielded(Orchard)).await;
 
         let secondary = environment.create_client().await;
         let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
 
+        fn per_cycle_primary_debit(start: u64) -> u64 {
+            start - 65_000u64
+        }
+        fn per_cycle_secondary_credit(start: u64) -> u64 {
+            start + 25_000u64
+        }
         for _ in 0..n {
-            from_inputs::send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
+            from_inputs::quick_send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
                 .await
                 .unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
-            dbg!(secondary.do_balance().await);
             secondary.quick_shield().await.unwrap();
             environment.bump_chain().await;
             secondary.do_sync(false).await.unwrap();
-            dbg!(secondary.do_balance().await);
-            from_inputs::send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
+            from_inputs::quick_send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
                 .await
                 .unwrap();
+            environment.bump_chain().await;
             primary.do_sync(false).await.unwrap();
-            dbg!(primary.do_balance().await);
+            primary_fund = per_cycle_primary_debit(primary_fund);
+            secondary_fund = per_cycle_secondary_credit(secondary_fund);
+            check_client_balances!(primary, o: primary_fund s: 0 t: 0);
+            check_client_balances!(secondary, o: secondary_fund s: 0 t: 0);
         }
     }
 
@@ -190,12 +199,17 @@ pub mod fixtures {
     where
         CC: ConductChain,
     {
+        let multiple = match pooltype {
+            PoolType::Shielded(Orchard) => 2u64,
+            PoolType::Shielded(Sapling) => 4u64,
+            PoolType::Transparent => 3u64,
+        };
         let mut environment = CC::setup().await;
 
         dbg!("chain set up, funding client now");
 
         let sender = environment
-            .fund_client(send_value + 2 * (MARGINAL_FEE.into_u64()))
+            .fund_client_orchard(send_value + multiple * (MARGINAL_FEE.into_u64()))
             .await;
 
         dbg!("client is ready to send");
@@ -208,7 +222,7 @@ pub mod fixtures {
         dbg!("recipient ready");
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);
 
-        crate::lightclient::from_inputs::send(
+        from_inputs::quick_send(
             &sender,
             vec![(dbg!(recipient_address).as_str(), send_value, None)],
         )
