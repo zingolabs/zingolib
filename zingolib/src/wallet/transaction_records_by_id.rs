@@ -122,7 +122,7 @@ impl TransactionRecordsById {
                     || transaction_metadata
                         .status
                         .is_broadcast_after_or_at(&reorg_height)
-                // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
+                // TODO: why dont we only remove confirmed transactions. pending transactions may still be valid in the mempool and may later confirm or expire.
                 {
                     Some(transaction_metadata.txid)
                 } else {
@@ -197,7 +197,7 @@ impl TransactionRecordsById {
                     *nd.spent_mut() = None;
                 }
 
-                // Remove unconfirmed spends too
+                // Remove pending spends too
                 if nd.pending_spent().is_some()
                     && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
                 {

@@ -123,7 +123,7 @@ pub trait ShieldedNoteInterface: OutputInterface + Sized {
         position_of_commitment_to_witness: Option<Position>,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
-        unconfirmed_spent: Option<(TxId, u32)>,
+        pending_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
