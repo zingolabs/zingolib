@@ -418,7 +418,7 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: PoolType::Transparent,
+                            pool_type: PoolType::Transparent,
                             amount: received_transparent.value,
                         },
                         memos: vec![],
@@ -437,7 +437,7 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: PoolType::Shielded(ShieldedProtocol::Sapling),
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
                             amount: received_sapling.value(),
                         },
                         memos,
@@ -456,7 +456,7 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: PoolType::Shielded(ShieldedProtocol::Orchard),
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
                             amount: received_orchard.value(),
                         },
                         memos,

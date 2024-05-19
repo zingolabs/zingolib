@@ -561,11 +561,12 @@ pub mod scenarios {
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{get_base_address_macro, increase_height_and_wait_for_client};
     use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-    use zingolib::{lightclient::LightClient, wallet::Pool};
+    use zingolib::lightclient::LightClient;
 
     /// TODO: Add Doc Comment Here!
     pub mod setup {
         use super::BASE_HEIGHT;
+        use zcash_client_backend::{PoolType, ShieldedProtocol};
         use zingo_testvectors::{
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
@@ -575,7 +576,6 @@ pub mod scenarios {
         use super::{ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use tokio::time::sleep;
-        use zingolib::wallet::Pool;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
 
         /// TODO: Add Doc Comment Here!
@@ -619,13 +619,17 @@ pub mod scenarios {
 
             fn configure_scenario(
                 &mut self,
-                mine_to_pool: Option<Pool>,
+                mine_to_pool: Option<PoolType>,
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) {
                 let mine_to_address = match mine_to_pool {
-                    Some(Pool::Orchard) => Some(REG_O_ADDR_FROM_ABANDONART),
-                    Some(Pool::Sapling) => Some(REG_Z_ADDR_FROM_ABANDONART),
-                    Some(Pool::Transparent) => Some(REG_T_ADDR_FROM_ABANDONART),
+                    Some(PoolType::Shielded(ShieldedProtocol::Orchard)) => {
+                        Some(REG_O_ADDR_FROM_ABANDONART)
+                    }
+                    Some(PoolType::Shielded(ShieldedProtocol::Sapling)) => {
+                        Some(REG_Z_ADDR_FROM_ABANDONART)
+                    }
+                    Some(PoolType::Transparent) => Some(REG_T_ADDR_FROM_ABANDONART),
                     None => None,
                 };
                 self.test_env
@@ -677,7 +681,10 @@ pub mod scenarios {
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
                 dbg!(&sb.test_env.regtest_manager.zcashd_config);
-                sb.configure_scenario(Some(Pool::Sapling), regtest_network);
+                sb.configure_scenario(
+                    Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
+                    regtest_network,
+                );
                 sb.launch_scenario(false).await;
                 sb
             }
