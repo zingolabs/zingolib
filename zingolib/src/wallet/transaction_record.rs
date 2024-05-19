@@ -17,7 +17,7 @@ use crate::{
         keys::unified::WalletCapability,
         notes::{
             self,
-            query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
+            query::{OutputQuery, OutputSpendStatusQuery},
             OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
             TransparentOutput,
         },
@@ -193,17 +193,7 @@ impl TransactionRecord {
 
     /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
-        self.query_sum_value(
-            QueryStipulations {
-                unspent: true,
-                pending_spent: true,
-                spent: true,
-                transparent: true,
-                sapling: true,
-                orchard: true,
-            }
-            .stipulate(),
-        )
+        self.query_sum_value(OutputQuery::any())
     }
 
     /// TODO: Add Doc Comment Here!
