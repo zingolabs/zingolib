@@ -3658,7 +3658,6 @@ mod slow {
 }
 
 mod basic_transactions {
-    use zcash_client_backend::PoolType;
     use zingo_testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
 
     #[tokio::test]
