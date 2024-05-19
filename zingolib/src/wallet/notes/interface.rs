@@ -1,4 +1,5 @@
-//! TODO: Add Mod Description Here!
+//! Logic that's common to all value transfer instruments. A significant discrepancy between
+//! librustzcash and zingolib is that transparent "notes" are a reified concept in zingolib.
 use incrementalmerkletree::{Hashable, Position};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
@@ -13,9 +14,13 @@ use super::{
     query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
 };
 
-/// TODO: Add Doc Comment Here!
+/// Expresses the behavior that *all* value transfers MUST support (inclusive of transparent).
 pub trait OutputInterface: Sized {
     /// returns the zcash_client_backend PoolType enum (one of 3)
+    /// Where lrz splits between shielded and transparent, zingolib
+    /// uses this type to discriminate among the three pools that we
+    /// must manage. NOTE:  Possibly we should distinguish with this
+    /// method name?
     fn pool_type(&self) -> PoolType;
 
     /// number of Zatoshis unlocked by the note
