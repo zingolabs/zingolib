@@ -17,14 +17,12 @@ use darkside_tests::{
 };
 use json::JsonValue;
 use tokio::time::sleep;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zingo_testutils::{
     get_base_address_macro, scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient,
 };
 use zingoconfig::RegtestNetwork;
-use zingolib::{
-    lightclient::PoolBalances,
-    wallet::{data::summaries::ValueTransferKind, Pool},
-};
+use zingolib::{lightclient::PoolBalances, wallet::data::summaries::ValueTransferKind};
 
 #[ignore]
 #[tokio::test]
@@ -85,7 +83,10 @@ async fn interrupt_initial_tree_fetch() {
 async fn shielded_note_marked_as_change_chainbuild() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     let chainbuild_file = create_chainbuild_file("shielded_note_marked_as_change");
-    let mut scenario = DarksideEnvironment::default_faucet_recipient(Pool::Sapling).await;
+    let mut scenario = DarksideEnvironment::default_faucet_recipient(PoolType::Shielded(
+        ShieldedProtocol::Sapling,
+    ))
+    .await;
 
     // stage a sapling to orchard send-to-self every thousand blocks
     for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {
@@ -128,7 +129,10 @@ async fn shielded_note_marked_as_change_chainbuild() {
 async fn shielded_note_marked_as_change_test() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");
-    let mut scenario = DarksideEnvironment::default_faucet_recipient(Pool::Sapling).await;
+    let mut scenario = DarksideEnvironment::default_faucet_recipient(PoolType::Shielded(
+        ShieldedProtocol::Sapling,
+    ))
+    .await;
 
     // stage a send to self every thousand blocks
     for thousands_blocks_count in 1..BLOCKCHAIN_HEIGHT / 1000 {

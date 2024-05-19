@@ -497,11 +497,12 @@ pub mod scenarios {
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zingo_testutils::scenarios::setup::ClientBuilder;
     use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingoconfig::RegtestNetwork;
-    use zingolib::{lightclient::LightClient, wallet::Pool};
+    use zingolib::lightclient::LightClient;
 
     use super::{
         init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
@@ -544,7 +545,7 @@ pub mod scenarios {
         pub async fn default() -> DarksideEnvironment {
             DarksideEnvironment::new(None).await
         }
-        pub async fn default_faucet_recipient(funded_pool: Pool) -> DarksideEnvironment {
+        pub async fn default_faucet_recipient(funded_pool: PoolType) -> DarksideEnvironment {
             let mut scenario = DarksideEnvironment::new(None).await;
             scenario
                 .build_faucet(funded_pool)
@@ -556,7 +557,7 @@ pub mod scenarios {
 
         /// Builds a lightclient with spending capability to the initial source of funds to the darkside blockchain
         /// The staged block with the funding transaction is not applied and the faucet is not synced
-        pub async fn build_faucet(&mut self, funded_pool: Pool) -> &mut DarksideEnvironment {
+        pub async fn build_faucet(&mut self, funded_pool: PoolType) -> &mut DarksideEnvironment {
             if self.faucet.is_some() {
                 panic!("Error: Faucet already exists!");
             }
@@ -572,9 +573,13 @@ pub mod scenarios {
             );
 
             let faucet_funding_transaction = match funded_pool {
-                Pool::Orchard => constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT,
-                Pool::Sapling => constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT,
-                Pool::Transparent => {
+                PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                    constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT
+                }
+                PoolType::Shielded(ShieldedProtocol::Sapling) => {
+                    constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT
+                }
+                PoolType::Transparent => {
                     panic!("Error: Transparent funding transactions for faucet are not currently implemented!")
                 }
             };

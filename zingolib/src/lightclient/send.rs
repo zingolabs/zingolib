@@ -1,7 +1,7 @@
 //! TODO: Add Mod Description Here!
 use log::debug;
 
-use zcash_client_backend::address::Address;
+use zcash_client_backend::{address::Address, PoolType, ShieldedProtocol};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_primitives::transaction::TxId;
@@ -9,7 +9,6 @@ use zcash_proofs::prover::LocalTxProver;
 
 use crate::data::receivers::Receivers;
 use crate::utils::conversion::zatoshis_from_u64;
-use crate::wallet::Pool;
 
 use super::LightClient;
 use super::LightWalletSendProgress;
@@ -40,7 +39,10 @@ impl LightClient {
         self.wallet
             .send_to_addresses(
                 sapling_prover,
-                vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
+                vec![
+                    PoolType::Shielded(ShieldedProtocol::Orchard),
+                    PoolType::Shielded(ShieldedProtocol::Sapling),
+                ], // This policy doesn't allow
                 // spend from transparent.
                 receivers,
                 transaction_submission_height,
@@ -67,7 +69,7 @@ impl LightClient {
     /// Defaults to the unified address of the capability if `address` is `None`.
     pub async fn do_shield(
         &self,
-        pools_to_shield: &[Pool],
+        pools_to_shield: &[PoolType],
         address: Option<Address>,
     ) -> Result<TxId, String> {
         let transaction_submission_height = self.get_submission_height().await?;
@@ -85,15 +87,16 @@ impl LightClient {
             .unwrap_or(0);
 
         // Make sure there is a balance, and it is greater than the amount
-        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
-            tbal
-        } else {
-            0
-        } + if pools_to_shield.contains(&Pool::Sapling) {
-            sapling_bal
-        } else {
-            0
-        };
+        let balance_to_shield =
+            if pools_to_shield.contains(&PoolType::Transparent) {
+                tbal
+            } else {
+                0
+            } + if pools_to_shield.contains(&PoolType::Shielded(ShieldedProtocol::Sapling)) {
+                sapling_bal
+            } else {
+                0
+            };
         if balance_to_shield <= fee {
             return Err(format!(
                 "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",

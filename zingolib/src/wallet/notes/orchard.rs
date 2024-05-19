@@ -4,9 +4,8 @@ use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
-    super::{data::TransactionRecord, Pool},
-    query::OutputSpendStatusQuery,
-    OutputInterface, ShieldedNoteInterface,
+    super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
+    ShieldedNoteInterface,
 };
 
 /// TODO: Add Doc Comment Here!
@@ -27,11 +26,11 @@ pub struct OrchardNote {
     pub(crate) nullifier: Option<orchard::note::Nullifier>,
 
     /// If this note was confirmed spent
-    pub spent: Option<(TxId, u32)>, // Todo: as related to unconfirmed spent, this is potential data incoherence
+    pub spent: Option<(TxId, u32)>, // Todo: as related to pending spent, this is potential data incoherence
 
     /// If this note was spent in a send, but has not yet been confirmed.
     /// Contains the transaction id and height at which it was broadcast
-    pub unconfirmed_spent: Option<(TxId, u32)>,
+    pub pending_spent: Option<(TxId, u32)>,
 
     /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
@@ -61,11 +60,11 @@ impl OutputInterface for OrchardNote {
     }
 
     fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
+        &self.pending_spent
     }
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
+        &mut self.pending_spent
     }
 
     fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
@@ -118,7 +117,7 @@ impl ShieldedNoteInterface for OrchardNote {
         witnessed_position: Option<Position>,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
-        unconfirmed_spent: Option<(TxId, u32)>,
+        pending_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
@@ -130,7 +129,7 @@ impl ShieldedNoteInterface for OrchardNote {
             witnessed_position,
             nullifier,
             spent,
-            unconfirmed_spent,
+            pending_spent,
             memo,
             is_change,
             have_spending_key,
@@ -169,8 +168,8 @@ impl ShieldedNoteInterface for OrchardNote {
         self.nullifier
     }
 
-    fn pool() -> Pool {
-        Pool::Orchard
+    fn pool() -> PoolType {
+        PoolType::Shielded(ShieldedProtocol::Orchard)
     }
 
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {
@@ -227,7 +226,7 @@ pub mod mocks {
         pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<Nullifier>>,
         spent: Option<Option<(TxId, u32)>>,
-        unconfirmed_spent: Option<Option<(TxId, u32)>>,
+        pending_spent: Option<Option<(TxId, u32)>>,
         memo: Option<Option<Memo>>,
         is_change: Option<bool>,
         have_spending_key: Option<bool>,
@@ -244,7 +243,7 @@ pub mod mocks {
                 output_index: None,
                 nullifier: None,
                 spent: None,
-                unconfirmed_spent: None,
+                pending_spent: None,
                 memo: None,
                 is_change: None,
                 have_spending_key: None,
@@ -258,7 +257,7 @@ pub mod mocks {
         build_method!(output_index, Option<u32>);
         build_method!(nullifier, Option<Nullifier>);
         build_method!(spent, Option<(TxId, u32)>);
-        build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+        build_method!(pending_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
         pub fn set_change(&mut self, is_change: bool) -> &mut Self {
@@ -282,7 +281,7 @@ pub mod mocks {
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
                 self.spent.unwrap(),
-                self.unconfirmed_spent.unwrap(),
+                self.pending_spent.unwrap(),
                 self.memo.unwrap(),
                 self.is_change.unwrap(),
                 self.have_spending_key.unwrap(),
@@ -301,7 +300,7 @@ pub mod mocks {
                 .output_index(Some(0))
                 .nullifier(Some(Nullifier::from_bytes(&[0u8; 32]).unwrap()))
                 .spent(None)
-                .unconfirmed_spent(None)
+                .pending_spent(None)
                 .memo(None)
                 .set_change(false)
                 .have_spending_key(true);
