@@ -184,7 +184,11 @@ impl TransactionRecordsById {
             // Select only spent or pending_spent notes.
             D::WalletNote::transaction_record_to_outputs_vec_query_mut(
                 transaction_metadata,
-                OutputSpendStatusQuery::new(false, true, true),
+                OutputSpendStatusQuery {
+                    unspent: false,
+                    pending_spent: true,
+                    spent: true,
+                },
             )
             .iter_mut()
             .for_each(|nd| {

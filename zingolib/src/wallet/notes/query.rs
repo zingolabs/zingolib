@@ -1,6 +1,5 @@
 //! Contains structs for querying a database about notes.
 
-use derive_more::Constructor;
 use getset::Getters;
 
 use zcash_client_backend::PoolType;
@@ -10,7 +9,7 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
 /// Selects received notes by how they been spent
-#[derive(Getters, Constructor, Clone, Copy)]
+#[derive(Getters, Clone, Copy)]
 pub struct OutputSpendStatusQuery {
     /// will the query include unspent notes?
     #[getset(get = "pub")]
@@ -34,7 +33,7 @@ impl OutputSpendStatusQuery {
 }
 
 /// Selects received notes by pool
-#[derive(Getters, Constructor, Clone, Copy)]
+#[derive(Getters, Clone, Copy)]
 pub struct OutputPoolQuery {
     /// will the query include transparent notes? (coins)
     #[getset(get = "pub")]

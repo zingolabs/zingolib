@@ -52,7 +52,11 @@ pub trait OutputInterface: Sized {
 
     /// Returns true if the note is unspent (spendable).
     fn is_unspent(&self) -> bool {
-        self.spend_status_query(OutputSpendStatusQuery::new(true, false, false))
+        self.spend_status_query(OutputSpendStatusQuery {
+            unspent: true,
+            pending_spent: false,
+            spent: false,
+        })
     }
 
     /// Returns true if the note is one of the pools enumerated by the query.
