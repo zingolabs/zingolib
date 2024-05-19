@@ -124,7 +124,7 @@ fn check_view_capability_bounds(
 
 mod fast {
     use zcash_address::unified::Encoding;
-    use zcash_client_backend::PoolType;
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_testutils::lightclient::from_inputs;
     use zingolib::wallet::WalletBase;
@@ -290,8 +290,11 @@ mod fast {
     #[tokio::test]
     async fn unspent_notes_are_not_saved() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient(Pool::Sapling, regtest_network).await;
+        let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            regtest_network,
+        )
+        .await;
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -584,8 +587,11 @@ mod fast {
     #[tokio::test]
     async fn mine_to_orchard() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet) =
-            scenarios::faucet(Pool::Orchard, regtest_network).await;
+        let (regtest_manager, _cph, faucet) = scenarios::faucet(
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            regtest_network,
+        )
+        .await;
         check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
@@ -596,8 +602,11 @@ mod fast {
     #[tokio::test]
     async fn mine_to_sapling() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet) =
-            scenarios::faucet(Pool::Sapling, regtest_network).await;
+        let (regtest_manager, _cph, faucet) = scenarios::faucet(
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            regtest_network,
+        )
+        .await;
         check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
@@ -609,7 +618,7 @@ mod fast {
     async fn mine_to_transparent() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
         check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
@@ -636,11 +645,11 @@ mod fast {
     async fn mine_to_transparent_and_shield() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
             .await
             .unwrap();
-        from_inputs::shield(&faucet, &[Pool::Transparent], None)
+        from_inputs::shield(&faucet, &[PoolType::Transparent], None)
             .await
             .unwrap();
     }
@@ -648,7 +657,7 @@ mod fast {
     async fn mine_to_transparent_and_propose_shielding() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -681,6 +690,7 @@ mod fast {
 }
 mod slow {
     use orchard::note_encryption::OrchardDomain;
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::NetworkConstants;
     use zingo_testutils::lightclient::from_inputs;
 
@@ -1152,7 +1162,12 @@ mod slow {
         );
 
         assert_eq!(
-            from_inputs::shield(&recipient, &[Pool::Sapling], None).await,
+            from_inputs::shield(
+                &recipient,
+                &[PoolType::Shielded(ShieldedProtocol::Sapling)],
+                None
+            )
+            .await,
             Err(
                 "Not enough transparent/sapling balance to shield. Have 100 zats, \
         need more than 10000 zats to cover tx fee"
@@ -1176,9 +1191,16 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        from_inputs::shield(&recipient, &[Pool::Sapling, Pool::Transparent], None)
-            .await
-            .unwrap();
+        from_inputs::shield(
+            &recipient,
+            &[
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+                PoolType::Transparent,
+            ],
+            None,
+        )
+        .await
+        .unwrap();
 
         // The exact same thing again, but with pre-existing orchard funds
         // already in the shielding wallet
@@ -1197,9 +1219,16 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        from_inputs::shield(&recipient, &[Pool::Sapling, Pool::Transparent], None)
-            .await
-            .unwrap();
+        from_inputs::shield(
+            &recipient,
+            &[
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+                PoolType::Transparent,
+            ],
+            None,
+        )
+        .await
+        .unwrap();
 
         println!(
             "{}",
@@ -1209,15 +1238,22 @@ mod slow {
     #[tokio::test]
     async fn shield_heartwood_sapling_funds() {
         let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
-        let (regtest_manager, _cph, faucet) =
-            scenarios::faucet(Pool::Sapling, regtest_network).await;
+        let (regtest_manager, _cph, faucet) = scenarios::faucet(
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            regtest_network,
+        )
+        .await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
         check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
-        from_inputs::shield(&faucet, &[Pool::Sapling], None)
-            .await
-            .unwrap();
+        from_inputs::shield(
+            &faucet,
+            &[PoolType::Shielded(ShieldedProtocol::Sapling)],
+            None,
+        )
+        .await
+        .unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -1241,9 +1277,16 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
-        from_inputs::shield(&recipient, &[Pool::Sapling, Pool::Transparent], None)
-            .await
-            .unwrap();
+        from_inputs::shield(
+            &recipient,
+            &[
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+                PoolType::Transparent,
+            ],
+            None,
+        )
+        .await
+        .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
@@ -1705,8 +1748,11 @@ mod slow {
         // consistent with all the notes in the relevant block changing state.
         // NOTE that the balance doesn't give insight into the distribution across notes.
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet) =
-            scenarios::faucet(Pool::Sapling, regtest_network).await;
+        let (regtest_manager, _cph, faucet) = scenarios::faucet(
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            regtest_network,
+        )
+        .await;
         let amount_to_send = 5_000;
         from_inputs::send(
             &faucet,
@@ -1733,8 +1779,11 @@ mod slow {
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
         let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient(Pool::Sapling, regtest_network).await;
+        let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            regtest_network,
+        )
+        .await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
@@ -1770,7 +1819,7 @@ mod slow {
             Some(100_000),
             Some(100_000),
             Some(100_000),
-            Pool::Orchard,
+            PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
         )
         .await;
@@ -2441,7 +2490,7 @@ mod slow {
                 Some(value),
                 None,
                 None,
-                Pool::Sapling,
+                PoolType::Shielded(ShieldedProtocol::Sapling),
                 regtest_network,
             )
             .await;
@@ -2762,8 +2811,11 @@ mod slow {
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (ref regtest_manager, cph, ref faucet) =
-            scenarios::faucet(Pool::Orchard, regtest_network).await;
+        let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            regtest_network,
+        )
+        .await;
         println!("Shutting down initial zcd/lwd unneeded processes");
         drop(cph);
 
@@ -3068,7 +3120,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
-        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[PoolType::Transparent], None)
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
@@ -3079,9 +3131,13 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
-        from_inputs::shield(&pool_migration_client, &[Pool::Sapling], None)
-            .await
-            .unwrap();
+        from_inputs::shield(
+            &pool_migration_client,
+            &[PoolType::Shielded(ShieldedProtocol::Sapling)],
+            None,
+        )
+        .await
+        .unwrap();
         bump_and_check!(o: 80_000 s: 0 t: 0);
 
         // 3 Test of an orchard-only client to itself
@@ -3099,7 +3155,7 @@ mod slow {
         .unwrap();
         bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
-        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[PoolType::Transparent], None)
             .await
             .unwrap();
         from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 20_000, None)])
@@ -3113,7 +3169,7 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
-        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[PoolType::Transparent], None)
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 0 t: 0);
@@ -3138,7 +3194,7 @@ mod slow {
         .unwrap();
         bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
-        from_inputs::shield(&pool_migration_client, &[Pool::Transparent], None)
+        from_inputs::shield(&pool_migration_client, &[PoolType::Transparent], None)
             .await
             .unwrap();
         from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 40_000, None)])
@@ -3216,8 +3272,11 @@ mod slow {
     #[tokio::test]
     async fn dont_write_pending() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
+        let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            regtest_network,
+        )
+        .await;
         from_inputs::send(
             &faucet,
             vec![(
@@ -3651,6 +3710,7 @@ mod slow {
 }
 
 mod basic_transactions {
+    use zcash_client_backend::PoolType;
     use zingo_testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
 
     #[tokio::test]
@@ -3975,7 +4035,7 @@ mod basic_transactions {
 
         let txid1 = from_inputs::shield(
             &recipient,
-            &[Pool::Transparent],
+            &[PoolType::Transparent],
             Some(&get_base_address_macro!(recipient, "unified")),
         )
         .await
@@ -4037,7 +4097,7 @@ mod basic_transactions {
 
         let txid2 = from_inputs::shield(
             &recipient,
-            &[Pool::Transparent],
+            &[PoolType::Transparent],
             Some(&get_base_address_macro!(recipient, "sapling")),
         )
         .await
