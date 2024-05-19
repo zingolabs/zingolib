@@ -5,7 +5,6 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use zcash_primitives::memo::Memo;
 
-use json::JsonValue;
 use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -21,7 +20,7 @@ use std::{
 use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
-use zcash_client_backend::{proto::service::TreeState, PoolType, ShieldedProtocol};
+use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 use zingoconfig::ZingoConfig;
 
@@ -60,38 +59,6 @@ pub fn now() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs()
-}
-
-/// TODO: Add Doc Comment Here!
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Pool {
-    /// TODO: Add Doc Comment Here!
-    Orchard,
-    /// TODO: Add Doc Comment Here!
-    Sapling,
-    /// TODO: Add Doc Comment Here!
-    Transparent,
-}
-
-impl From<PoolType> for Pool {
-    fn from(pool_type: PoolType) -> Self {
-        match pool_type {
-            PoolType::Transparent => Pool::Transparent,
-            PoolType::Shielded(ShieldedProtocol::Sapling) => Pool::Sapling,
-            PoolType::Shielded(ShieldedProtocol::Orchard) => Pool::Orchard,
-        }
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-impl From<Pool> for JsonValue {
-    fn from(value: Pool) -> Self {
-        match value {
-            Pool::Orchard => JsonValue::String(String::from("Orchard")),
-            Pool::Sapling => JsonValue::String(String::from("Sapling")),
-            Pool::Transparent => JsonValue::String(String::from("Transparent")),
-        }
-    }
 }
 
 /// TODO: Add Doc Comment Here!

@@ -4,9 +4,8 @@ use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use super::{
-    super::{data::TransactionRecord, Pool},
-    query::OutputSpendStatusQuery,
-    OutputInterface, ShieldedNoteInterface,
+    super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
+    ShieldedNoteInterface,
 };
 
 /// TODO: Add Doc Comment Here!
@@ -190,8 +189,8 @@ impl ShieldedNoteInterface for SaplingNote {
         self.nullifier
     }
 
-    fn pool() -> Pool {
-        Pool::Sapling
+    fn pool() -> PoolType {
+        PoolType::Shielded(ShieldedProtocol::Sapling)
     }
 
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self> {

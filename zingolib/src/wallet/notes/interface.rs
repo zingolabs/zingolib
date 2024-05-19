@@ -163,7 +163,7 @@ pub trait ShieldedNoteInterface: OutputInterface + Sized {
     }
 
     /// TODO: Add Doc Comment Here!
-    fn pool() -> crate::wallet::Pool;
+    fn pool() -> PoolType;
 
     /// TODO: Add Doc Comment Here!
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self>;

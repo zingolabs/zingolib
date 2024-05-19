@@ -394,9 +394,8 @@ pub mod finsight {
 /// TODO: Add Mod Description Here!
 pub mod summaries {
     use json::{object, JsonValue};
+    use zcash_client_backend::PoolType;
     use zcash_primitives::transaction::TxId;
-
-    use crate::wallet::Pool;
 
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
@@ -467,7 +466,7 @@ pub mod summaries {
         /// TODO: Add Doc Comment Here!
         Received {
             /// TODO: Add Doc Comment Here!
-            pool: Pool,
+            pool: PoolType,
             /// TODO: Add Doc Comment Here!
             amount: u64,
         },
