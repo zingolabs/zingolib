@@ -585,9 +585,10 @@ mod tests {
             pending_spent: true,
             spent: true,
         };
-        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(
-            OutputQuery::new(query_for_spentish_notes, OutputPoolQuery::any()),
-        );
+        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(OutputQuery {
+            spend_status: query_for_spentish_notes,
+            pools: OutputPoolQuery::any(),
+        });
         assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
         assert_ne!(

@@ -78,7 +78,7 @@ impl OutputPoolQuery {
 }
 
 /// Selects received notes by any properties
-#[derive(Getters, Constructor, Clone, Copy)]
+#[derive(Getters, Clone, Copy)]
 pub struct OutputQuery {
     /// selects spend status properties
     /// the query is expected to match note with ANY of the specified spend_stati AND ANY of the specified pools
@@ -106,10 +106,18 @@ impl OutputQuery {
         sapling: bool,
         orchard: bool,
     ) -> Self {
-        Self::new(
-            OutputSpendStatusQuery::new(unspent, pending_spent, spent),
-            OutputPoolQuery::new(transparent, sapling, orchard),
-        )
+        Self {
+            spend_status: OutputSpendStatusQuery {
+                unspent,
+                pending_spent,
+                spent,
+            },
+            pools: OutputPoolQuery {
+                transparent,
+                sapling,
+                orchard,
+            },
+        }
     }
     /// will the query include unspent notes?
     pub fn unspent(&self) -> &bool {

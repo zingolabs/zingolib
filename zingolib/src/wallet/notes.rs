@@ -164,14 +164,30 @@ pub mod tests {
             orchard: true,
         };
 
-        let unspent_transparent_query = OutputQuery::new(unspent_query, transparent_query);
-        let unspent_any_pool_query = OutputQuery::new(unspent_query, any_pool_query);
-        let pending_or_spent_transparent_query =
-            OutputQuery::new(pending_or_spent_query, transparent_query);
-        let pending_or_spent_shielded_query =
-            OutputQuery::new(pending_or_spent_query, shielded_query);
-        let spent_shielded_query = OutputQuery::new(spent_query, shielded_query);
-        let spent_any_pool_query = OutputQuery::new(spent_query, any_pool_query);
+        let unspent_transparent_query = OutputQuery {
+            spend_status: unspent_query,
+            pools: transparent_query,
+        };
+        let unspent_any_pool_query = OutputQuery {
+            spend_status: unspent_query,
+            pools: any_pool_query,
+        };
+        let pending_or_spent_transparent_query = OutputQuery {
+            spend_status: pending_or_spent_query,
+            pools: transparent_query,
+        };
+        let pending_or_spent_shielded_query = OutputQuery {
+            spend_status: pending_or_spent_query,
+            pools: shielded_query,
+        };
+        let spent_shielded_query = OutputQuery {
+            spend_status: spent_query,
+            pools: shielded_query,
+        };
+        let spent_any_pool_query = OutputQuery {
+            spend_status: spent_query,
+            pools: any_pool_query,
+        };
 
         assert!(transparent_unspent_note.query(unspent_transparent_query));
         assert!(transparent_unspent_note.query(unspent_any_pool_query));
