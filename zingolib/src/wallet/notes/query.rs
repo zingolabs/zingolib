@@ -78,7 +78,7 @@ impl OutputPoolQuery {
 }
 
 /// Selects received notes by any properties
-#[derive(Getters, Constructor, Clone, Copy)]
+#[derive(Getters, Clone, Copy)]
 pub struct OutputQuery {
     /// selects spend status properties
     /// the query is expected to match note with ANY of the specified spend_stati AND ANY of the specified pools
@@ -89,34 +89,6 @@ pub struct OutputQuery {
     pub pools: OutputPoolQuery,
 }
 
-/// A type that exposes bool field names
-pub struct QueryStipulations {
-    /// existence of an unspent
-    pub unspent: bool,
-    /// existence of a pending unspent
-    pub pending_spent: bool,
-    /// existence of a spent
-    pub spent: bool,
-    /// existence of transparent value
-    pub transparent: bool,
-    /// existence of sapling value
-    pub sapling: bool,
-    /// existence of orchard value
-    pub orchard: bool,
-}
-impl QueryStipulations {
-    /// Explicitly stipulate conditions
-    pub fn stipulate(self) -> OutputQuery {
-        OutputQuery::stipulations(
-            self.unspent,
-            self.pending_spent,
-            self.spent,
-            self.transparent,
-            self.sapling,
-            self.orchard,
-        )
-    }
-}
 impl OutputQuery {
     /// a query that accepts all notes.
     pub fn any() -> Self {
@@ -134,10 +106,18 @@ impl OutputQuery {
         sapling: bool,
         orchard: bool,
     ) -> Self {
-        Self::new(
-            OutputSpendStatusQuery::new(unspent, pending_spent, spent),
-            OutputPoolQuery::new(transparent, sapling, orchard),
-        )
+        Self {
+            spend_status: OutputSpendStatusQuery {
+                unspent,
+                pending_spent,
+                spent,
+            },
+            pools: OutputPoolQuery {
+                transparent,
+                sapling,
+                orchard,
+            },
+        }
     }
     /// will the query include unspent notes?
     pub fn unspent(&self) -> &bool {
