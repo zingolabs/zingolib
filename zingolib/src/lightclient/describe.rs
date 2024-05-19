@@ -208,7 +208,7 @@ impl LightClient {
                     balances.immature_change += change;
                     balances.dust += dust_value;
                 } else {
-                    // Unconfirmed
+                    // pending
                     balances.immature_change += change;
                     balances.incoming += useful_value;
                     balances.incoming_dust += dust_value;
@@ -262,7 +262,7 @@ impl LightClient {
 
             if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
                 if transaction_md.is_outgoing_transaction() {
-                    let (block_height, datetime, price, unconfirmed) = (
+                    let (block_height, datetime, price, pending) = (
                         transaction_md.status.get_height(),
                         transaction_md.datetime,
                         transaction_md.price,
@@ -275,7 +275,7 @@ impl LightClient {
                         memos: vec![],
                         price,
                         txid: *txid,
-                        unconfirmed,
+                        pending,
                     });
                 }
             };
@@ -366,7 +366,7 @@ impl LightClient {
         txid: TxId,
         transaction_md: &TransactionRecord,
     ) {
-        let (block_height, datetime, price, unconfirmed) = (
+        let (block_height, datetime, price, pending) = (
             transaction_md.status.get_height(),
             transaction_md.datetime,
             transaction_md.price,
@@ -406,7 +406,7 @@ impl LightClient {
                             memos,
                             price,
                             txid,
-                            unconfirmed,
+                            pending,
                         });
                     }
                 }
@@ -424,7 +424,7 @@ impl LightClient {
                         memos: vec![],
                         price,
                         txid,
-                        unconfirmed,
+                        pending,
                     });
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
@@ -443,7 +443,7 @@ impl LightClient {
                         memos,
                         price,
                         txid,
-                        unconfirmed,
+                        pending,
                     });
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
@@ -462,7 +462,7 @@ impl LightClient {
                         memos,
                         price,
                         txid,
-                        unconfirmed,
+                        pending,
                     });
                 }
             }
@@ -493,7 +493,7 @@ impl LightClient {
                         .collect(),
                     price,
                     txid,
-                    unconfirmed,
+                    pending,
                 });
             }
         };
@@ -523,13 +523,13 @@ impl LightClient {
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id.clone()),
                             "value"              => note_metadata.sapling_crypto_note.value().inner(),
-                            "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
+                            "pending"        => !transaction_metadata.status.is_confirmed(),
                             "is_change"          => note_metadata.is_change,
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => note_metadata.spent.map(|(_, h)| h),
-                            "unconfirmed_spent"  => note_metadata.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => note_metadata.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )
@@ -567,13 +567,13 @@ impl LightClient {
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => orch_note_metadata.orchard_crypto_note.value().inner(),
-                            "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
+                            "pending"        => !transaction_metadata.status.is_confirmed(),
                             "is_change"          => orch_note_metadata.is_change,
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => orch_note_metadata.spent.map(|(_, h)| h),
-                            "unconfirmed_spent"  => orch_note_metadata.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => orch_note_metadata.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )
@@ -619,7 +619,7 @@ impl LightClient {
                             "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spent"              => utxo.spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => utxo.spent().map(|(_, h)| h),
-                            "unconfirmed_spent"  => utxo.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => utxo.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )

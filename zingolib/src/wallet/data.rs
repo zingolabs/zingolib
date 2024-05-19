@@ -416,7 +416,7 @@ pub mod summaries {
         /// TODO: Add Doc Comment Here!
         pub txid: TxId,
         /// TODO: Add Doc Comment Here!
-        pub unconfirmed: bool,
+        pub pending: bool,
     }
 
     impl ValueTransfer {
@@ -449,7 +449,7 @@ pub mod summaries {
                 )
                 .field("price", &self.price)
                 .field("txid", &self.txid)
-                .field("unconfirmed", &self.unconfirmed)
+                .field("pending", &self.pending)
                 .finish()
         }
     }
@@ -502,7 +502,7 @@ pub mod summaries {
                     "pool": "",
                     "price": value.price,
                     "txid": value.txid.to_string(),
-                    "unconfirmed": value.unconfirmed,
+                    "pending": value.pending,
             };
             match value.kind {
                 ValueTransferKind::Sent {
