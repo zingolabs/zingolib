@@ -158,8 +158,8 @@ mod fast {
         );
         assert_eq!(preshield_utxos[0].value, postshield_utxos[0].value);
         assert_eq!(preshield_utxos[0].script, postshield_utxos[0].script);
-        assert!(preshield_utxos[0].unconfirmed_spent.is_none());
-        assert!(postshield_utxos[0].unconfirmed_spent.is_some());
+        assert!(preshield_utxos[0].pending_spent.is_none());
+        assert!(postshield_utxos[0].pending_spent.is_some());
     }
     #[tokio::test]
     async fn send_without_reorg_buffer_blocks_gives_correct_error() {

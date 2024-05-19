@@ -14,12 +14,9 @@ pub enum ConfirmationStatus {
 }
 
 impl ConfirmationStatus {
-    /// Converts from a blockheight and `unconfirmed`. unconfirmed is deprecated and is only needed in loading from save.
-    pub fn from_blockheight_and_unconfirmed_bool(
-        blockheight: BlockHeight,
-        unconfirmed: bool,
-    ) -> Self {
-        if unconfirmed {
+    /// Converts from a blockheight and `pending`. pending is deprecated and is only needed in loading from save.
+    pub fn from_blockheight_and_pending_bool(blockheight: BlockHeight, pending: bool) -> Self {
+        if pending {
             Self::Broadcast(blockheight)
         } else {
             Self::Confirmed(blockheight)

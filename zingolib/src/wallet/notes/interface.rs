@@ -35,7 +35,7 @@ pub trait OutputInterface: Sized {
     /// the Vec which tracks all BlockChain records of the value-transfer
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
-    ///
+    /// The TxId and broadcast height of a transfer that's not known to be on-record on the chain
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
 
     /// TODO: Add Doc Comment Here!

@@ -163,10 +163,10 @@ impl TransactionRecordsById {
                         *utxo.spent_mut() = None;
                     }
 
-                    if utxo.unconfirmed_spent.is_some()
-                        && invalidated_txids.contains(&utxo.unconfirmed_spent.unwrap().0)
+                    if utxo.pending_spent.is_some()
+                        && invalidated_txids.contains(&utxo.pending_spent.unwrap().0)
                     {
-                        utxo.unconfirmed_spent = None;
+                        utxo.pending_spent = None;
                     }
                 })
         });
@@ -313,9 +313,9 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
                     // Mark this utxo as spent
                     *spent_utxo.spent_mut() =
                         Some((source_txid, spending_tx_status.get_height().into()));
-                    spent_utxo.unconfirmed_spent = None;
+                    spent_utxo.pending_spent = None;
                 } else {
-                    spent_utxo.unconfirmed_spent =
+                    spent_utxo.pending_spent =
                         Some((source_txid, u32::from(spending_tx_status.get_height())));
                 }
 
