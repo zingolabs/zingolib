@@ -23,16 +23,19 @@ pub trait OutputInterface: Sized {
     /// method name?
     fn pool_type(&self) -> PoolType;
 
-    /// number of Zatoshis unlocked by the note
+    /// number of Zatoshis unlocked by the value-transfer
     fn value(&self) -> u64;
 
-    /// TODO: Add Doc Comment Here!
+    /// If the funds are spent, the TxId and Blockheight of record
     fn spent(&self) -> &Option<(TxId, u32)>;
 
-    /// TODO: Add Doc Comment Here!
+    /// Mutable access to the spent field.. hmm  NOTE:  Should we keep this pattern?
+    /// what is spent becomes a Vec<OnceCell(TxiD, u32)>, where the last element of that
+    /// Vec is the last known block chain record of the spend.  So then reorgs, just extend
+    /// the Vec which tracks all BlockChain records of the value-transfer
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
-    /// TODO: Add Doc Comment Here!
+    ///
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
 
     /// TODO: Add Doc Comment Here!
