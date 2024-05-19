@@ -33,7 +33,7 @@ use zingolib::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
         },
-        LightWallet, Pool,
+        LightWallet,
     },
 };
 
@@ -124,6 +124,7 @@ fn check_view_capability_bounds(
 
 mod fast {
     use zcash_address::unified::Encoding;
+    use zcash_client_backend::PoolType;
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_testutils::lightclient::from_inputs;
     use zingolib::wallet::WalletBase;
@@ -147,7 +148,7 @@ mod fast {
             .await
             .unwrap();
         let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
-        from_inputs::shield(&recipient, &[Pool::Transparent], None)
+        from_inputs::shield(&recipient, &[PoolType::Transparent], None)
             .await
             .unwrap();
         let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
@@ -3651,7 +3652,6 @@ mod slow {
 
 mod basic_transactions {
     use zingo_testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
-    use zingolib::wallet::Pool;
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {

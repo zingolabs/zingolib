@@ -30,6 +30,7 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
 }
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
+    use zcash_client_backend::PoolType;
     use zingolib::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
 
     /// Panics if the address, amount or memo conversion fails.
@@ -77,7 +78,7 @@ pub mod from_inputs {
     /// Panics if the address conversion fails.
     pub async fn shield(
         shielder: &LightClient,
-        pools_to_shield: &[zingolib::wallet::Pool],
+        pools_to_shield: &[PoolType],
         address: Option<&str>,
     ) -> Result<String, String> {
         let address = address.map(|addr| {
