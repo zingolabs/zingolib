@@ -246,7 +246,7 @@ impl LightWallet {
             ))
     }
 
-    /// Get all (unspent) utxos. pengind spent utxos are included
+    /// Get all (unspent) utxos. pending spent utxos are included
     pub async fn get_utxos(&self) -> Vec<TransparentOutput> {
         self.transaction_context
             .transaction_metadata_set
