@@ -426,7 +426,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend).clone())
+                        .orchard_notes(OrchardNoteBuilder::default().pending_spent(spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
                         .clone()

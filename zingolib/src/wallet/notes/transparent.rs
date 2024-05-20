@@ -23,11 +23,11 @@ pub struct TransparentOutput {
     /// TODO: Add Doc Comment Here!
     pub value: u64,
 
-    spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with unconfirmed_spent
+    spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with pending_spent
 
     /// If this utxo was spent in a send, but has not yet been confirmed.
     /// Contains the txid and height at which the Tx was broadcast
-    pub unconfirmed_spent: Option<(TxId, u32)>,
+    pub pending_spent: Option<(TxId, u32)>,
 }
 
 impl OutputInterface for TransparentOutput {
@@ -48,11 +48,11 @@ impl OutputInterface for TransparentOutput {
     }
 
     fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
+        &self.pending_spent
     }
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
+        &mut self.pending_spent
     }
 
     fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
@@ -94,7 +94,7 @@ impl TransparentOutput {
         script: Vec<u8>,
         value: u64,
         spent: Option<(TxId, u32)>,
-        unconfirmed_spent: Option<(TxId, u32)>,
+        pending_spent: Option<(TxId, u32)>,
     ) -> Self {
         Self {
             address,
@@ -103,7 +103,7 @@ impl TransparentOutput {
             script,
             value,
             spent,
-            unconfirmed_spent,
+            pending_spent,
         }
     }
 
@@ -187,7 +187,7 @@ impl TransparentOutput {
             })?
         };
 
-        let _unconfirmed_spent = if version == 3 {
+        let _pending_spent = if version == 3 {
             zcash_encoding::Optional::read(&mut reader, |r| {
                 let mut transaction_bytes = [0u8; 32];
                 r.read_exact(&mut transaction_bytes)?;
@@ -216,7 +216,7 @@ impl TransparentOutput {
             script,
             value,
             spent: spent_tuple,
-            unconfirmed_spent: None,
+            pending_spent: None,
         })
     }
 }
@@ -237,7 +237,7 @@ pub mod mocks {
         script: Option<Vec<u8>>,
         value: Option<u64>,
         spent: Option<Option<(TxId, u32)>>,
-        unconfirmed_spent: Option<Option<(TxId, u32)>>,
+        pending_spent: Option<Option<(TxId, u32)>>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransparentOutputBuilder {
@@ -250,7 +250,7 @@ pub mod mocks {
                 script: None,
                 value: None,
                 spent: None,
-                unconfirmed_spent: None,
+                pending_spent: None,
             }
         }
         // Methods to set each field
@@ -260,7 +260,7 @@ pub mod mocks {
         build_method!(script, Vec<u8>);
         build_method!(value, u64);
         build_method!(spent, Option<(TxId, u32)>);
-        build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+        build_method!(pending_spent, Option<(TxId, u32)>);
 
         /// builds a mock TransparentNote after all pieces are supplied
         pub fn build(self) -> TransparentOutput {
@@ -271,7 +271,7 @@ pub mod mocks {
                 self.script.unwrap(),
                 self.value.unwrap(),
                 self.spent.unwrap(),
-                self.unconfirmed_spent.unwrap(),
+                self.pending_spent.unwrap(),
             )
         }
     }
@@ -286,7 +286,7 @@ pub mod mocks {
                 .script(TransparentAddress::ScriptHash([0; 20]).script().0)
                 .value(100000)
                 .spent(None)
-                .unconfirmed_spent(None);
+                .pending_spent(None);
             builder
         }
     }

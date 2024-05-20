@@ -58,7 +58,6 @@ pub mod mocks {
         shpool: Option<ShieldedProtocol>,
         index: Option<u16>,
     }
-    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl NoteIdBuilder {
         /// blank builder
         pub fn new() -> Self {
@@ -118,7 +117,7 @@ pub mod tests {
 
         let transparent_unspent_note = TransparentOutputBuilder::default().build();
         let transparent_pending_spent_note = TransparentOutputBuilder::default()
-            .unconfirmed_spent(spend)
+            .pending_spent(spend)
             .clone()
             .build();
         let transparent_spent_note = TransparentOutputBuilder::default()
@@ -127,7 +126,7 @@ pub mod tests {
             .build();
         let sapling_unspent_note = SaplingNoteBuilder::default().build();
         let sapling_pending_spent_note = SaplingNoteBuilder::default()
-            .unconfirmed_spent(spend)
+            .pending_spent(spend)
             .clone()
             .build();
         let sapling_spent_note = SaplingNoteBuilder::default().spent(spend).clone().build();

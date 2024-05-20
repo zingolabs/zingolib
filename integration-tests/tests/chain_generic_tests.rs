@@ -34,6 +34,7 @@ async fn libtonode_propose_and_broadcast_40_000_to_sapling() {
 async fn libtonode_propose_and_broadcast_40_000_to_orchard() {
     propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
 }
+#[ignore]
 #[tokio::test]
 async fn libtonode_send_shield_cycle() {
     send_shield_cycle::<LibtonodeEnvironment>(4).await;

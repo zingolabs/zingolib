@@ -375,7 +375,7 @@ impl TransactionRecord {
 
         let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
 
-        let unconfirmed = if version <= 20 {
+        let pending = if version <= 20 {
             false
         } else {
             reader.read_u8()? == 1
@@ -444,7 +444,7 @@ impl TransactionRecord {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
+        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_pending_bool(block, pending);
         Ok(Self {
             status,
             datetime,
@@ -635,7 +635,7 @@ pub mod mocks {
             )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .unconfirmed_spent(semi_spend)
+                    .pending_spent(semi_spend)
                     .value(transparent_semi_spent)
                     .clone(),
             )
@@ -648,7 +648,7 @@ pub mod mocks {
             )
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .unconfirmed_spent(semi_spend)
+                    .pending_spent(semi_spend)
                     .value(sapling_semi_spent)
                     .clone(),
             )
@@ -661,7 +661,7 @@ pub mod mocks {
             )
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .unconfirmed_spent(semi_spend)
+                    .pending_spent(semi_spend)
                     .value(orchard_semi_spent)
                     .clone(),
             )

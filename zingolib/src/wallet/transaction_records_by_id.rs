@@ -122,7 +122,7 @@ impl TransactionRecordsById {
                     || transaction_metadata
                         .status
                         .is_broadcast_after_or_at(&reorg_height)
-                // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
+                // TODO: why dont we only remove confirmed transactions. pending transactions may still be valid in the mempool and may later confirm or expire.
                 {
                     Some(transaction_metadata.txid)
                 } else {
@@ -163,10 +163,10 @@ impl TransactionRecordsById {
                         *utxo.spent_mut() = None;
                     }
 
-                    if utxo.unconfirmed_spent.is_some()
-                        && invalidated_txids.contains(&utxo.unconfirmed_spent.unwrap().0)
+                    if utxo.pending_spent.is_some()
+                        && invalidated_txids.contains(&utxo.pending_spent.unwrap().0)
                     {
-                        utxo.unconfirmed_spent = None;
+                        utxo.pending_spent = None;
                     }
                 })
         });
@@ -197,7 +197,7 @@ impl TransactionRecordsById {
                     *nd.spent_mut() = None;
                 }
 
-                // Remove unconfirmed spends too
+                // Remove pending spends too
                 if nd.pending_spent().is_some()
                     && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
                 {
@@ -313,9 +313,9 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
                     // Mark this utxo as spent
                     *spent_utxo.spent_mut() =
                         Some((source_txid, spending_tx_status.get_height().into()));
-                    spent_utxo.unconfirmed_spent = None;
+                    spent_utxo.pending_spent = None;
                 } else {
-                    spent_utxo.unconfirmed_spent =
+                    spent_utxo.pending_spent =
                         Some((source_txid, u32::from(spending_tx_status.get_height())));
                 }
 

@@ -207,11 +207,11 @@ pub struct UserBalances {
     /// making them essentially inaccessible.
     pub dust: u64,
 
-    /// The sum of all *unconfirmed* UTXOs and notes that are not change.
+    /// The sum of all *pending* UTXOs and notes that are not change.
     /// This value includes any applicable `incoming_dust`.
     pub incoming: u64,
 
-    /// The sum of all *unconfirmed* UTXOs and notes that are not change and are each counted as dust.
+    /// The sum of all *pending* UTXOs and notes that are not change and are each counted as dust.
     pub incoming_dust: u64,
 }
 
@@ -520,7 +520,7 @@ impl LightClient {
         pending: &mut Vec<JsonValue>,
         spent: &mut Vec<JsonValue>,
     ) {
-        if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
+        if note["spent"].is_null() && note["pending_spent"].is_null() {
             unspent.push(note);
         } else if !note["spent"].is_null() {
             spent.push(note);

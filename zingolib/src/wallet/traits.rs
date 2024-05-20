@@ -739,7 +739,7 @@ where
         spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
         // Include only non-0 value notes that haven't been spent, or haven't been included
-        // in an unconfirmed spend yet.
+        // in an pending spend yet.
         if Self::check_spendability_of_note(note_and_metadata, spend_key) {
             // Filter out notes with nullifier or position not yet known
             if let (Some(nf), Some(pos)) = (
@@ -1123,8 +1123,8 @@ where
         reader.read_exact(&mut nullifier)?;
         let nullifier = T::Nullifier::from_bytes(nullifier);
 
-        // Note that this is only the spent field, we ignore the unconfirmed_spent field.
-        // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
+        // Note that this is only the spent field, we ignore the pending_spent field.
+        // The reason is that pending spents are only in memory, and we need to get the actual value of spent
         // from the blockchain anyway.
         let spent = Optional::read(&mut reader, |r| {
             let mut transaction_id_bytes = [0u8; 32];
@@ -1134,7 +1134,7 @@ where
         })?;
 
         if external_version < 3 {
-            let _unconfirmed_spent = {
+            let _pending_spent = {
                 Optional::read(&mut reader, |r| {
                     let mut transaction_bytes = [0u8; 32];
                     r.read_exact(&mut transaction_bytes)?;
