@@ -244,7 +244,8 @@ pub mod fixtures {
         // 10_000 was the old fee
         // 15_000 is the new fee. however, it gives an error (change required)
         // weirdly, the error for calling this next line with 110_001 is the same as if we call it with 115_001
-        let primary = environment.fund_client_orchard(115_000).await;
+        // okay, the solution to this is that LRZ requires at-least one change output. maybe there is a good reason
+        let primary = environment.fund_client_orchard(120_000).await;
 
         let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
 
