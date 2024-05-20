@@ -394,9 +394,8 @@ pub mod finsight {
 /// TODO: Add Mod Description Here!
 pub mod summaries {
     use json::{object, JsonValue};
+    use zcash_client_backend::PoolType;
     use zcash_primitives::transaction::TxId;
-
-    use crate::wallet::Pool;
 
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
@@ -467,7 +466,7 @@ pub mod summaries {
         /// TODO: Add Doc Comment Here!
         Received {
             /// TODO: Add Doc Comment Here!
-            pool: Pool,
+            pool_type: PoolType,
             /// TODO: Add Doc Comment Here!
             amount: u64,
         },
@@ -499,7 +498,7 @@ pub mod summaries {
                     "datetime": value.datetime,
                     "kind": "",
                     "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
-                    "pool": "",
+                    "pool_type": "",
                     "price": value.price,
                     "txid": value.txid.to_string(),
                     "pending": value.pending,
@@ -519,10 +518,10 @@ pub mod summaries {
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object
                 }
-                ValueTransferKind::Received { pool, amount } => {
+                ValueTransferKind::Received { pool_type, amount } => {
                     temp_object["amount"] = JsonValue::from(amount);
                     temp_object["kind"] = JsonValue::from(&value.kind);
-                    temp_object["pool"] = JsonValue::from(pool);
+                    temp_object["pool_type"] = JsonValue::from(pool_type.to_string());
                     temp_object
                 }
                 ValueTransferKind::SendToSelf => {

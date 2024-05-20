@@ -25,7 +25,7 @@ use std::convert::Infallible;
 use std::ops::Add;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::address;
+use zcash_client_backend::{address, PoolType, ShieldedProtocol};
 
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
@@ -54,7 +54,6 @@ use super::{notes, traits, LightWallet};
 
 use super::traits::{DomainWalletExt, Recipient, SpendableNote};
 use super::utils::get_price;
-use super::Pool;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
@@ -73,7 +72,7 @@ pub struct SendProgress {
     pub last_transaction_id: Option<String>,
 }
 
-pub(crate) type NoteSelectionPolicy = Vec<Pool>;
+pub(crate) type NoteSelectionPolicy = Vec<PoolType>;
 
 impl SendProgress {
     /// TODO: Add Doc Comment Here!
@@ -614,7 +613,7 @@ impl LightWallet {
             match pool {
                 // Transparent: This opportunistic shielding sweeps all transparent value leaking identifying information to
                 // a funder of the wallet's transparent value. We should change this.
-                Pool::Transparent => {
+                PoolType::Transparent => {
                     utxos = self
                         .get_utxos()
                         .await
@@ -627,7 +626,7 @@ impl LightWallet {
                             (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
                         });
                 }
-                Pool::Sapling => {
+                PoolType::Shielded(ShieldedProtocol::Sapling) => {
                     let sapling_candidates = self
                         .get_all_domain_specific_notes::<SaplingDomain>()
                         .await
@@ -640,7 +639,7 @@ impl LightWallet {
                             .unwrap(),
                     );
                 }
-                Pool::Orchard => {
+                PoolType::Shielded(ShieldedProtocol::Orchard) => {
                     let orchard_candidates = self
                         .get_all_domain_specific_notes::<OrchardDomain>()
                         .await
