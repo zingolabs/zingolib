@@ -174,17 +174,36 @@ pub mod fixtures {
             start + 25_000u64
         }
         for _ in 0..n {
-            from_inputs::quick_send(&primary, vec![(secondary_address.as_str(), 100_000, None)])
+            let _primary_proposal =
+                from_inputs::propose(&primary, vec![(secondary_address.as_str(), 100_000, None)])
+                    .await
+                    .unwrap();
+            let _primary_one_txid = primary
+                .complete_and_broadcast_stored_proposal()
                 .await
                 .unwrap();
+
             environment.bump_chain().await;
+
             secondary.do_sync(false).await.unwrap();
-            secondary.quick_shield().await.unwrap();
-            environment.bump_chain().await;
-            secondary.do_sync(false).await.unwrap();
-            from_inputs::quick_send(&secondary, vec![(primary_address.as_str(), 50_000, None)])
+            let _shield_proposal = secondary.propose_shield().await.unwrap();
+            let _shield_one_txid = secondary
+                .complete_and_broadcast_stored_proposal()
                 .await
                 .unwrap();
+
+            environment.bump_chain().await;
+
+            secondary.do_sync(false).await.unwrap();
+            let _sendback_proposal =
+                from_inputs::propose(&secondary, vec![(primary_address.as_str(), 50_000, None)])
+                    .await
+                    .unwrap();
+            let _sendback_one_txid = secondary
+                .complete_and_broadcast_stored_proposal()
+                .await
+                .unwrap();
+
             environment.bump_chain().await;
             primary.do_sync(false).await.unwrap();
             primary_fund = per_cycle_primary_debit(primary_fund);
