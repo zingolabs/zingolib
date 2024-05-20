@@ -239,7 +239,7 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let primary = environment.fund_client_orchard(110_000).await;
+        let primary = environment.fund_client_orchard(115_000).await;
 
         let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
 
