@@ -122,7 +122,7 @@ impl TransactionRecordsById {
                     || transaction_metadata
                         .status
                         .is_broadcast_after_or_at(&reorg_height)
-                // tODo: why dont we only remove confirmed transactions. unconfirmed transactions may still be valid in the mempool and may later confirm or expire.
+                // TODO: why dont we only remove confirmed transactions. pending transactions may still be valid in the mempool and may later confirm or expire.
                 {
                     Some(transaction_metadata.txid)
                 } else {
@@ -163,10 +163,10 @@ impl TransactionRecordsById {
                         *utxo.spent_mut() = None;
                     }
 
-                    if utxo.unconfirmed_spent.is_some()
-                        && invalidated_txids.contains(&utxo.unconfirmed_spent.unwrap().0)
+                    if utxo.pending_spent.is_some()
+                        && invalidated_txids.contains(&utxo.pending_spent.unwrap().0)
                     {
-                        utxo.unconfirmed_spent = None;
+                        utxo.pending_spent = None;
                     }
                 })
         });
@@ -184,7 +184,11 @@ impl TransactionRecordsById {
             // Select only spent or pending_spent notes.
             D::WalletNote::transaction_record_to_outputs_vec_query_mut(
                 transaction_metadata,
-                OutputSpendStatusQuery::new(false, true, true),
+                OutputSpendStatusQuery {
+                    unspent: false,
+                    pending_spent: true,
+                    spent: true,
+                },
             )
             .iter_mut()
             .for_each(|nd| {
@@ -193,7 +197,7 @@ impl TransactionRecordsById {
                     *nd.spent_mut() = None;
                 }
 
-                // Remove unconfirmed spends too
+                // Remove pending spends too
                 if nd.pending_spent().is_some()
                     && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
                 {
@@ -309,9 +313,9 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
                     // Mark this utxo as spent
                     *spent_utxo.spent_mut() =
                         Some((source_txid, spending_tx_status.get_height().into()));
-                    spent_utxo.unconfirmed_spent = None;
+                    spent_utxo.pending_spent = None;
                 } else {
-                    spent_utxo.unconfirmed_spent =
+                    spent_utxo.pending_spent =
                         Some((source_txid, u32::from(spending_tx_status.get_height())));
                 }
 
@@ -585,9 +589,10 @@ mod tests {
             pending_spent: true,
             spent: true,
         };
-        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(
-            OutputQuery::new(query_for_spentish_notes, OutputPoolQuery::any()),
-        );
+        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(OutputQuery {
+            spend_status: query_for_spentish_notes,
+            pools: OutputPoolQuery::any(),
+        });
         assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
         assert_ne!(

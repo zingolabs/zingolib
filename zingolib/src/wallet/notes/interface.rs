@@ -1,4 +1,5 @@
-//! TODO: Add Mod Description Here!
+//! Logic that's common to all value transfer instruments. A significant discrepancy between
+//! librustzcash and zingolib is that transparent "notes" are a reified concept in zingolib.
 use incrementalmerkletree::{Hashable, Position};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
@@ -13,21 +14,28 @@ use super::{
     query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
 };
 
-/// TODO: Add Doc Comment Here!
+/// Expresses the behavior that *all* value transfers MUST support (inclusive of transparent).
 pub trait OutputInterface: Sized {
     /// returns the zcash_client_backend PoolType enum (one of 3)
+    /// Where lrz splits between shielded and transparent, zingolib
+    /// uses this type to discriminate among the three pools that we
+    /// must manage. NOTE:  Possibly we should distinguish with this
+    /// method name?
     fn pool_type(&self) -> PoolType;
 
-    /// number of Zatoshis unlocked by the note
+    /// number of Zatoshis unlocked by the value-transfer
     fn value(&self) -> u64;
 
-    /// TODO: Add Doc Comment Here!
+    /// If the funds are spent, the TxId and Blockheight of record
     fn spent(&self) -> &Option<(TxId, u32)>;
 
-    /// TODO: Add Doc Comment Here!
+    /// Mutable access to the spent field.. hmm  NOTE:  Should we keep this pattern?
+    /// what is spent becomes a Vec<OnceCell(TxiD, u32)>, where the last element of that
+    /// Vec is the last known block chain record of the spend.  So then reorgs, just extend
+    /// the Vec which tracks all BlockChain records of the value-transfer
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
-    /// TODO: Add Doc Comment Here!
+    /// The TxId and broadcast height of a transfer that's not known to be on-record on the chain
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
 
     /// TODO: Add Doc Comment Here!
@@ -52,7 +60,11 @@ pub trait OutputInterface: Sized {
 
     /// Returns true if the note is unspent (spendable).
     fn is_unspent(&self) -> bool {
-        self.spend_status_query(OutputSpendStatusQuery::new(true, false, false))
+        self.spend_status_query(OutputSpendStatusQuery {
+            unspent: true,
+            pending_spent: false,
+            spent: false,
+        })
     }
 
     /// Returns true if the note is one of the pools enumerated by the query.
@@ -111,7 +123,7 @@ pub trait ShieldedNoteInterface: OutputInterface + Sized {
         position_of_commitment_to_witness: Option<Position>,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
-        unconfirmed_spent: Option<(TxId, u32)>,
+        pending_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,

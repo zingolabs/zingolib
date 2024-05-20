@@ -158,8 +158,8 @@ mod fast {
         );
         assert_eq!(preshield_utxos[0].value, postshield_utxos[0].value);
         assert_eq!(preshield_utxos[0].script, postshield_utxos[0].script);
-        assert!(preshield_utxos[0].unconfirmed_spent.is_none());
-        assert!(postshield_utxos[0].unconfirmed_spent.is_some());
+        assert!(preshield_utxos[0].pending_spent.is_none());
+        assert!(postshield_utxos[0].pending_spent.is_some());
     }
     #[tokio::test]
     async fn send_without_reorg_buffer_blocks_gives_correct_error() {
@@ -210,7 +210,7 @@ mod fast {
   "amount": 100000,
   "memo": "Enviado desde YWallet, Enviado desde YWallet",
   "block_height": 2060028,
-  "unconfirmed": false,
+  "pending": false,
   "datetime": 1682127442,
   "position": 0,
   "txid": "d93fbb42a101ac148b4e610eea1fe519c0131b17d49af53f29b5e35a778145cb",
@@ -1345,7 +1345,7 @@ mod slow {
         [
             {
                 "block_height": 5,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1694820763,
                 "position": 0,
                 "txid": "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
@@ -1356,7 +1356,7 @@ mod slow {
             },
             {
                 "block_height": 6,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1694825595,
                 "txid": "4ee5a583e6462eb4c39f9d8188e855bb1e37d989fcb8b417cff93c27b006e72d",
                 "zec_price": null,
@@ -1371,7 +1371,7 @@ mod slow {
             },
             {
                 "block_height": 7,
-                "unconfirmed": true,
+                "pending": true,
                 "datetime": 1694825735,
                 "txid": "55de92ebf5effc3ed67a289788ede88514a9d2c407af6154b00969325e2fdf00",
                 "zec_price": null,
@@ -1507,7 +1507,7 @@ mod slow {
         [
             {
                 "block_height": 5,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1686330002,
                 "position": 0,
                 "txid": "f040440eade0afc99800fee54753afb71fb09894483f1f1fa7462dedb63e7c02",
@@ -1518,7 +1518,7 @@ mod slow {
             },
             {
                 "block_height": 6,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1686330013,
                 "txid": "db532064c89c7d8266e107ffefc614f3c34050af922973199e398fcd18c43ea5",
                 "zec_price": null,
@@ -1533,7 +1533,7 @@ mod slow {
             },
             {
                 "block_height": 7,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1686330006,
                 "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
                 "zec_price": null,
@@ -1548,7 +1548,7 @@ mod slow {
             },
             {
                 "block_height": 7,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1686330013,
                 "position": 0,
                 "txid": "caf9438c9c61923d24a9594651cc694edc660eabb0082122c4588ae381edc3b4",
@@ -1559,7 +1559,7 @@ mod slow {
             },
             {
                 "block_height": 8,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1686330021,
                 "txid": "95a41ba1c6e2b7edf63ddde7899567431a6b36b7583ba1e359560041e5f8ce2b",
                 "zec_price": null,
@@ -1574,7 +1574,7 @@ mod slow {
             },
             {
                 "block_height": 8,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1686330021,
                 "txid": "c1004c32395ff45448fb943a7da4cc2819762066eea2628cd0a4aee65106207d",
                 "zec_price": null,
@@ -1589,7 +1589,7 @@ mod slow {
             },
             {
                 "block_height": 9,
-                "unconfirmed": false,
+                "pending": false,
                 "datetime": 1686330024,
                 "txid": "c5e94f462218634b37a2a3324f89bd288bc55ab877ea516a6203e48c207ba955",
                 "zec_price": null,
@@ -1987,17 +1987,17 @@ mod slow {
         .await
         .unwrap();
 
-        // 5. Check the unconfirmed transaction is present
+        // 5. Check the pending transaction is present
         // 5.1 Check notes
 
         let notes = recipient.do_list_notes(true).await;
-        // Has a new (unconfirmed) unspent note (the change)
+        // Has a new (pending) unspent note (the change)
         assert_eq!(notes["unspent_orchard_notes"].len(), 1);
         assert_eq!(
             notes["unspent_orchard_notes"][0]["created_in_txid"],
             sent_transaction_id
         );
-        assert!(notes["unspent_orchard_notes"][0]["unconfirmed"]
+        assert!(notes["unspent_orchard_notes"][0]["pending"]
             .as_bool()
             .unwrap());
 
@@ -2008,7 +2008,7 @@ mod slow {
             faucet_funding_txid.to_string()
         );
         assert_eq!(
-            notes["pending_sapling_notes"][0]["unconfirmed_spent"],
+            notes["pending_sapling_notes"][0]["pending_spent"],
             sent_transaction_id
         );
         assert!(notes["pending_sapling_notes"][0]["spent"].is_null());
@@ -2028,7 +2028,7 @@ mod slow {
             send_transaction["amount"].as_i64().unwrap(),
             -(sent_value as i64 + u64::from(MINIMUM_FEE) as i64)
         );
-        assert!(send_transaction["unconfirmed"].as_bool().unwrap());
+        assert!(send_transaction["pending"].as_bool().unwrap());
         assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 5);
 
         assert_eq!(
@@ -2051,7 +2051,7 @@ mod slow {
             .await
             .unwrap();
 
-        assert!(!send_transaction.contains("unconfirmed"));
+        assert!(!send_transaction.contains("pending"));
         assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 5);
 
         // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
@@ -2583,8 +2583,8 @@ mod slow {
         );
         assert_eq!(mempool_only_tx["txid"], sent_transaction_id);
 
-        // 6. note that the client correctly considers the note unconfirmed
-        assert_eq!(mempool_only_tx["unconfirmed"], true);
+        // 6. note that the client correctly considers the note pending
+        assert_eq!(mempool_only_tx["pending"], true);
 
         std::process::Command::new("rm")
             .arg("-rf")
@@ -2612,7 +2612,7 @@ mod slow {
         assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
         assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
 
-        // 6. Mine 10 blocks, the unconfirmed transaction should still be there.
+        // 6. Mine 10 blocks, the pending transaction should still be there.
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
             .await
             .unwrap();
@@ -2622,10 +2622,10 @@ mod slow {
 
         let transactions = recipient.do_list_transactions().await;
 
-        // There are 2 unspent notes, the unconfirmed transaction, and the final receipt
+        // There are 2 unspent notes, the pending transaction, and the final receipt
         println!("{}", json::stringify_pretty(notes.clone(), 4));
         println!("{}", json::stringify_pretty(transactions.clone(), 4));
-        // Two unspent notes: one change, unconfirmed, one from faucet, confirmed
+        // Two unspent notes: one change, pending, one from faucet, confirmed
         assert_eq!(notes["unspent_orchard_notes"].len(), 2);
         assert_eq!(notes["unspent_sapling_notes"].len(), 0);
         let note = notes["unspent_orchard_notes"][1].clone();
@@ -2634,7 +2634,7 @@ mod slow {
             note["value"].as_u64().unwrap(),
             value - sent_value - (2 * u64::from(MINIMUM_FEE)) - sent_to_self
         );
-        assert!(note["unconfirmed"].as_bool().unwrap());
+        assert!(note["pending"].as_bool().unwrap());
         assert_eq!(transactions.len(), 3);
 
         // 7. Mine 100 blocks, so the mempool expires
@@ -2652,7 +2652,7 @@ mod slow {
             notes["spent_orchard_notes"][0]["created_in_txid"],
             orig_transaction_id
         );
-        assert!(!notes["unspent_orchard_notes"][0]["unconfirmed"]
+        assert!(!notes["unspent_orchard_notes"][0]["pending"]
             .as_bool()
             .unwrap());
         assert_eq!(notes["pending_orchard_notes"].len(), 0);
@@ -2824,7 +2824,7 @@ mod slow {
         let expected_pre_sync_transactions = r#"[
   {
     "block_height": 3,
-    "unconfirmed": false,
+    "pending": false,
     "datetime": 1692212261,
     "position": 0,
     "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
@@ -2835,7 +2835,7 @@ mod slow {
   },
   {
     "block_height": 8,
-    "unconfirmed": false,
+    "pending": false,
     "datetime": 1692212266,
     "position": 0,
     "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
@@ -2846,7 +2846,7 @@ mod slow {
   },
   {
     "block_height": 9,
-    "unconfirmed": false,
+    "pending": false,
     "datetime": 1692212299,
     "position": 0,
     "txid": "0a014017add7dc9eb57ada3e70f905c9dce610ef055e135b03f4907dd5dc99a4",
@@ -2864,7 +2864,7 @@ mod slow {
         let expected_post_sync_transactions = r#"[
   {
     "block_height": 3,
-    "unconfirmed": false,
+    "pending": false,
     "datetime": 1692212261,
     "position": 0,
     "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
@@ -2875,7 +2875,7 @@ mod slow {
   },
   {
     "block_height": 8,
-    "unconfirmed": false,
+    "pending": false,
     "datetime": 1692212266,
     "position": 0,
     "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
@@ -2930,13 +2930,13 @@ mod slow {
                 "datetime" =>  0,
                 "created_in_txid" => "",
                 "value" =>  14_000,
-                "unconfirmed" =>  false,
+                "pending" =>  false,
                 "is_change" =>  false,
                 "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
                 "spendable" =>  true,
                 "spent" =>  JsonValue::Null,
                 "spent_at_height" =>  JsonValue::Null,
-                "unconfirmed_spent" =>  JsonValue::Null,
+                "pending_spent" =>  JsonValue::Null,
         };
         let original_recipient_address = "\
         uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
@@ -3213,7 +3213,7 @@ mod slow {
         );
     }
     #[tokio::test]
-    async fn dont_write_unconfirmed() {
+    async fn dont_write_pending() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
@@ -3251,7 +3251,7 @@ mod slow {
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
                 25_000,
-                Some("an unconfirmed transaction, that shall not be synced"),
+                Some("an pending transaction, that shall not be synced"),
             )],
         )
         .await
@@ -3413,7 +3413,7 @@ mod slow {
         assert_eq!(witness_before.unwrap(), witness_after.unwrap());
     }
     #[tokio::test]
-    async fn mempool_spends_correctly_marked_unconfirmed_spent() {
+    async fn mempool_spends_correctly_marked_pending_spent() {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(1_000_000).await;
         from_inputs::send(
