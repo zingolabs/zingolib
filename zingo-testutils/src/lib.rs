@@ -560,12 +560,14 @@ pub mod scenarios {
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{get_base_address_macro, increase_height_and_wait_for_client};
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-    use zingolib::{lightclient::LightClient, wallet::Pool};
+    use zingolib::lightclient::LightClient;
 
     /// TODO: Add Doc Comment Here!
     pub mod setup {
         use super::BASE_HEIGHT;
+        use zcash_client_backend::{PoolType, ShieldedProtocol};
         use zingo_testvectors::{
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
@@ -575,7 +577,6 @@ pub mod scenarios {
         use super::{ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use tokio::time::sleep;
-        use zingolib::wallet::Pool;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
 
         /// TODO: Add Doc Comment Here!
@@ -619,13 +620,17 @@ pub mod scenarios {
 
             fn configure_scenario(
                 &mut self,
-                mine_to_pool: Option<Pool>,
+                mine_to_pool: Option<PoolType>,
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) {
                 let mine_to_address = match mine_to_pool {
-                    Some(Pool::Orchard) => Some(REG_O_ADDR_FROM_ABANDONART),
-                    Some(Pool::Sapling) => Some(REG_Z_ADDR_FROM_ABANDONART),
-                    Some(Pool::Transparent) => Some(REG_T_ADDR_FROM_ABANDONART),
+                    Some(PoolType::Shielded(ShieldedProtocol::Orchard)) => {
+                        Some(REG_O_ADDR_FROM_ABANDONART)
+                    }
+                    Some(PoolType::Shielded(ShieldedProtocol::Sapling)) => {
+                        Some(REG_Z_ADDR_FROM_ABANDONART)
+                    }
+                    Some(PoolType::Transparent) => Some(REG_T_ADDR_FROM_ABANDONART),
                     None => None,
                 };
                 self.test_env
@@ -677,14 +682,17 @@ pub mod scenarios {
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
                 dbg!(&sb.test_env.regtest_manager.zcashd_config);
-                sb.configure_scenario(Some(Pool::Sapling), regtest_network);
+                sb.configure_scenario(
+                    Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
+                    regtest_network,
+                );
                 sb.launch_scenario(false).await;
                 sb
             }
 
             /// Writes the specified zcashd.conf and launches with it
             pub async fn build_configure_launch(
-                mine_to_pool: Option<Pool>,
+                mine_to_pool: Option<PoolType>,
                 zingo_wallet_dir: Option<PathBuf>,
                 set_lightwalletd_port: Option<portpicker::Port>,
                 regtest_network: &zingoconfig::RegtestNetwork,
@@ -921,7 +929,7 @@ pub mod scenarios {
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet(
-        mine_to_pool: Pool,
+        mine_to_pool: PoolType,
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
@@ -943,12 +951,16 @@ pub mod scenarios {
     /// TODO: Add Doc Comment Here!
     pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-        faucet(Pool::Orchard, regtest_network).await
+        faucet(
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            regtest_network,
+        )
+        .await
     }
 
     /// TODO: Add Doc Comment Here!
     pub async fn faucet_recipient(
-        mine_to_pool: Pool,
+        mine_to_pool: PoolType,
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (
         RegtestManager,
@@ -991,7 +1003,11 @@ pub mod scenarios {
         LightClient,
     ) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-        faucet_recipient(Pool::Orchard, regtest_network).await
+        faucet_recipient(
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            regtest_network,
+        )
+        .await
     }
 
     /// TODO: Add Doc Comment Here!
@@ -999,7 +1015,7 @@ pub mod scenarios {
         orchard_funds: Option<u64>,
         sapling_funds: Option<u64>,
         transparent_funds: Option<u64>,
-        mine_to_pool: Pool,
+        mine_to_pool: PoolType,
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (
         RegtestManager,
@@ -1093,7 +1109,7 @@ pub mod scenarios {
             Some(orchard_funds),
             None,
             None,
-            Pool::Orchard,
+            PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
         )
         .await;
@@ -1108,7 +1124,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn custom_clients(
-        mine_to_pool: Pool,
+        mine_to_pool: PoolType,
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         let sb = setup::ScenarioBuilder::build_configure_launch(
@@ -1133,8 +1149,11 @@ pub mod scenarios {
         zingoconfig::RegtestNetwork,
     ) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, cph, client_builder) =
-            custom_clients(Pool::Orchard, regtest_network).await;
+        let (regtest_manager, cph, client_builder) = custom_clients(
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            regtest_network,
+        )
+        .await;
         (regtest_manager, cph, client_builder, regtest_network)
     }
 
@@ -1158,7 +1177,7 @@ pub mod scenarios {
     pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-            Some(Pool::Sapling),
+            Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             None,
             Some(20_000),
             &regtest_network,
@@ -1195,7 +1214,7 @@ pub mod scenarios {
     ) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-            Some(Pool::Sapling),
+            Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             None,
             Some(20_000),
             &regtest_network,
@@ -1263,7 +1282,7 @@ pub mod scenarios {
     ) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-            Some(Pool::Sapling),
+            Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             None,
             Some(20_000),
             &regtest_network,
@@ -1379,16 +1398,20 @@ pub mod scenarios {
             .await
             .unwrap();
         // shield transparent
-        crate::lightclient::from_inputs::shield(&recipient, &[Pool::Transparent], None)
+        crate::lightclient::from_inputs::shield(&recipient, &[PoolType::Transparent], None)
             .await
             .unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
         // upgrade sapling
-        crate::lightclient::from_inputs::shield(&recipient, &[Pool::Sapling], None)
-            .await
-            .unwrap();
+        crate::lightclient::from_inputs::shield(
+            &recipient,
+            &[PoolType::Shielded(ShieldedProtocol::Sapling)],
+            None,
+        )
+        .await
+        .unwrap();
         // end
         scenario_builder
             .regtest_manager

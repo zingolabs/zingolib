@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
 use zcash_address::ZcashAddress;
-use zcash_client_backend::encoding::encode_payment_address;
+use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants},
     memo::Memo,
@@ -25,7 +25,7 @@ use crate::{
         },
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
-        LightWallet, Pool,
+        LightWallet,
     },
 };
 
@@ -418,7 +418,7 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: Pool::Transparent,
+                            pool_type: PoolType::Transparent,
                             amount: received_transparent.value,
                         },
                         memos: vec![],
@@ -437,7 +437,7 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: Pool::Sapling,
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
                             amount: received_sapling.value(),
                         },
                         memos,
@@ -456,7 +456,7 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: Pool::Orchard,
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
                             amount: received_orchard.value(),
                         },
                         memos,

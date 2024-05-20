@@ -4,14 +4,11 @@ use incrementalmerkletree::{Hashable, Position};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 
-use super::{
-    super::{
-        data::TransactionRecord,
-        keys::unified::WalletCapability,
-        traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
-        Pool,
-    },
-    query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+use crate::wallet::{
+    keys::unified::WalletCapability,
+    notes::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+    traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
+    transaction_record::TransactionRecord,
 };
 
 /// Expresses the behavior that *all* value transfers MUST support (inclusive of transparent).
@@ -166,7 +163,7 @@ pub trait ShieldedNoteInterface: OutputInterface + Sized {
     }
 
     /// TODO: Add Doc Comment Here!
-    fn pool() -> Pool;
+    fn pool() -> PoolType;
 
     /// TODO: Add Doc Comment Here!
     fn transaction_metadata_notes(wallet_transaction: &TransactionRecord) -> &Vec<Self>;
