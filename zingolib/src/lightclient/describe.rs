@@ -260,24 +260,24 @@ impl LightClient {
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
 
-            if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
-                if transaction_md.is_outgoing_transaction() {
-                    let (block_height, datetime, price, unconfirmed) = (
-                        transaction_md.status.get_height(),
-                        transaction_md.datetime,
-                        transaction_md.price,
-                        !transaction_md.status.is_confirmed(),
-                    );
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Fee { amount: tx_fee },
-                        memos: vec![],
-                        price,
-                        txid: *txid,
-                        unconfirmed,
-                    });
-                }
+            if transaction_md.is_outgoing_transaction() {
+                let (block_height, datetime, price, unconfirmed) = (
+                    transaction_md.status.get_height(),
+                    transaction_md.datetime,
+                    transaction_md.price,
+                    !transaction_md.status.is_confirmed(),
+                );
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Fee {
+                        amount: transaction_md.get_transaction_fee(),
+                    },
+                    memos: vec![],
+                    price,
+                    txid: *txid,
+                    unconfirmed,
+                });
             };
         }
         summaries.sort_by_key(|summary| summary.block_height);

@@ -13,7 +13,7 @@ use zingolib::wallet::transaction_record::TransactionRecord;
 pub async fn assert_record_matches_step(record: &TransactionRecord, step: &Step<NoteId>) {
     let balance = step.balance();
     assert_eq!(
-        record.get_transaction_fee().unwrap(),
+        record.get_transaction_fee(),
         balance.fee_required().into_u64()
     );
     // there is more to be done to fully match these objects

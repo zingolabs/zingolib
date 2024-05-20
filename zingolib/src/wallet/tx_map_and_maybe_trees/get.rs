@@ -175,14 +175,9 @@ fn test_get_some_txid_from_highest_wallet_block() {
 #[cfg(feature = "lightclient-deprecated")]
 impl TxMapAndMaybeTrees {
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
-        match self
-            .transaction_records_by_id
+        self.transaction_records_by_id
             .get(txid)
             .expect("To have the requested txid")
             .get_transaction_fee()
-        {
-            Ok(tx_fee) => tx_fee,
-            Err(e) => panic!("{:?} for txid {}", e, txid,),
-        }
     }
 }

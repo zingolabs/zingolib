@@ -10,19 +10,16 @@ use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{wallet::NoteId, PoolType};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::{
-    error::ZingoLibError,
-    wallet::{
-        data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
-        keys::unified::WalletCapability,
-        notes::{
-            self,
-            query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
-            OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
-            TransparentOutput,
-        },
-        traits::{DomainWalletExt, ReadableWriteable as _},
+use crate::wallet::{
+    data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
+    keys::unified::WalletCapability,
+    notes::{
+        self,
+        query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
+        OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
+        TransparentOutput,
     },
+    traits::{DomainWalletExt, ReadableWriteable as _},
 };
 
 ///  Everything (SOMETHING) about a transaction
@@ -211,23 +208,11 @@ impl TransactionRecord {
         self.total_transparent_value_spent
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
-        let outputted = self.value_outgoing() + self.total_change_returned();
-        if self.total_value_spent() >= outputted {
-            Ok(self.total_value_spent() - outputted)
-        } else {
-            ZingoLibError::MetadataUnderflow(format!(
-                "for txid {} with status {}: spent {}, outgoing {}, returned change {} \n {:?}",
-                self.txid,
-                self.status,
-                self.total_value_spent(),
-                self.value_outgoing(),
-                self.total_change_returned(),
-                self,
-            ))
-            .handle()
-        }
+    /// Returns the transaction fee
+    /// TODO: on next wallet version add value balance / fee field to transaction record so fee can be calculated as follows:
+    /// orchard value balance + sapling value balance + transparent value balance
+    pub fn get_transaction_fee(&self) -> u64 {
+        self.total_value_spent() - self.value_outgoing()
     }
 
     /// For each Shielded note received in this transactions,
@@ -708,7 +693,7 @@ mod tests {
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
         assert_eq!(new.get_transparent_value_spent(), 0);
-        assert_eq!(new.get_transaction_fee().unwrap(), 0);
+        assert_eq!(new.get_transaction_fee(), 0);
         assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
