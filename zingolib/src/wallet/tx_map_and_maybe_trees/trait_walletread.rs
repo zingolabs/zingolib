@@ -1,5 +1,8 @@
 //! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
 
+use crate::wallet::notes::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery};
+
+use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 use secrecy::SecretVec;
 use shardtree::store::ShardStore;
 use zcash_client_backend::{
@@ -12,10 +15,6 @@ use zcash_primitives::{
     legacy::keys::{NonHardenedChildIndex, TransparentKeyScope},
 };
 use zip32::{AccountId, Scope};
-
-use crate::wallet::notes::query::QueryStipulations;
-
-use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 
 /// This is a facade for using LRZ traits. In actuality, Zingo does not use multiple accounts in one wallet.
 pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);
@@ -41,17 +40,18 @@ impl Account<AccountId> for ZingoAccount {
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
-    let unspent_shield_output_ids = transaction.query_for_ids(
-        QueryStipulations {
+    let unspent_shield_output_ids = transaction.query_for_ids(OutputQuery {
+        spend_status: OutputSpendStatusQuery {
             unspent: true,
             pending_spent: false,
             spent: false,
+        },
+        pools: OutputPoolQuery {
             transparent: false,
             sapling: true,
             orchard: true,
-        }
-        .stipulate(),
-    );
+        },
+    });
     !unspent_shield_output_ids.is_empty()
 }
 /// some of these functions, initially those required for calculate_transaction, will be implemented
@@ -426,7 +426,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().unconfirmed_spent(spend).clone())
+                        .orchard_notes(OrchardNoteBuilder::default().pending_spent(spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
                         .clone()

@@ -895,7 +895,7 @@ async fn reorg_expires_outgoing_tx_height() {
 
 #[tokio::test]
 /// ### Reorg Changes Outbound Tx Index
-/// An outbound, unconfirmed transaction in a specific block changes height in the event of a reorg
+/// An outbound, pending transaction in a specific block changes height in the event of a reorg
 ///
 /// The wallet handles this change, reflects it appropriately in local storage, and funds remain spendable post confirmation.
 ///
