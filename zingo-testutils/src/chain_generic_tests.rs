@@ -309,8 +309,8 @@ pub mod fixtures {
                 (secondary_address_orchard.as_str(), 1_000, None),
                 (secondary_address_sapling.as_str(), 1_000, None),
                 (secondary_address_orchard.as_str(), 1_000, None),
-                (secondary_address_sapling.as_str(), 10_000, None),
-                (secondary_address_orchard.as_str(), 10_000, None),
+                (secondary_address_sapling.as_str(), 15_000, None),
+                (secondary_address_orchard.as_str(), 15_000, None),
             ],
         )
         .await
@@ -321,9 +321,10 @@ pub mod fixtures {
 
         check_client_balances!(secondary, o: 15_000 s: 15_000 t: 0);
 
+        // this is a hefty fee of 25_000 for multipool send. however, it correctly ignores dust and doesnt get confused
         from_inputs::quick_send(
             &secondary,
-            vec![(primary_address_orchard.as_str(), 5_001, None)],
+            vec![(primary_address_orchard.as_str(), 5_000, None)],
         )
         .await
         .unwrap();

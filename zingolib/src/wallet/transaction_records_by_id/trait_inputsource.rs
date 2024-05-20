@@ -9,7 +9,10 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{
     legacy::Script,
-    transaction::components::{amount::NonNegativeAmount, TxOut},
+    transaction::{
+        components::{amount::NonNegativeAmount, TxOut},
+        fees::zip317::MARGINAL_FEE,
+    },
 };
 
 use crate::wallet::{
@@ -150,6 +153,7 @@ impl InputSource for TransactionRecordsById {
             Some(target_value),
             |rolling_target, (note, note_id)| match rolling_target {
                 Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
+                Some(targ) if note.value().inner() <= MARGINAL_FEE.into_u64() => Ok(Some(targ)),
                 Some(targ) => {
                     sapling_notes.push(
                         self.get(note_id.txid())
@@ -171,6 +175,9 @@ impl InputSource for TransactionRecordsById {
                     Some(missing_value_after_sapling),
                     |rolling_target, (note, note_id)| match rolling_target {
                         Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
+                        Some(targ) if note.value().inner() <= MARGINAL_FEE.into_u64() => {
+                            Ok(Some(targ))
+                        }
                         Some(targ) => {
                             orchard_notes.push(
                                 self.get(note_id.txid())
