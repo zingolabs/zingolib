@@ -2186,7 +2186,7 @@ mod slow {
 
         println!("creating vec");
         from_inputs::send(
-            &faucet,
+            faucet,
             vec![(&get_base_address_macro!(faucet, "unified"), 10, None); 15],
         )
         .await
@@ -2195,7 +2195,7 @@ mod slow {
             .await
             .unwrap();
         from_inputs::send(
-            &recipient,
+            recipient,
             vec![(&get_base_address_macro!(faucet, "unified"), 10, None)],
         )
         .await
@@ -2418,7 +2418,7 @@ mod slow {
         let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
             scenarios::faucet_funded_recipient_default(inital_value).await;
         from_inputs::send(
-            &recipient,
+            recipient,
             vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
         )
         .await

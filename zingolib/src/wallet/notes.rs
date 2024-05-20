@@ -58,7 +58,6 @@ pub mod mocks {
         shpool: Option<ShieldedProtocol>,
         index: Option<u16>,
     }
-    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl NoteIdBuilder {
         /// blank builder
         pub fn new() -> Self {
