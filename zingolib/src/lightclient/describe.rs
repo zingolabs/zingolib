@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
 use zcash_address::ZcashAddress;
-use zcash_client_backend::encoding::encode_payment_address;
+use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants},
     memo::Memo,
@@ -25,7 +25,7 @@ use crate::{
         },
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
-        LightWallet, Pool,
+        LightWallet,
     },
 };
 
@@ -126,7 +126,7 @@ impl LightClient {
 
                 tx.orchard_notes
                     .iter()
-                    .filter(|n| n.spent().is_none() && n.unconfirmed_spent.is_none())
+                    .filter(|n| n.spent().is_none() && n.pending_spent.is_none())
                     .for_each(|n| {
                         let value = n.orchard_crypto_note.value().inner();
                         if !incoming && n.is_change {
@@ -144,7 +144,7 @@ impl LightClient {
 
                 tx.sapling_notes
                     .iter()
-                    .filter(|n| n.spent().is_none() && n.unconfirmed_spent.is_none())
+                    .filter(|n| n.spent().is_none() && n.pending_spent.is_none())
                     .for_each(|n| {
                         let value = n.sapling_crypto_note.value().inner();
                         if !incoming && n.is_change {
@@ -162,7 +162,7 @@ impl LightClient {
 
                 tx.transparent_outputs
                     .iter()
-                    .filter(|n| !n.is_spent() && n.unconfirmed_spent.is_none())
+                    .filter(|n| !n.is_spent() && n.pending_spent.is_none())
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
@@ -208,7 +208,7 @@ impl LightClient {
                     balances.immature_change += change;
                     balances.dust += dust_value;
                 } else {
-                    // Unconfirmed
+                    // pending
                     balances.immature_change += change;
                     balances.incoming += useful_value;
                     balances.incoming_dust += dust_value;
@@ -261,7 +261,7 @@ impl LightClient {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
 
             if transaction_md.is_outgoing_transaction() {
-                let (block_height, datetime, price, unconfirmed) = (
+                let (block_height, datetime, price, pending) = (
                     transaction_md.status.get_height(),
                     transaction_md.datetime,
                     transaction_md.price,
@@ -276,7 +276,7 @@ impl LightClient {
                     memos: vec![],
                     price,
                     txid: *txid,
-                    unconfirmed,
+                    pending,
                 });
             };
         }
@@ -366,7 +366,7 @@ impl LightClient {
         txid: TxId,
         transaction_md: &TransactionRecord,
     ) {
-        let (block_height, datetime, price, unconfirmed) = (
+        let (block_height, datetime, price, pending) = (
             transaction_md.status.get_height(),
             transaction_md.datetime,
             transaction_md.price,
@@ -389,7 +389,7 @@ impl LightClient {
                 } in &transaction_md.outgoing_tx_data
                 {
                     if let Ok(to_address) =
-                        ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
+                        ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(&to_address))
                     {
                         let memos = if let Memo::Text(textmemo) = memo {
                             vec![textmemo.clone()]
@@ -406,7 +406,7 @@ impl LightClient {
                             memos,
                             price,
                             txid,
-                            unconfirmed,
+                            pending,
                         });
                     }
                 }
@@ -418,13 +418,13 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: Pool::Transparent,
+                            pool_type: PoolType::Transparent,
                             amount: received_transparent.value,
                         },
                         memos: vec![],
                         price,
                         txid,
-                        unconfirmed,
+                        pending,
                     });
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
@@ -437,13 +437,13 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: Pool::Sapling,
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
                             amount: received_sapling.value(),
                         },
                         memos,
                         price,
                         txid,
-                        unconfirmed,
+                        pending,
                     });
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
@@ -456,13 +456,13 @@ impl LightClient {
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
-                            pool: Pool::Orchard,
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
                             amount: received_orchard.value(),
                         },
                         memos,
                         price,
                         txid,
-                        unconfirmed,
+                        pending,
                     });
                 }
             }
@@ -493,7 +493,7 @@ impl LightClient {
                         .collect(),
                     price,
                     txid,
-                    unconfirmed,
+                    pending,
                 });
             }
         };
@@ -515,7 +515,7 @@ impl LightClient {
                         None
                     } else {
                         let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
-                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
+                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spent.is_none() && note_metadata.pending_spent.is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         Some(object!{
@@ -523,13 +523,13 @@ impl LightClient {
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id.clone()),
                             "value"              => note_metadata.sapling_crypto_note.value().inner(),
-                            "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
+                            "pending"        => !transaction_metadata.status.is_confirmed(),
                             "is_change"          => note_metadata.is_change,
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => note_metadata.spent.map(|(_, h)| h),
-                            "unconfirmed_spent"  => note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => note_metadata.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )
@@ -559,7 +559,7 @@ impl LightClient {
                         None
                     } else {
                         let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
-                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
+                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent.is_none() && orch_note_metadata.pending_spent.is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         Some(object!{
@@ -567,13 +567,13 @@ impl LightClient {
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => orch_note_metadata.orchard_crypto_note.value().inner(),
-                            "unconfirmed"        => !transaction_metadata.status.is_confirmed(),
+                            "pending"        => !transaction_metadata.status.is_confirmed(),
                             "is_change"          => orch_note_metadata.is_change,
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => orch_note_metadata.spent.map(|(_, h)| h),
-                            "unconfirmed_spent"  => orch_note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => orch_note_metadata.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )
@@ -619,7 +619,7 @@ impl LightClient {
                             "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spent"              => utxo.spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => utxo.spent().map(|(_, h)| h),
-                            "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => utxo.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )

@@ -155,18 +155,18 @@ impl super::TxMapAndMaybeTrees {
                 ZingoLibError::NoSuchTxId(spending_txid).handle()?
             }
         } else if let Some(height) = status.get_broadcast_height() {
-            // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
+            // Mark the pending_spent. Confirmed spends are already handled in update_notes
             if let Some(transaction_spent_from) =
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
-                if let Some(unconfirmed_spent_note) =
+                if let Some(pending_spent_note) =
                     D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_spent_from)
                         .iter_mut()
                         .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
-                    *unconfirmed_spent_note.pending_spent_mut() =
+                    *pending_spent_note.pending_spent_mut() =
                         Some((spending_txid, u32::from(height)));
-                    unconfirmed_spent_note.value()
+                    pending_spent_note.value()
                 } else {
                     ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
                 }

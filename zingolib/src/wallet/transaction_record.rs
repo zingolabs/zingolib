@@ -15,7 +15,7 @@ use crate::wallet::{
     keys::unified::WalletCapability,
     notes::{
         self,
-        query::{OutputQuery, OutputSpendStatusQuery, QueryStipulations},
+        query::{OutputQuery, OutputSpendStatusQuery},
         OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
         TransparentOutput,
     },
@@ -190,17 +190,7 @@ impl TransactionRecord {
 
     /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
-        self.query_sum_value(
-            QueryStipulations {
-                unspent: true,
-                pending_spent: true,
-                spent: true,
-                transparent: true,
-                sapling: true,
-                orchard: true,
-            }
-            .stipulate(),
-        )
+        self.query_sum_value(OutputQuery::any())
     }
 
     /// TODO: Add Doc Comment Here!
@@ -370,7 +360,7 @@ impl TransactionRecord {
 
         let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
 
-        let unconfirmed = if version <= 20 {
+        let pending = if version <= 20 {
             false
         } else {
             reader.read_u8()? == 1
@@ -439,7 +429,7 @@ impl TransactionRecord {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_unconfirmed_bool(block, unconfirmed);
+        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_pending_bool(block, pending);
         Ok(Self {
             status,
             datetime,
@@ -630,7 +620,7 @@ pub mod mocks {
             )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .unconfirmed_spent(semi_spend)
+                    .pending_spent(semi_spend)
                     .value(transparent_semi_spent)
                     .clone(),
             )
@@ -643,7 +633,7 @@ pub mod mocks {
             )
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .unconfirmed_spent(semi_spend)
+                    .pending_spent(semi_spend)
                     .value(sapling_semi_spent)
                     .clone(),
             )
@@ -656,7 +646,7 @@ pub mod mocks {
             )
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .unconfirmed_spent(semi_spend)
+                    .pending_spent(semi_spend)
                     .value(orchard_semi_spent)
                     .clone(),
             )

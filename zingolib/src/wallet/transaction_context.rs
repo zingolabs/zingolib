@@ -412,7 +412,7 @@ pub mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
-            is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
+            is_outgoing_transaction: &mut bool, // Isn't this also NA for pending?
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) where
@@ -424,7 +424,7 @@ pub mod decrypt_transaction {
             D::IncomingViewingKey: Clone,
         {
             type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
-            // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
+            // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
             if status.is_broadcast() {
                 let unspent_nullifiers = self

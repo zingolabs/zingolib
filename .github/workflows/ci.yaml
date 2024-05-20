@@ -13,7 +13,7 @@ jobs:
 
   reject-trailing-whitespace:
     name: Reject trailing whitespace
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest-m
     if: github.event.pull_request.draft == false
     steps:
       - name: Checkout repository
@@ -24,7 +24,7 @@ jobs:
 
   run-doc-tests:
     name: Run doc tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest-m
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
