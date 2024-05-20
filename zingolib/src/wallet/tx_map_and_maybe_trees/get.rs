@@ -84,7 +84,11 @@ impl TxMapAndMaybeTrees {
             .flat_map(|(_, transaction_record)| {
                 D::WalletNote::transaction_record_to_outputs_vec_query(
                     transaction_record,
-                    OutputSpendStatusQuery::new(true, false, false),
+                    OutputSpendStatusQuery {
+                        unspent: true,
+                        pending_spent: false,
+                        spent: false,
+                    },
                 )
                 .iter()
                 .filter_map(move |unspent_note_data| {

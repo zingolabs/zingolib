@@ -27,11 +27,11 @@ pub struct SaplingNote {
     pub nullifier: Option<sapling_crypto::Nullifier>,
 
     /// TODO: Add Doc Comment Here!
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to unconfirmed spent, this is potential data incoherence
+    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to pending spent, this is potential data incoherence
 
     /// If this note was spent in a send, but has not yet been confirmed.
     /// Contains the transaction id and height at which it was broadcast
-    pub unconfirmed_spent: Option<(TxId, u32)>,
+    pub pending_spent: Option<(TxId, u32)>,
 
     /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
@@ -50,13 +50,13 @@ impl std::fmt::Debug for SaplingNote {
             .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
-            .field("unconfirmed_spent", &self.unconfirmed_spent)
+            .field("pending_spent", &self.pending_spent)
             .field("memo", &self.memo)
             .field("diversifier", &self.diversifier)
             .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
-            .field("unconfirmed_spent", &self.unconfirmed_spent)
+            .field("pending_spent", &self.pending_spent)
             .field("memo", &self.memo)
             .field("is_change", &self.is_change)
             .finish_non_exhaustive()
@@ -81,11 +81,11 @@ impl OutputInterface for SaplingNote {
     }
 
     fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
+        &self.pending_spent
     }
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
+        &mut self.pending_spent
     }
 
     fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
@@ -138,7 +138,7 @@ impl ShieldedNoteInterface for SaplingNote {
         witnessed_position: Option<Position>,
         nullifier: Option<sapling_crypto::Nullifier>,
         spent: Option<(TxId, u32)>,
-        unconfirmed_spent: Option<(TxId, u32)>,
+        pending_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
@@ -150,7 +150,7 @@ impl ShieldedNoteInterface for SaplingNote {
             witnessed_position,
             nullifier,
             spent,
-            unconfirmed_spent,
+            pending_spent,
             memo,
             is_change,
             have_spending_key,
@@ -248,7 +248,7 @@ pub mod mocks {
         pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<sapling_crypto::Nullifier>>,
         spent: Option<Option<(TxId, u32)>>,
-        unconfirmed_spent: Option<Option<(TxId, u32)>>,
+        pending_spent: Option<Option<(TxId, u32)>>,
         memo: Option<Option<Memo>>,
         is_change: Option<bool>,
         have_spending_key: Option<bool>,
@@ -265,7 +265,7 @@ pub mod mocks {
                 output_index: None,
                 nullifier: None,
                 spent: None,
-                unconfirmed_spent: None,
+                pending_spent: None,
                 memo: None,
                 is_change: None,
                 have_spending_key: None,
@@ -279,7 +279,7 @@ pub mod mocks {
         build_method!(output_index, Option<u32>);
         build_method!(nullifier, Option<sapling_crypto::Nullifier>);
         build_method!(spent, Option<(TxId, u32)>);
-        build_method!(unconfirmed_spent, Option<(TxId, u32)>);
+        build_method!(pending_spent, Option<(TxId, u32)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
         pub fn set_change(&mut self, is_change: bool) -> &mut Self {
@@ -303,7 +303,7 @@ pub mod mocks {
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
                 self.spent.unwrap(),
-                self.unconfirmed_spent.unwrap(),
+                self.pending_spent.unwrap(),
                 self.memo.unwrap(),
                 self.is_change.unwrap(),
                 self.have_spending_key.unwrap(),
@@ -322,7 +322,7 @@ pub mod mocks {
                 .output_index(Some(0))
                 .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))
                 .spent(None)
-                .unconfirmed_spent(None)
+                .pending_spent(None)
                 .memo(None)
                 .set_change(false)
                 .have_spending_key(true);

@@ -46,7 +46,7 @@ impl LightClient {
                     let block_height: u32 = transaction_metadata.status.get_height().into();
                     object! {
                         "block_height" => block_height,
-                        "unconfirmed"  => !transaction_metadata.status.is_confirmed(),
+                        "pending"      => !transaction_metadata.status.is_confirmed(),
                         "datetime"     => transaction_metadata.datetime,
                         "position"     => i,
                         "txid"         => format!("{}", transaction_metadata.txid),
@@ -101,7 +101,7 @@ impl LightClient {
         let block_height: u32 = wallet_transaction.status.get_height().into();
         object! {
             "block_height" => block_height,
-            "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
+            "pending"  => !wallet_transaction.status.is_confirmed(),
             "datetime"     => wallet_transaction.datetime,
             "txid"         => format!("{}", wallet_transaction.txid),
             "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
@@ -155,7 +155,7 @@ impl LightClient {
                         let block_height: u32 = wallet_transaction.status.get_height().into();
                         consumer_notes_by_tx.push(object! {
                             "block_height" => block_height,
-                            "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
+                            "pending"  => !wallet_transaction.status.is_confirmed(),
                             "datetime"     => wallet_transaction.datetime,
                             "txid"         => format!("{}", txid),
                             "amount"       => net_transparent_value,
