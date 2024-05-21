@@ -1,6 +1,6 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
-use crate::wallet::notes::OutputInterface;
 use crate::wallet::now;
+use crate::wallet::{notes::OutputInterface, transaction_context};
 use crate::{data::receivers::Receivers, wallet::data::SpendableSaplingNote};
 
 use futures::Future;
@@ -834,9 +834,9 @@ impl LightWallet {
         let mut raw_transaction = vec![];
         transaction.write(&mut raw_transaction).unwrap();
 
-        let serverz_transaction_id =
-            broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
-
+        //let serverz_transaction_id =
+        broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
+        /*
         // Add this transaction to the mempool structure
         {
             let price = self.price.read().await.clone();
@@ -847,32 +847,32 @@ impl LightWallet {
                 .await;
         }
 
-        let calculated_txid = transaction.txid();
+                let client_local_calculated_txid = transaction.txid();
 
-        let accepted_txid = match crate::utils::conversion::txid_from_hex_encoded_str(
-            serverz_transaction_id.as_str(),
-        ) {
-            Ok(serverz_txid) => {
-                if calculated_txid != serverz_txid {
-                    // happens during darkside tests
-                    error!(
-                        "served txid {} does not match calulated txid {}",
-                        serverz_txid, calculated_txid,
-                    );
+                let accepted_txid = match crate::utils::conversion::txid_from_hex_encoded_str(
+                    serverz_transaction_id.as_str(),
+                ) {
+                    Ok(serverz_txid) => {
+                        if client_local_calculated_txid != serverz_txid {
+                            // happens during darkside tests
+                            error!(
+                                "served txid {} does not match calulated txid {}",
+                                serverz_txid, client_local_calculated_txid,
+                            );
+                        };
+                        if self.transaction_context.config.accept_server_txids {
+                            serverz_txid
+                        } else {
+                            client_local_calculated_txid
+                        }
+                    }
+                    Err(e) => {
+                        error!("server returned invalid txid {}", e);
+                        client_local_calculated_txid
+                    }
                 };
-                if self.transaction_context.config.accept_server_txids {
-                    serverz_txid
-                } else {
-                    calculated_txid
-                }
-            }
-            Err(e) => {
-                error!("server returned invalid txid {}", e);
-                calculated_txid
-            }
-        };
-
-        Ok(accepted_txid)
+        */
+        Ok(transaction.txid())
     }
 }
 
