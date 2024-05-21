@@ -263,12 +263,12 @@ pub mod mocks {
         build_method!(pending_spent, Option<(TxId, u32)>);
 
         /// builds a mock TransparentNote after all pieces are supplied
-        pub fn build(self) -> TransparentOutput {
+        pub fn build(&self) -> TransparentOutput {
             TransparentOutput::from_parts(
-                self.address.unwrap(),
+                self.address.clone().unwrap(),
                 self.txid.unwrap(),
                 self.output_index.unwrap(),
-                self.script.unwrap(),
+                self.script.clone().unwrap(),
                 self.value.unwrap(),
                 self.spent.unwrap(),
                 self.pending_spent.unwrap(),
@@ -284,7 +284,7 @@ pub mod mocks {
                 .txid(TxId::from_bytes([0u8; 32]))
                 .output_index(0)
                 .script(TransparentAddress::ScriptHash([0; 20]).script().0)
-                .value(100000)
+                .value(100_000)
                 .spent(None)
                 .pending_spent(None);
             builder
