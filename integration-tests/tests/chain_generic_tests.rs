@@ -61,7 +61,7 @@ pub(crate) mod libtonode_environment {
         async fn setup() -> Self {
             let regtest_network = RegtestNetwork::all_upgrades_active();
             let scenario_builder = ScenarioBuilder::build_configure_launch(
-                Some(PoolType::Shielded(Sapling).into()),
+                Some(PoolType::Shielded(Sapling)),
                 None,
                 None,
                 &regtest_network,
