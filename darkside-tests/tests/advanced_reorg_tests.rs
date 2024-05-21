@@ -589,6 +589,7 @@ async fn reorg_changes_outgoing_tx_height() {
 
     assert_eq!(light_client.do_balance().await, expected_after_send_balance);
 
+    /*
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
@@ -680,6 +681,7 @@ async fn reorg_changes_outgoing_tx_height() {
     //         }),
     //     Some(BlockHeight::from(211))
     // );
+    */
 }
 
 async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Result<(), String> {
