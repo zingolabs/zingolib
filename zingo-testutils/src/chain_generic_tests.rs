@@ -114,27 +114,47 @@ pub mod fixtures {
             .complete_and_broadcast_stored_proposal()
             .await
             .unwrap();
+        let txid = one_txid.first();
+
+        {
+            let read_lock = sender
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await;
+
+            let record = read_lock
+                .transaction_records_by_id
+                .get(txid)
+                .expect("sender must recognize txid");
+
+            let step = proposal.steps().first();
+
+            assert_record_matches_step(record, step).await;
+        }
 
         environment.bump_chain().await;
 
         sender.do_sync(false).await.unwrap();
-        let txid = one_txid.first();
 
-        let read_lock = sender
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
+        {
+            let read_lock = sender
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await;
 
-        let record = read_lock
-            .transaction_records_by_id
-            .get(txid)
-            .expect("sender must recognize txid");
+            let record = read_lock
+                .transaction_records_by_id
+                .get(txid)
+                .expect("sender must recognize txid");
 
-        let step = proposal.steps().first();
+            let step = proposal.steps().first();
 
-        assert_record_matches_step(record, step).await;
+            assert_record_matches_step(record, step).await;
+        }
 
         recipient.do_sync(false).await.unwrap();
 
