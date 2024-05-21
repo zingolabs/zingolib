@@ -482,6 +482,67 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 // OUTGOING TX TESTS
 
 #[tokio::test]
+async fn check_send_txid() {
+    let darkside_handler = DarksideHandler::new(None);
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+
+    prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
+        .await
+        .unwrap();
+
+    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        )
+        .await;
+
+    light_client.do_sync(true).await.unwrap();
+    assert_eq!(
+        light_client.do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
+    );
+
+    let recipient_string = "uregtest1z8s5szuww2cnze042e0re2ez8l3d04zvkp7kslxwdha6tp644srd4nh0xlp8a05avzduc6uavqkxv79x53c60hrc0qsgeza3age2g3qualullukd4s0lsn6mtfup4z8jz6xdz2c05zakhafc7pmw0dwugwu9ljevzgyc3mfwxg9slr87k8l7cq075gl3fgxpr85uuvxhxydrskp2303";
+
+    // Send 100000 zatoshi to some address
+    let amount: u64 = 100_000;
+    let _ = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
+        .await
+        .unwrap();
+    light_client.do_sync(true).await.unwrap();
+
+    let expected_after_send_balance = PoolBalances {
+        sapling_balance: Some(0),
+        verified_sapling_balance: Some(0),
+        spendable_sapling_balance: Some(0),
+        unverified_sapling_balance: Some(0),
+        orchard_balance: Some(99_890_000),
+        verified_orchard_balance: Some(0),
+        spendable_orchard_balance: Some(0),
+        unverified_orchard_balance: Some(99_890_000),
+        transparent_balance: Some(0),
+    };
+
+    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+}
+#[tokio::test]
 /// A Re Org occurs and changes the height of an outbound transaction
 ///
 /// Pre-condition: Wallet has funds
@@ -556,13 +617,12 @@ async fn reorg_changes_outgoing_tx_height() {
     let recipient_string = "uregtest1z8s5szuww2cnze042e0re2ez8l3d04zvkp7kslxwdha6tp644srd4nh0xlp8a05avzduc6uavqkxv79x53c60hrc0qsgeza3age2g3qualullukd4s0lsn6mtfup4z8jz6xdz2c05zakhafc7pmw0dwugwu9ljevzgyc3mfwxg9slr87k8l7cq075gl3fgxpr85uuvxhxydrskp2303";
 
     // Send 100000 zatoshi to some address
-    let amount: u64 = 100000;
+    let amount: u64 = 100_000;
     let sent_tx_id = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
         .await
         .unwrap();
 
     println!("SENT TX ID: {:?}", sent_tx_id);
-
     let mut incoming_transaction_stream = connector.get_incoming_transactions().await.unwrap();
     let tx = incoming_transaction_stream
         .message()
@@ -580,10 +640,10 @@ async fn reorg_changes_outgoing_tx_height() {
         verified_sapling_balance: Some(0),
         spendable_sapling_balance: Some(0),
         unverified_sapling_balance: Some(0),
-        orchard_balance: Some(99890000),
+        orchard_balance: Some(99_890_000),
         verified_orchard_balance: Some(0),
         spendable_orchard_balance: Some(0),
-        unverified_orchard_balance: Some(99890000),
+        unverified_orchard_balance: Some(99_890_000),
         transparent_balance: Some(0),
     };
 
