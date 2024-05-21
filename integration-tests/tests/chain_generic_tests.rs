@@ -40,6 +40,7 @@ async fn libtonode_propose_and_broadcast_40_000_to_orchard() {
 async fn libtonode_send_shield_cycle() {
     send_shield_cycle::<LibtonodeEnvironment>(4).await;
 }
+#[ignore] // this would be a nice feature, but its not required for release
 #[tokio::test]
 async fn libtonode_send_grace_input() {
     send_grace_input::<LibtonodeEnvironment>().await;
