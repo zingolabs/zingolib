@@ -275,7 +275,7 @@ pub mod fixtures {
         environment.bump_chain().await;
         secondary.do_sync(false).await.unwrap();
 
-        dbg!(secondary.do_balance().await);
+        check_client_balances!(secondary, o: 15_000 s: 15_000 t: 0);
 
         from_inputs::send(
             &secondary,
@@ -286,7 +286,7 @@ pub mod fixtures {
 
         environment.bump_chain().await;
         secondary.do_sync(false).await.unwrap();
-        dbg!(secondary.do_balance().await);
+        check_client_balances!(secondary, o: 9_999 s: 5_000 t: 0);
     }
 
     /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
