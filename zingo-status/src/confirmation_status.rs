@@ -7,8 +7,8 @@ use zcash_primitives::consensus::BlockHeight;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
-    /// The transaction has been broadcast to the zcash blockchain. It may be waiting in the mempool.
-    /// The height of the chain as the transaction was broadcast.
+    /// The transaction is pending confirmation to the zcash blockchain. It may be waiting in the mempool.
+    /// The BlockHeight is the height of the chain as the transaction was broadcast.
     Pending(BlockHeight),
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
@@ -25,19 +25,19 @@ impl ConfirmationStatus {
         }
     }
 
-    /// A wrapper matching the Broadcast case.
+    /// A wrapper matching the Penging case.
     /// # Examples
     ///
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Broadcast(10.into());
-    /// assert_eq!(status.is_broadcast(), true);
+    /// let status = ConfirmationStatus::Pending(10.into());
+    /// assert_eq!(status.is_pending(), true);
     /// assert_eq!(status.is_confirmed(), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_broadcast(), false);
+    /// assert_eq!(status.is_pending(), false);
     /// assert_eq!(status.is_confirmed(), true);
     /// ```
     pub fn is_pending(&self) -> bool {
@@ -51,13 +51,13 @@ impl ConfirmationStatus {
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// let status = ConfirmationStatus::Pending(10.into());
     /// assert_eq!(status.is_confirmed(), false);
-    /// assert_eq!(status.is_broadcast(), true);
+    /// assert_eq!(status.is_pending(), true);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_confirmed(), true);
-    /// assert_eq!(status.is_broadcast(), false);
+    /// assert_eq!(status.is_pending(), false);
     /// ```
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
@@ -73,7 +73,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_confirmed_after_or_at(&9.into()), true);
     ///
-    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// let status = ConfirmationStatus::Pending(10.into());
     /// assert_eq!(status.is_confirmed_after_or_at(&10.into()), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
@@ -96,7 +96,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_confirmed_before_or_at(&9.into()), false);
     ///
-    /// let status = ConfirmationStatus::Broadcast(10.into());
+    /// let status = ConfirmationStatus::Pending(10.into());
     /// assert_eq!(status.is_confirmed_before_or_at(&10.into()), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
@@ -142,15 +142,15 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_broadcast_after_or_at(&9.into()), false);
+    /// assert_eq!(status.is_pending_after_or_at(&9.into()), false);
     ///
-    /// let status = ConfirmationStatus::Broadcast(10.into());
-    /// assert_eq!(status.is_broadcast_after_or_at(&10.into()), true);
+    /// let status = ConfirmationStatus::Pending(10.into());
+    /// assert_eq!(status.is_pending_after_or_at(&10.into()), true);
     ///
-    /// let status = ConfirmationStatus::Broadcast(10.into());
-    /// assert_eq!(status.is_broadcast_after_or_at(&11.into()), false);
+    /// let status = ConfirmationStatus::Pending(10.into());
+    /// assert_eq!(status.is_pending_after_or_at(&11.into()), false);
     /// ```
-    pub fn is_broadcast_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
+    pub fn is_pending_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
             Self::Pending(self_height) => self_height >= comparison_height,
             _ => false,
@@ -165,15 +165,15 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(16.into());
-    /// assert_eq!(status.is_broadcast_before(&15.into()), false);
+    /// assert_eq!(status.is_pending_before(&15.into()), false);
     ///
-    /// let status = ConfirmationStatus::Broadcast(12.into());
-    /// assert_eq!(status.is_broadcast_before(&13.into()), true);
+    /// let status = ConfirmationStatus::Pending(12.into());
+    /// assert_eq!(status.is_pending_before(&13.into()), true);
     ///
-    /// let status = ConfirmationStatus::Broadcast(14.into());
-    /// assert_eq!(status.is_broadcast_before(&14.into()), false);
+    /// let status = ConfirmationStatus::Pending(14.into());
+    /// assert_eq!(status.is_pending_before(&14.into()), false);
     /// ```
-    pub fn is_broadcast_before(&self, comparison_height: &BlockHeight) -> bool {
+    pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
             Self::Pending(self_height) => self_height < comparison_height,
             Self::Confirmed(_) => false,
@@ -190,7 +190,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(16.into());
     /// assert_eq!(status.get_confirmed_height(), Some(16.into()));
     ///
-    /// let status = ConfirmationStatus::Broadcast(15.into());
+    /// let status = ConfirmationStatus::Pending(15.into());
     /// assert_eq!(status.get_confirmed_height(), None);
     /// ```
     pub fn get_confirmed_height(&self) -> Option<BlockHeight> {
@@ -208,12 +208,12 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(16.into());
-    /// assert_eq!(status.get_broadcast_height(), None);
+    /// assert_eq!(status.get_pending_height(), None);
     ///
-    /// let status = ConfirmationStatus::Broadcast(15.into());
-    /// assert_eq!(status.get_broadcast_height(), Some(15.into()));
+    /// let status = ConfirmationStatus::Pending(15.into());
+    /// assert_eq!(status.get_pending_height(), Some(15.into()));
     /// ```
-    pub fn get_broadcast_height(&self) -> Option<BlockHeight> {
+    pub fn get_pending_height(&self) -> Option<BlockHeight> {
         match self {
             Self::Pending(self_height) => Some(*self_height),
             _ => None,
