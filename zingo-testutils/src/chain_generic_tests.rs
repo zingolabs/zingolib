@@ -71,9 +71,11 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
+    use crate::assertions::assert_record_matches_step;
+    use crate::chain_generic_tests::conduct_chain::ConductChain;
+    use crate::check_client_balances;
     use crate::lightclient::from_inputs;
-    use crate::{assertions::assert_record_matches_step, lightclient::get_base_address};
-    use crate::{chain_generic_tests::conduct_chain::ConductChain, check_client_balances};
+    use crate::lightclient::get_base_address;
 
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
@@ -100,7 +102,7 @@ pub mod fixtures {
         dbg!(send_value);
 
         let recipient = environment.create_client().await;
-        let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
+        let recipient_address = get_base_address(&recipient, pooltype).await;
         let request = from_inputs::transaction_request_from_send_inputs(
             &recipient,
             vec![(recipient_address.as_str(), send_value, None)],
@@ -165,7 +167,7 @@ pub mod fixtures {
         let primary_address = get_base_address(&primary, Shielded(Orchard)).await;
 
         let secondary = environment.create_client().await;
-        let secondary_address = crate::lightclient::get_base_address(&secondary, Transparent).await;
+        let secondary_address = get_base_address(&secondary, Transparent).await;
 
         fn per_cycle_primary_debit(start: u64) -> u64 {
             start - 65_000u64
@@ -231,6 +233,99 @@ pub mod fixtures {
         }
     }
 
+    /// uses a dust input to pad another input to finish a transaction
+    pub async fn send_grace_input<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(110_000).await;
+
+        let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
+
+        let secondary = environment.create_client().await;
+        // let secondary_address_sapling = secondary.get_base_address(Shielded(Sapling)).await;
+        let secondary_address_orchard = get_base_address(&secondary, Shielded(Orchard)).await;
+
+        from_inputs::send(
+            &primary,
+            vec![
+                (secondary_address_orchard.as_str(), 1, None),
+                (secondary_address_orchard.as_str(), 99_999, None),
+            ],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        secondary.do_sync(false).await.unwrap();
+
+        check_client_balances!(secondary, o: 100_000 s: 0 t: 0);
+
+        from_inputs::send(
+            &secondary,
+            vec![(primary_address_orchard.as_str(), 90_000, None)],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        primary.do_sync(false).await.unwrap();
+        check_client_balances!(primary, o: 90_000 s: 0 t: 0);
+    }
+
+    /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
+    pub async fn ignore_dust_inputs<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(120_000).await;
+
+        let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
+
+        let secondary = environment.create_client().await;
+        // let secondary_address_sapling = secondary.get_base_address(Shielded(Sapling)).await;
+        let secondary_address_sapling = get_base_address(&secondary, Shielded(Sapling)).await;
+        let secondary_address_orchard = get_base_address(&secondary, Shielded(Orchard)).await;
+
+        from_inputs::send(
+            &primary,
+            vec![
+                (secondary_address_sapling.as_str(), 1_000, None),
+                (secondary_address_orchard.as_str(), 1_000, None),
+                (secondary_address_sapling.as_str(), 1_000, None),
+                (secondary_address_orchard.as_str(), 1_000, None),
+                (secondary_address_sapling.as_str(), 1_000, None),
+                (secondary_address_orchard.as_str(), 1_000, None),
+                (secondary_address_sapling.as_str(), 1_000, None),
+                (secondary_address_orchard.as_str(), 1_000, None),
+                (secondary_address_sapling.as_str(), 1_000, None),
+                (secondary_address_orchard.as_str(), 1_000, None),
+                (secondary_address_sapling.as_str(), 10_000, None),
+                (secondary_address_orchard.as_str(), 10_000, None),
+            ],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        secondary.do_sync(false).await.unwrap();
+
+        check_client_balances!(secondary, o: 15_000 s: 15_000 t: 0);
+
+        from_inputs::send(
+            &secondary,
+            vec![(primary_address_orchard.as_str(), 5_001, None)],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        secondary.do_sync(false).await.unwrap();
+        check_client_balances!(secondary, o: 9_999 s: 5_000 t: 0);
+    }
+
     /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
     pub async fn send_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
     where
@@ -254,7 +349,7 @@ pub mod fixtures {
         dbg!(send_value);
 
         let recipient = environment.create_client().await;
-        let recipient_address = crate::lightclient::get_base_address(&recipient, pooltype).await;
+        let recipient_address = get_base_address(&recipient, pooltype).await;
 
         dbg!("recipient ready");
         dbg!(recipient.query_sum_value(OutputQuery::any()).await);

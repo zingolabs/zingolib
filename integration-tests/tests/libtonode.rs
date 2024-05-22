@@ -1278,7 +1278,7 @@ mod slow {
             .await
             .unwrap();
         from_inputs::shield(
-            &recipient,
+            recipient,
             &[
                 PoolType::Shielded(ShieldedProtocol::Sapling),
                 PoolType::Transparent,
