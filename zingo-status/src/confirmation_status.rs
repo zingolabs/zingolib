@@ -1,4 +1,6 @@
-//! TODO: Add Mod Description Here!
+//! A note can either be:
+//!  Pending === not on-record on-chain
+//!  Confirmed === on-record on-chain at BlockHeight
 
 use zcash_primitives::consensus::BlockHeight;
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
