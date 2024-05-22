@@ -137,6 +137,10 @@ impl InputSource for TransactionRecordsById {
                 );
             }
         }
+
+        sapling_note_noteref_pairs.sort_by_key(|sapling_note| sapling_note.0.value().inner());
+        orchard_note_noteref_pairs.sort_by_key(|orchard_note| orchard_note.0.value().inner());
+
         let mut sapling_notes = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut orchard_notes = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
         if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
