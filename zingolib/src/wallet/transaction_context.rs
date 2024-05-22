@@ -426,7 +426,7 @@ pub mod decrypt_transaction {
             type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
-            if status.is_broadcast() {
+            if status.is_pending() {
                 let unspent_nullifiers = self
                     .transaction_metadata_set
                     .read()

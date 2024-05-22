@@ -38,7 +38,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_broadcast(), false);
     /// assert_eq!(status.is_confirmed(), true);
     /// ```
-    pub fn is_broadcast(&self) -> bool {
+    pub fn is_pending(&self) -> bool {
         matches!(self, Self::Pending(_))
     }
 
