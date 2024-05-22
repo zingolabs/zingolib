@@ -537,7 +537,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 
 [[package]]
 name = "bumpalo"
@@ -721,12 +721,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7144d30dcf0fafbce74250a3963025d8d52177934239851c917d29f1df280c2"
 
 [[package]]
-name = "convert_case"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
-
-[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -804,7 +798,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "futures-util",
  "hex",
@@ -849,19 +843,6 @@ checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "derive_more"
-version = "0.99.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fb810d30a7c1953f91334de7244731fc3f3c10d7fe163338a35b9f640960321"
-dependencies = [
- "convert_case",
- "proc-macro2",
- "quote",
- "rustc_version",
  "syn 1.0.109",
 ]
 
@@ -2358,7 +2339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes 1.6.0",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -2754,15 +2735,6 @@ name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
-
-[[package]]
-name = "rustc_version"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
-dependencies = [
- "semver",
-]
 
 [[package]]
 name = "rustix"
@@ -4560,7 +4532,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4572,7 +4544,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
@@ -4591,7 +4563,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "zcash_primitives",
 ]
@@ -4599,7 +4571,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "http 0.2.12",
  "incrementalmerkletree",
@@ -4623,7 +4595,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "zcash_primitives",
  "zingoconfig",
@@ -4632,7 +4604,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "dirs",
  "http 0.2.12",
@@ -4645,7 +4617,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7c1e72b34727abbc92c7adf6ee0e68f5b9043296"
+source = "git+https://github.com/fluidvanadium/zingolib?branch=test_2#312c73cde0d1afeacf3286bd3267d04cd3c7d63d"
 dependencies = [
  "append-only-vec",
  "base58",
@@ -4654,7 +4626,6 @@ dependencies = [
  "build_utils",
  "byteorder",
  "bytes 0.4.12",
- "derive_more",
  "ff",
  "futures",
  "getset",
