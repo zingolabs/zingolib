@@ -383,7 +383,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let status = zingo_status::confirmation_status::ConfirmationStatus::Broadcast(height);
+        let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 

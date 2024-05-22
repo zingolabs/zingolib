@@ -7,7 +7,7 @@ use zcash_primitives::consensus::BlockHeight;
 pub enum ConfirmationStatus {
     /// The transaction has been broadcast to the zcash blockchain. It may be waiting in the mempool.
     /// The height of the chain as the transaction was broadcast.
-    Broadcast(BlockHeight),
+    Pending(BlockHeight),
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
     Confirmed(BlockHeight),
@@ -17,7 +17,7 @@ impl ConfirmationStatus {
     /// Converts from a blockheight and `pending`. pending is deprecated and is only needed in loading from save.
     pub fn from_blockheight_and_pending_bool(blockheight: BlockHeight, pending: bool) -> Self {
         if pending {
-            Self::Broadcast(blockheight)
+            Self::Pending(blockheight)
         } else {
             Self::Confirmed(blockheight)
         }
@@ -39,7 +39,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_confirmed(), true);
     /// ```
     pub fn is_broadcast(&self) -> bool {
-        matches!(self, Self::Broadcast(_))
+        matches!(self, Self::Pending(_))
     }
 
     /// A wrapper matching the Confirmed case.
@@ -150,7 +150,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_broadcast_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Broadcast(self_height) => self_height >= comparison_height,
+            Self::Pending(self_height) => self_height >= comparison_height,
             _ => false,
         }
     }
@@ -173,7 +173,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_broadcast_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Broadcast(self_height) => self_height < comparison_height,
+            Self::Pending(self_height) => self_height < comparison_height,
             Self::Confirmed(_) => false,
         }
     }
@@ -213,7 +213,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn get_broadcast_height(&self) -> Option<BlockHeight> {
         match self {
-            Self::Broadcast(self_height) => Some(*self_height),
+            Self::Pending(self_height) => Some(*self_height),
             _ => None,
         }
     }
@@ -229,7 +229,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn get_height(&self) -> BlockHeight {
         match self {
-            Self::Broadcast(self_height) => *self_height,
+            Self::Pending(self_height) => *self_height,
             Self::Confirmed(self_height) => *self_height,
         }
     }
@@ -238,7 +238,7 @@ impl ConfirmationStatus {
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Broadcast(self_height) => {
+            Self::Pending(self_height) => {
                 write!(f, "Transaction sent to mempool at height {}.", self_height)
             }
             Self::Confirmed(self_height) => {
