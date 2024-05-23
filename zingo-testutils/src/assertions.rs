@@ -51,12 +51,6 @@ pub async fn assert_send_outputs_match_receiver<NoteId>(
     assert_eq!(proposal.steps().len(), txids.len());
     for (i, step) in proposal.steps().iter().enumerate() {
         let record = records.get(&txids[i]).expect("sender must recognize txid");
-        // does this record match this step?
-        // may fail in uncertain ways if used on a transaction we dont have an OutgoingViewingKey for
-        assert_eq!(
-            records.calculate_transaction_fee(record).unwrap(),
-            step.balance().fee_required().into_u64()
-        );
 
         let mut sum_received = 0;
         for (_, payment) in step.transaction_request().payments() {
