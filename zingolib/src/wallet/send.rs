@@ -841,7 +841,7 @@ impl LightWallet {
         {
             let price = self.price.read().await.clone();
 
-            let status = ConfirmationStatus::Broadcast(submission_height);
+            let status = ConfirmationStatus::Pending(submission_height);
             self.transaction_context
                 .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
                 .await;

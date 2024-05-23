@@ -11,22 +11,25 @@ use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
 
 #[cfg(not(feature = "zip317"))]
-use crate::wallet::Pool;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 
 // Parse the shield arguments for `do_shield`
 #[cfg(not(feature = "zip317"))]
 pub(super) fn parse_shield_args(
     args: &[&str],
     chain: &ChainType,
-) -> Result<(Vec<Pool>, Option<Address>), CommandError> {
+) -> Result<(Vec<PoolType>, Option<Address>), CommandError> {
     if args.is_empty() || args.len() > 2 {
         return Err(CommandError::InvalidArguments);
     }
 
-    let pools_to_shield: &[Pool] = match args[0] {
-        "transparent" => &[Pool::Transparent],
-        "sapling" => &[Pool::Sapling],
-        "all" => &[Pool::Sapling, Pool::Transparent],
+    let pools_to_shield: &[PoolType] = match args[0] {
+        "transparent" => &[PoolType::Transparent],
+        "sapling" => &[PoolType::Shielded(ShieldedProtocol::Sapling)],
+        "all" => &[
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            PoolType::Transparent,
+        ],
         _ => return Err(CommandError::InvalidPool),
     };
     let address = if args.len() == 2 {
@@ -220,7 +223,7 @@ mod tests {
     };
 
     #[cfg(not(feature = "zip317"))]
-    use crate::wallet::Pool;
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
 
     #[cfg(not(feature = "zip317"))]
     #[test]
@@ -233,14 +236,26 @@ mod tests {
         let shield_args = &["all"];
         assert_eq!(
             super::parse_shield_args(shield_args, &chain).unwrap(),
-            (vec![Pool::Sapling, Pool::Transparent], None)
+            (
+                vec![
+                    PoolType::Shielded(ShieldedProtocol::Sapling),
+                    PoolType::Transparent
+                ],
+                None
+            )
         );
 
         // Shield all to given address
         let shield_args = &["all", address_str];
         assert_eq!(
             super::parse_shield_args(shield_args, &chain).unwrap(),
-            (vec![Pool::Sapling, Pool::Transparent], Some(address))
+            (
+                vec![
+                    PoolType::Shielded(ShieldedProtocol::Sapling),
+                    PoolType::Transparent
+                ],
+                Some(address)
+            )
         );
 
         // Invalid pool

@@ -121,7 +121,7 @@ impl TransactionRecordsById {
                     .is_confirmed_after_or_at(&reorg_height)
                     || transaction_metadata
                         .status
-                        .is_broadcast_after_or_at(&reorg_height)
+                        .is_pending_after_or_at(&reorg_height)
                 // TODO: why dont we only remove confirmed transactions. pending transactions may still be valid in the mempool and may later confirm or expire.
                 {
                     Some(transaction_metadata.txid)
@@ -208,9 +208,7 @@ impl TransactionRecordsById {
     }
 }
 
-/// This impl was extracted from:
-/// [`crate::wallet::transactions::recording::TxMapAndMaybeTrees`]
-impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
+impl TransactionRecordsById {
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32(
@@ -220,7 +218,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         let txids_to_remove = self
             .iter()
             .filter(|(_, transaction_metadata)| {
-                transaction_metadata.status.is_broadcast_before(&cutoff)
+                transaction_metadata.status.is_pending_before(&cutoff)
             }) // this transaction was submitted to the mempool before the cutoff and has not been confirmed. we deduce that it has expired.
             .map(|(_, transaction_metadata)| transaction_metadata.txid)
             .collect::<Vec<_>>();
@@ -383,7 +381,7 @@ impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let status = zingo_status::confirmation_status::ConfirmationStatus::Broadcast(height);
+        let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
