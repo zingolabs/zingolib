@@ -1,10 +1,22 @@
 //! contains functions that compare structs to see if they match
 
+use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Step;
 
 use zcash_client_backend::wallet::NoteId;
 
+use zcash_primitives::transaction::TxId;
+use zingolib::data::proposal::TransferProposal;
+use zingolib::lightclient::LightClient;
 use zingolib::wallet::transaction_record::TransactionRecord;
+
+/// assert send outputs match client
+pub async fn assert_send_outputs_match_client(
+    client: LightClient,
+    proposal: TransferProposal,
+    txids: NonEmpty<TxId>,
+) {
+}
 
 /// does this record match this step?
 /// currently only checks if the fee matches
