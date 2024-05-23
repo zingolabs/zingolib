@@ -157,25 +157,15 @@ pub mod fixtures {
             .await;
 
             secondary.do_sync(false).await.unwrap();
-            let _shield_proposal = secondary.propose_shield().await.unwrap();
-            let _shield_one_txid = secondary
-                .complete_and_broadcast_stored_proposal()
-                .await
-                .unwrap();
 
-            environment.bump_chain().await;
+            with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await;
+            with_assertions::propose_send_bump_sync(
+                &mut environment,
+                &secondary,
+                vec![(primary_address.as_str(), 50_000, None)],
+            )
+            .await;
 
-            secondary.do_sync(false).await.unwrap();
-            let _sendback_proposal =
-                from_inputs::propose(&secondary, vec![(primary_address.as_str(), 50_000, None)])
-                    .await
-                    .unwrap();
-            let _sendback_one_txid = secondary
-                .complete_and_broadcast_stored_proposal()
-                .await
-                .unwrap();
-
-            environment.bump_chain().await;
             primary.do_sync(false).await.unwrap();
             primary_fund = per_cycle_primary_debit(primary_fund);
             secondary_fund = per_cycle_secondary_credit(secondary_fund);
