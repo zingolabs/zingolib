@@ -36,7 +36,7 @@ pub async fn propose_send_bump_sync<CC>(
 /// test-only generic
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
-pub async fn propose_send_bump_sync_receiver<CC>(
+pub async fn propose_send_bump_sync_recipient<CC>(
     environment: &mut CC,
     sender: &LightClient,
     recipient: &LightClient,
