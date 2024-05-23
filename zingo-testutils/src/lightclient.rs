@@ -168,6 +168,6 @@ pub mod with_assertions {
 
         client.do_sync(false).await.unwrap();
 
-        assert_send_outputs_match_client(&client, &proposal, &txids).await;
+        assert_send_outputs_match_client(client, &proposal, &txids).await;
     }
 }
