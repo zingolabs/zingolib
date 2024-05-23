@@ -100,14 +100,14 @@ pub mod fixtures {
         println!("client is ready to send");
 
         let recipient = environment.create_client().await;
-        let recipient_address = get_base_address(&recipient, pooltype).await;
 
         println!("recipient ready");
 
-        with_assertions::propose_send_bump_sync(
+        with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &sender,
-            vec![(recipient_address.as_str(), send_value, None)],
+            &recipient,
+            vec![(pooltype, send_value)],
         )
         .await;
 
