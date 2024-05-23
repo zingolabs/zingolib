@@ -27,3 +27,4 @@ hex = { workspace = true }
 itertools = "0.10.5"
 serde_json = "1.0.107"
 http.workspace = true
+proptest = "1.4.0"

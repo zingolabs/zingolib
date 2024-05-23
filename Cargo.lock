@@ -1483,6 +1483,7 @@ dependencies = [
  "json",
  "log",
  "orchard",
+ "proptest",
  "serde_json",
  "shardtree",
  "tokio",
