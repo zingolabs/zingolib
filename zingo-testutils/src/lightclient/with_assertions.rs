@@ -4,7 +4,7 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::assert_send_outputs_match_sender,
+    assertions::{assert_send_outputs_match_receiver, assert_send_outputs_match_sender},
     chain_generic_tests::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -67,6 +67,7 @@ pub async fn propose_send_bump_sync_recipient<CC>(
     assert_send_outputs_match_sender(sender, &proposal, &txids).await;
 
     recipient.do_sync(false).await.unwrap();
+    assert_send_outputs_match_receiver(recipient, &proposal, &txids).await;
 }
 
 /// a test-only generic version of shield that includes assertions that the proposal was fulfilled
