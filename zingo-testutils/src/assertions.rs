@@ -54,7 +54,7 @@ pub async fn assert_send_outputs_match_receiver<NoteId>(
 
         let mut sum_received = 0;
         for payment in step.transaction_request().payments().values() {
-            sum_received = payment.amount.into_u64();
+            sum_received += payment.amount.into_u64();
         }
 
         assert_eq!(sum_received, record.query_sum_value(OutputQuery::any()));
