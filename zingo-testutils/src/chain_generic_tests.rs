@@ -104,7 +104,7 @@ pub mod fixtures {
 
         println!("recipient ready");
 
-        with_assertions::propose_send_sync_check(
+        with_assertions::propose_send_bump_sync(
             &mut environment,
             &sender,
             vec![(recipient_address.as_str(), send_value, None)],
@@ -149,7 +149,7 @@ pub mod fixtures {
             start + 25_000u64
         }
         for _ in 0..n {
-            with_assertions::propose_send_sync_check(
+            with_assertions::propose_send_bump_sync(
                 &mut environment,
                 &primary,
                 vec![(secondary_address.as_str(), 100_000, None)],

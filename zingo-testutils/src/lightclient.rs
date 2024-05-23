@@ -130,7 +130,7 @@ pub mod with_assertions {
 
     /// a test-only generic version of send that includes assertions that the proposal was fulfilled
     /// NOTICE this function bumps the chain and syncs the client
-    pub async fn propose_send_sync_check<CC>(
+    pub async fn propose_send_bump_sync<CC>(
         environment: &mut CC,
         client: &LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
