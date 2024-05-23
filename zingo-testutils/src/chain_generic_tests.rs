@@ -89,7 +89,7 @@ pub mod fixtures {
         let expected_fee = MARGINAL_FEE.into_u64()
             * match pooltype {
                 Transparent => 3,
-                Shielded(Sapling) => 4,
+                Shielded(Sapling) => 4, // but according to my reading of https://zips.z.cash/zip-0317, this should be 3
                 Shielded(Orchard) => 2,
             };
 
@@ -103,13 +103,15 @@ pub mod fixtures {
 
         println!("recipient ready");
 
-        with_assertions::propose_send_bump_sync_recipient(
+        let true_fee = with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &sender,
             &recipient,
             vec![(pooltype, send_value)],
         )
         .await;
+
+        assert_eq!(expected_fee, true_fee);
     }
 
     /// sends back and forth several times, including sends to transparent
