@@ -53,7 +53,7 @@ pub async fn assert_send_outputs_match_receiver<NoteId>(
         let record = records.get(&txids[i]).expect("sender must recognize txid");
 
         let mut sum_received = 0;
-        for (_, payment) in step.transaction_request().payments() {
+        for payment in step.transaction_request().payments().values() {
             sum_received = payment.amount.into_u64();
         }
 
