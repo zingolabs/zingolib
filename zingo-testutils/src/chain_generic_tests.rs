@@ -71,11 +71,11 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
-    use crate::assertions::assert_send_outputs_match_client;
     use crate::chain_generic_tests::conduct_chain::ConductChain;
     use crate::check_client_balances;
     use crate::lightclient::from_inputs;
     use crate::lightclient::get_base_address;
+    use crate::lightclient::with_assertions;
 
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
@@ -101,25 +101,15 @@ pub mod fixtures {
 
         let recipient = environment.create_client().await;
         let recipient_address = get_base_address(&recipient, pooltype).await;
-        let request = from_inputs::transaction_request_from_send_inputs(
-            &recipient,
-            vec![(recipient_address.as_str(), send_value, None)],
-        )
-        .unwrap();
 
         println!("recipient ready");
 
-        let proposal = sender.propose_send(request).await.unwrap();
-        let one_txid = sender
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
-
-        environment.bump_chain().await;
-
-        sender.do_sync(false).await.unwrap();
-
-        assert_send_outputs_match_client(&sender, &proposal, &one_txid).await;
+        with_assertions::propose_send_sync_check(
+            &mut environment,
+            &sender,
+            vec![(recipient_address.as_str(), send_value, None)],
+        )
+        .await;
 
         recipient.do_sync(false).await.unwrap();
 
@@ -159,16 +149,12 @@ pub mod fixtures {
             start + 25_000u64
         }
         for _ in 0..n {
-            let _primary_proposal =
-                from_inputs::propose(&primary, vec![(secondary_address.as_str(), 100_000, None)])
-                    .await
-                    .unwrap();
-            let _primary_one_txid = primary
-                .complete_and_broadcast_stored_proposal()
-                .await
-                .unwrap();
-
-            environment.bump_chain().await;
+            with_assertions::propose_send_sync_check(
+                &mut environment,
+                &primary,
+                vec![(secondary_address.as_str(), 100_000, None)],
+            )
+            .await;
 
             secondary.do_sync(false).await.unwrap();
             let _shield_proposal = secondary.propose_shield().await.unwrap();
