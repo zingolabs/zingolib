@@ -16,6 +16,8 @@ pub async fn assert_send_outputs_match_client(
     proposal: TransferProposal,
     txids: NonEmpty<TxId>,
 ) {
+    assert_eq!(proposal.steps().len(), txids.len());
+    for step in proposal.steps() {}
 }
 
 /// does this record match this step?
