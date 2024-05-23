@@ -113,6 +113,7 @@ impl InputSource for TransactionRecordsById {
     /// be included.
     /// IMPL: implemented and tested
     /// IMPL: _account skipped because Zingo uses 1 account.
+    /// IMPL: all notes beneath MARGINAL_FEE skipped as dust
     fn select_spendable_notes(
         &self,
         _account: Self::AccountId,
