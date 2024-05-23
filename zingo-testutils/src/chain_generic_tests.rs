@@ -234,11 +234,16 @@ pub mod fixtures {
     }
 
     /// uses a dust input to pad another input to finish a transaction
+    /// ironically, there seems to be no trouble sending the grace note, but there does seem to be some trouble sending two orchard outputs at once
     pub async fn send_grace_input<CC>()
     where
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
+        // on top of the 100_000 that is actually sent...
+        // 10_000 was the old fee
+        // 15_000 is the new fee. however, it gives an error (change required)
+        // weirdly, the error for calling this next line with 110_001 is the same as if we call it with 115_001
         let primary = environment.fund_client_orchard(115_000).await;
 
         let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
@@ -258,6 +263,8 @@ pub mod fixtures {
         .unwrap();
 
         environment.bump_chain().await;
+        primary.do_sync(false).await.unwrap();
+        dbg!(primary.do_balance().await);
         secondary.do_sync(false).await.unwrap();
 
         check_client_balances!(secondary, o: 100_000 s: 0 t: 0);
