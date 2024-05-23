@@ -1,0 +1,40 @@
+namespace zingo {
+  string init_logging();
+  string execute_command(string cmd, string args);
+  string init_new(
+      string serveruri,
+      string datadir,
+      string chainhint,
+      boolean monitor_mempool
+  );
+
+  string init_from_seed(
+      string serveruri,
+      string seed,
+      u64 birthday,
+      string datadir,
+      string chainhint,
+      boolean monitor_mempool
+  );
+
+  string init_from_ufvk(
+      string serveruri,
+      string ufvk,
+      u64 birthday,
+      string datadir,
+      string chainhint,
+      boolean monitor_mempool
+  );
+
+  string init_from_b64(
+      string serveruri,
+      string datab64,
+      string datadir,
+      string chainhint,
+      boolean monitor_mempool
+  );
+
+  string save_to_b64();
+  string get_latest_block_server(string serveruri);
+  string get_developer_donation_address();
+};

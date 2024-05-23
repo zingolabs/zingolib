@@ -1,5 +1,5 @@
 [package]
-name = "rustlib"
+name = "zingo"
 version = "1.0.1"
 authors = ["Zingolabs <zingo@zingolabs.com>"]
 edition = "2021"
@@ -9,7 +9,23 @@ zingolib = { workspace = true }
 zingoconfig = { workspace = true }
 http = "0.2.4"
 lazy_static = "1.4.0"
-base64 = "0.11.0"
+base64 = "0.22"
+android_logger = "0.11"
+log = "0.4"
+uniffi = { workspace = true, features = [ "cli" ] }
+
+[build-dependencies]
+uniffi_build = { version = "0.27", features = [ "builtin-bindgen" ] }
 
 [dev-dependencies]
 tokio = "1.32.0"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+name = "zingo"
+
+[[bin]]
+# This can be whatever name makes sense for your project, 
+# but the rest of this tutorial assumes uniffi-bindgen.
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
