@@ -1,3 +1,6 @@
+use proptest::proptest;
+use tokio::runtime::Runtime;
+
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::PoolType::Transparent;
 use zcash_client_backend::ShieldedProtocol::Orchard;
@@ -11,9 +14,14 @@ use zingo_testutils::chain_generic_tests::fixtures::send_value_to_pool;
 
 use libtonode_environment::LibtonodeEnvironment;
 
-#[tokio::test]
-async fn libtonode_send_40_000_to_transparent() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(4))]
+    #[test]
+    fn libtonode_send_value_to_transparent(value in 0..900_000u64) {
+        Runtime::new().unwrap().block_on(async {
+            send_value_to_pool::<LibtonodeEnvironment>(value, Transparent).await;
+        });
+    }
 }
 #[tokio::test]
 async fn libtonode_send_40_000_to_sapling() {
