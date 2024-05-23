@@ -15,7 +15,10 @@ use thiserror::Error;
 use crate::data::proposal::ShieldProposal;
 use crate::data::proposal::TransferProposal;
 use crate::data::proposal::ZingoProposal;
+use crate::data::receivers::transaction_request_from_receivers;
+use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
+use crate::utils::conversion::zatoshis_from_u64;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
@@ -44,6 +47,9 @@ pub enum ProposeSendError {
     #[error("{0:?}")]
     /// failed to construct a transaction request
     TransactionRequestFailed(Zip321Error),
+    #[error("{0:?}")]
+    /// conversion failed
+    ConversionFailed(crate::utils::error::ConversionError),
 }
 
 /// Errors that can result from do_propose
@@ -130,18 +136,30 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    #[cfg(test)]
     pub async fn propose_send_all(
         &self,
-        _address: zcash_keys::address::Address,
-        _memo: Option<zcash_primitives::memo::MemoBytes>,
-    ) -> Result<crate::data::proposal::TransferProposal, String> {
-        use crate::mocks::ProposalBuilder;
+        address: zcash_keys::address::Address,
+        memo: Option<zcash_primitives::memo::MemoBytes>,
+    ) -> Result<TransferProposal, ProposeSendError> {
+        // proposal for total balance
+        let pool_balances = self.do_balance().await;
+        let total_balance = pool_balances.transparent_balance.unwrap_or(0)
+            + pool_balances.sapling_balance.unwrap_or(0)
+            + pool_balances.orchard_balance.unwrap_or(0);
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            address,
+            zatoshis_from_u64(total_balance).map_err(ProposeSendError::ConversionFailed)?,
+            memo,
+        )])
+        .map_err(ProposeSendError::TransactionRequestFailed)?;
+        let proposal = self.create_send_proposal(request).await;
 
-        let proposal = ProposalBuilder::default().build();
-        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
-            .await;
-        Ok(proposal)
+        // minus amount in insufficient funds error
+
+        // new proposal
+
+        // Ok(proposal)
+        todo!()
     }
 
     fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
