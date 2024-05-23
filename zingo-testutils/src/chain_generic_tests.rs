@@ -103,7 +103,7 @@ pub mod fixtures {
 
         println!("recipient ready");
 
-        let true_fee = with_assertions::propose_send_bump_sync_recipient(
+        let recorded_fee = with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &sender,
             &recipient,
@@ -111,7 +111,7 @@ pub mod fixtures {
         )
         .await;
 
-        assert_eq!(expected_fee, true_fee);
+        assert_eq!(expected_fee, recorded_fee);
     }
 
     /// sends back and forth several times, including sends to transparent
