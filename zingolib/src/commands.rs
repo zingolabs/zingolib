@@ -906,8 +906,6 @@ impl Command for SendCommand {
     }
 }
 
-/*
-// Unimplemented
 #[cfg(feature = "zip317")]
 struct SendAllCommand {}
 #[cfg(feature = "zip317")]
@@ -963,7 +961,7 @@ impl Command for SendAllCommand {
         })
     }
 }
-*/
+
 #[cfg(feature = "zip317")]
 struct QuickSendCommand {}
 #[cfg(feature = "zip317")]
