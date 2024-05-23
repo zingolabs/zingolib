@@ -150,9 +150,9 @@ fn test_get_some_txid_from_highest_wallet_block() {
     let txid_3 = TxId::from_bytes(txid_bytes_3);
     tms.transaction_records_by_id
         .insert_transaction_record(TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
-                BlockHeight::from_u32(3_200_000),
-            ),
+            zingo_status::confirmation_status::ConfirmationStatus::Pending(BlockHeight::from_u32(
+                3_200_000,
+            )),
             100,
             &txid_1,
         ));
