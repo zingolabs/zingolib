@@ -25,7 +25,7 @@ impl ConfirmationStatus {
         }
     }
 
-    /// A wrapper matching the Penging case.
+    /// A wrapper matching the Pending case.
     /// # Examples
     ///
     /// ```
