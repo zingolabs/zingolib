@@ -25,10 +25,14 @@ pub async fn propose_send_bump_sync<CC>(
         .await
         .unwrap();
 
-    environment.bump_chain().await;
-
+    // mempool check
     client.do_sync(false).await.unwrap();
+    assert_send_outputs_match_sender(client, &proposal, &txids).await;
 
+    // confirmed check
+    environment.bump_chain().await;
+    client.do_sync(false).await.unwrap();
+    assert_send_outputs_match_sender(client, &proposal, &txids).await;
     assert_send_outputs_match_sender(client, &proposal, &txids).await;
 }
 
@@ -61,6 +65,15 @@ pub async fn propose_send_bump_sync_recipient<CC>(
         .await
         .unwrap();
 
+    // mempool checks
+
+    sender.do_sync(false).await.unwrap();
+    assert_send_outputs_match_sender(sender, &proposal, &txids).await;
+
+    recipient.do_sync(false).await.unwrap();
+    assert_send_outputs_match_receiver(recipient, &proposal, &txids).await;
+
+    // confirmed checks
     environment.bump_chain().await;
 
     sender.do_sync(false).await.unwrap();
@@ -83,9 +96,12 @@ where
         .await
         .unwrap();
 
-    environment.bump_chain().await;
-
+    // mempool check
     client.do_sync(false).await.unwrap();
+    assert_send_outputs_match_sender(client, &proposal, &txids).await;
 
+    // confirmed check
+    environment.bump_chain().await;
+    client.do_sync(false).await.unwrap();
     assert_send_outputs_match_sender(client, &proposal, &txids).await;
 }
