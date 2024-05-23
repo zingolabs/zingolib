@@ -954,7 +954,7 @@ impl Command for SendAllCommand {
                     }
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    object! { "error" => e.to_string() }
                 }
             }
             .pretty(2)

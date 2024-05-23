@@ -19,6 +19,7 @@ use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
 use crate::utils::conversion::zatoshis_from_u64;
+use crate::wallet::transaction_records_by_id::trait_inputsource::InputSourceError;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
@@ -50,6 +51,9 @@ pub enum ProposeSendError {
     #[error("{0:?}")]
     /// conversion failed
     ConversionFailed(crate::utils::error::ConversionError),
+    #[error("proposal created with zero fee!")]
+    /// created a proposal with zero fee
+    ZeroFee,
 }
 
 /// Errors that can result from do_propose
@@ -147,19 +151,35 @@ impl LightClient {
             + pool_balances.sapling_balance.unwrap_or(0)
             + pool_balances.orchard_balance.unwrap_or(0);
         let request = transaction_request_from_receivers(vec![Receiver::new(
-            address,
+            address.clone(),
             zatoshis_from_u64(total_balance).map_err(ProposeSendError::ConversionFailed)?,
+            memo.clone(),
+        )])
+        .map_err(ProposeSendError::TransactionRequestFailed)?;
+        let failing_proposal = self.create_send_proposal(request).await;
+
+        // subtract shoftfall from total_balance to find spendable balance
+        let shoftfall = match failing_proposal {
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::DataSource(
+                    TxMapAndMaybeTreesTraitError::InputSource(InputSourceError::Shortfall(
+                        shortfall,
+                    )),
+                ),
+            )) => Ok(shortfall),
+            Err(e) => Err(e),
+            Ok(_) => Err(ProposeSendError::ZeroFee),
+        }?;
+        let spendable_balance = total_balance - shoftfall;
+
+        // new proposal with spendable balance
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            address,
+            zatoshis_from_u64(spendable_balance).map_err(ProposeSendError::ConversionFailed)?,
             memo,
         )])
         .map_err(ProposeSendError::TransactionRequestFailed)?;
-        let proposal = self.create_send_proposal(request).await;
-
-        // minus amount in insufficient funds error
-
-        // new proposal
-
-        // Ok(proposal)
-        todo!()
+        self.create_send_proposal(request).await
     }
 
     fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {

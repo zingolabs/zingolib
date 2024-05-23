@@ -17,6 +17,7 @@ use zingo_testutils::{
     get_base_address_macro, increase_height_and_wait_for_client, paths::get_cargo_manifest_dir,
     scenarios,
 };
+use zingolib::utils::conversion::address_from_str;
 
 use zingo_testvectors::{
     block_rewards,
@@ -4144,4 +4145,21 @@ mod basic_transactions {
 #[tokio::test]
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
+}
+
+#[tokio::test]
+async fn send_all() {
+    let (_regtest_manager, _cph, _faucet, recipient, _) =
+        scenarios::faucet_funded_recipient_default(100_000).await;
+    let proposal = recipient
+        .propose_send_all(
+            address_from_str(
+                &get_base_address_macro!(recipient, "unified"),
+                &recipient.config().chain,
+            )
+            .unwrap(),
+            None,
+        )
+        .await;
+    dbg!(&proposal);
 }
