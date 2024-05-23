@@ -133,23 +133,32 @@ pub mod fixtures {
             start + 25_000u64
         }
         for _ in 0..n {
-            with_assertions::propose_send_bump_sync_recipient(
-                &mut environment,
-                &primary,
-                &secondary,
-                vec![(Transparent, 100_000)],
-            )
-            .await;
+            assert_eq!(
+                with_assertions::propose_send_bump_sync_recipient(
+                    &mut environment,
+                    &primary,
+                    &secondary,
+                    vec![(Transparent, 100_000)],
+                )
+                .await,
+                MARGINAL_FEE.into_u64() * 3
+            );
 
-            with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await;
+            assert_eq!(
+                with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await,
+                MARGINAL_FEE.into_u64() * 3
+            );
 
-            with_assertions::propose_send_bump_sync_recipient(
-                &mut environment,
-                &secondary,
-                &primary,
-                vec![(Shielded(Orchard), 50_000)],
-            )
-            .await;
+            assert_eq!(
+                with_assertions::propose_send_bump_sync_recipient(
+                    &mut environment,
+                    &secondary,
+                    &primary,
+                    vec![(Shielded(Orchard), 50_000)],
+                )
+                .await,
+                MARGINAL_FEE.into_u64() * 2
+            );
 
             primary_fund = per_cycle_primary_debit(primary_fund);
             secondary_fund = per_cycle_secondary_credit(secondary_fund);
