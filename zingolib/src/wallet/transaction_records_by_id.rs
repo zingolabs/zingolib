@@ -208,9 +208,7 @@ impl TransactionRecordsById {
     }
 }
 
-/// This impl was extracted from:
-/// [`crate::wallet::transactions::recording::TxMapAndMaybeTrees`]
-impl crate::wallet::transaction_records_by_id::TransactionRecordsById {
+impl TransactionRecordsById {
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32(
