@@ -747,7 +747,7 @@ mod tests {
                             .to_owned(),
                     )
                     .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(first_sapling_nullifier.clone()))
+                    .nullifier(Some(first_sapling_nullifier))
                     .to_owned(),
             )
             .sapling_notes(
@@ -758,7 +758,7 @@ mod tests {
                             .to_owned(),
                     )
                     .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(second_sapling_nullifier.clone()))
+                    .nullifier(Some(second_sapling_nullifier))
                     .to_owned(),
             )
             .orchard_notes(
@@ -769,7 +769,7 @@ mod tests {
                             .to_owned(),
                     )
                     .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(first_orchard_nullifier.clone()))
+                    .nullifier(Some(first_orchard_nullifier))
                     .to_owned(),
             )
             .transparent_outputs(TransparentOutputBuilder::default())
@@ -792,7 +792,7 @@ mod tests {
                             .to_owned(),
                     )
                     .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(second_orchard_nullifier.clone()))
+                    .nullifier(Some(second_orchard_nullifier))
                     .to_owned(),
             )
             .transparent_outputs(TransparentOutputBuilder::default())
@@ -871,7 +871,7 @@ mod tests {
                                 .to_owned(),
                         )
                         .spent(Some((sent_txid, 15)))
-                        .nullifier(Some(sapling_nullifier.clone()))
+                        .nullifier(Some(sapling_nullifier))
                         .to_owned(),
                 )
                 .build();
