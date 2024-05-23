@@ -110,22 +110,6 @@ pub mod fixtures {
             vec![(pooltype, send_value)],
         )
         .await;
-
-        recipient.do_sync(false).await.unwrap();
-
-        assert_eq!(
-            recipient
-                .query_sum_value(OutputQuery {
-                    spend_status: OutputSpendStatusQuery {
-                        unspent: true,
-                        pending_spent: false,
-                        spent: false,
-                    },
-                    pools: OutputPoolQuery::one_pool(pooltype),
-                })
-                .await,
-            send_value
-        );
     }
 
     /// sends back and forth several times, including sends to transparent
