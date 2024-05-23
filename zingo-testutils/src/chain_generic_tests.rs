@@ -98,8 +98,6 @@ pub mod fixtures {
             .await;
 
         println!("client is ready to send");
-        dbg!(sender.query_sum_value(OutputQuery::any()).await);
-        dbg!(send_value);
 
         let recipient = environment.create_client().await;
         let recipient_address = get_base_address(&recipient, pooltype).await;
@@ -165,12 +163,6 @@ pub mod fixtures {
                 from_inputs::propose(&primary, vec![(secondary_address.as_str(), 100_000, None)])
                     .await
                     .unwrap();
-            dbg!(_primary_proposal
-                .steps()
-                .first()
-                .balance()
-                .fee_required()
-                .into_u64());
             let _primary_one_txid = primary
                 .complete_and_broadcast_stored_proposal()
                 .await
@@ -180,12 +172,6 @@ pub mod fixtures {
 
             secondary.do_sync(false).await.unwrap();
             let _shield_proposal = secondary.propose_shield().await.unwrap();
-            dbg!(_shield_proposal
-                .steps()
-                .first()
-                .balance()
-                .fee_required()
-                .into_u64());
             let _shield_one_txid = secondary
                 .complete_and_broadcast_stored_proposal()
                 .await
@@ -198,12 +184,6 @@ pub mod fixtures {
                 from_inputs::propose(&secondary, vec![(primary_address.as_str(), 50_000, None)])
                     .await
                     .unwrap();
-            dbg!(_sendback_proposal
-                .steps()
-                .first()
-                .balance()
-                .fee_required()
-                .into_u64());
             let _sendback_one_txid = secondary
                 .complete_and_broadcast_stored_proposal()
                 .await
@@ -323,25 +303,16 @@ pub mod fixtures {
         };
         let mut environment = CC::setup().await;
 
-        dbg!("chain set up, funding client now");
-
         let sender = environment
             .fund_client_orchard(send_value + multiple * (MARGINAL_FEE.into_u64()))
             .await;
 
-        dbg!("client is ready to send");
-        dbg!(sender.query_sum_value(OutputQuery::any()).await);
-        dbg!(send_value);
-
         let recipient = environment.create_client().await;
         let recipient_address = get_base_address(&recipient, pooltype).await;
 
-        dbg!("recipient ready");
-        dbg!(recipient.query_sum_value(OutputQuery::any()).await);
-
         from_inputs::quick_send(
             &sender,
-            vec![(dbg!(recipient_address).as_str(), send_value, None)],
+            vec![(recipient_address.as_str(), send_value, None)],
         )
         .await
         .unwrap();
