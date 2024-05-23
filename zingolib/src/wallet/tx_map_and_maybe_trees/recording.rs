@@ -154,7 +154,7 @@ impl super::TxMapAndMaybeTrees {
             } else {
                 ZingoLibError::NoSuchTxId(spending_txid).handle()?
             }
-        } else if let Some(height) = status.get_broadcast_height() {
+        } else if let Some(height) = status.get_pending_height() {
             // Mark the pending_spent. Confirmed spends are already handled in update_notes
             if let Some(transaction_spent_from) =
                 self.transaction_records_by_id.get_mut(&source_txid)
