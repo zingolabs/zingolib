@@ -7,8 +7,9 @@ use crate::wallet::data::OutgoingTxData;
 /// Errors associated with calculating transaction fees
 #[derive(Debug)]
 pub enum FeeError {
-    /// Notes spent in a transaction not found in the wallet
+    /// Sapling notes spent in a transaction not found in the wallet
     SaplingSpendNotFound(sapling_crypto::Nullifier),
+    /// Orchard notes spent in a transaction not found in the wallet
     OrchardSpendNotFound(orchard::note::Nullifier),
     /// Attempted to calculate a fee for a transaction received and not created by the wallet's spend capability
     ReceivedTransaction,
