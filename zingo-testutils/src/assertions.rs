@@ -9,7 +9,7 @@ use zingolib::lightclient::LightClient;
 /// assert send outputs match client
 /// currently only checks if the fee matches
 /// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
-pub async fn assert_send_outputs_match_client<NoteId>(
+pub async fn assert_send_outputs_match_sender<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,

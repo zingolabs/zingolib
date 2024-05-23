@@ -4,9 +4,8 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::assert_send_outputs_match_client,
+    assertions::assert_send_outputs_match_sender,
     chain_generic_tests::conduct_chain::ConductChain,
-    check_client_balances,
     lightclient::{from_inputs, get_base_address},
 };
 
@@ -30,7 +29,7 @@ pub async fn propose_send_bump_sync<CC>(
 
     client.do_sync(false).await.unwrap();
 
-    assert_send_outputs_match_client(client, &proposal, &txids).await;
+    assert_send_outputs_match_sender(client, &proposal, &txids).await;
 }
 
 /// this version assumes a single recipient and measures that the recipient also recieved the expected balances
@@ -65,7 +64,7 @@ pub async fn propose_send_bump_sync_receiver<CC>(
     environment.bump_chain().await;
 
     sender.do_sync(false).await.unwrap();
-    assert_send_outputs_match_client(sender, &proposal, &txids).await;
+    assert_send_outputs_match_sender(sender, &proposal, &txids).await;
 
     recipient.do_sync(false).await.unwrap();
 }
@@ -87,5 +86,5 @@ where
 
     client.do_sync(false).await.unwrap();
 
-    assert_send_outputs_match_client(client, &proposal, &txids).await;
+    assert_send_outputs_match_sender(client, &proposal, &txids).await;
 }
