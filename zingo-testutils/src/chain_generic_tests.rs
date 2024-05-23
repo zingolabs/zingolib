@@ -161,7 +161,7 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let mut primary_fund = 1_000_000 + (n + 6) * MARGINAL_FEE.into_u64();
+        let mut primary_fund = 1_000_000;
         let mut secondary_fund = 0u64;
         let primary = environment.fund_client_orchard(primary_fund).await;
         let primary_address = get_base_address(&primary, Shielded(Orchard)).await;
