@@ -534,7 +534,6 @@ mod tests {
             .randomize_txid()
             .status(Confirmed(15.into()))
             .transparent_outputs(TransparentOutputBuilder::default())
-            .clone()
             .build();
         let spending_txid = transaction_record_later.txid;
 
@@ -563,7 +562,6 @@ mod tests {
             )
             .orchard_notes(OrchardNoteBuilder::default())
             .set_output_indexes()
-            .clone()
             .build();
 
         let txid_containing_valid_note_with_invalid_spends = transaction_record_early.txid;

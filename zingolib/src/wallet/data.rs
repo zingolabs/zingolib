@@ -664,3 +664,57 @@ fn read_write_empty_sapling_tree() {
         read_commitment_tree(&mut buffer.as_slice()).unwrap()
     )
 }
+
+#[cfg(test)]
+pub(crate) mod mocks {
+    use zcash_primitives::memo::Memo;
+
+    use crate::mocks::build_method;
+
+    use super::OutgoingTxData;
+
+    pub(crate) struct OutgoingTxDataBuilder {
+        to_address: Option<String>,
+        value: Option<u64>,
+        memo: Option<Memo>,
+        recipient_ua: Option<Option<String>>,
+    }
+
+    impl OutgoingTxDataBuilder {
+        pub(crate) fn new() -> Self {
+            Self {
+                to_address: None,
+                value: None,
+                memo: None,
+                recipient_ua: None,
+            }
+        }
+
+        // Methods to set each field
+        build_method!(to_address, String);
+        build_method!(value, u64);
+        build_method!(memo, Memo);
+        build_method!(recipient_ua, Option<String>);
+
+        pub(crate) fn build(&self) -> OutgoingTxData {
+            OutgoingTxData {
+                to_address: self.to_address.clone().unwrap(),
+                value: self.value.unwrap(),
+                memo: self.memo.clone().unwrap(),
+                recipient_ua: self.recipient_ua.clone().unwrap(),
+            }
+        }
+    }
+
+    impl Default for OutgoingTxDataBuilder {
+        fn default() -> Self {
+            let mut builder = Self::new();
+            builder
+                .to_address("default_address".to_string())
+                .value(50_000)
+                .memo(Memo::default())
+                .recipient_ua(None);
+            builder
+        }
+    }
+}
