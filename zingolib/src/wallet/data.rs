@@ -276,7 +276,7 @@ pub(crate) fn write_sapling_rseed<W: Write>(
 }
 
 /// TODO: Add Doc Comment Here!
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OutgoingTxData {
     /// TODO: Add Doc Comment Here!
     pub to_address: String,

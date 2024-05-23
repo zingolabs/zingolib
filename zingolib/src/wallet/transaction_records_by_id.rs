@@ -217,8 +217,13 @@ impl TransactionRecordsById {
     ///
     /// Returns [`crate::wallet::error::FeeError::ReceivedTransaction`] if no spends or outgoing_tx_data were found
     /// in the wallet for this transaction, indicating this transaction was not created by this spend capability.
-    /// Returns [`crate::wallet::error::FeeError::SpendNotFound`] if any shielded spends in the transaction are not
-    /// found in the wallet, indicating that all shielded spends have not yet been synced. Also returns this error
+    /// Returns
+    /// [`crate::wallet::error::FeeError::SaplingSpendNotFound`]
+    /// OR
+    /// [`crate::wallet::error::FeeError::OrchardSpendNotFound`]
+    /// if any shielded spends in the transaction are not
+    /// found in the wallet, indicating that all shielded spends have not yet been synced.
+    /// Also returns this error
     /// if the transaction record contains outgoing_tx_data but no spends are found.
     /// If a transparent spend has not yet been synced, the fee will be incorrect and return
     /// [`crate::wallet::error::FeeError::FeeUnderflow`] if an underflow occurs.
@@ -240,7 +245,7 @@ impl TransactionRecordsById {
                             false
                         }
                     })
-                    .ok_or(FeeError::SpendNotFound)
+                    .ok_or(FeeError::SaplingSpendNotFound(*nullifier))
             })
             .collect::<Result<Vec<&SaplingNote>, FeeError>>()?;
         let sapling_spend_value: u64 = sapling_spends.iter().map(|&note| note.value()).sum();
@@ -258,7 +263,7 @@ impl TransactionRecordsById {
                             false
                         }
                     })
-                    .ok_or(FeeError::SpendNotFound)
+                    .ok_or(FeeError::OrchardSpendNotFound(*nullifier))
             })
             .collect::<Result<Vec<&OrchardNote>, FeeError>>()?;
         let orchard_spend_value: u64 = orchard_spends.iter().map(|&note| note.value()).sum();
@@ -271,7 +276,13 @@ impl TransactionRecordsById {
             if transaction_record.value_outgoing() == 0 {
                 return Err(FeeError::ReceivedTransaction);
             } else {
-                return Err(FeeError::SpendNotFound);
+                return Err(FeeError::OutgoingWithoutSpends(
+                    transaction_record
+                        .outgoing_tx_data
+                        .iter()
+                        .cloned()
+                        .collect(),
+                ));
             }
         }
 
@@ -864,7 +875,7 @@ mod tests {
                 .orchard_notes(OrchardNoteBuilder::default())
                 .build();
             let sent_txid = sent_transaction_record.txid;
-            let sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
+            let sapling_nullifier = dbg!(sent_transaction_record.spent_sapling_nullifiers[0]);
 
             let received_transaction_record = TransactionRecordBuilder::default()
                 .randomize_txid()
@@ -888,7 +899,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::SpendNotFound)));
+            assert!(matches!(fee, Err(FeeError::OutgoingWithoutSpends(_))));
         }
         #[test]
         fn received_transaction() {
@@ -923,7 +934,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::SpendNotFound)));
+            assert!(matches!(fee, Err(FeeError::OutgoingWithoutSpends(_))));
         }
         #[test]
         fn transparent_spends_not_fully_synced() {
