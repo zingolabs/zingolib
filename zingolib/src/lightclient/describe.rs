@@ -248,25 +248,26 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
-
-        for (txid, transaction_md) in self
+        let transaction_records_by_id = &self
             .wallet
             .transaction_context
             .transaction_metadata_set
             .read()
             .await
-            .transaction_records_by_id
-            .iter()
-        {
-            LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
+            .transaction_records_by_id;
 
-            if let Ok(tx_fee) = transaction_md.get_transaction_fee() {
-                if transaction_md.is_outgoing_transaction() {
+        for (txid, transaction_record) in transaction_records_by_id.iter() {
+            LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_record);
+
+            if let Ok(tx_fee) =
+                transaction_records_by_id.calculate_transaction_fee(transaction_record)
+            {
+                if transaction_record.is_outgoing_transaction() {
                     let (block_height, datetime, price, pending) = (
-                        transaction_md.status.get_height(),
-                        transaction_md.datetime,
-                        transaction_md.price,
-                        !transaction_md.status.is_confirmed(),
+                        transaction_record.status.get_height(),
+                        transaction_record.datetime,
+                        transaction_record.price,
+                        !transaction_record.status.is_confirmed(),
                     );
                     summaries.push(ValueTransfer {
                         block_height,

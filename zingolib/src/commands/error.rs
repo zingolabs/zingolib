@@ -55,3 +55,5 @@ impl fmt::Display for CommandError {
         }
     }
 }
+
+impl std::error::Error for CommandError {}
