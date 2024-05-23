@@ -215,12 +215,13 @@ impl TransactionRecordsById {
     ///
     /// # Error
     ///
-    /// Returns [`crate::wallet::error::FeeError::ReceivedTransaction`] if no spends were found in the wallet for this transaction, indicating
-    /// this transaction was not created by this spend capability.
-    /// Returns [`crate::wallet::error::FeeError::SpendNotFound`] if any shielded spends in the transaction are not found in the wallet
-    /// indicating that all shielded spends have not yet been synced.
-    /// If a transparent spend has not yet been synced, the fee will be incorrect and return [`crate::wallet::error::FeeError::FeeUnderflow`]
-    /// if an underflow occurs.
+    /// Returns [`crate::wallet::error::FeeError::ReceivedTransaction`] if no spends or outgoing_tx_data were found
+    /// in the wallet for this transaction, indicating this transaction was not created by this spend capability.
+    /// Returns [`crate::wallet::error::FeeError::SpendNotFound`] if any shielded spends in the transaction are not
+    /// found in the wallet, indicating that all shielded spends have not yet been synced. Also returns this error
+    /// if the transaction record contains outgoing_tx_data but no spends are found.
+    /// If a transparent spend has not yet been synced, the fee will be incorrect and return
+    /// [`crate::wallet::error::FeeError::FeeUnderflow`] if an underflow occurs.
     /// The tracking of transparent spends will be improved on the next internal wallet version.
     pub fn calculate_transaction_fee(
         &self,
@@ -243,6 +244,7 @@ impl TransactionRecordsById {
             })
             .collect::<Result<Vec<&SaplingNote>, FeeError>>()?;
         let sapling_spend_value: u64 = sapling_spends.iter().map(|&note| note.value()).sum();
+
         let orchard_spends = transaction_record
             .spent_orchard_nullifiers()
             .iter()
@@ -260,15 +262,16 @@ impl TransactionRecordsById {
             })
             .collect::<Result<Vec<&OrchardNote>, FeeError>>()?;
         let orchard_spend_value: u64 = orchard_spends.iter().map(|&note| note.value()).sum();
+
         let total_spend_value = transaction_record.total_transparent_value_spent
             + sapling_spend_value
             + orchard_spend_value;
 
         if total_spend_value == 0 {
-            if transaction_record.value_outgoing() != 0 {
-                return Err(FeeError::SpendNotFound);
-            } else {
+            if transaction_record.value_outgoing() == 0 {
                 return Err(FeeError::ReceivedTransaction);
+            } else {
+                return Err(FeeError::SpendNotFound);
             }
         }
 
@@ -287,6 +290,7 @@ impl TransactionRecordsById {
             .iter()
             .map(|note| note.value())
             .sum();
+
         let total_output_value = transaction_record.value_outgoing()
             + transparent_output_value
             + sapling_output_value
@@ -298,9 +302,7 @@ impl TransactionRecordsById {
             Err(FeeError::FeeUnderflow)
         }
     }
-}
 
-impl TransactionRecordsById {
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32(

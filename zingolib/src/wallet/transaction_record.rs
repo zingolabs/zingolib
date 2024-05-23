@@ -111,6 +111,31 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// Get transparent outputs
+    pub fn transparent_outputs(&self) -> &[TransparentOutput] {
+        &self.transparent_outputs
+    }
+
+    /// Get sapling notes
+    pub fn sapling_notes(&self) -> &[SaplingNote] {
+        &self.sapling_notes
+    }
+
+    /// Get orchard notes
+    pub fn orchard_notes(&self) -> &[OrchardNote] {
+        &self.orchard_notes
+    }
+
+    /// Get sapling nullifiers
+    pub fn spent_sapling_nullifiers(&self) -> &[sapling_crypto::Nullifier] {
+        &self.spent_sapling_nullifiers
+    }
+
+    /// Get orchard nullifiers
+    pub fn spent_orchard_nullifiers(&self) -> &[orchard::note::Nullifier] {
+        &self.spent_orchard_nullifiers
+    }
+
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
     pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
         let mut set = vec![];
@@ -353,31 +378,6 @@ impl TransactionRecord {
                 )
             })
         })
-    }
-
-    /// Returns a ref slice of transparent outputs in the transaction
-    pub fn transparent_outputs(&self) -> &[TransparentOutput] {
-        &self.transparent_outputs
-    }
-
-    /// Returns a ref slice of sapling notes in the transaction
-    pub fn sapling_notes(&self) -> &[SaplingNote] {
-        &self.sapling_notes
-    }
-
-    /// Returns a ref slice of orchard notes in the transaction
-    pub fn orchard_notes(&self) -> &[OrchardNote] {
-        &self.orchard_notes
-    }
-
-    /// Get sapling nullifiers
-    pub fn spent_sapling_nullifiers(&self) -> &[sapling_crypto::Nullifier] {
-        &self.spent_sapling_nullifiers
-    }
-
-    /// Get orchard nullifiers
-    pub fn spent_orchard_nullifiers(&self) -> &[orchard::note::Nullifier] {
-        &self.spent_orchard_nullifiers
     }
 }
 // read/write
