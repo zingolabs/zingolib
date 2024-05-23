@@ -899,7 +899,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::OutgoingWithoutSpends(_))));
+            assert!(matches!(fee, Err(FeeError::OrchardSpendNotFound(_))));
         }
         #[test]
         fn received_transaction() {
