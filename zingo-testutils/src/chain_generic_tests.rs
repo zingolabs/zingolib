@@ -265,7 +265,6 @@ pub mod fixtures {
 
         environment.bump_chain().await;
         primary.do_sync(false).await.unwrap();
-        dbg!(primary.do_balance().await);
         secondary.do_sync(false).await.unwrap();
 
         check_client_balances!(secondary, o: 100_000 s: 0 t: 0);
