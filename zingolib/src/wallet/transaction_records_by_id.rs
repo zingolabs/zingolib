@@ -277,11 +277,7 @@ impl TransactionRecordsById {
                 return Err(FeeError::ReceivedTransaction);
             } else {
                 return Err(FeeError::OutgoingWithoutSpends(
-                    transaction_record
-                        .outgoing_tx_data
-                        .iter()
-                        .cloned()
-                        .collect(),
+                    transaction_record.outgoing_tx_data.to_vec(),
                 ));
             }
         }
