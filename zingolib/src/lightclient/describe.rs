@@ -262,23 +262,21 @@ impl LightClient {
             if let Ok(tx_fee) =
                 transaction_records_by_id.calculate_transaction_fee(transaction_record)
             {
-                if transaction_record.is_outgoing_transaction() {
-                    let (block_height, datetime, price, pending) = (
-                        transaction_record.status.get_height(),
-                        transaction_record.datetime,
-                        transaction_record.price,
-                        !transaction_record.status.is_confirmed(),
-                    );
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Fee { amount: tx_fee },
-                        memos: vec![],
-                        price,
-                        txid: *txid,
-                        pending,
-                    });
-                }
+                let (block_height, datetime, price, pending) = (
+                    transaction_record.status.get_height(),
+                    transaction_record.datetime,
+                    transaction_record.price,
+                    !transaction_record.status.is_confirmed(),
+                );
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Fee { amount: tx_fee },
+                    memos: vec![],
+                    price,
+                    txid: *txid,
+                    pending,
+                });
             };
         }
         summaries.sort_by_key(|summary| summary.block_height);
