@@ -24,14 +24,19 @@ use thiserror::Error;
 use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::transaction::components::amount::BalanceError;
 
+/// TODO: Add Doc Comment Here!
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
+    /// TODO: Add Doc Comment Here!
     #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
+    /// TODO: Add Doc Comment Here!
     #[error(
         "An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}"
     )]
+    /// TODO: Add Doc Comment Here!
     OutputTooBig((u64, BalanceError)),
+    /// TODO: Add Doc Comment Here!
     #[error("Cannot send. Fund shortfall: {0:?}")]
     Shortfall(u64),
 }
@@ -440,7 +445,7 @@ mod tests {
             let transaction_record = TransactionRecordBuilder::default()
                 .sapling_notes(SaplingNoteBuilder::default().value(20_000).clone())
                 .orchard_notes(OrchardNoteBuilder::default().value(20_000).clone())
-                .set_output_indexes().clone()
+                .set_output_indexes()
                 .build();
             transaction_records_by_id.insert_transaction_record(transaction_record);
 

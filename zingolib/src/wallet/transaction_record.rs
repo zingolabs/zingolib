@@ -111,6 +111,31 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// Get transparent outputs
+    pub fn transparent_outputs(&self) -> &[TransparentOutput] {
+        &self.transparent_outputs
+    }
+
+    /// Get sapling notes
+    pub fn sapling_notes(&self) -> &[SaplingNote] {
+        &self.sapling_notes
+    }
+
+    /// Get orchard notes
+    pub fn orchard_notes(&self) -> &[OrchardNote] {
+        &self.orchard_notes
+    }
+
+    /// Get sapling nullifiers
+    pub fn spent_sapling_nullifiers(&self) -> &[sapling_crypto::Nullifier] {
+        &self.spent_sapling_nullifiers
+    }
+
+    /// Get orchard nullifiers
+    pub fn spent_orchard_nullifiers(&self) -> &[orchard::note::Nullifier] {
+        &self.spent_orchard_nullifiers
+    }
+
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
     pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
         let mut set = vec![];
@@ -202,6 +227,9 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[deprecated(
+        note = "replaced by `calculate_transaction_fee` method for [`crate::wallet::transaction_records_by_id::TransactionRecordsById`]"
+    )]
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
         let outputted = self.value_outgoing() + self.total_change_returned();
         if self.total_value_spent() >= outputted {
@@ -275,6 +303,7 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "unused function with misleading name")]
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
@@ -515,24 +544,34 @@ pub mod mocks {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
-        mocks::{build_method, build_method_push, build_push_list, random_txid},
-        wallet::notes::{
-            orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder,
+        mocks::{
+            build_method, build_method_push, build_push_list,
+            nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
+            random_txid,
+        },
+        wallet::{
+            data::mocks::OutgoingTxDataBuilder,
+            notes::{
+                orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+                transparent::mocks::TransparentOutputBuilder,
+            },
         },
     };
 
     use super::TransactionRecord;
 
     /// to create a mock TransactionRecord
-    #[derive(Clone)]
     pub(crate) struct TransactionRecordBuilder {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
+        spent_sapling_nullifiers: Vec<SaplingNullifierBuilder>,
+        spent_orchard_nullifiers: Vec<OrchardNullifierBuilder>,
         transparent_outputs: Vec<TransparentOutputBuilder>,
         sapling_notes: Vec<SaplingNoteBuilder>,
         orchard_notes: Vec<OrchardNoteBuilder>,
+        total_transparent_value_spent: Option<u64>,
+        outgoing_tx_data: Vec<OutgoingTxDataBuilder>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransactionRecordBuilder {
@@ -542,18 +581,26 @@ pub mod mocks {
                 status: None,
                 datetime: None,
                 txid: None,
+                spent_sapling_nullifiers: vec![],
+                spent_orchard_nullifiers: vec![],
                 transparent_outputs: vec![],
                 sapling_notes: vec![],
                 orchard_notes: vec![],
+                total_transparent_value_spent: None,
+                outgoing_tx_data: vec![],
             }
         }
         // Methods to set each field
         build_method!(status, ConfirmationStatus);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
+        build_method_push!(spent_sapling_nullifiers, SaplingNullifierBuilder);
+        build_method_push!(spent_orchard_nullifiers, OrchardNullifierBuilder);
         build_method_push!(transparent_outputs, TransparentOutputBuilder);
         build_method_push!(sapling_notes, SaplingNoteBuilder);
         build_method_push!(orchard_notes, OrchardNoteBuilder);
+        build_method!(total_transparent_value_spent, u64);
+        build_method_push!(outgoing_tx_data, OutgoingTxDataBuilder);
 
         /// Use the mockery of random_txid to get one?
         pub fn randomize_txid(&mut self) -> &mut Self {
@@ -575,15 +622,20 @@ pub mod mocks {
         }
 
         /// builds a mock TransactionRecord after all pieces are supplied
-        pub fn build(self) -> TransactionRecord {
+        pub fn build(&self) -> TransactionRecord {
             let mut transaction_record = TransactionRecord::new(
                 self.status.unwrap(),
                 self.datetime.unwrap(),
                 &self.txid.unwrap(),
             );
+            build_push_list!(spent_sapling_nullifiers, self, transaction_record);
+            build_push_list!(spent_orchard_nullifiers, self, transaction_record);
             build_push_list!(transparent_outputs, self, transaction_record);
             build_push_list!(sapling_notes, self, transaction_record);
             build_push_list!(orchard_notes, self, transaction_record);
+            build_push_list!(outgoing_tx_data, self, transaction_record);
+            transaction_record.total_transparent_value_spent =
+                self.total_transparent_value_spent.unwrap();
             transaction_record
         }
     }
@@ -598,9 +650,13 @@ pub mod mocks {
                 ),
                 datetime: Some(1705077003),
                 txid: Some(crate::mocks::default_txid()),
+                spent_sapling_nullifiers: vec![],
+                spent_orchard_nullifiers: vec![],
                 transparent_outputs: vec![],
                 sapling_notes: vec![],
                 orchard_notes: vec![],
+                total_transparent_value_spent: Some(0),
+                outgoing_tx_data: vec![],
             }
         }
     }
@@ -667,7 +723,6 @@ pub mod mocks {
             )
             .randomize_txid()
             .set_output_indexes()
-            .clone()
             .build()
     }
 
@@ -698,7 +753,6 @@ mod tests {
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
         assert_eq!(new.get_transparent_value_spent(), 0);
-        assert_eq!(new.get_transaction_fee().unwrap(), 0);
         assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
@@ -721,7 +775,6 @@ mod tests {
         // A single transparent note makes is_incoming_transaction true.
         let transaction_record = TransactionRecordBuilder::default()
             .transparent_outputs(TransparentOutputBuilder::default())
-            .clone()
             .build();
         assert!(transaction_record.is_incoming_transaction());
     }
