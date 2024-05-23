@@ -408,7 +408,6 @@ mod tests {
                     TransactionRecordBuilder::default()
                         .transparent_outputs(TransparentOutputBuilder::default())
                         .status(Confirmed(1000000.into()))
-                        .clone()
                         .build(),
                 );
             let spend = Some((default_txid(), 112358));
@@ -419,7 +418,6 @@ mod tests {
                         .sapling_notes(SaplingNoteBuilder::default().spent(spend).clone())
                         .status(Confirmed(2000000.into()))
                         .randomize_txid()
-                        .clone()
                         .build(),
                 );
             transaction_records_and_maybe_trees
@@ -429,7 +427,6 @@ mod tests {
                         .orchard_notes(OrchardNoteBuilder::default().pending_spent(spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
-                        .clone()
                         .build(),
                 );
 
@@ -441,7 +438,6 @@ mod tests {
                         .sapling_notes(SaplingNoteBuilder::default())
                         .status(Confirmed(sapling_height.into()))
                         .randomize_txid()
-                        .clone()
                         .build(),
                 );
             transaction_records_and_maybe_trees
@@ -451,7 +447,6 @@ mod tests {
                         .orchard_notes(OrchardNoteBuilder::default())
                         .status(Confirmed(orchard_height.into()))
                         .randomize_txid()
-                        .clone()
                         .build(),
                 );
 
@@ -463,7 +458,6 @@ mod tests {
             let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
 
             let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into()))
-            .clone()
             .build();
 
             let txid = transaction_record.txid;
