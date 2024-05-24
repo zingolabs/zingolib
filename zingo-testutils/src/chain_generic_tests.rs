@@ -122,21 +122,21 @@ pub mod fixtures {
         sender.do_sync(false).await.unwrap();
         let txid = one_txid.first();
 
-        let read_lock = sender
+        let transaction_records = &sender
             .wallet
             .transaction_context
             .transaction_metadata_set
             .read()
-            .await;
+            .await
+            .transaction_records_by_id;
 
-        let record = read_lock
-            .transaction_records_by_id
+        let record = transaction_records
             .get(txid)
             .expect("sender must recognize txid");
 
         let step = proposal.steps().first();
 
-        assert_record_matches_step(record, step).await;
+        assert_record_matches_step(transaction_records, record, step).await;
 
         recipient.do_sync(false).await.unwrap();
 

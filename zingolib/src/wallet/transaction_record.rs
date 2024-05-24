@@ -111,6 +111,31 @@ impl TransactionRecord {
 }
 //get
 impl TransactionRecord {
+    /// Get transparent outputs
+    pub fn transparent_outputs(&self) -> &[TransparentOutput] {
+        &self.transparent_outputs
+    }
+
+    /// Get sapling notes
+    pub fn sapling_notes(&self) -> &[SaplingNote] {
+        &self.sapling_notes
+    }
+
+    /// Get orchard notes
+    pub fn orchard_notes(&self) -> &[OrchardNote] {
+        &self.orchard_notes
+    }
+
+    /// Get sapling nullifiers
+    pub fn spent_sapling_nullifiers(&self) -> &[sapling_crypto::Nullifier] {
+        &self.spent_sapling_nullifiers
+    }
+
+    /// Get orchard nullifiers
+    pub fn spent_orchard_nullifiers(&self) -> &[orchard::note::Nullifier] {
+        &self.spent_orchard_nullifiers
+    }
+
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
     pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
         let mut set = vec![];
@@ -202,6 +227,9 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[deprecated(
+        note = "replaced by `calculate_transaction_fee` method for [`crate::wallet::transaction_records_by_id::TransactionRecordsById`]"
+    )]
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
         let outputted = self.value_outgoing() + self.total_change_returned();
         if self.total_value_spent() >= outputted {
@@ -275,6 +303,7 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "unused function with misleading name")]
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
@@ -724,7 +753,6 @@ mod tests {
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
         assert_eq!(new.get_transparent_value_spent(), 0);
-        assert_eq!(new.get_transaction_fee().unwrap(), 0);
         assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
