@@ -77,8 +77,6 @@ pub mod fixtures {
     use crate::lightclient::get_base_address;
     use crate::lightclient::with_assertions;
 
-    const X: u64 = 1;
-
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
     where
@@ -90,9 +88,23 @@ pub mod fixtures {
 
         let expected_fee = MARGINAL_FEE.into_u64()
             * match pooltype {
-                Transparent => X,
-                Shielded(Sapling) => X,
-                Shielded(Orchard) => X,
+                // contribution_transparent = 1
+                //  1 transfer
+                // contribution_orchard = 2
+                //  1 input
+                //  1 dummy output
+                Transparent => 3,
+                // contribution_sapling = 2
+                //  1 output
+                //  1 dummy input
+                // contribution_orchard = 2
+                //  1 input
+                //  1 dummy output
+                Shielded(Sapling) => 4,
+                // contribution_orchard = 2
+                //  1 input
+                //  1 output
+                Shielded(Orchard) => 2,
             };
 
         let sender = environment
@@ -136,12 +148,12 @@ pub mod fixtures {
                     vec![(Transparent, 100_000)],
                 )
                 .await,
-                MARGINAL_FEE.into_u64() * X
+                MARGINAL_FEE.into_u64() * 3
             );
 
             assert_eq!(
                 with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await,
-                MARGINAL_FEE.into_u64() * X
+                MARGINAL_FEE.into_u64() * 3
             );
 
             assert_eq!(
@@ -152,7 +164,7 @@ pub mod fixtures {
                     vec![(Shielded(Orchard), 50_000)],
                 )
                 .await,
-                MARGINAL_FEE.into_u64() * X
+                MARGINAL_FEE.into_u64() * 2
             );
         }
     }
