@@ -1,8 +1,12 @@
 //! The types of transaction Proposal that Zingo! uses.
+
 use std::convert::Infallible;
 
 use zcash_client_backend::proposal::Proposal;
-use zcash_primitives::transaction::fees::zip317::FeeRule;
+use zcash_primitives::transaction::{
+    components::amount::{BalanceError, NonNegativeAmount},
+    fees::zip317::FeeRule,
+};
 
 /// A proposed send to addresses.
 /// Identifies the notes to spend by txid, pool, and output_index.
@@ -24,4 +28,40 @@ pub(crate) enum ZingoProposal {
     /// to send to the proposing capability's receiver for its fanciest shielded pool
     #[allow(dead_code)] // TOdo construct it
     Shield(ShieldProposal),
+}
+
+/// total sum of all transaction request payment amounts in a proposal
+pub fn total_payment_amount(
+    proposal: &TransferProposal,
+) -> Result<NonNegativeAmount, BalanceError> {
+    proposal
+        .steps()
+        .iter()
+        .map(|step| step.transaction_request())
+        .fold(Ok(NonNegativeAmount::ZERO), |acc, tr| {
+            (acc? + tr.total()?).ok_or(BalanceError::Overflow)
+        })
+}
+
+/// total sum of all fees in a proposal
+pub fn total_fee(proposal: &TransferProposal) -> Result<NonNegativeAmount, BalanceError> {
+    proposal
+        .steps()
+        .iter()
+        .map(|step| step.balance().fee_required())
+        .fold(Ok(NonNegativeAmount::ZERO), |acc, fee| {
+            (acc? + fee).ok_or(BalanceError::Overflow)
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::mocks;
+
+    #[test]
+    fn total_payment_amount() {
+        let proposal = mocks::proposal::ProposalBuilder::default().build();
+    }
+    #[test]
+    fn total_fee() {}
 }
