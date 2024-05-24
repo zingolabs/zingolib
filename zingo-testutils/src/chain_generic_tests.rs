@@ -88,8 +88,17 @@ pub mod fixtures {
 
         let expected_fee = MARGINAL_FEE.into_u64()
             * match pooltype {
+                // 1 orchard input
+                // 1 transparent output
+                // 1 DUMMY orchard output
                 Transparent => 3,
-                Shielded(Sapling) => 4, // but according to my reading of https://zips.z.cash/zip-0317, this should be 3
+                // 1 orchard input
+                // 1 sapling output
+                // 1 DUMMY sapling output
+                // 1 DUMMY orchard output
+                Shielded(Sapling) => 4,
+                // 1 orchard input
+                // 1 orchard output
                 Shielded(Orchard) => 2,
             };
 
