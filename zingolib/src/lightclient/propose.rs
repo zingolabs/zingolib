@@ -156,7 +156,7 @@ impl LightClient {
             memo.clone(),
         )])
         .map_err(ProposeSendError::TransactionRequestFailed)?;
-        let failing_proposal = self.create_send_proposal(request).await;
+        let failing_proposal = dbg!(self.create_send_proposal(request).await);
 
         // subtract shoftfall from total_balance to find spendable balance
         let shoftfall = match failing_proposal {
@@ -171,6 +171,7 @@ impl LightClient {
             Ok(_) => Err(ProposeSendError::ZeroFee),
         }?;
         let spendable_balance = total_balance - shoftfall;
+        dbg!(spendable_balance);
 
         // new proposal with spendable balance
         let request = transaction_request_from_receivers(vec![Receiver::new(

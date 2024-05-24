@@ -149,7 +149,7 @@ impl InputSource for TransactionRecordsById {
         let mut sapling_notes = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut orchard_notes = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
         if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
-            Some(target_value),
+            Some(dbg!(target_value)),
             |rolling_target, (note, note_id)| match rolling_target {
                 Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
                 Some(targ) => {

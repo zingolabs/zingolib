@@ -12,6 +12,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     transaction::fees::zip317::MINIMUM_FEE,
 };
+use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
     self, build_fvk_client, check_client_balances, check_transaction_equality,
     get_base_address_macro, increase_height_and_wait_for_client, paths::get_cargo_manifest_dir,
@@ -4149,12 +4150,35 @@ async fn proxy_server_worky() {
 
 #[tokio::test]
 async fn send_all() {
-    let (_regtest_manager, _cph, _faucet, recipient, _) =
+    let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
+    from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(&recipient, "unified"),
+            50_000,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(&recipient, "unified"),
+            200_000,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
     let proposal = recipient
         .propose_send_all(
             address_from_str(
-                &get_base_address_macro!(recipient, "unified"),
+                &get_base_address_macro!(faucet, "unified"),
                 &recipient.config().chain,
             )
             .unwrap(),
