@@ -31,6 +31,7 @@ pub(crate) enum ZingoProposal {
 }
 
 /// total sum of all transaction request payment amounts in a proposal
+/// TODO: test for multi-step, zip320 currently unsupported.
 pub fn total_payment_amount(
     proposal: &TransferProposal,
 ) -> Result<NonNegativeAmount, BalanceError> {
@@ -44,6 +45,7 @@ pub fn total_payment_amount(
 }
 
 /// total sum of all fees in a proposal
+/// TODO: test for multi-step, zip320 currently unsupported.
 pub fn total_fee(proposal: &TransferProposal) -> Result<NonNegativeAmount, BalanceError> {
     proposal
         .steps()
@@ -56,12 +58,24 @@ pub fn total_fee(proposal: &TransferProposal) -> Result<NonNegativeAmount, Balan
 
 #[cfg(test)]
 mod tests {
+    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+
     use crate::mocks;
 
     #[test]
     fn total_payment_amount() {
         let proposal = mocks::proposal::ProposalBuilder::default().build();
+        assert_eq!(
+            super::total_payment_amount(&proposal).unwrap(),
+            NonNegativeAmount::from_u64(100_000).unwrap()
+        );
     }
     #[test]
-    fn total_fee() {}
+    fn total_fee() {
+        let proposal = mocks::proposal::ProposalBuilder::default().build();
+        assert_eq!(
+            super::total_fee(&proposal).unwrap(),
+            NonNegativeAmount::from_u64(20_000).unwrap()
+        );
+    }
 }
