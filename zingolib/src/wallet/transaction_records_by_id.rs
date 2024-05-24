@@ -792,10 +792,43 @@ mod tests {
             ))
             .set_output_indexes()
             .build();
+        let received_txid = first_received_transaction_record.txid;
         let mut transaction_records_by_id = TransactionRecordsById::default();
         transaction_records_by_id.insert_transaction_record(sent_transaction_record);
         transaction_records_by_id.insert_transaction_record(first_received_transaction_record);
 
+        assert_eq!(
+            transaction_records_by_id
+                .get(&sent_txid)
+                .unwrap()
+                .spent_sapling_nullifiers()
+                .len(),
+            1
+        );
+        assert_eq!(
+            transaction_records_by_id
+                .get(&sent_txid)
+                .unwrap()
+                .spent_orchard_nullifiers()
+                .len(),
+            0
+        );
+        assert_eq!(
+            transaction_records_by_id
+                .get(&received_txid)
+                .unwrap()
+                .sapling_notes()
+                .len(),
+            1
+        );
+        assert_eq!(
+            transaction_records_by_id
+                .get(&received_txid)
+                .unwrap()
+                .orchard_notes()
+                .len(),
+            0
+        );
         let fee = transaction_records_by_id
             .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap())
             .unwrap();
