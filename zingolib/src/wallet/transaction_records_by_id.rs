@@ -232,6 +232,27 @@ impl TransactionRecordsById {
             })
             .collect::<Result<Vec<&SaplingNote>, FeeError>>()
     }
+    fn get_orchard_notes_spent_in_tx(
+        &self,
+        query: &TransactionRecord,
+    ) -> Result<Vec<&OrchardNote>, FeeError> {
+        query
+            .spent_orchard_nullifiers()
+            .iter()
+            .map(|nullifier| {
+                self.values()
+                    .flat_map(|wallet_transaction_record| wallet_transaction_record.orchard_notes())
+                    .find(|&note| {
+                        if let Some(nf) = note.nullifier() {
+                            nf == *nullifier
+                        } else {
+                            false
+                        }
+                    })
+                    .ok_or(FeeError::OrchardSpendNotFound(*nullifier))
+            })
+            .collect::<Result<Vec<&OrchardNote>, FeeError>>()
+    }
     /// Calculate the fee for a transaction in the wallet
     ///
     /// # Error
@@ -258,24 +279,11 @@ impl TransactionRecordsById {
             .iter()
             .map(|&note| note.value())
             .sum();
-
-        let orchard_spends = querying_transaction_record
-            .spent_orchard_nullifiers()
+        let orchard_spend_value: u64 = self
+            .get_orchard_notes_spent_in_tx(querying_transaction_record)?
             .iter()
-            .map(|nullifier| {
-                self.values()
-                    .flat_map(|transaction_record| transaction_record.orchard_notes())
-                    .find(|&note| {
-                        if let Some(nf) = note.nullifier() {
-                            nf == *nullifier
-                        } else {
-                            false
-                        }
-                    })
-                    .ok_or(FeeError::OrchardSpendNotFound(*nullifier))
-            })
-            .collect::<Result<Vec<&OrchardNote>, FeeError>>()?;
-        let orchard_spend_value: u64 = orchard_spends.iter().map(|&note| note.value()).sum();
+            .map(|&note| note.value())
+            .sum();
 
         let total_spend_value = querying_transaction_record.total_transparent_value_spent
             + sapling_spend_value
