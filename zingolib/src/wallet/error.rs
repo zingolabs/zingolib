@@ -16,19 +16,17 @@ pub enum FeeError {
     /// Outgoing tx data, but no spends found!
     OutgoingWithoutSpends(Vec<OutgoingTxData>),
     /// Total output value is larger than total spend value causing the unsigned integer to underflow
-    FeeUnderflow(u64),
+    FeeUnderflow((u64, u64)),
 }
 
 impl fmt::Display for FeeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use FeeError::*;
-
         match self {
-            OrchardSpendNotFound(n) => write!(f, "Orchard nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
-            SaplingSpendNotFound(n) => write!(f, "Sapling nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
-            ReceivedTransaction => write!(f, "No inputs or outgoing transaction data found, indicating this transaction was received and not sent by this capability"),
-            FeeUnderflow => write!(f, "total output value is larger than total spend value indicating transparent spends not found in the wallet. Is the wallet fully synced?"),
-            OutgoingWithoutSpends(ov) =>  write!(f, "No inputs funded this transaction, but it has outgoing data! Is the wallet fully synced? {:?}", ov),
+            FeeError::OrchardSpendNotFound(n) => write!(f, "Orchard nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
+            FeeError::SaplingSpendNotFound(n) => write!(f, "Sapling nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
+            FeeError::ReceivedTransaction => write!(f, "No inputs or outgoing transaction data found, indicating this transaction was received and not sent by this capability"),
+            FeeError::FeeUnderflow((total_in, total_out)) => write!(f, "Output value: {} is larger than total input value: {} Is the wallet fully synced?", total_out, total_in),
+            FeeError::OutgoingWithoutSpends(ov) =>  write!(f, "No inputs funded this transaction, but it has outgoing data! Is the wallet fully synced? {:?}", ov),
         }
     }
 }

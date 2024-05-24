@@ -324,9 +324,10 @@ impl TransactionRecordsById {
         if total_spend_value >= total_output_value {
             Ok(total_spend_value - total_output_value)
         } else {
-            Err(FeeError::FeeUnderflow(
-                query_record.total_transparent_value_spent,
-            ))
+            Err(FeeError::FeeUnderflow((
+                query_record.total_value_spent(),
+                query_record.total_value_received(),
+            )))
         }
     }
 
@@ -974,7 +975,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::FeeUnderflow(_))));
+            assert!(matches!(fee, Err(FeeError::FeeUnderflow((_, _)))));
         }
     }
 
