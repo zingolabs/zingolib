@@ -272,50 +272,51 @@ impl TransactionRecordsById {
     /// The tracking of transparent spends will be improved on the next internal wallet version.
     pub fn calculate_transaction_fee(
         &self,
-        querying_transaction_record: &TransactionRecord,
+        query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
         let sapling_spend_value: u64 = self
-            .get_sapling_notes_spent_in_tx(querying_transaction_record)?
+            .get_sapling_notes_spent_in_tx(query_record)?
             .iter()
             .map(|&note| note.value())
             .sum();
         let orchard_spend_value: u64 = self
-            .get_orchard_notes_spent_in_tx(querying_transaction_record)?
+            .get_orchard_notes_spent_in_tx(query_record)?
             .iter()
             .map(|&note| note.value())
             .sum();
-
-        let total_spend_value = querying_transaction_record.total_transparent_value_spent
+        let total_trans_spent = query_record.total_transparent_value_spent;
+        let total_spend_value = query_record.total_transparent_value_spent
+            + total_trans_spent
             + sapling_spend_value
             + orchard_spend_value;
 
         if total_spend_value == 0 {
-            if querying_transaction_record.value_outgoing() == 0 {
+            if query_record.value_outgoing() == 0 {
                 return Err(FeeError::ReceivedTransaction);
             } else {
                 return Err(FeeError::OutgoingWithoutSpends(
-                    querying_transaction_record.outgoing_tx_data.to_vec(),
+                    query_record.outgoing_tx_data.to_vec(),
                 ));
             }
         }
 
-        let transparent_output_value: u64 = querying_transaction_record
+        let transparent_output_value: u64 = query_record
             .transparent_outputs()
             .iter()
             .map(|note| note.value())
             .sum();
-        let sapling_output_value: u64 = querying_transaction_record
+        let sapling_output_value: u64 = query_record
             .sapling_notes()
             .iter()
             .map(|note| note.value())
             .sum();
-        let orchard_output_value: u64 = querying_transaction_record
+        let orchard_output_value: u64 = query_record
             .orchard_notes()
             .iter()
             .map(|note| note.value())
             .sum();
 
-        let total_output_value = querying_transaction_record.value_outgoing()
+        let total_output_value = query_record.value_outgoing()
             + transparent_output_value
             + sapling_output_value
             + orchard_output_value;
@@ -323,7 +324,9 @@ impl TransactionRecordsById {
         if total_spend_value >= total_output_value {
             Ok(total_spend_value - total_output_value)
         } else {
-            Err(FeeError::FeeUnderflow)
+            Err(FeeError::FeeUnderflow(
+                query_record.total_transparent_value_spent,
+            ))
         }
     }
 
@@ -971,7 +974,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::FeeUnderflow)));
+            assert!(matches!(fee, Err(FeeError::FeeUnderflow(_))));
         }
     }
 
