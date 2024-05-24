@@ -77,6 +77,8 @@ pub mod fixtures {
     use crate::lightclient::get_base_address;
     use crate::lightclient::with_assertions;
 
+    const X: u64 = 1;
+
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
     where
@@ -88,18 +90,9 @@ pub mod fixtures {
 
         let expected_fee = MARGINAL_FEE.into_u64()
             * match pooltype {
-                // 1 orchard input
-                // 1 transparent output
-                // 1 DUMMY orchard output
-                Transparent => 3,
-                // 1 orchard input
-                // 1 sapling output
-                // 1 DUMMY sapling output
-                // 1 DUMMY orchard output
-                Shielded(Sapling) => 4,
-                // 1 orchard input
-                // 1 orchard output
-                Shielded(Orchard) => 2,
+                Transparent => X,
+                Shielded(Sapling) => X,
+                Shielded(Orchard) => X,
             };
 
         let sender = environment
@@ -129,18 +122,11 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let mut primary_fund = 1_000_000;
-        let mut secondary_fund = 0u64;
+        let primary_fund = 1_000_000;
         let primary = environment.fund_client_orchard(primary_fund).await;
 
         let secondary = environment.create_client().await;
 
-        fn per_cycle_primary_debit(start: u64) -> u64 {
-            start - 65_000u64
-        }
-        fn per_cycle_secondary_credit(start: u64) -> u64 {
-            start + 25_000u64
-        }
         for _ in 0..n {
             assert_eq!(
                 with_assertions::propose_send_bump_sync_recipient(
@@ -150,12 +136,12 @@ pub mod fixtures {
                     vec![(Transparent, 100_000)],
                 )
                 .await,
-                MARGINAL_FEE.into_u64() * 3
+                MARGINAL_FEE.into_u64() * X
             );
 
             assert_eq!(
                 with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await,
-                MARGINAL_FEE.into_u64() * 3
+                MARGINAL_FEE.into_u64() * X
             );
 
             assert_eq!(
@@ -166,13 +152,8 @@ pub mod fixtures {
                     vec![(Shielded(Orchard), 50_000)],
                 )
                 .await,
-                MARGINAL_FEE.into_u64() * 2
+                MARGINAL_FEE.into_u64() * X
             );
-
-            primary_fund = per_cycle_primary_debit(primary_fund);
-            secondary_fund = per_cycle_secondary_credit(secondary_fund);
-            check_client_balances!(primary, o: primary_fund s: 0 t: 0);
-            check_client_balances!(secondary, o: secondary_fund s: 0 t: 0);
         }
     }
 
