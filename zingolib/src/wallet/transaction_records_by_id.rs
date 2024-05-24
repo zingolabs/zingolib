@@ -780,9 +780,6 @@ mod tests {
             .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default())
-            .orchard_notes(OrchardNoteBuilder::default())
             .total_transparent_value_spent(30_000)
             .outgoing_tx_data(OutgoingTxDataBuilder::default())
             .build();
