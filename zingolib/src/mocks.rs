@@ -365,7 +365,7 @@ pub mod proposal {
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
     use zcash_client_backend::zip321::{Payment, TransactionRequest};
-    use zcash_client_backend::PoolType;
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_keys::address::Address;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{
@@ -506,11 +506,13 @@ pub mod proposal {
                 NoteValue::from_raw(20_000),
                 Rseed::AfterZip212([7; 32]),
             );
+            let mut payment_pools = BTreeMap::new();
+            payment_pools.insert(1, PoolType::Shielded(ShieldedProtocol::Orchard));
 
             let mut builder = Self::new();
             builder
                 .transaction_request(TransactionRequestBuilder::default().build())
-                .payment_pools(BTreeMap::new())
+                .payment_pools(payment_pools)
                 .transparent_inputs(vec![])
                 // .shielded_inputs(None)
                 .shielded_inputs(Some(ShieldedInputs::from_parts(
