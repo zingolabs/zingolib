@@ -274,15 +274,15 @@ pub mod mocks {
         }
 
         /// builds a mock SaplingNote after all pieces are supplied
-        pub fn build(self) -> OrchardNote {
+        pub fn build(&self) -> OrchardNote {
             OrchardNote::from_parts(
                 self.diversifier.unwrap(),
-                self.note.unwrap().build(),
+                self.note.clone().unwrap().build(),
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
                 self.spent.unwrap(),
                 self.pending_spent.unwrap(),
-                self.memo.unwrap(),
+                self.memo.clone().unwrap(),
                 self.is_change.unwrap(),
                 self.have_spending_key.unwrap(),
                 self.output_index.unwrap(),

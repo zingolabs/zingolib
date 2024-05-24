@@ -150,9 +150,9 @@ fn test_get_some_txid_from_highest_wallet_block() {
     let txid_3 = TxId::from_bytes(txid_bytes_3);
     tms.transaction_records_by_id
         .insert_transaction_record(TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Broadcast(
-                BlockHeight::from_u32(3_200_000),
-            ),
+            zingo_status::confirmation_status::ConfirmationStatus::Pending(BlockHeight::from_u32(
+                3_200_000,
+            )),
             100,
             &txid_1,
         ));
@@ -179,11 +179,13 @@ fn test_get_some_txid_from_highest_wallet_block() {
 #[cfg(feature = "lightclient-deprecated")]
 impl TxMapAndMaybeTrees {
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
-        match self
+        let transaction_record = self
             .transaction_records_by_id
             .get(txid)
-            .expect("To have the requested txid")
-            .get_transaction_fee()
+            .expect("should have the requested transaction record in the wallet");
+        match self
+            .transaction_records_by_id
+            .calculate_transaction_fee(transaction_record)
         {
             Ok(tx_fee) => tx_fee,
             Err(e) => panic!("{:?} for txid {}", e, txid,),
