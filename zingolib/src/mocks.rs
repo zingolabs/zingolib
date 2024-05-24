@@ -503,11 +503,11 @@ pub mod proposal {
             let (_, _, address) = default_zaddr();
             let note = sapling_crypto::Note::from_parts(
                 address,
-                NoteValue::from_raw(20_000),
+                NoteValue::from_raw(120_000),
                 Rseed::AfterZip212([7; 32]),
             );
             let mut payment_pools = BTreeMap::new();
-            payment_pools.insert(1, PoolType::Shielded(ShieldedProtocol::Orchard));
+            payment_pools.insert(0, PoolType::Shielded(ShieldedProtocol::Orchard));
 
             let mut builder = Self::new();
             builder
