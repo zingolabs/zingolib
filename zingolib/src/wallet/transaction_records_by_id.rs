@@ -230,14 +230,14 @@ impl TransactionRecordsById {
     /// The tracking of transparent spends will be improved on the next internal wallet version.
     pub fn calculate_transaction_fee(
         &self,
-        transaction_record: &TransactionRecord,
+        querying_transaction_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
-        let sapling_spends = transaction_record
+        let sapling_spends = querying_transaction_record
             .spent_sapling_nullifiers()
             .iter()
             .map(|nullifier| {
                 self.values()
-                    .flat_map(|transaction_record| transaction_record.sapling_notes())
+                    .flat_map(|wallet_transaction_record| wallet_transaction_record.sapling_notes())
                     .find(|&note| {
                         if let Some(nf) = note.nullifier() {
                             nf == *nullifier
@@ -250,7 +250,7 @@ impl TransactionRecordsById {
             .collect::<Result<Vec<&SaplingNote>, FeeError>>()?;
         let sapling_spend_value: u64 = sapling_spends.iter().map(|&note| note.value()).sum();
 
-        let orchard_spends = transaction_record
+        let orchard_spends = querying_transaction_record
             .spent_orchard_nullifiers()
             .iter()
             .map(|nullifier| {
@@ -268,37 +268,37 @@ impl TransactionRecordsById {
             .collect::<Result<Vec<&OrchardNote>, FeeError>>()?;
         let orchard_spend_value: u64 = orchard_spends.iter().map(|&note| note.value()).sum();
 
-        let total_spend_value = transaction_record.total_transparent_value_spent
+        let total_spend_value = querying_transaction_record.total_transparent_value_spent
             + sapling_spend_value
             + orchard_spend_value;
 
         if total_spend_value == 0 {
-            if transaction_record.value_outgoing() == 0 {
+            if querying_transaction_record.value_outgoing() == 0 {
                 return Err(FeeError::ReceivedTransaction);
             } else {
                 return Err(FeeError::OutgoingWithoutSpends(
-                    transaction_record.outgoing_tx_data.to_vec(),
+                    querying_transaction_record.outgoing_tx_data.to_vec(),
                 ));
             }
         }
 
-        let transparent_output_value: u64 = transaction_record
+        let transparent_output_value: u64 = querying_transaction_record
             .transparent_outputs()
             .iter()
             .map(|note| note.value())
             .sum();
-        let sapling_output_value: u64 = transaction_record
+        let sapling_output_value: u64 = querying_transaction_record
             .sapling_notes()
             .iter()
             .map(|note| note.value())
             .sum();
-        let orchard_output_value: u64 = transaction_record
+        let orchard_output_value: u64 = querying_transaction_record
             .orchard_notes()
             .iter()
             .map(|note| note.value())
             .sum();
 
-        let total_output_value = transaction_record.value_outgoing()
+        let total_output_value = querying_transaction_record.value_outgoing()
             + transparent_output_value
             + sapling_output_value
             + orchard_output_value;
