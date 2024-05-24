@@ -770,6 +770,35 @@ mod tests {
             .to_owned()
     }
     #[test]
+    fn single_sapling_send() {
+        let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
+
+        let sent_transaction_record = TransactionRecordBuilder::default()
+            .status(Confirmed(15.into()))
+            .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
+            .build();
+        let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
+        let sent_txid = sent_transaction_record.txid;
+        let first_received_transaction_record = TransactionRecordBuilder::default()
+            .randomize_txid()
+            .status(Confirmed(5.into()))
+            .sapling_notes(spent_sapling_note_builder(
+                175_000,
+                (sent_txid, 15),
+                &first_sapling_nullifier,
+            ))
+            .set_output_indexes()
+            .build();
+        let mut transaction_records_by_id = TransactionRecordsById::default();
+        transaction_records_by_id.insert_transaction_record(sent_transaction_record);
+        transaction_records_by_id.insert_transaction_record(first_received_transaction_record);
+
+        let fee = transaction_records_by_id
+            .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap())
+            .unwrap();
+        assert_eq!(fee, 0);
+    }
+    #[test]
     fn calculate_transaction_fee() {
         let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
         let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
