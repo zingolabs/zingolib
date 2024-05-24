@@ -28,7 +28,7 @@ impl fmt::Display for FeeError {
             SaplingSpendNotFound(n) => write!(f, "Sapling nullifier(s) {:?} for this transaction not found in wallet. check wallet is fully synced.", n),
             ReceivedTransaction => write!(f, "no spends or outgoing transaction data found, indicating this transaction was received and not sent by this capability. check wallet is fully synced."),
             FeeUnderflow => write!(f, "total output value is larger than total spend value indicating transparent spends not found in the wallet. check wallet is fully synced."),
-            OutgoingWithoutSpends(ov) =>  write!(f, "No inputs funded this transaction, but it has outgoing data: {:?}", ov),
+            OutgoingWithoutSpends(ov) =>  write!(f, "No inputs funded this transaction, but it has outgoing data! Is the wallet fully synced? {:?}", ov),
         }
     }
 }

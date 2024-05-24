@@ -888,7 +888,7 @@ mod tests {
                 .orchard_notes(OrchardNoteBuilder::default())
                 .build();
             let sent_txid = sent_transaction_record.txid;
-            let sapling_nullifier = dbg!(sent_transaction_record.spent_sapling_nullifiers[0]);
+            let sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
 
             let received_transaction_record = TransactionRecordBuilder::default()
                 .randomize_txid()
