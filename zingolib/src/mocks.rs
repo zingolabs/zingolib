@@ -509,7 +509,7 @@ pub mod proposal {
 
             let mut builder = Self::new();
             builder
-                .transaction_request(TransactionRequest::empty())
+                .transaction_request(TransactionRequestBuilder::default().build())
                 .payment_pools(BTreeMap::new())
                 .transparent_inputs(vec![])
                 // .shielded_inputs(None)
@@ -598,7 +598,10 @@ pub mod proposal {
 
         /// Builds after all fields have been set.
         pub fn build(&self) -> Payment {
-            Payment::without_memo(self.recipient_address.unwrap(), self.amount.unwrap())
+            Payment::without_memo(
+                self.recipient_address.clone().unwrap(),
+                self.amount.unwrap(),
+            )
         }
     }
 
