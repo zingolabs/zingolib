@@ -660,7 +660,10 @@ mod tests {
 
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
-    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+    use zcash_primitives::{
+        consensus::BlockHeight,
+        transaction::{fees::zip317::MARGINAL_FEE, TxId},
+    };
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
@@ -796,7 +799,7 @@ mod tests {
         let fee = transaction_records_by_id
             .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap())
             .unwrap();
-        assert_eq!(fee, 0);
+        assert_eq!(fee, u64::from(MARGINAL_FEE) * 2);
     }
     #[test]
     fn calculate_transaction_fee() {
