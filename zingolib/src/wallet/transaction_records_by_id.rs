@@ -1028,6 +1028,7 @@ mod tests {
             )
         }
     }
+    #[ignore = "This work-in-progress is based on incorrect assumptions about the order of transactions."]
     #[test]
     fn single_sapling_send() {
         let sent_transaction_record = TransactionRecordBuilder::default()
