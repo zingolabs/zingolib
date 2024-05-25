@@ -440,13 +440,13 @@ impl Nullifier for sapling_crypto::Nullifier {
     fn get_nullifiers_spent_in_transaction(
         transaction_metadata_set: &TransactionRecord,
     ) -> &Vec<Self> {
-        &transaction_metadata_set.spent_sapling_nullifiers
+        &transaction_metadata_set.sapling_inputs
     }
 }
 
 impl Nullifier for orchard::note::Nullifier {
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionRecord) -> &Vec<Self> {
-        &transaction.spent_orchard_nullifiers
+        &transaction.orchard_inputs
     }
 }
 

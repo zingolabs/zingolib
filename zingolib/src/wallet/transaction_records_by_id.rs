@@ -228,7 +228,7 @@ impl TransactionRecordsById {
         transaction_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
         let sapling_spends = transaction_record
-            .spent_sapling_nullifiers()
+            .sapling_inputs
             .iter()
             .map(|nullifier| {
                 self.values()
@@ -246,7 +246,7 @@ impl TransactionRecordsById {
         let sapling_spend_value: u64 = sapling_spends.iter().map(|&note| note.value()).sum();
 
         let orchard_spends = transaction_record
-            .spent_orchard_nullifiers()
+            .orchard_inputs
             .iter()
             .map(|nullifier| {
                 self.values()
@@ -718,10 +718,10 @@ mod tests {
 
         let sent_transaction_record = TransactionRecordBuilder::default()
             .status(Confirmed(15.into()))
-            .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
-            .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
-            .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
-            .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
+            .sapling_inputs(sapling_nullifier_builder.assign_unique_nullifier().clone())
+            .sapling_inputs(sapling_nullifier_builder.assign_unique_nullifier().clone())
+            .orchard_inputs(orchard_nullifier_builder.assign_unique_nullifier().clone())
+            .orchard_inputs(orchard_nullifier_builder.assign_unique_nullifier().clone())
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
             .orchard_notes(OrchardNoteBuilder::default())
@@ -729,10 +729,10 @@ mod tests {
             .outgoing_tx_data(OutgoingTxDataBuilder::default())
             .build();
         let sent_txid = sent_transaction_record.txid;
-        let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
-        let second_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[1];
-        let first_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[0];
-        let second_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[1];
+        let first_sapling_nullifier = sent_transaction_record.sapling_inputs[0];
+        let second_sapling_nullifier = sent_transaction_record.sapling_inputs[1];
+        let first_orchard_nullifier = sent_transaction_record.orchard_inputs[0];
+        let second_orchard_nullifier = sent_transaction_record.orchard_inputs[1];
         // t-note + s-note + o-note + outgoing_tx_data
         let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000;
 
@@ -846,19 +846,15 @@ mod tests {
 
             let sent_transaction_record = TransactionRecordBuilder::default()
                 .status(Confirmed(15.into()))
-                .spent_sapling_nullifiers(
-                    sapling_nullifier_builder.assign_unique_nullifier().clone(),
-                )
-                .spent_orchard_nullifiers(
-                    orchard_nullifier_builder.assign_unique_nullifier().clone(),
-                )
+                .sapling_inputs(sapling_nullifier_builder.assign_unique_nullifier().clone())
+                .orchard_inputs(orchard_nullifier_builder.assign_unique_nullifier().clone())
                 .outgoing_tx_data(OutgoingTxDataBuilder::default())
                 .transparent_outputs(TransparentOutputBuilder::default())
                 .sapling_notes(SaplingNoteBuilder::default())
                 .orchard_notes(OrchardNoteBuilder::default())
                 .build();
             let sent_txid = sent_transaction_record.txid;
-            let sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
+            let sapling_nullifier = sent_transaction_record.sapling_inputs[0];
 
             let received_transaction_record = TransactionRecordBuilder::default()
                 .randomize_txid()

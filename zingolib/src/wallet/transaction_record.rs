@@ -25,47 +25,67 @@ use crate::{
     },
 };
 
-///  Everything (SOMETHING) about a transaction
+/// This Capabilities perspective on a Transaction
+/// Key:   [ChainPublic|Outgoing|Incoming]
+///   ChainPublic: this data can be obtained directly from the chain, it has no privacy properties
+///   Outgoing:    this data can be Viewed by the Capability that createed this Transaction
+///   Incoming:    this data can be Viewed by the Recipient Capability that is encumbered by the note
+///  NOTE: A received note on an outgoing transaction was formerly called "change".
 #[derive(Debug)]
 pub struct TransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
+    ///  # ChainPublic
     pub status: zingo_status::confirmation_status::ConfirmationStatus,
 
     /// Timestamp of Tx. Added in v4
+    ///  # ChainPublic
     pub datetime: u64,
 
     /// Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
-    /// WalletTx in LightWallet::txs)
+    /// TransactionRecord in LightWallet::TransactionRecordsById)
+    ///  # ChainPublic
     pub txid: TxId,
 
-    /// List of all nullifiers spent by this wallet in this Tx.
-    pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
+    /// List of all Sapling nullifiers used by this Capability to add value to the Sapling Value Pool.
+    ///  # Outgoing
+    pub sapling_inputs: Vec<sapling_crypto::Nullifier>,
 
-    /// List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
-    pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
+    /// List of all Orchard nullifiers used by this Capability to add value to the Orchard Value Pool.
+    ///  # Outgoing
+    pub orchard_inputs: Vec<orchard::note::Nullifier>,
 
     /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    ///  # Outgoing
+    ///  # Incoming
     pub sapling_notes: Vec<SaplingNote>,
 
     /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    ///  # Outgoing
+    ///  # Incoming
     pub orchard_notes: Vec<OrchardNote>,
 
     /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
+    ///  # ChainPublic
     pub transparent_outputs: Vec<TransparentOutput>,
 
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
+    ///  # ChainPublic
     pub total_sapling_value_spent: u64,
 
     /// Total value of all the orchard nullifiers that were spent by this wallet in this Tx
+    ///  # ChainPublic
     pub total_orchard_value_spent: u64,
 
     /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
+    ///  # ChainPublic
     pub total_transparent_value_spent: u64,
 
     /// All outgoing sends
+    ///  # Outgoing
     pub outgoing_tx_data: Vec<OutgoingTxData>,
 
     /// Price of Zec when this Tx was created
+    ///  # ChainPublic
     pub price: Option<f64>,
 }
 
@@ -81,8 +101,8 @@ impl TransactionRecord {
             status,
             datetime,
             txid: *transaction_id,
-            spent_sapling_nullifiers: vec![],
-            spent_orchard_nullifiers: vec![],
+            sapling_inputs: vec![],
+            orchard_inputs: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
             transparent_outputs: vec![],
@@ -98,11 +118,11 @@ impl TransactionRecord {
     pub fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
-                self.spent_sapling_nullifiers.push(sapling_nullifier);
+                self.sapling_inputs.push(sapling_nullifier);
                 self.total_sapling_value_spent += value;
             }
             PoolNullifier::Orchard(orchard_nullifier) => {
-                self.spent_orchard_nullifiers.push(orchard_nullifier);
+                self.orchard_inputs.push(orchard_nullifier);
                 self.total_orchard_value_spent += value;
             }
         }
@@ -124,16 +144,6 @@ impl TransactionRecord {
     /// Get orchard notes
     pub fn orchard_notes(&self) -> &[OrchardNote] {
         &self.orchard_notes
-    }
-
-    /// Get sapling nullifiers
-    pub fn spent_sapling_nullifiers(&self) -> &[sapling_crypto::Nullifier] {
-        &self.spent_sapling_nullifiers
-    }
-
-    /// Get orchard nullifiers
-    pub fn spent_orchard_nullifiers(&self) -> &[orchard::note::Nullifier] {
-        &self.spent_orchard_nullifiers
     }
 
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
@@ -481,8 +491,8 @@ impl TransactionRecord {
             sapling_notes,
             orchard_notes,
             transparent_outputs: utxos,
-            spent_sapling_nullifiers,
-            spent_orchard_nullifiers,
+            sapling_inputs: spent_sapling_nullifiers,
+            orchard_inputs: spent_orchard_nullifiers,
             total_sapling_value_spent,
             total_transparent_value_spent,
             total_orchard_value_spent,
@@ -526,10 +536,8 @@ impl TransactionRecord {
             w.write_f64::<LittleEndian>(p)
         })?;
 
-        zcash_encoding::Vector::write(&mut writer, &self.spent_sapling_nullifiers, |w, n| {
-            w.write_all(&n.0)
-        })?;
-        zcash_encoding::Vector::write(&mut writer, &self.spent_orchard_nullifiers, |w, n| {
+        zcash_encoding::Vector::write(&mut writer, &self.sapling_inputs, |w, n| w.write_all(&n.0))?;
+        zcash_encoding::Vector::write(&mut writer, &self.orchard_inputs, |w, n| {
             w.write_all(&n.to_bytes())
         })?;
 
@@ -565,8 +573,8 @@ pub mod mocks {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,
-        spent_sapling_nullifiers: Vec<SaplingNullifierBuilder>,
-        spent_orchard_nullifiers: Vec<OrchardNullifierBuilder>,
+        sapling_inputs: Vec<SaplingNullifierBuilder>,
+        orchard_inputs: Vec<OrchardNullifierBuilder>,
         transparent_outputs: Vec<TransparentOutputBuilder>,
         sapling_notes: Vec<SaplingNoteBuilder>,
         orchard_notes: Vec<OrchardNoteBuilder>,
@@ -581,8 +589,8 @@ pub mod mocks {
                 status: None,
                 datetime: None,
                 txid: None,
-                spent_sapling_nullifiers: vec![],
-                spent_orchard_nullifiers: vec![],
+                sapling_inputs: vec![],
+                orchard_inputs: vec![],
                 transparent_outputs: vec![],
                 sapling_notes: vec![],
                 orchard_notes: vec![],
@@ -594,8 +602,8 @@ pub mod mocks {
         build_method!(status, ConfirmationStatus);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
-        build_method_push!(spent_sapling_nullifiers, SaplingNullifierBuilder);
-        build_method_push!(spent_orchard_nullifiers, OrchardNullifierBuilder);
+        build_method_push!(sapling_inputs, SaplingNullifierBuilder);
+        build_method_push!(orchard_inputs, OrchardNullifierBuilder);
         build_method_push!(transparent_outputs, TransparentOutputBuilder);
         build_method_push!(sapling_notes, SaplingNoteBuilder);
         build_method_push!(orchard_notes, OrchardNoteBuilder);
@@ -628,8 +636,8 @@ pub mod mocks {
                 self.datetime.unwrap(),
                 &self.txid.unwrap(),
             );
-            build_push_list!(spent_sapling_nullifiers, self, transaction_record);
-            build_push_list!(spent_orchard_nullifiers, self, transaction_record);
+            build_push_list!(sapling_inputs, self, transaction_record);
+            build_push_list!(orchard_inputs, self, transaction_record);
             build_push_list!(transparent_outputs, self, transaction_record);
             build_push_list!(sapling_notes, self, transaction_record);
             build_push_list!(orchard_notes, self, transaction_record);
@@ -650,8 +658,8 @@ pub mod mocks {
                 ),
                 datetime: Some(1705077003),
                 txid: Some(crate::mocks::default_txid()),
-                spent_sapling_nullifiers: vec![],
-                spent_orchard_nullifiers: vec![],
+                sapling_inputs: vec![],
+                orchard_inputs: vec![],
                 transparent_outputs: vec![],
                 sapling_notes: vec![],
                 orchard_notes: vec![],
