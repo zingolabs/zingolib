@@ -245,8 +245,8 @@ impl LightClient {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
+    /// Get the ValueTransfers for this Capability
+    pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
         let transaction_records_by_id = &self
             .wallet
@@ -304,7 +304,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let summaries = self.do_list_txsummaries().await;
+        let summaries = self.list_txsummaries().await;
         let mut memobytes_by_address = HashMap::new();
         for summary in summaries {
             use ValueTransferKind::*;
@@ -682,7 +682,7 @@ impl LightClient {
     }
 
     async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let summaries = self.do_list_txsummaries().await;
+        let summaries = self.list_txsummaries().await;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
             use ValueTransferKind::*;
