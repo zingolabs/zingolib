@@ -397,24 +397,28 @@ pub mod summaries {
     use zcash_client_backend::PoolType;
     use zcash_primitives::transaction::TxId;
 
-    /// The MobileTx is the zingolib representation of
+    /// The ValueTransfer is the zingolib representation of
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
+    /// Uses publicity markup in comments like TransactionRecord
     #[derive(PartialEq)]
     pub struct ValueTransfer {
-        /// TODO: Add Doc Comment Here!
+        /// Shall we change this to a ConfirmationStatus?
+        ///  # ChainPublic
         pub block_height: zcash_primitives::consensus::BlockHeight,
-        /// TODO: Add Doc Comment Here!
+        /// The recorded confirmation time
+        ///  # ChainPublic
         pub datetime: u64,
-        /// TODO: Add Doc Comment Here!
+        /// Represents information about the relationship between
+        /// the creating and receiving capabilities
         pub kind: ValueTransferKind,
-        /// TODO: Add Doc Comment Here!
+        /// Private messages
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
-        /// TODO: Add Doc Comment Here!
+        /// Obtained from a third party
         pub price: Option<f64>,
-        /// TODO: Add Doc Comment Here!
+        /// LRZ TxId
         pub txid: TxId,
-        /// TODO: Add Doc Comment Here!
+        /// This can be derived from the ConfirmationStatus
         pub pending: bool,
     }
 
