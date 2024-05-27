@@ -65,6 +65,7 @@ pub mod fixtures {
     use zcash_client_backend::PoolType::Transparent;
     use zcash_client_backend::ShieldedProtocol::Orchard;
     use zcash_client_backend::ShieldedProtocol::Sapling;
+    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
     use zingolib::wallet::notes::query::OutputPoolQuery;
@@ -137,13 +138,9 @@ pub mod fixtures {
         let mut environment = CC::setup().await;
 
         let sender = environment.fund_client_orchard(100_000).await;
-
-        println!("client is ready to send");
-
         let recipient = environment.create_client().await;
 
-        println!("recipient ready");
-
+        // creates a transparent dust output for recipient
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
@@ -155,8 +152,14 @@ pub mod fixtures {
             15_000
         );
 
+        // the recipient cannot propose shielding
         assert!(match recipient.propose_shield().await.unwrap_err() {
-            zingolib::lightclient::propose::ProposeShieldError::Dusty => true,
+            zingolib::lightclient::propose::ProposeShieldError::Component(zcash_client_backend::data_api::error::Error::NoteSelection(zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError::Change(zcash_client_backend::fees::ChangeError::InsufficientFunds { available, required }))) => {
+                if available.into_u64() == 1000 && required.into_u64() == 15_000 { true } else {
+                    println!("available {}, required {}", available.into_u64(), required.into_u64());
+                    false
+                }
+            },
             e => {
                 dbg!(e);
                 false
