@@ -262,12 +262,14 @@ impl TransactionRecordsById {
             .iter()
             .map(|&note| note.value())
             .sum();
-        let orchard_spend_value: u64 = self
+        let orchard_spend_value: u64 = dbg!(self
             .get_orchard_notes_spent_in_tx(query_record)?
             .iter()
             .map(|&note| note.value())
-            .sum();
-        Ok(query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value)
+            .sum());
+        Ok(dbg!(
+            query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value
+        ))
     }
     fn total_value_output_to_explicit_receivers(&self, query_record: &TransactionRecord) -> u64 {
         let transparent_output_value: u64 = query_record
