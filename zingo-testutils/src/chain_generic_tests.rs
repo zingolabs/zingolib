@@ -137,7 +137,7 @@ pub mod fixtures {
     {
         let mut environment = CC::setup().await;
 
-        let sender = environment.fund_client_orchard(100_000).await;
+        let sender = environment.fund_client_orchard(1_000_000).await;
         let recipient = environment.create_client().await;
 
         // creates a bunch of transparent dust outputs for recipient
@@ -147,12 +147,12 @@ pub mod fixtures {
                 &sender,
                 &recipient,
                 vec![
-                    (Transparent, 1000),
-                    (Transparent, 1000),
-                    (Transparent, 1000),
-                    (Transparent, 1000),
-                    (Transparent, 1000),
-                    (Transparent, 1000)
+                    (Transparent, 1_000),
+                    (Transparent, 1_000),
+                    (Transparent, 1_000),
+                    (Transparent, 1_000),
+                    (Transparent, 1_000),
+                    (Transparent, 1_000)
                 ],
             )
             .await,
@@ -168,7 +168,22 @@ pub mod fixtures {
                 &mut environment,
                 &sender,
                 &recipient,
-                vec![(Transparent, 6000)],
+                vec![(Transparent, 6_000)],
+            )
+            .await,
+            15_000
+        );
+
+        // the recipient cannot propose shielding
+        assertions::assert_cant_shield(&recipient).await;
+
+        // creates an output for recipient which combined with the previous is almost enough to be worth a shield
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &sender,
+                &recipient,
+                vec![(Transparent, 14_000)],
             )
             .await,
             15_000
