@@ -216,14 +216,18 @@ impl LightClient {
         let proposal = self.create_shield_proposal().await?;
 
         // dont dust ourselves. we have to give ourselves a note with worthwhile value
-        if proposal
+
+        let biggest_change = proposal
             .steps()
             .first()
             .balance()
             .proposed_change()
             .iter()
-            .any(|change_value| change_value.value().into_u64() > SHIELDING_THRESHOLD)
-        {
+            .fold(0, |biggest_change_value_value, change_value| {
+                std::cmp::max(biggest_change_value_value, change_value.value().into_u64())
+            });
+
+        if biggest_change > SHIELDING_THRESHOLD {
             self.store_proposal(ZingoProposal::Shield(proposal.clone()))
                 .await;
             Ok(proposal)
