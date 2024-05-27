@@ -19,7 +19,6 @@ use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
 use crate::utils::conversion::zatoshis_from_u64;
-use crate::wallet::transaction_records_by_id::trait_inputsource::InputSourceError;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
@@ -51,9 +50,12 @@ pub enum ProposeSendError {
     #[error("{0:?}")]
     /// conversion failed
     ConversionFailed(crate::utils::error::ConversionError),
-    #[error("proposal created with zero fee!")]
-    /// created a proposal with zero fee
-    ZeroFee,
+    #[error("send all is transferring no value. only enough funds to pay the fees!")]
+    /// send all is transferring no value
+    ZeroValueSendAll,
+    #[error("insufficient funds")]
+    /// insufficient funds
+    InsufficientFunds,
 }
 
 /// Errors that can result from do_propose
@@ -147,40 +149,49 @@ impl LightClient {
     ) -> Result<TransferProposal, ProposeSendError> {
         // proposal for total balance
         let pool_balances = self.do_balance().await;
-        let total_balance = pool_balances.transparent_balance.unwrap_or(0)
-            + pool_balances.sapling_balance.unwrap_or(0)
-            + pool_balances.orchard_balance.unwrap_or(0);
+        let total_shielded_balance = zatoshis_from_u64(
+            pool_balances.sapling_balance.unwrap_or(0) + pool_balances.orchard_balance.unwrap_or(0),
+        )
+        .map_err(ProposeSendError::ConversionFailed)?;
         let request = transaction_request_from_receivers(vec![Receiver::new(
             address.clone(),
-            zatoshis_from_u64(total_balance).map_err(ProposeSendError::ConversionFailed)?,
+            total_shielded_balance,
             memo.clone(),
         )])
         .map_err(ProposeSendError::TransactionRequestFailed)?;
         let failing_proposal = dbg!(self.create_send_proposal(request).await);
 
-        // subtract shoftfall from total_balance to find spendable balance
-        let shoftfall = match failing_proposal {
+        // subtract shoftfall from available shielded balance to find spendable balance
+        let spendable_balance = match failing_proposal {
             Err(ProposeSendError::Proposal(
-                zcash_client_backend::data_api::error::Error::DataSource(
-                    TxMapAndMaybeTreesTraitError::InputSource(InputSourceError::Shortfall(
-                        shortfall,
-                    )),
-                ),
-            )) => Ok(shortfall),
+                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                    available,
+                    required,
+                },
+            )) => {
+                if let Some(shortfall) = required - available {
+                    Ok((available - shortfall)
+                        .ok_or_else(|| ProposeSendError::InsufficientFunds)?)
+                } else {
+                    return failing_proposal; // return the proposal in the case there is zero fee
+                }
+            }
             Err(e) => Err(e),
-            Ok(_) => Err(ProposeSendError::ZeroFee),
+            Ok(_) => return failing_proposal, // return the proposal in the case there is zero fee
         }?;
-        let spendable_balance = total_balance - shoftfall;
         dbg!(spendable_balance);
 
         // new proposal with spendable balance
         let request = transaction_request_from_receivers(vec![Receiver::new(
             address,
-            zatoshis_from_u64(spendable_balance).map_err(ProposeSendError::ConversionFailed)?,
+            spendable_balance,
             memo,
         )])
         .map_err(ProposeSendError::TransactionRequestFailed)?;
-        self.create_send_proposal(request).await
+        let proposal = self.create_send_proposal(request).await?;
+        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
+            .await;
+        Ok(proposal)
     }
 
     fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
