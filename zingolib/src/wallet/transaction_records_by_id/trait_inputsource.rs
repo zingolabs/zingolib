@@ -25,16 +25,14 @@ use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::transaction::components::amount::BalanceError;
 
 /// TODO: Add Doc Comment Here!
+#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
-    /// TODO: Add Doc Comment Here!
     #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
-    /// TODO: Add Doc Comment Here!
     #[error(
         "An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}"
     )]
-    /// TODO: Add Doc Comment Here!
     OutputTooBig((u64, BalanceError)),
 }
 
