@@ -635,9 +635,23 @@ impl TransactionRecordsById {
     }
 
     /// get a list of spendable NoteIds with associated note values
-    pub(crate) fn get_spendable_note_ids_and_values(&self) -> Vec<(NoteId, u64)> {
+    pub(crate) fn get_spendable_note_ids_and_values(
+        &self,
+        sources: &[zcash_client_backend::ShieldedProtocol],
+        anchor_height: zcash_primitives::consensus::BlockHeight,
+        exclude: &[NoteId],
+    ) -> Vec<(NoteId, u64)> {
         self.values()
-            .flat_map(|transaction_record| transaction_record.get_spendable_note_ids_and_values())
+            .flat_map(|transaction_record| {
+                if transaction_record
+                    .status
+                    .is_confirmed_before_or_at(&anchor_height)
+                {
+                    transaction_record.get_spendable_note_ids_and_values()
+                } else {
+                    vec![]
+                }
+            })
             .collect()
     }
 }
