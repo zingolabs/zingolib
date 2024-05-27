@@ -406,6 +406,44 @@ impl TransactionRecord {
             }
         }
     }
+
+    /// get a list of unspent NoteIds with associated note values
+    pub(crate) fn get_spendable_note_ids(&self) -> Vec<(NoteId, u64)> {
+        let mut all = vec![];
+        self.sapling_notes.iter().for_each(|zingo_sapling_note| {
+            if zingo_sapling_note.is_unspent() {
+                if let Some(output_index) = zingo_sapling_note.output_index() {
+                    all.push((
+                        NoteId::new(
+                            self.txid,
+                            zcash_client_backend::ShieldedProtocol::Sapling,
+                            *output_index as u16,
+                        ),
+                        zingo_sapling_note.value(),
+                    ))
+                } else {
+                    println!("note has no index");
+                }
+            }
+        });
+        self.orchard_notes.iter().for_each(|zingo_orchard_note| {
+            if zingo_orchard_note.is_unspent() {
+                if let Some(output_index) = zingo_orchard_note.output_index() {
+                    all.push((
+                        NoteId::new(
+                            self.txid,
+                            zcash_client_backend::ShieldedProtocol::Orchard,
+                            *output_index as u16,
+                        ),
+                        zingo_orchard_note.value(),
+                    ))
+                } else {
+                    println!("note has no index");
+                }
+            }
+        });
+        all
+    }
 }
 // read/write
 impl TransactionRecord {
