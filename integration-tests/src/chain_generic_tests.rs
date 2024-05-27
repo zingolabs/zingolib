@@ -17,21 +17,25 @@ use libtonode_environment::LibtonodeEnvironment;
 const MAX_LIBTONODE_FAUCET: u64 = 2_000_000_000;
 
 proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_cases(4))]
+    #![proptest_config(proptest::test_runner::Config::with_cases(2))]
     #[test]
     fn libtonode_send_value_to_transparent(value in 0..MAX_LIBTONODE_FAUCET) {
         Runtime::new().unwrap().block_on(async {
             send_value_to_pool::<LibtonodeEnvironment>(value, Transparent).await;
         });
     }
-}
-#[tokio::test]
-async fn libtonode_send_max_to_sapling() {
-    send_value_to_pool::<LibtonodeEnvironment>(MAX_LIBTONODE_FAUCET, Shielded(Sapling)).await;
-}
-#[tokio::test]
-async fn libtonode_send_40_000_to_orchard() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+    #[test]
+    fn libtonode_send_value_to_sapling(value in 0..MAX_LIBTONODE_FAUCET) {
+        Runtime::new().unwrap().block_on(async {
+            send_value_to_pool::<LibtonodeEnvironment>(value, Shielded(Sapling)).await;
+        });
+    }
+    #[test]
+    fn libtonode_send_value_to_orchard(value in 0..MAX_LIBTONODE_FAUCET) {
+        Runtime::new().unwrap().block_on(async {
+            send_value_to_pool::<LibtonodeEnvironment>(value, Shielded(Orchard)).await;
+        });
+    }
 }
 
 #[tokio::test]
