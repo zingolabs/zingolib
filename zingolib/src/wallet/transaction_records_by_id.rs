@@ -627,6 +627,13 @@ impl TransactionRecordsById {
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
         price.map(|p| self.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
+
+    /// get a Note from a NoteId
+    pub(crate) fn get_note_from_id(&self, id: NoteId) -> Option<crate::data::notes::Note> {
+        self.get(id.txid())
+            .map(|transaction_record| transaction_record.get_note_from_id(id))
+            .flatten()
+    }
 }
 
 impl Default for TransactionRecordsById {

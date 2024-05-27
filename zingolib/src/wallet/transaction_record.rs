@@ -381,6 +381,7 @@ impl TransactionRecord {
         })
     }
 
+    /// get a Note from a NoteId
     pub(crate) fn get_note_from_id(&self, id: NoteId) -> Option<crate::data::notes::Note> {
         match id.protocol() {
             zcash_client_backend::ShieldedProtocol::Sapling => {
