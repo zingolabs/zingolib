@@ -159,15 +159,19 @@ impl InputSource for TransactionRecordsById {
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
-        selected.iter().for_each(|(id, _value)| {
-            match id.protocol() {
+        let result = selected
+            .iter()
+            .try_for_each(|(id, _value)| match id.protocol() {
                 zcash_client_backend::ShieldedProtocol::Sapling => {
                     match self.get(id.txid()).and_then(|transaction_record| {
                         transaction_record
                             .get_received_note::<SaplingDomain>(id.output_index() as u32)
                     }) {
-                        Some(received_note) => selected_sapling.push(received_note),
-                        None => (),
+                        Some(received_note) => {
+                            selected_sapling.push(received_note);
+                            Ok(())
+                        }
+                        None => Err(()),
                     }
                 }
                 zcash_client_backend::ShieldedProtocol::Orchard => {
@@ -175,12 +179,14 @@ impl InputSource for TransactionRecordsById {
                         transaction_record
                             .get_received_note::<OrchardDomain>(id.output_index() as u32)
                     }) {
-                        Some(received_note) => selected_orchard.push(received_note),
-                        None => (),
+                        Some(received_note) => {
+                            selected_orchard.push(received_note);
+                            Ok(())
+                        }
+                        None => Err(()),
                     }
                 }
-            };
-        });
+            });
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }
