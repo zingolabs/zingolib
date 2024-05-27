@@ -70,6 +70,9 @@ pub enum ProposeShieldError {
     Dusty,
 }
 
+/// below this threshold it is not worth shielding
+pub const SHIELDING_THRESHOLD: u64 = 15_000;
+
 impl LightClient {
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
@@ -219,7 +222,7 @@ impl LightClient {
             .balance()
             .proposed_change()
             .iter()
-            .any(|change_value| change_value.value().into_u64() > 15_000)
+            .any(|change_value| change_value.value().into_u64() > SHIELDING_THRESHOLD)
         {
             self.store_proposal(ZingoProposal::Shield(proposal.clone()))
                 .await;
