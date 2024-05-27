@@ -9,7 +9,10 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{
     legacy::Script,
-    transaction::components::{amount::NonNegativeAmount, TxOut},
+    transaction::{
+        components::{amount::NonNegativeAmount, TxOut},
+        fees::zip317::MARGINAL_FEE,
+    },
 };
 
 use crate::wallet::{
@@ -110,6 +113,7 @@ impl InputSource for TransactionRecordsById {
     /// be included.
     /// IMPL: implemented and tested
     /// IMPL: _account skipped because Zingo uses 1 account.
+    /// IMPL: all notes beneath MARGINAL_FEE skipped as dust
     fn select_spendable_notes(
         &self,
         _account: Self::AccountId,
@@ -143,8 +147,11 @@ impl InputSource for TransactionRecordsById {
             }
         }
 
+        // TOdo! this sort order does not maximize effective use of grace inputs.
         sapling_note_noteref_pairs.sort_by_key(|sapling_note| sapling_note.0.value().inner());
+        sapling_note_noteref_pairs.reverse();
         orchard_note_noteref_pairs.sort_by_key(|orchard_note| orchard_note.0.value().inner());
+        orchard_note_noteref_pairs.reverse();
 
         let mut sapling_notes = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut orchard_notes = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
@@ -152,6 +159,7 @@ impl InputSource for TransactionRecordsById {
             Some(target_value),
             |rolling_target, (note, note_id)| match rolling_target {
                 Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
+                Some(targ) if note.value().inner() <= MARGINAL_FEE.into_u64() => Ok(Some(targ)),
                 Some(targ) => {
                     sapling_notes.push(
                         self.get(note_id.txid())
@@ -173,6 +181,9 @@ impl InputSource for TransactionRecordsById {
                     Some(missing_value_after_sapling),
                     |rolling_target, (note, note_id)| match rolling_target {
                         Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
+                        Some(targ) if note.value().inner() <= MARGINAL_FEE.into_u64() => {
+                            Ok(Some(targ))
+                        }
                         Some(targ) => {
                             orchard_notes.push(
                                 self.get(note_id.txid())
