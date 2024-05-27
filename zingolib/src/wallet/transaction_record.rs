@@ -408,40 +408,48 @@ impl TransactionRecord {
     }
 
     /// get a list of unspent NoteIds with associated note values
-    pub(crate) fn get_spendable_note_ids_and_values(&self) -> Vec<(NoteId, u64)> {
+    pub(crate) fn get_spendable_note_ids_and_values(
+        &self,
+        sources: &[zcash_client_backend::ShieldedProtocol],
+        exclude: &[NoteId],
+    ) -> Vec<(NoteId, u64)> {
         let mut all = vec![];
-        self.sapling_notes.iter().for_each(|zingo_sapling_note| {
-            if zingo_sapling_note.is_unspent() {
-                if let Some(output_index) = zingo_sapling_note.output_index() {
-                    all.push((
-                        NoteId::new(
+        if sources.contains(&zcash_client_backend::ShieldedProtocol::Sapling) {
+            self.sapling_notes.iter().for_each(|zingo_sapling_note| {
+                if zingo_sapling_note.is_unspent() {
+                    if let Some(output_index) = zingo_sapling_note.output_index() {
+                        let id = NoteId::new(
                             self.txid,
                             zcash_client_backend::ShieldedProtocol::Sapling,
                             *output_index as u16,
-                        ),
-                        zingo_sapling_note.value(),
-                    ))
-                } else {
-                    println!("note has no index");
+                        );
+                        if !exclude.contains(&id) {
+                            all.push((id, zingo_sapling_note.value()));
+                        }
+                    } else {
+                        println!("note has no index");
+                    }
                 }
-            }
-        });
-        self.orchard_notes.iter().for_each(|zingo_orchard_note| {
-            if zingo_orchard_note.is_unspent() {
-                if let Some(output_index) = zingo_orchard_note.output_index() {
-                    all.push((
-                        NoteId::new(
+            });
+        }
+        if sources.contains(&zcash_client_backend::ShieldedProtocol::Orchard) {
+            self.orchard_notes.iter().for_each(|zingo_orchard_note| {
+                if zingo_orchard_note.is_unspent() {
+                    if let Some(output_index) = zingo_orchard_note.output_index() {
+                        let id = NoteId::new(
                             self.txid,
                             zcash_client_backend::ShieldedProtocol::Orchard,
                             *output_index as u16,
-                        ),
-                        zingo_orchard_note.value(),
-                    ))
-                } else {
-                    println!("note has no index");
+                        );
+                        if !exclude.contains(&id) {
+                            all.push((id, zingo_orchard_note.value()));
+                        }
+                    } else {
+                        println!("note has no index");
+                    }
                 }
-            }
-        });
+            });
+        }
         all
     }
 }

@@ -647,7 +647,7 @@ impl TransactionRecordsById {
                     .status
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    transaction_record.get_spendable_note_ids_and_values()
+                    transaction_record.get_spendable_note_ids_and_values(sources, exclude)
                 } else {
                     vec![]
                 }
