@@ -5,6 +5,7 @@
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
+
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{wallet::NoteId, PoolType};
@@ -378,6 +379,70 @@ impl TransactionRecord {
                 )
             })
         })
+    }
+
+    /// get a Note from a NoteId
+    pub(crate) fn get_note_from_id(&self, id: NoteId) -> Option<crate::data::notes::Note> {
+        match id.protocol() {
+            zcash_client_backend::ShieldedProtocol::Sapling => {
+                <sapling_crypto::note_encryption::SaplingDomain as DomainWalletExt>::WalletNote::transaction_record_to_outputs_vec(
+                    self,
+                )
+                .into_iter()
+                .find(|note| *note.output_index() == Some(id.output_index().into()))
+                .map(|zingo_sapling_note| {
+                    crate::data::notes::Note::Sapling(zingo_sapling_note.note().clone())
+                })
+            }
+            zcash_client_backend::ShieldedProtocol::Orchard => {
+                <orchard::note_encryption::OrchardDomain as DomainWalletExt>::WalletNote::transaction_record_to_outputs_vec(
+                    self,
+                )
+                .into_iter()
+                .find(|note| *note.output_index() == Some(id.output_index().into()))
+                .map(|zingo_orchard_note| {
+                    crate::data::notes::Note::Orchard(*zingo_orchard_note.note())
+                })
+            }
+        }
+    }
+
+    /// get a list of unspent NoteIds with associated note values
+    pub(crate) fn get_spendable_note_ids(&self) -> Vec<(NoteId, u64)> {
+        let mut all = vec![];
+        self.sapling_notes.iter().for_each(|zingo_sapling_note| {
+            if zingo_sapling_note.is_unspent() {
+                if let Some(output_index) = zingo_sapling_note.output_index() {
+                    all.push((
+                        NoteId::new(
+                            self.txid,
+                            zcash_client_backend::ShieldedProtocol::Sapling,
+                            *output_index as u16,
+                        ),
+                        zingo_sapling_note.value(),
+                    ))
+                } else {
+                    println!("note has no index");
+                }
+            }
+        });
+        self.orchard_notes.iter().for_each(|zingo_orchard_note| {
+            if zingo_orchard_note.is_unspent() {
+                if let Some(output_index) = zingo_orchard_note.output_index() {
+                    all.push((
+                        NoteId::new(
+                            self.txid,
+                            zcash_client_backend::ShieldedProtocol::Orchard,
+                            *output_index as u16,
+                        ),
+                        zingo_orchard_note.value(),
+                    ))
+                } else {
+                    println!("note has no index");
+                }
+            }
+        });
+        all
     }
 }
 // read/write
