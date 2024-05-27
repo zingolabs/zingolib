@@ -129,6 +129,7 @@ impl InputSource for TransactionRecordsById {
         let mut unselected_iterator = 0;
         loop {
             if unselected.is_empty() {
+                // all notes are selected. we pass the max value onwards whether we have reached target or not
                 break;
             }
             match unselected.get(unselected_iterator) {
