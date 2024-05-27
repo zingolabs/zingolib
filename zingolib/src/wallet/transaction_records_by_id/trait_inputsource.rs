@@ -393,6 +393,8 @@ mod tests {
                     anchor_height,
                     &[],
                 ).unwrap();
+            let expected_len = if target_value > std::cmp::max(sapling_value, orchard_value) {2} else {1};
+            prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_len);
         }
     }
 
