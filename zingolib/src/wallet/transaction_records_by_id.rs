@@ -661,10 +661,7 @@ mod tests {
 
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
-    use zcash_primitives::{
-        consensus::BlockHeight,
-        transaction::{fees::zip317::MARGINAL_FEE, TxId},
-    };
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
