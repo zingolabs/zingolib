@@ -170,7 +170,7 @@ pub mod fixtures {
     }
 
     /// uses a dust input to pad another input to finish a transaction
-    pub async fn send_grace_input<CC>()
+    pub async fn send_grace_note<CC>()
     where
         CC: ConductChain,
     {
