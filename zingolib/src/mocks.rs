@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-//! Tools to facilitate mocks of external crates for testing
+//! Tools to facilitate mocks for structs of external crates and general mocking utilities for testing
 
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
@@ -108,14 +108,9 @@ pub mod nullifier {
                 self.nullifier = Some(self.unique_nullifier);
                 self
             }
-
-            fn default() -> Self {
-                let mut builder = Self::new();
-                builder.nullifier([0u8; 32]);
-                builder
-            }
         };
     }
+
     #[derive(Clone)]
     pub(crate) struct SaplingNullifierBuilder {
         unique_nullifier: [u8; 32],
@@ -141,6 +136,14 @@ pub mod nullifier {
         }
     }
 
+    impl Default for SaplingNullifierBuilder {
+        fn default() -> Self {
+            let mut builder = Self::new();
+            builder.nullifier([0u8; 32]);
+            builder
+        }
+    }
+
     #[derive(Clone)]
     pub(crate) struct OrchardNullifierBuilder {
         unique_nullifier: [u8; 32],
@@ -163,6 +166,14 @@ pub mod nullifier {
         /// Build the nullifier
         pub fn build(&self) -> orchard::note::Nullifier {
             orchard::note::Nullifier::from_bytes(&self.nullifier.unwrap()).unwrap()
+        }
+    }
+
+    impl Default for OrchardNullifierBuilder {
+        fn default() -> Self {
+            let mut builder = Self::new();
+            builder.nullifier([0u8; 32]);
+            builder
         }
     }
 }
@@ -353,14 +364,18 @@ pub mod proposal {
     use zcash_client_backend::fees::TransactionBalance;
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
-    use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_client_backend::PoolType;
+    use zcash_client_backend::zip321::{Payment, TransactionRequest};
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
+    use zcash_keys::address::Address;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{
         components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
     use zcash_client_backend::wallet::NoteId;
+    use zingoconfig::{ChainType, RegtestNetwork};
+
+    use crate::utils::conversion::address_from_str;
 
     use super::{default_txid, default_zaddr};
 
@@ -369,11 +384,10 @@ pub mod proposal {
     /// # Examples
     ///
     /// ```
-    /// use zingolib::test_framework::mocks::ProposalBuilder;
+    /// use zingolib::mocks::proposal::ProposalBuilder;
     ///
     /// let proposal = ProposalBuilder::default().build();
     /// ````
-    #[allow(dead_code)]
     pub struct ProposalBuilder {
         fee_rule: Option<FeeRule>,
         min_target_height: Option<BlockHeight>,
@@ -382,7 +396,7 @@ pub mod proposal {
 
     #[allow(dead_code)]
     impl ProposalBuilder {
-        /// Constructs a new [`ProposalBuilder`] with all fields as `None`.
+        /// Constructs an empty builder.
         pub fn new() -> Self {
             ProposalBuilder {
                 fee_rule: None,
@@ -395,12 +409,7 @@ pub mod proposal {
         build_method!(min_target_height, BlockHeight);
         build_method!(steps, NonEmpty<Step<NoteId>>);
 
-        /// Builds a proposal after all fields have been set.
-        ///
-        /// # Panics
-        ///
-        /// `build` will panic if any fields of the builder are `None` or if the build failed
-        /// due to invalid values.
+        /// Builds after all fields have been set.
         pub fn build(self) -> Proposal<FeeRule, NoteId> {
             let step = self.steps.unwrap().first().clone();
             Proposal::single_step(
@@ -418,7 +427,7 @@ pub mod proposal {
     }
 
     impl Default for ProposalBuilder {
-        /// Constructs a new [`ProposalBuilder`] where all fields are preset to default values.
+        /// Constructs a default builder.
         fn default() -> Self {
             let mut builder = ProposalBuilder::new();
             builder
@@ -434,7 +443,7 @@ pub mod proposal {
     /// # Examples
     ///
     /// ```
-    /// use zingolib::test_framework::mocks::StepBuilder;
+    /// use zingolib::mocks::proposal::StepBuilder;
     ///
     /// let step = StepBuilder::default().build();
     /// ````
@@ -449,7 +458,7 @@ pub mod proposal {
     }
 
     impl StepBuilder {
-        /// Constructs a new [`StepBuilder`] with all fields as `None`.
+        /// Constructs an empty builder.
         pub fn new() -> Self {
             StepBuilder {
                 transaction_request: None,
@@ -471,13 +480,7 @@ pub mod proposal {
         build_method!(balance, TransactionBalance);
         build_method!(is_shielding, bool);
 
-        /// Builds a step after all fields have been set.
-        ///
-        /// # Panics
-        ///
-        /// `build` will panic if any fields of the builder are `None` or if the build failed
-        /// due to invalid values.
-        #[allow(dead_code)]
+        /// Builds after all fields have been set.
         pub fn build(self) -> Step<NoteId> {
             Step::from_parts(
                 &[],
@@ -494,20 +497,22 @@ pub mod proposal {
     }
 
     impl Default for StepBuilder {
-        /// Constructs a new [`StepBuilder`] where all fields are preset to default values.
+        /// Constructs a default builder.
         fn default() -> Self {
             let txid = default_txid();
             let (_, _, address) = default_zaddr();
             let note = sapling_crypto::Note::from_parts(
                 address,
-                NoteValue::from_raw(20_000),
+                NoteValue::from_raw(120_000),
                 Rseed::AfterZip212([7; 32]),
             );
+            let mut payment_pools = BTreeMap::new();
+            payment_pools.insert(0, PoolType::Shielded(ShieldedProtocol::Orchard));
 
             let mut builder = Self::new();
             builder
-                .transaction_request(TransactionRequest::empty())
-                .payment_pools(BTreeMap::new())
+                .transaction_request(TransactionRequestBuilder::default().build())
+                .payment_pools(payment_pools)
                 .transparent_inputs(vec![])
                 // .shielded_inputs(None)
                 .shielded_inputs(Some(ShieldedInputs::from_parts(
@@ -527,6 +532,94 @@ pub mod proposal {
                         .unwrap(),
                 )
                 .is_shielding(false);
+            builder
+        }
+    }
+
+    /// Provides a builder for constructing a mock [`zcash_client_backend::zip321::TransactionRequest`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zingolib::mocks::proposal::TransactionRequestBuilder;
+    ///
+    /// let transaction_request = TransactionRequestBuilder::default().build();
+    /// ````
+    pub struct TransactionRequestBuilder {
+        payments: Vec<Payment>,
+    }
+
+    impl TransactionRequestBuilder {
+        /// Constructs an empty builder.
+        pub fn new() -> Self {
+            TransactionRequestBuilder { payments: vec![] }
+        }
+
+        build_method_push!(payments, Payment);
+
+        /// Builds after all fields have been set.
+        pub fn build(self) -> TransactionRequest {
+            TransactionRequest::new(self.payments).unwrap()
+        }
+    }
+
+    impl Default for TransactionRequestBuilder {
+        /// Constructs a default builder.
+        fn default() -> Self {
+            let mut builder = Self::new();
+            builder.payments(PaymentBuilder::default().build());
+            builder
+        }
+    }
+
+    /// Provides a builder for constructing a mock [`zcash_client_backend::zip321::Payment`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zingolib::mocks::proposal::PaymentBuilder;
+    ///
+    /// let payment = PaymentBuilder::default().build();
+    /// ````
+    pub struct PaymentBuilder {
+        recipient_address: Option<Address>,
+        amount: Option<NonNegativeAmount>,
+    }
+
+    impl PaymentBuilder {
+        /// Constructs an empty builder.
+        pub fn new() -> Self {
+            PaymentBuilder {
+                recipient_address: None,
+                amount: None,
+            }
+        }
+
+        build_method!(recipient_address, Address);
+        build_method!(amount, NonNegativeAmount);
+
+        /// Builds after all fields have been set.
+        pub fn build(&self) -> Payment {
+            Payment::without_memo(
+                self.recipient_address.clone().unwrap(),
+                self.amount.unwrap(),
+            )
+        }
+    }
+
+    impl Default for PaymentBuilder {
+        /// Constructs a default builder.
+        fn default() -> Self {
+            let mut builder = Self::new();
+            builder
+                .recipient_address(
+                    address_from_str(
+                        zingo_testvectors::REG_O_ADDR_FROM_ABANDONART,
+                        &ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
+                    )
+                    .unwrap(),
+                )
+                .amount(NonNegativeAmount::from_u64(100_000).unwrap());
             builder
         }
     }
