@@ -160,7 +160,7 @@ pub mod fixtures {
         );
 
         // the recipient cannot propose shielding
-        assertions::assert_cant_shield(&recipient, 1000).await;
+        assertions::assert_cant_shield(&recipient).await;
 
         // creates an output for recipient which is too small too send, but not dust
         assert_eq!(
@@ -175,7 +175,7 @@ pub mod fixtures {
         );
 
         // the recipient cannot propose shielding
-        assertions::assert_cant_shield(&recipient, 6000).await;
+        assertions::assert_cant_shield(&recipient).await;
     }
 
     /// sends back and forth several times, including sends to transparent
