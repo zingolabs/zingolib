@@ -311,7 +311,7 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
-        let input_value = dbg!(self.total_value_input_to_transaction(query_record)?);
+        let input_value = self.total_value_input_to_transaction(query_record)?;
 
         if input_value == 0 {
             if query_record.value_outgoing() == 0 {
@@ -1058,8 +1058,8 @@ mod tests {
         transaction_records_by_id.insert_transaction_record(first_received_transaction_record);
 
         let recovered_send_record = transaction_records_by_id.get(&sent_txid).unwrap();
-        dbg!(&recovered_send_record.spent_sapling_nullifiers);
-        dbg!(recovered_send_record.spent_sapling_nullifiers());
+        recovered_send_record.spent_sapling_nullifiers;
+        recovered_send_record.spent_sapling_nullifiers();
         assert_eq!(
             transaction_records_by_id
                 .get(&sent_txid)
