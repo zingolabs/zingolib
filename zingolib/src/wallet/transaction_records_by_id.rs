@@ -628,12 +628,6 @@ impl TransactionRecordsById {
         price.map(|p| self.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
 
-    /// get a Note from a NoteId
-    pub(crate) fn get_note_from_id(&self, id: NoteId) -> Option<crate::data::notes::Note> {
-        self.get(id.txid())
-            .and_then(|transaction_record| transaction_record.get_note_from_id(id))
-    }
-
     /// get a list of spendable NoteIds with associated note values
     pub(crate) fn get_spendable_note_ids_and_values(
         &self,

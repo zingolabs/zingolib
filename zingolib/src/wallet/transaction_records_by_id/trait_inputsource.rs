@@ -9,9 +9,7 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{
     legacy::Script,
-    transaction::{
-        components::{amount::NonNegativeAmount, TxOut},
-    },
+    transaction::components::{amount::NonNegativeAmount, TxOut},
 };
 
 use crate::wallet::{

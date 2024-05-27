@@ -381,32 +381,6 @@ impl TransactionRecord {
         })
     }
 
-    /// get a Note from a NoteId
-    pub(crate) fn get_note_from_id(&self, id: NoteId) -> Option<crate::data::notes::Note> {
-        match id.protocol() {
-            zcash_client_backend::ShieldedProtocol::Sapling => {
-                <sapling_crypto::note_encryption::SaplingDomain as DomainWalletExt>::WalletNote::transaction_record_to_outputs_vec(
-                    self,
-                )
-                .into_iter()
-                .find(|note| *note.output_index() == Some(id.output_index().into()))
-                .map(|zingo_sapling_note| {
-                    crate::data::notes::Note::Sapling(zingo_sapling_note.note().clone())
-                })
-            }
-            zcash_client_backend::ShieldedProtocol::Orchard => {
-                <orchard::note_encryption::OrchardDomain as DomainWalletExt>::WalletNote::transaction_record_to_outputs_vec(
-                    self,
-                )
-                .into_iter()
-                .find(|note| *note.output_index() == Some(id.output_index().into()))
-                .map(|zingo_orchard_note| {
-                    crate::data::notes::Note::Orchard(*zingo_orchard_note.note())
-                })
-            }
-        }
-    }
-
     /// get a list of unspent NoteIds with associated note values
     pub(crate) fn get_spendable_note_ids_and_values(
         &self,
