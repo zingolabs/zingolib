@@ -4,7 +4,7 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::{assert_send_outputs_match_receiver, assert_send_outputs_match_sender},
+    assertions::{assert_send_outputs_match_recipient, assert_send_outputs_match_sender},
     chain_generic_tests::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -12,11 +12,13 @@ use crate::{
 /// a test-only generic version of send that includes assertions that the proposal was fulfilled
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
+/// returns the total fee for the transfer
 pub async fn propose_send_bump_sync<CC>(
     environment: &mut CC,
     client: &LightClient,
     raw_receivers: Vec<(&str, u64, Option<&str>)>,
-) where
+) -> u64
+where
     CC: ConductChain,
 {
     let proposal = from_inputs::propose(client, raw_receivers).await.unwrap();
@@ -29,19 +31,21 @@ pub async fn propose_send_bump_sync<CC>(
 
     client.do_sync(false).await.unwrap();
 
-    assert_send_outputs_match_sender(client, &proposal, &txids).await;
+    assert_send_outputs_match_sender(client, &proposal, &txids).await
 }
 
 /// this version assumes a single recipient and measures that the recipient also recieved the expected balances
 /// test-only generic
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
+/// returns the total fee for the transfer
 pub async fn propose_send_bump_sync_recipient<CC>(
     environment: &mut CC,
     sender: &LightClient,
     recipient: &LightClient,
     sends: Vec<(PoolType, u64)>,
-) where
+) -> u64
+where
     CC: ConductChain,
 {
     let mut subraw_receivers = vec![];
@@ -63,17 +67,18 @@ pub async fn propose_send_bump_sync_recipient<CC>(
 
     environment.bump_chain().await;
 
-    sender.do_sync(false).await.unwrap();
-    assert_send_outputs_match_sender(sender, &proposal, &txids).await;
-
     recipient.do_sync(false).await.unwrap();
-    assert_send_outputs_match_receiver(recipient, &proposal, &txids).await;
+    assert_send_outputs_match_recipient(recipient, &proposal, &txids).await;
+
+    sender.do_sync(false).await.unwrap();
+    assert_send_outputs_match_sender(sender, &proposal, &txids).await
 }
 
 /// a test-only generic version of shield that includes assertions that the proposal was fulfilled
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
-pub async fn propose_shield_bump_sync<CC>(environment: &mut CC, client: &LightClient)
+/// returns the total fee for the transfer
+pub async fn propose_shield_bump_sync<CC>(environment: &mut CC, client: &LightClient) -> u64
 where
     CC: ConductChain,
 {
@@ -87,5 +92,5 @@ where
 
     client.do_sync(false).await.unwrap();
 
-    assert_send_outputs_match_sender(client, &proposal, &txids).await;
+    assert_send_outputs_match_sender(client, &proposal, &txids).await
 }
