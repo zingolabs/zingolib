@@ -122,11 +122,26 @@ impl InputSource for TransactionRecordsById {
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        // TOdo! this sort order does not maximize effective use of grace inputs.
-        // unselected_sapling.sort_by_key(|sapling_note| sapling_note.0.value().inner());
-        // unselected_sapling.reverse();
-        // unselected_orchard.sort_by_key(|orchard_note| orchard_note.0.value().inner());
-        // unselected_orchard.reverse();
+        let mut unselected = self.get_spendable_note_ids_by_value();
+
+        unselected.sort_by_key(|(_id, value)| value.clone());
+
+        let mut selected = vec![];
+
+        loop {
+            let selected_total = selected.iter().fold(0, |sum, (_id, value)| sum + *value);
+            if unselected.is_empty() {
+                break;
+            }
+            unselected.retain(|(note_id, value)| {
+                if *value >= target_value.into_u64() - selected_total {
+                    selected.push((note_id.clone(), value.clone()));
+                    false
+                } else {
+                    true
+                }
+            });
+        }
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
