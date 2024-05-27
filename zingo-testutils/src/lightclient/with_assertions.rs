@@ -4,7 +4,7 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::{assert_send_outputs_match_receiver, assert_send_outputs_match_sender},
+    assertions::{assert_send_outputs_match_recipient, assert_send_outputs_match_sender},
     chain_generic_tests::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -68,7 +68,7 @@ where
     environment.bump_chain().await;
 
     recipient.do_sync(false).await.unwrap();
-    assert_send_outputs_match_receiver(recipient, &proposal, &txids).await;
+    assert_send_outputs_match_recipient(recipient, &proposal, &txids).await;
 
     sender.do_sync(false).await.unwrap();
     assert_send_outputs_match_sender(sender, &proposal, &txids).await
