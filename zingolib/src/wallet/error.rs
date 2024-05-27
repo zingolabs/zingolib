@@ -15,7 +15,7 @@ pub enum FeeError {
     ReceivedTransaction,
     /// Outgoing tx data, but no spends found!
     OutgoingWithoutSpends(Vec<OutgoingTxData>),
-    /// Total output value is larger than total spend value causing the unsigned integer to underflow
+    /// Total explicit receiver value is larger than input value causing the unsigned integer to underflow
     FeeUnderflow((u64, u64)),
 }
 
