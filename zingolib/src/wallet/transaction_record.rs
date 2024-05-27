@@ -825,7 +825,6 @@ mod tests {
     use proptest::prelude::proptest;
     use test_case::test_matrix;
 
-    use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};

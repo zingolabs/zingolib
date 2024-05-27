@@ -294,10 +294,10 @@ impl InputSource for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use proptest::{prop_assert, prop_assert_eq, proptest};
+    use proptest::{prop_assert_eq, proptest};
     use zcash_client_backend::{
-        data_api::{InputSource as _, SpendableNotes},
-        wallet::{NoteId, ReceivedNote},
+        data_api::{InputSource as _},
+        wallet::{ReceivedNote},
         ShieldedProtocol,
     };
     use zcash_primitives::{
@@ -308,15 +308,13 @@ mod tests {
 
     use crate::wallet::{
         notes::{
-            orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
-            sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
+            query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
             OutputInterface,
         },
         transaction_record::mocks::{
             nine_note_transaction_record, nine_note_transaction_record_default,
-            TransactionRecordBuilder,
         },
-        transaction_records_by_id::{trait_inputsource::InputSourceError, TransactionRecordsById},
+        transaction_records_by_id::{TransactionRecordsById},
     };
 
     #[test]
@@ -366,15 +364,15 @@ mod tests {
         ) {
             let mut transaction_records_by_id = TransactionRecordsById::new();
             transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
-                1_000_000 as u64,
-                1_000_000 as u64,
-                1_000_000 as u64,
+                1_000_000_u64,
+                1_000_000_u64,
+                1_000_000_u64,
                 sapling_value as u64,
-                1_000_000 as u64,
-                1_000_000 as u64,
+                1_000_000_u64,
+                1_000_000_u64,
                 orchard_value as u64,
-                1_000_000 as u64,
-                1_000_000 as u64,
+                1_000_000_u64,
+                1_000_000_u64,
             ));
 
             let target_amount = NonNegativeAmount::const_from_u64(target_value as u64);
