@@ -159,7 +159,7 @@ impl InputSource for TransactionRecordsById {
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
-        let result = selected
+        selected
             .iter()
             .try_for_each(|(id, _value)| match id.protocol() {
                 zcash_client_backend::ShieldedProtocol::Sapling => {
@@ -171,7 +171,7 @@ impl InputSource for TransactionRecordsById {
                             selected_sapling.push(received_note);
                             Ok(())
                         }
-                        None => Err(()),
+                        None => Err(InputSourceError::NoteCannotBeIdentified(*id)),
                     }
                 }
                 zcash_client_backend::ShieldedProtocol::Orchard => {
@@ -183,10 +183,10 @@ impl InputSource for TransactionRecordsById {
                             selected_orchard.push(received_note);
                             Ok(())
                         }
-                        None => Err(()),
+                        None => Err(InputSourceError::NoteCannotBeIdentified(*id)),
                     }
                 }
-            });
+            })?;
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }
