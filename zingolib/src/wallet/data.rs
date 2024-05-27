@@ -275,16 +275,17 @@ pub(crate) fn write_sapling_rseed<W: Write>(
     }
 }
 
-/// TODO: Add Doc Comment Here!
-#[derive(Debug)]
+/// Only for TransactionRecords *from* "this" capability
+#[derive(Clone, Debug)]
 pub struct OutgoingTxData {
     /// TODO: Add Doc Comment Here!
     pub to_address: String,
-    /// TODO: Add Doc Comment Here!
+    /// Amount to this receiver
     pub value: u64,
-    /// TODO: Add Doc Comment Here!
+    /// Note to the receiver, why not an option?
     pub memo: Memo,
-    /// TODO: Add Doc Comment Here!
+    /// What if it wasn't provided?  How does this relate to
+    /// to_address?
     pub recipient_ua: Option<String>,
 }
 
