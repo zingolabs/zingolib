@@ -128,23 +128,59 @@ impl InputSource for TransactionRecordsById {
 
         let mut selected = vec![];
 
+        let mut unselected_iterator = 0;
         loop {
-            let selected_total = selected.iter().fold(0, |sum, (_id, value)| sum + *value);
             if unselected.is_empty() {
                 break;
             }
-            unselected.retain(|(note_id, value)| {
-                if *value >= target_value.into_u64() - selected_total {
-                    selected.push((note_id.clone(), value.clone()));
-                    false
-                } else {
-                    true
+            match unselected.get(unselected_iterator) {
+                None => {
+                    // the iterator went off the end of the vector without finding a note big enough to complete the transaction... add the biggest note and reset the iteraton
+                    selected.push(unselected.pop().expect("nonempty"));
+                    unselected_iterator = 0;
+                    continue;
                 }
-            });
+                Some(smallest_unselected) => {
+                    // selected a note to test if it has enough value to complete the transaction on its own
+                    if smallest_unselected.1
+                        >= target_value.into_u64()
+                            - selected.iter().fold(0, |sum, (_id, value)| sum + *value)
+                    {
+                        selected.push(*smallest_unselected);
+                        unselected.remove(unselected_iterator);
+                        break;
+                    } else {
+                        // this note is not big enough. try the next
+                        unselected_iterator += 1;
+                    }
+                }
+            }
         }
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
+        selected.iter().for_each(|(id, _value)| {
+            match id.protocol() {
+                zcash_client_backend::ShieldedProtocol::Sapling => {
+                    match self.get(id.txid()).and_then(|transaction_record| {
+                        transaction_record
+                            .get_received_note::<SaplingDomain>(id.output_index() as u32)
+                    }) {
+                        Some(received_note) => selected_sapling.push(received_note),
+                        None => (),
+                    }
+                }
+                zcash_client_backend::ShieldedProtocol::Orchard => {
+                    match self.get(id.txid()).and_then(|transaction_record| {
+                        transaction_record
+                            .get_received_note::<OrchardDomain>(id.output_index() as u32)
+                    }) {
+                        Some(received_note) => selected_orchard.push(received_note),
+                        None => (),
+                    }
+                }
+            };
+        });
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }
