@@ -253,41 +253,6 @@ impl TransactionRecord {
         }
     }
 
-    /// For each Shielded note received in this transactions,
-    /// pair it with a NoteRecordIdentifier identifying the note
-    /// and return the list
-    pub fn select_unspent_shnotes_and_ids<D>(
-        &self,
-    ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, NoteId)>
-    where
-        D: DomainWalletExt,
-        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
-        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
-    {
-        let mut value_ref_pairs = Vec::new();
-        <D as DomainWalletExt>::WalletNote::transaction_record_to_outputs_vec_query(
-            self,
-            OutputSpendStatusQuery {
-                unspent: true,
-                pending_spent: false,
-                spent: false,
-            },
-        )
-        .iter()
-        .for_each(|note| {
-            if let Some(index) = note.output_index() {
-                let index = *index;
-                let note_record_reference =
-                    NoteId::new(self.txid, D::SHIELDED_PROTOCOL, index as u16);
-                value_ref_pairs.push((
-                    notes::ShieldedNoteInterface::note(*note).clone(),
-                    note_record_reference,
-                ));
-            }
-        });
-        value_ref_pairs
-    }
-
     /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
@@ -825,6 +790,7 @@ mod tests {
     use proptest::prelude::proptest;
     use test_case::test_matrix;
 
+    use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
