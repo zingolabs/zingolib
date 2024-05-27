@@ -122,15 +122,15 @@ impl InputSource for TransactionRecordsById {
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        let mut sapling_note_noteref_pairs: Vec<(sapling_crypto::Note, NoteId)> = Vec::new();
-        let mut orchard_note_noteref_pairs: Vec<(orchard::Note, NoteId)> = Vec::new();
+        let mut unselected_sapling: Vec<(sapling_crypto::Note, NoteId)> = Vec::new();
+        let mut unselected_orchard: Vec<(orchard::Note, NoteId)> = Vec::new();
         for transaction_record in self.values().filter(|transaction_record| {
             transaction_record
                 .status
                 .is_confirmed_before_or_at(&anchor_height)
         }) {
             if sources.contains(&ShieldedProtocol::Sapling) {
-                sapling_note_noteref_pairs.extend(
+                unselected_sapling.extend(
                     transaction_record
                         .select_unspent_shnotes_and_ids::<SaplingDomain>()
                         .into_iter()
@@ -138,7 +138,7 @@ impl InputSource for TransactionRecordsById {
                 );
             }
             if sources.contains(&ShieldedProtocol::Orchard) {
-                orchard_note_noteref_pairs.extend(
+                unselected_orchard.extend(
                     transaction_record
                         .select_unspent_shnotes_and_ids::<OrchardDomain>()
                         .into_iter()
@@ -148,20 +148,20 @@ impl InputSource for TransactionRecordsById {
         }
 
         // TOdo! this sort order does not maximize effective use of grace inputs.
-        sapling_note_noteref_pairs.sort_by_key(|sapling_note| sapling_note.0.value().inner());
-        sapling_note_noteref_pairs.reverse();
-        orchard_note_noteref_pairs.sort_by_key(|orchard_note| orchard_note.0.value().inner());
-        orchard_note_noteref_pairs.reverse();
+        unselected_sapling.sort_by_key(|sapling_note| sapling_note.0.value().inner());
+        unselected_sapling.reverse();
+        unselected_orchard.sort_by_key(|orchard_note| orchard_note.0.value().inner());
+        unselected_orchard.reverse();
 
-        let mut sapling_notes = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
-        let mut orchard_notes = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
-        if let Some(missing_value_after_sapling) = sapling_note_noteref_pairs.into_iter().try_fold(
+        let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
+        let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
+        if let Some(missing_value_after_sapling) = unselected_sapling.into_iter().try_fold(
             Some(target_value),
             |rolling_target, (note, note_id)| match rolling_target {
                 Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
                 Some(targ) if note.value().inner() <= MARGINAL_FEE.into_u64() => Ok(Some(targ)),
                 Some(targ) => {
-                    sapling_notes.push(
+                    selected_sapling.push(
                         self.get(note_id.txid())
                             .and_then(|tr| {
                                 tr.get_received_note::<SaplingDomain>(note_id.output_index() as u32)
@@ -176,33 +176,29 @@ impl InputSource for TransactionRecordsById {
                 None => Ok(None),
             },
         )? {
-            if let Some(missing_value_after_orchard) =
-                orchard_note_noteref_pairs.into_iter().try_fold(
-                    Some(missing_value_after_sapling),
-                    |rolling_target, (note, note_id)| match rolling_target {
-                        Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
-                        Some(targ) if note.value().inner() <= MARGINAL_FEE.into_u64() => {
-                            Ok(Some(targ))
-                        }
-                        Some(targ) => {
-                            orchard_notes.push(
-                                self.get(note_id.txid())
-                                    .and_then(|tr| {
-                                        tr.get_received_note::<OrchardDomain>(
-                                            note_id.output_index() as u32,
-                                        )
-                                    })
-                                    .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
-                            );
-                            Ok(targ
-                                - NonNegativeAmount::from_u64(note.value().inner()).map_err(
-                                    |e| InputSourceError::OutputTooBig((note.value().inner(), e)),
-                                )?)
-                        }
-                        None => Ok(None),
-                    },
-                )?
-            {
+            if let Some(missing_value_after_orchard) = unselected_orchard.into_iter().try_fold(
+                Some(missing_value_after_sapling),
+                |rolling_target, (note, note_id)| match rolling_target {
+                    Some(targ) if targ == NonNegativeAmount::ZERO => Ok(None),
+                    Some(targ) if note.value().inner() <= MARGINAL_FEE.into_u64() => Ok(Some(targ)),
+                    Some(targ) => {
+                        selected_orchard.push(
+                            self.get(note_id.txid())
+                                .and_then(|tr| {
+                                    tr.get_received_note::<OrchardDomain>(
+                                        note_id.output_index() as u32
+                                    )
+                                })
+                                .ok_or(InputSourceError::NoteCannotBeIdentified(note_id))?,
+                        );
+                        Ok(targ
+                            - NonNegativeAmount::from_u64(note.value().inner()).map_err(|e| {
+                                InputSourceError::OutputTooBig((note.value().inner(), e))
+                            })?)
+                    }
+                    None => Ok(None),
+                },
+            )? {
                 if missing_value_after_orchard != NonNegativeAmount::ZERO {
                     return Err(InputSourceError::Shortfall(
                         missing_value_after_orchard.into_u64(),
@@ -211,7 +207,7 @@ impl InputSource for TransactionRecordsById {
             };
         };
 
-        Ok(SpendableNotes::new(sapling_notes, orchard_notes))
+        Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }
 
     /// Fetches a spendable transparent output.
