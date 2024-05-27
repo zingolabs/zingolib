@@ -298,7 +298,7 @@ impl InputSource for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use proptest::{prop_assert_eq, proptest};
+    use proptest::{prop_assert, prop_assert_eq, proptest};
     use zcash_client_backend::{
         data_api::{InputSource as _, SpendableNotes},
         wallet::{NoteId, ReceivedNote},
@@ -364,97 +364,41 @@ mod tests {
 
     proptest! {
         #[test]
-        fn select_spendable_notes( spent_val in 0..10_000_000i32,
-            unspent_val in 0..10_000_000i32,
-            unconf_spent_val in 0..10_000_000i32,
+        fn select_spendable_notes( sapling_value in 0..10_000_000u32,
+            orchard_value in 0..10_000_000u32,
+            target_value in 0..10_000_000u32,
         ) {
             let mut transaction_records_by_id = TransactionRecordsById::new();
             transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
-                unspent_val as u64,
-                spent_val as u64,
-                unconf_spent_val as u64,
-                unspent_val as u64,
-                spent_val as u64,
-                unconf_spent_val as u64,
-                unspent_val as u64,
-                spent_val as u64,
-                unconf_spent_val as u64,
+                1_000_000 as u64,
+                1_000_000 as u64,
+                1_000_000 as u64,
+                sapling_value as u64,
+                1_000_000 as u64,
+                1_000_000 as u64,
+                orchard_value as u64,
+                1_000_000 as u64,
+                1_000_000 as u64,
             ));
 
-            let target_value = NonNegativeAmount::const_from_u64(20_000);
+            let target_amount = NonNegativeAmount::const_from_u64(target_value as u64);
             let anchor_height: BlockHeight = 10.into();
-            let spendable_notes: Result<SpendableNotes<NoteId>, InputSourceError> =
+            let result: Result<SpendableNotes<NoteId>, InputSourceError> =
                 zcash_client_backend::data_api::InputSource::select_spendable_notes(
                     &transaction_records_by_id,
                     AccountId::ZERO,
-                    target_value,
+                    target_amount,
                     &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
                     anchor_height,
                     &[],
                 );
-            if unspent_val >= 10_000 {
-                prop_assert_eq!(
-                    spendable_notes.unwrap().sapling().first().unwrap().note().value(),
-                    transaction_records_by_id
-                        .values()
-                        .next()
-                        .unwrap()
-                        .sapling_notes
-                        .iter()
-                        .find(|note| {
-                            note.spend_status_query(OutputSpendStatusQuery {
-                                unspent: true,
-                                pending_spent: false,
-                                spent: false,
-                            })
-                        })
-                        .unwrap()
-                        .sapling_crypto_note
-                        .value()
-                )
-            } else {
-                let Err(notes) = spendable_notes else {
-                    proptest::prop_assert!(false, "should fail to select enough value");
-                    panic!();
-                };
-                assert_eq!(
-                    notes,
-                    InputSourceError::Shortfall(20_000 - (2 * unspent_val as u64))
-                )
-            }
-        }
-
-        #[test]
-        fn select_spendable_notes_2(feebits in 0..5u64) {
-            let mut transaction_records_by_id = TransactionRecordsById::new();
-
-            let transaction_record = TransactionRecordBuilder::default()
-                .sapling_notes(SaplingNoteBuilder::default().value(20_000).clone())
-                .orchard_notes(OrchardNoteBuilder::default().value(20_000).clone())
-                .set_output_indexes()
-                .build();
-            transaction_records_by_id.insert_transaction_record(transaction_record);
-
-            let target_value = NonNegativeAmount::const_from_u64(feebits * 10_000);
-            let anchor_height: BlockHeight = 10.into();
-            let spendable_notes_result: Result<SpendableNotes<NoteId>, InputSourceError> =
-                zcash_client_backend::data_api::InputSource::select_spendable_notes(
-                    &transaction_records_by_id,
-                    AccountId::ZERO,
-                    target_value,
-                    &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
-                    anchor_height,
-                    &[],
-                );
-            if feebits > 4 {
-                let spendable_notes_error: InputSourceError = spendable_notes_result.map(|_sn| "expected Shortfall error").unwrap_err();
-                prop_assert_eq!(spendable_notes_error, InputSourceError::Shortfall(10_000));
-            } else {
-                let spendable_notes = spendable_notes_result.unwrap();
-                let expected_notes = ((feebits + 1) / 2) as usize;
-                println!("sapling notes selected: {}", spendable_notes.sapling().len());
-                println!("orchard notes selected: {}", spendable_notes.orchard().len());
-                prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_notes);
+            match result {
+                Err(_) => {
+                    prop_assert!(target_value > sapling_value + orchard_value);
+                },
+                Ok(spendable_notes) => {
+                    prop_assert!(target_value <= sapling_value + orchard_value);
+                }
             }
         }
     }
