@@ -2,16 +2,16 @@
 
 use nonempty::NonEmpty;
 
+use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
-use zingolib::data::proposal::TransferProposal;
 use zingolib::lightclient::LightClient;
 
 /// assert send outputs match client
 /// currently only checks if the fee matches
 /// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
-pub async fn assert_send_outputs_match_client(
+pub async fn assert_send_outputs_match_client<NoteId>(
     client: &LightClient,
-    proposal: &TransferProposal,
+    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
 ) {
     let records = &client
