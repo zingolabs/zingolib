@@ -14,6 +14,8 @@ use zingo_testutils::chain_generic_tests::fixtures::send_value_to_pool;
 
 use libtonode_environment::LibtonodeEnvironment;
 
+const MAX_LIBTONODE_FAUCET: u64 = 2_000_000_000;
+
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
     #[test]
@@ -24,8 +26,8 @@ proptest! {
     }
 }
 #[tokio::test]
-async fn libtonode_send_40_000_to_sapling() {
-    send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
+async fn libtonode_send_max_to_sapling() {
+    send_value_to_pool::<LibtonodeEnvironment>(MAX_LIBTONODE_FAUCET, Shielded(Sapling)).await;
 }
 #[tokio::test]
 async fn libtonode_send_40_000_to_orchard() {
