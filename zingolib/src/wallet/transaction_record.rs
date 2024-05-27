@@ -21,10 +21,8 @@ use crate::{
         data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
         keys::unified::WalletCapability,
         notes::{
-            self,
-            query::{OutputQuery, OutputSpendStatusQuery},
-            OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
-            TransparentOutput,
+            query::OutputQuery, OrchardNote, OutputId, OutputInterface, SaplingNote,
+            ShieldedNoteInterface, TransparentOutput,
         },
         traits::{DomainWalletExt, ReadableWriteable as _},
     },
@@ -790,7 +788,6 @@ mod tests {
     use proptest::prelude::proptest;
     use test_case::test_matrix;
 
-    use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
