@@ -62,7 +62,7 @@ pub async fn assert_send_outputs_match_recipient<NoteId>(
 }
 
 /// assert that proposing shield causes a specific error
-pub async fn assert_cant_shield(client: zingolib::lightclient::LightClient, balance: u64) {
+pub async fn assert_cant_shield(client: &zingolib::lightclient::LightClient, balance: u64) {
     assert!(match client.propose_shield().await.unwrap_err() {
             zingolib::lightclient::propose::ProposeShieldError::Component(zcash_client_backend::data_api::error::Error::NoteSelection(zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError::Change(zcash_client_backend::fees::ChangeError::InsufficientFunds { available, required }))) => {
                 println!("available {}, required {}", available.into_u64(), required.into_u64());
