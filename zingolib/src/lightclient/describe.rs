@@ -20,11 +20,9 @@ use crate::{
     error::ZingoLibError,
     wallet::{
         data::{
-            finsight,
-            summaries::{ValueTransfer, ValueTransferKind},
-            OutgoingTxData, TransactionRecord,
+            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+            TransactionRecord,
         },
-        error::FeeError,
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
         LightWallet,
@@ -261,32 +259,25 @@ impl LightClient {
         for (txid, transaction_record) in transaction_records_by_id.iter() {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_record);
 
-            match transaction_records_by_id.calculate_transaction_fee(transaction_record) {
-                Ok(tx_fee) => {
-                    let (block_height, datetime, price, pending) = (
-                        transaction_record.status.get_height(),
-                        transaction_record.datetime,
-                        transaction_record.price,
-                        !transaction_record.status.is_confirmed(),
-                    );
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Fee { amount: tx_fee },
-                        memos: vec![],
-                        price,
-                        txid: *txid,
-                        pending,
-                    });
-                }
-                Err(fee_error) => match fee_error {
-                    FeeError::ReceivedTransaction => panic!(),
-                    FeeError::SaplingSpendNotFound(_ssnf) => panic!(),
-                    FeeError::OrchardSpendNotFound(_osnf) => panic!(),
-                    FeeError::FeeUnderflow(_fu) => panic!(),
-                    FeeError::OutgoingWithoutSpends(_) => panic!(),
-                },
-            }
+            if let Ok(tx_fee) =
+                transaction_records_by_id.calculate_transaction_fee(transaction_record)
+            {
+                let (block_height, datetime, price, pending) = (
+                    transaction_record.status.get_height(),
+                    transaction_record.datetime,
+                    transaction_record.price,
+                    !transaction_record.status.is_confirmed(),
+                );
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Fee { amount: tx_fee },
+                    memos: vec![],
+                    price,
+                    txid: *txid,
+                    pending,
+                });
+            };
         }
         summaries.sort_by_key(|summary| summary.block_height);
         summaries

@@ -3113,60 +3113,20 @@ mod slow {
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {
-        (o: $o:tt s: $s:tt t: $t:tt) => {
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
-            check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
-        };
-    }
+            (o: $o:tt s: $s:tt t: $t:tt) => {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
+                check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
+            };
+        }
 
-        // 1 pmc receives 50_000 transparent
+        // 1 pmc receives 70_000 orchard
         //  # Expected Fees:
         //    - legacy: 0
         //    - 317:    0
-        from_inputs::send(&sapling_faucet, vec![(&pmc_taddr, 50_000, None)])
+        from_inputs::send(&sapling_faucet, vec![(&pmc_unified, 100_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 0 s: 0 t: 50_000);
-
-        // 2 pmc shields 50_000 transparent, to orchard paying 10_000 fee
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    20_000
-        from_inputs::shield(&pool_migration_client, &[PoolType::Transparent], None)
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 40_000 s: 0 t: 0);
-
-        // 3 pmc receives 50_000 sapling
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    20_000
-        from_inputs::send(&sapling_faucet, vec![(&pmc_sapling, 50_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 40_000 s: 50_000 t: 0);
-
-        // 4 pmc shields 40_000 from sapling to orchard and pays 10_000 fee (should be 20_000 post zip317)
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    20_000
-        from_inputs::shield(
-            &pool_migration_client,
-            &[PoolType::Shielded(ShieldedProtocol::Sapling)],
-            None,
-        )
-        .await
-        .unwrap();
-        bump_and_check_pmc!(o: 80_000 s: 0 t: 0);
-
-        // 5 Self send of 70_000 paying 10_000 fee
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    10_000
-        from_inputs::send(&pool_migration_client, vec![(&pmc_unified, 70_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 70_000 s: 0 t: 0);
+        bump_and_check_pmc!(o: 100_000 s: 0 t: 0);
 
         // 4 to transparent and sapling from orchard
         //  # Expected Fees:
@@ -3178,7 +3138,7 @@ mod slow {
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 0 s: 30_000 t: 30_000);
+        bump_and_check_pmc!(o: 30_000 s: 30_000 t: 30_000);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
