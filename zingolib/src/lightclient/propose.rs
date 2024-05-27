@@ -46,7 +46,8 @@ pub enum ProposeSendError {
     TransactionRequestFailed(Zip321Error),
 }
 
-/// Errors that can result from do_propose
+/// Errors that can result from do_propose_shield
+#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, Error)]
 pub enum ProposeShieldError {
     /// error in parsed addresses
@@ -65,6 +66,8 @@ pub enum ProposeShieldError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
+    #[error("Transparent funds are not sufficient to cover the shielding fee.")]
+    Dusty,
 }
 
 impl LightClient {

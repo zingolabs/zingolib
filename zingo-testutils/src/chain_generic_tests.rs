@@ -128,6 +128,39 @@ pub mod fixtures {
         assert_eq!(expected_fee, recorded_fee);
     }
 
+    /// chain-generic shielding test with dust avoidance
+    /// only shield when it would return positive value
+    pub async fn shield_positive<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+
+        let sender = environment.fund_client_orchard(100_000).await;
+
+        println!("client is ready to send");
+
+        let recipient = environment.create_client().await;
+
+        println!("recipient ready");
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &sender,
+                &recipient,
+                vec![(Transparent, 1000)],
+            )
+            .await,
+            15_000
+        );
+
+        assert!(match recipient.propose_shield().await.unwrap_err() {
+            zingolib::lightclient::propose::ProposeShieldError::Dusty => true,
+            _ => false,
+        });
+    }
+
     /// sends back and forth several times, including sends to transparent
     pub async fn send_shield_cycle<CC>(n: u64)
     where

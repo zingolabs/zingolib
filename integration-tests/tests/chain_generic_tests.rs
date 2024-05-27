@@ -8,6 +8,7 @@ use zingo_testutils::chain_generic_tests::fixtures::propose_and_broadcast_value_
 use zingo_testutils::chain_generic_tests::fixtures::send_grace_input;
 use zingo_testutils::chain_generic_tests::fixtures::send_shield_cycle;
 use zingo_testutils::chain_generic_tests::fixtures::send_value_to_pool;
+use zingo_testutils::chain_generic_tests::fixtures::shield_positive;
 
 use libtonode_environment::LibtonodeEnvironment;
 
@@ -35,6 +36,11 @@ async fn libtonode_propose_and_broadcast_40_000_to_sapling() {
 #[tokio::test]
 async fn libtonode_propose_and_broadcast_40_000_to_orchard() {
     propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+}
+
+#[tokio::test]
+async fn libtonode_shield_positive() {
+    shield_positive::<LibtonodeEnvironment>().await;
 }
 #[tokio::test]
 async fn libtonode_send_shield_cycle() {
