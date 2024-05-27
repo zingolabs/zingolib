@@ -100,14 +100,14 @@ pub mod fixtures {
         println!("client is ready to send");
 
         let recipient = environment.create_client().await;
-        let recipient_address = get_base_address(&recipient, pooltype).await;
 
         println!("recipient ready");
 
-        with_assertions::propose_send_bump_sync(
+        with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &sender,
-            vec![(recipient_address.as_str(), send_value, None)],
+            &recipient,
+            vec![(pooltype, send_value)],
         )
         .await;
 
@@ -137,10 +137,8 @@ pub mod fixtures {
         let mut primary_fund = 1_000_000 + (n + 6) * MARGINAL_FEE.into_u64();
         let mut secondary_fund = 0u64;
         let primary = environment.fund_client_orchard(primary_fund).await;
-        let primary_address = get_base_address(&primary, Shielded(Orchard)).await;
 
         let secondary = environment.create_client().await;
-        let secondary_address = get_base_address(&secondary, Transparent).await;
 
         fn per_cycle_primary_debit(start: u64) -> u64 {
             start - 65_000u64
@@ -149,24 +147,24 @@ pub mod fixtures {
             start + 25_000u64
         }
         for _ in 0..n {
-            with_assertions::propose_send_bump_sync(
+            with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &primary,
-                vec![(secondary_address.as_str(), 100_000, None)],
+                &secondary,
+                vec![(Transparent, 100_000)],
             )
             .await;
-
-            secondary.do_sync(false).await.unwrap();
 
             with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await;
-            with_assertions::propose_send_bump_sync(
+
+            with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &secondary,
-                vec![(primary_address.as_str(), 50_000, None)],
+                &primary,
+                vec![(Shielded(Orchard), 50_000)],
             )
             .await;
 
-            primary.do_sync(false).await.unwrap();
             primary_fund = per_cycle_primary_debit(primary_fund);
             secondary_fund = per_cycle_secondary_credit(secondary_fund);
             check_client_balances!(primary, o: primary_fund s: 0 t: 0);
