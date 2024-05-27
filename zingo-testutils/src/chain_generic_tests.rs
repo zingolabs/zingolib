@@ -138,14 +138,14 @@ pub mod fixtures {
         let mut environment = CC::setup().await;
 
         let sender = environment.fund_client_orchard(1_000_000).await;
-        let recipient = environment.create_client().await;
+        let shielder = environment.create_client().await;
 
         // creates a bunch of transparent dust outputs for recipient
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &sender,
-                &recipient,
+                &shielder,
                 vec![
                     (Transparent, 1_000),
                     (Transparent, 1_000),
@@ -160,37 +160,59 @@ pub mod fixtures {
         );
 
         // the recipient cannot propose shielding
-        assertions::assert_cant_shield(&recipient).await;
+        assertions::assert_cant_shield(&shielder).await;
 
         // creates an output for recipient which is too small too send, but not dust
+        let nondust_1 = 6_000u64;
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &sender,
-                &recipient,
-                vec![(Transparent, 6_000)],
+                &shielder,
+                vec![(Transparent, nondust_1)],
             )
             .await,
             15_000
         );
 
         // the recipient cannot propose shielding
-        assertions::assert_cant_shield(&recipient).await;
+        assertions::assert_cant_shield(&shielder).await;
 
-        // creates an output for recipient which combined with the previous is still not enough to be worth a shield
+        // creates an output for recipient which combined with the previous is sendable, but would create dust: still not enough to be worth a shield
+        let nondust_2 = 14_000u64;
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &sender,
-                &recipient,
-                vec![(Transparent, 14_000)],
+                &shielder,
+                vec![(Transparent, nondust_2)],
             )
             .await,
             15_000
         );
 
         // the recipient cannot propose shielding
-        assertions::assert_cant_shield(&recipient).await;
+        assertions::assert_cant_shield(&shielder).await;
+
+        // creates an output for recipient which is enough to cover the marginal fee for a shield
+        let nondust_3 = 50_000u64;
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &sender,
+                &shielder,
+                vec![(Transparent, nondust_3)],
+            )
+            .await,
+            15_000
+        );
+
+        // the recipient can propose shielding
+        let expected_shield_fee = 25_000;
+        assert_eq!(
+            with_assertions::propose_shield_bump_sync(&mut environment, &shielder).await,
+            expected_shield_fee,
+        );
     }
 
     /// sends back and forth several times, including sends to transparent
