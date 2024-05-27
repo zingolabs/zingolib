@@ -68,7 +68,9 @@ pub async fn assert_cant_shield(client: &zingolib::lightclient::LightClient) {
                 println!("available {}, required more than {}", available.into_u64(), required.into_u64());
                 true
             },
-            zingolib::lightclient::propose::ProposeShieldError::Dusty => true,
+            zingolib::lightclient::propose::ProposeShieldError::BelowThreshold(amount) => {
+                println!("possible note {}, threshold {}", amount, zingolib::lightclient::propose::SHIELDING_THRESHOLD);
+                true},
             e => {
                 dbg!(e);
                 false

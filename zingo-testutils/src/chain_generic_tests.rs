@@ -177,7 +177,7 @@ pub mod fixtures {
         // the recipient cannot propose shielding
         assertions::assert_cant_shield(&recipient).await;
 
-        // creates an output for recipient which combined with the previous is almost enough to be worth a shield
+        // creates an output for recipient which combined with the previous is still not enough to be worth a shield
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,

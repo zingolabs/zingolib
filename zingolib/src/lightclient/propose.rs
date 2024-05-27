@@ -66,8 +66,8 @@ pub enum ProposeShieldError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("Transparent funds are not sufficient to cover the shielding fee.")]
-    Dusty,
+    #[error("Shielding would create a shielded note with value {0}. This is too small. Wait for more transparent funds before shielding.")]
+    BelowThreshold(u64),
 }
 
 /// below this threshold it is not worth shielding
@@ -232,7 +232,7 @@ impl LightClient {
                 .await;
             Ok(proposal)
         } else {
-            Err(ProposeShieldError::Dusty)
+            Err(ProposeShieldError::BelowThreshold(biggest_change))
         }
     }
 }
