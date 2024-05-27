@@ -88,8 +88,22 @@ pub mod fixtures {
 
         let expected_fee = MARGINAL_FEE.into_u64()
             * match pooltype {
+                // contribution_transparent = 1
+                //  1 transfer
+                // contribution_orchard = 2
+                //  1 input
+                //  1 dummy output
                 Transparent => 3,
+                // contribution_sapling = 2
+                //  1 output
+                //  1 dummy input
+                // contribution_orchard = 2
+                //  1 input
+                //  1 dummy output
                 Shielded(Sapling) => 4,
+                // contribution_orchard = 2
+                //  1 input
+                //  1 output
                 Shielded(Orchard) => 2,
             };
 
@@ -100,32 +114,18 @@ pub mod fixtures {
         println!("client is ready to send");
 
         let recipient = environment.create_client().await;
-        let recipient_address = get_base_address(&recipient, pooltype).await;
 
         println!("recipient ready");
 
-        with_assertions::propose_send_bump_sync(
+        let recorded_fee = with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &sender,
-            vec![(recipient_address.as_str(), send_value, None)],
+            &recipient,
+            vec![(pooltype, send_value)],
         )
         .await;
 
-        recipient.do_sync(false).await.unwrap();
-
-        assert_eq!(
-            recipient
-                .query_sum_value(OutputQuery {
-                    spend_status: OutputSpendStatusQuery {
-                        unspent: true,
-                        pending_spent: false,
-                        spent: false,
-                    },
-                    pools: OutputPoolQuery::one_pool(pooltype),
-                })
-                .await,
-            send_value
-        );
+        assert_eq!(expected_fee, recorded_fee);
     }
 
     /// sends back and forth several times, including sends to transparent
@@ -134,53 +134,38 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let mut primary_fund = 1_000_000 + (n + 6) * MARGINAL_FEE.into_u64();
-        let mut secondary_fund = 0u64;
+        let primary_fund = 1_000_000;
         let primary = environment.fund_client_orchard(primary_fund).await;
-        let primary_address = get_base_address(&primary, Shielded(Orchard)).await;
 
         let secondary = environment.create_client().await;
-        let secondary_address = get_base_address(&secondary, Transparent).await;
 
-        fn per_cycle_primary_debit(start: u64) -> u64 {
-            start - 65_000u64
-        }
-        fn per_cycle_secondary_credit(start: u64) -> u64 {
-            start + 25_000u64
-        }
         for _ in 0..n {
-            with_assertions::propose_send_bump_sync(
-                &mut environment,
-                &primary,
-                vec![(secondary_address.as_str(), 100_000, None)],
-            )
-            .await;
+            assert_eq!(
+                with_assertions::propose_send_bump_sync_recipient(
+                    &mut environment,
+                    &primary,
+                    &secondary,
+                    vec![(Transparent, 100_000), (Transparent, 4_000)],
+                )
+                .await,
+                MARGINAL_FEE.into_u64() * 4
+            );
 
-            secondary.do_sync(false).await.unwrap();
-            let _shield_proposal = secondary.propose_shield().await.unwrap();
-            let _shield_one_txid = secondary
-                .complete_and_broadcast_stored_proposal()
-                .await
-                .unwrap();
+            assert_eq!(
+                with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await,
+                MARGINAL_FEE.into_u64() * 3
+            );
 
-            environment.bump_chain().await;
-
-            secondary.do_sync(false).await.unwrap();
-            let _sendback_proposal =
-                from_inputs::propose(&secondary, vec![(primary_address.as_str(), 50_000, None)])
-                    .await
-                    .unwrap();
-            let _sendback_one_txid = secondary
-                .complete_and_broadcast_stored_proposal()
-                .await
-                .unwrap();
-
-            environment.bump_chain().await;
-            primary.do_sync(false).await.unwrap();
-            primary_fund = per_cycle_primary_debit(primary_fund);
-            secondary_fund = per_cycle_secondary_credit(secondary_fund);
-            check_client_balances!(primary, o: primary_fund s: 0 t: 0);
-            check_client_balances!(secondary, o: secondary_fund s: 0 t: 0);
+            assert_eq!(
+                with_assertions::propose_send_bump_sync_recipient(
+                    &mut environment,
+                    &secondary,
+                    &primary,
+                    vec![(Shielded(Orchard), 50_000)],
+                )
+                .await,
+                MARGINAL_FEE.into_u64() * 2
+            );
         }
     }
 

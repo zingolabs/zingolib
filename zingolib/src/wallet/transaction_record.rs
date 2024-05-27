@@ -464,7 +464,7 @@ impl TransactionRecord {
             zcash_encoding::Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())?
         };
 
-        let spent_sapling_nullifiers = if version <= 5 {
+        let sapling_inputs = if version <= 5 {
             vec![]
         } else {
             zcash_encoding::Vector::read(&mut reader, |r| {
@@ -474,7 +474,7 @@ impl TransactionRecord {
             })?
         };
 
-        let spent_orchard_nullifiers = if version <= 21 {
+        let orchard_inputs = if version <= 21 {
             vec![]
         } else {
             zcash_encoding::Vector::read(&mut reader, |r| {
@@ -491,8 +491,8 @@ impl TransactionRecord {
             sapling_notes,
             orchard_notes,
             transparent_outputs: utxos,
-            sapling_inputs: spent_sapling_nullifiers,
-            orchard_inputs: spent_orchard_nullifiers,
+            sapling_inputs,
+            orchard_inputs,
             total_sapling_value_spent,
             total_transparent_value_spent,
             total_orchard_value_spent,
@@ -739,6 +739,49 @@ pub mod mocks {
         nine_note_transaction_record(
             10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 70_000, 80_000, 90_000,
         )
+    }
+    #[test]
+    fn check_nullifier_indices() {
+        let sap_null_one = SaplingNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let sap_null_two = SaplingNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let orch_null_one = OrchardNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let orch_null_two = OrchardNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let sent_transaction_record = TransactionRecordBuilder::default()
+            .status(ConfirmationStatus::Confirmed(15.into()))
+            .sapling_inputs(sap_null_one.clone())
+            .sapling_inputs(sap_null_two.clone())
+            .orchard_inputs(orch_null_one.clone())
+            .orchard_inputs(orch_null_two.clone())
+            .transparent_outputs(TransparentOutputBuilder::default())
+            .sapling_notes(SaplingNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default())
+            .total_transparent_value_spent(30_000)
+            .outgoing_tx_data(OutgoingTxDataBuilder::default())
+            .build();
+        assert_eq!(
+            sent_transaction_record.sapling_inputs[0],
+            sap_null_one.build()
+        );
+        assert_eq!(
+            sent_transaction_record.sapling_inputs[1],
+            sap_null_two.build()
+        );
+        assert_eq!(
+            sent_transaction_record.orchard_inputs[0],
+            orch_null_one.build()
+        );
+        assert_eq!(
+            sent_transaction_record.orchard_inputs[1],
+            orch_null_two.build()
+        );
     }
 }
 
