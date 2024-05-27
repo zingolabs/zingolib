@@ -211,9 +211,22 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     pub async fn propose_shield(&self) -> Result<ShieldProposal, ProposeShieldError> {
         let proposal = self.create_shield_proposal().await?;
-        self.store_proposal(ZingoProposal::Shield(proposal.clone()))
-            .await;
-        Ok(proposal)
+
+        // dont dust ourselves. we have to give ourselves a note with worthwhile value
+        if proposal
+            .steps()
+            .first()
+            .balance()
+            .proposed_change()
+            .iter()
+            .any(|change_value| change_value.value().into_u64() > 15_000)
+        {
+            self.store_proposal(ZingoProposal::Shield(proposal.clone()))
+                .await;
+            Ok(proposal)
+        } else {
+            Err(ProposeShieldError::Dusty)
+        }
     }
 }
 
