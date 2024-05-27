@@ -3094,6 +3094,10 @@ mod slow {
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
+        // This test includes combinations that are disallowed in the mobile
+        // app and are not recommended in production.
+        // An example is a transaction that "shields" both transparent and
+        // sapling value into the orchard value pool.
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
