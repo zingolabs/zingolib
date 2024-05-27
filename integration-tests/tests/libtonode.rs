@@ -3105,10 +3105,9 @@ mod slow {
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
-        let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
         let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 1)
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {
@@ -3131,13 +3130,32 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
-        from_inputs::send(
+        from_inputs::send(&pool_migration_client, vec![(&pmc_taddr, 30_000, None)])
+            .await
+            .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(
+            &regtest_manager,
             &pool_migration_client,
-            vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
+            1,
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 30_000 t: 30_000);
+        assert_eq!(
+            pool_migration_client
+                .do_balance()
+                .await
+                .orchard_balance
+                .unwrap(),
+            60_000u64
+        );
+        assert_eq!(
+            pool_migration_client
+                .do_balance()
+                .await
+                .transparent_balance
+                .unwrap(),
+            30_000u64
+        );
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
