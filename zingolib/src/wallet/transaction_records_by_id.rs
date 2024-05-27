@@ -311,7 +311,7 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
-        let input_value = dbg!(self.total_value_input_to_transaction(query_record)?);
+        let input_value = self.total_value_input_to_transaction(query_record)?;
 
         if input_value == 0 {
             if query_record.value_outgoing() == 0 {
@@ -661,10 +661,7 @@ mod tests {
 
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
-    use zcash_primitives::{
-        consensus::BlockHeight,
-        transaction::{fees::zip317::MARGINAL_FEE, TxId},
-    };
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
@@ -1028,73 +1025,5 @@ mod tests {
                     .map(zcash_client_backend::wallet::Note::Sapling),
             )
         }
-    }
-    #[ignore = "This work-in-progress is based on incorrect assumptions about the order of transactions."]
-    #[test]
-    fn single_sapling_send() {
-        let sent_transaction_record = TransactionRecordBuilder::default()
-            .status(Confirmed(15.into()))
-            .spent_sapling_nullifiers(
-                SaplingNullifierBuilder::new()
-                    .assign_unique_nullifier()
-                    .clone(),
-            )
-            .build();
-        let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
-        let sent_txid = sent_transaction_record.txid;
-        let first_received_transaction_record = TransactionRecordBuilder::default()
-            .randomize_txid()
-            .status(Confirmed(5.into()))
-            .sapling_notes(spent_sapling_note_builder(
-                175_000,
-                (sent_txid, 15),
-                &first_sapling_nullifier,
-            ))
-            .set_output_indexes()
-            .build();
-        let received_txid = first_received_transaction_record.txid;
-        let mut transaction_records_by_id = TransactionRecordsById::default();
-        transaction_records_by_id.insert_transaction_record(sent_transaction_record);
-        transaction_records_by_id.insert_transaction_record(first_received_transaction_record);
-
-        let recovered_send_record = transaction_records_by_id.get(&sent_txid).unwrap();
-        dbg!(&recovered_send_record.spent_sapling_nullifiers);
-        dbg!(recovered_send_record.spent_sapling_nullifiers());
-        assert_eq!(
-            transaction_records_by_id
-                .get(&sent_txid)
-                .unwrap()
-                .spent_sapling_nullifiers()
-                .len(),
-            1
-        );
-        assert_eq!(
-            transaction_records_by_id
-                .get(&sent_txid)
-                .unwrap()
-                .spent_orchard_nullifiers()
-                .len(),
-            0
-        );
-        assert_eq!(
-            transaction_records_by_id
-                .get(&received_txid)
-                .unwrap()
-                .sapling_notes()
-                .len(),
-            1
-        );
-        assert_eq!(
-            transaction_records_by_id
-                .get(&received_txid)
-                .unwrap()
-                .orchard_notes()
-                .len(),
-            0
-        );
-        let fee = transaction_records_by_id
-            .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap())
-            .unwrap();
-        assert_eq!(fee, u64::from(MARGINAL_FEE) * 2);
     }
 }
