@@ -65,13 +65,13 @@ pub mod fixtures {
     use zcash_client_backend::PoolType::Transparent;
     use zcash_client_backend::ShieldedProtocol::Orchard;
     use zcash_client_backend::ShieldedProtocol::Sapling;
-    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
     use zingolib::wallet::notes::query::OutputPoolQuery;
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
+    use crate::assertions;
     use crate::chain_generic_tests::conduct_chain::ConductChain;
     use crate::check_client_balances;
     use crate::lightclient::from_inputs;
@@ -129,22 +129,6 @@ pub mod fixtures {
         assert_eq!(expected_fee, recorded_fee);
     }
 
-    /// assert that proposing shield causes a specific error
-    pub async fn assert_cant_shield(client: zingolib::lightclient::LightClient, balance: u64) {
-        assert!(match client.propose_shield().await.unwrap_err() {
-            zingolib::lightclient::propose::ProposeShieldError::Component(zcash_client_backend::data_api::error::Error::NoteSelection(zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError::Change(zcash_client_backend::fees::ChangeError::InsufficientFunds { available, required }))) => {
-                println!("available {}, required {}", available.into_u64(), required.into_u64());
-                if available.into_u64() == balance { true } else {
-                    false
-                }
-            },
-            e => {
-                dbg!(e);
-                false
-            }
-        });
-    }
-
     /// chain-generic shielding test with dust avoidance
     /// only shield when it would return positive value
     pub async fn shield_positive<CC>()
@@ -169,7 +153,7 @@ pub mod fixtures {
         );
 
         // the recipient cannot propose shielding
-        assert_cant_shield(recipient, 1000).await;
+        assertions::assert_cant_shield(recipient, 1000).await;
     }
 
     /// sends back and forth several times, including sends to transparent
