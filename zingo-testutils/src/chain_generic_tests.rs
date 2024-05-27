@@ -145,10 +145,10 @@ pub mod fixtures {
                     &mut environment,
                     &primary,
                     &secondary,
-                    vec![(Transparent, 100_000)],
+                    vec![(Transparent, 100_000), (Transparent, 4_000)],
                 )
                 .await,
-                MARGINAL_FEE.into_u64() * 3
+                MARGINAL_FEE.into_u64() * 4
             );
 
             assert_eq!(
