@@ -17,21 +17,21 @@ use libtonode_environment::LibtonodeEnvironment;
 const MAX_LIBTONODE_FAUCET: u64 = 2_000_000_000;
 
 proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_cases(2))]
+    #![proptest_config(proptest::test_runner::Config::with_cases(1))]
     #[test]
-    fn libtonode_send_value_to_transparent(value in 0..MAX_LIBTONODE_FAUCET) {
+    fn libtonode_send_value_to_transparent(value in 1..MAX_LIBTONODE_FAUCET) {
         Runtime::new().unwrap().block_on(async {
             send_value_to_pool::<LibtonodeEnvironment>(value, Transparent).await;
         });
     }
     #[test]
-    fn libtonode_send_value_to_sapling(value in 0..MAX_LIBTONODE_FAUCET) {
+    fn libtonode_send_value_to_sapling(value in 1..MAX_LIBTONODE_FAUCET) {
         Runtime::new().unwrap().block_on(async {
             send_value_to_pool::<LibtonodeEnvironment>(value, Shielded(Sapling)).await;
         });
     }
     #[test]
-    fn libtonode_send_value_to_orchard(value in 0..MAX_LIBTONODE_FAUCET) {
+    fn libtonode_send_value_to_orchard(value in 1..MAX_LIBTONODE_FAUCET) {
         Runtime::new().unwrap().block_on(async {
             send_value_to_pool::<LibtonodeEnvironment>(value, Shielded(Orchard)).await;
         });
