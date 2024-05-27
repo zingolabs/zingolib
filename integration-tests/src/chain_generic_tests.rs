@@ -36,20 +36,26 @@ proptest! {
             send_value_to_pool::<LibtonodeEnvironment>(value, Shielded(Orchard)).await;
         });
     }
+    #[test]
+    fn libtonode_propose_and_broadcast_value_to_transparent(value in 1..MAX_LIBTONODE_FAUCET) {
+        Runtime::new().unwrap().block_on(async {
+            propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(value, Transparent).await;
+        });
+    }
+    #[test]
+    fn libtonode_propose_and_broadcast_value_to_sapling(value in 1..MAX_LIBTONODE_FAUCET) {
+        Runtime::new().unwrap().block_on(async {
+            propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(value, Shielded(Sapling)).await;
+        });
+    }
+    #[test]
+    fn libtonode_propose_and_broadcast_value_to_orchard(value in 1..MAX_LIBTONODE_FAUCET) {
+        Runtime::new().unwrap().block_on(async {
+            propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(value, Shielded(Orchard)).await;
+        });
+    }
 }
 
-#[tokio::test]
-async fn libtonode_propose_and_broadcast_40_000_to_transparent() {
-    propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
-}
-#[tokio::test]
-async fn libtonode_propose_and_broadcast_40_000_to_sapling() {
-    propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
-}
-#[tokio::test]
-async fn libtonode_propose_and_broadcast_40_000_to_orchard() {
-    propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
-}
 #[tokio::test]
 async fn libtonode_send_shield_cycle() {
     send_shield_cycle::<LibtonodeEnvironment>(4).await;
