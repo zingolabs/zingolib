@@ -176,38 +176,29 @@ pub mod fixtures {
     {
         let mut environment = CC::setup().await;
         let primary = environment.fund_client_orchard(110_000).await;
-
-        let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
-
         let secondary = environment.create_client().await;
-        // let secondary_address_sapling = secondary.get_base_address(Shielded(Sapling)).await;
-        let secondary_address_orchard = get_base_address(&secondary, Shielded(Orchard)).await;
 
-        from_inputs::send(
-            &primary,
-            vec![
-                (secondary_address_orchard.as_str(), 1, None),
-                (secondary_address_orchard.as_str(), 99_999, None),
-            ],
-        )
-        .await
-        .unwrap();
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 99_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
 
-        environment.bump_chain().await;
-        secondary.do_sync(false).await.unwrap();
-
-        check_client_balances!(secondary, o: 100_000 s: 0 t: 0);
-
-        from_inputs::send(
-            &secondary,
-            vec![(primary_address_orchard.as_str(), 90_000, None)],
-        )
-        .await
-        .unwrap();
-
-        environment.bump_chain().await;
-        primary.do_sync(false).await.unwrap();
-        check_client_balances!(primary, o: 90_000 s: 0 t: 0);
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), 90_000)]
+            )
+            .await,
+            2 * MARGINAL_FEE.into_u64()
+        );
     }
 
     /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
