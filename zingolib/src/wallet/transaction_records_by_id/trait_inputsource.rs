@@ -296,9 +296,7 @@ impl InputSource for TransactionRecordsById {
 mod tests {
     use proptest::{prop_assert_eq, proptest};
     use zcash_client_backend::{
-        data_api::{InputSource as _},
-        wallet::{ReceivedNote},
-        ShieldedProtocol,
+        data_api::InputSource as _, wallet::ReceivedNote, ShieldedProtocol,
     };
     use zcash_primitives::{
         consensus::BlockHeight, legacy::TransparentAddress,
@@ -314,7 +312,7 @@ mod tests {
         transaction_record::mocks::{
             nine_note_transaction_record, nine_note_transaction_record_default,
         },
-        transaction_records_by_id::{TransactionRecordsById},
+        transaction_records_by_id::TransactionRecordsById,
     };
 
     #[test]
