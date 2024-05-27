@@ -632,7 +632,7 @@ mod tests {
 
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
-    use zcash_primitives::consensus::BlockHeight;
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     #[test]
@@ -711,6 +711,36 @@ mod tests {
         // ^ but it was not spent in the deleted txid
     }
 
+    fn spent_sapling_note_builder(
+        amount: u64,
+        sent: (TxId, u32),
+        sapling_nullifier: &sapling_crypto::Nullifier,
+    ) -> SaplingNoteBuilder {
+        SaplingNoteBuilder::default()
+            .note(
+                SaplingCryptoNoteBuilder::default()
+                    .value(sapling_crypto::value::NoteValue::from_raw(amount))
+                    .to_owned(),
+            )
+            .spent(Some(sent))
+            .nullifier(Some(*sapling_nullifier))
+            .to_owned()
+    }
+    fn spent_orchard_note_builder(
+        amount: u64,
+        sent: (TxId, u32),
+        orchard_nullifier: &orchard::note::Nullifier,
+    ) -> OrchardNoteBuilder {
+        OrchardNoteBuilder::default()
+            .note(
+                OrchardCryptoNoteBuilder::default()
+                    .value(orchard::value::NoteValue::from_raw(amount))
+                    .to_owned(),
+            )
+            .spent(Some(sent))
+            .nullifier(Some(*orchard_nullifier))
+            .to_owned()
+    }
     #[test]
     fn calculate_transaction_fee() {
         let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
@@ -739,39 +769,21 @@ mod tests {
         let first_received_transaction_record = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(5.into()))
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .note(
-                        SaplingCryptoNoteBuilder::default()
-                            .value(sapling_crypto::value::NoteValue::from_raw(175_000))
-                            .to_owned(),
-                    )
-                    .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(first_sapling_nullifier))
-                    .to_owned(),
-            )
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .note(
-                        SaplingCryptoNoteBuilder::default()
-                            .value(sapling_crypto::value::NoteValue::from_raw(325_000))
-                            .to_owned(),
-                    )
-                    .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(second_sapling_nullifier))
-                    .to_owned(),
-            )
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .note(
-                        OrchardCryptoNoteBuilder::default()
-                            .value(orchard::value::NoteValue::from_raw(500_000))
-                            .to_owned(),
-                    )
-                    .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(first_orchard_nullifier))
-                    .to_owned(),
-            )
+            .sapling_notes(spent_sapling_note_builder(
+                175_000,
+                (sent_txid, 15),
+                &first_sapling_nullifier,
+            ))
+            .sapling_notes(spent_sapling_note_builder(
+                325_000,
+                (sent_txid, 15),
+                &second_sapling_nullifier,
+            ))
+            .orchard_notes(spent_orchard_note_builder(
+                500_000,
+                (sent_txid, 15),
+                &first_orchard_nullifier,
+            ))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(
                 SaplingNoteBuilder::default()
@@ -784,17 +796,11 @@ mod tests {
         let second_received_transaction_record = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(7.into()))
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .note(
-                        OrchardCryptoNoteBuilder::default()
-                            .value(orchard::value::NoteValue::from_raw(200_000))
-                            .to_owned(),
-                    )
-                    .spent(Some((sent_txid, 15)))
-                    .nullifier(Some(second_orchard_nullifier))
-                    .to_owned(),
-            )
+            .orchard_notes(spent_orchard_note_builder(
+                200_000,
+                (sent_txid, 15),
+                &second_orchard_nullifier,
+            ))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default().clone())
             .orchard_notes(
