@@ -635,9 +635,9 @@ impl TransactionRecordsById {
     }
 
     /// get a list of spendable NoteIds with associated note values
-    pub(crate) fn get_spendable_note_ids(&self) -> Vec<(NoteId, u64)> {
+    pub(crate) fn get_spendable_note_ids_by_value(&self) -> Vec<(NoteId, u64)> {
         self.values()
-            .flat_map(|transaction_record| transaction_record.get_spendable_note_ids())
+            .flat_map(|transaction_record| transaction_record.get_spendable_note_ids_by_value())
             .collect()
     }
 }

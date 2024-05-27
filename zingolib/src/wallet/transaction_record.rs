@@ -408,7 +408,7 @@ impl TransactionRecord {
     }
 
     /// get a list of unspent NoteIds with associated note values
-    pub(crate) fn get_spendable_note_ids(&self) -> Vec<(NoteId, u64)> {
+    pub(crate) fn get_spendable_note_ids_by_value(&self) -> Vec<(NoteId, u64)> {
         let mut all = vec![];
         self.sapling_notes.iter().for_each(|zingo_sapling_note| {
             if zingo_sapling_note.is_unspent() {
