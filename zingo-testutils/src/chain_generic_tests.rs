@@ -157,7 +157,10 @@ pub mod fixtures {
 
         assert!(match recipient.propose_shield().await.unwrap_err() {
             zingolib::lightclient::propose::ProposeShieldError::Dusty => true,
-            _ => false,
+            e => {
+                dbg!(e);
+                false
+            }
         });
     }
 
