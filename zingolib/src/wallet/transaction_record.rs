@@ -732,6 +732,49 @@ pub mod mocks {
             10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 70_000, 80_000, 90_000,
         )
     }
+    #[test]
+    fn check_nullifier_indices() {
+        let sap_null_one = SaplingNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let sap_null_two = SaplingNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let orch_null_one = OrchardNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let orch_null_two = OrchardNullifierBuilder::new()
+            .assign_unique_nullifier()
+            .clone();
+        let sent_transaction_record = TransactionRecordBuilder::default()
+            .status(ConfirmationStatus::Confirmed(15.into()))
+            .spent_sapling_nullifiers(sap_null_one.clone())
+            .spent_sapling_nullifiers(sap_null_two.clone())
+            .spent_orchard_nullifiers(orch_null_one.clone())
+            .spent_orchard_nullifiers(orch_null_two.clone())
+            .transparent_outputs(TransparentOutputBuilder::default())
+            .sapling_notes(SaplingNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default())
+            .total_transparent_value_spent(30_000)
+            .outgoing_tx_data(OutgoingTxDataBuilder::default())
+            .build();
+        assert_eq!(
+            sent_transaction_record.spent_sapling_nullifiers[0],
+            sap_null_one.build()
+        );
+        assert_eq!(
+            sent_transaction_record.spent_sapling_nullifiers[1],
+            sap_null_two.build()
+        );
+        assert_eq!(
+            sent_transaction_record.spent_orchard_nullifiers[0],
+            orch_null_one.build()
+        );
+        assert_eq!(
+            sent_transaction_record.spent_orchard_nullifiers[1],
+            orch_null_two.build()
+        );
+    }
 }
 
 #[cfg(test)]
