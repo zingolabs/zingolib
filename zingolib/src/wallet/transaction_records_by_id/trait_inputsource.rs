@@ -122,7 +122,7 @@ impl InputSource for TransactionRecordsById {
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        let mut unselected = self.get_spendable_note_ids_by_value();
+        let mut unselected = self.get_spendable_note_ids_and_values();
 
         unselected.sort_by_key(|(_id, value)| value.clone());
 
