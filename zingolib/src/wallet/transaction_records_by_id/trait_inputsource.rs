@@ -11,7 +11,6 @@ use zcash_primitives::{
     legacy::Script,
     transaction::{
         components::{amount::NonNegativeAmount, TxOut},
-        fees::zip317::MARGINAL_FEE,
     },
 };
 
@@ -125,7 +124,7 @@ impl InputSource for TransactionRecordsById {
         let mut unselected =
             self.get_spendable_note_ids_and_values(sources, anchor_height, exclude);
 
-        unselected.sort_by_key(|(_id, value)| value.clone());
+        unselected.sort_by_key(|(_id, value)| *value);
 
         let mut selected = vec![];
 
