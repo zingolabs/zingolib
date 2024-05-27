@@ -631,16 +631,13 @@ impl TransactionRecordsById {
     /// get a Note from a NoteId
     pub(crate) fn get_note_from_id(&self, id: NoteId) -> Option<crate::data::notes::Note> {
         self.get(id.txid())
-            .map(|transaction_record| transaction_record.get_note_from_id(id))
-            .flatten()
+            .and_then(|transaction_record| transaction_record.get_note_from_id(id))
     }
 
     /// get a list of spendable NoteIds with associated note values
     pub(crate) fn get_spendable_note_ids(&self) -> Vec<(NoteId, u64)> {
         self.values()
-            .into_iter()
-            .map(|transaction_record| transaction_record.get_spendable_note_ids())
-            .flatten()
+            .flat_map(|transaction_record| transaction_record.get_spendable_note_ids())
             .collect()
     }
 }

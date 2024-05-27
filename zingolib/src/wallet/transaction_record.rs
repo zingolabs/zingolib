@@ -401,7 +401,7 @@ impl TransactionRecord {
                 .into_iter()
                 .find(|note| *note.output_index() == Some(id.output_index().into()))
                 .map(|zingo_orchard_note| {
-                    crate::data::notes::Note::Orchard(zingo_orchard_note.note().clone())
+                    crate::data::notes::Note::Orchard(*zingo_orchard_note.note())
                 })
             }
         }
