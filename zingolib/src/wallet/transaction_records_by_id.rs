@@ -752,7 +752,7 @@ mod tests {
                     .to_owned(),
             )
             .spent(Some(sent))
-            .nullifier(Some(sapling_nullifier.clone()))
+            .nullifier(Some(*sapling_nullifier))
             .to_owned()
     }
     fn spent_orchard_note_builder(
@@ -767,7 +767,7 @@ mod tests {
                     .to_owned(),
             )
             .spent(Some(sent))
-            .nullifier(Some(orchard_nullifier.clone()))
+            .nullifier(Some(*orchard_nullifier))
             .to_owned()
     }
     #[test]

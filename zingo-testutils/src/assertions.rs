@@ -2,16 +2,15 @@
 
 use nonempty::NonEmpty;
 
+use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
-use zingolib::data::proposal::TransferProposal;
-use zingolib::lightclient::LightClient;
+use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 
-/// assert send outputs match client
 /// currently only checks if the fee matches
 /// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
-pub async fn assert_send_outputs_match_client(
+pub async fn assert_send_outputs_match_sender<NoteId>(
     client: &LightClient,
-    proposal: &TransferProposal,
+    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
 ) {
     let records = &client
@@ -31,5 +30,33 @@ pub async fn assert_send_outputs_match_client(
             records.calculate_transaction_fee(record).unwrap(),
             step.balance().fee_required().into_u64()
         );
+    }
+}
+
+/// currently only checks if the fee matches
+/// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
+pub async fn assert_send_outputs_match_receiver<NoteId>(
+    client: &LightClient,
+    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
+    txids: &NonEmpty<TxId>,
+) {
+    let records = &client
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id;
+
+    assert_eq!(proposal.steps().len(), txids.len());
+    for (i, step) in proposal.steps().iter().enumerate() {
+        let record = records.get(&txids[i]).expect("sender must recognize txid");
+
+        let mut sum_received = 0;
+        for payment in step.transaction_request().payments().values() {
+            sum_received += payment.amount.into_u64();
+        }
+
+        assert_eq!(sum_received, record.query_sum_value(OutputQuery::any()));
     }
 }
