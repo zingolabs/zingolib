@@ -19,7 +19,7 @@ const MAX_LIBTONODE_FAUCET: u64 = 2_000_000_000;
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
     #[test]
-    fn libtonode_send_value_to_transparent(value in 0..900_000u64) {
+    fn libtonode_send_value_to_transparent(value in 0..MAX_LIBTONODE_FAUCET) {
         Runtime::new().unwrap().block_on(async {
             send_value_to_pool::<LibtonodeEnvironment>(value, Transparent).await;
         });
