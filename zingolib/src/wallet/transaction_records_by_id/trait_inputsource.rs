@@ -36,9 +36,6 @@ pub enum InputSourceError {
     )]
     /// TODO: Add Doc Comment Here!
     OutputTooBig((u64, BalanceError)),
-    /// TODO: Add Doc Comment Here!
-    #[error("Cannot send. Fund shortfall: {0:?}")]
-    Shortfall(u64),
 }
 
 /// A trait representing the capability to query a data store for unspent transaction outputs
