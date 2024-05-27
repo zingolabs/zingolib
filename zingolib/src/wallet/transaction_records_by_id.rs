@@ -285,7 +285,10 @@ impl TransactionRecordsById {
             .iter()
             .map(|note| note.value())
             .sum();
-        transparent_output_value + sapling_output_value + orchard_output_value
+        transparent_output_value
+            + sapling_output_value
+            + orchard_output_value
+            + query_record.value_outgoing()
     }
     /// Calculate the fee for a transaction in the wallet
     ///
@@ -308,7 +311,7 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
-        let input_value = self.total_value_input_to_transaction(query_record)?;
+        let input_value = dbg!(self.total_value_input_to_transaction(query_record)?);
 
         if input_value == 0 {
             if query_record.value_outgoing() == 0 {
