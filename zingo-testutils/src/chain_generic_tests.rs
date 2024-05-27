@@ -140,16 +140,23 @@ pub mod fixtures {
         let sender = environment.fund_client_orchard(100_000).await;
         let recipient = environment.create_client().await;
 
-        // creates a transparent dust output for recipient
+        // creates a bunch of transparent dust outputs for recipient
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &sender,
                 &recipient,
-                vec![(Transparent, 1000)],
+                vec![
+                    (Transparent, 1000),
+                    (Transparent, 1000),
+                    (Transparent, 1000),
+                    (Transparent, 1000),
+                    (Transparent, 1000),
+                    (Transparent, 1000)
+                ],
             )
             .await,
-            15_000
+            40_000
         );
 
         // the recipient cannot propose shielding
