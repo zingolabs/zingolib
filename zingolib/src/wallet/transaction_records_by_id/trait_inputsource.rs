@@ -383,7 +383,7 @@ mod tests {
 
             let target_amount = NonNegativeAmount::const_from_u64(target_value as u64);
             let anchor_height: BlockHeight = 10.into();
-            let result: Result<SpendableNotes<NoteId>, InputSourceError> =
+            let spendable_notes =
                 zcash_client_backend::data_api::InputSource::select_spendable_notes(
                     &transaction_records_by_id,
                     AccountId::ZERO,
@@ -391,15 +391,7 @@ mod tests {
                     &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
                     anchor_height,
                     &[],
-                );
-            match result {
-                Err(_) => {
-                    prop_assert!(target_value > sapling_value + orchard_value);
-                },
-                Ok(spendable_notes) => {
-                    prop_assert!(target_value <= sapling_value + orchard_value);
-                }
-            }
+                ).unwrap();
         }
     }
 
