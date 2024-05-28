@@ -100,12 +100,20 @@ impl InputSource for TransactionRecordsById {
         }
     }
 
+    /// the trait method below is used as a TxMapAndMaybeTrees trait method by propose_transaction.
+    /// this function is used inside a loop that calculates a fee and balances change
+    /// this algorithm influences strategy for user fee minimization
+    /// see [create_send_proposal]
+    /// TRAIT DOCUMENTATION
     /// Returns a list of spendable notes sufficient to cover the specified target value, if
     /// possible. Only spendable notes corresponding to the specified shielded protocol will
     /// be included.
-    /// IMPL: implemented and tested
-    /// IMPL: _account skipped because Zingo uses 1 account.
-    /// IMPL: all notes beneath MARGINAL_FEE skipped as dust
+    /// IMPLEMENTATION DETAILS
+    /// account skipped because Zingo uses 1 account.
+    /// the algorithm to pick notes is summarized below
+    /// 1) first, sort all eligible notes by value
+    /// 2) pick the smallest that overcomes the target value and return it
+    /// 3) if you cant, add the biggest to the selection and return to step 2 to pick another
     fn select_spendable_notes(
         &self,
         _account: Self::AccountId,
@@ -121,17 +129,17 @@ impl InputSource for TransactionRecordsById {
 
         let mut selected = vec![];
 
-        let mut unselected_iterator = 0;
+        let mut index_of_unselected = 0;
         loop {
             if unselected.is_empty() {
                 // all notes are selected. we pass the max value onwards whether we have reached target or not
                 break;
             }
-            match unselected.get(unselected_iterator) {
+            match unselected.get(index_of_unselected) {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction... add the biggest note and reset the iteraton
                     selected.push(unselected.pop().expect("nonempty"));
-                    unselected_iterator = 0;
+                    index_of_unselected = 0;
                     continue;
                 }
                 Some(smallest_unselected) => {
@@ -141,11 +149,11 @@ impl InputSource for TransactionRecordsById {
                             - selected.iter().fold(0, |sum, (_id, value)| sum + *value)
                     {
                         selected.push(*smallest_unselected);
-                        unselected.remove(unselected_iterator);
+                        unselected.remove(index_of_unselected);
                         break;
                     } else {
                         // this note is not big enough. try the next
-                        unselected_iterator += 1;
+                        index_of_unselected += 1;
                     }
                 }
             }
