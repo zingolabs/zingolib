@@ -4178,15 +4178,15 @@ async fn send_all() {
     // increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
     //     .await
     //     .unwrap();
-    from_inputs::quick_send(
+    from_inputs::send(
         &faucet,
-        vec![(&get_base_address_macro!(&recipient, "unified"), 2_000, None)],
+        vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
     .await
     .unwrap();
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        .await
-        .unwrap();
+    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    //     .await
+    //     .unwrap();
     // from_inputs::quick_send(
     //     &faucet,
     //     vec![(

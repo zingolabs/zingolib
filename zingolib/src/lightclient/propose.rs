@@ -4,6 +4,8 @@ use std::convert::Infallible;
 use std::num::NonZeroU32;
 use std::ops::DerefMut;
 
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::zip321::Zip321Error;
@@ -56,6 +58,9 @@ pub enum ProposeSendError {
     #[error("insufficient funds")]
     /// insufficient funds
     InsufficientFunds,
+    #[error("failed to retrieve full viewing key for balance calculation")]
+    /// insufficient funds
+    NoFullViewingKey,
 }
 
 /// Errors that can result from do_propose
@@ -147,12 +152,19 @@ impl LightClient {
         address: zcash_keys::address::Address,
         memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<TransferProposal, ProposeSendError> {
-        // proposal for total balance
-        let pool_balances = self.do_balance().await;
         let total_shielded_balance = zatoshis_from_u64(
-            pool_balances.sapling_balance.unwrap_or(0) + pool_balances.orchard_balance.unwrap_or(0),
+            self.wallet
+                .spendable_balance_excluding_dust::<OrchardDomain>(None)
+                .await
+                .ok_or(ProposeSendError::NoFullViewingKey)?
+                + self
+                    .wallet
+                    .spendable_balance_excluding_dust::<SaplingDomain>(None)
+                    .await
+                    .ok_or(ProposeSendError::NoFullViewingKey)?,
         )
         .map_err(ProposeSendError::ConversionFailed)?;
+        dbg!(total_shielded_balance);
         let request = transaction_request_from_receivers(vec![Receiver::new(
             address.clone(),
             total_shielded_balance,
@@ -170,8 +182,7 @@ impl LightClient {
                 },
             )) => {
                 if let Some(shortfall) = required - available {
-                    Ok((available - shortfall)
-                        .ok_or_else(|| ProposeSendError::InsufficientFunds)?)
+                    Ok((available - shortfall).ok_or(ProposeSendError::InsufficientFunds)?)
                 } else {
                     return failing_proposal; // return the proposal in the case there is zero fee
                 }

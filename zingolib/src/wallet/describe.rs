@@ -2,6 +2,7 @@
 use orchard::note_encryption::OrchardDomain;
 
 use sapling_crypto::note_encryption::SaplingDomain;
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::{cmp, sync::Arc};
 use tokio::sync::RwLock;
@@ -157,6 +158,29 @@ impl LightWallet {
                     .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
             }),
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
+        ];
+        self.shielded_balance::<D>(target_addr, filters).await
+    }
+
+    /// Returns spendable balance for a given shielded pool excluding any notes with value less than marginal fee
+    pub async fn spendable_balance_excluding_dust<D: DomainWalletExt>(
+        &self,
+        target_addr: Option<String>,
+    ) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        let anchor_height = self.get_anchor_height().await;
+        #[allow(clippy::type_complexity)]
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
+            Box::new(|_, transaction| {
+                transaction
+                    .status
+                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
+            }),
+            Box::new(|note, _| !note.pending_receipt()),
+            Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
         ];
         self.shielded_balance::<D>(target_addr, filters).await
     }

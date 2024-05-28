@@ -189,6 +189,8 @@ impl InputSource for TransactionRecordsById {
                 },
             )?;
         };
+        dbg!(&orchard_notes);
+        dbg!(&sapling_notes);
 
         Ok(SpendableNotes::new(sapling_notes, orchard_notes))
     }
