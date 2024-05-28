@@ -70,8 +70,10 @@ pub enum ProposeShieldError {
     BelowThreshold(u64),
 }
 
-/// below this threshold it is not worth shielding
-pub const SHIELDING_THRESHOLD: u64 = 15_000;
+/// a greater note is worth shielding to create. not this one
+/// maybe should be a configuration value
+/// could arguably range from 0 to 3 * MARGINAL_FEE
+pub const SHIELDING_CUTOFF: u64 = 5_000;
 
 impl LightClient {
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
@@ -227,7 +229,7 @@ impl LightClient {
                 std::cmp::max(biggest_change_value_value, change_value.value().into_u64())
             });
 
-        if biggest_change > SHIELDING_THRESHOLD {
+        if biggest_change > SHIELDING_CUTOFF {
             self.store_proposal(ZingoProposal::Shield(proposal.clone()))
                 .await;
             Ok(proposal)

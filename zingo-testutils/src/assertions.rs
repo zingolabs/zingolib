@@ -69,7 +69,7 @@ pub async fn assert_cant_shield(client: &zingolib::lightclient::LightClient) {
                 true
             },
             zingolib::lightclient::propose::ProposeShieldError::BelowThreshold(amount) => {
-                println!("possible note {}, threshold {}", amount, zingolib::lightclient::propose::SHIELDING_THRESHOLD);
+                println!("possible note {}, threshold {}", amount, zingolib::lightclient::propose::SHIELDING_CUTOFF);
                 true},
             e => {
                 dbg!(e);
