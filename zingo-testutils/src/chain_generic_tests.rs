@@ -156,7 +156,7 @@ pub mod fixtures {
                 ],
             )
             .await,
-            40_000
+            8 * MARGINAL_FEE.into_u64()
         );
 
         // the recipient cannot propose shielding
@@ -172,7 +172,7 @@ pub mod fixtures {
                 vec![(Transparent, nondust_1)],
             )
             .await,
-            15_000
+            3 * MARGINAL_FEE.into_u64()
         );
 
         // the recipient cannot propose shielding
@@ -188,7 +188,7 @@ pub mod fixtures {
                 vec![(Transparent, nondust_2)],
             )
             .await,
-            15_000
+            3 * MARGINAL_FEE.into_u64()
         );
 
         // the recipient cannot propose shielding
@@ -204,11 +204,11 @@ pub mod fixtures {
                 vec![(Transparent, nondust_3)],
             )
             .await,
-            15_000
+            3 * MARGINAL_FEE.into_u64()
         );
 
         // the recipient can propose shielding
-        let expected_shield_fee = 25_000;
+        let expected_shield_fee = 5 * MARGINAL_FEE.into_u64();
         assert_eq!(
             with_assertions::propose_shield_bump_sync(&mut environment, &shielder).await,
             expected_shield_fee,
