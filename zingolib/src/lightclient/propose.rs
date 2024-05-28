@@ -78,7 +78,7 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub(crate) async fn create_send_proposal(
+    pub async fn create_send_proposal(
         &self,
         request: TransactionRequest,
     ) -> Result<TransferProposal, ProposeSendError> {
@@ -174,7 +174,10 @@ impl LightClient {
 
         let input_selector = GISKit::new(
             change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::default(),
+            zcash_client_backend::fees::DustOutputPolicy::new(
+                zcash_client_backend::fees::DustAction::AllowDustChange,
+                None,
+            ),
         );
 
         let mut tmamt = self
