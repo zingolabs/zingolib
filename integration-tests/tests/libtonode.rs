@@ -3092,12 +3092,8 @@ mod slow {
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
     #[tokio::test]
-    async fn unexpected_received_tx() {
-        // Test all possible promoting note source combinations
-        // This test includes combinations that are disallowed in the mobile
-        // app and are not recommended in production.
-        // An example is a transaction that "shields" both transparent and
-        // sapling value into the orchard value pool.
+    async fn list_txsummaries_check_fees() {
+        // Check that list_txsummaries behaves correctly given different fee scenarios
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
