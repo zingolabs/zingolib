@@ -5,9 +5,14 @@
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
+
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use zcash_client_backend::{wallet::NoteId, PoolType};
+use zcash_client_backend::{
+    wallet::NoteId,
+    PoolType,
+    ShieldedProtocol::{Orchard, Sapling},
+};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::{
@@ -16,10 +21,8 @@ use crate::{
         data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
         keys::unified::WalletCapability,
         notes::{
-            self,
-            query::{OutputQuery, OutputSpendStatusQuery},
-            OrchardNote, OutputId, OutputInterface, SaplingNote, ShieldedNoteInterface,
-            TransparentOutput,
+            query::OutputQuery, OrchardNote, OutputId, OutputInterface, SaplingNote,
+            ShieldedNoteInterface, TransparentOutput,
         },
         traits::{DomainWalletExt, ReadableWriteable as _},
     },
@@ -248,41 +251,6 @@ impl TransactionRecord {
         }
     }
 
-    /// For each Shielded note received in this transactions,
-    /// pair it with a NoteRecordIdentifier identifying the note
-    /// and return the list
-    pub fn select_unspent_shnotes_and_ids<D>(
-        &self,
-    ) -> Vec<(<D as zcash_note_encryption::Domain>::Note, NoteId)>
-    where
-        D: DomainWalletExt,
-        <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
-        <D as zcash_note_encryption::Domain>::Recipient: super::traits::Recipient,
-    {
-        let mut value_ref_pairs = Vec::new();
-        <D as DomainWalletExt>::WalletNote::transaction_record_to_outputs_vec_query(
-            self,
-            OutputSpendStatusQuery {
-                unspent: true,
-                pending_spent: false,
-                spent: false,
-            },
-        )
-        .iter()
-        .for_each(|note| {
-            if let Some(index) = note.output_index() {
-                let index = *index;
-                let note_record_reference =
-                    NoteId::new(self.txid, D::SHIELDED_PROTOCOL, index as u16);
-                value_ref_pairs.push((
-                    notes::ShieldedNoteInterface::note(*note).clone(),
-                    note_record_reference,
-                ));
-            }
-        });
-        value_ref_pairs
-    }
-
     /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
@@ -378,6 +346,44 @@ impl TransactionRecord {
                 )
             })
         })
+    }
+
+    /// get a list of unspent NoteIds with associated note values
+    pub(crate) fn get_spendable_note_ids_and_values(
+        &self,
+        sources: &[zcash_client_backend::ShieldedProtocol],
+        exclude: &[NoteId],
+    ) -> Vec<(NoteId, u64)> {
+        let mut all = vec![];
+        if sources.contains(&Sapling) {
+            self.sapling_notes.iter().for_each(|zingo_sapling_note| {
+                if zingo_sapling_note.is_unspent() {
+                    if let Some(output_index) = zingo_sapling_note.output_index() {
+                        let id = NoteId::new(self.txid, Sapling, *output_index as u16);
+                        if !exclude.contains(&id) {
+                            all.push((id, zingo_sapling_note.value()));
+                        }
+                    } else {
+                        println!("note has no index");
+                    }
+                }
+            });
+        }
+        if sources.contains(&Orchard) {
+            self.orchard_notes.iter().for_each(|zingo_orchard_note| {
+                if zingo_orchard_note.is_unspent() {
+                    if let Some(output_index) = zingo_orchard_note.output_index() {
+                        let id = NoteId::new(self.txid, Orchard, *output_index as u16);
+                        if !exclude.contains(&id) {
+                            all.push((id, zingo_orchard_note.value()));
+                        }
+                    } else {
+                        println!("note has no index");
+                    }
+                }
+            });
+        }
+        all
     }
 }
 // read/write
@@ -779,10 +785,12 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use orchard::note_encryption::OrchardDomain;
     use proptest::prelude::proptest;
-    use sapling_crypto::note_encryption::SaplingDomain;
     use test_case::test_matrix;
+
+    use sapling_crypto::note_encryption::SaplingDomain;
+    use zcash_client_backend::wallet::NoteId;
+    use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 
     use crate::wallet::notes::query::OutputQuery;
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
@@ -954,39 +962,19 @@ mod tests {
     }
 
     #[test]
-    fn select_unspent_shnotes_and_ids() {
-        let transaction_record = nine_note_transaction_record(
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-        );
+    fn select_spendable_note_ids_and_values() {
+        let transaction_record = nine_note_transaction_record_default();
 
-        let sapling_notes = transaction_record.select_unspent_shnotes_and_ids::<SaplingDomain>();
+        let unspent_ids_and_values =
+            transaction_record.get_spendable_note_ids_and_values(&[Sapling, Orchard], &[]);
+
         assert_eq!(
-            sapling_notes.first().unwrap().0,
-            transaction_record
-                .sapling_notes
-                .first()
-                .unwrap()
-                .sapling_crypto_note,
+            unspent_ids_and_values,
+            vec![
+                (NoteId::new(transaction_record.txid, Sapling, 0), 40_000),
+                (NoteId::new(transaction_record.txid, Orchard, 0), 70_000)
+            ]
         );
-        assert_eq!(sapling_notes.len(), 1);
-        let orchard_notes = transaction_record.select_unspent_shnotes_and_ids::<OrchardDomain>();
-        assert_eq!(
-            orchard_notes.first().unwrap().0,
-            transaction_record
-                .orchard_notes
-                .first()
-                .unwrap()
-                .orchard_crypto_note,
-        );
-        assert_eq!(orchard_notes.len(), 1);
     }
 
     #[test]
