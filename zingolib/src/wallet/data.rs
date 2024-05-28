@@ -677,7 +677,7 @@ pub(crate) mod mocks {
     use super::OutgoingTxData;
 
     pub(crate) struct OutgoingTxDataBuilder {
-        to_address: Option<String>,
+        destination_address: Option<String>,
         value: Option<u64>,
         memo: Option<Memo>,
         recipient_ua: Option<Option<String>>,
@@ -686,7 +686,7 @@ pub(crate) mod mocks {
     impl OutgoingTxDataBuilder {
         pub(crate) fn new() -> Self {
             Self {
-                to_address: None,
+                destination_address: None,
                 value: None,
                 memo: None,
                 recipient_ua: None,
@@ -694,14 +694,14 @@ pub(crate) mod mocks {
         }
 
         // Methods to set each field
-        build_method!(to_address, String);
+        build_method!(destination_address, String);
         build_method!(value, u64);
         build_method!(memo, Memo);
         build_method!(recipient_ua, Option<String>);
 
         pub(crate) fn build(&self) -> OutgoingTxData {
             OutgoingTxData {
-                destination_address: self.to_address.clone().unwrap(),
+                destination_address: self.destination_address.clone().unwrap(),
                 value: self.value.unwrap(),
                 memo: self.memo.clone().unwrap(),
                 recipient_ua: self.recipient_ua.clone().unwrap(),
@@ -713,7 +713,7 @@ pub(crate) mod mocks {
         fn default() -> Self {
             let mut builder = Self::new();
             builder
-                .to_address("default_address".to_string())
+                .destination_address("default_address".to_string())
                 .value(50_000)
                 .memo(Memo::default())
                 .recipient_ua(None);
