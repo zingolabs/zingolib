@@ -1292,9 +1292,9 @@ impl Command for ValueTxSummariesCommand {
             return format!("Didn't understand arguments\n{}", self.help());
         }
 
-        RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_list_txsummaries().await).pretty(2)
-        })
+        RT.block_on(
+            async move { json::JsonValue::from(lightclient.list_txsummaries().await).pretty(2) },
+        )
     }
 }
 
