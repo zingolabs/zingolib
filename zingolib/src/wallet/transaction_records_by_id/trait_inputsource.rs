@@ -161,6 +161,8 @@ impl InputSource for TransactionRecordsById {
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
+
+        // transform each NoteId to a ReceivedNote
         selected.iter().try_for_each(|(id, _value)| {
             let transaction = self.get(id.txid());
             match id.protocol() {
