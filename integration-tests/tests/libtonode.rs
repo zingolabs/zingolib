@@ -3135,11 +3135,11 @@ mod slow {
         //    - 317:    5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
         from_inputs::send(
             &pool_migration_client,
-            vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
+            vec![(&pmc_taddr, 10_000, None), (&pmc_sapling, 10_000, None)],
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 30_000 t: 30_000);
+        bump_and_check_pmc!(o: 70_000 s: 10_000 t: 10_000);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
