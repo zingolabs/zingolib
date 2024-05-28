@@ -20,11 +20,13 @@ use crate::{
     error::ZingoLibError,
     wallet::{
         data::{
-            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionRecord,
+            finsight,
+            summaries::{ValueTransfer, ValueTransferKind},
+            OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
+        transaction_records_by_id::TransactionRecordsById,
         LightWallet,
     },
 };
@@ -252,8 +254,36 @@ impl LightClient {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn list_txsummaries(&self) -> Result<Vec<ValueTransfer>, ListTxSummariesError> {
+    fn add_fee_value_transfer(
+        record: &TransactionRecord,
+        records: &TransactionRecordsById,
+        summaries: &mut Vec<ValueTransfer>,
+    ) -> Result<(), ListTxSummariesError> {
+        match records.calculate_transaction_fee(record) {
+            Ok(tx_fee) => {
+                let (block_height, datetime, price, pending) = (
+                    record.status.get_height(),
+                    record.datetime,
+                    record.price,
+                    !record.status.is_confirmed(),
+                );
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Fee { amount: tx_fee },
+                    memos: vec![],
+                    price,
+                    txid: record.txid,
+                    pending,
+                });
+            }
+            _ => todo!(),
+        }
+        Ok(())
+    }
+    /// Provide a list of the ways value has been transferred by this capability
+    /// summing over these transfers will result in a correct balance.
+    pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
         let transaction_records_by_id = &self
             .wallet
@@ -265,25 +295,13 @@ impl LightClient {
 
         for (txid, transaction_record) in transaction_records_by_id.iter() {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_record);
-
-            if let Ok(tx_fee) =
-                transaction_records_by_id.calculate_transaction_fee(transaction_record)
-            {
-                let (block_height, datetime, price, pending) = (
-                    transaction_record.status.get_height(),
-                    transaction_record.datetime,
-                    transaction_record.price,
-                    !transaction_record.status.is_confirmed(),
-                );
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Fee { amount: tx_fee },
-                    memos: vec![],
-                    price,
-                    txid: *txid,
-                    pending,
-                });
+            match LightClient::add_fee_value_transfer(
+                transaction_record,
+                transaction_records_by_id,
+                &mut summaries,
+            ) {
+                Ok(()) => continue,
+                _ => todo!(),
             };
         }
         summaries.sort_by_key(|summary| summary.block_height);
