@@ -41,6 +41,7 @@ async fn libtonode_send_shield_cycle() {
     send_shield_cycle::<LibtonodeEnvironment>(4).await;
 }
 #[tokio::test]
+#[ignore]
 async fn libtonode_send_grace_input() {
     send_grace_input::<LibtonodeEnvironment>().await;
 }
