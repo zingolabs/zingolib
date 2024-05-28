@@ -24,12 +24,13 @@ use thiserror::Error;
 use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::transaction::components::amount::BalanceError;
 
-/// TODO: Add Doc Comment Here!
-#[allow(missing_docs)] // error types document themselves
+/// Error type used by InputSource trait
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
+    /// #[error("Note expected but not found: {0:?}")]
     #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
+    /// #[error("An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}")]
     #[error(
         "An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}"
     )]
