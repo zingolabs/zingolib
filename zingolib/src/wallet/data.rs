@@ -279,7 +279,7 @@ pub(crate) fn write_sapling_rseed<W: Write>(
 #[derive(Clone, Debug)]
 pub struct OutgoingTxData {
     /// TODO: Add Doc Comment Here!
-    pub to_address: String,
+    pub destination_address: String,
     /// Amount to this receiver
     pub value: u64,
     /// Note to the receiver, why not an option?
@@ -291,7 +291,8 @@ pub struct OutgoingTxData {
 
 impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
-        (self.to_address == other.to_address || self.recipient_ua == other.recipient_ua)
+        (self.destination_address == other.destination_address
+            || self.recipient_ua == other.recipient_ua)
             && self.value == other.value
             && self.memo == other.memo
     }
@@ -321,7 +322,7 @@ impl OutgoingTxData {
         }?;
 
         Ok(OutgoingTxData {
-            to_address: address,
+            destination_address: address,
             value,
             memo,
             recipient_ua: None,
@@ -333,8 +334,9 @@ impl OutgoingTxData {
         // Strings are written as len + utf8
         match &self.recipient_ua {
             None => {
-                writer.write_u64::<LittleEndian>(self.to_address.as_bytes().len() as u64)?;
-                writer.write_all(self.to_address.as_bytes())?;
+                writer
+                    .write_u64::<LittleEndian>(self.destination_address.as_bytes().len() as u64)?;
+                writer.write_all(self.destination_address.as_bytes())?;
             }
             Some(ua) => {
                 writer.write_u64::<LittleEndian>(ua.as_bytes().len() as u64)?;
@@ -699,7 +701,7 @@ pub(crate) mod mocks {
 
         pub(crate) fn build(&self) -> OutgoingTxData {
             OutgoingTxData {
-                to_address: self.to_address.clone().unwrap(),
+                destination_address: self.to_address.clone().unwrap(),
                 value: self.value.unwrap(),
                 memo: self.memo.clone().unwrap(),
                 recipient_ua: self.recipient_ua.clone().unwrap(),

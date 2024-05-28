@@ -381,7 +381,7 @@ impl LightClient {
             // All received funds were change, this is a normal send
             (true, false) => {
                 for OutgoingTxData {
-                    to_address,
+                    destination_address: to_address,
                     value,
                     memo,
                     recipient_ua,
