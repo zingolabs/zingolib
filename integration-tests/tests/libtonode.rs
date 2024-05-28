@@ -3133,29 +3133,7 @@ mod slow {
         from_inputs::send(&pool_migration_client, vec![(&pmc_taddr, 30_000, None)])
             .await
             .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(
-            &regtest_manager,
-            &pool_migration_client,
-            1,
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            pool_migration_client
-                .do_balance()
-                .await
-                .orchard_balance
-                .unwrap(),
-            60_000u64
-        );
-        assert_eq!(
-            pool_migration_client
-                .do_balance()
-                .await
-                .transparent_balance
-                .unwrap(),
-            30_000u64
-        );
+        bump_and_check_pmc!(o: 60_000 s: 0 t: 30_000);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
