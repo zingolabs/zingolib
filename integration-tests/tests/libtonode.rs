@@ -3121,7 +3121,13 @@ mod slow {
         from_inputs::send(&sapling_faucet, vec![(&pmc_unified, 100_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 100_000 s: 0 t: 0);
+        zingo_testutils::increase_height_and_wait_for_client(
+            &regtest_manager,
+            &pool_migration_client,
+            1,
+        )
+        .await
+        .unwrap();
 
         // 2 to transparent and sapling from orchard
         //  # Expected Fees:
