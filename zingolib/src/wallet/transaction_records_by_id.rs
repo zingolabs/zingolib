@@ -628,16 +628,24 @@ impl TransactionRecordsById {
         price.map(|p| self.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
 
-    /// get a Note from a NoteId
-    pub(crate) fn get_note_from_id(&self, id: NoteId) -> Option<crate::data::notes::Note> {
-        self.get(id.txid())
-            .and_then(|transaction_record| transaction_record.get_note_from_id(id))
-    }
-
     /// get a list of spendable NoteIds with associated note values
-    pub(crate) fn get_spendable_note_ids_by_value(&self) -> Vec<(NoteId, u64)> {
+    pub(crate) fn get_spendable_note_ids_and_values(
+        &self,
+        sources: &[zcash_client_backend::ShieldedProtocol],
+        anchor_height: zcash_primitives::consensus::BlockHeight,
+        exclude: &[NoteId],
+    ) -> Vec<(NoteId, u64)> {
         self.values()
-            .flat_map(|transaction_record| transaction_record.get_spendable_note_ids_by_value())
+            .flat_map(|transaction_record| {
+                if transaction_record
+                    .status
+                    .is_confirmed_before_or_at(&anchor_height)
+                {
+                    transaction_record.get_spendable_note_ids_and_values(sources, exclude)
+                } else {
+                    vec![]
+                }
+            })
             .collect()
     }
 }

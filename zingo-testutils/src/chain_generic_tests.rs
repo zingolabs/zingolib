@@ -216,50 +216,42 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
+
         let primary = environment.fund_client_orchard(120_000).await;
-
-        let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
-
         let secondary = environment.create_client().await;
-        // let secondary_address_sapling = secondary.get_base_address(Shielded(Sapling)).await;
-        let secondary_address_sapling = get_base_address(&secondary, Shielded(Sapling)).await;
-        let secondary_address_orchard = get_base_address(&secondary, Shielded(Orchard)).await;
 
-        from_inputs::send(
-            &primary,
-            vec![
-                (secondary_address_sapling.as_str(), 1_000, None),
-                (secondary_address_orchard.as_str(), 1_000, None),
-                (secondary_address_sapling.as_str(), 1_000, None),
-                (secondary_address_orchard.as_str(), 1_000, None),
-                (secondary_address_sapling.as_str(), 1_000, None),
-                (secondary_address_orchard.as_str(), 1_000, None),
-                (secondary_address_sapling.as_str(), 1_000, None),
-                (secondary_address_orchard.as_str(), 1_000, None),
-                (secondary_address_sapling.as_str(), 1_000, None),
-                (secondary_address_orchard.as_str(), 1_000, None),
-                (secondary_address_sapling.as_str(), 10_000, None),
-                (secondary_address_orchard.as_str(), 10_000, None),
-            ],
-        )
-        .await
-        .unwrap();
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![
+                    (Shielded(Sapling), 1_000),
+                    (Shielded(Sapling), 1_000),
+                    (Shielded(Sapling), 1_000),
+                    (Shielded(Sapling), 1_000),
+                    (Shielded(Sapling), 15_000),
+                    (Shielded(Orchard), 1_000),
+                    (Shielded(Orchard), 1_000),
+                    (Shielded(Orchard), 1_000),
+                    (Shielded(Orchard), 1_000),
+                    (Shielded(Orchard), 15_000),
+                ],
+            )
+            .await,
+            11 * MARGINAL_FEE.into_u64()
+        );
 
-        environment.bump_chain().await;
-        secondary.do_sync(false).await.unwrap();
-
-        check_client_balances!(secondary, o: 15_000 s: 15_000 t: 0);
-
-        from_inputs::send(
-            &secondary,
-            vec![(primary_address_orchard.as_str(), 5_001, None)],
-        )
-        .await
-        .unwrap();
-
-        environment.bump_chain().await;
-        secondary.do_sync(false).await.unwrap();
-        check_client_balances!(secondary, o: 9_999 s: 5_000 t: 0);
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), 10_000),],
+            )
+            .await,
+            4 * MARGINAL_FEE.into_u64()
+        );
     }
 
     /// creates a proposal, sends it and receives it (upcoming: compares that it was executed correctly) in a chain-generic context
