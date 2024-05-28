@@ -175,7 +175,7 @@ impl InputSource for TransactionRecordsById {
                             selected_sapling.push(received_note);
                             Ok(())
                         }
-                        None => Err(InputSourceError::NoteCannotBeIdentified(*id)),
+                        None => Err(()),
                     }
                 }
                 zcash_client_backend::ShieldedProtocol::Orchard => {
@@ -186,10 +186,11 @@ impl InputSource for TransactionRecordsById {
                             selected_orchard.push(received_note);
                             Ok(())
                         }
-                        None => Err(InputSourceError::NoteCannotBeIdentified(*id)),
+                        None => Err(()),
                     }
                 }
             }
+            .map_err(|()| InputSourceError::NoteCannotBeIdentified(*id))
         })?;
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
