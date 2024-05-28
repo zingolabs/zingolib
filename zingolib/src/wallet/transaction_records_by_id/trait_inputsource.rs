@@ -167,30 +167,22 @@ impl InputSource for TransactionRecordsById {
             let transaction = self.get(id.txid());
             let output_index = id.output_index() as u32;
             match id.protocol() {
-                zcash_client_backend::ShieldedProtocol::Sapling => {
-                    match transaction.and_then(|transaction_record| {
+                zcash_client_backend::ShieldedProtocol::Sapling => transaction
+                    .and_then(|transaction_record| {
                         transaction_record.get_received_note::<SaplingDomain>(output_index)
-                    }) {
-                        Some(received_note) => {
-                            selected_sapling.push(received_note);
-                            Ok(())
-                        }
-                        None => Err(()),
-                    }
-                }
-                zcash_client_backend::ShieldedProtocol::Orchard => {
-                    match transaction.and_then(|transaction_record| {
+                    })
+                    .map(|received_note| {
+                        selected_sapling.push(received_note);
+                    }),
+                zcash_client_backend::ShieldedProtocol::Orchard => transaction
+                    .and_then(|transaction_record| {
                         transaction_record.get_received_note::<OrchardDomain>(output_index)
-                    }) {
-                        Some(received_note) => {
-                            selected_orchard.push(received_note);
-                            Ok(())
-                        }
-                        None => Err(()),
-                    }
-                }
+                    })
+                    .map(|received_note| {
+                        selected_orchard.push(received_note);
+                    }),
             }
-            .map_err(|()| InputSourceError::NoteCannotBeIdentified(*id))
+            .ok_or(InputSourceError::NoteCannotBeIdentified(*id))
         })?;
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
