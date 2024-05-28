@@ -164,17 +164,17 @@ impl InputSource for TransactionRecordsById {
 
         // transform each NoteId to a ReceivedNote
         selected.iter().try_for_each(|(id, _value)| {
-            let transaction = self.get(id.txid());
+            let opt_transaction_record = self.get(id.txid());
             let output_index = id.output_index() as u32;
             match id.protocol() {
-                zcash_client_backend::ShieldedProtocol::Sapling => transaction
+                zcash_client_backend::ShieldedProtocol::Sapling => opt_transaction_record
                     .and_then(|transaction_record| {
                         transaction_record.get_received_note::<SaplingDomain>(output_index)
                     })
                     .map(|received_note| {
                         selected_sapling.push(received_note);
                     }),
-                zcash_client_backend::ShieldedProtocol::Orchard => transaction
+                zcash_client_backend::ShieldedProtocol::Orchard => opt_transaction_record
                     .and_then(|transaction_record| {
                         transaction_record.get_received_note::<OrchardDomain>(output_index)
                     })
