@@ -29,6 +29,13 @@ use crate::{
     },
 };
 
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, thiserror::Error)]
+pub enum ListTxSummariesError {
+    #[error("Error in fee calclation")]
+    FeeCalculationError(String),
+}
+
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
@@ -246,7 +253,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
+    pub async fn list_txsummaries(&self) -> Result<Vec<ValueTransfer>, ListTxSummariesError> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
         let transaction_records_by_id = &self
             .wallet
