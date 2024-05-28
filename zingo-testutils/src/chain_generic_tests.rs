@@ -175,7 +175,7 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let primary = environment.fund_client_orchard(110_000).await;
+        let primary = environment.fund_client_orchard(115_000).await;
         let secondary = environment.create_client().await;
 
         assert_eq!(
