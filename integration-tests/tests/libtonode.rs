@@ -3093,6 +3093,7 @@ mod slow {
     }
     #[tokio::test]
     async fn list_txsummaries_check_fees() {
+        const FUND: u64 = 100_000;
         // Check that list_txsummaries behaves correctly given different fee scenarios
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
@@ -3118,10 +3119,10 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 0
         //    - 317:    0
-        from_inputs::send(&sapling_faucet, vec![(&pmc_unified, 234_567, None)])
+        from_inputs::send(&sapling_faucet, vec![(&pmc_unified, FUND, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 234_567 s: 0 t: 0);
+        bump_and_check_pmc!(o: FUND s: 0 t: 0);
 
         // 2 to transparent and sapling from orchard
         //  # Expected Fees:
@@ -3133,7 +3134,8 @@ mod slow {
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 164_567 s: 30_000 t: 30_000);
+        let expected_orchard_remaing = (FUND as i64 - 10_000 - 30_000 - 30_000) as u64;
+        bump_and_check_pmc!(o: expected_orchard_remaing s: 30_000 t: 30_000);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
