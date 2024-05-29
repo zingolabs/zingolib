@@ -246,8 +246,16 @@ impl LightClient {
     }
 
     /// Provides a list of value transfers related to this capability
+    /// This public interface silently swallows fee calculation errors
     pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
+        let (vtransfers, ferrors) = self.list_txsummaries_and_fee_errors().await;
+        dbg!(ferrors);
+        vtransfers
+    }
+    async fn list_txsummaries_and_fee_errors(&self) -> (Vec<ValueTransfer>, Vec<String>) {
+        let mut counter = 0;
         let mut summaries: Vec<ValueTransfer> = Vec::new();
+        let mut fee_report: Vec<String> = Vec::new();
         let transaction_records_by_id = &self
             .wallet
             .transaction_context
@@ -259,28 +267,31 @@ impl LightClient {
         for (txid, transaction_record) in transaction_records_by_id.iter() {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_record);
 
-            if let Ok(tx_fee) =
-                transaction_records_by_id.calculate_transaction_fee(transaction_record)
-            {
-                let (block_height, datetime, price, pending) = (
-                    transaction_record.status.get_height(),
-                    transaction_record.datetime,
-                    transaction_record.price,
-                    !transaction_record.status.is_confirmed(),
-                );
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Fee { amount: tx_fee },
-                    memos: vec![],
-                    price,
-                    txid: *txid,
-                    pending,
-                });
-            };
+            let (block_height, datetime, price, pending) = (
+                transaction_record.status.get_height(),
+                transaction_record.datetime,
+                transaction_record.price,
+                !transaction_record.status.is_confirmed(),
+            );
+            match transaction_records_by_id.calculate_transaction_fee(transaction_record) {
+                Ok(tx_fee) => {
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Fee { amount: tx_fee },
+                        memos: vec![],
+                        price,
+                        txid: *txid,
+                        pending,
+                    });
+                    fee_report.push(format!("{} error: NONE", counter))
+                }
+                Err(e) => fee_report.push(format!("{} error: {}", counter, e.to_string())),
+            }
+            counter = counter + 1;
         }
         summaries.sort_by_key(|summary| summary.block_height);
-        summaries
+        (summaries, fee_report)
     }
 
     /// TODO: Add Doc Comment Here!
