@@ -24,21 +24,6 @@ macro_rules! get_base_address_macro {
 macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
         let balance = $client.do_balance().await;
-        let tx_summary_balance = $client
-            .list_txsummaries()
-            .await
-            .iter()
-            .map(|transfer| transfer.balance_delta())
-            .sum::<i64>();
-        assert_eq!(
-            (balance.orchard_balance.unwrap_or(0)
-                + balance.sapling_balance.unwrap_or(0)
-                + balance.transparent_balance.unwrap_or(0)) as i64,
-            tx_summary_balance,
-            "tx_summaries follow: {}\ndo_list_transactions follow: {}",
-            ::json::JsonValue::from($client.list_txsummaries().await).pretty(4),
-            ::json::JsonValue::from($client.do_list_transactions().await).pretty(4)
-        );
         assert_eq!(
             balance.orchard_balance.unwrap(),
             $orchard,
@@ -59,6 +44,20 @@ macro_rules! check_client_balances {
             "\nt_balance: {} expectation: {} ",
             balance.transparent_balance.unwrap(),
             $transparent
+        );
+        let tx_summaries = $client.list_txsummaries().await;
+        let tx_summary_balance = tx_summaries
+            .iter()
+            .map(|transfer| transfer.balance_delta())
+            .sum::<i64>();
+        assert_eq!(
+            (balance.orchard_balance.unwrap_or(0)
+                + balance.sapling_balance.unwrap_or(0)
+                + balance.transparent_balance.unwrap_or(0)) as i64,
+            tx_summary_balance,
+            "do_list_transactions: {}\nlist_txsummaries: {}",
+            ::json::JsonValue::from($client.do_list_transactions().await).pretty(4),
+            ::json::JsonValue::from(tx_summaries).pretty(4)
         );
     };
 }
