@@ -90,7 +90,10 @@ impl LightClient {
 
         let input_selector = GISKit::new(
             change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::default(),
+            zcash_client_backend::fees::DustOutputPolicy::new(
+                zcash_client_backend::fees::DustAction::AllowDustChange,
+                None,
+            ),
         );
 
         let mut tmamt = self
@@ -174,10 +177,7 @@ impl LightClient {
 
         let input_selector = GISKit::new(
             change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::new(
-                zcash_client_backend::fees::DustAction::AllowDustChange,
-                None,
-            ),
+            zcash_client_backend::fees::DustOutputPolicy::default(),
         );
 
         let mut tmamt = self
