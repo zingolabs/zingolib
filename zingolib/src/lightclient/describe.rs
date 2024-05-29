@@ -246,7 +246,6 @@ impl LightClient {
     }
 
     /// Provides a list of value transfers related to this capability
-    /// This public interface silently swallows fee calculation errors
     pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
         let transaction_records_by_id = &self
