@@ -1064,7 +1064,7 @@ impl Command for ShieldCommand {
                         .balance()
                         .proposed_change()
                         .iter()
-                        .fold(Some(NonNegativeAmount::ZERO), |acc, c| acc? + c.value()) else {
+                        .try_fold(NonNegativeAmount::ZERO, |acc, c| acc + c.value()) else {
                             return object! { "error" => "shield amount outside valid range of zatoshis" }
                                 .pretty(2);
                     };
