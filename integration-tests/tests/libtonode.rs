@@ -3104,7 +3104,7 @@ mod slow {
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
         let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 1)
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {
