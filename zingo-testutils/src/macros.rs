@@ -58,7 +58,7 @@ macro_rules! check_client_balances {
                 + balance.sapling_balance.unwrap()
                 + balance.transparent_balance.unwrap()) as i64,
             tx_summary_balance,
-            "do_list_transactions: {}\nlist_txsummaries: {}",
+            "\ndo_list_transactions: {}\nlist_txsummaries: {}",
             ::json::JsonValue::from($client.do_list_transactions().await).pretty(4),
             ::json::JsonValue::from(tx_summaries).pretty(4)
         );

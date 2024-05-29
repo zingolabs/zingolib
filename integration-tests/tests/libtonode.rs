@@ -3118,10 +3118,10 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 0
         //    - 317:    0
-        from_inputs::send(&sapling_faucet, vec![(&pmc_unified, 100_000, None)])
+        from_inputs::send(&sapling_faucet, vec![(&pmc_unified, 234_567, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 100_000 s: 0 t: 0);
+        bump_and_check_pmc!(o: 234_567 s: 0 t: 0);
 
         // 2 to transparent and sapling from orchard
         //  # Expected Fees:
@@ -3133,7 +3133,7 @@ mod slow {
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 30_000 t: 30_000);
+        bump_and_check_pmc!(o: 164_567 s: 30_000 t: 30_000);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
