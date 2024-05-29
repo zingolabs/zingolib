@@ -420,7 +420,8 @@ pub mod summaries {
     }
 
     impl ValueTransfer {
-        /// TODO: Add Doc Comment Here!
+        /// Depending on the relationship of this Capability to the
+        /// receiver capability assign polarity to amount transferred.
         pub fn balance_delta(&self) -> i64 {
             match self.kind {
                 ValueTransferKind::Sent { amount, .. } => -(amount as i64),

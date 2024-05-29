@@ -19,7 +19,10 @@ macro_rules! get_base_address_macro {
     };
 }
 
-/// TODO: Add Doc Comment Here!
+/// First check that each pools' balance matches an expectation
+/// then check that the overall balance as calculated by
+/// summing the amounts listed in tx_summaries matches the
+/// sum of the balances.
 #[macro_export]
 macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
