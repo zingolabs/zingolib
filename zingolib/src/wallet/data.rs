@@ -279,19 +279,19 @@ pub(crate) fn write_sapling_rseed<W: Write>(
 #[derive(Clone, Debug)]
 pub struct OutgoingTxData {
     /// TODO: Add Doc Comment Here!
-    pub destination_address: String,
+    pub recipient_address: String,
     /// Amount to this receiver
     pub value: u64,
     /// Note to the receiver, why not an option?
     pub memo: Memo,
     /// What if it wasn't provided?  How does this relate to
-    /// to_address?
+    /// recipient_address?
     pub recipient_ua: Option<String>,
 }
 
 impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
-        (self.destination_address == other.destination_address
+        (self.recipient_address == other.recipient_address
             || self.recipient_ua == other.recipient_ua)
             && self.value == other.value
             && self.memo == other.memo
@@ -322,7 +322,7 @@ impl OutgoingTxData {
         }?;
 
         Ok(OutgoingTxData {
-            destination_address: address,
+            recipient_address: address,
             value,
             memo,
             recipient_ua: None,
@@ -334,9 +334,8 @@ impl OutgoingTxData {
         // Strings are written as len + utf8
         match &self.recipient_ua {
             None => {
-                writer
-                    .write_u64::<LittleEndian>(self.destination_address.as_bytes().len() as u64)?;
-                writer.write_all(self.destination_address.as_bytes())?;
+                writer.write_u64::<LittleEndian>(self.recipient_address.as_bytes().len() as u64)?;
+                writer.write_all(self.recipient_address.as_bytes())?;
             }
             Some(ua) => {
                 writer.write_u64::<LittleEndian>(ua.as_bytes().len() as u64)?;
@@ -464,7 +463,7 @@ pub mod summaries {
             /// TODO: Add Doc Comment Here!
             amount: u64,
             /// TODO: Add Doc Comment Here!
-            to_address: zcash_address::ZcashAddress,
+            recipient_address: zcash_address::ZcashAddress,
         },
         /// TODO: Add Doc Comment Here!
         Received {
@@ -508,12 +507,12 @@ pub mod summaries {
             };
             match value.kind {
                 ValueTransferKind::Sent {
-                    ref to_address,
+                    ref recipient_address,
                     amount,
                 } => {
                     temp_object["amount"] = JsonValue::from(amount);
                     temp_object["kind"] = JsonValue::from(&value.kind);
-                    temp_object["to_address"] = JsonValue::from(to_address.encode());
+                    temp_object["to_address"] = JsonValue::from(recipient_address.encode());
                     temp_object
                 }
                 ValueTransferKind::Fee { amount } => {
@@ -677,7 +676,7 @@ pub(crate) mod mocks {
     use super::OutgoingTxData;
 
     pub(crate) struct OutgoingTxDataBuilder {
-        destination_address: Option<String>,
+        recipient_address: Option<String>,
         value: Option<u64>,
         memo: Option<Memo>,
         recipient_ua: Option<Option<String>>,
@@ -686,7 +685,7 @@ pub(crate) mod mocks {
     impl OutgoingTxDataBuilder {
         pub(crate) fn new() -> Self {
             Self {
-                destination_address: None,
+                recipient_address: None,
                 value: None,
                 memo: None,
                 recipient_ua: None,
@@ -694,14 +693,14 @@ pub(crate) mod mocks {
         }
 
         // Methods to set each field
-        build_method!(destination_address, String);
+        build_method!(recipient_address, String);
         build_method!(value, u64);
         build_method!(memo, Memo);
         build_method!(recipient_ua, Option<String>);
 
         pub(crate) fn build(&self) -> OutgoingTxData {
             OutgoingTxData {
-                destination_address: self.destination_address.clone().unwrap(),
+                recipient_address: self.recipient_address.clone().unwrap(),
                 value: self.value.unwrap(),
                 memo: self.memo.clone().unwrap(),
                 recipient_ua: self.recipient_ua.clone().unwrap(),
@@ -713,7 +712,7 @@ pub(crate) mod mocks {
         fn default() -> Self {
             let mut builder = Self::new();
             builder
-                .destination_address("default_address".to_string())
+                .recipient_address("default_address".to_string())
                 .value(50_000)
                 .memo(Memo::default())
                 .recipient_ua(None);
