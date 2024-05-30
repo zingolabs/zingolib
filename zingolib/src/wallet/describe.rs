@@ -2,6 +2,7 @@
 use orchard::note_encryption::OrchardDomain;
 
 use sapling_crypto::note_encryption::SaplingDomain;
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::{cmp, sync::Arc};
 use tokio::sync::RwLock;
@@ -82,6 +83,7 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: this should minus the fee of sending the confirmed balance!
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
             self.verified_balance::<OrchardDomain>(target_addr).await
@@ -91,6 +93,7 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: this should minus the fee of sending the confirmed balance!
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().sapling {
             self.verified_balance::<SaplingDomain>(target_addr).await
@@ -161,12 +164,44 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Returns balance for a given shielded pool excluding any notes with value less than marginal fee
+    /// that are confirmed on the block chain (the block has at least 1 confirmation)
+    pub async fn confirmed_balance_excluding_dust<D: DomainWalletExt>(
+        &self,
+        target_addr: Option<String>,
+    ) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        let wallet_tip = self
+            .blocks
+            .read()
+            .await
+            .first()
+            .map(|block| block.height as u32)
+            .unwrap_or(0);
+        #[allow(clippy::type_complexity)]
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
+            Box::new(|_, transaction| {
+                transaction
+                    .status
+                    .is_confirmed_before_or_at(&BlockHeight::from_u32(wallet_tip))
+            }),
+            Box::new(|note, _| !note.pending_receipt()),
+            Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
+        ];
+        self.shielded_balance::<D>(target_addr, filters).await
+    }
+
+    /// Deprecated for `shielded_balance`
+    #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
     pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
         self.shielded_balance::<OrchardDomain>(addr, &[]).await
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Deprecated for `shielded_balance`
+    #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
     pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
         self.shielded_balance::<SaplingDomain>(addr, &[]).await
     }
@@ -203,7 +238,7 @@ impl LightWallet {
     /// Get the height of the anchor block
     pub async fn get_anchor_height(&self) -> u32 {
         match self.get_target_height_and_anchor_offset().await {
-            Some((height, anchor_offset)) => height - anchor_offset as u32 - 1,
+            Some((height, anchor_offset)) => height - anchor_offset as u32 - 1, // what is the purpose of this -1 ?
             None => 0,
         }
     }
