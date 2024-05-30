@@ -5,7 +5,7 @@
 [workspace]
 members = [
     "zingo-testutils",
-    "integration-tests",
+    "libtonode-tests",
     "darkside-tests",
     "zingocli",
     "zingolib",

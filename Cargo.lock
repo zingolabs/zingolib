@@ -1474,28 +1474,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "integration-tests"
-version = "0.2.0"
-dependencies = [
- "hex",
- "http 0.2.12",
- "itertools 0.10.5",
- "json",
- "log",
- "orchard",
- "serde_json",
- "shardtree",
- "tokio",
- "zcash_address",
- "zcash_client_backend",
- "zcash_primitives",
- "zingo-testutils",
- "zingo-testvectors",
- "zingoconfig",
- "zingolib",
-]
-
-[[package]]
 name = "iovec"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1607,6 +1585,28 @@ checksum = "c0ff37bd590ca25063e35af745c343cb7a0271906fb7b37e4813e8f79f00268d"
 dependencies = [
  "bitflags 2.5.0",
  "libc",
+]
+
+[[package]]
+name = "libtonode-tests"
+version = "0.2.0"
+dependencies = [
+ "hex",
+ "http 0.2.12",
+ "itertools 0.10.5",
+ "json",
+ "log",
+ "orchard",
+ "serde_json",
+ "shardtree",
+ "tokio",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_primitives",
+ "zingo-testutils",
+ "zingo-testvectors",
+ "zingoconfig",
+ "zingolib",
 ]
 
 [[package]]
