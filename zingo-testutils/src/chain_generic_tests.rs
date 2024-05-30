@@ -169,12 +169,12 @@ pub mod fixtures {
     }
 
     /// uses a dust input to pad another input to finish a transaction
-    pub async fn send_grace_input<CC>()
+    pub async fn send_required_dust<CC>()
     where
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let primary = environment.fund_client_orchard(115_000).await;
+        let primary = environment.fund_client_orchard(120_000).await;
         let secondary = environment.create_client().await;
 
         assert_eq!(
