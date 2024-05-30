@@ -440,14 +440,14 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn do_encrypt_message(&self, to_address_str: String, memo: Memo) -> JsonValue {
+    pub fn do_encrypt_message(&self, recipient_address_str: String, memo: Memo) -> JsonValue {
         let to = match decode_payment_address(
             self.config.chain.hrp_sapling_payment_address(),
-            &to_address_str,
+            &recipient_address_str,
         ) {
             Ok(to) => to,
             _ => {
-                return object! {"error" => format!("Couldn't parse {} as a z-address", to_address_str) };
+                return object! {"error" => format!("Couldn't parse {} as a z-address", recipient_address_str) };
             }
         };
 

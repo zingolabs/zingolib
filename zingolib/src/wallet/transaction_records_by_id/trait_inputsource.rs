@@ -24,12 +24,13 @@ use thiserror::Error;
 use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::transaction::components::amount::BalanceError;
 
-/// TODO: Add Doc Comment Here!
-#[allow(missing_docs)] // error types document themselves
+/// Error type used by InputSource trait
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
+    /// #[error("Note expected but not found: {0:?}")]
     #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
+    /// #[error("An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}")]
     #[error(
         "An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}"
     )]
@@ -100,12 +101,20 @@ impl InputSource for TransactionRecordsById {
         }
     }
 
+    /// the trait method below is used as a TxMapAndMaybeTrees trait method by propose_transaction.
+    /// this function is used inside a loop that calculates a fee and balances change
+    /// this algorithm influences strategy for user fee minimization
+    /// see [crate::lightclient::LightClient::create_send_proposal]
+    /// TRAIT DOCUMENTATION
     /// Returns a list of spendable notes sufficient to cover the specified target value, if
     /// possible. Only spendable notes corresponding to the specified shielded protocol will
     /// be included.
-    /// IMPL: implemented and tested
-    /// IMPL: _account skipped because Zingo uses 1 account.
-    /// IMPL: all notes beneath MARGINAL_FEE skipped as dust
+    /// IMPLEMENTATION DETAILS
+    /// account skipped because Zingo uses 1 account.
+    /// the algorithm to pick notes is summarized below
+    /// 1) first, sort all eligible notes by value
+    /// 2) pick the smallest that overcomes the target value and return it
+    /// 3) if you cant, add the biggest to the selection and return to step 2 to pick another
     fn select_spendable_notes(
         &self,
         _account: Self::AccountId,
@@ -121,17 +130,17 @@ impl InputSource for TransactionRecordsById {
 
         let mut selected = vec![];
 
-        let mut unselected_iterator = 0;
+        let mut index_of_unselected = 0;
         loop {
             if unselected.is_empty() {
                 // all notes are selected. we pass the max value onwards whether we have reached target or not
                 break;
             }
-            match unselected.get(unselected_iterator) {
+            match unselected.get(index_of_unselected) {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction... add the biggest note and reset the iteraton
                     selected.push(unselected.pop().expect("nonempty"));
-                    unselected_iterator = 0;
+                    index_of_unselected = 0;
                     continue;
                 }
                 Some(smallest_unselected) => {
@@ -141,11 +150,11 @@ impl InputSource for TransactionRecordsById {
                             - selected.iter().fold(0, |sum, (_id, value)| sum + *value)
                     {
                         selected.push(*smallest_unselected);
-                        unselected.remove(unselected_iterator);
+                        unselected.remove(index_of_unselected);
                         break;
                     } else {
                         // this note is not big enough. try the next
-                        unselected_iterator += 1;
+                        index_of_unselected += 1;
                     }
                 }
             }
@@ -153,34 +162,29 @@ impl InputSource for TransactionRecordsById {
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
-        selected
-            .iter()
-            .try_for_each(|(id, _value)| match id.protocol() {
-                zcash_client_backend::ShieldedProtocol::Sapling => {
-                    match self.get(id.txid()).and_then(|transaction_record| {
-                        transaction_record
-                            .get_received_note::<SaplingDomain>(id.output_index() as u32)
-                    }) {
-                        Some(received_note) => {
-                            selected_sapling.push(received_note);
-                            Ok(())
-                        }
-                        None => Err(InputSourceError::NoteCannotBeIdentified(*id)),
-                    }
-                }
-                zcash_client_backend::ShieldedProtocol::Orchard => {
-                    match self.get(id.txid()).and_then(|transaction_record| {
-                        transaction_record
-                            .get_received_note::<OrchardDomain>(id.output_index() as u32)
-                    }) {
-                        Some(received_note) => {
-                            selected_orchard.push(received_note);
-                            Ok(())
-                        }
-                        None => Err(InputSourceError::NoteCannotBeIdentified(*id)),
-                    }
-                }
-            })?;
+
+        // transform each NoteId to a ReceivedNote
+        selected.iter().try_for_each(|(id, _value)| {
+            let opt_transaction_record = self.get(id.txid());
+            let output_index = id.output_index() as u32;
+            match id.protocol() {
+                zcash_client_backend::ShieldedProtocol::Sapling => opt_transaction_record
+                    .and_then(|transaction_record| {
+                        transaction_record.get_received_note::<SaplingDomain>(output_index)
+                    })
+                    .map(|received_note| {
+                        selected_sapling.push(received_note);
+                    }),
+                zcash_client_backend::ShieldedProtocol::Orchard => opt_transaction_record
+                    .and_then(|transaction_record| {
+                        transaction_record.get_received_note::<OrchardDomain>(output_index)
+                    })
+                    .map(|received_note| {
+                        selected_orchard.push(received_note);
+                    }),
+            }
+            .ok_or(InputSourceError::NoteCannotBeIdentified(*id))
+        })?;
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }

@@ -72,7 +72,6 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
     use crate::chain_generic_tests::conduct_chain::ConductChain;
-
     use crate::lightclient::from_inputs;
     use crate::lightclient::get_base_address;
     use crate::lightclient::with_assertions;
@@ -211,6 +210,7 @@ pub mod fixtures {
         let primary = environment.fund_client_orchard(120_000).await;
         let secondary = environment.create_client().await;
 
+        // send a bunch of dust
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
@@ -233,6 +233,7 @@ pub mod fixtures {
             11 * MARGINAL_FEE.into_u64()
         );
 
+        // combine the only valid sapling note with the only valid orchard note to send
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
