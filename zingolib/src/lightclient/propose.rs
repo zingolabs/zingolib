@@ -152,22 +152,22 @@ impl LightClient {
         address: zcash_keys::address::Address,
         memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let total_shielded_balance = zatoshis_from_u64(
+        let confirmed_shielded_balance = zatoshis_from_u64(
             self.wallet
-                .spendable_balance_excluding_dust::<OrchardDomain>(None)
+                .verified_balance_excluding_dust::<OrchardDomain>(None)
                 .await
                 .ok_or(ProposeSendError::NoFullViewingKey)?
                 + self
                     .wallet
-                    .spendable_balance_excluding_dust::<SaplingDomain>(None)
+                    .verified_balance_excluding_dust::<SaplingDomain>(None)
                     .await
                     .ok_or(ProposeSendError::NoFullViewingKey)?,
         )
         .map_err(ProposeSendError::ConversionFailed)?;
-        dbg!(total_shielded_balance);
+        dbg!(confirmed_shielded_balance);
         let request = transaction_request_from_receivers(vec![Receiver::new(
             address.clone(),
-            total_shielded_balance,
+            confirmed_shielded_balance,
             memo.clone(),
         )])
         .map_err(ProposeSendError::TransactionRequestFailed)?;
@@ -182,7 +182,7 @@ impl LightClient {
                 },
             )) => {
                 if let Some(shortfall) = required - available {
-                    Ok((available - shortfall).ok_or(ProposeSendError::InsufficientFunds)?)
+                    (available - shortfall).ok_or(ProposeSendError::InsufficientFunds)
                 } else {
                     return failing_proposal; // return the proposal in the case there is zero fee
                 }

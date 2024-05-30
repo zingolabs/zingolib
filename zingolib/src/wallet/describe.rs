@@ -163,7 +163,7 @@ impl LightWallet {
     }
 
     /// Returns spendable balance for a given shielded pool excluding any notes with value less than marginal fee
-    pub async fn spendable_balance_excluding_dust<D: DomainWalletExt>(
+    pub async fn verified_balance_excluding_dust<D: DomainWalletExt>(
         &self,
         target_addr: Option<String>,
     ) -> Option<u64>

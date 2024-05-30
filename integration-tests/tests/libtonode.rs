@@ -4149,7 +4149,7 @@ async fn proxy_server_worky() {
 }
 
 #[tokio::test]
-async fn send_all() {
+async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
     // from_inputs::quick_send(
