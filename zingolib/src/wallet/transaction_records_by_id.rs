@@ -63,6 +63,14 @@ impl TransactionRecordsById {
         })
     }
 
+    /// Uses a query to select all notes across all transactions with specific properties and sum them
+    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<crate::wallet::notes::OutputId> {
+        self.0
+            .iter()
+            .flat_map(|transaction_record| transaction_record.1.query_for_ids(include_notes))
+            .collect()
+    }
+
     /// TODO: Add Doc Comment Here!
     pub fn get_received_spendable_note_from_identifier<D: DomainWalletExt>(
         &self,
