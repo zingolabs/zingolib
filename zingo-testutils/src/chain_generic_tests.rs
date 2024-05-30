@@ -200,6 +200,47 @@ pub mod fixtures {
         );
     }
 
+    /// uses a dust input to pad another input to finish a transaction
+    pub async fn send_grace_dust<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(120_000).await;
+        let secondary = environment.create_client().await;
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 99_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), 30_000)]
+            )
+            .await,
+            2 * MARGINAL_FEE.into_u64()
+        );
+
+        // since we used our dust as a freebie in the last send, we should only have 2
+        assert_eq!(
+            secondary
+                .query_for_ids(OutputQuery::only_unspent())
+                .await
+                .len(),
+            1
+        );
+    }
+
     /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
     pub async fn ignore_dust_inputs<CC>()
     where
