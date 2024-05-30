@@ -230,6 +230,9 @@ pub mod fixtures {
             .await,
             2 * MARGINAL_FEE.into_u64()
         );
+
+        // since we used our dust as a freebie in the last send, we should only have 2
+        // assert_eq!(secondary.query_for_ids(unspent).len(), 1);
     }
 
     /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
