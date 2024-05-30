@@ -160,6 +160,15 @@ impl InputSource for TransactionRecordsById {
             }
         }
 
+        if selected.len() < 2 {
+            // since we maxed out the target value with only one note, we have an option to grace a dust note.
+            // we will simply rescue the smallest note
+            unselected.reverse();
+            if let Some(smallest_note) = unselected.pop() {
+                selected.push(smallest_note);
+            }
+        }
+
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
 
