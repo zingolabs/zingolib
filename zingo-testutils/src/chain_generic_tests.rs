@@ -232,7 +232,13 @@ pub mod fixtures {
         );
 
         // since we used our dust as a freebie in the last send, we should only have 2
-        // assert_eq!(secondary.query_for_ids(unspent).len(), 1);
+        assert_eq!(
+            secondary
+                .query_for_ids(OutputQuery::only_unspent())
+                .await
+                .len(),
+            1
+        );
     }
 
     /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
