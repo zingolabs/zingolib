@@ -21,9 +21,9 @@ lightwalletd supported for these tests need to have the TreeState API. This mean
 
 ## running the tests (currently experimental)
 
-By default the darkside tests are run as part of the integration tests `cargo nextest run`, for more explicit invocations:
+By default the darkside tests are run as part of the libtonode  tests `cargo nextest run`, for more explicit invocations:
 
-cargo nextest run --package integration-tests --features darkside_tests -- darkside
+cargo nextest run --package libtonode -tests --features darkside_tests -- darkside
 
 # or to run a specific test
-cargo nextest run --package integration-tests --features darkside_tests -- $TESTNAME --nocapture
+cargo nextest run --package libtonode -tests --features darkside_tests -- $TESTNAME --nocapture
