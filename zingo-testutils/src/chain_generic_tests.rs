@@ -127,6 +127,27 @@ pub mod fixtures {
         assert_eq!(expected_fee, recorded_fee);
     }
 
+    /// required change should be 0
+    pub async fn change_required<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(45_000).await;
+        let secondary = environment.create_client().await;
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 29_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
+    }
+
     /// sends back and forth several times, including sends to transparent
     pub async fn send_shield_cycle<CC>(n: u64)
     where
