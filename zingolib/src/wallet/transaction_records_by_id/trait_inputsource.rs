@@ -176,9 +176,8 @@ impl InputSource for TransactionRecordsById {
             } else {
                 // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
                 unselected.reverse();
-                match unselected.pop() {
-                    Some(id_value) => selected.push(id_value),
-                    None => (),
+                if let Some(id_value) = unselected.pop() {
+                    selected.push(id_value);
                 };
             }
         }
