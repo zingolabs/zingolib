@@ -14,6 +14,7 @@ use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 /// Errors associated with the commands interface
@@ -1062,21 +1063,22 @@ impl Command for ShieldCommand {
         RT.block_on(async move {
             match lightclient.propose_shield().await {
                 Ok(proposal) => {
-                    // TODO: return amount to be shielded also?
-                    let step = proposal.steps().first();
-                    let value_to_shield = step
-                        .transparent_inputs()
-                        .iter()
-                        .fold(0, |acc, transparent_output| {
-                            transparent_output.value().into_u64() + acc
-                        });
                     if proposal.steps().len() != 1 {
-                        object! {"error" => "zip320 transactions not yet supported"}
-                    } else {
-                        object! {
-                            "fee" => step.balance().fee_required().into_u64(),
-                            "value_to_shield" => value_to_shield
-                        }
+                        return object! { "error" => "zip320 transactions not yet supported" }.pretty(2);
+                    }
+                    let step = proposal.steps().first();
+                    let Some(value_to_shield) = step
+                        .balance()
+                        .proposed_change()
+                        .iter()
+                        .try_fold(NonNegativeAmount::ZERO, |acc, c| acc + c.value()) else {
+                            return object! { "error" => "shield amount outside valid range of zatoshis" }
+                                .pretty(2);
+                    };
+                    let fee = step.balance().fee_required();
+                    object! {
+                        "value_to_shield" => value_to_shield.into_u64(),
+                        "fee" => fee.into_u64(),
                     }
                 }
                 Err(e) => {

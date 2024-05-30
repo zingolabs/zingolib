@@ -125,7 +125,7 @@ pub mod decrypt_transaction {
                             .map(|raw_taddr| address_from_pubkeyhash(&self.config, raw_taddr))
                         {
                             outgoing_metadatas.push(OutgoingTxData {
-                                to_address: taddr,
+                                recipient_address: taddr,
                                 value: u64::from(vout.value),
                                 memo: Memo::Empty,
                                 recipient_ua: None,
@@ -338,7 +338,7 @@ pub mod decrypt_transaction {
                                         .iter_mut()
                                         .filter(|out_meta| {
                                             outgoing_potential_receivers
-                                                .contains(&Some(out_meta.to_address.clone()))
+                                                .contains(&Some(out_meta.recipient_address.clone()))
                                         })
                                         .for_each(|out_metadata| {
                                             out_metadata.recipient_ua =
@@ -581,7 +581,7 @@ pub mod decrypt_transaction {
                                     }) {
                                         if let Memo::Text(_) = memo {
                                             Some(OutgoingTxData {
-                                                to_address: address,
+                                                recipient_address: address,
                                                 value: D::WalletNote::value_from_note(&note),
                                                 memo,
                                                 recipient_ua: None,
@@ -591,7 +591,7 @@ pub mod decrypt_transaction {
                                         }
                                     } else {
                                         Some(OutgoingTxData {
-                                            to_address: address,
+                                            recipient_address: address,
                                             value: D::WalletNote::value_from_note(&note),
                                             memo,
                                             recipient_ua: None,

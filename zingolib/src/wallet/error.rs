@@ -25,7 +25,7 @@ impl fmt::Display for FeeError {
             FeeError::OrchardSpendNotFound(n) => write!(f, "Orchard nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
             FeeError::SaplingSpendNotFound(n) => write!(f, "Sapling nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
             FeeError::ReceivedTransaction => write!(f, "No inputs or outgoing transaction data found, indicating this transaction was received and not sent by this capability"),
-            FeeError::FeeUnderflow((total_in, total_out)) => write!(f, "Output value: {} is larger than total input value: {} Is the wallet fully synced?", total_out, total_in),
+            FeeError::FeeUnderflow((input_value, explicit_output_value)) => write!(f, "Output value: {} is larger than total input value: {} Is the wallet fully synced?", explicit_output_value, input_value),
             FeeError::OutgoingWithoutSpends(ov) =>  write!(f, "No inputs funded this transaction, but it has outgoing data! Is the wallet fully synced? {:?}", ov),
         }
     }
