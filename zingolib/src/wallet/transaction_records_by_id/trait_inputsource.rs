@@ -9,7 +9,10 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{
     legacy::Script,
-    transaction::components::{amount::NonNegativeAmount, TxOut},
+    transaction::{
+        components::{amount::NonNegativeAmount, TxOut},
+        fees::zip317::MARGINAL_FEE,
+    },
 };
 
 use crate::wallet::{
@@ -162,10 +165,14 @@ impl InputSource for TransactionRecordsById {
 
         if selected.len() < 2 {
             // since we maxed out the target value with only one note, we have an option to grace a dust note.
-            // we will simply rescue the smallest note
+            // we will rescue the biggest dust note
             unselected.reverse();
-            if let Some(smallest_note) = unselected.pop() {
-                selected.push(smallest_note);
+            if let Some(smallest_note) = unselected
+                .iter()
+                .find(|(_id, value)| value <= &MARGINAL_FEE.into_u64())
+            {
+                selected.push(*smallest_note);
+                // we dont bother to pop this last selected note from unselected because we are done with unselected
             }
         }
 
