@@ -325,3 +325,77 @@ impl LightWallet {
         self.transaction_context.transaction_metadata_set.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use orchard::note_encryption::OrchardDomain;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingoconfig::ZingoConfigBuilder;
+
+    use crate::wallet::{
+        data::BlockData,
+        notes::{
+            orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+            transparent::mocks::TransparentOutputBuilder,
+        },
+        transaction_record::mocks::TransactionRecordBuilder,
+        LightWallet, WalletBase,
+    };
+
+    #[tokio::test]
+    async fn confirmed_balance_excluding_dust() {
+        let wallet = LightWallet::new(
+            ZingoConfigBuilder::default().create(),
+            WalletBase::FreshEntropy,
+            1,
+        )
+        .unwrap();
+        wallet
+            .set_blocks(vec![BlockData {
+                ecb: [0u8; 32].to_vec(),
+                height: 100,
+            }])
+            .await;
+        let confirmed_tx_record = TransactionRecordBuilder::default()
+            .status(ConfirmationStatus::Confirmed(80.into()))
+            .transparent_outputs(TransparentOutputBuilder::default())
+            .sapling_notes(SaplingNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default())
+            .build();
+        let pending_tx_record = TransactionRecordBuilder::default()
+            .status(ConfirmationStatus::Pending(95.into()))
+            .transparent_outputs(TransparentOutputBuilder::default())
+            .sapling_notes(SaplingNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default())
+            .build();
+        let confirmed_above_wallet_tip_tx_record = TransactionRecordBuilder::default()
+            .status(ConfirmationStatus::Confirmed(110.into()))
+            .transparent_outputs(TransparentOutputBuilder::default())
+            .sapling_notes(SaplingNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default())
+            .build();
+        {
+            let mut tx_map = wallet
+                .transaction_context
+                .transaction_metadata_set
+                .write()
+                .await;
+            tx_map
+                .transaction_records_by_id
+                .insert_transaction_record(confirmed_tx_record);
+            tx_map
+                .transaction_records_by_id
+                .insert_transaction_record(pending_tx_record);
+            tx_map
+                .transaction_records_by_id
+                .insert_transaction_record(confirmed_above_wallet_tip_tx_record);
+        }
+
+        assert_eq!(
+            wallet
+                .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+                .await,
+            None
+        )
+    }
+}
