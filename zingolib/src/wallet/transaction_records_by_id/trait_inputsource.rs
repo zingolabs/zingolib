@@ -27,10 +27,11 @@ use zcash_primitives::transaction::components::amount::BalanceError;
 /// Error type used by InputSource trait
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
-    /// #[error("Note expected but not found: {0:?}")]
+    /// Note cannot be identified for selection
     #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
-    #[error("Note value outside valid range of zatoshis. {0:?}")]
+    /// Output value outside the valid range of zatoshis
+    #[error("Output value outside valid range of zatoshis. {0:?}")]
     OutputTooBig((u64, BalanceError)),
 }
 
