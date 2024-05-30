@@ -5,6 +5,7 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 
 use zingo_testutils::chain_generic_tests::fixtures::ignore_dust_inputs;
 use zingo_testutils::chain_generic_tests::fixtures::propose_and_broadcast_value_to_pool;
+use zingo_testutils::chain_generic_tests::fixtures::send_grace_dust;
 use zingo_testutils::chain_generic_tests::fixtures::send_required_dust;
 use zingo_testutils::chain_generic_tests::fixtures::send_shield_cycle;
 use zingo_testutils::chain_generic_tests::fixtures::send_value_to_pool;
@@ -43,6 +44,10 @@ async fn libtonode_send_shield_cycle() {
 #[tokio::test]
 async fn libtonode_send_required_dust() {
     send_required_dust::<LibtonodeEnvironment>().await;
+}
+#[tokio::test]
+async fn libtonode_send_grace_dust() {
+    send_grace_dust::<LibtonodeEnvironment>().await;
 }
 #[tokio::test]
 async fn libtonode_ignore_dust_inputs() {
