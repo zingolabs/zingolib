@@ -319,11 +319,12 @@ mod tests {
 
     use crate::wallet::{
         notes::{
-            query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
-            OutputInterface,
+            orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
+            transparent::mocks::TransparentOutputBuilder, OutputInterface,
         },
         transaction_record::mocks::{
             nine_note_transaction_record, nine_note_transaction_record_default,
+            TransactionRecordBuilder,
         },
         transaction_records_by_id::TransactionRecordsById,
     };
@@ -400,22 +401,21 @@ mod tests {
             prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), 2);
         }
         #[test]
-        fn select_spendable_notes_2( sapling_value in 0..10_000_000u32,
-            orchard_value in 0..10_000_000u32,
-            target_value in 0..10_000_000u32,
+        fn select_spendable_notes_2(
+            target_value in 0..4_000_000u32,
         ) {
             let mut transaction_records_by_id = TransactionRecordsById::new();
-            transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
-                1_000_000_u64,
-                1_000_000_u64,
-                1_000_000_u64,
-                sapling_value as u64,
-                1_000_000_u64,
-                1_000_000_u64,
-                orchard_value as u64,
-                1_000_000_u64,
-                1_000_000_u64,
-            ));
+            transaction_records_by_id.insert_transaction_record(
+
+        TransactionRecordBuilder::default()
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .randomize_txid()
+            .set_output_indexes()
+            .build()
+                );
 
             let target_amount = NonNegativeAmount::const_from_u64(target_value as u64);
             let anchor_height: BlockHeight = 10.into();
@@ -428,7 +428,12 @@ mod tests {
                     anchor_height,
                     &[],
                 ).unwrap();
-            let expected_len = if target_value > std::cmp::max(sapling_value, orchard_value) {2} else {1};
+            let expected_len = match target_value {
+                target_value if target_value <= 2_000_000 => 2,
+                target_value if target_value <= 3_000_000 => 3,
+                _ => 4
+            };
+
             prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_len);
         }
     }
