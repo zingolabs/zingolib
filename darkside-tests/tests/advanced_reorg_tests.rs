@@ -600,8 +600,11 @@ async fn reorg_changes_outgoing_tx_height() {
             .await
             .into_iter()
             .find_map(|v| match v.kind {
-                ValueTransferKind::Sent { to_address, amount } => {
-                    if to_address.to_string() == recipient_string && amount == 100000 {
+                ValueTransferKind::Sent {
+                    recipient_address,
+                    amount,
+                } => {
+                    if recipient_address.to_string() == recipient_string && amount == 100000 {
                         Some(v.block_height)
                     } else {
                         None
@@ -828,8 +831,11 @@ async fn reorg_expires_outgoing_tx_height() {
             .await
             .into_iter()
             .find_map(|v| match v.kind {
-                ValueTransferKind::Sent { to_address, amount } => {
-                    if to_address.to_string() == recipient_string && amount == 100000 {
+                ValueTransferKind::Sent {
+                    recipient_address,
+                    amount,
+                } => {
+                    if recipient_address.to_string() == recipient_string && amount == 100000 {
                         Some(v.block_height)
                     } else {
                         None
@@ -1012,8 +1018,11 @@ async fn reorg_changes_outgoing_tx_index() {
             .await
             .into_iter()
             .find_map(|v| match v.kind {
-                ValueTransferKind::Sent { to_address, amount } => {
-                    if to_address.to_string() == recipient_string && amount == 100000 {
+                ValueTransferKind::Sent {
+                    recipient_address,
+                    amount,
+                } => {
+                    if recipient_address.to_string() == recipient_string && amount == 100000 {
                         Some(v.block_height)
                     } else {
                         None

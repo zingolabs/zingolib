@@ -91,7 +91,7 @@ impl LightClient {
                 object! {
                     // Is this address ever different than the address in the containing struct
                     // this is the full UA.
-                    "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
+                    "address" => om.recipient_ua.clone().unwrap_or(om.recipient_address.clone()),
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 }

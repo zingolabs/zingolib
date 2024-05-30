@@ -309,8 +309,10 @@ impl LightClient {
         for summary in summaries {
             use ValueTransferKind::*;
             match summary.kind {
-                Sent { to_address, .. } => {
-                    let address = to_address.encode();
+                Sent {
+                    recipient_address, ..
+                } => {
+                    let address = recipient_address.encode();
                     let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
                     memobytes_by_address
                         .entry(address)
@@ -381,15 +383,15 @@ impl LightClient {
             // All received funds were change, this is a normal send
             (true, false) => {
                 for OutgoingTxData {
-                    to_address,
+                    recipient_address,
                     value,
                     memo,
                     recipient_ua,
                 } in &transaction_md.outgoing_tx_data
                 {
-                    if let Ok(to_address) =
-                        ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
-                    {
+                    if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
+                        recipient_ua.as_ref().unwrap_or(recipient_address),
+                    ) {
                         let memos = if let Memo::Text(textmemo) = memo {
                             vec![textmemo.clone()]
                         } else {
@@ -399,7 +401,7 @@ impl LightClient {
                             block_height,
                             datetime,
                             kind: ValueTransferKind::Sent {
-                                to_address,
+                                recipient_address,
                                 amount: *value,
                             },
                             memos,
@@ -687,8 +689,11 @@ impl LightClient {
         for summary in summaries {
             use ValueTransferKind::*;
             match summary.kind {
-                Sent { amount, to_address } => {
-                    let address = to_address.encode();
+                Sent {
+                    amount,
+                    recipient_address,
+                } => {
+                    let address = recipient_address.encode();
                     if let std::collections::hash_map::Entry::Vacant(e) =
                         amount_by_address.entry(address.clone())
                     {
