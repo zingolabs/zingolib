@@ -72,7 +72,7 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
     use crate::chain_generic_tests::conduct_chain::ConductChain;
-    
+
     use crate::lightclient::from_inputs;
     use crate::lightclient::get_base_address;
     use crate::lightclient::with_assertions;
@@ -175,7 +175,7 @@ pub mod fixtures {
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let primary = environment.fund_client_orchard(115_000).await;
+        let primary = environment.fund_client_orchard(120_000).await;
         let secondary = environment.create_client().await;
 
         assert_eq!(
