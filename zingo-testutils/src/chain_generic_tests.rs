@@ -118,7 +118,7 @@ pub mod fixtures {
         assert_eq!(expected_fee, recorded_fee);
     }
     /// runs a send-to-receiver and receives it in a chain-generic context
-    pub async fn quicksend_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
+    pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
     where
         CC: ConductChain,
     {

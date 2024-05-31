@@ -11,17 +11,27 @@ mod chain_generics {
         use super::*;
         #[tokio::test]
         async fn to_transparent() {
-            fixtures::quicksend_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+            fixtures::propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(
+                40_000,
+                Transparent,
+            )
+            .await;
         }
         #[tokio::test]
         async fn to_sapling() {
-            fixtures::quicksend_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling))
-                .await;
+            fixtures::propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(
+                40_000,
+                Shielded(Sapling),
+            )
+            .await;
         }
         #[tokio::test]
         async fn to_orchard() {
-            fixtures::quicksend_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard))
-                .await;
+            fixtures::propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(
+                40_000,
+                Shielded(Orchard),
+            )
+            .await;
         }
         #[tokio::test]
         async fn to_self_transparent() {
