@@ -99,8 +99,9 @@ pub mod decrypt_transaction {
                 .read()
                 .await
                 .transaction_records_by_id
-                .total_funds_spent_in(&transaction.txid())
+                .value_input_by_capability_to_transaction(&transaction.txid())
                 > 0
+            // This number is only based on the sum of received notes, and therefore marks is_outgoing_true
             {
                 is_outgoing_transaction = true;
             }

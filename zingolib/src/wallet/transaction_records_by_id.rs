@@ -361,7 +361,7 @@ impl TransactionRecordsById {
         self.invalidate_transactions(txids_to_remove);
     }
     /// TODO: Add Doc Comment Here!
-    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
+    pub fn value_input_by_capability_to_transaction(&self, txid: &TxId) -> u64 {
         self.get(txid)
             .map(TransactionRecord::total_value_spent)
             .unwrap_or(0)
@@ -373,7 +373,7 @@ impl TransactionRecordsById {
     /// TODO: Add Doc Comment Here!
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
-        if self.total_funds_spent_in(txid) > 0 {
+        if self.value_input_by_capability_to_transaction(txid) > 0 {
             if let Some(transaction_metadata) = self.get_mut(txid) {
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);
