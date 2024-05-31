@@ -61,8 +61,6 @@ where
 
     let proposal = from_inputs::propose(sender, raw_receivers).await.unwrap();
 
-    dbg!(proposal.steps().first().balance().proposed_change());
-
     let txids = sender
         .complete_and_broadcast_stored_proposal()
         .await
