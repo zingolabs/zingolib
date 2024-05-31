@@ -174,20 +174,9 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let wallet_tip = self
-            .blocks
-            .read()
-            .await
-            .first()
-            .map(|block| block.height as u32)
-            .unwrap_or(0);
         #[allow(clippy::type_complexity)]
         let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| {
-                transaction
-                    .status
-                    .is_confirmed_before_or_at(&BlockHeight::from_u32(wallet_tip))
-            }),
+            Box::new(|_, transaction| transaction.status.is_confirmed()),
             Box::new(|note, _| !note.pending_receipt()),
             Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
         ];
@@ -329,17 +318,21 @@ impl LightWallet {
 #[cfg(test)]
 mod tests {
     use orchard::note_encryption::OrchardDomain;
+    use sapling_crypto::note_encryption::SaplingDomain;
+
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingoconfig::ZingoConfigBuilder;
 
-    use crate::wallet::{
-        data::BlockData,
-        notes::{
-            orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder,
+    use crate::{
+        mocks::{orchard_note::OrchardCryptoNoteBuilder, SaplingCryptoNoteBuilder},
+        wallet::{
+            notes::{
+                orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+                transparent::mocks::TransparentOutputBuilder,
+            },
+            transaction_record::mocks::TransactionRecordBuilder,
+            LightWallet, WalletBase,
         },
-        transaction_record::mocks::TransactionRecordBuilder,
-        LightWallet, WalletBase,
     };
 
     #[tokio::test]
@@ -350,26 +343,43 @@ mod tests {
             1,
         )
         .unwrap();
-        wallet
-            .set_blocks(vec![BlockData {
-                ecb: [0u8; 32].to_vec(),
-                height: 100,
-            }])
-            .await;
         let confirmed_tx_record = TransactionRecordBuilder::default()
             .status(ConfirmationStatus::Confirmed(80.into()))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
+            .sapling_notes(SaplingNoteBuilder::default())
+            .sapling_notes(
+                SaplingNoteBuilder::default()
+                    .note(
+                        SaplingCryptoNoteBuilder::default()
+                            .value(sapling_crypto::value::NoteValue::from_raw(3_000))
+                            .clone(),
+                    )
+                    .clone(),
+            )
             .orchard_notes(OrchardNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default())
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .note(
+                        OrchardCryptoNoteBuilder::default()
+                            .value(orchard::value::NoteValue::from_raw(5_000))
+                            .clone(),
+                    )
+                    .clone(),
+            )
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .note(
+                        OrchardCryptoNoteBuilder::default()
+                            .value(orchard::value::NoteValue::from_raw(2_000))
+                            .clone(),
+                    )
+                    .clone(),
+            )
             .build();
         let pending_tx_record = TransactionRecordBuilder::default()
             .status(ConfirmationStatus::Pending(95.into()))
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default())
-            .orchard_notes(OrchardNoteBuilder::default())
-            .build();
-        let confirmed_above_wallet_tip_tx_record = TransactionRecordBuilder::default()
-            .status(ConfirmationStatus::Confirmed(110.into()))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
             .orchard_notes(OrchardNoteBuilder::default())
@@ -386,16 +396,19 @@ mod tests {
             tx_map
                 .transaction_records_by_id
                 .insert_transaction_record(pending_tx_record);
-            tx_map
-                .transaction_records_by_id
-                .insert_transaction_record(confirmed_above_wallet_tip_tx_record);
         }
 
         assert_eq!(
             wallet
+                .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+                .await,
+            Some(400_000)
+        );
+        assert_eq!(
+            wallet
                 .confirmed_balance_excluding_dust::<OrchardDomain>(None)
                 .await,
-            None
-        )
+            Some(1_605_000)
+        );
     }
 }
