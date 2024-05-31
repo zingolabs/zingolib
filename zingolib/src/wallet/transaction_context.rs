@@ -88,23 +88,13 @@ pub mod decrypt_transaction {
             // Collect our t-addresses for easy checking
             let taddrs_set = self.key.get_all_taddrs(&self.config);
             // Process t-address outputs
+            //  THE FOLLOWING LINE INTENDS TO SAY:  IF THERE EXISTS AT LESAT ONE RECEIVER THAT THE CREATING CAPABILITY DOES NOT CONTROL...
             // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
             // that don't belong to us as the outgoing metadata
             // the assumption is either we already decrypted a compact output and filled in some data
             // or transparent something
 
             // in the send case, we already know the transaction is outgoing. however, this if clause will not trigger.
-            if self
-                .transaction_metadata_set
-                .read()
-                .await
-                .transaction_records_by_id
-                .value_input_by_capability_to_transaction(&transaction.txid())
-                > 0
-            // This number is only based on the sum of received notes, and therefore marks is_outgoing_true
-            {
-                is_outgoing_transaction = true;
-            }
             let mut outgoing_metadatas = vec![];
             // Execute scanning operations
             self.decrypt_transaction_to_record(
@@ -219,6 +209,11 @@ pub mod decrypt_transaction {
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
                         let output_taddr = address_from_pubkeyhash(&self.config, taddr);
+                        // If there's at least one output in this bundle that does *NOT* belong to the
+                        // Creator, then the transaction is defined as "is_outgoing"
+                        if !taddrs_set.contains(&output_taddr) {
+                            *is_outgoing_transaction = true;
+                        }
                         if taddrs_set.contains(&output_taddr) {
                             // This is our address. Add this as an output to the txid
                             self.transaction_metadata_set
@@ -280,8 +275,6 @@ pub mod decrypt_transaction {
             // Mark all the UTXOs that were spent here back in their original txns.
             for (prev_transaction_id, prev_n, transaction_id) in spent_utxos {
                 // Mark that this Tx spent some funds
-                *is_outgoing_transaction = true;
-
                 self.transaction_metadata_set
                     .write()
                     .await
@@ -291,8 +284,6 @@ pub mod decrypt_transaction {
 
             // If this transaction spent value, add the spent amount to the TxID
             if total_transparent_value_spent > 0 {
-                *is_outgoing_transaction = true;
-
                 self.transaction_metadata_set
                     .write()
                     .await

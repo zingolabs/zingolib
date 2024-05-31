@@ -289,7 +289,7 @@ impl TransactionRecord {
 
     /// TODO: Add Doc Comment Here!
     pub fn total_value_spent(&self) -> u64 {
-        self.value_spent_by_pool().iter().sum()
+        self.value_input_by_capability_to_transaction().iter().sum()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -300,7 +300,7 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn value_spent_by_pool(&self) -> [u64; 3] {
+    pub fn value_input_by_capability_to_transaction(&self) -> [u64; 3] {
         [
             self.total_transparent_value_spent,
             self.total_sapling_value_spent,
@@ -514,7 +514,7 @@ impl TransactionRecord {
         zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
         zcash_encoding::Vector::write(&mut writer, &self.transparent_outputs, |w, u| u.write(w))?;
 
-        for pool in self.value_spent_by_pool() {
+        for pool in self.value_input_by_capability_to_transaction() {
             writer.write_u64::<LittleEndian>(pool)?;
         }
 
@@ -814,7 +814,7 @@ mod tests {
         assert_eq!(new.total_value_spent(), 0);
         assert_eq!(new.value_outgoing(), 0);
         let t: [u64; 3] = [0, 0, 0];
-        assert_eq!(new.value_spent_by_pool(), t);
+        assert_eq!(new.value_input_by_capability_to_transaction(), t);
     }
     #[test]
     fn single_transparent_note_makes_is_incoming_true() {
