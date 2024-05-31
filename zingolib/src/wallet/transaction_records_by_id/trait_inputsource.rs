@@ -167,11 +167,11 @@ impl InputSource for TransactionRecordsById {
             // since we maxed out the target value with only one note, we have an option to grace a note.
             // we will rescue the biggest dust note
             unselected.reverse();
-            if let Some(smallest_note) = unselected
+            if let Some(biggest_dust) = unselected
                 .iter()
                 .find(|(_id, value)| value <= &MARGINAL_FEE.into_u64())
             {
-                selected.push(*smallest_note);
+                selected.push(*biggest_dust);
                 // we dont bother to pop this last selected note from unselected because we are done with unselected
             } else {
                 // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
