@@ -7,38 +7,25 @@ mod chain_generics {
     use zingo_testutils::chain_generic_tests::fixtures;
 
     use environment::LibtonodeEnvironment;
-    mod propose_and_broadcast_40_000 {
+    mod quicksend_40_000 {
         use super::*;
         #[tokio::test]
         async fn to_transparent() {
-            fixtures::propose_and_broadcast_orchard_value_to_pool::<LibtonodeEnvironment>(
-                40_000,
-                Transparent,
-            )
-            .await;
+            fixtures::quicksend_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
         }
         #[tokio::test]
         async fn to_sapling() {
-            fixtures::propose_and_broadcast_orchard_value_to_pool::<LibtonodeEnvironment>(
-                40_000,
-                Shielded(Sapling),
-            )
-            .await;
+            fixtures::quicksend_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling))
+                .await;
         }
         #[tokio::test]
         async fn to_orchard() {
-            fixtures::propose_and_broadcast_orchard_value_to_pool::<LibtonodeEnvironment>(
-                40_000,
-                Shielded(Orchard),
-            )
-            .await;
+            fixtures::quicksend_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard))
+                .await;
         }
         #[tokio::test]
         async fn to_self_transparent() {
-            fixtures::propose_and_broadcast_orch_to_transparent_selfsend::<LibtonodeEnvironment>(
-                40_000,
-            )
-            .await;
+            fixtures::quicksend_selfsend_to_transparent::<LibtonodeEnvironment>(40_000).await;
         }
     }
     mod send_40_000 {

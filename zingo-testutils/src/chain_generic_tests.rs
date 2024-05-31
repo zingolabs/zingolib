@@ -99,7 +99,7 @@ pub mod fixtures {
             }
     }
     /// Check behavior when sending to our own transparent receiver
-    pub async fn propose_and_broadcast_orch_to_transparent_selfsend<CC>(send_value: u64)
+    pub async fn quicksend_selfsend_to_transparent<CC>(send_value: u64)
     where
         CC: ConductChain,
     {
@@ -118,10 +118,8 @@ pub mod fixtures {
         assert_eq!(expected_fee, recorded_fee);
     }
     /// runs a send-to-receiver and receives it in a chain-generic context
-    pub async fn propose_and_broadcast_orchard_value_to_pool<CC>(
-        send_value: u64,
-        pooltype: PoolType,
-    ) where
+    pub async fn quicksend_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
+    where
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
