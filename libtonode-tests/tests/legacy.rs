@@ -134,7 +134,7 @@ mod fast {
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        from_inputs::send(
+        from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),

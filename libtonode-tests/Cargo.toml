@@ -1,5 +1,5 @@
 [package]
-name = "integration-tests"
+name = "libtonode-tests"
 version = "0.2.0"
 edition = "2021"
 
@@ -9,7 +9,7 @@ chain_generic_tests = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { path = "../zingolib" }
+zingolib = { path = "../zingolib", features = ["deprecations"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingo-testvectors = { path = "../zingo-testvectors" }
 zingoconfig = { path = "../zingoconfig" }

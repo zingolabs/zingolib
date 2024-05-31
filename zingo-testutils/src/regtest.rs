@@ -8,7 +8,7 @@ use std::process::Child;
 ///  To manage the state associated a "regtest" run this type:
 ///   * sets up paths to config and log directories
 ///   * optionally receives parameters that allow configs to be set in nonstandard
-///     locations.  We use this to input configs for the integration_tests
+///     locations.  We use this to input configs for the libtonode_tests
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct RegtestManager {
@@ -162,7 +162,7 @@ pub fn launch_lightwalletd(
             panic!(
                 "{}",
                 format!(
-                    "failed to start lightwalletd at {}. see docs/integration-tests.txt",
+                    "failed to start lightwalletd at {}. see docs/libtonode-tests.txt",
                     bin.display()
                 )
                 .to_owned()
@@ -385,7 +385,7 @@ impl RegtestManager {
             panic!(
                 "{}",
                 format!(
-                    "failed to start zcashd at {}. see docs/integration-tests.txt",
+                    "failed to start zcashd at {}. see docs/libtonode-tests.txt",
                     self.bin_dir.clone().display()
                 )
                 .to_owned()
