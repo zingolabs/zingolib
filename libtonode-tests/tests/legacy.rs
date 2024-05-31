@@ -3232,7 +3232,7 @@ mod slow {
         // 5 Shield transparent and sapling to orchard
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    disallowed (not *precisely*) BY 317...
+        //    - 317:    disallowed (not *precisely* BY 317...
         from_inputs::shield(
             &pool_migration_client,
             &[
