@@ -53,6 +53,14 @@ mod chain_generics {
     async fn send_grace_dust() {
         fixtures::send_grace_dust::<LibtonodeEnvironment>().await;
     }
+    #[tokio::test]
+    async fn change_required() {
+        fixtures::change_required::<LibtonodeEnvironment>().await;
+    }
+    #[tokio::test]
+    async fn send_required_dust() {
+        fixtures::send_required_dust::<LibtonodeEnvironment>().await;
+    }
     mod environment {
         use zcash_client_backend::PoolType;
 
