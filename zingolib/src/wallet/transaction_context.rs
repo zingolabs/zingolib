@@ -115,12 +115,14 @@ pub mod decrypt_transaction {
                             .recipient_address()
                             .map(|raw_taddr| address_from_pubkeyhash(&self.config, raw_taddr))
                         {
-                            outgoing_metadatas.push(OutgoingTxData {
-                                recipient_address: taddr,
-                                value: u64::from(vout.value),
-                                memo: Memo::Empty,
-                                recipient_ua: None,
-                            });
+                            if !taddrs_set.contains(&taddr) {
+                                outgoing_metadatas.push(OutgoingTxData {
+                                    recipient_address: taddr,
+                                    value: u64::from(vout.value),
+                                    memo: Memo::Empty,
+                                    recipient_ua: None,
+                                });
+                            }
                         }
                     }
                 }
@@ -534,6 +536,8 @@ pub mod decrypt_transaction {
                     ) {
                         Some((note, payment_address, memo_bytes)) => {
                             // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
+                            // The OVK successfully decrypted a note, therefore this transaction is outgoing from the
+                            // Creator.
                             *is_outgoing_transaction = true;
                             let address = payment_address.b32encode_for_network(&self.config.chain);
 
