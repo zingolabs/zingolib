@@ -279,6 +279,16 @@ pub mod orchard_note {
         build_method!(rho, Rho);
         build_method!(random_seed, RandomSeed);
 
+        /// selects a default recipient address for the orchard note
+        pub fn default_recipient(&mut self) -> &mut Self {
+            let bytes = [0; 32];
+            let sk = SpendingKey::from_bytes(bytes).unwrap();
+            let fvk: FullViewingKey = (&sk).into();
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            self.recipient(recipient)
+        }
+
         /// selects a random recipient address for the orchard note
         pub fn randomize_recipient(&mut self) -> &mut Self {
             let mut rng = OsRng;
@@ -343,7 +353,7 @@ pub mod orchard_note {
     impl Default for OrchardCryptoNoteBuilder {
         fn default() -> Self {
             Self::new()
-                .randomize_recipient()
+                .default_recipient()
                 .randomize_rho_and_rseed()
                 .value(NoteValue::from_raw(800_000))
                 .clone()
