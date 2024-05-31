@@ -87,12 +87,6 @@ pub mod decrypt_transaction {
             let mut is_outgoing_transaction = false;
             // Collect our t-addresses for easy checking
             let taddrs_set = self.key.get_all_taddrs(&self.config);
-            // Process t-address outputs
-            //  THE FOLLOWING LINE INTENDS TO SAY:  IF THERE EXISTS AT LESAT ONE RECEIVER THAT THE CREATING CAPABILITY DOES NOT CONTROL...
-            // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
-            // that don't belong to us as the outgoing metadata
-            // the assumption is either we already decrypted a compact output and filled in some data
-            // or transparent something
 
             // in the send case, we already know the transaction is outgoing. however, this if clause will not trigger.
             let mut outgoing_metadatas = vec![];
