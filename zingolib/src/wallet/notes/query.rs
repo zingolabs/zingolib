@@ -96,6 +96,18 @@ impl OutputQuery {
             pools: OutputPoolQuery::any(),
         }
     }
+    /// a query that accepts all notes.
+    pub fn only_unspent() -> Self {
+        Self {
+            spend_status: OutputSpendStatusQuery {
+                unspent: true,
+                pending_spent: false,
+                spent: false,
+            },
+            pools: OutputPoolQuery::any(),
+        }
+    }
+
     /// build a query, specifying each stipulation
     pub fn stipulations(
         unspent: bool,

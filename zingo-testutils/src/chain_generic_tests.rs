@@ -127,6 +127,27 @@ pub mod fixtures {
         assert_eq!(expected_fee, recorded_fee);
     }
 
+    /// required change should be 0
+    pub async fn change_required<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(45_000).await;
+        let secondary = environment.create_client().await;
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 29_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
+    }
+
     /// sends back and forth several times, including sends to transparent
     pub async fn send_shield_cycle<CC>(n: u64)
     where
@@ -169,12 +190,12 @@ pub mod fixtures {
     }
 
     /// uses a dust input to pad another input to finish a transaction
-    pub async fn send_grace_input<CC>()
+    pub async fn send_required_dust<CC>()
     where
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let primary = environment.fund_client_orchard(115_000).await;
+        let primary = environment.fund_client_orchard(120_000).await;
         let secondary = environment.create_client().await;
 
         assert_eq!(
@@ -197,6 +218,47 @@ pub mod fixtures {
             )
             .await,
             2 * MARGINAL_FEE.into_u64()
+        );
+    }
+
+    /// uses a dust input to pad another input to finish a transaction
+    pub async fn send_grace_dust<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(120_000).await;
+        let secondary = environment.create_client().await;
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 99_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), 30_000)]
+            )
+            .await,
+            2 * MARGINAL_FEE.into_u64()
+        );
+
+        // since we used our dust as a freebie in the last send, we should only have 2
+        assert_eq!(
+            secondary
+                .query_for_ids(OutputQuery::only_unspent())
+                .await
+                .len(),
+            1
         );
     }
 

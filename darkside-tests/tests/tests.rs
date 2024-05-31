@@ -142,13 +142,13 @@ async fn sent_transaction_reorged_into_mempool() {
             transparent_balance: Some(0)
         }
     );
-    let txid = from_inputs::send(
+    let one_txid = from_inputs::quick_send(
         &light_client,
         vec![(&get_base_address_macro!(recipient, "unified"), 10_000, None)],
     )
     .await
     .unwrap();
-    println!("{}", txid);
+    println!("{}", one_txid.first());
     recipient.do_sync(false).await.unwrap();
     println!("{}", recipient.do_list_transactions().await.pretty(2));
 

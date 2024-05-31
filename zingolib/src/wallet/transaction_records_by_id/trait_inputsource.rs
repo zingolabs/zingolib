@@ -9,7 +9,10 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{
     legacy::Script,
-    transaction::components::{amount::NonNegativeAmount, TxOut},
+    transaction::{
+        components::{amount::NonNegativeAmount, TxOut},
+        fees::zip317::MARGINAL_FEE,
+    },
 };
 
 use crate::wallet::{
@@ -156,6 +159,25 @@ impl InputSource for TransactionRecordsById {
                         index_of_unselected += 1;
                     }
                 }
+            }
+        }
+
+        if selected.len() < 2 {
+            // since we maxed out the target value with only one note, we have an option to grace a note.
+            // we will rescue the biggest dust note
+            unselected.reverse();
+            if let Some(biggest_dust) = unselected
+                .iter()
+                .find(|(_id, value)| value <= &MARGINAL_FEE.into_u64())
+            {
+                selected.push(*biggest_dust);
+                // we dont bother to pop this last selected note from unselected because we are done with unselected
+            } else {
+                // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
+                unselected.reverse();
+                if let Some(id_value) = unselected.pop() {
+                    selected.push(id_value);
+                };
             }
         }
 
@@ -309,11 +331,12 @@ mod tests {
 
     use crate::wallet::{
         notes::{
-            query::OutputSpendStatusQuery, transparent::mocks::TransparentOutputBuilder,
-            OutputInterface,
+            orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
+            transparent::mocks::TransparentOutputBuilder, OutputInterface,
         },
         transaction_record::mocks::{
             nine_note_transaction_record, nine_note_transaction_record_default,
+            TransactionRecordBuilder,
         },
         transaction_records_by_id::TransactionRecordsById,
     };
@@ -387,7 +410,46 @@ mod tests {
                     anchor_height,
                     &[],
                 ).unwrap();
-            let expected_len = if target_value > std::cmp::max(sapling_value, orchard_value) {2} else {1};
+            prop_assert_eq!(spendable_notes.sapling().len(), 1);
+            prop_assert_eq!(spendable_notes.orchard().len(), 1);
+        }
+        #[test]
+        fn select_spendable_notes_2(
+            target_value in 0..4_000_000u32,
+        ) {
+            let mut transaction_records_by_id = TransactionRecordsById::new();
+            transaction_records_by_id.insert_transaction_record(
+
+        TransactionRecordBuilder::default()
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(0).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(1).clone())
+            .orchard_notes(OrchardNoteBuilder::default().value(10).clone())
+            .randomize_txid()
+            .set_output_indexes()
+            .build()
+                );
+
+            let target_amount = NonNegativeAmount::const_from_u64(target_value as u64);
+            let anchor_height: BlockHeight = 10.into();
+            let spendable_notes =
+                zcash_client_backend::data_api::InputSource::select_spendable_notes(
+                    &transaction_records_by_id,
+                    AccountId::ZERO,
+                    target_amount,
+                    &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                    anchor_height,
+                    &[],
+                ).unwrap();
+            let expected_len = match target_value {
+                target_value if target_value <= 2_000_000 => 2,
+                target_value if target_value <= 3_000_000 => 3,
+                _ => 4
+            };
+
             prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_len);
         }
     }

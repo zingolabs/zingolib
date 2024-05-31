@@ -136,7 +136,7 @@ mod fast {
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        from_inputs::send(
+        from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1462,7 +1462,10 @@ mod slow {
             - first_send_to_transparent
             - (2 * u64::from(MINIMUM_FEE));
         assert_eq!(
-            recipient.wallet.maybe_verified_orchard_balance(None).await,
+            recipient
+                .wallet
+                .shielded_balance::<OrchardDomain>(None, &[])
+                .await,
             Some(expected_funds)
         );
         assert_eq!(
@@ -1545,7 +1548,10 @@ mod slow {
             - third_send_to_transparent
             - (3 * u64::from(MINIMUM_FEE));
         assert_eq!(
-            recipient.wallet.maybe_verified_orchard_balance(None).await,
+            recipient
+                .wallet
+                .shielded_balance::<OrchardDomain>(None, &[])
+                .await,
             Some(second_wave_expected_funds),
         );
 

@@ -812,7 +812,7 @@ pub mod scenarios {
                 let lightwalletd_rpcservice_port =
                     TestEnvironmentGenerator::pick_unused_port_to_string(set_lightwalletd_port);
                 let regtest_manager = RegtestManager::new(
-                    tempdir::TempDir::new("zingo_integration_test")
+                    tempdir::TempDir::new("zingo_libtonode_test")
                         .unwrap()
                         .into_path(),
                 );

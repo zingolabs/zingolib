@@ -60,6 +60,7 @@ where
         .collect();
 
     let proposal = from_inputs::propose(sender, raw_receivers).await.unwrap();
+
     let txids = sender
         .complete_and_broadcast_stored_proposal()
         .await
