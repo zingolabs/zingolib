@@ -49,6 +49,10 @@ mod chain_generics {
     async fn ignore_dust_inputs() {
         fixtures::ignore_dust_inputs::<LibtonodeEnvironment>().await;
     }
+    #[tokio::test]
+    async fn send_grace_dust() {
+        fixtures::send_grace_dust::<LibtonodeEnvironment>().await;
+    }
     mod environment {
         use zcash_client_backend::PoolType;
 
