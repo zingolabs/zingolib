@@ -72,7 +72,6 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
     use crate::chain_generic_tests::conduct_chain::ConductChain;
-    use crate::check_client_balances;
     use crate::lightclient::from_inputs;
     use crate::lightclient::get_base_address;
     use crate::lightclient::with_assertions;
@@ -128,6 +127,27 @@ pub mod fixtures {
         assert_eq!(expected_fee, recorded_fee);
     }
 
+    /// required change should be 0
+    pub async fn change_required<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(45_000).await;
+        let secondary = environment.create_client().await;
+
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 29_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
+    }
+
     /// sends back and forth several times, including sends to transparent
     pub async fn send_shield_cycle<CC>(n: u64)
     where
@@ -170,44 +190,76 @@ pub mod fixtures {
     }
 
     /// uses a dust input to pad another input to finish a transaction
-    pub async fn send_grace_input<CC>()
+    pub async fn send_required_dust<CC>()
     where
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
-        let primary = environment.fund_client_orchard(110_000).await;
-
-        let primary_address_orchard = get_base_address(&primary, Shielded(Orchard)).await;
-
+        let primary = environment.fund_client_orchard(120_000).await;
         let secondary = environment.create_client().await;
-        // let secondary_address_sapling = secondary.get_base_address(Shielded(Sapling)).await;
-        let secondary_address_orchard = get_base_address(&secondary, Shielded(Orchard)).await;
 
-        from_inputs::send(
-            &primary,
-            vec![
-                (secondary_address_orchard.as_str(), 1, None),
-                (secondary_address_orchard.as_str(), 99_999, None),
-            ],
-        )
-        .await
-        .unwrap();
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 99_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
 
-        environment.bump_chain().await;
-        secondary.do_sync(false).await.unwrap();
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), 90_000)]
+            )
+            .await,
+            2 * MARGINAL_FEE.into_u64()
+        );
+    }
 
-        check_client_balances!(secondary, o: 100_000 s: 0 t: 0);
+    /// uses a dust input to pad another input to finish a transaction
+    pub async fn send_grace_dust<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let primary = environment.fund_client_orchard(120_000).await;
+        let secondary = environment.create_client().await;
 
-        from_inputs::send(
-            &secondary,
-            vec![(primary_address_orchard.as_str(), 90_000, None)],
-        )
-        .await
-        .unwrap();
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Orchard), 1), (Shielded(Orchard), 99_999)]
+            )
+            .await,
+            3 * MARGINAL_FEE.into_u64()
+        );
 
-        environment.bump_chain().await;
-        primary.do_sync(false).await.unwrap();
-        check_client_balances!(primary, o: 90_000 s: 0 t: 0);
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), 30_000)]
+            )
+            .await,
+            2 * MARGINAL_FEE.into_u64()
+        );
+
+        // since we used our dust as a freebie in the last send, we should only have 2
+        assert_eq!(
+            secondary
+                .query_for_ids(OutputQuery::only_unspent())
+                .await
+                .len(),
+            1
+        );
     }
 
     /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
