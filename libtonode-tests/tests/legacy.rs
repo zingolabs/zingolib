@@ -3232,10 +3232,17 @@ mod slow {
         // 5 Shield transparent and sapling to orchard
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
-        from_inputs::shield(&pool_migration_client, &[PoolType::Transparent], None)
-            .await
-            .unwrap();
+        //    - 317:    disallowed (not *precisely* BY 317...
+        from_inputs::shield(
+            &pool_migration_client,
+            &[
+                PoolType::Transparent,
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+            ],
+            None,
+        )
+        .await
+        .unwrap();
         bump_and_check_pmc!(o: 50_000 s: 0 t: 0);
 
         // 6 self send orchard to orchard
