@@ -1238,26 +1238,27 @@ mod slow {
     #[tokio::test]
     async fn shield_heartwood_sapling_funds() {
         let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
-        let (regtest_manager, _cph, faucet) = scenarios::faucet(
+        let (regtest_manager, _cph, sapling_faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,
         )
         .await;
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
+        increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
+        dbg!(sapling_faucet.do_balance().await.sapling_balance);
+        check_client_balances!(sapling_faucet, o: 0 s: 3_500_000_000u64 t: 0);
         from_inputs::shield(
-            &faucet,
+            &sapling_faucet,
             &[PoolType::Shielded(ShieldedProtocol::Sapling)],
             None,
         )
         .await
         .unwrap();
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 3_499_990_000u64 s: 625_010_000 t: 0);
+        check_client_balances!(sapling_faucet, o: 3_499_990_000u64 s: 625_010_000 t: 0);
     }
     #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
@@ -3226,10 +3227,17 @@ mod slow {
         // 5 Shield transparent and sapling to orchard
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
-        from_inputs::shield(&pool_migration_client, &[PoolType::Transparent], None)
-            .await
-            .unwrap();
+        //    - 317:    disallowed (not *precisely* BY 317...
+        from_inputs::shield(
+            &pool_migration_client,
+            &[
+                PoolType::Transparent,
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+            ],
+            None,
+        )
+        .await
+        .unwrap();
         bump_and_check_pmc!(o: 50_000 s: 0 t: 0);
 
         // 6 self send orchard to orchard

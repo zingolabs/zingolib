@@ -7,39 +7,54 @@ mod chain_generics {
     use zingo_testutils::chain_generic_tests::fixtures;
 
     use environment::LibtonodeEnvironment;
-    #[tokio::test]
-    async fn send_40_000_to_transparent() {
-        fixtures::send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
-    }
-    #[tokio::test]
-    async fn send_40_000_to_sapling() {
-        fixtures::send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
-    }
-    #[tokio::test]
-    async fn send_40_000_to_orchard() {
-        fixtures::send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
-    }
-
-    #[tokio::test]
-    async fn propose_and_broadcast_40_000_to_transparent() {
-        fixtures::propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent)
+    mod propose_and_broadcast_40_000 {
+        use super::*;
+        #[tokio::test]
+        async fn to_transparent() {
+            fixtures::propose_and_broadcast_orchard_value_to_pool::<LibtonodeEnvironment>(
+                40_000,
+                Transparent,
+            )
             .await;
+        }
+        #[tokio::test]
+        async fn to_sapling() {
+            fixtures::propose_and_broadcast_orchard_value_to_pool::<LibtonodeEnvironment>(
+                40_000,
+                Shielded(Sapling),
+            )
+            .await;
+        }
+        #[tokio::test]
+        async fn to_orchard() {
+            fixtures::propose_and_broadcast_orchard_value_to_pool::<LibtonodeEnvironment>(
+                40_000,
+                Shielded(Orchard),
+            )
+            .await;
+        }
+        #[tokio::test]
+        async fn to_self_transparent() {
+            fixtures::propose_and_broadcast_orch_to_transparent_selfsend::<LibtonodeEnvironment>(
+                40_000,
+            )
+            .await;
+        }
     }
-    #[tokio::test]
-    async fn propose_and_broadcast_40_000_to_sapling() {
-        fixtures::propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(
-            40_000,
-            Shielded(Sapling),
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn propose_and_broadcast_40_000_to_orchard() {
-        fixtures::propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(
-            40_000,
-            Shielded(Orchard),
-        )
-        .await;
+    mod send_40_000 {
+        use super::*;
+        #[tokio::test]
+        async fn to_transparent() {
+            fixtures::send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
+        }
+        #[tokio::test]
+        async fn to_sapling() {
+            fixtures::send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Sapling)).await;
+        }
+        #[tokio::test]
+        async fn to_orchard() {
+            fixtures::send_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+        }
     }
     #[tokio::test]
     async fn send_shield_cycle() {

@@ -76,16 +76,8 @@ pub mod fixtures {
     use crate::lightclient::get_base_address;
     use crate::lightclient::with_assertions;
 
-    /// runs a send-to-receiver and receives it in a chain-generic context
-    pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
-    where
-        CC: ConductChain,
-    {
-        let mut environment = CC::setup().await;
-
-        println!("chain set up, funding client now");
-
-        let expected_fee = MARGINAL_FEE.into_u64()
+    fn calculate_basic_from_orchard_fee_for_pool(pooltype: PoolType) -> u64 {
+        MARGINAL_FEE.into_u64()
             * match pooltype {
                 // contribution_transparent = 1
                 //  1 transfer
@@ -104,7 +96,39 @@ pub mod fixtures {
                 //  1 input
                 //  1 output
                 Shielded(Orchard) => 2,
-            };
+            }
+    }
+    /// Check behavior when sending to our own transparent receiver
+    pub async fn propose_and_broadcast_orch_to_transparent_selfsend<CC>(send_value: u64)
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let expected_fee = calculate_basic_from_orchard_fee_for_pool(Transparent);
+        let sender_recipient = environment
+            .fund_client_orchard(send_value + expected_fee)
+            .await;
+        let recorded_fee = with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &sender_recipient,
+            &sender_recipient,
+            vec![(Transparent, send_value)],
+        )
+        .await;
+        assert_eq!(expected_fee, recorded_fee);
+    }
+    /// runs a send-to-receiver and receives it in a chain-generic context
+    pub async fn propose_and_broadcast_orchard_value_to_pool<CC>(
+        send_value: u64,
+        pooltype: PoolType,
+    ) where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+
+        println!("chain set up, funding client now");
+
+        let expected_fee = calculate_basic_from_orchard_fee_for_pool(pooltype);
 
         let sender = environment
             .fund_client_orchard(send_value + expected_fee)
