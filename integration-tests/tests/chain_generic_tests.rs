@@ -3,6 +3,7 @@ use zcash_client_backend::PoolType::Transparent;
 use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
+use zingo_testutils::chain_generic_tests::fixtures::change_required;
 use zingo_testutils::chain_generic_tests::fixtures::ignore_dust_inputs;
 use zingo_testutils::chain_generic_tests::fixtures::propose_and_broadcast_value_to_pool;
 use zingo_testutils::chain_generic_tests::fixtures::send_grace_dust;
@@ -36,6 +37,10 @@ async fn libtonode_propose_and_broadcast_40_000_to_sapling() {
 #[tokio::test]
 async fn libtonode_propose_and_broadcast_40_000_to_orchard() {
     propose_and_broadcast_value_to_pool::<LibtonodeEnvironment>(40_000, Shielded(Orchard)).await;
+}
+#[tokio::test]
+async fn libtonode_change_required() {
+    change_required::<LibtonodeEnvironment>().await;
 }
 #[tokio::test]
 async fn libtonode_send_shield_cycle() {
