@@ -98,6 +98,25 @@ pub mod fixtures {
                 Shielded(Orchard) => 2,
             }
     }
+    /// Check behavior when sending to our own transparent receiver
+    pub async fn propose_and_broadcast_orch_to_transparent_selfsend<CC>(send_value: u64)
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+        let expected_fee = calculate_basic_from_orchard_fee_for_pool(Transparent);
+        let sender_recipient = environment
+            .fund_client_orchard(send_value + expected_fee)
+            .await;
+        let recorded_fee = with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &sender_recipient,
+            &sender_recipient,
+            vec![(Transparent, send_value)],
+        )
+        .await;
+        assert_eq!(expected_fee, recorded_fee);
+    }
     /// runs a send-to-receiver and receives it in a chain-generic context
     pub async fn propose_and_broadcast_orchard_value_to_pool<CC>(
         send_value: u64,

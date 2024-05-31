@@ -33,6 +33,13 @@ mod chain_generics {
             )
             .await;
         }
+        #[tokio::test]
+        async fn to_self_transparent() {
+            fixtures::propose_and_broadcast_orch_to_transparent_selfsend::<LibtonodeEnvironment>(
+                40_000,
+            )
+            .await;
+        }
     }
     mod send_40_000 {
         use super::*;
