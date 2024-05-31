@@ -87,8 +87,6 @@ pub mod decrypt_transaction {
             let mut is_outgoing_transaction = false;
             // Collect our t-addresses for easy checking
             let taddrs_set = self.key.get_all_taddrs(&self.config);
-
-            // in the send case, we already know the transaction is outgoing. however, this if clause will not trigger.
             let mut outgoing_metadatas = vec![];
             // Execute scanning operations
             self.decrypt_transaction_to_record(
