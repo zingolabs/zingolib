@@ -133,6 +133,9 @@ impl InputSource for TransactionRecordsById {
         let mut selected = vec![];
 
         let mut index_of_unselected = 0;
+
+        let target_value_u64 = target_value.into_u64(); // temp
+
         loop {
             if unselected.is_empty() {
                 // all notes are selected. we pass the max value onwards whether we have reached target or not
@@ -141,15 +144,24 @@ impl InputSource for TransactionRecordsById {
             match unselected.get(index_of_unselected) {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction... add the biggest note and reset the iteraton
-                    selected.push(unselected.pop().expect("nonempty"));
-                    index_of_unselected = 0;
-                    continue;
+                    if unselected.last().unwrap().1 >= MARGINAL_FEE.into_u64() {
+                        selected.push(unselected.pop().expect("nonempty"));
+                        index_of_unselected = 0;
+                    } else {
+                        break;
+                    }
                 }
                 Some(smallest_unselected) => {
                     // selected a note to test if it has enough value to complete the transaction on its own
-                    if smallest_unselected.1
-                        >= target_value.into_u64()
-                            - selected.iter().fold(0, |sum, (_id, value)| sum + *value)
+                    let selected_notes_total_value =
+                        selected.iter().fold(0, |sum, (_id, value)| sum + *value);
+                    let target_value_u64 = if target_value_u64 > selected_notes_total_value {
+                        target_value_u64 - selected_notes_total_value
+                    } else {
+                        break;
+                    };
+                    if smallest_unselected.1 >= target_value_u64
+                        && smallest_unselected.1 >= MARGINAL_FEE.into_u64()
                     {
                         selected.push(*smallest_unselected);
                         unselected.remove(index_of_unselected);
@@ -206,6 +218,9 @@ impl InputSource for TransactionRecordsById {
             }
             .ok_or(InputSourceError::NoteCannotBeIdentified(*id))
         })?;
+
+        dbg!(&selected_sapling);
+        dbg!(&selected_orchard);
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }

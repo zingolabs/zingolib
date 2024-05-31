@@ -59,7 +59,7 @@ pub enum ProposeSendError {
     /// insufficient funds
     InsufficientFunds,
     #[error("failed to retrieve full viewing key for balance calculation")]
-    /// insufficient funds
+    /// failed to retrieve full viewing key for balance calculation
     NoFullViewingKey,
 }
 
@@ -157,12 +157,12 @@ impl LightClient {
     ) -> Result<TransferProposal, ProposeSendError> {
         let confirmed_shielded_balance = zatoshis_from_u64(
             self.wallet
-                .verified_balance_excluding_dust::<OrchardDomain>(None)
+                .confirmed_balance_excluding_dust::<OrchardDomain>(None)
                 .await
                 .ok_or(ProposeSendError::NoFullViewingKey)?
                 + self
                     .wallet
-                    .verified_balance_excluding_dust::<SaplingDomain>(None)
+                    .confirmed_balance_excluding_dust::<SaplingDomain>(None)
                     .await
                     .ok_or(ProposeSendError::NoFullViewingKey)?,
         )
@@ -180,12 +180,12 @@ impl LightClient {
         let spendable_balance = match failing_proposal {
             Err(ProposeSendError::Proposal(
                 zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                    available,
-                    required,
+                    required, ..
                 },
             )) => {
-                if let Some(shortfall) = required - available {
-                    (available - shortfall).ok_or(ProposeSendError::InsufficientFunds)
+                if let Some(shortfall) = required - confirmed_shielded_balance {
+                    (confirmed_shielded_balance - shortfall)
+                        .ok_or(ProposeSendError::InsufficientFunds)
                 } else {
                     return failing_proposal; // return the proposal in the case there is zero fee
                 }

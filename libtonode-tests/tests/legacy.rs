@@ -4244,86 +4244,35 @@ async fn proxy_server_worky() {
 async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
-    // from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(&recipient, "unified"),
-    //         50_000,
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
-    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-    //     .await
-    //     .unwrap();
-    // from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(&recipient, "unified"),
-    //         200_000,
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
-    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-    //     .await
-    //     .unwrap();
+
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
     from_inputs::send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
     .await
     .unwrap();
-    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-    //     .await
-    //     .unwrap();
-    // from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(&recipient, "sapling"),
-    //         20_000,
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
-    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-    //     .await
-    //     .unwrap();
-    // from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
-    // )
-    // .await
-    // .unwrap();
-    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-    //     .await
-    //     .unwrap();
-    // from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(&recipient, "transparent"),
-    //         40_000,
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    let proposal = recipient
-        .propose_send_all(
-            address_from_str(
-                &get_base_address_macro!(faucet, "sapling"),
-                &recipient.config().chain,
-            )
-            .unwrap(),
-            None,
-        )
-        .await;
+
+    let proposal = from_inputs::propose(
+        &recipient,
+        vec![(&get_base_address_macro!(faucet, "sapling"), 50_000, None)],
+    )
+    .await;
+    // let proposal = recipient
+    //     .propose_send_all(
+    //         address_from_str(
+    //             &get_base_address_macro!(faucet, "sapling"),
+    //             &recipient.config().chain,
+    //         )
+    //         .unwrap(),
+    //         None,
+    //     )
+    //     .await;
     dbg!(&proposal);
     proposal.unwrap();
     recipient
@@ -4333,6 +4282,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
+
     faucet.do_sync(false).await.unwrap();
     dbg!(faucet.do_balance().await);
     dbg!(recipient.do_balance().await);
