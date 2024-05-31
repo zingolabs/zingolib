@@ -275,7 +275,7 @@ impl TransactionRecordsById {
             .iter()
             .map(|&note| note.value())
             .sum();
-        Ok(query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value)
+        Ok(query_record.transparent_input_value + sapling_spend_value + orchard_spend_value)
     }
     fn total_value_output_to_explicit_receivers(&self, query_record: &TransactionRecord) -> u64 {
         let transparent_output_value: u64 = query_record
@@ -417,12 +417,12 @@ impl TransactionRecordsById {
         txid: TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
         timestamp: u64,
-        total_transparent_value_spent: u64,
+        transparent_input_value: u64,
     ) {
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
+        transaction_metadata.transparent_input_value = transparent_input_value;
 
         self.check_notes_mark_change(&txid);
     }

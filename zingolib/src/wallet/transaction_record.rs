@@ -63,7 +63,7 @@ pub struct TransactionRecord {
     pub total_orchard_value_spent: u64,
 
     /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
-    pub total_transparent_value_spent: u64,
+    pub transparent_input_value: u64,
 
     /// All outgoing sends
     pub outgoing_tx_data: Vec<OutgoingTxData>,
@@ -89,7 +89,7 @@ impl TransactionRecord {
             sapling_notes: vec![],
             orchard_notes: vec![],
             transparent_outputs: vec![],
-            total_transparent_value_spent: 0,
+            transparent_input_value: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
             outgoing_tx_data: vec![],
@@ -302,7 +302,7 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     pub fn value_input_by_capability_to_transaction(&self) -> [u64; 3] {
         [
-            self.total_transparent_value_spent,
+            self.transparent_input_value,
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
@@ -436,7 +436,7 @@ impl TransactionRecord {
         let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
-        let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
+        let transparent_input_value = reader.read_u64::<LittleEndian>()?;
         let total_orchard_value_spent = if version >= 22 {
             reader.read_u64::<LittleEndian>()?
         } else {
@@ -485,7 +485,7 @@ impl TransactionRecord {
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
             total_sapling_value_spent,
-            total_transparent_value_spent,
+            transparent_input_value,
             total_orchard_value_spent,
             outgoing_tx_data: outgoing_metadata,
             price: zec_price,
@@ -635,7 +635,7 @@ pub mod mocks {
             build_push_list!(sapling_notes, self, transaction_record);
             build_push_list!(orchard_notes, self, transaction_record);
             build_push_list!(outgoing_tx_data, self, transaction_record);
-            transaction_record.total_transparent_value_spent =
+            transaction_record.transparent_input_value =
                 self.total_transparent_value_spent.unwrap();
             transaction_record
         }
@@ -798,7 +798,7 @@ mod tests {
     #[test]
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
-        assert_eq!(new.total_transparent_value_spent, 0);
+        assert_eq!(new.transparent_input_value, 0);
         assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);

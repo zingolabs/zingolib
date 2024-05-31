@@ -230,7 +230,7 @@ pub mod decrypt_transaction {
             // Scan transparent spends
 
             // Scan all the inputs to see if we spent any transparent funds in this tx
-            let mut total_transparent_value_spent = 0;
+            let mut transparent_input_value = 0;
             let mut spent_utxos = vec![];
 
             {
@@ -254,7 +254,7 @@ pub mod decrypt_transaction {
                                 .iter()
                                 .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                             {
-                                total_transparent_value_spent += spent_utxo.value;
+                                transparent_input_value += spent_utxo.value;
                                 spent_utxos.push((
                                     prev_transaction_id,
                                     prev_n as u32,
@@ -277,7 +277,7 @@ pub mod decrypt_transaction {
             }
 
             // If this transaction spent value, add the spent amount to the TxID
-            if total_transparent_value_spent > 0 {
+            if transparent_input_value > 0 {
                 self.transaction_metadata_set
                     .write()
                     .await
@@ -286,7 +286,7 @@ pub mod decrypt_transaction {
                         transaction.txid(),
                         status,
                         block_time as u64,
-                        total_transparent_value_spent,
+                        transparent_input_value,
                     );
             }
         }
