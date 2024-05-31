@@ -655,7 +655,7 @@ pub mod mocks {
                     ),
                 ),
                 datetime: Some(1705077003),
-                txid: Some(crate::mocks::default_txid()),
+                txid: Some(crate::mocks::random_txid()),
                 spent_sapling_nullifiers: vec![],
                 spent_orchard_nullifiers: vec![],
                 transparent_outputs: vec![],
