@@ -498,75 +498,63 @@ impl LightClient {
                     pending,
                 });
             }
-        }
-        match (
-            transaction_records.transaction_is_outgoing(transaction_record)?,
-            transaction_record.is_incoming_transaction(),
-        ) {
-            // This transaction is entirely composed of what we consider
-            // to be 'change'. We just make a Fee transfer and move on
-            (false, false) => (),
-            // All received funds were change, this is a normal send
-            (true, false) => {}
-            // No funds spent, this is a normal receipt
-            (false, true) => {
-                for received_transparent in transaction_record.transparent_outputs.iter() {
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Received {
-                            pool_type: PoolType::Transparent,
-                            amount: received_transparent.value,
-                        },
-                        memos: vec![],
-                        price,
-                        txid,
-                        pending,
-                    });
-                }
-                for received_sapling in transaction_record.sapling_notes.iter() {
-                    let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
-                        vec![textmemo.clone()]
-                    } else {
-                        vec![]
-                    };
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Received {
-                            pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
-                            amount: received_sapling.value(),
-                        },
-                        memos,
-                        price,
-                        txid,
-                        pending,
-                    });
-                }
-                for received_orchard in transaction_record.orchard_notes.iter() {
-                    let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
-                        vec![textmemo.clone()]
-                    } else {
-                        vec![]
-                    };
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Received {
-                            pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
-                            amount: received_orchard.value(),
-                        },
-                        memos,
-                        price,
-                        txid,
-                        pending,
-                    });
-                }
+        } else {
+            // This transaction is *NOT* outgoing, I *THINK* the TransactionRecord
+            // only write down outputs that are relevant to this Capability
+            // so that means everything we know about is Received.
+            for received_transparent in transaction_record.transparent_outputs.iter() {
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Transparent,
+                        amount: received_transparent.value,
+                    },
+                    memos: vec![],
+                    price,
+                    txid,
+                    pending,
+                });
             }
-            // We spent funds, and received funds as non-change. This is most likely a send-to-self,
-            // TODO: Figure out what kind of special-case handling we want for these
-            (true, true) => {}
-        };
+            for received_sapling in transaction_record.sapling_notes.iter() {
+                let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
+                    vec![textmemo.clone()]
+                } else {
+                    vec![]
+                };
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
+                        amount: received_sapling.value(),
+                    },
+                    memos,
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+            for received_orchard in transaction_record.orchard_notes.iter() {
+                let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
+                    vec![textmemo.clone()]
+                } else {
+                    vec![]
+                };
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
+                        amount: received_orchard.value(),
+                    },
+                    memos,
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+        }
         Ok(())
     }
 
