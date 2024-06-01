@@ -1,17 +1,12 @@
 //! These functions can be called by consumer to learn about the LightClient.
+use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
-use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
 use zcash_address::ZcashAddress;
-use zcash_client_backend::{
-    encoding::encode_payment_address,
-    fees::{orchard, TransactionBalance},
-    proto::proposal::TransactionBalance,
-    PoolType, ShieldedProtocol,
-};
+use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants},
     memo::Memo,
@@ -29,12 +24,8 @@ use crate::{
             summaries::{ValueTransfer, ValueTransferKind},
             OutgoingTxData, TransactionRecord,
         },
-        error::FeeError,
         keys::address_from_pubkeyhash,
-        notes::{
-            query::{self, OutputQuery},
-            OutputInterface,
-        },
+        notes::{query::OutputQuery, OutputInterface},
         transaction_records_by_id::TransactionRecordsById,
         LightWallet,
     },
@@ -405,7 +396,7 @@ impl LightClient {
     pub fn get_server_uri(&self) -> http::Uri {
         self.config.get_lightwalletd_uri()
     }
-
+    // Given a transaction write down ValueTransfer information in a Summary list
     fn record_value_transfers(
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
@@ -617,7 +608,7 @@ impl LightClient {
                     if !all_notes && orch_note_metadata.is_spent() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
+                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent.is_none() && orch_note_metadata.pending_spent.is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
