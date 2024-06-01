@@ -15,17 +15,14 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::{
-    error::ZingoLibError,
-    wallet::{
-        data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
-        keys::unified::WalletCapability,
-        notes::{
-            query::OutputQuery, OrchardNote, OutputId, OutputInterface, SaplingNote,
-            ShieldedNoteInterface, TransparentOutput,
-        },
-        traits::{DomainWalletExt, ReadableWriteable as _},
+use crate::wallet::{
+    data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
+    keys::unified::WalletCapability,
+    notes::{
+        query::OutputQuery, OrchardNote, OutputId, OutputInterface, SaplingNote,
+        ShieldedNoteInterface, TransparentOutput,
     },
+    traits::{DomainWalletExt, ReadableWriteable as _},
 };
 
 ///  Everything (SOMETHING) about a transaction
@@ -187,33 +184,6 @@ impl TransactionRecord {
             }
         }
         sum
-    }
-
-    /// Sums all the received notes in the transaction.
-    pub fn total_value_received(&self) -> u64 {
-        self.query_sum_value(OutputQuery::any())
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(
-        note = "replaced by `calculate_transaction_fee` method for [`crate::wallet::transaction_records_by_id::TransactionRecordsById`]"
-    )]
-    pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
-        let outputted = self.value_outgoing() + self.total_change_returned();
-        if self.total_value_spent() >= outputted {
-            Ok(self.total_value_spent() - outputted)
-        } else {
-            ZingoLibError::MetadataUnderflow(format!(
-                "for txid {} with status {}: spent {}, outgoing {}, returned change {} \n {:?}",
-                self.txid,
-                self.status,
-                self.total_value_spent(),
-                self.value_outgoing(),
-                self.total_change_returned(),
-                self,
-            ))
-            .handle()
-        }
     }
 
     /// TODO: Add Doc Comment Here!
@@ -751,6 +721,11 @@ mod tests {
                 .iter()
                 .map(|note_and_metadata| note_and_metadata.value())
                 .sum()
+        }
+
+        /// Sums all the received notes in the transaction.
+        pub fn total_value_received(&self) -> u64 {
+            self.query_sum_value(OutputQuery::any())
         }
     }
     use proptest::prelude::proptest;
