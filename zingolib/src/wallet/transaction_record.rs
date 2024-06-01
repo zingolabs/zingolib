@@ -74,7 +74,12 @@ pub struct TransactionRecord {
 
 // set
 impl TransactionRecord {
-    /// TODO: Add Doc Comment Here!
+    /// Standard Constructur, three fields are required at construction because they are guaranteed to be known
+    ///    * status:     The variant Pending or Confirmed and the relevant BlockHeight
+    ///    * datatime:   Nearly the same information at the status
+    ///    * transaction_id: as of v5 this is non-malleable
+    /// All other data *may* be incomplete for one of the following reasons:
+    ///    1.
     pub fn new(
         status: zingo_status::confirmation_status::ConfirmationStatus,
         datetime: u64,
@@ -97,7 +102,9 @@ impl TransactionRecord {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// This operation binds a private source of fund to this Record
+    /// If an attacker were able to determine which nullfiers provided
+    /// funds to the Record they could trace the transaction graph.
     pub fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
@@ -110,35 +117,9 @@ impl TransactionRecord {
             }
         }
     }
-    // much data assignment of this struct is done through the pub fields as of january 2024. Todo: should have private fields and public methods.
-}
-//get
-impl TransactionRecord {
-    /// Get transparent outputs
-    pub fn transparent_outputs(&self) -> &[TransparentOutput] {
-        &self.transparent_outputs
-    }
-
-    /// Get sapling notes
-    pub fn sapling_notes(&self) -> &[SaplingNote] {
-        &self.sapling_notes
-    }
-
-    /// Get orchard notes
-    pub fn orchard_notes(&self) -> &[OrchardNote] {
-        &self.orchard_notes
-    }
-
-    /// Get sapling nullifiers
-    pub fn spent_sapling_nullifiers(&self) -> &[sapling_crypto::Nullifier] {
-        &self.spent_sapling_nullifiers
-    }
-
-    /// Get orchard nullifiers
-    pub fn spent_orchard_nullifiers(&self) -> &[orchard::note::Nullifier] {
-        &self.spent_orchard_nullifiers
-    }
-
+    /// much data assignment of this struct is done through the pub fields as of january 2024.
+    ///  Todo: should have private fields and public methods. This might be right, but it should be
+    ///  done all at once!
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
     pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
         let mut set = vec![];

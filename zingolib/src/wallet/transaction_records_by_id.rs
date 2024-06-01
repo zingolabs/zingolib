@@ -224,11 +224,11 @@ impl TransactionRecordsById {
         query: &TransactionRecord,
     ) -> Result<Vec<&SaplingNote>, FeeError> {
         query
-            .spent_sapling_nullifiers()
+            .spent_sapling_nullifiers
             .iter()
             .map(|nullifier| {
                 self.values()
-                    .flat_map(|wallet_transaction_record| wallet_transaction_record.sapling_notes())
+                    .flat_map(|wallet_transaction_record| &wallet_transaction_record.sapling_notes)
                     .find(|&note| {
                         if let Some(nf) = note.nullifier() {
                             nf == *nullifier
@@ -245,11 +245,11 @@ impl TransactionRecordsById {
         query: &TransactionRecord,
     ) -> Result<Vec<&OrchardNote>, FeeError> {
         query
-            .spent_orchard_nullifiers()
+            .spent_orchard_nullifiers
             .iter()
             .map(|nullifier| {
                 self.values()
-                    .flat_map(|wallet_transaction_record| wallet_transaction_record.orchard_notes())
+                    .flat_map(|wallet_transaction_record| &wallet_transaction_record.orchard_notes)
                     .find(|&note| {
                         if let Some(nf) = note.nullifier() {
                             nf == *nullifier
@@ -300,17 +300,17 @@ impl TransactionRecordsById {
     // is the fee.
     fn total_value_output_to_explicit_receivers(&self, query_record: &TransactionRecord) -> u64 {
         let transparent_output_value: u64 = query_record
-            .transparent_outputs()
+            .transparent_outputs
             .iter()
             .map(|note| note.value())
             .sum();
         let sapling_output_value: u64 = query_record
-            .sapling_notes()
+            .sapling_notes
             .iter()
             .map(|note| note.value())
             .sum();
         let orchard_output_value: u64 = query_record
-            .orchard_notes()
+            .orchard_notes
             .iter()
             .map(|note| note.value())
             .sum();
