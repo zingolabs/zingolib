@@ -278,7 +278,7 @@ impl LightClient {
             .transaction_records_by_id;
 
         for (txid, transaction_record) in transaction_records_by_id.iter() {
-            if let Err(fee_error) = LightClient::tx_summary_matcher(
+            if let Err(fee_error) = LightClient::record_value_transfers(
                 &mut summaries,
                 *txid,
                 transaction_record,
@@ -390,7 +390,7 @@ impl LightClient {
         self.config.get_lightwalletd_uri()
     }
 
-    fn tx_summary_matcher(
+    fn record_value_transfers(
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
         transaction_record: &TransactionRecord,
