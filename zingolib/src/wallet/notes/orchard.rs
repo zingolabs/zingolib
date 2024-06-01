@@ -67,7 +67,7 @@ impl OutputInterface for OrchardNote {
         &mut self.pending_spent
     }
 
-    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+    fn transaction_record_to_outputs(transaction_record: &TransactionRecord) -> Vec<&Self> {
         transaction_record.orchard_notes.iter().collect()
     }
     fn transaction_record_to_outputs_vec_query(

@@ -117,9 +117,6 @@ impl TransactionRecord {
             }
         }
     }
-    /// much data assignment of this struct is done through the pub fields as of january 2024.
-    ///  Todo: should have private fields and public methods. This might be right, but it should be
-    ///  done all at once!
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
     pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
         let mut set = vec![];
@@ -190,14 +187,6 @@ impl TransactionRecord {
             }
         }
         sum
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn pool_value_received<Pool: OutputInterface>(&self) -> u64 {
-        Pool::transaction_record_to_outputs_vec(self)
-            .iter()
-            .map(|note_and_metadata| note_and_metadata.value())
-            .sum()
     }
 
     /// Sums all the received notes in the transaction.
@@ -298,7 +287,7 @@ impl TransactionRecord {
         D::Note: PartialEq + Clone,
         D::Recipient: super::traits::Recipient,
     {
-        let note = D::WalletNote::transaction_record_to_outputs_vec(self)
+        let note = D::WalletNote::transaction_record_to_outputs(self)
             .into_iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
@@ -755,6 +744,15 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
+    impl super::TransactionRecord {
+        /// Get pool specific value.  Interestingly only currently used in tests!
+        pub fn pool_value_received<Pool: crate::wallet::notes::OutputInterface>(&self) -> u64 {
+            Pool::transaction_record_to_outputs(self)
+                .iter()
+                .map(|note_and_metadata| note_and_metadata.value())
+                .sum()
+        }
+    }
     use proptest::prelude::proptest;
     use test_case::test_matrix;
 

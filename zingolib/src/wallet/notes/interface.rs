@@ -79,7 +79,7 @@ pub trait OutputInterface: Sized {
     }
 
     /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
-    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self>;
+    fn transaction_record_to_outputs(transaction_record: &TransactionRecord) -> Vec<&Self>;
     /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
     fn transaction_record_to_outputs_vec_query(
         transaction_record: &TransactionRecord,

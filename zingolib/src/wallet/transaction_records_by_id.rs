@@ -88,7 +88,7 @@ impl TransactionRecordsById {
         let transaction = self.get(note_id.txid());
         if note_id.protocol() == D::SHIELDED_PROTOCOL {
             transaction.and_then(|transaction_record| {
-                D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
+                D::WalletNote::transaction_record_to_outputs(transaction_record)
                     .iter()
                     .find(|note| note.output_index() == &Some(note_id.output_index() as u32))
                     .and_then(|note| {
@@ -542,7 +542,7 @@ impl TransactionRecordsById {
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        match D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
+        match D::WalletNote::transaction_record_to_outputs(transaction_record)
             .iter_mut()
             .find(|n| n.note() == &note)
         {

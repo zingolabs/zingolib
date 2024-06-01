@@ -55,7 +55,7 @@ impl OutputInterface for TransparentOutput {
         &mut self.pending_spent
     }
 
-    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+    fn transaction_record_to_outputs(transaction_record: &TransactionRecord) -> Vec<&Self> {
         transaction_record.transparent_outputs.iter().collect()
     }
     fn transaction_record_to_outputs_vec_query(
