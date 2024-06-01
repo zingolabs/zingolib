@@ -261,6 +261,22 @@ impl TransactionRecordsById {
             })
             .collect::<Result<Vec<&OrchardNote>, FeeError>>()
     }
+    /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
+    /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
+    /// the Zcash protocol
+    ///  TODO:   Test and handle 0-value, 0-fee transaction
+    fn transaction_is_outgoing(&self, query_record: &TransactionRecord) -> Result<bool, FeeError> {
+        match self.total_value_input_to_transaction(query_record) {
+            Ok(amount) => {
+                if amount > 0 {
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            Err(fee_error) => Err(fee_error),
+        }
+    }
     fn total_value_input_to_transaction(
         &self,
         query_record: &TransactionRecord,
