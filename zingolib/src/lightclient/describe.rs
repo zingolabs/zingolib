@@ -46,7 +46,7 @@ pub enum ValueTransferRecordingError {
     #[error("Fee was not calculable because of error:  {0}")]
     FeeCalculationError(String),
     #[error("Nonempty outgoing_tx_data in non outgoing transaction: {0}")]
-    IncoherentOutgoing(Vec<OutgoingTxData>),
+    IncoherentOutgoing(String), // TODO: Make this the actual data
 }
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
@@ -422,7 +422,7 @@ impl LightClient {
         };
         if !is_outgoing && !transaction_record.outgoing_tx_data.is_empty() {
             return Err(ValueTransferRecordingError::IncoherentOutgoing(
-                transaction_record.outgoing_tx_data,
+                "transaction_record.outgoing_tx_data".to_string(), // TODO: Make into real data.
             ));
         }
 
@@ -468,20 +468,20 @@ impl LightClient {
             //   - sapling notes
             //   - orchard notes
             // then they were sent to self
-            let (sapling_notes, orchard_notes) = (
-                transaction_record.sapling_notes,
-                transaction_record.orchard_notes,
-            );
-            if !sapling_notes.is_empty() || !orchard_notes.is_empty() {
+            if !transaction_record.sapling_notes.is_empty()
+                || !transaction_record.orchard_notes.is_empty()
+            {
                 summaries.push(ValueTransfer {
                     block_height,
                     datetime,
                     kind: ValueTransferKind::SendToSelf,
-                    memos: sapling_notes
+                    memos: transaction_record
+                        .sapling_notes
                         .iter()
                         .filter_map(|sapling_note| sapling_note.memo.clone())
                         .chain(
-                            orchard_notes
+                            transaction_record
+                                .orchard_notes
                                 .iter()
                                 .filter_map(|orchard_note| orchard_note.memo.clone()),
                         )
