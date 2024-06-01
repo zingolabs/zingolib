@@ -65,3 +65,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `do_save_to_buffer_sync`
   - `fix_spent_at_height`
   - `TransactionRecord::net_spent`
+  - `TransactionRecord::iget_transparent_value_spent()`
