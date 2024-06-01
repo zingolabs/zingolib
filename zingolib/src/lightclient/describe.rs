@@ -403,19 +403,14 @@ impl LightClient {
         transaction_record: &TransactionRecord,
         transaction_records: &TransactionRecordsById,
     ) -> Result<(), ValueTransferRecordingError> {
-        let is_outgoing = match transaction_records.transaction_is_outgoing(transaction_record) {
-            Ok(outgoing) => outgoing,
+        let is_received = match transaction_records.transaction_is_received(transaction_record) {
+            Ok(received) => received,
             Err(fee_error) => {
                 return Err(ValueTransferRecordingError::FeeCalculationError(
                     fee_error.to_string(),
                 ))
             }
         };
-        if !is_outgoing && !transaction_record.outgoing_tx_data.is_empty() {
-            return Err(ValueTransferRecordingError::IncoherentOutgoing(
-                "transaction_record.outgoing_tx_data".to_string(), // TODO: Make into real data.
-            ));
-        }
 
         let (block_height, datetime, price, pending) = (
             transaction_record.status.get_height(),
@@ -423,7 +418,68 @@ impl LightClient {
             transaction_record.price,
             !transaction_record.status.is_confirmed(),
         );
-        if is_outgoing {
+        if is_received {
+            if !transaction_record.outgoing_tx_data.is_empty() {
+                return Err(ValueTransferRecordingError::IncoherentOutgoing(
+                    "transaction_record.outgoing_tx_data".to_string(), // TODO: Make into real data.
+                ));
+            }
+            // This transaction is *NOT* outgoing, I *THINK* the TransactionRecord
+            // only write down outputs that are relevant to this Capability
+            // so that means everything we know about is Received.
+            for received_transparent in transaction_record.transparent_outputs.iter() {
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Transparent,
+                        amount: received_transparent.value,
+                    },
+                    memos: vec![],
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+            for received_sapling in transaction_record.sapling_notes.iter() {
+                let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
+                    vec![textmemo.clone()]
+                } else {
+                    vec![]
+                };
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
+                        amount: received_sapling.value(),
+                    },
+                    memos,
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+            for received_orchard in transaction_record.orchard_notes.iter() {
+                let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
+                    vec![textmemo.clone()]
+                } else {
+                    vec![]
+                };
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
+                        amount: received_orchard.value(),
+                    },
+                    memos,
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+        } else {
             // These Value Transfers create resources that are controlled by
             // a Capability other than the creator
             for OutgoingTxData {
@@ -484,62 +540,6 @@ impl LightClient {
                             }
                         })
                         .collect(),
-                    price,
-                    txid,
-                    pending,
-                });
-            }
-        } else {
-            // This transaction is *NOT* outgoing, I *THINK* the TransactionRecord
-            // only write down outputs that are relevant to this Capability
-            // so that means everything we know about is Received.
-            for received_transparent in transaction_record.transparent_outputs.iter() {
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Received {
-                        pool_type: PoolType::Transparent,
-                        amount: received_transparent.value,
-                    },
-                    memos: vec![],
-                    price,
-                    txid,
-                    pending,
-                });
-            }
-            for received_sapling in transaction_record.sapling_notes.iter() {
-                let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
-                    vec![textmemo.clone()]
-                } else {
-                    vec![]
-                };
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Received {
-                        pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
-                        amount: received_sapling.value(),
-                    },
-                    memos,
-                    price,
-                    txid,
-                    pending,
-                });
-            }
-            for received_orchard in transaction_record.orchard_notes.iter() {
-                let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
-                    vec![textmemo.clone()]
-                } else {
-                    vec![]
-                };
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Received {
-                        pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
-                        amount: received_orchard.value(),
-                    },
-                    memos,
                     price,
                     txid,
                     pending,
