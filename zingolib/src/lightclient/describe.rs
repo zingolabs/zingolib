@@ -6,7 +6,12 @@ use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
 use zcash_address::ZcashAddress;
-use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
+use zcash_client_backend::{
+    encoding::encode_payment_address,
+    fees::{orchard, TransactionBalance},
+    proto::proposal::TransactionBalance,
+    PoolType, ShieldedProtocol,
+};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants},
     memo::Memo,
@@ -427,6 +432,73 @@ impl LightClient {
             transaction_record.price,
             !transaction_record.status.is_confirmed(),
         );
+        if is_outgoing {
+            // These Value Transfers create resources that are controlled by
+            // a Capability other than the creator
+            for OutgoingTxData {
+                recipient_address,
+                value,
+                memo,
+                recipient_ua,
+            } in &transaction_record.outgoing_tx_data
+            {
+                if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
+                    recipient_ua.as_ref().unwrap_or(recipient_address),
+                ) {
+                    let memos = if let Memo::Text(textmemo) = memo {
+                        vec![textmemo.clone()]
+                    } else {
+                        vec![]
+                    };
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Sent {
+                            recipient_address,
+                            amount: *value,
+                        },
+                        memos,
+                        price,
+                        txid,
+                        pending,
+                    });
+                }
+            }
+            // If the transaction is outgoing, and there are notes in:
+            //   - sapling notes
+            //   - orchard notes
+            // then they were sent to self
+            let (sapling_notes, orchard_notes) = (
+                transaction_record.sapling_notes,
+                transaction_record.orchard_notes,
+            );
+            if !sapling_notes.is_empty() || !orchard_notes.is_empty() {
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::SendToSelf,
+                    memos: sapling_notes
+                        .iter()
+                        .filter_map(|sapling_note| sapling_note.memo.clone())
+                        .chain(
+                            orchard_notes
+                                .iter()
+                                .filter_map(|orchard_note| orchard_note.memo.clone()),
+                        )
+                        .filter_map(|memo| {
+                            if let Memo::Text(text_memo) = memo {
+                                Some(text_memo)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+        }
         match (
             transaction_records.transaction_is_outgoing(transaction_record)?,
             transaction_record.is_incoming_transaction(),
@@ -435,37 +507,7 @@ impl LightClient {
             // to be 'change'. We just make a Fee transfer and move on
             (false, false) => (),
             // All received funds were change, this is a normal send
-            (true, false) => {
-                for OutgoingTxData {
-                    recipient_address,
-                    value,
-                    memo,
-                    recipient_ua,
-                } in &transaction_record.outgoing_tx_data
-                {
-                    if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
-                        recipient_ua.as_ref().unwrap_or(recipient_address),
-                    ) {
-                        let memos = if let Memo::Text(textmemo) = memo {
-                            vec![textmemo.clone()]
-                        } else {
-                            vec![]
-                        };
-                        summaries.push(ValueTransfer {
-                            block_height,
-                            datetime,
-                            kind: ValueTransferKind::Sent {
-                                recipient_address,
-                                amount: *value,
-                            },
-                            memos,
-                            price,
-                            txid,
-                            pending,
-                        });
-                    }
-                }
-            }
+            (true, false) => {}
             // No funds spent, this is a normal receipt
             (false, true) => {
                 for received_transparent in transaction_record.transparent_outputs.iter() {
@@ -523,34 +565,7 @@ impl LightClient {
             }
             // We spent funds, and received funds as non-change. This is most likely a send-to-self,
             // TODO: Figure out what kind of special-case handling we want for these
-            (true, true) => {
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::SendToSelf,
-                    memos: transaction_record
-                        .sapling_notes
-                        .iter()
-                        .filter_map(|sapling_note| sapling_note.memo.clone())
-                        .chain(
-                            transaction_record
-                                .orchard_notes
-                                .iter()
-                                .filter_map(|orchard_note| orchard_note.memo.clone()),
-                        )
-                        .filter_map(|memo| {
-                            if let Memo::Text(text_memo) = memo {
-                                Some(text_memo)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
-                    price,
-                    txid,
-                    pending,
-                });
-            }
+            (true, true) => {}
         };
         Ok(())
     }
