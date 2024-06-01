@@ -26,12 +26,21 @@ use crate::{
         },
         error::FeeError,
         keys::address_from_pubkeyhash,
-        notes::{query::OutputQuery, OutputInterface},
+        notes::{
+            query::{self, OutputQuery},
+            OutputInterface,
+        },
         transaction_records_by_id::TransactionRecordsById,
         LightWallet,
     },
 };
 
+#[allow(missing_docs)]
+#[derive(Debug, thiserror::Error)]
+pub enum ValueTransferRecordingError {
+    #[error("Fee was not calculable because of error:  {0}")]
+    FeeCalculationError(String),
+}
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
@@ -278,13 +287,13 @@ impl LightClient {
             .transaction_records_by_id;
 
         for (txid, transaction_record) in transaction_records_by_id.iter() {
-            if let Err(fee_error) = LightClient::record_value_transfers(
+            if let Err(value_recording_error) = LightClient::record_value_transfers(
                 &mut summaries,
                 *txid,
                 transaction_record,
                 transaction_records_by_id,
             ) {
-                errors.push(fee_error.to_string())
+                errors.push(value_recording_error.to_string())
             };
 
             if let Ok(tx_fee) =
@@ -395,13 +404,21 @@ impl LightClient {
         txid: TxId,
         transaction_record: &TransactionRecord,
         transaction_records: &TransactionRecordsById,
-    ) -> Result<(), FeeError> {
+    ) -> Result<(), ValueTransferRecordingError> {
         let (block_height, datetime, price, pending) = (
             transaction_record.status.get_height(),
             transaction_record.datetime,
             transaction_record.price,
             !transaction_record.status.is_confirmed(),
         );
+        let is_outgoing = match transaction_records.transaction_is_outgoing(transaction_record) {
+            Ok(outgoing) => outgoing,
+            Err(fee_error) => {
+                return Err(ValueTransferRecordingError::FeeCalculationError(
+                    fee_error.to_string(),
+                ))
+            }
+        };
         match (
             transaction_records.transaction_is_outgoing(transaction_record)?,
             transaction_record.is_incoming_transaction(),
