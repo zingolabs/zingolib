@@ -40,6 +40,8 @@ use crate::{
 pub enum ValueTransferRecordingError {
     #[error("Fee was not calculable because of error:  {0}")]
     FeeCalculationError(String),
+    #[error("Nonempty outgoing_tx_data in non outgoing transaction: {0}")]
+    IncoherentOutgoing(Vec<OutgoingTxData>),
 }
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
@@ -405,12 +407,6 @@ impl LightClient {
         transaction_record: &TransactionRecord,
         transaction_records: &TransactionRecordsById,
     ) -> Result<(), ValueTransferRecordingError> {
-        let (block_height, datetime, price, pending) = (
-            transaction_record.status.get_height(),
-            transaction_record.datetime,
-            transaction_record.price,
-            !transaction_record.status.is_confirmed(),
-        );
         let is_outgoing = match transaction_records.transaction_is_outgoing(transaction_record) {
             Ok(outgoing) => outgoing,
             Err(fee_error) => {
@@ -419,6 +415,18 @@ impl LightClient {
                 ))
             }
         };
+        if !is_outgoing && !transaction_record.outgoing_tx_data.is_empty() {
+            return Err(ValueTransferRecordingError::IncoherentOutgoing(
+                transaction_record.outgoing_tx_data,
+            ));
+        }
+
+        let (block_height, datetime, price, pending) = (
+            transaction_record.status.get_height(),
+            transaction_record.datetime,
+            transaction_record.price,
+            !transaction_record.status.is_confirmed(),
+        );
         match (
             transaction_records.transaction_is_outgoing(transaction_record)?,
             transaction_record.is_incoming_transaction(),
