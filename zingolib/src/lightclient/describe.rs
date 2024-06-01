@@ -20,11 +20,13 @@ use crate::{
     error::ZingoLibError,
     wallet::{
         data::{
-            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionRecord,
+            finsight,
+            summaries::{ValueTransfer, ValueTransferKind},
+            OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
+        transaction_records_by_id::{self, TransactionRecordsById},
         LightWallet,
     },
 };
@@ -271,7 +273,12 @@ impl LightClient {
             .transaction_records_by_id;
 
         for (txid, transaction_record) in transaction_records_by_id.iter() {
-            LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_record);
+            LightClient::tx_summary_matcher(
+                &mut summaries,
+                *txid,
+                transaction_record,
+                transaction_records_by_id,
+            );
 
             if let Ok(tx_fee) =
                 transaction_records_by_id.calculate_transaction_fee(transaction_record)
@@ -379,17 +386,18 @@ impl LightClient {
     fn tx_summary_matcher(
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
-        transaction_md: &TransactionRecord,
+        transaction_record: &TransactionRecord,
+        transaction_records: &TransactionRecordsById,
     ) {
         let (block_height, datetime, price, pending) = (
-            transaction_md.status.get_height(),
-            transaction_md.datetime,
-            transaction_md.price,
-            !transaction_md.status.is_confirmed(),
+            transaction_record.status.get_height(),
+            transaction_record.datetime,
+            transaction_record.price,
+            !transaction_record.status.is_confirmed(),
         );
         match (
-            transaction_md.is_outgoing_transaction(),
-            transaction_md.is_incoming_transaction(),
+            transaction_records.transaction_is_outgoing(transaction_record),
+            transaction_records.is_incoming_transaction(),
         ) {
             // This transaction is entirely composed of what we consider
             // to be 'change'. We just make a Fee transfer and move on
@@ -401,7 +409,7 @@ impl LightClient {
                     value,
                     memo,
                     recipient_ua,
-                } in &transaction_md.outgoing_tx_data
+                } in &transaction_records.outgoing_tx_data
                 {
                     if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
                         recipient_ua.as_ref().unwrap_or(recipient_address),
@@ -428,7 +436,7 @@ impl LightClient {
             }
             // No funds spent, this is a normal receipt
             (false, true) => {
-                for received_transparent in transaction_md.transparent_outputs.iter() {
+                for received_transparent in transaction_records.transparent_outputs.iter() {
                     summaries.push(ValueTransfer {
                         block_height,
                         datetime,
@@ -442,7 +450,7 @@ impl LightClient {
                         pending,
                     });
                 }
-                for received_sapling in transaction_md.sapling_notes.iter() {
+                for received_sapling in transaction_records.sapling_notes.iter() {
                     let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
                         vec![textmemo.clone()]
                     } else {
@@ -461,7 +469,7 @@ impl LightClient {
                         pending,
                     });
                 }
-                for received_orchard in transaction_md.orchard_notes.iter() {
+                for received_orchard in transaction_records.orchard_notes.iter() {
                     let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
                         vec![textmemo.clone()]
                     } else {
@@ -488,12 +496,12 @@ impl LightClient {
                     block_height,
                     datetime,
                     kind: ValueTransferKind::SendToSelf,
-                    memos: transaction_md
+                    memos: transaction_records
                         .sapling_notes
                         .iter()
                         .filter_map(|sapling_note| sapling_note.memo.clone())
                         .chain(
-                            transaction_md
+                            transaction_records
                                 .orchard_notes
                                 .iter()
                                 .filter_map(|orchard_note| orchard_note.memo.clone()),
