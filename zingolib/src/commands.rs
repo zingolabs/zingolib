@@ -13,7 +13,6 @@ use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 /// Errors associated with the commands interface
