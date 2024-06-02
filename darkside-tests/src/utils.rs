@@ -679,7 +679,7 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            zingo_testutils::lightclient::from_inputs::send(
+            zingo_testutils::lightclient::from_inputs::old_send(
                 lightclient,
                 vec![(receiver_address, value, None)],
             )

@@ -15,7 +15,7 @@ async fn shield_transparent() {
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
     );
-    let proposal = from_inputs::send(
+    let proposal = from_inputs::old_send(
         &faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),

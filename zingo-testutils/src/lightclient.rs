@@ -68,7 +68,7 @@ pub mod from_inputs {
     }
 
     /// In a test give sender a raw_receiver to encode and send to
-    pub async fn send(
+    pub async fn old_send(
         sender: &zingolib::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
