@@ -10,37 +10,6 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zingoconfig::ChainType;
 
-#[cfg(not(feature = "zip317"))]
-use zcash_client_backend::{PoolType, ShieldedProtocol};
-
-// Parse the shield arguments for `do_shield`
-#[cfg(not(feature = "zip317"))]
-pub(super) fn parse_shield_args(
-    args: &[&str],
-    chain: &ChainType,
-) -> Result<(Vec<PoolType>, Option<Address>), CommandError> {
-    if args.is_empty() || args.len() > 2 {
-        return Err(CommandError::InvalidArguments);
-    }
-
-    let pools_to_shield: &[PoolType] = match args[0] {
-        "transparent" => &[PoolType::Transparent],
-        "sapling" => &[PoolType::Shielded(ShieldedProtocol::Sapling)],
-        "all" => &[
-            PoolType::Shielded(ShieldedProtocol::Sapling),
-            PoolType::Transparent,
-        ],
-        _ => return Err(CommandError::InvalidPool),
-    };
-    let address = if args.len() == 2 {
-        Some(address_from_str(args[1], chain).map_err(CommandError::ConversionFailed)?)
-    } else {
-        None
-    };
-
-    Ok((pools_to_shield.to_vec(), address))
-}
-
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
@@ -221,50 +190,6 @@ mod tests {
         utils::conversion::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string},
     };
-
-    #[cfg(not(feature = "zip317"))]
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
-
-    #[cfg(not(feature = "zip317"))]
-    #[test]
-    fn parse_shield_args() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-        let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let address = address_from_str(address_str, &chain).unwrap();
-
-        // Shield all to default address
-        let shield_args = &["all"];
-        assert_eq!(
-            super::parse_shield_args(shield_args, &chain).unwrap(),
-            (
-                vec![
-                    PoolType::Shielded(ShieldedProtocol::Sapling),
-                    PoolType::Transparent
-                ],
-                None
-            )
-        );
-
-        // Shield all to given address
-        let shield_args = &["all", address_str];
-        assert_eq!(
-            super::parse_shield_args(shield_args, &chain).unwrap(),
-            (
-                vec![
-                    PoolType::Shielded(ShieldedProtocol::Sapling),
-                    PoolType::Transparent
-                ],
-                Some(address)
-            )
-        );
-
-        // Invalid pool
-        let shield_args = &["invalid"];
-        assert!(matches!(
-            super::parse_shield_args(shield_args, &chain),
-            Err(CommandError::InvalidPool)
-        ));
-    }
 
     #[test]
     fn parse_send_args() {
