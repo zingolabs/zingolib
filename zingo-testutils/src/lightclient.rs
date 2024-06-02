@@ -72,8 +72,12 @@ pub mod from_inputs {
         sender: &zingolib::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<String, String> {
-        let receivers = receivers_from_send_inputs(raw_receivers, &sender.config().chain);
-        sender.do_send(receivers).await.map(|txid| txid.to_string())
+        let request = transaction_request_from_send_inputs(sender, raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        match sender.quick_send(request).await {
+            Ok(txids) => Ok(txids.head.to_string()),
+            Err(_quick_send_error) => Err("oops".to_string()),
+        }
     }
 
     /// Panics if the address conversion fails.
