@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
 
 use json::JsonValue;
+use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
+use sapling_crypto::note_encryption::SaplingDomain;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, time::Duration};
@@ -4252,7 +4254,35 @@ async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
-    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    from_inputs::send(
+        &faucet,
+        vec![(&get_base_address_macro!(&recipient, "unified"), 5_000, None)],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    from_inputs::send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(&recipient, "sapling"),
+            50_000,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    from_inputs::send(
+        &faucet,
+        vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
     from_inputs::send(
@@ -4261,27 +4291,22 @@ async fn zip317_send_all() {
     )
     .await
     .unwrap();
-    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
+    recipient.do_sync(false).await.unwrap();
 
-    let proposal = from_inputs::propose(
-        &recipient,
-        vec![(&get_base_address_macro!(faucet, "sapling"), 50_000, None)],
-    )
-    .await;
-    // let proposal = recipient
-    //     .propose_send_all(
-    //         address_from_str(
-    //             &get_base_address_macro!(faucet, "sapling"),
-    //             &recipient.config().chain,
-    //         )
-    //         .unwrap(),
-    //         None,
-    //     )
-    //     .await;
-    dbg!(&proposal);
-    proposal.unwrap();
+    recipient
+        .propose_send_all(
+            address_from_str(
+                &get_base_address_macro!(faucet, "sapling"),
+                &recipient.config().chain,
+            )
+            .unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
     recipient
         .complete_and_broadcast_stored_proposal()
         .await
@@ -4289,8 +4314,20 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-
     faucet.do_sync(false).await.unwrap();
-    dbg!(faucet.do_balance().await);
-    dbg!(recipient.do_balance().await);
+
+    assert_eq!(
+        recipient
+            .wallet
+            .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+            .await,
+        Some(0)
+    );
+    assert_eq!(
+        recipient
+            .wallet
+            .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+            .await,
+        Some(0)
+    );
 }

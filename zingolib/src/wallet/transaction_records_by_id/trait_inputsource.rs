@@ -124,7 +124,6 @@ impl InputSource for TransactionRecordsById {
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        dbg!(target_value);
         let mut unselected =
             self.get_spendable_note_ids_and_values(sources, anchor_height, exclude);
 
@@ -218,9 +217,6 @@ impl InputSource for TransactionRecordsById {
             }
             .ok_or(InputSourceError::NoteCannotBeIdentified(*id))
         })?;
-
-        dbg!(&selected_sapling);
-        dbg!(&selected_orchard);
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }

@@ -167,14 +167,13 @@ impl LightClient {
                     .ok_or(ProposeSendError::NoFullViewingKey)?,
         )
         .map_err(ProposeSendError::ConversionFailed)?;
-        dbg!(confirmed_shielded_balance);
         let request = transaction_request_from_receivers(vec![Receiver::new(
             address.clone(),
             confirmed_shielded_balance,
             memo.clone(),
         )])
         .map_err(ProposeSendError::TransactionRequestFailed)?;
-        let failing_proposal = dbg!(self.create_send_proposal(request).await);
+        let failing_proposal = self.create_send_proposal(request).await;
 
         // subtract shoftfall from available shielded balance to find spendable balance
         let spendable_balance = match failing_proposal {
@@ -193,7 +192,6 @@ impl LightClient {
             Err(e) => Err(e),
             Ok(_) => return failing_proposal, // return the proposal in the case there is zero fee
         }?;
-        dbg!(spendable_balance);
 
         // new proposal with spendable balance
         let request = transaction_request_from_receivers(vec![Receiver::new(
