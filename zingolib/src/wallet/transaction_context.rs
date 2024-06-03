@@ -124,12 +124,14 @@ pub mod decrypt_transaction {
                             .recipient_address()
                             .map(|raw_taddr| address_from_pubkeyhash(&self.config, raw_taddr))
                         {
-                            outgoing_metadatas.push(OutgoingTxData {
-                                recipient_address: taddr,
-                                value: u64::from(vout.value),
-                                memo: Memo::Empty,
-                                recipient_ua: None,
-                            });
+                            if !taddrs_set.contains(&taddr) {
+                                outgoing_metadatas.push(OutgoingTxData {
+                                    recipient_address: taddr,
+                                    value: u64::from(vout.value),
+                                    memo: Memo::Empty,
+                                    recipient_ua: None,
+                                });
+                            }
                         }
                     }
                 }
