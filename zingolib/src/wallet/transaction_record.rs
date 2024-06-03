@@ -225,11 +225,6 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn get_transparent_value_spent(&self) -> u64 {
-        self.total_transparent_value_spent
-    }
-
-    /// TODO: Add Doc Comment Here!
     #[deprecated(
         note = "replaced by `calculate_transaction_fee` method for [`crate::wallet::transaction_records_by_id::TransactionRecordsById`]"
     )]
@@ -271,13 +266,6 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[deprecated(note = "unused function with misleading name")]
-    pub fn net_spent(&self) -> u64 {
-        assert!(self.is_outgoing_transaction());
-        self.total_value_spent() - self.total_change_returned()
-    }
-
-    /// TODO: Add Doc Comment Here!
     fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
     where
         <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
@@ -307,7 +295,7 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
         [
-            self.get_transparent_value_spent(),
+            self.total_transparent_value_spent,
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
@@ -803,7 +791,7 @@ mod tests {
     #[test]
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
-        assert_eq!(new.get_transparent_value_spent(), 0);
+        assert_eq!(new.total_transparent_value_spent, 0);
         assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
