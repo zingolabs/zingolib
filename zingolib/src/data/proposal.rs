@@ -39,8 +39,8 @@ pub fn total_payment_amount(
         .steps()
         .iter()
         .map(|step| step.transaction_request())
-        .fold(Ok(NonNegativeAmount::ZERO), |acc, tr| {
-            (acc? + tr.total()?).ok_or(BalanceError::Overflow)
+        .try_fold(NonNegativeAmount::ZERO, |acc, request| {
+            (acc + request.total()?).ok_or(BalanceError::Overflow)
         })
 }
 
@@ -51,8 +51,8 @@ pub fn total_fee(proposal: &TransferProposal) -> Result<NonNegativeAmount, Balan
         .steps()
         .iter()
         .map(|step| step.balance().fee_required())
-        .fold(Ok(NonNegativeAmount::ZERO), |acc, fee| {
-            (acc? + fee).ok_or(BalanceError::Overflow)
+        .try_fold(NonNegativeAmount::ZERO, |acc, fee| {
+            (acc + fee).ok_or(BalanceError::Overflow)
         })
 }
 
