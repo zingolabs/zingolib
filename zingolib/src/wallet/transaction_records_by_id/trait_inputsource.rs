@@ -30,11 +30,13 @@ use zcash_primitives::transaction::components::amount::BalanceError;
 /// Error type used by InputSource trait
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
-    /// Note cannot be identified for selection
+    /// #[error("Note expected but not found: {0:?}")]
     #[error("Note expected but not found: {0:?}")]
     NoteCannotBeIdentified(NoteId),
-    /// Output value outside the valid range of zatoshis
-    #[error("Output value outside valid range of zatoshis. {0:?}")]
+    /// #[error("An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}")]
+    #[error(
+        "An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}"
+    )]
     OutputTooBig((u64, BalanceError)),
 }
 
@@ -132,9 +134,6 @@ impl InputSource for TransactionRecordsById {
         let mut selected = vec![];
 
         let mut index_of_unselected = 0;
-
-        let target_value_u64 = target_value.into_u64(); // temp
-
         loop {
             if unselected.is_empty() {
                 // all notes are selected. we pass the max value onwards whether we have reached target or not
@@ -143,24 +142,15 @@ impl InputSource for TransactionRecordsById {
             match unselected.get(index_of_unselected) {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction... add the biggest note and reset the iteraton
-                    if unselected.last().unwrap().1 >= MARGINAL_FEE.into_u64() {
-                        selected.push(unselected.pop().expect("nonempty"));
-                        index_of_unselected = 0;
-                    } else {
-                        break;
-                    }
+                    selected.push(unselected.pop().expect("nonempty"));
+                    index_of_unselected = 0;
+                    continue;
                 }
                 Some(smallest_unselected) => {
                     // selected a note to test if it has enough value to complete the transaction on its own
-                    let selected_notes_total_value =
-                        selected.iter().fold(0, |sum, (_id, value)| sum + *value);
-                    let target_value_u64 = if target_value_u64 > selected_notes_total_value {
-                        target_value_u64 - selected_notes_total_value
-                    } else {
-                        break;
-                    };
-                    if smallest_unselected.1 >= target_value_u64
-                        && smallest_unselected.1 >= MARGINAL_FEE.into_u64()
+                    if smallest_unselected.1
+                        >= target_value.into_u64()
+                            - selected.iter().fold(0, |sum, (_id, value)| sum + *value)
                     {
                         selected.push(*smallest_unselected);
                         unselected.remove(index_of_unselected);
