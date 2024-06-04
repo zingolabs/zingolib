@@ -510,9 +510,7 @@ impl LightClient {
             //   - sapling notes
             //   - orchard notes
             // then they were sent to self
-            if !transaction_record.sapling_notes.is_empty()
-                || !transaction_record.orchard_notes.is_empty()
-            {
+            if transaction_record.outgoing_tx_data.is_empty() {
                 summaries.push(ValueTransfer {
                     block_height,
                     datetime,
