@@ -12,6 +12,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     transaction::fees::zip317::MINIMUM_FEE,
 };
+use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
     self, build_fvk_client, check_client_balances, check_transaction_equality,
     get_base_address_macro, increase_height_and_wait_for_client, paths::get_cargo_manifest_dir,
@@ -4243,4 +4244,27 @@ mod basic_transactions {
 #[tokio::test]
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
+}
+
+#[tokio::test]
+async fn propose_orchard_dust_to_sapling() {
+    let (regtest_manager, _cph, faucet, recipient, _) =
+        scenarios::faucet_funded_recipient_default(100_000).await;
+
+    from_inputs::send(
+        &faucet,
+        vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+
+    from_inputs::propose(
+        &recipient,
+        vec![(&get_base_address_macro!(faucet, "sapling"), 10_000, None)],
+    )
+    .await
+    .unwrap();
 }
