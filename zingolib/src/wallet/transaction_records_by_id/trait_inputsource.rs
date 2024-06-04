@@ -84,18 +84,24 @@ impl InputSource for TransactionRecordsById {
         >,
         Self::Error,
     > {
-        let note_record_reference: <Self as InputSource>::NoteRef =
-            NoteId::new(*txid, protocol, index as u16);
         match protocol {
             ShieldedProtocol::Sapling => Ok(self
-                .get_received_spendable_note_from_identifier::<SaplingDomain>(note_record_reference)
+                .get_received_spendable_note_from_identifier::<SaplingDomain>(NoteId::new(
+                    *txid,
+                    protocol,
+                    index as u16,
+                ))
                 .map(|note| {
                     note.map_note(|note_inner| {
                         zcash_client_backend::wallet::Note::Sapling(note_inner)
                     })
                 })),
             ShieldedProtocol::Orchard => Ok(self
-                .get_received_spendable_note_from_identifier::<OrchardDomain>(note_record_reference)
+                .get_received_spendable_note_from_identifier::<OrchardDomain>(NoteId::new(
+                    *txid,
+                    protocol,
+                    index as u16,
+                ))
                 .map(|note| {
                     note.map_note(|note_inner| {
                         zcash_client_backend::wallet::Note::Orchard(note_inner)
