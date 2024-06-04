@@ -271,7 +271,7 @@ impl TransactionRecordsById {
     ) -> Result<bool, FeeError> {
         match self.total_value_input_to_transaction(query_record) {
             Ok(amount) => {
-                if amount == 0 {
+                if amount == 0 && query_record.outgoing_tx_data.is_empty() {
                     Ok(true)
                 } else {
                     Ok(false)
