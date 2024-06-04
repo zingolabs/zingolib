@@ -273,9 +273,11 @@ impl LightClient {
     pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
         self.list_txsummaries_and_capture_errors().await.0
     }
-    async fn list_txsummaries_and_capture_errors(&self) -> (Vec<ValueTransfer>, Vec<String>) {
+    async fn list_txsummaries_and_capture_errors(
+        &self,
+    ) -> (Vec<ValueTransfer>, Vec<ValueTransferRecordingError>) {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
-        let mut errors: Vec<String> = Vec::new();
+        let mut errors: Vec<ValueTransferRecordingError> = Vec::new();
         let transaction_records_by_id = &self
             .wallet
             .transaction_context
@@ -291,7 +293,7 @@ impl LightClient {
                 transaction_record,
                 transaction_records_by_id,
             ) {
-                errors.push(value_recording_error.to_string())
+                errors.push(value_recording_error)
             };
 
             if let Ok(tx_fee) =
