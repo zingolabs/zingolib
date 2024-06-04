@@ -190,12 +190,18 @@ impl InputSource for TransactionRecordsById {
             {
                 selected.push(*biggest_dust);
                 // we dont bother to pop this last selected note from unselected because we are done with unselected
-            } else {
-                // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
-                if let Some(smallest_note) = unselected.pop() {
-                    selected.push(smallest_note);
-                };
             }
+            // TODO: re-introduce this optimisation, current bug is that we don't select a note from the same pool as the single selected note
+            // (and we don't have information about the pool(s) the outputs are being created for)
+            // this is ok for dust as it is excluded if the dust is from a pool where grace inputs are available. however, this doesn't work for
+            // non-dust
+            //
+            // } else {
+            //     // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
+            //     if let Some(smallest_note) = unselected.pop() {
+            //         selected.push(smallest_note);
+            //     };
+            // }
         }
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
