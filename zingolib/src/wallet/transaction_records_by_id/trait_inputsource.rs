@@ -30,14 +30,12 @@ use zcash_primitives::transaction::components::amount::BalanceError;
 /// Error type used by InputSource trait
 #[derive(Debug, PartialEq, Error)]
 pub enum InputSourceError {
-    /// #[error("Note expected but not found: {0:?}")]
-    #[error("Note expected but not found: {0:?}")]
-    NoteCannotBeIdentified(NoteId),
-    /// #[error("An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}")]
-    #[error(
-        "An output is this wallet is believed to contain {0:?} zec. That is more than exist. {0:?}"
-    )]
-    OutputTooBig((u64, BalanceError)),
+    /// No witness position found for note. Note cannot be spent.
+    #[error("No witness position found for note. Note cannot be spent: {0:?}")]
+    WitnessPositionNotFound(NoteId),
+    /// Value outside the valid range of zatoshis
+    #[error("Value outside valid range of zatoshis. {0:?}")]
+    InvalidValue(BalanceError),
 }
 
 /// A trait representing the capability to query a data store for unspent transaction outputs
@@ -126,31 +124,40 @@ impl InputSource for TransactionRecordsById {
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        let mut unselected =
-            self.get_spendable_note_ids_and_values(sources, anchor_height, exclude);
-
+        let mut unselected = self
+            .get_spendable_note_ids_and_values(sources, anchor_height, exclude)
+            .into_iter()
+            .map(|(id, value)| NonNegativeAmount::from_u64(value).map(|value| (id, value)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(InputSourceError::InvalidValue)?;
         unselected.sort_by_key(|(_id, value)| *value);
-
         let mut selected = vec![];
-
         let mut index_of_unselected = 0;
+
         loop {
+            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
             if unselected.is_empty() {
-                // all notes are selected. we pass the max value onwards whether we have reached target or not
+                break;
+            }
+
+            // update target value for further note selection
+            let selected_notes_total_value = selected
+                .iter()
+                .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
+                .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
+            let Some(updated_target_value) = target_value - selected_notes_total_value else {
+                // if underflow, target has been reached
+                break;
+            };
+            if updated_target_value == NonNegativeAmount::ZERO {
+                // if zero, target has been reached
                 break;
             }
             match unselected.get(index_of_unselected) {
-                None => {
-                    // the iterator went off the end of the vector without finding a note big enough to complete the transaction... add the biggest note and reset the iteraton
-                    selected.push(unselected.pop().expect("nonempty"));
-                    index_of_unselected = 0;
-                    continue;
-                }
                 Some(smallest_unselected) => {
                     // selected a note to test if it has enough value to complete the transaction on its own
-                    if smallest_unselected.1
-                        >= target_value.into_u64()
-                            - selected.iter().fold(0, |sum, (_id, value)| sum + *value)
+                    if smallest_unselected.1 >= updated_target_value
+                        && smallest_unselected.1 >= MARGINAL_FEE
                     {
                         selected.push(*smallest_unselected);
                         unselected.remove(index_of_unselected);
@@ -160,6 +167,18 @@ impl InputSource for TransactionRecordsById {
                         index_of_unselected += 1;
                     }
                 }
+                None => {
+                    // the iterator went off the end of the vector without finding a note big enough to complete the transaction
+                    // add the biggest note and reset the iteraton
+                    if let Some(largest_note) = unselected.last() {
+                        if largest_note.1 >= MARGINAL_FEE {
+                            selected.push(unselected.pop().expect("should be nonempty"));
+                            index_of_unselected = 0;
+                        } else {
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -167,19 +186,22 @@ impl InputSource for TransactionRecordsById {
             // since we maxed out the target value with only one note, we have an option to grace a note.
             // we will rescue the biggest dust note
             unselected.reverse();
-            if let Some(biggest_dust) = unselected
-                .iter()
-                .find(|(_id, value)| value <= &MARGINAL_FEE.into_u64())
+            if let Some(biggest_dust) = unselected.iter().find(|(_id, value)| value < &MARGINAL_FEE)
             {
                 selected.push(*biggest_dust);
                 // we dont bother to pop this last selected note from unselected because we are done with unselected
-            } else {
-                // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
-                unselected.reverse();
-                if let Some(id_value) = unselected.pop() {
-                    selected.push(id_value);
-                };
             }
+            // TODO: re-introduce this optimisation, current bug is that we don't select a note from the same pool as the single selected note
+            // (and we don't have information about the pool(s) the outputs are being created for)
+            // this is ok for dust as it is excluded if the dust is from a pool where grace inputs are available. however, this doesn't work for
+            // non-dust
+            //
+            // } else {
+            //     // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
+            //     if let Some(smallest_note) = unselected.pop() {
+            //         selected.push(smallest_note);
+            //     };
+            // }
         }
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
@@ -187,25 +209,23 @@ impl InputSource for TransactionRecordsById {
 
         // transform each NoteId to a ReceivedNote
         selected.iter().try_for_each(|(id, _value)| {
-            let opt_transaction_record = self.get(id.txid());
+            let transaction_record = self
+                .get(id.txid())
+                .expect("should exist as note_id is created from the record itself");
             let output_index = id.output_index() as u32;
             match id.protocol() {
-                zcash_client_backend::ShieldedProtocol::Sapling => opt_transaction_record
-                    .and_then(|transaction_record| {
-                        transaction_record.get_received_note::<SaplingDomain>(output_index)
-                    })
+                zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
+                    .get_received_note::<SaplingDomain>(output_index)
                     .map(|received_note| {
                         selected_sapling.push(received_note);
                     }),
-                zcash_client_backend::ShieldedProtocol::Orchard => opt_transaction_record
-                    .and_then(|transaction_record| {
-                        transaction_record.get_received_note::<OrchardDomain>(output_index)
-                    })
+                zcash_client_backend::ShieldedProtocol::Orchard => transaction_record
+                    .get_received_note::<OrchardDomain>(output_index)
                     .map(|received_note| {
                         selected_orchard.push(received_note);
                     }),
             }
-            .ok_or(InputSourceError::NoteCannotBeIdentified(*id))
+            .ok_or(InputSourceError::WitnessPositionNotFound(*id))
         })?;
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
@@ -244,8 +264,8 @@ impl InputSource for TransactionRecordsById {
         }) else {
             return Ok(None);
         };
-        let value = NonNegativeAmount::from_u64(output.value)
-            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))?;
+        let value =
+            NonNegativeAmount::from_u64(output.value).map_err(InputSourceError::InvalidValue)?;
 
         let script_pubkey = Script(output.script.clone());
 
@@ -296,7 +316,7 @@ impl InputSource for TransactionRecordsById {
                     })
                     .filter_map(move |output| {
                         let value = match NonNegativeAmount::from_u64(output.value)
-                            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))
+                            .map_err(InputSourceError::InvalidValue)
                         {
                             Ok(v) => v,
                             Err(e) => return Some(Err(e)),

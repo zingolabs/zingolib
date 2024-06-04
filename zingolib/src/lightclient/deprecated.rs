@@ -138,7 +138,7 @@ impl LightClient {
 
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
-                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.get_transparent_value_spent() as i64;
+                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
                 let address = wallet_transaction.transparent_outputs.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
                 if net_transparent_value > 0 {
                     if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
