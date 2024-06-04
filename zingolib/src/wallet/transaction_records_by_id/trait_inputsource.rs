@@ -148,7 +148,6 @@ impl InputSource for TransactionRecordsById {
                 .iter()
                 .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
                 .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
-            if target_value > selected_notes_total_value {}
             let Some(updated_target_value) = target_value - selected_notes_total_value else {
                 // if underflow, target has been reached
                 break;
