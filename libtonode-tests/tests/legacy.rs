@@ -9,6 +9,7 @@ use shardtree::ShardTree;
 use std::{fs::File, path::Path, time::Duration};
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
@@ -20,6 +21,7 @@ use zingo_testutils::{
     get_base_address_macro, increase_height_and_wait_for_client, paths::get_cargo_manifest_dir,
     scenarios,
 };
+use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
 
 use zingo_testvectors::{
@@ -4330,4 +4332,56 @@ async fn zip317_send_all() {
             .await,
         Some(0)
     );
+}
+
+#[tokio::test]
+async fn zip317_send_all_insufficient_funds() {
+    let (_regtest_manager, _cph, faucet, recipient, _) =
+        scenarios::faucet_funded_recipient_default(10_000).await;
+
+    let proposal_error = recipient
+        .propose_send_all(
+            address_from_str(
+                &get_base_address_macro!(faucet, "sapling"),
+                &recipient.config().chain,
+            )
+            .unwrap(),
+            None,
+        )
+        .await;
+
+    match proposal_error {
+        Err(ProposeSendError::Proposal(
+            zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                available: a,
+                required: r,
+            },
+        )) => {
+            assert_eq!(a, NonNegativeAmount::const_from_u64(10_000));
+            assert_eq!(r, NonNegativeAmount::const_from_u64(20_000));
+        }
+        _ => panic!("expected an InsufficientFunds error"),
+    }
+}
+
+#[tokio::test]
+async fn zip317_send_all_zero_value() {
+    let (_regtest_manager, _cph, faucet, recipient, _) =
+        scenarios::faucet_funded_recipient_default(10_000).await;
+
+    let proposal_error = recipient
+        .propose_send_all(
+            address_from_str(
+                &get_base_address_macro!(faucet, "unified"),
+                &recipient.config().chain,
+            )
+            .unwrap(),
+            None,
+        )
+        .await;
+
+    assert!(matches!(
+        proposal_error,
+        Err(ProposeSendError::ZeroValueSendAll)
+    ))
 }

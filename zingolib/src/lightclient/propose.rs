@@ -55,9 +55,6 @@ pub enum ProposeSendError {
     #[error("send all is transferring no value. only enough funds to pay the fees!")]
     /// send all is transferring no value
     ZeroValueSendAll,
-    #[error("insufficient funds")]
-    /// insufficient funds
-    InsufficientFunds,
     #[error("failed to retrieve full viewing key for balance calculation")]
     /// failed to retrieve full viewing key for balance calculation
     NoFullViewingKey,
@@ -183,8 +180,12 @@ impl LightClient {
                 },
             )) => {
                 if let Some(shortfall) = required - confirmed_shielded_balance {
-                    (confirmed_shielded_balance - shortfall)
-                        .ok_or(ProposeSendError::InsufficientFunds)
+                    (confirmed_shielded_balance - shortfall).ok_or(ProposeSendError::Proposal(
+                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                            available: confirmed_shielded_balance,
+                            required: shortfall,
+                        },
+                    ))
                 } else {
                     return failing_proposal; // return the proposal in the case there is zero fee
                 }
@@ -192,6 +193,9 @@ impl LightClient {
             Err(e) => Err(e),
             Ok(_) => return failing_proposal, // return the proposal in the case there is zero fee
         }?;
+        if spendable_balance == NonNegativeAmount::ZERO {
+            return Err(ProposeSendError::ZeroValueSendAll);
+        }
 
         // new proposal with spendable balance
         let request = transaction_request_from_receivers(vec![Receiver::new(
