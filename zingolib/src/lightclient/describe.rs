@@ -506,10 +506,11 @@ impl LightClient {
                     });
                 }
             }
-            // If the transaction is outgoing, and there are notes in:
-            //   - sapling notes
-            //   - orchard notes
-            // then they were sent to self
+            // If the transaction is "received", and nothing is allocates to another capability
+            // then this is a special kind of **TRANSACTION** we call a "SendToSelf", and all
+            // ValueTransfers are typed to match.
+            //  TODO:  I think this violates a clean separation of concerns between ValueTransfers
+            //  and transactions, so I think we should redefine terms in the new architecture
             if transaction_record.outgoing_tx_data.is_empty() {
                 summaries.push(ValueTransfer {
                     block_height,
