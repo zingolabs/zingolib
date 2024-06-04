@@ -35,7 +35,7 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 pub enum ValueTransferRecordingError {
     #[error("Fee was not calculable because of error:  {0}")]
-    FeeCalculationError(String),
+    FeeCalculationError(String), // TODO: revisit passed type
     #[error("Nonempty outgoing_tx_data in non outgoing transaction: {0}")]
     IncoherentOutgoing(String), // TODO: Make this the actual data
 }
