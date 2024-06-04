@@ -33,9 +33,6 @@ pub enum InputSourceError {
     /// No witness position found for note. Note cannot be spent.
     #[error("No witness position found for note. Note cannot be spent: {0:?}")]
     WitnessPositionNotFound(NoteId),
-    /// Output value outside the valid range of zatoshis
-    #[error("Output value outside valid range of zatoshis. {0:?}")]
-    OutputTooBig((u64, BalanceError)),
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(BalanceError),
@@ -261,8 +258,8 @@ impl InputSource for TransactionRecordsById {
         }) else {
             return Ok(None);
         };
-        let value = NonNegativeAmount::from_u64(output.value)
-            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))?;
+        let value =
+            NonNegativeAmount::from_u64(output.value).map_err(InputSourceError::InvalidValue)?;
 
         let script_pubkey = Script(output.script.clone());
 
@@ -313,7 +310,7 @@ impl InputSource for TransactionRecordsById {
                     })
                     .filter_map(move |output| {
                         let value = match NonNegativeAmount::from_u64(output.value)
-                            .map_err(|e| InputSourceError::OutputTooBig((output.value, e)))
+                            .map_err(InputSourceError::InvalidValue)
                         {
                             Ok(v) => v,
                             Err(e) => return Some(Err(e)),
