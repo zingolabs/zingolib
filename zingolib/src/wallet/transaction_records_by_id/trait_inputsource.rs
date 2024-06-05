@@ -70,9 +70,36 @@ enum RemainingNeeded {
     Change(NonNegativeAmount),
 }
 fn sweep_dust_into_grace(
-    selected: Vec<(NoteId, NonNegativeAmount)>,
-    dust: Vec<(NoteId, NonNegativeAmount)>,
+    selected: &mut Vec<(NoteId, NonNegativeAmount)>,
+    dust_notes: Vec<(NoteId, NonNegativeAmount)>,
 ) {
+    let sapling_dust: Vec<_> = dust_notes
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Sapling)
+        .cloned()
+        .collect();
+    let orchard_dust: Vec<_> = dust_notes
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Orchard)
+        .cloned()
+        .collect();
+    match selected
+        .last()
+        .expect("Guaranteed to exist by selected.len() == 1")
+        .0
+        .protocol()
+    {
+        ShieldedProtocol::Sapling => {
+            if !sapling_dust.is_empty() {
+                selected.push(*sapling_dust.last().expect("Guaranteed by !is_empty"));
+            };
+        }
+        ShieldedProtocol::Orchard => {
+            if !orchard_dust.is_empty() {
+                selected.push(*orchard_dust.last().expect("Guaranteed by !is_empty"));
+            }
+        }
+    }
 }
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
@@ -213,15 +240,11 @@ impl InputSource for TransactionRecordsById {
             }
         }
 
-        if selected.len() < 2 {
+        if selected.len() == 1 {
             // since we maxed out the target value with only one note, we have an option to grace a note.
             // we will rescue the biggest dust note
             if !dust_notes.is_empty() {
-                selected.push(
-                    *dust_notes
-                        .last()
-                        .expect("Guaranteed to exist by !is_empty()."),
-                )
+                sweep_dust_into_grace(&mut selected, dust_notes);
             }
             // TODO: re-introduce this optimisation, current bug is that we don't select a note from the same pool as the single selected note
             // (and we don't have information about the pool(s) the outputs are being created for)
