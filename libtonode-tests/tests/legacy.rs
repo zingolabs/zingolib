@@ -3775,6 +3775,8 @@ mod slow {
 }
 
 mod basic_transactions {
+    use std::cmp;
+
     use zingo_testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
 
     #[tokio::test]
@@ -3889,15 +3891,13 @@ mod basic_transactions {
             zingo_testutils::total_tx_value(&faucet, txid1.as_str()).await - 40_000;
         println!("Fee Paid: {}", calculated_fee_txid1);
 
-        let expected_fee_txid1 = 10000;
-        // currently expected fee is always 10000 but will change to the following in zip317
-        // let expected_fee_txid1 = 5000
-        //     * (cmp::max(
-        //         2,
-        //         tx_actions_txid1.transparent_tx_actions
-        //             + tx_actions_txid1.sapling_tx_actions
-        //             + tx_actions_txid1.orchard_tx_actions,
-        //     ));
+        let expected_fee_txid1 = 5000
+            * (cmp::max(
+                2,
+                tx_actions_txid1.transparent_tx_actions
+                    + tx_actions_txid1.sapling_tx_actions
+                    + tx_actions_txid1.orchard_tx_actions,
+            ));
         println!("Expected Fee: {}", expected_fee_txid1);
 
         assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
@@ -3923,15 +3923,13 @@ mod basic_transactions {
             zingo_testutils::total_tx_value(&faucet, txid2.as_str()).await - 40_000;
         println!("Fee Paid: {}", calculated_fee_txid2);
 
-        let expected_fee_txid2 = 10000;
-        // currently expected fee is always 10000 but will change to the following in zip317
-        // let expected_fee_txid2 = 5000
-        //     * (cmp::max(
-        //         2,
-        //         tx_actions_txid2.transparent_tx_actions
-        //             + tx_actions_txid2.sapling_tx_actions
-        //             + tx_actions_txid2.orchard_tx_actions,
-        //     ));
+        let expected_fee_txid2 = 5000
+            * (cmp::max(
+                2,
+                tx_actions_txid2.transparent_tx_actions
+                    + tx_actions_txid2.sapling_tx_actions
+                    + tx_actions_txid2.orchard_tx_actions,
+            ));
         println!("Expected Fee: {}", expected_fee_txid2);
 
         assert_eq!(calculated_fee_txid2, expected_fee_txid2 as u64);
@@ -3957,15 +3955,13 @@ mod basic_transactions {
             zingo_testutils::total_tx_value(&faucet, txid3.as_str()).await - 40_000;
         println!("Fee Paid: {}", calculated_fee_txid3);
 
-        let expected_fee_txid3 = 10000;
-        // currently expected fee is always 10000 but will change to the following in zip317
-        // let expected_fee_txid3 = 5000
-        //     * (cmp::max(
-        //         2,
-        //         tx_actions_txid3.transparent_tx_actions
-        //             + tx_actions_txid3.sapling_tx_actions
-        //             + tx_actions_txid3.orchard_tx_actions,
-        //     ));
+        let expected_fee_txid3 = 5000
+            * (cmp::max(
+                2,
+                tx_actions_txid3.transparent_tx_actions
+                    + tx_actions_txid3.sapling_tx_actions
+                    + tx_actions_txid3.orchard_tx_actions,
+            ));
         println!("Expected Fee: {}", expected_fee_txid3);
 
         assert_eq!(calculated_fee_txid3, expected_fee_txid3 as u64);
@@ -3974,7 +3970,7 @@ mod basic_transactions {
             &recipient,
             vec![(
                 get_base_address_macro!(faucet, "transparent").as_str(),
-                60_000,
+                55_000,
                 None,
             )],
         )
@@ -4008,18 +4004,16 @@ mod basic_transactions {
         println!("Transaction Actions:\n{:?}", tx_actions_txid4);
 
         let calculated_fee_txid4 =
-            zingo_testutils::total_tx_value(&recipient, txid4.as_str()).await - 60_000;
+            zingo_testutils::total_tx_value(&recipient, txid4.as_str()).await - 55_000;
         println!("Fee Paid: {}", calculated_fee_txid4);
 
-        let expected_fee_txid4 = 10000;
-        // currently expected fee is always 10000 but will change to the following in zip317
-        // let expected_fee_txid4 = 5000
-        //     * (cmp::max(
-        //         2,
-        //         tx_actions_txid4.transparent_tx_actions
-        //             + tx_actions_txid4.sapling_tx_actions
-        //             + tx_actions_txid4.orchard_tx_actions,
-        //     ));
+        let expected_fee_txid4 = 5000
+            * (cmp::max(
+                2,
+                tx_actions_txid4.transparent_tx_actions
+                    + tx_actions_txid4.sapling_tx_actions
+                    + tx_actions_txid4.orchard_tx_actions,
+            ));
         println!("Expected Fee: {}", expected_fee_txid4);
 
         assert_eq!(calculated_fee_txid4, expected_fee_txid4 as u64);
@@ -4070,15 +4064,13 @@ mod basic_transactions {
         let calculated_fee_txid1 = zingo_testutils::total_tx_value(&faucet, txid1.as_str()).await;
         println!("Fee Paid: {}", calculated_fee_txid1);
 
-        let expected_fee_txid1 = 10000;
-        // currently expected fee is always 10000 but will change to the following in zip317
-        // let expected_fee_txid1 = 5000
-        //     * (cmp::max(
-        //         2,
-        //         tx_actions_txid1.transparent_tx_actions
-        //             + tx_actions_txid1.sapling_tx_actions
-        //             + tx_actions_txid1.orchard_tx_actions,
-        //     ));
+        let expected_fee_txid1 = 5000
+            * (cmp::max(
+                2,
+                tx_actions_txid1.transparent_tx_actions
+                    + tx_actions_txid1.sapling_tx_actions
+                    + tx_actions_txid1.orchard_tx_actions,
+            ));
         println!("Expected Fee: {}", expected_fee_txid1);
 
         assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
@@ -4132,15 +4124,13 @@ mod basic_transactions {
             zingo_testutils::total_tx_value(&recipient, txid1.as_str()).await;
         println!("Fee Paid: {}", calculated_fee_txid1);
 
-        let expected_fee_txid1 = 10000;
-        // currently expected fee is always 10000 but will change to the following in zip317
-        // let expected_fee_txid1 = 5000
-        //     * (cmp::max(
-        //         2,
-        //         tx_actions_txid1.transparent_tx_actions
-        //             + tx_actions_txid1.sapling_tx_actions
-        //             + tx_actions_txid1.orchard_tx_actions,
-        //     ));
+        let expected_fee_txid1 = 5000
+            * (cmp::max(
+                2,
+                tx_actions_txid1.transparent_tx_actions
+                    + tx_actions_txid1.sapling_tx_actions
+                    + tx_actions_txid1.orchard_tx_actions,
+            ));
         println!("Expected Fee: {}", expected_fee_txid1);
 
         assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
