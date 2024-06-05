@@ -17,6 +17,7 @@ use zcash_primitives::legacy::TransparentAddress;
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TxMapAndMaybeTrees {
+    /// TODO: Doc-comment!
     pub transaction_records_by_id: TransactionRecordsById,
     witness_trees: Option<WitnessTrees>,
     pub(crate) transparent_child_addresses:
@@ -50,12 +51,14 @@ impl TxMapAndMaybeTrees {
             transparent_child_addresses,
         }
     }
+    /// TODO: Doc-comment!
     pub fn witness_trees(&self) -> Option<&WitnessTrees> {
         self.witness_trees.as_ref()
     }
     pub(crate) fn witness_trees_mut(&mut self) -> Option<&mut WitnessTrees> {
         self.witness_trees.as_mut()
     }
+    /// TODO: Doc-comment!
     pub fn clear(&mut self) {
         self.transaction_records_by_id.clear();
         self.witness_trees.as_mut().map(WitnessTrees::clear);
@@ -81,10 +84,13 @@ impl TxMapAndMaybeTrees {
     }
 }
 
+/// TODO: Doc-comment!
 #[derive(Debug, PartialEq, Error)]
 pub enum TxMapAndMaybeTreesTraitError {
+    /// TODO: Doc-comment!
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,
+    /// TODO: Doc-comment!
     #[error("{0:?}")]
     InputSource(InputSourceError),
 }
