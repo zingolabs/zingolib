@@ -38,6 +38,13 @@ pub enum InputSourceError {
     InvalidValue(BalanceError),
 }
 
+// Calculate remaining difference between target and selected.
+// There are two mutually exclusive cases:
+//    * the target has been reached, the remaining value is <= 0
+//    * the target has not been reached the remaining value is >0
+// This function represents the NonPositive case as None, which
+// then serves to signal a break in the note selection for where
+// this helper is uniquely called.
 fn calculate_remaining_value(
     target_value: NonNegativeAmount,
     total_selected_value: NonNegativeAmount,
