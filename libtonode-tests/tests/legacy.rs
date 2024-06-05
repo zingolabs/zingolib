@@ -691,8 +691,9 @@ mod slow {
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::NetworkConstants;
     use zingo_testutils::lightclient::from_inputs;
-    use zingolib::lightclient::{
-        propose::ProposeSendError, send::send_with_proposal::QuickSendError,
+    use zingolib::{
+        lightclient::{propose::ProposeSendError, send::send_with_proposal::QuickSendError},
+        wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
     };
 
     use super::*;
@@ -1104,7 +1105,9 @@ mod slow {
                 )
                 .await,
                 Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::NoSpendingKey(_)
+                    zcash_client_backend::data_api::error::Error::DataSource(
+                        TxMapAndMaybeTreesTraitError::NoSpendCapability
+                    )
                 )))
             ));
         }
