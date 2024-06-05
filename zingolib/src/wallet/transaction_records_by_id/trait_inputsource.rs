@@ -69,6 +69,8 @@ enum RemainingNeeded {
     Positive(NonNegativeAmount),
     GracelessChangeAmount(NonNegativeAmount),
 }
+
+#[allow(dead_code)]
 fn sweep_dust_into_grace(
     selected: &mut Vec<(NoteId, NonNegativeAmount)>,
     dust_notes: Vec<(NoteId, NonNegativeAmount)>,
