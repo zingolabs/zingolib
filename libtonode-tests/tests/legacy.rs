@@ -1163,7 +1163,7 @@ mod slow {
         from_inputs::quick_send(
             &faucet,
             vec![(
-                &get_base_address_macro!(recipient, "sapling"),
+                &get_base_address_macro!(recipient, "transparent"),
                 transparent_funding,
                 None,
             )],
@@ -1212,6 +1212,7 @@ mod slow {
             )
             .pretty(2)
         );
+        // TODO: Add asserts!
     }
     #[tokio::test]
     async fn send_to_ua_saves_full_ua_in_wallet() {
