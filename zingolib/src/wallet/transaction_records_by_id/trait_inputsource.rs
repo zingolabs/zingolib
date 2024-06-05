@@ -161,8 +161,11 @@ impl InputSource for TransactionRecordsById {
             .map(|(id, value)| NonNegativeAmount::from_u64(value).map(|value| (id, value)))
             .collect::<Result<Vec<_>, _>>()
             .map_err(InputSourceError::InvalidValue)?;
-        unselected.retain(|(_id, value)| *value >= MARGINAL_FEE); // remove dust before selection loop
         unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
+        let dust_spendable_index =
+            unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
+        let dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
+        dbg!(dust_notes.last());
         let mut selected = vec![];
         let mut index_of_unselected = 0;
 
@@ -199,7 +202,7 @@ impl InputSource for TransactionRecordsById {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction
                     // add the biggest note and reset the iteraton
-                    selected.push(unselected.pop().expect("should be nonempty"));
+                    selected.push(unselected.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
                     index_of_unselected = 0;
                 }
             }
@@ -208,11 +211,12 @@ impl InputSource for TransactionRecordsById {
         if selected.len() < 2 {
             // since we maxed out the target value with only one note, we have an option to grace a note.
             // we will rescue the biggest dust note
-            unselected.reverse();
-            if let Some(biggest_dust) = unselected.iter().find(|(_id, value)| value < &MARGINAL_FEE)
-            {
-                selected.push(*biggest_dust);
-                // we dont bother to pop this last selected note from unselected because we are done with unselected
+            if !dust_notes.is_empty() {
+                selected.push(
+                    *dust_notes
+                        .last()
+                        .expect("Guaranteed to exist by !is_empty()."),
+                )
             }
             // TODO: re-introduce this optimisation, current bug is that we don't select a note from the same pool as the single selected note
             // (and we don't have information about the pool(s) the outputs are being created for)
