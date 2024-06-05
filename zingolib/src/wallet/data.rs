@@ -288,6 +288,27 @@ pub struct OutgoingTxData {
     /// recipient_address?
     pub recipient_ua: Option<String>,
 }
+impl std::fmt::Display for OutgoingTxData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Format the recipient address or unified address if provided.
+        let address_display = if let Some(ref ua) = self.recipient_ua {
+            format!("Unified Address: {}", ua)
+        } else {
+            format!("Recipient Address: {}", self.recipient_address)
+        };
+        let memo_text = if let Memo::Text(mt) = self.memo.clone() {
+            mt.to_string()
+        } else {
+            "not a text memo".to_string()
+        };
+
+        write!(
+            f,
+            "{}\nValue: {}\nMemo: {}",
+            address_display, self.value, memo_text
+        )
+    }
+}
 
 impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
@@ -297,7 +318,6 @@ impl PartialEq for OutgoingTxData {
             && self.memo == other.memo
     }
 }
-
 impl OutgoingTxData {
     /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {

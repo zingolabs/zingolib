@@ -88,12 +88,9 @@ pub mod decrypt_transaction {
             // Collect our t-addresses for easy checking
             let taddrs_set = self.key.get_all_taddrs(&self.config);
             // Process t-address outputs
-            // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
-            // that don't belong to us as the outgoing metadata
-            // the assumption is either we already decrypted a compact output and filled in some data
-            // or transparent something
-
-            // in the send case, we already know the transaction is outgoing. however, this if clause will not trigger.
+            // If the there's funding known to be input to this transaction by this Capability
+            // then it's known to be Outgoing.  It may still be outgoing but those funds may not be known
+            // at this point.
             if self
                 .transaction_metadata_set
                 .read()

@@ -1,6 +1,6 @@
 //! These functions can be called by consumer to learn about the LightClient.
+use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
-use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
@@ -20,15 +20,23 @@ use crate::{
     error::ZingoLibError,
     wallet::{
         data::{
-            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionRecord,
+            finsight,
+            summaries::{ValueTransfer, ValueTransferKind},
+            OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
+        transaction_records_by_id::TransactionRecordsById,
         LightWallet,
     },
 };
 
+#[allow(missing_docs)]
+#[derive(Debug, thiserror::Error)]
+pub enum ValueTransferRecordingError {
+    #[error("Fee was not calculable because of error:  {0}")]
+    FeeCalculationError(String), // TODO: revisit passed type
+}
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
@@ -261,7 +269,13 @@ impl LightClient {
 
     /// Provides a list of value transfers related to this capability
     pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
+        self.list_txsummaries_and_capture_errors().await.0
+    }
+    async fn list_txsummaries_and_capture_errors(
+        &self,
+    ) -> (Vec<ValueTransfer>, Vec<ValueTransferRecordingError>) {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
+        let mut errors: Vec<ValueTransferRecordingError> = Vec::new();
         let transaction_records_by_id = &self
             .wallet
             .transaction_context
@@ -271,7 +285,14 @@ impl LightClient {
             .transaction_records_by_id;
 
         for (txid, transaction_record) in transaction_records_by_id.iter() {
-            LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_record);
+            if let Err(value_recording_error) = LightClient::record_value_transfers(
+                &mut summaries,
+                *txid,
+                transaction_record,
+                transaction_records_by_id,
+            ) {
+                errors.push(value_recording_error)
+            };
 
             if let Ok(tx_fee) =
                 transaction_records_by_id.calculate_transaction_fee(transaction_record)
@@ -294,7 +315,7 @@ impl LightClient {
             };
         }
         summaries.sort_by_key(|summary| summary.block_height);
-        summaries
+        (summaries, errors)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -375,75 +396,98 @@ impl LightClient {
     pub fn get_server_uri(&self) -> http::Uri {
         self.config.get_lightwalletd_uri()
     }
-
-    fn tx_summary_matcher(
+    // Given a transaction write down ValueTransfer information in a Summary list
+    fn record_value_transfers(
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
-        transaction_md: &TransactionRecord,
-    ) {
+        transaction_record: &TransactionRecord,
+        transaction_records: &TransactionRecordsById,
+    ) -> Result<(), ValueTransferRecordingError> {
+        let is_received = match transaction_records.transaction_is_received(transaction_record) {
+            Ok(received) => received,
+            Err(fee_error) => {
+                return Err(ValueTransferRecordingError::FeeCalculationError(
+                    fee_error.to_string(),
+                ))
+            }
+        };
+
         let (block_height, datetime, price, pending) = (
-            transaction_md.status.get_height(),
-            transaction_md.datetime,
-            transaction_md.price,
-            !transaction_md.status.is_confirmed(),
+            transaction_record.status.get_height(),
+            transaction_record.datetime,
+            transaction_record.price,
+            !transaction_record.status.is_confirmed(),
         );
-        match (
-            transaction_md.is_outgoing_transaction(),
-            transaction_md.is_incoming_transaction(),
-        ) {
-            // This transaction is entirely composed of what we consider
-            // to be 'change'. We just make a Fee transfer and move on
-            (false, false) => (),
-            // All received funds were change, this is a normal send
-            (true, false) => {
-                for OutgoingTxData {
-                    recipient_address,
-                    value,
-                    memo,
-                    recipient_ua,
-                } in &transaction_md.outgoing_tx_data
-                {
-                    if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
-                        recipient_ua.as_ref().unwrap_or(recipient_address),
-                    ) {
-                        let memos = if let Memo::Text(textmemo) = memo {
-                            vec![textmemo.clone()]
-                        } else {
-                            vec![]
-                        };
-                        summaries.push(ValueTransfer {
-                            block_height,
-                            datetime,
-                            kind: ValueTransferKind::Sent {
-                                recipient_address,
-                                amount: *value,
-                            },
-                            memos,
-                            price,
-                            txid,
-                            pending,
-                        });
-                    }
-                }
+        if is_received {
+            // This transaction is *NOT* outgoing, I *THINK* the TransactionRecord
+            // only write down outputs that are relevant to this Capability
+            // so that means everything we know about is Received.
+            for received_transparent in transaction_record.transparent_outputs.iter() {
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Transparent,
+                        amount: received_transparent.value,
+                    },
+                    memos: vec![],
+                    price,
+                    txid,
+                    pending,
+                });
             }
-            // No funds spent, this is a normal receipt
-            (false, true) => {
-                for received_transparent in transaction_md.transparent_outputs.iter() {
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Received {
-                            pool_type: PoolType::Transparent,
-                            amount: received_transparent.value,
-                        },
-                        memos: vec![],
-                        price,
-                        txid,
-                        pending,
-                    });
-                }
-                for received_sapling in transaction_md.sapling_notes.iter() {
-                    let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
+            for received_sapling in transaction_record.sapling_notes.iter() {
+                let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
+                    vec![textmemo.clone()]
+                } else {
+                    vec![]
+                };
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
+                        amount: received_sapling.value(),
+                    },
+                    memos,
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+            for received_orchard in transaction_record.orchard_notes.iter() {
+                let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
+                    vec![textmemo.clone()]
+                } else {
+                    vec![]
+                };
+                summaries.push(ValueTransfer {
+                    block_height,
+                    datetime,
+                    kind: ValueTransferKind::Received {
+                        pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
+                        amount: received_orchard.value(),
+                    },
+                    memos,
+                    price,
+                    txid,
+                    pending,
+                });
+            }
+        } else {
+            // These Value Transfers create resources that are controlled by
+            // a Capability other than the creator
+            for OutgoingTxData {
+                recipient_address,
+                value,
+                memo,
+                recipient_ua,
+            } in &transaction_record.outgoing_tx_data
+            {
+                if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
+                    recipient_ua.as_ref().unwrap_or(recipient_address),
+                ) {
+                    let memos = if let Memo::Text(textmemo) = memo {
                         vec![textmemo.clone()]
                     } else {
                         vec![]
@@ -451,28 +495,9 @@ impl LightClient {
                     summaries.push(ValueTransfer {
                         block_height,
                         datetime,
-                        kind: ValueTransferKind::Received {
-                            pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
-                            amount: received_sapling.value(),
-                        },
-                        memos,
-                        price,
-                        txid,
-                        pending,
-                    });
-                }
-                for received_orchard in transaction_md.orchard_notes.iter() {
-                    let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
-                        vec![textmemo.clone()]
-                    } else {
-                        vec![]
-                    };
-                    summaries.push(ValueTransfer {
-                        block_height,
-                        datetime,
-                        kind: ValueTransferKind::Received {
-                            pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
-                            amount: received_orchard.value(),
+                        kind: ValueTransferKind::Sent {
+                            recipient_address,
+                            amount: *value,
                         },
                         memos,
                         price,
@@ -481,19 +506,22 @@ impl LightClient {
                     });
                 }
             }
-            // We spent funds, and received funds as non-change. This is most likely a send-to-self,
-            // TODO: Figure out what kind of special-case handling we want for these
-            (true, true) => {
+            // If the transaction is "received", and nothing is allocates to another capability
+            // then this is a special kind of **TRANSACTION** we call a "SendToSelf", and all
+            // ValueTransfers are typed to match.
+            //  TODO:  I think this violates a clean separation of concerns between ValueTransfers
+            //  and transactions, so I think we should redefine terms in the new architecture
+            if transaction_record.outgoing_tx_data.is_empty() {
                 summaries.push(ValueTransfer {
                     block_height,
                     datetime,
                     kind: ValueTransferKind::SendToSelf,
-                    memos: transaction_md
+                    memos: transaction_record
                         .sapling_notes
                         .iter()
                         .filter_map(|sapling_note| sapling_note.memo.clone())
                         .chain(
-                            transaction_md
+                            transaction_record
                                 .orchard_notes
                                 .iter()
                                 .filter_map(|orchard_note| orchard_note.memo.clone()),
@@ -511,7 +539,8 @@ impl LightClient {
                     pending,
                 });
             }
-        };
+        }
+        Ok(())
     }
 
     async fn list_sapling_notes(
@@ -573,7 +602,7 @@ impl LightClient {
                     if !all_notes && orch_note_metadata.is_spent() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
+                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent.is_none() && orch_note_metadata.pending_spent.is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
