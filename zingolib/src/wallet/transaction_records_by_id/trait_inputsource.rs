@@ -40,27 +40,28 @@ pub enum InputSourceError {
 
 // Calculate remaining difference between target and selected.
 // There are two mutually exclusive cases:
-//    (A) the target has been reached, the remaining value is <= 0
-//    (B) the target has not been reached the remaining value is > 0
+//    (Change) There's no more needed so we've selected 0 or more change
+//    (Positive) We need > 0 more value.
 // This function represents the NonPositive case as None, which
 // then serves to signal a break in the note selection for where
 // this helper is uniquely called.
 fn calculate_remaining_needed(
     target_value: NonNegativeAmount,
-    total_selected_value: NonNegativeAmount,
+    selected_value: NonNegativeAmount,
 ) -> RemainingNeeded {
-    if let Some(amount) = target_value - total_selected_value {
+    if let Some(amount) = target_value - selected_value {
         if amount == NonNegativeAmount::ZERO {
-            // Case (A) target_value == total_selected_value
+            // Case (Change) target_value == total_selected_value
             RemainingNeeded::Change(NonNegativeAmount::const_from_u64(0u64))
         } else {
-            // Case (B) target_value > total_selected_value
+            // Case (Positive) target_value > total_selected_value
             RemainingNeeded::Positive(amount)
         }
     } else {
-        // Case (A) target_value < total_selected_value
+        // Case (Change) target_value < total_selected_value
+        // Return the non-zero change quantity
         RemainingNeeded::Change(
-            (total_selected_value - target_value).expect("This is guaranteed positive"),
+            (selected_value - target_value).expect("This is guaranteed positive"),
         )
     }
 }
