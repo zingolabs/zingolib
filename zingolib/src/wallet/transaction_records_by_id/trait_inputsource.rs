@@ -40,8 +40,8 @@ pub enum InputSourceError {
 
 // Calculate remaining difference between target and selected.
 // There are two mutually exclusive cases:
-//    * the target has been reached, the remaining value is <= 0
-//    * the target has not been reached the remaining value is >0
+//    (A) the target has been reached, the remaining value is <= 0
+//    (B) the target has not been reached the remaining value is >0
 // This function represents the NonPositive case as None, which
 // then serves to signal a break in the note selection for where
 // this helper is uniquely called.
@@ -51,13 +51,14 @@ fn calculate_remaining_value(
 ) -> Option<NonNegativeAmount> {
     if let Some(amount) = target_value - total_selected_value {
         if amount == NonNegativeAmount::ZERO {
-            // target_value == total_selected_value
+            // Case (A) target_value == total_selected_value
             None
         } else {
+            // Case (B) target_value > total_selected_value
             Some(amount)
         }
     } else {
-        // Negative difference
+        // Case (A) target_value < total_selected_value
         None
     }
 }
