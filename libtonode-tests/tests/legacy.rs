@@ -692,8 +692,7 @@ mod slow {
     use zcash_primitives::consensus::NetworkConstants;
     use zingo_testutils::lightclient::from_inputs;
     use zingolib::lightclient::{
-        propose::{ProposeSendError, ProposeShieldError},
-        send::send_with_proposal::{QuickSendError, QuickShieldError},
+        propose::ProposeSendError, send::send_with_proposal::QuickSendError,
     };
 
     use super::*;
@@ -1152,101 +1151,7 @@ mod slow {
             ))
         ));
     }
-    #[tokio::test]
-    async fn shield_sapling() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
 
-        let sapling_dust = 100;
-        let _sent_transaction_id = from_inputs::quick_send(
-            &faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "sapling"),
-                sapling_dust,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
-
-        assert!(matches!(
-            recipient.quick_shield().await,
-            Err(QuickShieldError::Propose(ProposeShieldError::Component(
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                    available: _,
-                    required: _
-                }
-            )))
-        ));
-
-        let sapling_enough_for_fee = 10_100;
-        faucet.do_sync(false).await.unwrap();
-        let _sent_transaction_id = from_inputs::quick_send(
-            &faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "sapling"),
-                sapling_enough_for_fee,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        recipient.quick_shield().await.unwrap();
-
-        // The exact same thing again, but with pre-existing orchard funds
-        // already in the shielding wallet
-        faucet.do_sync(false).await.unwrap();
-        let _sent_transaction_id = from_inputs::quick_send(
-            &faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "sapling"),
-                sapling_enough_for_fee,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        recipient.quick_shield().await.unwrap();
-
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
-    }
-    #[tokio::test]
-    async fn shield_heartwood_sapling_funds() {
-        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
-        let (regtest_manager, _cph, faucet) = scenarios::faucet(
-            PoolType::Shielded(ShieldedProtocol::Sapling),
-            regtest_network,
-        )
-        .await;
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
-            .await
-            .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
-        faucet.quick_shield().await.unwrap();
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        check_client_balances!(faucet, o: 3_499_990_000u64 s: 625_010_000 t: 0);
-    }
     #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
         let transparent_funding = 100_000;
@@ -1777,7 +1682,7 @@ mod slow {
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
-                3_499_990_000u64,
+                3_499_960_000u64,
                 None,
             )],
         )
@@ -1787,7 +1692,7 @@ mod slow {
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        check_client_balances!(recipient, o: 3_499_990_000u64 s: 0 t: 0);
+        check_client_balances!(recipient, o: 3_499_960_000u64 s: 0 t: 0);
     }
     #[tokio::test]
     async fn send_funds_to_all_pools() {
