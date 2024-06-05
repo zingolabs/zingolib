@@ -41,26 +41,32 @@ pub enum InputSourceError {
 // Calculate remaining difference between target and selected.
 // There are two mutually exclusive cases:
 //    (A) the target has been reached, the remaining value is <= 0
-//    (B) the target has not been reached the remaining value is >0
+//    (B) the target has not been reached the remaining value is > 0
 // This function represents the NonPositive case as None, which
 // then serves to signal a break in the note selection for where
 // this helper is uniquely called.
-fn calculate_remaining_value(
+fn calculate_remaining_needed(
     target_value: NonNegativeAmount,
     total_selected_value: NonNegativeAmount,
-) -> Option<NonNegativeAmount> {
+) -> RemainingNeeded {
     if let Some(amount) = target_value - total_selected_value {
         if amount == NonNegativeAmount::ZERO {
             // Case (A) target_value == total_selected_value
-            None
+            RemainingNeeded::Change(NonNegativeAmount::const_from_u64(0u64))
         } else {
             // Case (B) target_value > total_selected_value
-            Some(amount)
+            RemainingNeeded::Positive(amount)
         }
     } else {
         // Case (A) target_value < total_selected_value
-        None
+        RemainingNeeded::Change(
+            (total_selected_value - target_value).expect("This is guaranteed positive"),
+        )
     }
+}
+enum RemainingNeeded {
+    Positive(NonNegativeAmount),
+    Change(NonNegativeAmount),
 }
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
@@ -159,21 +165,24 @@ impl InputSource for TransactionRecordsById {
         let mut index_of_unselected = 0;
 
         loop {
-            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
-            if unselected.is_empty() {
-                break;
-            }
-
             // update target value for further note selection
             let selected_notes_total_value = selected
                 .iter()
                 .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
                 .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
-            let Some(updated_target_value) =
-                calculate_remaining_value(target_value, selected_notes_total_value)
-            else {
+            let updated_target_value =
+                match calculate_remaining_needed(target_value, selected_notes_total_value) {
+                    RemainingNeeded::Positive(updated_target_value) => updated_target_value,
+                    RemainingNeeded::Change(change) => {
+                        println!("{:?}", change);
+                        break;
+                    }
+                };
+            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
+            if unselected.is_empty() {
                 break;
-            };
+            }
+
             match unselected.get(index_of_unselected) {
                 Some(smallest_unselected) => {
                     // selected a note to test if it has enough value to complete the transaction on its own
