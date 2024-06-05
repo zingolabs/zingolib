@@ -195,11 +195,15 @@ impl InputSource for TransactionRecordsById {
         unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
         let dust_spendable_index =
             unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
-        let dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
+        let _dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
         let mut selected = vec![];
         let mut index_of_unselected = 0;
 
         loop {
+            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
+            if unselected.is_empty() {
+                break;
+            }
             // update target value for further note selection
             let selected_notes_total_value = selected
                 .iter()
@@ -208,15 +212,11 @@ impl InputSource for TransactionRecordsById {
             let updated_target_value =
                 match calculate_remaining_needed(target_value, selected_notes_total_value) {
                     RemainingNeeded::Positive(updated_target_value) => updated_target_value,
-                    RemainingNeeded::GracelessChangeAmount(change) => {
-                        println!("{:?}", change);
+                    RemainingNeeded::GracelessChangeAmount(_change) => {
+                        //println!("{:?}", change);
                         break;
                     }
                 };
-            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
-            if unselected.is_empty() {
-                break;
-            }
 
             match unselected.get(index_of_unselected) {
                 Some(smallest_unselected) => {
@@ -238,6 +238,7 @@ impl InputSource for TransactionRecordsById {
             }
         }
 
+        /* TODO: Priority
         if selected
             .iter()
             .filter(|n| n.0.protocol() == ShieldedProtocol::Sapling)
@@ -267,6 +268,7 @@ impl InputSource for TransactionRecordsById {
             //     };
             // }
         }
+        */
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
