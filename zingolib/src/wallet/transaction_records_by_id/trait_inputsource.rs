@@ -69,6 +69,11 @@ enum RemainingNeeded {
     Positive(NonNegativeAmount),
     Change(NonNegativeAmount),
 }
+fn sweep_dust_into_grace(
+    selected: Vec<(NoteId, NonNegativeAmount)>,
+    dust: Vec<(NoteId, NonNegativeAmount)>,
+) {
+}
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
 impl InputSource for TransactionRecordsById {
