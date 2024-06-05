@@ -197,7 +197,6 @@ impl InputSource for TransactionRecordsById {
         let dust_spendable_index =
             unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
         let dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
-        dbg!(dust_notes.last());
         let mut selected = vec![];
         let mut index_of_unselected = 0;
 
