@@ -83,23 +83,26 @@ fn sweep_dust_into_grace(
         .filter(|x| x.0.protocol() == ShieldedProtocol::Orchard)
         .cloned()
         .collect();
-    match selected
-        .last()
-        .expect("Guaranteed to exist by selected.len() == 1")
-        .0
-        .protocol()
-    {
-        ShieldedProtocol::Sapling => {
-            if !sapling_dust.is_empty() {
-                selected.push(*sapling_dust.last().expect("Guaranteed by !is_empty"));
-            };
+    let sapling_selected: Vec<_> = selected
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Sapling)
+        .cloned()
+        .collect();
+    let orchard_selected: Vec<_> = selected
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Orchard)
+        .cloned()
+        .collect();
+    if sapling_selected.len() == 1 {
+        if !sapling_dust.is_empty() {
+            selected.push(*sapling_dust.last().expect("Guaranteed by !is_empty"));
+        };
+    };
+    if orchard_selected.len() == 1 {
+        if !orchard_dust.is_empty() {
+            selected.push(*orchard_dust.last().expect("Guaranteed by !is_empty"));
         }
-        ShieldedProtocol::Orchard => {
-            if !orchard_dust.is_empty() {
-                selected.push(*orchard_dust.last().expect("Guaranteed by !is_empty"));
-            }
-        }
-    }
+    };
 }
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
@@ -239,9 +242,20 @@ impl InputSource for TransactionRecordsById {
             }
         }
 
-        if selected.len() == 1 {
-            // since we maxed out the target value with only one note, we have an option to grace a note.
-            // we will rescue the biggest dust note
+        if selected
+            .iter()
+            .filter(|n| n.0.protocol() == ShieldedProtocol::Sapling)
+            .count()
+            == 1
+            || selected
+                .iter()
+                .filter(|n| n.0.protocol() == ShieldedProtocol::Orchard)
+                .count()
+                == 1
+        {
+            // since we maxed out the target value with only one note in at least one Shielded Pool
+            //  we have an option to sweep a dust note into a grace input.
+            // we will sweep the biggest dust note we can
             if !dust_notes.is_empty() {
                 sweep_dust_into_grace(&mut selected, dust_notes);
             }
