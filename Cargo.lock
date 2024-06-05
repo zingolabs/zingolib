@@ -1597,6 +1597,7 @@ dependencies = [
  "json",
  "log",
  "orchard",
+ "sapling-crypto",
  "serde_json",
  "shardtree",
  "tokio",

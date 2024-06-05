@@ -4,6 +4,8 @@ use std::convert::Infallible;
 use std::num::NonZeroU32;
 use std::ops::DerefMut;
 
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::zip321::Zip321Error;
@@ -15,7 +17,10 @@ use thiserror::Error;
 use crate::data::proposal::ShieldProposal;
 use crate::data::proposal::TransferProposal;
 use crate::data::proposal::ZingoProposal;
+use crate::data::receivers::transaction_request_from_receivers;
+use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
+use crate::utils::conversion::zatoshis_from_u64;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
@@ -44,6 +49,15 @@ pub enum ProposeSendError {
     #[error("{0:?}")]
     /// failed to construct a transaction request
     TransactionRequestFailed(Zip321Error),
+    #[error("{0:?}")]
+    /// conversion failed
+    ConversionFailed(crate::utils::error::ConversionError),
+    #[error("send all is transferring no value. only enough funds to pay the fees!")]
+    /// send all is transferring no value
+    ZeroValueSendAll,
+    #[error("failed to retrieve full viewing key for balance calculation")]
+    /// failed to retrieve full viewing key for balance calculation
+    NoFullViewingKey,
 }
 
 /// Errors that can result from do_propose
@@ -130,24 +144,71 @@ impl LightClient {
         Ok(proposal)
     }
 
-    /*
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    #[cfg(test)]
     pub async fn propose_send_all(
         &self,
-        _address: zcash_keys::address::Address,
-        _memo: Option<zcash_primitives::memo::MemoBytes>,
-    ) -> Result<crate::data::proposal::TransferProposal, String> {
-        use crate::mocks::ProposalBuilder;
+        address: zcash_keys::address::Address,
+        memo: Option<zcash_primitives::memo::MemoBytes>,
+    ) -> Result<TransferProposal, ProposeSendError> {
+        let confirmed_shielded_balance = zatoshis_from_u64(
+            self.wallet
+                .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+                .await
+                .ok_or(ProposeSendError::NoFullViewingKey)?
+                + self
+                    .wallet
+                    .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+                    .await
+                    .ok_or(ProposeSendError::NoFullViewingKey)?,
+        )
+        .map_err(ProposeSendError::ConversionFailed)?;
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            address.clone(),
+            confirmed_shielded_balance,
+            memo.clone(),
+        )])
+        .map_err(ProposeSendError::TransactionRequestFailed)?;
+        let failing_proposal = self.create_send_proposal(request).await;
 
-        let proposal = ProposalBuilder::default().build();
+        // subtract shoftfall from available shielded balance to find spendable balance
+        let spendable_balance = match failing_proposal {
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                    required, ..
+                },
+            )) => {
+                if let Some(shortfall) = required - confirmed_shielded_balance {
+                    (confirmed_shielded_balance - shortfall).ok_or(ProposeSendError::Proposal(
+                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                            available: confirmed_shielded_balance,
+                            required: shortfall,
+                        },
+                    ))
+                } else {
+                    return failing_proposal; // return the proposal in the case there is zero fee
+                }
+            }
+            Err(e) => Err(e),
+            Ok(_) => return failing_proposal, // return the proposal in the case there is zero fee
+        }?;
+        if spendable_balance == NonNegativeAmount::ZERO {
+            return Err(ProposeSendError::ZeroValueSendAll);
+        }
+
+        // new proposal with spendable balance
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            address,
+            spendable_balance,
+            memo,
+        )])
+        .map_err(ProposeSendError::TransactionRequestFailed)?;
+        let proposal = self.create_send_proposal(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)
     }
-    */
 
     fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
         self.wallet
