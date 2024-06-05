@@ -14,6 +14,7 @@ use crate::wallet::{
 use super::TxMapAndMaybeTrees;
 
 impl TxMapAndMaybeTrees {
+    /// TODO: Doc-comment!
     pub fn get_notes_for_updating(
         &self,
         before_block: u64,
@@ -66,6 +67,7 @@ impl TxMapAndMaybeTrees {
             .collect()
     }
 
+    /// TODO: Doc-comment!
     #[allow(clippy::type_complexity)]
     pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
         &self,
@@ -178,6 +180,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
 
 #[cfg(feature = "lightclient-deprecated")]
 impl TxMapAndMaybeTrees {
+    /// TODO: Doc-comment!
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
         let transaction_record = self
             .transaction_records_by_id
