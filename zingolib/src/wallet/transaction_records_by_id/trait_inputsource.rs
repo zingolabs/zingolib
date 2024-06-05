@@ -38,6 +38,22 @@ pub enum InputSourceError {
     InvalidValue(BalanceError),
 }
 
+fn calculate_remaining_value(
+    target_value: NonNegativeAmount,
+    total_selected_value: NonNegativeAmount,
+) -> Option<NonNegativeAmount> {
+    if let Some(amount) = target_value - total_selected_value {
+        if amount == NonNegativeAmount::ZERO {
+            // target_value == total_selected_value
+            None
+        } else {
+            Some(amount)
+        }
+    } else {
+        // Negative difference
+        None
+    }
+}
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
 impl InputSource for TransactionRecordsById {
@@ -145,14 +161,11 @@ impl InputSource for TransactionRecordsById {
                 .iter()
                 .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
                 .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
-            let Some(updated_target_value) = target_value - selected_notes_total_value else {
-                // if underflow, target has been reached
+            let Some(updated_target_value) =
+                calculate_remaining_value(target_value, selected_notes_total_value)
+            else {
                 break;
             };
-            if updated_target_value == NonNegativeAmount::ZERO {
-                // if zero, target has been reached
-                break;
-            }
             match unselected.get(index_of_unselected) {
                 Some(smallest_unselected) => {
                     // selected a note to test if it has enough value to complete the transaction on its own
