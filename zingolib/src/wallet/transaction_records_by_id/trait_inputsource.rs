@@ -93,16 +93,12 @@ fn sweep_dust_into_grace(
         .filter(|x| x.0.protocol() == ShieldedProtocol::Orchard)
         .cloned()
         .collect();
-    if sapling_selected.len() == 1 {
-        if !sapling_dust.is_empty() {
-            selected.push(*sapling_dust.last().expect("Guaranteed by !is_empty"));
-        };
-    };
-    if orchard_selected.len() == 1 {
-        if !orchard_dust.is_empty() {
-            selected.push(*orchard_dust.last().expect("Guaranteed by !is_empty"));
-        }
-    };
+    if sapling_selected.len() == 1 && !sapling_dust.is_empty() {
+        selected.push(*sapling_dust.last().expect("Guaranteed by !is_empty"));
+    }
+    if orchard_selected.len() == 1 && !orchard_dust.is_empty() {
+        selected.push(*orchard_dust.last().expect("Guaranteed by !is_empty"));
+    }
 }
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
