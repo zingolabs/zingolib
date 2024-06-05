@@ -52,7 +52,7 @@ fn calculate_remaining_needed(
     if let Some(amount) = target_value - selected_value {
         if amount == NonNegativeAmount::ZERO {
             // Case (Change) target_value == total_selected_value
-            RemainingNeeded::Change(NonNegativeAmount::const_from_u64(0u64))
+            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::const_from_u64(0u64))
         } else {
             // Case (Positive) target_value > total_selected_value
             RemainingNeeded::Positive(amount)
@@ -60,14 +60,14 @@ fn calculate_remaining_needed(
     } else {
         // Case (Change) target_value < total_selected_value
         // Return the non-zero change quantity
-        RemainingNeeded::Change(
+        RemainingNeeded::GracelessChangeAmount(
             (selected_value - target_value).expect("This is guaranteed positive"),
         )
     }
 }
 enum RemainingNeeded {
     Positive(NonNegativeAmount),
-    Change(NonNegativeAmount),
+    GracelessChangeAmount(NonNegativeAmount),
 }
 fn sweep_dust_into_grace(
     selected: &mut Vec<(NoteId, NonNegativeAmount)>,
@@ -209,7 +209,7 @@ impl InputSource for TransactionRecordsById {
             let updated_target_value =
                 match calculate_remaining_needed(target_value, selected_notes_total_value) {
                     RemainingNeeded::Positive(updated_target_value) => updated_target_value,
-                    RemainingNeeded::Change(change) => {
+                    RemainingNeeded::GracelessChangeAmount(change) => {
                         println!("{:?}", change);
                         break;
                     }
