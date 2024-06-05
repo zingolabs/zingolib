@@ -161,7 +161,8 @@ impl InputSource for TransactionRecordsById {
             .map(|(id, value)| NonNegativeAmount::from_u64(value).map(|value| (id, value)))
             .collect::<Result<Vec<_>, _>>()
             .map_err(InputSourceError::InvalidValue)?;
-        unselected.sort_by_key(|(_id, value)| *value);
+        unselected.retain(|(_id, value)| *value >= MARGINAL_FEE); // remove dust before selection loop
+        unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
         let mut selected = vec![];
         let mut index_of_unselected = 0;
 
@@ -187,12 +188,9 @@ impl InputSource for TransactionRecordsById {
             match unselected.get(index_of_unselected) {
                 Some(smallest_unselected) => {
                     // selected a note to test if it has enough value to complete the transaction on its own
-                    if smallest_unselected.1 >= updated_target_value
-                        && smallest_unselected.1 >= MARGINAL_FEE
-                    {
+                    if smallest_unselected.1 >= updated_target_value {
                         selected.push(*smallest_unselected);
                         unselected.remove(index_of_unselected);
-                        break;
                     } else {
                         // this note is not big enough. try the next
                         index_of_unselected += 1;
@@ -201,14 +199,8 @@ impl InputSource for TransactionRecordsById {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction
                     // add the biggest note and reset the iteraton
-                    if let Some(largest_note) = unselected.last() {
-                        if largest_note.1 >= MARGINAL_FEE {
-                            selected.push(unselected.pop().expect("should be nonempty"));
-                            index_of_unselected = 0;
-                        } else {
-                            break;
-                        }
-                    }
+                    selected.push(unselected.pop().expect("should be nonempty"));
+                    index_of_unselected = 0;
                 }
             }
         }
