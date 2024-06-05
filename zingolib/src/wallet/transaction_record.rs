@@ -253,7 +253,8 @@ impl TransactionRecord {
         (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// This means there's at least one note that adds funds
+    /// to this capabilities control
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes
             .iter()
