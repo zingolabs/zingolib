@@ -4,6 +4,7 @@ use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
+use zcash_keys::address::UnifiedAddress;
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
@@ -71,14 +72,22 @@ impl LightClient {
             let transparent = address
                 .transparent()
                 .map(|taddr| address_from_pubkeyhash(&self.config, *taddr));
+            let sapling = address.sapling().map(|z_addr| {
+                encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)
+            });
+            let ua_orchard_only = address
+                .orchard()
+                .and_then(|o_addr| UnifiedAddress::from_receivers(Some(*o_addr), None, None))
+                .map(|ua| ua.encode(&self.config().chain));
             objectified_addresses.push(object! {
-        "address" => encoded_ua,
-        "receivers" => object!(
-            "transparent" => transparent,
-            "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
-            "orchard_exists" => address.orchard().is_some(),
-            )
-        })
+            "address" => encoded_ua,
+            "ua_orchard_only" => ua_orchard_only,
+            "receivers" => object!(
+                "transparent" => transparent,
+                "sapling" => sapling,
+                "orchard_exists" => address.orchard().is_some(),
+                )
+            })
         }
         JsonValue::Array(objectified_addresses)
     }
@@ -270,6 +279,7 @@ impl LightClient {
     /// Provides a list of value transfers related to this capability
     pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
         self.list_txsummaries_and_capture_errors().await.0
+        // dbg!(self.list_txsummaries_and_capture_errors().await.0)
     }
     async fn list_txsummaries_and_capture_errors(
         &self,
@@ -342,19 +352,21 @@ impl LightClient {
         let summaries = self.list_txsummaries().await;
         let mut memobytes_by_address = HashMap::new();
         for summary in summaries {
-            use ValueTransferKind::*;
             match summary.kind {
-                Sent {
+                ValueTransferKind::Sent {
                     recipient_address, ..
                 } => {
                     let address = recipient_address.encode();
+                    dbg!(&address);
                     let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
                     memobytes_by_address
                         .entry(address)
                         .and_modify(|e| *e += bytes)
                         .or_insert(bytes);
                 }
-                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
+                ValueTransferKind::SendToSelf { .. }
+                | ValueTransferKind::Received { .. }
+                | ValueTransferKind::Fee { .. } => (),
             }
         }
         finsight::TotalMemoBytesToAddress(memobytes_by_address)
@@ -481,11 +493,11 @@ impl LightClient {
                 recipient_address,
                 value,
                 memo,
-                recipient_ua,
+                recipient_ua: _,
             } in &transaction_record.outgoing_tx_data
             {
                 if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
-                    recipient_ua.as_ref().unwrap_or(recipient_address),
+                    recipient_address, // recipient_ua.as_ref().unwrap_or(recipient_address),
                 ) {
                     let memos = if let Memo::Text(textmemo) = memo {
                         vec![textmemo.clone()]

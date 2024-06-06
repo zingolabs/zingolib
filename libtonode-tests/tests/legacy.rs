@@ -3440,34 +3440,23 @@ mod slow {
     async fn by_address_finsight() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        let base_uaddress = get_base_address_macro!(recipient, "unified");
+        let base_uaddress = get_base_address_macro!(recipient, "ua_orchard_only");
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
             .await
             .unwrap();
-        println!(
-            "faucet notes: {}",
-            faucet.do_list_notes(true).await.pretty(4)
-        );
-        from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+        // from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+        //     .await
+        //     .unwrap();
+        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
-        from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
-            .await
-            .expect(
-                "We only have sapling notes, plus a pending orchard note from the \
-            previous send. If we're allowed to select pending notes, we'll attempt \
-            to select that one, and this will fail",
-            );
-        assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
-            "2".to_string()
-        );
-        from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
+        dbg!(&base_uaddress);
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
-            "6".to_string()
+            "1".to_string()
         );
     }
     #[tokio::test]

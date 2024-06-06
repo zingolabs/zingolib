@@ -8,6 +8,9 @@ macro_rules! get_base_address_macro {
             "unified" => $client.do_addresses().await[0]["address"]
                 .take()
                 .to_string(),
+            "ua_orchard_only" => $client.do_addresses().await[0]["ua_orchard_only"]
+                .take()
+                .to_string(),
             "sapling" => $client.do_addresses().await[0]["receivers"]["sapling"]
                 .clone()
                 .to_string(),
