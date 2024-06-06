@@ -609,7 +609,7 @@ impl Command for SpendableBalanceCommand {
             the given address.
             An address must be specified as fees, and therefore spendable balance, depends on the receiver
             type.
-            
+
             Usage:
             spendablebalance <address>
 
