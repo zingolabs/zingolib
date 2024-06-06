@@ -2,6 +2,7 @@
 use orchard::note_encryption::OrchardDomain;
 
 use sapling_crypto::note_encryption::SaplingDomain;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::{cmp, sync::Arc};
@@ -12,12 +13,14 @@ use zcash_note_encryption::Domain;
 
 use zcash_primitives::consensus::BlockHeight;
 
+use crate::utils;
 use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::OutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
 use crate::wallet::traits::Diversifiable as _;
 
+use super::error::BalanceError;
 use super::keys::unified::{Capability, WalletCapability};
 use super::notes::TransparentOutput;
 use super::traits::DomainWalletExt;
@@ -181,6 +184,29 @@ impl LightWallet {
             Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
         ];
         self.shielded_balance::<D>(target_addr, filters).await
+    }
+
+    /// Returns total balance of all shielded pools excluding any notes with value less than marginal fee
+    /// that are confirmed on the block chain (the block has at least 1 confirmation).
+    /// Does not include transparent funds.
+    ///
+    /// # Error
+    ///
+    /// Returns an error if the full viewing key is not found or if the balance summation exceeds the valid range of zatoshis.
+    pub async fn confirmed_shielded_balance_excluding_dust(
+        &self,
+        target_addr: Option<String>,
+    ) -> Result<NonNegativeAmount, BalanceError> {
+        utils::conversion::zatoshis_from_u64(
+            self.confirmed_balance_excluding_dust::<OrchardDomain>(target_addr.clone())
+                .await
+                .ok_or(BalanceError::NoFullViewingKey)?
+                + self
+                    .confirmed_balance_excluding_dust::<SaplingDomain>(target_addr)
+                    .await
+                    .ok_or(BalanceError::NoFullViewingKey)?,
+        )
+        .map_err(BalanceError::ConversionFailed)
     }
 
     /// Deprecated for `shielded_balance`

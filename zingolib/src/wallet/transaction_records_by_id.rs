@@ -357,7 +357,10 @@ impl TransactionRecordsById {
         if input_value >= explicit_output_value {
             Ok(input_value - explicit_output_value)
         } else {
-            Err(FeeError::FeeUnderflow((input_value, explicit_output_value)))
+            Err(FeeError::FeeUnderflow {
+                input_value,
+                explicit_output_value,
+            })
         }
     }
 

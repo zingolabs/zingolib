@@ -146,7 +146,6 @@ impl LightClient {
 
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
-    // TODO: Add migrate_sapling_to_orchard argument
     pub async fn propose_send_all(
         &self,
         address: zcash_keys::address::Address,
