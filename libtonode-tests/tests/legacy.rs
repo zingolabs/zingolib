@@ -324,6 +324,7 @@ mod fast {
         )
         .await
         .unwrap();
+        // Total zip317 fee:  10_000 orchard + 10_000 sapling + 5_000 transparent
         bump_and_check!(recipient: o: 10_000 s: 10_000 t: 10_000);
     }
     #[tokio::test]
