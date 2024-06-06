@@ -3092,14 +3092,14 @@ mod slow {
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
         let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 1)
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {
-        (o: $o:tt s: $s:tt t: $t:tt) => {
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
-            check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
-        };
+            (o: $o:tt s: $s:tt t: $t:tt) => {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
+                check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
+            };
         }
 
         // 1 pmc receives 50_000 transparent
