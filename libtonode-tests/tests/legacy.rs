@@ -1465,13 +1465,9 @@ mod slow {
             - first_send_to_sapling
             - first_send_to_transparent
             - (2 * u64::from(MINIMUM_FEE));
-        assert_eq!(
-            recipient
-                .wallet
-                .shielded_balance::<OrchardDomain>(&[])
-                .await,
-            Some(expected_funds)
-        );
+        // The whole orchard balance should be pending as change.
+        let pending_orchard_balance = recipient.wallet.pending_orchard_balance().await.unwrap();
+        assert_eq!(pending_orchard_balance, expected_funds);
         assert_eq!(
             recipient.wallet.verified_balance::<OrchardDomain>().await,
             Some(0)
@@ -1548,13 +1544,12 @@ mod slow {
             - second_send_to_transparent
             - third_send_to_transparent
             - (3 * u64::from(MINIMUM_FEE));
-        assert_eq!(
-            recipient
-                .wallet
-                .shielded_balance::<OrchardDomain>(&[])
-                .await,
-            Some(second_wave_expected_funds),
-        );
+        let verified_orchard_balance = recipient
+            .wallet
+            .verified_balance::<OrchardDomain>()
+            .await
+            .unwrap();
+        assert_eq!(verified_orchard_balance, second_wave_expected_funds);
 
         let second_wave_expected_transactions = json::parse(r#"
         [

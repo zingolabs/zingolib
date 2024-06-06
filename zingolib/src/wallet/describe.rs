@@ -29,7 +29,7 @@ use crate::wallet::LightWallet;
 impl LightWallet {
     /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
-    pub async fn shielded_balance<D>(
+    pub(crate) async fn shielded_balance<D>(
         &self,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
     ) -> Option<u64>
@@ -125,7 +125,7 @@ impl LightWallet {
         self.shielded_balance::<D>(filters).await
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// TODO:  If the transaction is confirmed how can the note be pending?
     pub async fn verified_balance<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
@@ -160,10 +160,10 @@ impl LightWallet {
         self.shielded_balance::<D>(filters).await
     }
 
-    /// Deprecated for `shielded_balance`
-    #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
-    pub async fn maybe_verified_orchard_balance(&self) -> Option<u64> {
-        self.shielded_balance::<OrchardDomain>(&[]).await
+    /// The amount in orchard notes, not yet on chain
+    pub async fn pending_orchard_balance(&self) -> Option<u64> {
+        self.shielded_balance::<OrchardDomain>(&[Box::new(|note, _| note.pending_receipt())])
+            .await
     }
 
     /// Deprecated for `shielded_balance`
