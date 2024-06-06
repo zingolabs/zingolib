@@ -12,7 +12,7 @@ use super::error::ConversionError;
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, Error)]
 pub enum TxIdFromHexEncodedStrError {
-    #[error("{0:?}")]
+    #[error("{0}")]
     Decode(hex::FromHexError),
     #[error("{0:?}")]
     Code(Vec<u8>),
