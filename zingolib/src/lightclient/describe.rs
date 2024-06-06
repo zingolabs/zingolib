@@ -86,21 +86,15 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_balance(&self) -> PoolBalances {
         PoolBalances {
-            sapling_balance: self
-                .wallet
-                .shielded_balance::<SaplingDomain>(None, &[])
-                .await,
-            verified_sapling_balance: self.wallet.verified_balance::<SaplingDomain>(None).await,
-            spendable_sapling_balance: self.wallet.spendable_sapling_balance(None).await,
-            unverified_sapling_balance: self.wallet.unverified_balance::<SaplingDomain>(None).await,
+            sapling_balance: self.wallet.shielded_balance::<SaplingDomain>(&[]).await,
+            verified_sapling_balance: self.wallet.verified_balance::<SaplingDomain>().await,
+            spendable_sapling_balance: self.wallet.spendable_sapling_balance().await,
+            unverified_sapling_balance: self.wallet.unverified_balance::<SaplingDomain>().await,
 
-            orchard_balance: self
-                .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
-                .await,
-            verified_orchard_balance: self.wallet.verified_balance::<OrchardDomain>(None).await,
-            spendable_orchard_balance: self.wallet.spendable_orchard_balance(None).await,
-            unverified_orchard_balance: self.wallet.unverified_balance::<OrchardDomain>(None).await,
+            orchard_balance: self.wallet.shielded_balance::<OrchardDomain>(&[]).await,
+            verified_orchard_balance: self.wallet.verified_balance::<OrchardDomain>().await,
+            spendable_orchard_balance: self.wallet.spendable_orchard_balance().await,
+            unverified_orchard_balance: self.wallet.unverified_balance::<OrchardDomain>().await,
 
             transparent_balance: self.wallet.tbalance(None).await,
         }

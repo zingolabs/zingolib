@@ -31,7 +31,6 @@ impl LightWallet {
     #[allow(clippy::type_complexity)]
     pub async fn shielded_balance<D>(
         &self,
-        target_addr: Option<String>,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
     ) -> Option<u64>
     where
@@ -39,17 +38,6 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
-        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
-        let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
-            Some(addr) => {
-                let diversified_address =
-                    &fvk.diversified_address(*notedata.diversifier()).unwrap();
-                *addr
-                    == diversified_address
-                        .b32encode_for_network(&self.transaction_context.config.chain)
-            }
-            None => true, // If the addr is none, then get all addrs.
-        };
         Some(
             self.transaction_context
                 .transaction_metadata_set
@@ -58,17 +46,15 @@ impl LightWallet {
                 .transaction_records_by_id
                 .values()
                 .map(|transaction| {
-                    let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
-                        D::WalletNote::transaction_metadata_notes(transaction)
-                            .iter()
-                            .filter(filter_notes_by_target_addr),
-                    );
+                    let mut unfiltered_notes: Box<dyn Iterator<Item = &D::WalletNote>> =
+                        Box::new(D::WalletNote::transaction_metadata_notes(transaction).iter());
                     // All filters in iterator are applied, by this loop
                     for filtering_fn in filters {
-                        filtered_notes =
-                            Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
+                        unfiltered_notes = Box::new(
+                            unfiltered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)),
+                        )
                     }
-                    filtered_notes
+                    unfiltered_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
                                 <D::WalletNote as OutputInterface>::value(notedata)
@@ -84,9 +70,9 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     // TODO: this should minus the fee of sending the confirmed balance!
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn spendable_orchard_balance(&self) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
-            self.verified_balance::<OrchardDomain>(target_addr).await
+            self.verified_balance::<OrchardDomain>().await
         } else {
             None
         }
@@ -94,9 +80,9 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     // TODO: this should minus the fee of sending the confirmed balance!
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn spendable_sapling_balance(&self) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().sapling {
-            self.verified_balance::<SaplingDomain>(target_addr).await
+            self.verified_balance::<SaplingDomain>().await
         } else {
             None
         }
@@ -122,10 +108,7 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn unverified_balance<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
+    pub async fn unverified_balance<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -139,14 +122,11 @@ impl LightWallet {
                     .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
                     || nnmd.pending_receipt()
             })];
-        self.shielded_balance::<D>(target_addr, filters).await
+        self.shielded_balance::<D>(filters).await
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn verified_balance<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
+    pub async fn verified_balance<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -161,15 +141,12 @@ impl LightWallet {
             }),
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
         ];
-        self.shielded_balance::<D>(target_addr, filters).await
+        self.shielded_balance::<D>(filters).await
     }
 
     /// Returns balance for a given shielded pool excluding any notes with value less than marginal fee
     /// that are confirmed on the block chain (the block has at least 1 confirmation)
-    pub async fn confirmed_balance_excluding_dust<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
+    pub async fn confirmed_balance_excluding_dust<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -180,19 +157,19 @@ impl LightWallet {
             Box::new(|note, _| !note.pending_receipt()),
             Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
         ];
-        self.shielded_balance::<D>(target_addr, filters).await
+        self.shielded_balance::<D>(filters).await
     }
 
     /// Deprecated for `shielded_balance`
     #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
-        self.shielded_balance::<OrchardDomain>(addr, &[]).await
+    pub async fn maybe_verified_orchard_balance(&self) -> Option<u64> {
+        self.shielded_balance::<OrchardDomain>(&[]).await
     }
 
     /// Deprecated for `shielded_balance`
     #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
-        self.shielded_balance::<SaplingDomain>(addr, &[]).await
+    pub async fn maybe_verified_sapling_balance(&self) -> Option<u64> {
+        self.shielded_balance::<SaplingDomain>(&[]).await
     }
 
     /// TODO: Add Doc Comment Here!
@@ -400,13 +377,13 @@ mod tests {
 
         assert_eq!(
             wallet
-                .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+                .confirmed_balance_excluding_dust::<SaplingDomain>()
                 .await,
             Some(400_000)
         );
         assert_eq!(
             wallet
-                .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+                .confirmed_balance_excluding_dust::<OrchardDomain>()
                 .await,
             Some(1_605_000)
         );

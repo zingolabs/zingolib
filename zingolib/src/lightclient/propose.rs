@@ -154,12 +154,12 @@ impl LightClient {
     ) -> Result<TransferProposal, ProposeSendError> {
         let confirmed_shielded_balance = zatoshis_from_u64(
             self.wallet
-                .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+                .confirmed_balance_excluding_dust::<OrchardDomain>()
                 .await
                 .ok_or(ProposeSendError::NoFullViewingKey)?
                 + self
                     .wallet
-                    .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+                    .confirmed_balance_excluding_dust::<SaplingDomain>()
                     .await
                     .ok_or(ProposeSendError::NoFullViewingKey)?,
         )

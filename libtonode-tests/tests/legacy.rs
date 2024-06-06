@@ -1468,15 +1468,12 @@ mod slow {
         assert_eq!(
             recipient
                 .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
+                .shielded_balance::<OrchardDomain>(&[])
                 .await,
             Some(expected_funds)
         );
         assert_eq!(
-            recipient
-                .wallet
-                .verified_balance::<OrchardDomain>(None)
-                .await,
+            recipient.wallet.verified_balance::<OrchardDomain>().await,
             Some(0)
         );
 
@@ -1554,7 +1551,7 @@ mod slow {
         assert_eq!(
             recipient
                 .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
+                .shielded_balance::<OrchardDomain>(&[])
                 .await,
             Some(second_wave_expected_funds),
         );
@@ -4344,14 +4341,14 @@ async fn zip317_send_all() {
     assert_eq!(
         recipient
             .wallet
-            .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+            .confirmed_balance_excluding_dust::<SaplingDomain>()
             .await,
         Some(0)
     );
     assert_eq!(
         recipient
             .wallet
-            .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+            .confirmed_balance_excluding_dust::<OrchardDomain>()
             .await,
         Some(0)
     );
