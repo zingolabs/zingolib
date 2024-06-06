@@ -1,4 +1,4 @@
-//! TODO: Add Mod Discription Here!
+//! Wallet-State reporters as LightWallet methods.
 use orchard::note_encryption::OrchardDomain;
 
 use sapling_crypto::note_encryption::SaplingDomain;
