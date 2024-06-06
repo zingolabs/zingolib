@@ -52,7 +52,7 @@ fn calculate_remaining_needed(
     if let Some(amount) = target_value - selected_value {
         if amount == NonNegativeAmount::ZERO {
             // Case (Change) target_value == total_selected_value
-            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::const_from_u64(0u64))
+            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::ZERO)
         } else {
             // Case (Positive) target_value > total_selected_value
             RemainingNeeded::Positive(amount)
