@@ -4252,6 +4252,29 @@ async fn proxy_server_worky() {
 }
 
 #[tokio::test]
+async fn propose_orchard_dust_to_sapling() {
+    let (regtest_manager, _cph, faucet, recipient, _) =
+        scenarios::faucet_funded_recipient_default(100_000).await;
+
+    from_inputs::send(
+        &faucet,
+        vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+
+    from_inputs::propose(
+        &recipient,
+        vec![(&get_base_address_macro!(faucet, "sapling"), 10_000, None)],
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
