@@ -80,7 +80,11 @@ impl LightClient {
             .tbalance(None)
             .await
             .expect("to receive a balance");
-        let sapling_bal = self.wallet.spendable_sapling_balance().await.unwrap_or(0);
+        let sapling_bal = self
+            .wallet
+            .spendable_balance::<sapling_crypto::note_encryption::SaplingDomain>()
+            .await
+            .unwrap_or(0);
 
         // Make sure there is a balance, and it is greater than the amount
         let balance_to_shield =

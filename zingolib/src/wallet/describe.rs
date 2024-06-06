@@ -1,7 +1,4 @@
 //! Wallet-State reporters as LightWallet methods.
-use orchard::note_encryption::OrchardDomain;
-
-use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::{cmp, sync::Arc};
@@ -70,19 +67,13 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     // TODO: this should minus the fee of sending the confirmed balance!
-    pub async fn spendable_orchard_balance(&self) -> Option<u64> {
+    pub async fn spendable_balance<D: DomainWalletExt>(&self) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
-            self.verified_balance::<OrchardDomain>().await
-        } else {
-            None
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    // TODO: this should minus the fee of sending the confirmed balance!
-    pub async fn spendable_sapling_balance(&self) -> Option<u64> {
-        if let Capability::Spend(_) = self.wallet_capability().sapling {
-            self.verified_balance::<SaplingDomain>().await
+            self.verified_balance::<D>().await
         } else {
             None
         }

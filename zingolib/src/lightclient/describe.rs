@@ -88,12 +88,12 @@ impl LightClient {
         PoolBalances {
             sapling_balance: self.wallet.shielded_balance::<SaplingDomain>(&[]).await,
             verified_sapling_balance: self.wallet.verified_balance::<SaplingDomain>().await,
-            spendable_sapling_balance: self.wallet.spendable_sapling_balance().await,
+            spendable_sapling_balance: self.wallet.spendable_balance::<SaplingDomain>().await,
             unverified_sapling_balance: self.wallet.unverified_balance::<SaplingDomain>().await,
 
             orchard_balance: self.wallet.shielded_balance::<OrchardDomain>(&[]).await,
             verified_orchard_balance: self.wallet.verified_balance::<OrchardDomain>().await,
-            spendable_orchard_balance: self.wallet.spendable_orchard_balance().await,
+            spendable_orchard_balance: self.wallet.spendable_balance::<OrchardDomain>().await,
             unverified_orchard_balance: self.wallet.unverified_balance::<OrchardDomain>().await,
 
             transparent_balance: self.wallet.tbalance(None).await,
