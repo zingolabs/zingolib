@@ -18,14 +18,14 @@ use crate::wallet::notes::ShieldedNoteInterface;
 
 use crate::wallet::traits::Diversifiable as _;
 
-use super::keys::unified::{Capability, WalletCapability};
-use super::notes::TransparentOutput;
-use super::traits::DomainWalletExt;
-use super::traits::Recipient;
+use crate::wallet::keys::unified::{Capability, WalletCapability};
+use crate::wallet::notes::TransparentOutput;
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::Recipient;
 
-use super::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
-use super::LightWallet;
+use crate::wallet::LightWallet;
 impl LightWallet {
     /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
