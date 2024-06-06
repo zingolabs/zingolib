@@ -17,6 +17,8 @@ use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
+use self::utils::parse_spendable_balance_args;
+
 /// Errors associated with the commands interface
 mod error;
 /// Utilities associated with the commands interface
@@ -592,6 +594,54 @@ impl Command for BalanceCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
+        })
+    }
+}
+
+#[cfg(feature = "zip317")]
+struct SpendableBalanceCommand {}
+#[cfg(feature = "zip317")]
+impl Command for SpendableBalanceCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Display the wallet's spendable balance.
+            Calculated as the confirmed shielded balance minus the fee required to send all funds to
+            the given address.
+            An address must be specified as fees, and therefore spendable balance, depends on the receiver
+            type.
+            
+            Usage:
+            spendablebalance <address>
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Display the wallet's spendable balance."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let address = match parse_spendable_balance_args(args, &lightclient.config.chain) {
+            Ok(addr) => addr,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    e
+                );
+            }
+        };
+        RT.block_on(async move {
+            match lightclient.spendable_balance(address).await {
+                Ok(bal) => {
+                    object! {
+                        "balance" => bal.into_u64(),
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
         })
     }
 }
@@ -1769,6 +1819,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     }
     #[cfg(feature = "zip317")]
     {
+        entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));
         entries.push(("sendall", Box::new(SendAllCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
         entries.push(("quickshield", Box::new(QuickShieldCommand {})));
