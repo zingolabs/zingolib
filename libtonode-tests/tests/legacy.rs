@@ -3097,14 +3097,16 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000
-        pool_migration_client.quick_shield().await.unwrap();
+        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 30_000, None)])
+            .await
+            .unwrap();
         bump_and_check_pmc!(o: 65_000 s: 0 t: 0);
 
-        // 5 Self send of 70_000 paying 10_000 fee
+        // 5 Self send of 55_000 paying 10_000 fee
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 65_000, None)])
+        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 55_000, None)])
             .await
             .unwrap();
         bump_and_check_pmc!(o: 55_000 s: 0 t: 0);
