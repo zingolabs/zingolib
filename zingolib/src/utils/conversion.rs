@@ -29,7 +29,7 @@ pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, TxIdFromHexEncodedS
     Ok(TxId::from_bytes(txid_bytes))
 }
 
-/// Convert a &str to an Adddress
+/// Convert a &str to an Address
 pub fn address_from_str(address: &str, chain: &ChainType) -> Result<Address, ConversionError> {
     Address::decode(chain, address)
         .ok_or_else(|| ConversionError::InvalidAddress(address.to_string()))
