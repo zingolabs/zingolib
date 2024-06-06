@@ -3309,6 +3309,8 @@ mod slow {
         assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
         check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
     }
+
+    // FIXME: same bug, sent value transfer not created by quick_send
     #[tokio::test]
     async fn by_address_finsight() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -3326,11 +3328,7 @@ mod slow {
             .unwrap();
         from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
-            .expect(
-                "We only have sapling notes, plus a pending orchard note from the \
-            previous send. If we're allowed to select pending notes, we'll attempt \
-            to select that one, and this will fail",
-            );
+            .unwrap();
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
             "2".to_string()
@@ -3343,6 +3341,7 @@ mod slow {
             "6".to_string()
         );
     }
+
     #[tokio::test]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
