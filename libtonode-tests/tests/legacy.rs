@@ -294,6 +294,39 @@ mod fast {
     }
 
     #[tokio::test]
+    async fn demote_to_sapling_and_orchard() {
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            regtest_network,
+        )
+        .await;
+
+        let recipient_taddr = get_base_address_macro!(recipient, "transparent");
+        let recipient_sapling = get_base_address_macro!(recipient, "sapling");
+        let recipient_unified = get_base_address_macro!(recipient, "unified");
+        macro_rules! bump_and_check {
+            ($client:ident: o: $o:tt s: $s:tt t: $t:tt) => {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &$client, 1).await.unwrap();
+                check_client_balances!($client, o:$o s:$s t:$t);
+            };
+        }
+        from_inputs::quick_send(&faucet, vec![(&recipient_unified, 55_000, None)])
+            .await
+            .unwrap();
+        bump_and_check!(recipient: o: 55_000 s: 0 t: 0);
+        from_inputs::quick_send(
+            &recipient,
+            vec![
+                (&recipient_taddr, 10_000, None),
+                (&recipient_sapling, 10_000, None),
+            ],
+        )
+        .await
+        .unwrap();
+        bump_and_check!(recipient: o: 10_000 s: 10_000 t: 10_000);
+    }
+    #[tokio::test]
     async fn unspent_notes_are_not_saved() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
@@ -3066,7 +3099,7 @@ mod slow {
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
             check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
         };
-    }
+        }
 
         // 1 pmc receives 50_000 transparent
         //  # Expected Fees to recipient:
