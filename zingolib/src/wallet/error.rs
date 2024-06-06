@@ -34,10 +34,10 @@ pub enum FeeError {
 /// Errors associated with balance calculation
 #[derive(Debug, Error)]
 pub enum BalanceError {
-    /// failed to retrieve full viewing key for balance calculation
-    #[error("failed to retrieve full viewing key for balance calculation")]
+    /// failed to retrieve full viewing key
+    #[error("failed to retrieve full viewing key.")]
     NoFullViewingKey,
     /// conversion failed
-    #[error("conversion failed calculating balance. {0}")]
+    #[error("conversion failed. {0}")]
     ConversionFailed(crate::utils::error::ConversionError),
 }
