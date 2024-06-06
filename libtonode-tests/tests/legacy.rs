@@ -3069,7 +3069,7 @@ mod slow {
     }
 
         // 1 pmc receives 50_000 transparent
-        //  # Expected Fees:
+        //  # Expected Fees to recipient:
         //    - legacy: 0
         //    - 317:    0
         from_inputs::quick_send(&sapling_faucet, vec![(&pmc_taddr, 50_000, None)])
@@ -3078,48 +3078,48 @@ mod slow {
         bump_and_check_pmc!(o: 0 s: 0 t: 50_000);
 
         // 2 pmc shields 50_000 transparent, to orchard paying 10_000 fee
-        //  # Expected Fees:
+        //  # Expected Fees to recipient:
         //    - legacy: 10_000
-        //    - 317:    20_000
+        //    - 317:    15_000 1-orchard + 1-dummy + 1-transparent in
         pool_migration_client.quick_shield().await.unwrap();
-        bump_and_check_pmc!(o: 40_000 s: 0 t: 0);
+        bump_and_check_pmc!(o: 35_000 s: 0 t: 0);
 
         // 3 pmc receives 50_000 sapling
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    20_000
+        //  # Expected Fees to recipient:
+        //    - legacy: 0
+        //    - 317:    0
         from_inputs::quick_send(&sapling_faucet, vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 40_000 s: 50_000 t: 0);
+        bump_and_check_pmc!(o: 35_000 s: 50_000 t: 0);
 
         // 4 pmc shields 40_000 from sapling to orchard and pays 10_000 fee (should be 20_000 post zip317)
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000
         pool_migration_client.quick_shield().await.unwrap();
-        bump_and_check_pmc!(o: 80_000 s: 0 t: 0);
+        bump_and_check_pmc!(o: 65_000 s: 0 t: 0);
 
         // 5 Self send of 70_000 paying 10_000 fee
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 70_000, None)])
+        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 65_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 70_000 s: 0 t: 0);
+        bump_and_check_pmc!(o: 55_000 s: 0 t: 0);
 
         // 4 to transparent and sapling from orchard
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
+        //    - 317:    5_000 for transparent out + 10_000 for orchard + 10_000 for sapling == 25_000
         from_inputs::quick_send(
             &pool_migration_client,
-            vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
+            vec![(&pmc_taddr, 10_000, None), (&pmc_sapling, 10_000, None)],
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 0 s: 30_000 t: 30_000);
+        bump_and_check_pmc!(o: 10_000 s: 10_000 t: 10_000);
 
         // 5 Shield transparent and sapling to orchard
         //  # Expected Fees:
