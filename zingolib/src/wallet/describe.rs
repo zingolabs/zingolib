@@ -161,8 +161,12 @@ impl LightWallet {
     }
 
     /// The amount in orchard notes, not yet on chain
-    pub async fn pending_orchard_balance(&self) -> Option<u64> {
-        self.shielded_balance::<OrchardDomain>(&[Box::new(|note, _| note.pending_receipt())])
+    pub async fn pending_balance<D: DomainWalletExt>(&self) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.shielded_balance::<D>(&[Box::new(|note, _| note.pending_receipt())])
             .await
     }
 

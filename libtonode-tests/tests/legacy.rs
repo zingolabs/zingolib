@@ -1466,7 +1466,11 @@ mod slow {
             - first_send_to_transparent
             - (2 * u64::from(MINIMUM_FEE));
         // The whole orchard balance should be pending as change.
-        let pending_orchard_balance = recipient.wallet.pending_orchard_balance().await.unwrap();
+        let pending_orchard_balance = recipient
+            .wallet
+            .pending_balance::<OrchardDomain>()
+            .await
+            .unwrap();
         assert_eq!(pending_orchard_balance, expected_funds);
         assert_eq!(
             recipient.wallet.verified_balance::<OrchardDomain>().await,
