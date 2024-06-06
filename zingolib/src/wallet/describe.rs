@@ -170,12 +170,6 @@ impl LightWallet {
             .await
     }
 
-    /// Deprecated for `shielded_balance`
-    #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
-    pub async fn maybe_verified_sapling_balance(&self) -> Option<u64> {
-        self.shielded_balance::<SaplingDomain>(&[]).await
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn wallet_capability(&self) -> Arc<WalletCapability> {
         self.transaction_context.key.clone()
