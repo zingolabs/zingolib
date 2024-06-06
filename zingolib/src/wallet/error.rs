@@ -39,5 +39,5 @@ pub enum BalanceError {
     NoFullViewingKey,
     /// conversion failed
     #[error("conversion failed. {0}")]
-    ConversionFailed(crate::utils::error::ConversionError),
+    ConversionFailed(#[from] crate::utils::error::ConversionError),
 }

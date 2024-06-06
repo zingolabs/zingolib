@@ -197,7 +197,7 @@ impl LightWallet {
         &self,
         target_addr: Option<String>,
     ) -> Result<NonNegativeAmount, BalanceError> {
-        utils::conversion::zatoshis_from_u64(
+        Ok(utils::conversion::zatoshis_from_u64(
             self.confirmed_balance_excluding_dust::<OrchardDomain>(target_addr.clone())
                 .await
                 .ok_or(BalanceError::NoFullViewingKey)?
@@ -205,8 +205,7 @@ impl LightWallet {
                     .confirmed_balance_excluding_dust::<SaplingDomain>(target_addr)
                     .await
                     .ok_or(BalanceError::NoFullViewingKey)?,
-        )
-        .map_err(BalanceError::ConversionFailed)
+        )?)
     }
 
     /// Deprecated for `shielded_balance`
