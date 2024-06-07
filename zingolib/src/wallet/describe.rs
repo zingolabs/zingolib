@@ -94,16 +94,12 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
+    pub async fn tbalance(&self) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
                 self.get_utxos()
                     .await
                     .iter()
-                    .filter(|utxo| match addr.as_ref() {
-                        Some(a) => utxo.address == *a,
-                        None => true,
-                    })
                     .map(|utxo| utxo.value)
                     .sum::<u64>(),
             )

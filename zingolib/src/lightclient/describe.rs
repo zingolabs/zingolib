@@ -96,7 +96,7 @@ impl LightClient {
             spendable_orchard_balance: self.wallet.spendable_balance::<OrchardDomain>().await,
             unverified_orchard_balance: self.wallet.unverified_balance::<OrchardDomain>().await,
 
-            transparent_balance: self.wallet.tbalance(None).await,
+            transparent_balance: self.wallet.tbalance().await,
         }
     }
 
