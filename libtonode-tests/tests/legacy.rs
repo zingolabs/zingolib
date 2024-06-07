@@ -3448,7 +3448,7 @@ mod slow {
             "faucet notes: {}",
             faucet.do_list_notes(true).await.pretty(4)
         );
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+        from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
         from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
