@@ -279,7 +279,6 @@ impl LightClient {
     /// Provides a list of value transfers related to this capability
     pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
         self.list_txsummaries_and_capture_errors().await.0
-        // dbg!(self.list_txsummaries_and_capture_errors().await.0)
     }
     async fn list_txsummaries_and_capture_errors(
         &self,
@@ -357,7 +356,6 @@ impl LightClient {
                     recipient_address, ..
                 } => {
                     let address = recipient_address.encode();
-                    dbg!(&address);
                     let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
                     memobytes_by_address
                         .entry(address)
@@ -497,7 +495,9 @@ impl LightClient {
             } in &transaction_record.outgoing_tx_data
             {
                 if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
-                    recipient_address, // recipient_ua.as_ref().unwrap_or(recipient_address),
+                    recipient_address,
+                    // TODO: add recipient_ua to zip317 sends
+                    // recipient_ua.as_ref().unwrap_or(recipient_address),
                 ) {
                     let memos = if let Memo::Text(textmemo) = memo {
                         vec![textmemo.clone()]

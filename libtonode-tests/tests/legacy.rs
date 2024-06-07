@@ -3444,19 +3444,22 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
             .await
             .unwrap();
-        // from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
-        //     .await
-        //     .unwrap();
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+        from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
-        dbg!(&base_uaddress);
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
-            "1".to_string()
+            "2".to_string()
+        );
+        from_inputs::send(&faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
+            .await
+            .unwrap();
+        assert_eq!(
+            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+            "6".to_string()
         );
     }
     #[tokio::test]
@@ -4238,6 +4241,29 @@ mod basic_transactions {
 #[tokio::test]
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
+}
+
+#[tokio::test]
+async fn propose_orchard_dust_to_sapling() {
+    let (regtest_manager, _cph, faucet, recipient, _) =
+        scenarios::faucet_funded_recipient_default(100_000).await;
+
+    from_inputs::send(
+        &faucet,
+        vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+
+    from_inputs::propose(
+        &recipient,
+        vec![(&get_base_address_macro!(faucet, "sapling"), 10_000, None)],
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

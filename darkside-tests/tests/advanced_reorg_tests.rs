@@ -7,14 +7,19 @@ use darkside_tests::{
         TREE_STATE_FOLDER_PATH,
     },
     darkside_types::{Empty, TreeState},
-    utils::{read_dataset, read_lines, DarksideConnector, DarksideHandler},
+    utils::{
+        read_dataset, read_lines, scenarios::DarksideEnvironment, DarksideConnector,
+        DarksideHandler,
+    },
 };
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_testutils::{
-    lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
+    get_base_address_macro, lightclient::from_inputs, paths::get_cargo_manifest_dir,
+    scenarios::setup::ClientBuilder,
 };
+use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 use zingolib::wallet::data::summaries::ValueTransferKind;
@@ -507,43 +512,43 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 /// 14. sync to latest height
 /// 15. verify that there's no pending transaction and that the tx is displayed on the sentTransactions collection
 async fn reorg_changes_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let mut darkside_environment = DarksideEnvironment::default().await;
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
-
-    prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
+    prepare_changes_outgoing_tx_height_before_reorg(darkside_environment.get_connector())
         .await
         .unwrap();
 
-    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-        .build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        )
+    darkside_environment
+        .build_client(ADVANCED_REORG_TESTS_USER_WALLET.to_string(), 202)
+        .await;
+    darkside_environment
+        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 200)
         .await;
 
-    light_client.do_sync(true).await.unwrap();
+    darkside_environment
+        .get_lightclient(0)
+        .do_sync(true)
+        .await
+        .unwrap();
     assert_eq!(
-        light_client.do_balance().await,
+        darkside_environment.get_lightclient(0).do_balance().await,
         PoolBalances {
             sapling_balance: Some(0),
             verified_sapling_balance: Some(0),
             spendable_sapling_balance: Some(0),
             unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
+            orchard_balance: Some(100_000_000),
+            verified_orchard_balance: Some(100_000_000),
+            spendable_orchard_balance: Some(100_000_000),
             unverified_orchard_balance: Some(0),
             transparent_balance: Some(0)
         }
     );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = darkside_environment
+        .get_lightclient(0)
+        .list_txsummaries()
+        .await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -551,19 +556,25 @@ async fn reorg_changes_outgoing_tx_height() {
         BlockHeight::from_u32(203)
     );
 
-    let connector = DarksideConnector(server_id.clone());
-
-    let recipient_string = "uregtest1z8s5szuww2cnze042e0re2ez8l3d04zvkp7kslxwdha6tp644srd4nh0xlp8a05avzduc6uavqkxv79x53c60hrc0qsgeza3age2g3qualullukd4s0lsn6mtfup4z8jz6xdz2c05zakhafc7pmw0dwugwu9ljevzgyc3mfwxg9slr87k8l7cq075gl3fgxpr85uuvxhxydrskp2303";
+    let recipient_string =
+        get_base_address_macro!(darkside_environment.get_lightclient(1), "ua_orchard_only");
 
     // Send 100000 zatoshi to some address
-    let amount: u64 = 100000;
-    let sent_tx_id = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
-        .await
-        .unwrap();
+    let amount: u64 = 100_000;
+    let sent_tx_id = from_inputs::send(
+        darkside_environment.get_lightclient(0),
+        [(recipient_string.as_str(), amount, None)].to_vec(),
+    )
+    .await
+    .unwrap();
 
     println!("SENT TX ID: {:?}", sent_tx_id);
 
-    let mut incoming_transaction_stream = connector.get_incoming_transactions().await.unwrap();
+    let mut incoming_transaction_stream = darkside_environment
+        .get_connector()
+        .get_incoming_transactions()
+        .await
+        .unwrap();
     let tx = incoming_transaction_stream
         .message()
         .await
@@ -571,31 +582,49 @@ async fn reorg_changes_outgoing_tx_height() {
         .unwrap();
 
     let sent_tx_height: i32 = 205;
-    _ = connector.apply_staged(sent_tx_height).await;
+    darkside_environment
+        .get_connector()
+        .apply_staged(sent_tx_height)
+        .await
+        .unwrap();
 
-    light_client.do_sync(true).await.unwrap();
+    darkside_environment
+        .get_lightclient(0)
+        .do_sync(true)
+        .await
+        .unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
         verified_sapling_balance: Some(0),
         spendable_sapling_balance: Some(0),
         unverified_sapling_balance: Some(0),
-        orchard_balance: Some(99890000),
+        orchard_balance: Some(99_890_000),
         verified_orchard_balance: Some(0),
         spendable_orchard_balance: Some(0),
-        unverified_orchard_balance: Some(99890000),
+        unverified_orchard_balance: Some(99_890_000),
         transparent_balance: Some(0),
     };
 
-    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+    assert_eq!(
+        darkside_environment.get_lightclient(0).do_balance().await,
+        expected_after_send_balance
+    );
 
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!(
+        "{:?}",
+        darkside_environment
+            .get_lightclient(0)
+            .list_txsummaries()
+            .await
+    );
 
     assert_eq!(
-        light_client
+        darkside_environment
+            .get_lightclient(0)
             .list_txsummaries()
             .await
             .into_iter()
@@ -622,15 +651,25 @@ async fn reorg_changes_outgoing_tx_height() {
     //
 
     // stage empty blocks from height 205 to cause a Reorg
-    _ = connector.stage_blocks_create(sent_tx_height, 20, 1).await;
+    darkside_environment
+        .get_connector()
+        .stage_blocks_create(sent_tx_height, 20, 1)
+        .await
+        .unwrap();
 
-    _ = connector
+    darkside_environment
+        .get_connector()
         .stage_transactions_stream([(tx.clone().data, 210)].to_vec())
-        .await;
+        .await
+        .unwrap();
 
-    _ = connector.apply_staged(211).await;
+    darkside_environment
+        .get_connector()
+        .apply_staged(211)
+        .await
+        .unwrap();
 
-    let reorg_sync_result = light_client.do_sync(true).await;
+    let reorg_sync_result = darkside_environment.get_lightclient(0).do_sync(true).await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -651,15 +690,24 @@ async fn reorg_changes_outgoing_tx_height() {
 
     // Assert that balance holds
     assert_eq!(
-        light_client.do_balance().await,
+        darkside_environment.get_lightclient(0).do_balance().await,
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = darkside_environment
+        .get_lightclient(0)
+        .list_txsummaries()
+        .await;
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!(
+        "{:?}",
+        darkside_environment
+            .get_lightclient(0)
+            .list_txsummaries()
+            .await
+    );
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -685,14 +733,9 @@ async fn reorg_changes_outgoing_tx_height() {
     // );
 }
 
-async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Result<(), String> {
-    dbg!(&uri);
-    let connector = DarksideConnector(uri.clone());
-
-    let mut client = connector.get_client().await.unwrap();
-    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
-    client.clear_address_utxo(Empty {}).await.unwrap();
-
+async fn prepare_changes_outgoing_tx_height_before_reorg(
+    connector: &DarksideConnector,
+) -> Result<(), String> {
     // reset with parameters
     connector
         .reset(202, String::from(BRANCH_ID), String::from("regtest"))
@@ -746,24 +789,17 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 /// 8. sync to latest height
 /// 9. verify that there's an expired transaction as a pending transaction
 async fn reorg_expires_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let mut darkside_environment = DarksideEnvironment::default().await;
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
-
-    prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
+    prepare_changes_outgoing_tx_height_before_reorg(darkside_environment.get_connector())
         .await
         .unwrap();
 
-    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-        .build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        )
+    darkside_environment
+        .build_client(ADVANCED_REORG_TESTS_USER_WALLET.to_string(), 202)
+        .await;
+    darkside_environment
+        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 200)
         .await;
 
     let expected_initial_balance = PoolBalances {
@@ -778,10 +814,20 @@ async fn reorg_expires_outgoing_tx_height() {
         transparent_balance: Some(0),
     };
 
-    light_client.do_sync(true).await.unwrap();
-    assert_eq!(light_client.do_balance().await, expected_initial_balance);
+    darkside_environment
+        .get_lightclient(0)
+        .do_sync(true)
+        .await
+        .unwrap();
+    assert_eq!(
+        darkside_environment.get_lightclient(0).do_balance().await,
+        expected_initial_balance
+    );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = darkside_environment
+        .get_lightclient(0)
+        .list_txsummaries()
+        .await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -789,22 +835,32 @@ async fn reorg_expires_outgoing_tx_height() {
         BlockHeight::from_u32(203)
     );
 
-    let connector = DarksideConnector(server_id.clone());
-
-    let recipient_string = "uregtest1z8s5szuww2cnze042e0re2ez8l3d04zvkp7kslxwdha6tp644srd4nh0xlp8a05avzduc6uavqkxv79x53c60hrc0qsgeza3age2g3qualullukd4s0lsn6mtfup4z8jz6xdz2c05zakhafc7pmw0dwugwu9ljevzgyc3mfwxg9slr87k8l7cq075gl3fgxpr85uuvxhxydrskp2303";
+    let recipient_string =
+        get_base_address_macro!(darkside_environment.get_lightclient(1), "ua_orchard_only");
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
-    let sent_tx_id = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
-        .await
-        .unwrap();
+    let sent_tx_id = from_inputs::send(
+        &darkside_environment.get_lightclient(0),
+        [(recipient_string.as_str(), amount, None)].to_vec(),
+    )
+    .await
+    .unwrap();
 
     println!("SENT TX ID: {:?}", sent_tx_id);
 
     let sent_tx_height: i32 = 205;
-    _ = connector.apply_staged(sent_tx_height).await;
+    darkside_environment
+        .get_connector()
+        .apply_staged(sent_tx_height)
+        .await
+        .unwrap();
 
-    light_client.do_sync(true).await.unwrap();
+    darkside_environment
+        .get_lightclient(0)
+        .do_sync(true)
+        .await
+        .unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -818,15 +874,25 @@ async fn reorg_expires_outgoing_tx_height() {
         transparent_balance: Some(0),
     };
 
-    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+    assert_eq!(
+        darkside_environment.get_lightclient(0).do_balance().await,
+        expected_after_send_balance
+    );
 
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!(
+        "{:?}",
+        darkside_environment
+            .get_lightclient(0)
+            .list_txsummaries()
+            .await
+    );
 
     assert_eq!(
-        light_client
+        darkside_environment
+            .get_lightclient(0)
             .list_txsummaries()
             .await
             .into_iter()
@@ -853,12 +919,20 @@ async fn reorg_expires_outgoing_tx_height() {
     //
 
     // stage empty blocks from height 205 to cause a Reorg
-    _ = connector.stage_blocks_create(sent_tx_height, 50, 1).await;
+    darkside_environment
+        .get_connector()
+        .stage_blocks_create(sent_tx_height, 50, 1)
+        .await
+        .unwrap();
 
     // this will remove the submitted transaction from our view of the blockchain
-    _ = connector.apply_staged(245).await;
+    darkside_environment
+        .get_connector()
+        .apply_staged(245)
+        .await
+        .unwrap();
 
-    let reorg_sync_result = light_client.do_sync(true).await;
+    let reorg_sync_result = darkside_environment.get_lightclient(0).do_sync(true).await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -867,13 +941,25 @@ async fn reorg_expires_outgoing_tx_height() {
 
     // Assert that balance is equal to the initial balance since the
     // sent transaction was never mined and has expired.
-    assert_eq!(light_client.do_balance().await, expected_initial_balance);
+    assert_eq!(
+        darkside_environment.get_lightclient(0).do_balance().await,
+        expected_initial_balance
+    );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = darkside_environment
+        .get_lightclient(0)
+        .list_txsummaries()
+        .await;
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!(
+        "{:?}",
+        darkside_environment
+            .get_lightclient(0)
+            .list_txsummaries()
+            .await
+    );
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -925,29 +1011,26 @@ async fn reorg_expires_outgoing_tx_height() {
 /// 12. applyStaged(sentTx + 10)
 /// 13. verify that there's no more pending transaction
 async fn reorg_changes_outgoing_tx_index() {
-    let darkside_handler = DarksideHandler::new(None);
+    let mut darkside_environment = DarksideEnvironment::default().await;
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
-
-    prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
+    prepare_changes_outgoing_tx_height_before_reorg(darkside_environment.get_connector())
         .await
         .unwrap();
 
-    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-        .build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        )
+    darkside_environment
+        .build_client(ADVANCED_REORG_TESTS_USER_WALLET.to_string(), 202)
+        .await;
+    darkside_environment
+        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 200)
         .await;
 
-    light_client.do_sync(true).await.unwrap();
+    darkside_environment
+        .get_lightclient(0)
+        .do_sync(true)
+        .await
+        .unwrap();
     assert_eq!(
-        light_client.do_balance().await,
+        darkside_environment.get_lightclient(0).do_balance().await,
         PoolBalances {
             sapling_balance: Some(0),
             verified_sapling_balance: Some(0),
@@ -961,7 +1044,10 @@ async fn reorg_changes_outgoing_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = darkside_environment
+        .get_lightclient(0)
+        .list_txsummaries()
+        .await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -969,19 +1055,25 @@ async fn reorg_changes_outgoing_tx_index() {
         BlockHeight::from_u32(203)
     );
 
-    let connector = DarksideConnector(server_id.clone());
-
-    let recipient_string = "uregtest1z8s5szuww2cnze042e0re2ez8l3d04zvkp7kslxwdha6tp644srd4nh0xlp8a05avzduc6uavqkxv79x53c60hrc0qsgeza3age2g3qualullukd4s0lsn6mtfup4z8jz6xdz2c05zakhafc7pmw0dwugwu9ljevzgyc3mfwxg9slr87k8l7cq075gl3fgxpr85uuvxhxydrskp2303";
+    let recipient_string =
+        get_base_address_macro!(darkside_environment.get_lightclient(1), "ua_orchard_only");
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
-    let sent_tx_id = from_inputs::send(&light_client, [(recipient_string, amount, None)].to_vec())
-        .await
-        .unwrap();
+    let sent_tx_id = from_inputs::send(
+        darkside_environment.get_lightclient(0),
+        [(recipient_string.as_str(), amount, None)].to_vec(),
+    )
+    .await
+    .unwrap();
 
     println!("SENT TX ID: {:?}", sent_tx_id);
 
-    let mut incoming_transaction_stream = connector.get_incoming_transactions().await.unwrap();
+    let mut incoming_transaction_stream = darkside_environment
+        .get_connector()
+        .get_incoming_transactions()
+        .await
+        .unwrap();
     let tx = incoming_transaction_stream
         .message()
         .await
@@ -989,9 +1081,17 @@ async fn reorg_changes_outgoing_tx_index() {
         .unwrap();
 
     let sent_tx_height: i32 = 205;
-    _ = connector.apply_staged(sent_tx_height).await;
+    darkside_environment
+        .get_connector()
+        .apply_staged(sent_tx_height)
+        .await
+        .unwrap();
 
-    light_client.do_sync(true).await.unwrap();
+    darkside_environment
+        .get_lightclient(0)
+        .do_sync(true)
+        .await
+        .unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -1005,15 +1105,25 @@ async fn reorg_changes_outgoing_tx_index() {
         transparent_balance: Some(0),
     };
 
-    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+    assert_eq!(
+        darkside_environment.get_lightclient(0).do_balance().await,
+        expected_after_send_balance
+    );
 
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!(
+        "{:?}",
+        darkside_environment
+            .get_lightclient(0)
+            .list_txsummaries()
+            .await
+    );
 
     assert_eq!(
-        light_client
+        darkside_environment
+            .get_lightclient(0)
             .list_txsummaries()
             .await
             .into_iter()
@@ -1040,9 +1150,14 @@ async fn reorg_changes_outgoing_tx_index() {
     //
 
     // stage empty blocks from height 205 to cause a Reorg
-    _ = connector.stage_blocks_create(sent_tx_height, 20, 1).await;
+    darkside_environment
+        .get_connector()
+        .stage_blocks_create(sent_tx_height, 20, 1)
+        .await
+        .unwrap();
 
-    _ = connector
+    darkside_environment
+        .get_connector()
         .stage_transactions_stream(
             [
                 (hex::decode(TRANSACTION_TO_FILLER_ADDRESS).unwrap(), 205),
@@ -1050,11 +1165,16 @@ async fn reorg_changes_outgoing_tx_index() {
             ]
             .to_vec(),
         )
-        .await;
+        .await
+        .unwrap();
 
-    _ = connector.apply_staged(211).await;
+    darkside_environment
+        .get_connector()
+        .apply_staged(211)
+        .await
+        .unwrap();
 
-    let reorg_sync_result = light_client.do_sync(true).await;
+    let reorg_sync_result = darkside_environment.get_lightclient(0).do_sync(true).await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -1075,11 +1195,14 @@ async fn reorg_changes_outgoing_tx_index() {
 
     // Assert that balance holds
     assert_eq!(
-        light_client.do_balance().await,
+        darkside_environment.get_lightclient(0).do_balance().await,
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = darkside_environment
+        .get_lightclient(0)
+        .list_txsummaries()
+        .await;
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
