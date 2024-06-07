@@ -21,11 +21,13 @@ use crate::wallet::notes::TransparentOutput;
 use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
 
+use crate::wallet::LightWallet;
 use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
-use crate::wallet::LightWallet;
 impl LightWallet {
-    /// TODO: Add Doc Comment Here!
+    // Core shielded_balance function, other public methods dispatch specific sets of filters to this
+    // method for processing.
+    // This methods ensures that None is returned in the case of a missing view capability
     #[allow(clippy::type_complexity)]
     pub(crate) async fn shielded_balance<D>(
         &self,
@@ -106,24 +108,6 @@ impl LightWallet {
         } else {
             None
         }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn unverified_balance<D: DomainWalletExt>(&self) -> Option<u64>
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
-            &[Box::new(|nnmd, transaction| {
-                !transaction
-                    .status
-                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
-                    || nnmd.pending_receipt()
-            })];
-        self.shielded_balance::<D>(filters).await
     }
 
     /// TODO:  If the transaction is confirmed how can the note be pending?
