@@ -86,12 +86,18 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_balance(&self) -> PoolBalances {
         PoolBalances {
-            sapling_balance: self.wallet.shielded_balance::<SaplingDomain>(&[]).await,
+            sapling_balance: self
+                .wallet
+                .pending_and_confirmed_balance::<SaplingDomain>()
+                .await,
             verified_sapling_balance: self.wallet.confirmed_balance::<SaplingDomain>().await,
             spendable_sapling_balance: self.wallet.spendable_balance::<SaplingDomain>().await,
             unverified_sapling_balance: self.wallet.pending_balance::<SaplingDomain>().await,
 
-            orchard_balance: self.wallet.shielded_balance::<OrchardDomain>(&[]).await,
+            orchard_balance: self
+                .wallet
+                .pending_and_confirmed_balance::<OrchardDomain>()
+                .await,
             verified_orchard_balance: self.wallet.confirmed_balance::<OrchardDomain>().await,
             spendable_orchard_balance: self.wallet.spendable_balance::<OrchardDomain>().await,
             unverified_orchard_balance: self.wallet.pending_balance::<OrchardDomain>().await,

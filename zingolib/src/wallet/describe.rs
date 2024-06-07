@@ -29,7 +29,7 @@ impl LightWallet {
     // method for processing.
     // This methods ensures that None is returned in the case of a missing view capability
     #[allow(clippy::type_complexity)]
-    pub(crate) async fn shielded_balance<D>(
+    async fn shielded_balance<D>(
         &self,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
     ) -> Option<u64>
@@ -81,8 +81,7 @@ impl LightWallet {
         )
     }
 
-    /// TODO: Add Doc Comment Here!
-    // TODO: this should minus the fee of sending the confirmed balance!
+    /// Spendable balance is confirmed balance, that we have the *spend* capability for
     pub async fn spendable_balance<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
@@ -128,7 +127,34 @@ impl LightWallet {
         ];
         self.shielded_balance::<D>(filters).await
     }
+    /// The amount in orchard notes, not yet on chain
+    pub async fn pending_balance<D: DomainWalletExt>(&self) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.shielded_balance::<D>(&[Box::new(|note, _| note.pending_receipt())])
+            .await
+    }
 
+    /// Combined amount from pending and confirmed notes
+    pub async fn pending_and_confirmed_balance<D: DomainWalletExt>(&self) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        if let Some(confirmed) = self.confirmed_balance::<D>().await {
+            Some(
+                confirmed
+                    + self
+                        .pending_balance::<D>()
+                        .await
+                        .expect("If non-None for confirmed then we have view capability."),
+            )
+        } else {
+            None
+        }
+    }
     /// Returns balance for a given shielded pool excluding any notes with value less than marginal fee
     /// that are confirmed on the block chain (the block has at least 1 confirmation)
     pub async fn confirmed_balance_excluding_dust<D: DomainWalletExt>(&self) -> Option<u64>
@@ -143,21 +169,6 @@ impl LightWallet {
             Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
         ];
         self.shielded_balance::<D>(filters).await
-    }
-
-    /// The amount in orchard notes, not yet on chain
-    pub async fn pending_balance<D: DomainWalletExt>(&self) -> Option<u64>
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        self.shielded_balance::<D>(&[Box::new(|note, _| note.pending_receipt())])
-            .await
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
-        self.transaction_context.key.clone()
     }
 
     /// TODO: Add Doc Comment Here!
