@@ -880,9 +880,7 @@ impl LightWallet {
 
 // TODO: move to a more suitable place
 #[cfg(feature = "zip317")]
-pub(crate) fn change_memo_bytes_from_transaction_request(
-    request: &TransactionRequest,
-) -> MemoBytes {
+pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest) -> MemoBytes {
     let recipient_uas = request
         .payments()
         .iter()
