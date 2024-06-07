@@ -1473,7 +1473,7 @@ mod slow {
             .unwrap();
         assert_eq!(pending_orchard_balance, expected_funds);
         assert_eq!(
-            recipient.wallet.verified_balance::<OrchardDomain>().await,
+            recipient.wallet.confirmed_balance::<OrchardDomain>().await,
             Some(0)
         );
 
@@ -1550,7 +1550,7 @@ mod slow {
             - (3 * u64::from(MINIMUM_FEE));
         let verified_orchard_balance = recipient
             .wallet
-            .verified_balance::<OrchardDomain>()
+            .confirmed_balance::<OrchardDomain>()
             .await
             .unwrap();
         assert_eq!(verified_orchard_balance, second_wave_expected_funds);

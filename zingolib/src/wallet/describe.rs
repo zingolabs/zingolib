@@ -89,7 +89,7 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
-            self.verified_balance::<D>().await
+            self.confirmed_balance::<D>().await
         } else {
             None
         }
@@ -110,8 +110,8 @@ impl LightWallet {
         }
     }
 
-    /// TODO:  If the transaction is confirmed how can the note be pending?
-    pub async fn verified_balance<D: DomainWalletExt>(&self) -> Option<u64>
+    /// On chain balance
+    pub async fn confirmed_balance<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
