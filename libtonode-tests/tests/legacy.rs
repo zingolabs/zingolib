@@ -3077,11 +3077,27 @@ mod slow {
     }
     #[tokio::test]
     async fn demote_from_orchard_to_sapling_and_transparent() {
-        let (regtest_manager, _cph, faucet, recipient, regtest_network) =
+        let (regtest_manager, _cph, _faucet, recipient, _regtest_network) =
             scenarios::faucet_funded_recipient_default(200_000).await;
-        dbg!(faucet.do_balance().await);
-        dbg!(recipient.do_balance().await);
-        panic!();
+        macro_rules! bump_and_check {
+            ($client:ident, o: $o:tt s: $s:tt t: $t:tt) => {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &$client, 1).await.unwrap();
+                check_client_balances!($client, o:$o s:$s t:$t);
+            };
+        }
+        let recipient_taddr = get_base_address_macro!(recipient, "transparent");
+        let recipient_sapling = get_base_address_macro!(recipient, "sapling");
+
+        from_inputs::quick_send(
+            &recipient,
+            vec![
+                (&recipient_taddr, 50_000, None),
+                (&recipient_sapling, 50_000, None),
+            ],
+        )
+        .await
+        .unwrap();
+        bump_and_check!(recipient, o: 75_000 s: 50_000 t: 50_000);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
