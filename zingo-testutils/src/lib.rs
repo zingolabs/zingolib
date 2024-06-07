@@ -1092,7 +1092,10 @@ pub mod scenarios {
         )
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Initializes with orchard_funds controlled by
+    /// the second returned LightClient, conventionally
+    ///   * LightClient 1:  Faucet
+    ///   * LightClient 2:  Recipient
     pub async fn faucet_funded_recipient_default(
         orchard_funds: u64,
     ) -> (
@@ -1164,23 +1167,7 @@ pub mod scenarios {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-        let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-            None,
-            None,
-            Some(20_000),
-            &regtest_network,
-        )
-        .await;
-        (
-            scenario_builder.regtest_manager,
-            scenario_builder.child_process_handler.unwrap(),
-        )
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
+    pub async fn orchard_funded_client(value: u64) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(PoolType::Shielded(ShieldedProtocol::Sapling)),

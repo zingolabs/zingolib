@@ -3076,6 +3076,14 @@ mod slow {
         bump_and_check_pmc!(o: 30_000 s: 30_000 t: 30_000);
     }
     #[tokio::test]
+    async fn demote_from_orchard_to_sapling_and_transparent() {
+        let (regtest_manager, _cph, faucet, recipient, regtest_network) =
+            scenarios::faucet_funded_recipient_default(200_000).await;
+        dbg!(faucet.do_balance().await);
+        dbg!(recipient.do_balance().await);
+        panic!();
+    }
+    #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         // This test includes combinations that are disallowed in the mobile
