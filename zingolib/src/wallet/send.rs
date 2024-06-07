@@ -25,8 +25,8 @@ use std::convert::Infallible;
 use std::ops::Add;
 use std::sync::mpsc::channel;
 
-use zcash_client_backend::{address, PoolType, ShieldedProtocol};
-
+use zcash_client_backend::{address, zip321::TransactionRequest, PoolType, ShieldedProtocol};
+use zcash_keys::address::Address;
 use zcash_primitives::transaction::builder::{BuildResult, Progress};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
@@ -42,6 +42,7 @@ use zcash_primitives::{
     },
 };
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
+
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -681,6 +682,7 @@ impl LightWallet {
         .expect("u64 representable"))
     }
 
+    // TODO: LEGACY. to be deprecated when zip317 lands
     fn add_change_output_to_builder<'a>(
         &self,
         mut tx_builder: TxBuilder<'a>,
@@ -874,6 +876,34 @@ impl LightWallet {
 
         Ok(accepted_txid)
     }
+}
+
+// TODO: move to a more suitable place
+#[cfg(feature = "zip317")]
+pub(crate) fn change_memo_bytes_from_transaction_request(
+    request: &TransactionRequest,
+) -> MemoBytes {
+    let recipient_uas = request
+        .payments()
+        .iter()
+        .filter_map(|(_, payment)| match payment.recipient_address {
+            Address::Transparent(_) => None,
+            Address::Sapling(_) => None,
+            Address::Unified(ref ua) => Some(ua.clone()),
+        })
+        .collect::<Vec<_>>();
+    let uas_bytes = match create_wallet_internal_memo_version_0(recipient_uas.as_slice()) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            log::error!(
+                "Could not write uas to memo field: {e}\n\
+        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
+        The correct address was sent to."
+            );
+            [0; 511]
+        }
+    };
+    MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
 }
 
 #[cfg(test)]

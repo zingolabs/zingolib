@@ -18,6 +18,7 @@ use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
+use crate::wallet::send::memo_bytes_from_transaction_request;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
@@ -90,9 +91,11 @@ impl LightClient {
         &self,
         request: TransactionRequest,
     ) -> Result<TransferProposal, ProposeSendError> {
+        let memo = memo_bytes_from_transaction_request(&request);
+
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            None,
+            Some(memo),
             ShieldedProtocol::Orchard,
         ); // review consider change strategy!
 
