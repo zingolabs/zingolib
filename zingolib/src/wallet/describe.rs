@@ -1,4 +1,5 @@
 //! Wallet-State reporters as LightWallet methods.
+use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::{cmp, sync::Arc};
@@ -35,6 +36,19 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
+        // For the moment we encode lack of view capability as None
+        match D::SHIELDED_PROTOCOL {
+            ShieldedProtocol::Sapling => {
+                if !self.wallet_capability().sapling.can_view() {
+                    return None;
+                }
+            }
+            ShieldedProtocol::Orchard => {
+                if !self.wallet_capability().orchard.can_view() {
+                    return None;
+                }
+            }
+        }
         Some(
             self.transaction_context
                 .transaction_metadata_set
