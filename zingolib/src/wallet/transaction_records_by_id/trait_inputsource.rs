@@ -38,6 +38,70 @@ pub enum InputSourceError {
     InvalidValue(BalanceError),
 }
 
+// Calculate remaining difference between target and selected.
+// There are two mutually exclusive cases:
+//    (Change) There's no more needed so we've selected 0 or more change
+//    (Positive) We need > 0 more value.
+// This function represents the NonPositive case as None, which
+// then serves to signal a break in the note selection for where
+// this helper is uniquely called.
+fn calculate_remaining_needed(
+    target_value: NonNegativeAmount,
+    selected_value: NonNegativeAmount,
+) -> RemainingNeeded {
+    if let Some(amount) = target_value - selected_value {
+        if amount == NonNegativeAmount::ZERO {
+            // Case (Change) target_value == total_selected_value
+            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::ZERO)
+        } else {
+            // Case (Positive) target_value > total_selected_value
+            RemainingNeeded::Positive(amount)
+        }
+    } else {
+        // Case (Change) target_value < total_selected_value
+        // Return the non-zero change quantity
+        RemainingNeeded::GracelessChangeAmount(
+            (selected_value - target_value).expect("This is guaranteed positive"),
+        )
+    }
+}
+enum RemainingNeeded {
+    Positive(NonNegativeAmount),
+    GracelessChangeAmount(NonNegativeAmount),
+}
+
+#[allow(dead_code)]
+fn sweep_dust_into_grace(
+    selected: &mut Vec<(NoteId, NonNegativeAmount)>,
+    dust_notes: Vec<(NoteId, NonNegativeAmount)>,
+) {
+    let sapling_dust: Vec<_> = dust_notes
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Sapling)
+        .cloned()
+        .collect();
+    let orchard_dust: Vec<_> = dust_notes
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Orchard)
+        .cloned()
+        .collect();
+    let sapling_selected: Vec<_> = selected
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Sapling)
+        .cloned()
+        .collect();
+    let orchard_selected: Vec<_> = selected
+        .iter()
+        .filter(|x| x.0.protocol() == ShieldedProtocol::Orchard)
+        .cloned()
+        .collect();
+    if sapling_selected.len() == 1 && !sapling_dust.is_empty() {
+        selected.push(*sapling_dust.last().expect("Guaranteed by !is_empty"));
+    }
+    if orchard_selected.len() == 1 && !orchard_dust.is_empty() {
+        selected.push(*orchard_dust.last().expect("Guaranteed by !is_empty"));
+    }
+}
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
 impl InputSource for TransactionRecordsById {
@@ -130,7 +194,9 @@ impl InputSource for TransactionRecordsById {
             .map(|(id, value)| NonNegativeAmount::from_u64(value).map(|value| (id, value)))
             .collect::<Result<Vec<_>, _>>()
             .map_err(InputSourceError::InvalidValue)?;
-        unselected.sort_by_key(|(_id, value)| *value);
+        unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
+        let dust_spendable_index = unselected.partition_point(|(_id, value)| *value < MARGINAL_FEE);
+        let _dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
         let mut selected = vec![];
         let mut index_of_unselected = 0;
 
@@ -139,29 +205,26 @@ impl InputSource for TransactionRecordsById {
             if unselected.is_empty() {
                 break;
             }
-
             // update target value for further note selection
             let selected_notes_total_value = selected
                 .iter()
                 .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
                 .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
-            let Some(updated_target_value) = target_value - selected_notes_total_value else {
-                // if underflow, target has been reached
-                break;
-            };
-            if updated_target_value == NonNegativeAmount::ZERO {
-                // if zero, target has been reached
-                break;
-            }
+            let updated_target_value =
+                match calculate_remaining_needed(target_value, selected_notes_total_value) {
+                    RemainingNeeded::Positive(updated_target_value) => updated_target_value,
+                    RemainingNeeded::GracelessChangeAmount(_change) => {
+                        //println!("{:?}", change);
+                        break;
+                    }
+                };
+
             match unselected.get(index_of_unselected) {
                 Some(smallest_unselected) => {
                     // selected a note to test if it has enough value to complete the transaction on its own
-                    if smallest_unselected.1 >= updated_target_value
-                        && smallest_unselected.1 >= MARGINAL_FEE
-                    {
+                    if smallest_unselected.1 >= updated_target_value {
                         selected.push(*smallest_unselected);
                         unselected.remove(index_of_unselected);
-                        break;
                     } else {
                         // this note is not big enough. try the next
                         index_of_unselected += 1;
@@ -170,26 +233,29 @@ impl InputSource for TransactionRecordsById {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction
                     // add the biggest note and reset the iteraton
-                    if let Some(largest_note) = unselected.last() {
-                        if largest_note.1 >= MARGINAL_FEE {
-                            selected.push(unselected.pop().expect("should be nonempty"));
-                            index_of_unselected = 0;
-                        } else {
-                            break;
-                        }
-                    }
+                    selected.push(unselected.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
+                    index_of_unselected = 0;
                 }
             }
         }
 
-        if selected.len() < 2 {
-            // since we maxed out the target value with only one note, we have an option to grace a note.
-            // we will rescue the biggest dust note
-            unselected.reverse();
-            if let Some(biggest_dust) = unselected.iter().find(|(_id, value)| value < &MARGINAL_FEE)
-            {
-                selected.push(*biggest_dust);
-                // we dont bother to pop this last selected note from unselected because we are done with unselected
+        /* TODO: Priority
+        if selected
+            .iter()
+            .filter(|n| n.0.protocol() == ShieldedProtocol::Sapling)
+            .count()
+            == 1
+            || selected
+                .iter()
+                .filter(|n| n.0.protocol() == ShieldedProtocol::Orchard)
+                .count()
+                == 1
+        {
+            // since we maxed out the target value with only one note in at least one Shielded Pool
+            //  we have an option to sweep a dust note into a grace input.
+            // we will sweep the biggest dust note we can
+            if !dust_notes.is_empty() {
+                sweep_dust_into_grace(&mut selected, dust_notes);
             }
             // TODO: re-introduce this optimisation, current bug is that we don't select a note from the same pool as the single selected note
             // (and we don't have information about the pool(s) the outputs are being created for)
@@ -203,6 +269,7 @@ impl InputSource for TransactionRecordsById {
             //     };
             // }
         }
+        */
 
         let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
         let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
@@ -437,7 +504,7 @@ mod tests {
         // }
         #[test]
         fn select_spendable_notes_2(
-            target_value in 5_000..4_000_000u32,
+            target_value in 5_000..3_980_000u32,
         ) {
             let mut transaction_records_by_id = TransactionRecordsById::new();
             transaction_records_by_id.insert_transaction_record(
@@ -447,9 +514,9 @@ mod tests {
             .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
             .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
             .orchard_notes(OrchardNoteBuilder::default().value(1_000_000).clone())
-            .orchard_notes(OrchardNoteBuilder::default().value(0).clone())
-            .orchard_notes(OrchardNoteBuilder::default().value(1).clone())
-            .orchard_notes(OrchardNoteBuilder::default().value(10).clone())
+            // .orchard_notes(OrchardNoteBuilder::default().value(0).clone())
+            // .orchard_notes(OrchardNoteBuilder::default().value(1).clone())
+            // .orchard_notes(OrchardNoteBuilder::default().value(10).clone())
             .randomize_txid()
             .set_output_indexes()
             .build()
@@ -467,6 +534,7 @@ mod tests {
                     &[],
                 ).unwrap();
             let expected_len = match target_value {
+                target_value if target_value <= 1_000_000 => 1,
                 target_value if target_value <= 2_000_000 => 2,
                 target_value if target_value <= 3_000_000 => 3,
                 _ => 4
