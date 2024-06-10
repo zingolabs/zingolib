@@ -3212,24 +3212,11 @@ mod slow {
             .unwrap();
         bump_and_check_pmc!(o: 490_000 s: 10_000 t: 0);
 
-        dbg!(
-            pool_migration_client.do_list_notes(false).await["unspent_orchard_notes"]
-                .clone()
-                .len()
-        );
-        dbg!(
-            pool_migration_client.do_list_notes(false).await["unspent_sapling_notes"]
-                .clone()
-                .len()
-        );
-        dbg!(pool_migration_client.do_list_notes(false).await["utxos"]
-            .clone()
-            .len());
         // 10 Orchard and Sapling demote all to transparent self-send
         //  oz -> t
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    5-o 25_000 orchard, 2-s 10_000 sapling, 1 utxo 5_000 transparent
+        //    - 317:    15_000 5-o (3 dust)- 10_000 orchard, 1 utxo 5_000 transparent
         zingo_testutils::increase_height_and_wait_for_client(
             &regtest_manager,
             &pool_migration_client,
@@ -3237,68 +3224,55 @@ mod slow {
         )
         .await
         .unwrap();
-        dbg!(
-            pool_migration_client.do_list_notes(false).await["unspent_orchard_notes"]
-                .clone()
-                .len()
-        );
-        dbg!(
-            pool_migration_client.do_list_notes(false).await["unspent_sapling_notes"]
-                .clone()
-                .len()
-        );
-        dbg!(pool_migration_client.do_list_notes(false).await["utxos"]
-            .clone()
-            .len());
-        pool_migration_client.do_total_value_to_address().await;
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_taddr, 460_000, None)])
+
+        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_taddr, 465_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 0 s: 0 t: 460_000);
+        bump_and_check_pmc!(o: 10_000 s: 10_000 t: 465_000);
 
-        // 11 Shield transparent to orchard
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    disallowed
-        pool_migration_client.quick_shield().await.unwrap();
-        bump_and_check_pmc!(o: 20_000 s: 0 t: 0);
+        // 10 transparent to transparent
+        // Very explicit catch of reject sending from transparent to other than Self Orchard
+        match from_inputs::quick_send(&pool_migration_client, vec![(&pmc_taddr, 1, None)]).await {
+            Ok(_) => panic!(),
+            Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
+                ProposeSendError::Proposal(insufficient) => match insufficient {
+                    zcash_client_backend::data_api::error::Error::DataSource(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::CommitmentTree(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::NoteSelection(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::Proposal(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::ProposalNotSupported => panic!(),
+                    zcash_client_backend::data_api::error::Error::KeyNotRecognized => panic!(),
+                    zcash_client_backend::data_api::error::Error::BalanceError(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                        available,
+                        required,
+                    } => {
+                        assert_eq!(available, NonNegativeAmount::from_u64(0).unwrap());
+                        assert_eq!(required, NonNegativeAmount::from_u64(1).unwrap());
+                    }
+                    zcash_client_backend::data_api::error::Error::ScanRequired => panic!(),
+                    zcash_client_backend::data_api::error::Error::Builder(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::MemoForbidden => panic!(),
+                    zcash_client_backend::data_api::error::Error::UnsupportedChangeType(_) => {
+                        panic!()
+                    }
+                    zcash_client_backend::data_api::error::Error::NoSupportedReceivers(_) => {
+                        panic!()
+                    }
+                    zcash_client_backend::data_api::error::Error::NoSpendingKey(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::NoteMismatch(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::AddressNotRecognized(_) => {
+                        panic!()
+                    }
+                },
+                ProposeSendError::TransactionRequestFailed(_) => panic!(),
+                ProposeSendError::ZeroValueSendAll => panic!(),
+                ProposeSendError::BalanceError(_) => panic!(),
+            },
+            _ => panic!(),
+        }
+        bump_and_check_pmc!(o: 10_000 s: 10_000 t: 465_000);
 
-        // 12 sapling and orchard to orchard
-        from_inputs::quick_send(&sapling_faucet, vec![(&pmc_sapling, 20_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 20_000 s: 20_000 t: 0);
-
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 30_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 0 t: 0);
-
-        // 13 tzo --> o
-        from_inputs::quick_send(
-            &sapling_faucet,
-            vec![(&pmc_taddr, 20_000, None), (&pmc_sapling, 20_000, None)],
-        )
-        .await
-        .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 20_000 t: 20_000);
-
-        pool_migration_client.quick_shield().await.unwrap();
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 40_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 50_000 s: 0 t: 0);
-
-        // Send from Sapling into empty Orchard pool
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_sapling, 40_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 0 s: 40_000 t: 0);
-
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 30_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 0 t: 0);
         let mut total_value_to_addrs_iter = pool_migration_client
             .do_total_value_to_address()
             .await
