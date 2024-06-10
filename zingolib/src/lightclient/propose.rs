@@ -8,7 +8,7 @@ use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::zip321::Zip321Error;
 use zcash_client_backend::ShieldedProtocol;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 
 use thiserror::Error;
 
@@ -28,6 +28,25 @@ type GISKit = GreedyInputSelector<
     zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
 >;
 
+// This private helper is a very small DRY, but it has already corrected a minor
+// divergence in change strategy.
+//  Because shielding operations are never expected to create dust notes this change
+// is not a bugfix.
+fn build_default_giskit(memo: Option<MemoBytes>) -> GISKit {
+    let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+        zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+        memo,
+        ShieldedProtocol::Orchard,
+    ); // review consider change strategy!
+
+    GISKit::new(
+        change_strategy,
+        zcash_client_backend::fees::DustOutputPolicy::new(
+            zcash_client_backend::fees::DustAction::AllowDustChange,
+            None,
+        ),
+    )
+}
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
 pub enum ProposeSendError {
@@ -93,20 +112,7 @@ impl LightClient {
     ) -> Result<TransferProposal, ProposeSendError> {
         let memo = change_memo_from_transaction_request(&request);
 
-        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            Some(memo),
-            ShieldedProtocol::Orchard,
-        ); // review consider change strategy!
-
-        let input_selector = GISKit::new(
-            change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::new(
-                zcash_client_backend::fees::DustAction::AllowDustChange,
-                None,
-            ),
-        );
-
+        let input_selector = build_default_giskit(Some(memo));
         let mut tmamt = self
             .wallet
             .transaction_context
@@ -140,16 +146,7 @@ impl LightClient {
     pub(crate) async fn create_shield_proposal(
         &self,
     ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
-        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            None,
-            ShieldedProtocol::Orchard,
-        ); // review consider change strategy!
-
-        let input_selector = GISKit::new(
-            change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::default(),
-        );
+        let input_selector = build_default_giskit(None);
 
         let mut tmamt = self
             .wallet
