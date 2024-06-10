@@ -1295,10 +1295,10 @@ mod slow {
             {
                 "block_height": 6,
                 "pending": false,
-                "datetime": 1694825595,
-                "txid": "4ee5a583e6462eb4c39f9d8188e855bb1e37d989fcb8b417cff93c27b006e72d",
+                "datetime": 1718023286,
+                "txid": "392da4b0abfc2b3938741301fc109ad2de7641a8054f2cda8c6fa33804b6385a",
                 "zec_price": null,
-                "amount": -30000,
+                "amount": -40000,
                 "outgoing_metadata": [
                     {
                         "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
@@ -1351,8 +1351,9 @@ mod slow {
 
         let expected_funds = recipient_initial_funds
             - first_send_to_sapling
+            - (4 * u64::from(MARGINAL_FEE))
             - first_send_to_transparent
-            - (2 * u64::from(MINIMUM_FEE));
+            - (3 * u64::from(MARGINAL_FEE));
         assert_eq!(
             recipient
                 .wallet
