@@ -43,7 +43,7 @@ pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub mod transaction_records_by_id;
-pub(crate) mod tx_map_and_maybe_trees;
+pub mod tx_map_and_maybe_trees;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet

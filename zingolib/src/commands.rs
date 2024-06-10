@@ -1,6 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
+use crate::data::proposal;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -15,6 +16,8 @@ use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+
+use self::utils::parse_spendable_balance_args;
 
 /// Errors associated with the commands interface
 mod error;
@@ -595,6 +598,54 @@ impl Command for BalanceCommand {
     }
 }
 
+#[cfg(feature = "zip317")]
+struct SpendableBalanceCommand {}
+#[cfg(feature = "zip317")]
+impl Command for SpendableBalanceCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Display the wallet's spendable balance.
+            Calculated as the confirmed shielded balance minus the fee required to send all funds to
+            the given address.
+            An address must be specified as fees, and therefore spendable balance, depends on the receiver
+            type.
+
+            Usage:
+            spendablebalance <address>
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Display the wallet's spendable balance."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let address = match parse_spendable_balance_args(args, &lightclient.config.chain) {
+            Ok(addr) => addr,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    e
+                );
+            }
+        };
+        RT.block_on(async move {
+            match lightclient.spendable_balance(address).await {
+                Ok(bal) => {
+                    object! {
+                        "balance" => bal.into_u64(),
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
 struct AddressCommand {}
 impl Command for AddressCommand {
     fn help(&self) -> &'static str {
@@ -892,11 +943,13 @@ impl Command for SendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient
-                .propose_send(request)
-                .await {
+            match lightclient.propose_send(request).await {
                 Ok(proposal) => {
-                    object! { "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())) }
+                    let fee = match proposal::total_fee(&proposal) {
+                        Ok(fee) => fee,
+                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    };
+                    object! { "fee" => fee.into_u64() }
                 }
                 Err(e) => {
                     object! { "error" => e.to_string() }
@@ -907,8 +960,6 @@ impl Command for SendCommand {
     }
 }
 
-/*
-// Unimplemented
 #[cfg(feature = "zip317")]
 struct SendAllCommand {}
 #[cfg(feature = "zip317")]
@@ -947,24 +998,30 @@ impl Command for SendAllCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient
-                .propose_send_all(address, memo)
-                .await {
+            match lightclient.propose_send_all(address, memo).await {
                 Ok(proposal) => {
+                    let amount = match proposal::total_payment_amount(&proposal) {
+                        Ok(amount) => amount,
+                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    };
+                    let fee = match proposal::total_fee(&proposal) {
+                        Ok(fee) => fee,
+                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    };
                     object! {
-                        "amount" => proposal.steps().iter().fold(0, |acc, step| acc + step.shielded_inputs().unwrap().notes().iter().fold(0, |acc, note| acc + u64::from(note.note().value()))),
-                        "fee" => proposal.steps().iter().fold(0, |acc, step| acc + u64::from(step.balance().fee_required())),
+                        "amount" => amount.into_u64(),
+                        "fee" => fee.into_u64(),
                     }
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    object! { "error" => e.to_string() }
                 }
             }
             .pretty(2)
         })
     }
 }
-*/
+
 #[cfg(feature = "zip317")]
 struct QuickSendCommand {}
 #[cfg(feature = "zip317")]
@@ -1762,7 +1819,8 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     }
     #[cfg(feature = "zip317")]
     {
-        //entries.push(("sendall", Box::new(SendAllCommand {})));
+        entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));
+        entries.push(("sendall", Box::new(SendAllCommand {})));
         entries.push(("quicksend", Box::new(QuickSendCommand {})));
         entries.push(("quickshield", Box::new(QuickShieldCommand {})));
         entries.push(("confirm", Box::new(ConfirmCommand {})));

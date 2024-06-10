@@ -15,10 +15,12 @@ use crate::{
 
 use super::{TransactionRecordsById, TxMapAndMaybeTrees};
 impl TxMapAndMaybeTrees {
+    /// TODO: Doc-comment!
     pub fn serialized_version() -> u64 {
         22
     }
 
+    /// TODO: Doc-comment!
     pub fn read_old<R: Read>(
         mut reader: R,
         wallet_capability: &WalletCapability,
@@ -71,6 +73,7 @@ impl TxMapAndMaybeTrees {
         })
     }
 
+    /// TODO: Doc-comment!
     pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
@@ -137,6 +140,7 @@ impl TxMapAndMaybeTrees {
         })
     }
 
+    /// TODO: Doc-comment!
     pub async fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;

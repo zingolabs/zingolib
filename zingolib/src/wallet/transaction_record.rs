@@ -227,11 +227,6 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn get_transparent_value_spent(&self) -> u64 {
-        self.total_transparent_value_spent
-    }
-
-    /// TODO: Add Doc Comment Here!
     #[deprecated(
         note = "replaced by `calculate_transaction_fee` method for [`crate::wallet::transaction_records_by_id::TransactionRecordsById`]"
     )]
@@ -260,7 +255,8 @@ impl TransactionRecord {
             || !self.spent_orchard_nullifiers.is_empty()
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// This means there's at least one note that adds funds
+    /// to this capabilities control
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes
             .iter()
@@ -270,13 +266,6 @@ impl TransactionRecord {
                 .iter()
                 .any(|note| !ShieldedNoteInterface::is_change(note))
             || !self.transparent_outputs.is_empty()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(note = "unused function with misleading name")]
-    pub fn net_spent(&self) -> u64 {
-        assert!(self.is_outgoing_transaction());
-        self.total_value_spent() - self.total_change_returned()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -309,7 +298,7 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
         [
-            self.get_transparent_value_spent(),
+            self.total_transparent_value_spent,
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
@@ -657,7 +646,7 @@ pub mod mocks {
                     ),
                 ),
                 datetime: Some(1705077003),
-                txid: Some(crate::mocks::default_txid()),
+                txid: Some(crate::mocks::random_txid()),
                 spent_sapling_nullifiers: vec![],
                 spent_orchard_nullifiers: vec![],
                 transparent_outputs: vec![],
@@ -805,7 +794,7 @@ mod tests {
     #[test]
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
-        assert_eq!(new.get_transparent_value_spent(), 0);
+        assert_eq!(new.total_transparent_value_spent, 0);
         assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
