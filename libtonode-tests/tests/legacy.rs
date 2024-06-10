@@ -695,7 +695,7 @@ mod fast {
 mod slow {
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_primitives::consensus::NetworkConstants;
+    use zcash_primitives::{consensus::NetworkConstants, transaction::fees::zip317::MARGINAL_FEE};
     use zingo_testutils::lightclient::from_inputs;
     use zingolib::{
         lightclient::{propose::ProposeSendError, send::send_with_proposal::QuickSendError},
@@ -1673,7 +1673,7 @@ mod slow {
         assert_eq!(balance.unverified_orchard_balance, Some(0));
         assert_eq!(
             balance.verified_orchard_balance.unwrap(),
-            625_000_000 - u64::from(MINIMUM_FEE)
+            625_000_000 - 4 * u64::from(MARGINAL_FEE)
         );
     }
     #[tokio::test]
