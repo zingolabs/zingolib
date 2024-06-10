@@ -41,20 +41,15 @@ pub struct TransactionRecord {
     /// WalletTx in LightWallet::txs)
     pub txid: TxId,
 
+    /// Price of Zec when this Tx was created
+    pub price: Option<f64>,
+
+    // INPUTS
     /// List of all nullifiers spent by this wallet in this Tx.
     pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
 
     /// List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
-
-    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
-    pub sapling_notes: Vec<SaplingNote>,
-
-    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
-    pub orchard_notes: Vec<OrchardNote>,
-
-    /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
-    pub transparent_outputs: Vec<TransparentOutput>,
 
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
@@ -65,11 +60,18 @@ pub struct TransactionRecord {
     /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
     pub total_transparent_value_spent: u64,
 
+    // OUTPUTS
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    pub sapling_notes: Vec<SaplingNote>,
+
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    pub orchard_notes: Vec<OrchardNote>,
+
+    /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
+    pub transparent_outputs: Vec<TransparentOutput>,
+
     /// All outgoing sends
     pub outgoing_tx_data: Vec<OutgoingTxData>,
-
-    /// Price of Zec when this Tx was created
-    pub price: Option<f64>,
 }
 
 // set
@@ -246,11 +248,11 @@ impl TransactionRecord {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    // TODO: This is incorrect in the edge case where where we have a send-to-self with
-    // no text memo and 0-value fee
+    /// If there is input data to this transaction, we deduce that the transaction was created by this wallet. We call it 'outgoing'.
     pub fn is_outgoing_transaction(&self) -> bool {
-        (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
+        !self.outgoing_tx_data.is_empty()
+            || !self.spent_sapling_nullifiers.is_empty()
+            || !self.spent_orchard_nullifiers.is_empty()
     }
 
     /// This means there's at least one note that adds funds
