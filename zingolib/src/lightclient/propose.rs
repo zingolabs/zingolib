@@ -129,6 +129,55 @@ impl LightClient {
         )
         .map_err(ProposeSendError::Proposal)
     }
+    /// The shield operation consumes a proposal that transfers value
+    /// into the Orchard pool.
+    ///
+    /// The proposal is generated with this method, which operates on
+    /// the balance transparent pool, without other input.
+    /// In other words, shield does not take a user-specified amount
+    /// to shield, rather it consumes all transparent value in the wallet that
+    /// can be consumsed without costing more in zip317 fees than is being transferred.
+    pub(crate) async fn create_shield_proposal(
+        &self,
+    ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            None,
+            ShieldedProtocol::Orchard,
+        ); // review consider change strategy!
+
+        let input_selector = GISKit::new(
+            change_strategy,
+            zcash_client_backend::fees::DustOutputPolicy::default(),
+        );
+
+        let mut tmamt = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+
+        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
+            TxMapAndMaybeTrees,
+            ChainType,
+            GISKit,
+            TxMapAndMaybeTreesTraitError,
+        >(
+            &mut tmamt,
+            &self.wallet.transaction_context.config.chain,
+            &input_selector,
+            // don't shield dust
+            NonNegativeAmount::const_from_u64(10_000),
+            &self.get_transparent_addresses(),
+            // review! do we want to require confirmations?
+            // make it configurable?
+            0,
+        )
+        .map_err(ProposeShieldError::Component)?;
+
+        Ok(proposed_shield)
+    }
 
     /// Unstable function to expose the zip317 interface for development
     pub async fn propose_send(
@@ -227,56 +276,6 @@ impl LightClient {
             .iter()
             .map(|(_index, sk)| *sk)
             .collect::<Vec<_>>()
-    }
-
-    /// The shield operation consumes a proposal that transfers value
-    /// into the Orchard pool.
-    ///
-    /// The proposal is generated with this method, which operates on
-    /// the balance transparent pool, without other input.
-    /// In other words, shield does not take a user-specified amount
-    /// to shield, rather it consumes all transparent value in the wallet that
-    /// can be consumsed without costing more in zip317 fees than is being transferred.
-    pub(crate) async fn create_shield_proposal(
-        &self,
-    ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
-        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            None,
-            ShieldedProtocol::Orchard,
-        ); // review consider change strategy!
-
-        let input_selector = GISKit::new(
-            change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::default(),
-        );
-
-        let mut tmamt = self
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
-
-        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-            TxMapAndMaybeTrees,
-            ChainType,
-            GISKit,
-            TxMapAndMaybeTreesTraitError,
-        >(
-            &mut tmamt,
-            &self.wallet.transaction_context.config.chain,
-            &input_selector,
-            // don't shield dust
-            NonNegativeAmount::const_from_u64(10_000),
-            &self.get_transparent_addresses(),
-            // review! do we want to require confirmations?
-            // make it configurable?
-            0,
-        )
-        .map_err(ProposeShieldError::Component)?;
-
-        Ok(proposed_shield)
     }
 
     /// Unstable function to expose the zip317 interface for development
