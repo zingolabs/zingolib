@@ -87,7 +87,7 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub async fn create_send_proposal(
+    pub(crate) async fn create_send_proposal(
         &self,
         request: TransactionRequest,
     ) -> Result<TransferProposal, ProposeSendError> {
@@ -233,7 +233,7 @@ impl LightClient {
     /// into the Orchard pool.
     ///
     /// The proposal is generated with this method, which operates on
-    /// the balances in the wallet pools, without other input.
+    /// the balance transparent pool, without other input.
     /// In other words, shield does not take a user-specified amount
     /// to shield, rather it consumes all transparent value in the wallet that
     /// can be consumsed without costing more in zip317 fees than is being transferred.
