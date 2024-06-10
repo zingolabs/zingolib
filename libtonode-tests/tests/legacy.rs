@@ -2252,7 +2252,7 @@ mod slow {
             .unwrap();
 
         let client_2_saplingaddress = get_base_address_macro!(recipient, "sapling");
-        // Send three transfers in increasing 1000 zat increments
+        // Send three transfers in increasing 10,000 zat increments
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
@@ -2262,7 +2262,7 @@ mod slow {
                 .map(|n| {
                     (
                         client_2_saplingaddress.as_str(),
-                        n * 10000,
+                        n * 10_000,
                         Some(memos[(n - 1) as usize]),
                     )
                 })
@@ -2274,14 +2274,14 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
-        // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
-        // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
+        // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
+        // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
         // plus the transaction fee.
         from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
-                30000,
+                30_000,
                 Some("Sending back, should have 2 inputs"),
             )],
         )
