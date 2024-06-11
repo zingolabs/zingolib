@@ -357,34 +357,26 @@ pub mod fixtures {
     {
         let mut environment = CC::setup().await;
 
-        let primary = environment.fund_client_orchard(100_000).await;
+        let primary = environment.fund_client_orchard(200_000).await;
         let secondary = environment.create_client().await;
 
-        // Send three transfers in increasing 10_000 zat increments
+        // Send n=4 transfers in increasing 10_000 zat increments
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &primary,
             &secondary,
-            (1..=3).map(|n| (Shielded(Sapling), n * 10_000)).collect(),
+            (1..=4).map(|n| (Shielded(Sapling), n * 10_000)).collect(),
+        )
+        .await;
+
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &primary,
+            &secondary,
+            vec![(Shielded(Orchard), 40_000)],
         )
         .await;
         /*
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
-            .await
-            .unwrap();
-        // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
-        // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
-        // plus the transaction fee.
-        from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "unified"),
-                30_000,
-                Some("Sending back, should have 2 inputs"),
-            )],
-        )
-        .await
-        .unwrap();
         let client_2_notes = recipient.do_list_notes(false).await;
         // The 30_000 zat note to cover the value, plus another for the tx-fee.
         let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
