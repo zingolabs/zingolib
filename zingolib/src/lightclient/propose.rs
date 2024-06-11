@@ -194,7 +194,7 @@ impl LightClient {
         address: zcash_keys::address::Address,
         memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let spendable_balance = self.spendable_balance(address.clone()).await?;
+        let spendable_balance = self.get_spendable_shielded_balance(address.clone()).await?;
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
@@ -218,7 +218,7 @@ impl LightClient {
     /// Will return an error if this method fails to calculate the total wallet balance or create the
     /// proposal needed to calculate the fee
     // TODO: move spendable balance and create proposal to wallet layer
-    pub async fn spendable_balance(
+    pub async fn get_spendable_shielded_balance(
         &self,
         address: zcash_keys::address::Address,
     ) -> Result<NonNegativeAmount, ProposeSendError> {
