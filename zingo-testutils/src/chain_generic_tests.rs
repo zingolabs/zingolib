@@ -352,4 +352,105 @@ pub mod fixtures {
             send_value
         );
     }
+
+    /// In order to fund a transaction multiple notes may be selected and consumed.
+    /// The algorithm selects the smallest covering note(s).
+    pub async fn note_selection_order<CC>()
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+
+        let primary = environment.fund_client_orchard(100_000).await;
+        let secondary = environment.create_client().await;
+
+        // Send three transfers in increasing 10_000 zat increments
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &primary,
+            &secondary,
+            (1..=3).map(|n| (Shielded(Sapling), n * 10_000)).collect(),
+        )
+        .await;
+        /*
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+            .await
+            .unwrap();
+        // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
+        // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
+        // plus the transaction fee.
+        from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "unified"),
+                30_000,
+                Some("Sending back, should have 2 inputs"),
+            )],
+        )
+        .await
+        .unwrap();
+        let client_2_notes = recipient.do_list_notes(false).await;
+        // The 30_000 zat note to cover the value, plus another for the tx-fee.
+        let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
+            .as_fixed_point_u64(0)
+            .unwrap();
+        let second_value = client_2_notes["pending_sapling_notes"][1]["value"]
+            .as_fixed_point_u64(0)
+            .unwrap();
+        assert!(
+            first_value == 30_000u64 && second_value == 20_000u64
+                || first_value == 20_000u64 && second_value == 30_000u64
+        );
+        //);
+        // Because the above tx fee won't consume a full note, change will be sent back to 2.
+        // This implies that client_2 will have a total of 2 unspent notes:
+        //  * one (sapling) from client_1 sent above (and never used) + 1 (orchard) as change to itself
+        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 1);
+        assert_eq!(client_2_notes["unspent_orchard_notes"].len(), 1);
+        let change_note = client_2_notes["unspent_orchard_notes"]
+            .members()
+            .filter(|note| note["is_change"].as_bool().unwrap())
+            .collect::<Vec<_>>()[0];
+        // Because 2000 is the size of the second largest note.
+        assert_eq!(change_note["value"], 20000 - u64::from(MINIMUM_FEE));
+        let non_change_note_values = client_2_notes["unspent_sapling_notes"]
+            .members()
+            .filter(|note| !note["is_change"].as_bool().unwrap())
+            .map(extract_value_as_u64)
+            .collect::<Vec<_>>();
+        // client_2 got a total of 3000+2000+1000
+        // It sent 3000 to the client_1, and also
+        // paid the default transaction fee.
+        // In non change notes it has 1000.
+        // There is an outstanding 2000 that is marked as change.
+        // After sync the unspent_sapling_notes should go to 3000.
+        assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
+
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+            .await
+            .unwrap();
+        let client_2_post_transaction_notes = recipient.do_list_notes(false).await;
+        assert_eq!(
+            client_2_post_transaction_notes["pending_sapling_notes"].len(),
+            0
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_sapling_notes"].len(),
+            1
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_orchard_notes"].len(),
+            1
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_sapling_notes"]
+                .members()
+                .chain(client_2_post_transaction_notes["unspent_orchard_notes"].members())
+                .map(extract_value_as_u64)
+                .sum::<u64>(),
+            20000u64 // 10000 received and unused + (20000 - 10000 txfee)
+        );
+
+        */
+    }
 }
