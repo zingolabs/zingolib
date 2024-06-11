@@ -342,9 +342,8 @@ impl LightClient {
         let summaries = self.list_txsummaries().await;
         let mut memobytes_by_address = HashMap::new();
         for summary in summaries {
-            use ValueTransferKind::*;
             match summary.kind {
-                Sent {
+                ValueTransferKind::Sent {
                     recipient_address, ..
                 } => {
                     let address = recipient_address.encode();
@@ -354,7 +353,9 @@ impl LightClient {
                         .and_modify(|e| *e += bytes)
                         .or_insert(bytes);
                 }
-                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
+                ValueTransferKind::SendToSelf { .. }
+                | ValueTransferKind::Received { .. }
+                | ValueTransferKind::Fee { .. } => (),
             }
         }
         finsight::TotalMemoBytesToAddress(memobytes_by_address)
@@ -730,9 +731,8 @@ impl LightClient {
         let summaries = self.list_txsummaries().await;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
-            use ValueTransferKind::*;
             match summary.kind {
-                Sent {
+                ValueTransferKind::Sent {
                     amount,
                     recipient_address,
                 } => {
@@ -748,7 +748,7 @@ impl LightClient {
                             .push(amount);
                     };
                 }
-                Fee { amount } => {
+                ValueTransferKind::Fee { amount } => {
                     let fee_key = "fee".to_string();
                     if let std::collections::hash_map::Entry::Vacant(e) =
                         amount_by_address.entry(fee_key.clone())
@@ -761,7 +761,7 @@ impl LightClient {
                             .push(amount);
                     };
                 }
-                SendToSelf { .. } | Received { .. } => (),
+                ValueTransferKind::SendToSelf { .. } | ValueTransferKind::Received { .. } => (),
             }
         }
         finsight::ValuesSentToAddress(amount_by_address)

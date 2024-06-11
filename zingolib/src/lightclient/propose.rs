@@ -8,7 +8,7 @@ use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_client_backend::zip321::Zip321Error;
 use zcash_client_backend::ShieldedProtocol;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 
 use thiserror::Error;
 
@@ -18,6 +18,7 @@ use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
+use crate::wallet::send::change_memo_from_transaction_request;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 use zingoconfig::ChainType;
@@ -27,6 +28,25 @@ type GISKit = GreedyInputSelector<
     zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
 >;
 
+// This private helper is a very small DRY, but it has already corrected a minor
+// divergence in change strategy.
+//  Because shielding operations are never expected to create dust notes this change
+// is not a bugfix.
+fn build_default_giskit(memo: Option<MemoBytes>) -> GISKit {
+    let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+        zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+        memo,
+        ShieldedProtocol::Orchard,
+    ); // review consider change strategy!
+
+    GISKit::new(
+        change_strategy,
+        zcash_client_backend::fees::DustOutputPolicy::new(
+            zcash_client_backend::fees::DustAction::AllowDustChange,
+            None,
+        ),
+    )
+}
 /// Errors that can result from do_propose
 #[derive(Debug, Error)]
 pub enum ProposeSendError {
@@ -86,24 +106,13 @@ impl LightClient {
     /// Unstable function to expose the zip317 interface for development
     // TOdo: add correct functionality and doc comments / tests
     // TODO: Add migrate_sapling_to_orchard argument
-    pub async fn create_send_proposal(
+    pub(crate) async fn create_send_proposal(
         &self,
         request: TransactionRequest,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            None,
-            ShieldedProtocol::Orchard,
-        ); // review consider change strategy!
+        let memo = change_memo_from_transaction_request(&request);
 
-        let input_selector = GISKit::new(
-            change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::new(
-                zcash_client_backend::fees::DustAction::AllowDustChange,
-                None,
-            ),
-        );
-
+        let input_selector = build_default_giskit(Some(memo));
         let mut tmamt = self
             .wallet
             .transaction_context
@@ -126,6 +135,46 @@ impl LightClient {
         )
         .map_err(ProposeSendError::Proposal)
     }
+    /// The shield operation consumes a proposal that transfers value
+    /// into the Orchard pool.
+    ///
+    /// The proposal is generated with this method, which operates on
+    /// the balance transparent pool, without other input.
+    /// In other words, shield does not take a user-specified amount
+    /// to shield, rather it consumes all transparent value in the wallet that
+    /// can be consumsed without costing more in zip317 fees than is being transferred.
+    pub(crate) async fn create_shield_proposal(
+        &self,
+    ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
+        let input_selector = build_default_giskit(None);
+
+        let mut tmamt = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+
+        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
+            TxMapAndMaybeTrees,
+            ChainType,
+            GISKit,
+            TxMapAndMaybeTreesTraitError,
+        >(
+            &mut tmamt,
+            &self.wallet.transaction_context.config.chain,
+            &input_selector,
+            // don't shield dust
+            NonNegativeAmount::const_from_u64(10_000),
+            &self.get_transparent_addresses(),
+            // review! do we want to require confirmations?
+            // make it configurable?
+            0,
+        )
+        .map_err(ProposeShieldError::Component)?;
+
+        Ok(proposed_shield)
+    }
 
     /// Unstable function to expose the zip317 interface for development
     pub async fn propose_send(
@@ -145,7 +194,7 @@ impl LightClient {
         address: zcash_keys::address::Address,
         memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<TransferProposal, ProposeSendError> {
-        let spendable_balance = self.spendable_balance(address.clone()).await?;
+        let spendable_balance = self.get_spendable_shielded_balance(address.clone()).await?;
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
@@ -169,7 +218,7 @@ impl LightClient {
     /// Will return an error if this method fails to calculate the total wallet balance or create the
     /// proposal needed to calculate the fee
     // TODO: move spendable balance and create proposal to wallet layer
-    pub async fn spendable_balance(
+    pub async fn get_spendable_shielded_balance(
         &self,
         address: zcash_keys::address::Address,
     ) -> Result<NonNegativeAmount, ProposeSendError> {
@@ -224,56 +273,6 @@ impl LightClient {
             .iter()
             .map(|(_index, sk)| *sk)
             .collect::<Vec<_>>()
-    }
-
-    /// The shield operation consumes a proposal that transfers value
-    /// into the Orchard pool.
-    ///
-    /// The proposal is generated with this method, which operates on
-    /// the balances in the wallet pools, without other input.
-    /// In other words, shield does not take a user-specified amount
-    /// to shield, rather it consumes all transparent value in the wallet that
-    /// can be consumsed without costing more in zip317 fees than is being transferred.
-    pub(crate) async fn create_shield_proposal(
-        &self,
-    ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
-        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            None,
-            ShieldedProtocol::Orchard,
-        ); // review consider change strategy!
-
-        let input_selector = GISKit::new(
-            change_strategy,
-            zcash_client_backend::fees::DustOutputPolicy::default(),
-        );
-
-        let mut tmamt = self
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
-
-        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-            TxMapAndMaybeTrees,
-            ChainType,
-            GISKit,
-            TxMapAndMaybeTreesTraitError,
-        >(
-            &mut tmamt,
-            &self.wallet.transaction_context.config.chain,
-            &input_selector,
-            // don't shield dust
-            NonNegativeAmount::const_from_u64(10_000),
-            &self.get_transparent_addresses(),
-            // review! do we want to require confirmations?
-            // make it configurable?
-            0,
-        )
-        .map_err(ProposeShieldError::Component)?;
-
-        Ok(proposed_shield)
     }
 
     /// Unstable function to expose the zip317 interface for development
