@@ -355,19 +355,32 @@ pub mod fixtures {
     where
         CC: ConductChain,
     {
-        let mut environment = CC::setup().await;
+        let number_of_notes = 4;
 
-        let primary = environment.fund_client_orchard(200_000).await;
+        let transaction_1_sends = (1..=number_of_notes).map(|n| n * 10_000);
+
+        let expected_fee_for_transaction_1 = number_of_notes * 2 * MARGINAL_FEE.into_u64();
+        // let expected_funds_from_transaction_1 = oeui.map(x);
+
+        let mut environment = CC::setup().await;
+        let primary = environment
+            .fund_client_orchard(expected_fee_for_transaction_1)
+            .await;
         let secondary = environment.create_client().await;
 
         // Send n=4 transfers in increasing 10_000 zat increments
-        with_assertions::propose_send_bump_sync_recipient(
-            &mut environment,
-            &primary,
-            &secondary,
-            (1..=4).map(|n| (Shielded(Sapling), n * 10_000)).collect(),
-        )
-        .await;
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                transaction_1_sends
+                    .map(|value| (Shielded(Sapling), value))
+                    .collect()
+            )
+            .await,
+            number_of_notes * 2 * MARGINAL_FEE.into_u64()
+        );
 
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
