@@ -1,34 +1,43 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
-use std::fmt;
+use thiserror::Error;
 
 use crate::wallet::data::OutgoingTxData;
 
-/// Errors associated with calculating transaction fees
-#[derive(Debug)]
+/// Errors associated with transaction fee calculation
+#[derive(Debug, Error)]
 pub enum FeeError {
     /// Sapling notes spent in a transaction not found in the wallet
+    #[error("Sapling nullifier(s) {0:?} for this transaction not found in wallet. Is the wallet fully synced?")]
     SaplingSpendNotFound(sapling_crypto::Nullifier),
     /// Orchard notes spent in a transaction not found in the wallet
+    #[error("Orchard nullifier(s) {0:?} for this transaction not found in wallet. Is the wallet fully synced?")]
     OrchardSpendNotFound(orchard::note::Nullifier),
     /// Attempted to calculate a fee for a transaction received and not created by the wallet's spend capability
+    #[error("No inputs or outgoing transaction data found, indicating this transaction was received and not sent by this capability. Is the wallet fully synced?")]
     ReceivedTransaction,
     /// Outgoing tx data, but no spends found!
+    #[error("No inputs funded this transaction, but it has outgoing data! Is the wallet fully synced? {0:?}")]
     OutgoingWithoutSpends(Vec<OutgoingTxData>),
     /// Total explicit receiver value is larger than input value causing the unsigned integer to underflow
-    FeeUnderflow((u64, u64)),
+    #[error(
+        "Output value {explicit_output_value} is larger than total input value {input_value}. Is the wallet fully synced?"
+    )]
+    FeeUnderflow {
+        /// total value of all shielded notes and transparent outputs spent in a transaction
+        input_value: u64,
+        /// total value of all outputs to receivers including change
+        explicit_output_value: u64,
+    },
 }
 
-impl fmt::Display for FeeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            FeeError::OrchardSpendNotFound(n) => write!(f, "Orchard nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
-            FeeError::SaplingSpendNotFound(n) => write!(f, "Sapling nullifier(s) {:?} for this transaction not found in wallet. Is the wallet fully synced?", n),
-            FeeError::ReceivedTransaction => write!(f, "No inputs or outgoing transaction data found, indicating this transaction was received and not sent by this capability"),
-            FeeError::FeeUnderflow((input_value, explicit_output_value)) => write!(f, "Output value: {} is larger than total input value: {} Is the wallet fully synced?", explicit_output_value, input_value),
-            FeeError::OutgoingWithoutSpends(ov) =>  write!(f, "No inputs funded this transaction, but it has outgoing data! Is the wallet fully synced? {:?}", ov),
-        }
-    }
+/// Errors associated with balance calculation
+#[derive(Debug, Error)]
+pub enum BalanceError {
+    /// failed to retrieve full viewing key
+    #[error("failed to retrieve full viewing key.")]
+    NoFullViewingKey,
+    /// conversion failed
+    #[error("conversion failed. {0}")]
+    ConversionFailed(#[from] crate::utils::error::ConversionError),
 }
-
-impl std::error::Error for FeeError {}

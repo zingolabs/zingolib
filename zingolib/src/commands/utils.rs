@@ -105,7 +105,7 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
 // Parse the send arguments for `propose_send` when sending all funds from shielded pools.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
-// - 2 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
+// - 1 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
 #[cfg(feature = "zip317")]
 pub(super) fn parse_send_all_args(
     args: &[&str],
@@ -154,6 +154,48 @@ pub(super) fn parse_send_all_args(
     }
 
     Ok((address, memo))
+}
+
+// Parse the arguments for `spendable_balance`.
+// The arguments have two possible formats:
+// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>"}]'
+// - 1 argument for a single address. &["<address>"]
+#[cfg(feature = "zip317")]
+pub(super) fn parse_spendable_balance_args(
+    args: &[&str],
+    chain: &ChainType,
+) -> Result<Address, CommandError> {
+    let address: Address;
+
+    if args.len() != 1 {
+        return Err(CommandError::InvalidArguments);
+    }
+
+    if let Ok(addr) = address_from_str(args[0], chain) {
+        address = addr;
+    } else {
+        let json_args =
+            json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+
+        if !json_args.is_array() {
+            return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
+        }
+        if json_args.is_empty() {
+            return Err(CommandError::EmptyJsonArray);
+        }
+        let json_args = if json_args.len() == 1 {
+            json_args
+                .members()
+                .next()
+                .expect("should have a single json member")
+        } else {
+            return Err(CommandError::MultipleReceivers);
+        };
+
+        address = address_from_json(json_args, chain)?;
+    }
+
+    Ok(address)
 }
 
 // Checks send inputs do not contain memo's to transparent addresses.
