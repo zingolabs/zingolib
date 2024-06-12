@@ -412,6 +412,18 @@ pub mod fixtures {
             expected_fee_for_transaction_2
         );
 
+        let expected_debit_from_transaction_2 =
+            expected_fee_for_transaction_2 + value_from_transaction_2;
+        assert_eq!(
+            secondary
+                .query_sum_value(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::only_unspent(),
+                    pools: OutputPoolQuery::shielded(),
+                })
+                .await,
+            expected_value_from_transaction_1 - expected_debit_from_transaction_2
+        );
+
         // with_assertions::propose_send_bump_sync_recipient(
         //     &mut environment,
         //     &primary,
