@@ -42,11 +42,7 @@ fn has_unspent_shielded_outputs(
 ) -> bool {
     let unspent_shield_output_ids = transaction.query_for_ids(OutputQuery {
         spend_status: OutputSpendStatusQuery::only_unspent(),
-        pools: OutputPoolQuery {
-            transparent: false,
-            sapling: true,
-            orchard: true,
-        },
+        pools: OutputPoolQuery::shielded(),
     });
     !unspent_shield_output_ids.is_empty()
 }
