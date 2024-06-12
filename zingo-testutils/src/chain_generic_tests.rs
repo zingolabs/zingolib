@@ -394,9 +394,29 @@ pub mod fixtures {
             expected_value_from_transaction_1
         );
 
-        // toDo: these depend on the number_of_notes and value_from_transaction_2
-        let expected_inputs_for_transaction_2 = 2;
         let expected_orchard_contribution_for_transaction_2 = 2;
+
+        // toDo: these depend on the number_of_notes and value_from_transaction_2
+        let mut expected_highest_unselected = 10_000 * number_of_notes;
+        let mut expected_inputs_for_transaction_2 = 0;
+        let mut max_unselected_value_for_transaction_2: i64 =
+            (value_from_transaction_2 + expected_orchard_contribution_for_transaction_2) as i64;
+        loop {
+            // add an input
+            expected_inputs_for_transaction_2 += 1;
+            max_unselected_value_for_transaction_2 += MARGINAL_FEE.into_u64() as i64;
+            max_unselected_value_for_transaction_2 -= expected_highest_unselected as i64;
+            expected_highest_unselected -= 10_000;
+
+            if max_unselected_value_for_transaction_2 <= 0 {
+                // met target
+                break;
+            }
+            if expected_highest_unselected <= 0 {
+                // did not meet target. expect failure
+                break;
+            }
+        }
         let expected_fee_for_transaction_2 = (expected_inputs_for_transaction_2
             + expected_orchard_contribution_for_transaction_2)
             * MARGINAL_FEE.into_u64();
@@ -423,85 +443,14 @@ pub mod fixtures {
                 .await,
             expected_value_from_transaction_1 - expected_debit_from_transaction_2
         );
+
         let received_change_from_transaction_2 = secondary
             .query_sum_value(OutputQuery {
                 spend_status: OutputSpendStatusQuery::only_unspent(),
                 pools: OutputPoolQuery::one_pool(Shielded(Orchard)),
             })
             .await;
-        // if 10_000 or more change incoming, would have used a smaller note
+        // if 10_000 or more change, would have used a smaller note
         assert!(received_change_from_transaction_2 < 10_000);
-
-        // with_assertions::propose_send_bump_sync_recipient(
-        //     &mut environment,
-        //     &primary,
-        //     &secondary,
-        //     vec![(shielded(orchard), 40_000)],
-        // )
-        // .await;
-        /*
-        let client_2_notes = recipient.do_list_notes(false).await;
-        // The 30_000 zat note to cover the value, plus another for the tx-fee.
-        let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        let second_value = client_2_notes["pending_sapling_notes"][1]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        assert!(
-            first_value == 30_000u64 && second_value == 20_000u64
-                || first_value == 20_000u64 && second_value == 30_000u64
-        );
-        //);
-        // Because the above tx fee won't consume a full note, change will be sent back to 2.
-        // This implies that client_2 will have a total of 2 unspent notes:
-        //  * one (sapling) from client_1 sent above (and never used) + 1 (orchard) as change to itself
-        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 1);
-        assert_eq!(client_2_notes["unspent_orchard_notes"].len(), 1);
-        let change_note = client_2_notes["unspent_orchard_notes"]
-            .members()
-            .filter(|note| note["is_change"].as_bool().unwrap())
-            .collect::<Vec<_>>()[0];
-        // Because 2000 is the size of the second largest note.
-        assert_eq!(change_note["value"], 20000 - u64::from(MINIMUM_FEE));
-        let non_change_note_values = client_2_notes["unspent_sapling_notes"]
-            .members()
-            .filter(|note| !note["is_change"].as_bool().unwrap())
-            .map(extract_value_as_u64)
-            .collect::<Vec<_>>();
-        // client_2 got a total of 3000+2000+1000
-        // It sent 3000 to the client_1, and also
-        // paid the default transaction fee.
-        // In non change notes it has 1000.
-        // There is an outstanding 2000 that is marked as change.
-        // After sync the unspent_sapling_notes should go to 3000.
-        assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
-
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
-            .await
-            .unwrap();
-        let client_2_post_transaction_notes = recipient.do_list_notes(false).await;
-        assert_eq!(
-            client_2_post_transaction_notes["pending_sapling_notes"].len(),
-            0
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_sapling_notes"].len(),
-            1
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_orchard_notes"].len(),
-            1
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_sapling_notes"]
-                .members()
-                .chain(client_2_post_transaction_notes["unspent_orchard_notes"].members())
-                .map(extract_value_as_u64)
-                .sum::<u64>(),
-            20000u64 // 10000 received and unused + (20000 - 10000 txfee)
-        );
-
-        */
     }
 }
