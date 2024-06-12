@@ -348,4 +348,120 @@ pub mod fixtures {
             send_value
         );
     }
+
+    /// In order to fund a transaction multiple notes may be selected and consumed.
+    /// The algorithm selects the smallest covering note(s).
+    pub async fn note_selection_order<CC>()
+    where
+        CC: ConductChain,
+    {
+        // toDo: proptest different values for these first two variables
+        let number_of_notes = 4;
+        let value_from_transaction_2: u64 = 40_000;
+
+        let transaction_1_values = (1..=number_of_notes).map(|n| n * 10_000);
+
+        let expected_fee_for_transaction_1 = (number_of_notes + 2) * MARGINAL_FEE.into_u64();
+        let expected_value_from_transaction_1: u64 = transaction_1_values.clone().sum();
+
+        let mut environment = CC::setup().await;
+        let primary = environment
+            .fund_client_orchard(expected_fee_for_transaction_1 + expected_value_from_transaction_1)
+            .await;
+        let secondary = environment.create_client().await;
+
+        // Send number_of_notes transfers in increasing 10_000 zat increments
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                transaction_1_values
+                    .map(|value| (Shielded(Sapling), value))
+                    .collect()
+            )
+            .await,
+            expected_fee_for_transaction_1
+        );
+
+        assert_eq!(
+            secondary
+                .query_sum_value(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::only_unspent(),
+                    pools: OutputPoolQuery::one_pool(Shielded(Sapling)),
+                })
+                .await,
+            expected_value_from_transaction_1
+        );
+
+        let expected_orchard_contribution_for_transaction_2 = 2;
+
+        // calculate what will be spent
+        let mut expected_highest_unselected = 10_000 * number_of_notes;
+        let mut expected_inputs_for_transaction_2 = 0;
+        let mut max_unselected_value_for_transaction_2: i64 =
+            (value_from_transaction_2 + expected_orchard_contribution_for_transaction_2) as i64;
+        loop {
+            // add an input
+            expected_inputs_for_transaction_2 += 1;
+            max_unselected_value_for_transaction_2 += MARGINAL_FEE.into_u64() as i64;
+            max_unselected_value_for_transaction_2 -= expected_highest_unselected as i64;
+            expected_highest_unselected -= 10_000;
+
+            if max_unselected_value_for_transaction_2 <= 0 {
+                // met target
+                break;
+            }
+            if expected_highest_unselected <= 0 {
+                // did not meet target. expect error on send
+                break;
+            }
+        }
+        let expected_fee_for_transaction_2 = (expected_inputs_for_transaction_2
+            + expected_orchard_contribution_for_transaction_2)
+            * MARGINAL_FEE.into_u64();
+        // the second client selects notes to cover the transaction.
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), value_from_transaction_2)]
+            )
+            .await,
+            expected_fee_for_transaction_2
+        );
+
+        let expected_debit_from_transaction_2 =
+            expected_fee_for_transaction_2 + value_from_transaction_2;
+        assert_eq!(
+            secondary
+                .query_sum_value(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::only_unspent(),
+                    pools: OutputPoolQuery::shielded(),
+                })
+                .await,
+            expected_value_from_transaction_1 - expected_debit_from_transaction_2
+        );
+
+        let received_change_from_transaction_2 = secondary
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery::only_unspent(),
+                pools: OutputPoolQuery::one_pool(Shielded(Orchard)),
+            })
+            .await;
+        // if 10_000 or more change, would have used a smaller note
+        assert!(received_change_from_transaction_2 < 10_000);
+
+        assert_eq!(
+            secondary
+                .query_for_ids(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::only_spent(),
+                    pools: OutputPoolQuery::one_pool(Shielded(Sapling)),
+                })
+                .await
+                .len(),
+            expected_inputs_for_transaction_2 as usize
+        );
+    }
 }

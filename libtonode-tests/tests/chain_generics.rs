@@ -63,6 +63,10 @@ mod chain_generics {
     async fn send_required_dust() {
         fixtures::send_required_dust::<LibtonodeEnvironment>().await;
     }
+    #[tokio::test]
+    async fn note_selection_order() {
+        fixtures::note_selection_order::<LibtonodeEnvironment>().await;
+    }
     mod environment {
         use zcash_client_backend::PoolType;
 
