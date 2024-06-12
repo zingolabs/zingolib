@@ -2931,157 +2931,294 @@ mod slow {
         // app and are not recommended in production.
         // An example is a transaction that "shields" both transparent and
         // sapling value into the orchard value pool.
+        async fn fees(client: &LightClient) -> u64 {
+            client
+                .list_txsummaries()
+                .await
+                .into_iter()
+                .filter_map(|x| {
+                    if let zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } =
+                        x.kind
+                    {
+                        Some(amount)
+                    } else {
+                        None
+                    }
+                })
+                .sum::<u64>()
+        }
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
-        let pool_migration_client = client_builder
+        let client = client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
-        let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
-        let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
-        let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
+        let pmc_taddr = get_base_address_macro!(client, "transparent");
+        let pmc_sapling = get_base_address_macro!(client, "sapling");
+        let pmc_unified = get_base_address_macro!(client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 1)
             .await
             .unwrap();
-        macro_rules! bump_and_check_pmc {
-        (o: $o:tt s: $s:tt t: $t:tt) => {
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
-            check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
-        };
-    }
+        macro_rules! bump_and_check {
+            (o: $o:tt s: $s:tt t: $t:tt) => {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &client, 1).await.unwrap();
+                check_client_balances!(client, o:$o s:$s t:$t);
+            };
+        }
 
+        let mut test_dev_total_expected_fee = 0;
         // 1 pmc receives 50_000 transparent
-        //  # Expected Fees:
+        //  # Expected Fees to recipient:
         //    - legacy: 0
         //    - 317:    0
         from_inputs::quick_send(&sapling_faucet, vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 0 s: 0 t: 50_000);
+        bump_and_check!(o: 0 s: 0 t: 50_000);
+        assert_eq!(test_dev_total_expected_fee, 0);
 
         // 2 pmc shields 50_000 transparent, to orchard paying 10_000 fee
-        //  # Expected Fees:
+        //  t -> o
+        //  # Expected Fees to recipient:
         //    - legacy: 10_000
-        //    - 317:    20_000
-        pool_migration_client.quick_shield().await.unwrap();
-        bump_and_check_pmc!(o: 40_000 s: 0 t: 0);
+        //    - 317:    15_000 1-orchard + 1-dummy + 1-transparent in
+        client.quick_shield().await.unwrap();
+        bump_and_check!(o: 35_000 s: 0 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
         // 3 pmc receives 50_000 sapling
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    20_000
+        //  # Expected Fees to recipient:
+        //    - legacy: 0
+        //    - 317:    0
         from_inputs::quick_send(&sapling_faucet, vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 40_000 s: 50_000 t: 0);
+        bump_and_check!(o: 35_000 s: 50_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
         // 4 pmc shields 40_000 from sapling to orchard and pays 10_000 fee (should be 20_000 post zip317)
+        //  z -> o
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000
-        pool_migration_client.quick_shield().await.unwrap();
-        bump_and_check_pmc!(o: 80_000 s: 0 t: 0);
+        from_inputs::quick_send(&client, vec![(&pmc_unified, 30_000, None)])
+            .await
+            .unwrap();
+        bump_and_check!(o: 65_000 s: 0 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 5 Self send of 70_000 paying 10_000 fee
+        // 5 Self send of 55_000 paying 10_000 fee
+        //  o -> o
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 70_000, None)])
+        from_inputs::quick_send(&client, vec![(&pmc_unified, 55_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 70_000 s: 0 t: 0);
+        bump_and_check!(o: 55_000 s: 0 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 4 to transparent and sapling from orchard
+        // 6 to transparent and sapling from orchard
+        //  o -> tz
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
+        //    - 317:    5_000 for transparent out + 10_000 for orchard + 10_000 for sapling == 25_000
         from_inputs::quick_send(
-            &pool_migration_client,
-            vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
+            &client,
+            vec![(&pmc_taddr, 10_000, None), (&pmc_sapling, 10_000, None)],
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 0 s: 30_000 t: 30_000);
+        bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 25_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 5 Shield transparent and sapling to orchard
+        // 7 Receipt
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    disallowed (not *precisely*) BY 317...
-        pool_migration_client.quick_shield().await.unwrap();
-        bump_and_check_pmc!(o: 50_000 s: 0 t: 0);
+        from_inputs::quick_send(&sapling_faucet, vec![(&pmc_taddr, 500_000, None)])
+            .await
+            .unwrap();
+        bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 6 self send orchard to orchard
+        // 8 Shield transparent and sapling to orchard
+        //  t -> o
+        //  # Expected Fees:
+        //    - legacy: 10_000
+        //    - 317:    20_000 = 10_000 orchard and o-dummy + 10_000 (2 t-notes)
+        client.quick_shield().await.unwrap();
+        bump_and_check!(o: 500_000 s: 10_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+
+        // 9 self o send orchard to orchard
+        //  o -> o
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 20_000, None)])
+        from_inputs::quick_send(&client, vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 40_000 s: 0 t: 0);
+        bump_and_check!(o: 490_000 s: 10_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 7 Orchard to transparent self-send
+        // 10 Orchard and Sapling demote all to transparent self-send
+        //  oz -> t
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    (orchard = 10_000 + 5_000) 15_000
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_taddr, 20_000, None)])
+        //    - 317:    15_000 5-o (3 dust)- 10_000 orchard, 1 utxo 5_000 transparent
+        from_inputs::quick_send(&client, vec![(&pmc_taddr, 465_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 10_000 s: 0 t: 20_000);
+        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 8 Shield transparent to orchard
-        // 7 Orchard to transparent self-send
+        // 10 transparent to transparent
+        // Very explicit catch of reject sending from transparent to other than Self Orchard
+        match from_inputs::quick_send(&client, vec![(&pmc_taddr, 1, None)]).await {
+            Ok(_) => panic!(),
+            Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
+                ProposeSendError::Proposal(insufficient) => match insufficient {
+                    zcash_client_backend::data_api::error::Error::DataSource(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::CommitmentTree(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::NoteSelection(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::Proposal(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::ProposalNotSupported => panic!(),
+                    zcash_client_backend::data_api::error::Error::KeyNotRecognized => panic!(),
+                    zcash_client_backend::data_api::error::Error::BalanceError(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                        available,
+                        required,
+                    } => {
+                        assert_eq!(available, NonNegativeAmount::from_u64(20_000).unwrap());
+                        assert_eq!(required, NonNegativeAmount::from_u64(25_001).unwrap());
+                    }
+                    zcash_client_backend::data_api::error::Error::ScanRequired => panic!(),
+                    zcash_client_backend::data_api::error::Error::Builder(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::MemoForbidden => panic!(),
+                    zcash_client_backend::data_api::error::Error::UnsupportedChangeType(_) => {
+                        panic!()
+                    }
+                    zcash_client_backend::data_api::error::Error::NoSupportedReceivers(_) => {
+                        panic!()
+                    }
+                    zcash_client_backend::data_api::error::Error::NoSpendingKey(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::NoteMismatch(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::AddressNotRecognized(_) => {
+                        panic!()
+                    }
+                },
+                ProposeSendError::TransactionRequestFailed(_) => panic!(),
+                ProposeSendError::ZeroValueSendAll => panic!(),
+                ProposeSendError::BalanceError(_) => panic!(),
+            },
+            _ => panic!(),
+        }
+        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+
+        // 11 transparent to sapling
+        //  t -> z
+        // 10 transparent to transparent
+        // Very explicit catch of reject sending from transparent to other than Self Orchard
+        match from_inputs::quick_send(&client, vec![(&pmc_sapling, 50_000, None)]).await {
+            Ok(_) => panic!(),
+            Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
+                ProposeSendError::Proposal(insufficient) => match insufficient {
+                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                        available,
+                        required,
+                    } => {
+                        assert_eq!(available, NonNegativeAmount::from_u64(20_000).unwrap());
+                        assert_eq!(required, NonNegativeAmount::from_u64(70_000).unwrap());
+                    }
+                    _ => {
+                        panic!()
+                    }
+                },
+                _ => panic!(),
+            },
+            _ => panic!(),
+        }
+        // End of 11 no change
+        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+
+        // 12 Orchard and Sapling demote all to transparent self-send
+        //  t -> o
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    disallowed
-        pool_migration_client.quick_shield().await.unwrap();
-        bump_and_check_pmc!(o: 20_000 s: 0 t: 0);
+        //    - 317:    15_000 1t and 2o
+        client.quick_shield().await.unwrap();
+        bump_and_check!(o: 460_000 s: 10_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 6 sapling and orchard to orchard
-        from_inputs::quick_send(&sapling_faucet, vec![(&pmc_sapling, 20_000, None)])
+        // 13 Orchard and Sapling demote all to transparent self-send
+        //  o -> z
+        //  # Expected Fees:
+        //    - legacy: 10_000
+        //    - 317:    20_000 2o and 2s
+        from_inputs::quick_send(&client, vec![(&pmc_sapling, 10_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 20_000 s: 20_000 t: 0);
+        bump_and_check!(o: 430_000 s: 20_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 30_000, None)])
+        // 14 Orchard and Sapling demote all to transparent self-send
+        //  o -> o
+        //  # Expected Fees:
+        //    - legacy: 10_000
+        //    - 317:    10_000
+        from_inputs::quick_send(&client, vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 0 t: 0);
+        bump_and_check!(o: 420_000 s: 20_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // 7 tzo --> o
-        from_inputs::quick_send(
-            &sapling_faucet,
-            vec![(&pmc_taddr, 20_000, None), (&pmc_sapling, 20_000, None)],
-        )
-        .await
-        .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 20_000 t: 20_000);
-
-        pool_migration_client.quick_shield().await.unwrap();
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 40_000, None)])
+        // 14 Orchard and Sapling demote all to transparent self-send
+        //  zo -> o
+        //  # Expected Fees:
+        //    - legacy: 10_000
+        //    - 317:    20_000
+        from_inputs::quick_send(&client, vec![(&pmc_sapling, 400_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 50_000 s: 0 t: 0);
+        bump_and_check!(o: 10_000 s: 410_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        // Send from Sapling into empty Orchard pool
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_sapling, 40_000, None)])
+        // 15 Orchard and Sapling demote all to transparent self-send
+        //  z -> z
+        //  # Expected Fees:
+        //    - legacy: 10_000
+        //    - 317:    20_000  this transfer must require 4 sapling notes
+        from_inputs::quick_send(&client, vec![(&pmc_sapling, 380_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 0 s: 40_000 t: 0);
+        bump_and_check!(o: 10_000 s: 390_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
 
-        from_inputs::quick_send(&pool_migration_client, vec![(&pmc_unified, 30_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 30_000 s: 0 t: 0);
-        let mut total_value_to_addrs_iter = pool_migration_client
-            .do_total_value_to_address()
-            .await
-            .0
-            .into_iter();
-        assert_eq!(
-            total_value_to_addrs_iter.next(),
-            Some((String::from("fee"), u64::from((MINIMUM_FEE * 13).unwrap())))
-        );
+        let total_fee = fees(&client).await;
+        assert_eq!(total_fee, test_dev_total_expected_fee);
+        let mut total_value_to_addrs_iter = client.do_total_value_to_address().await.0.into_iter();
+        let from_finsight = total_value_to_addrs_iter.next().unwrap().1;
+        assert_eq!(from_finsight, total_fee);
         assert!(total_value_to_addrs_iter.next().is_none());
     }
     #[tokio::test]
