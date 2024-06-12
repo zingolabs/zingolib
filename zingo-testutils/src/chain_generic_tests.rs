@@ -423,6 +423,14 @@ pub mod fixtures {
                 .await,
             expected_value_from_transaction_1 - expected_debit_from_transaction_2
         );
+        let received_change_from_transaction_2 = secondary
+            .query_sum_value(OutputQuery {
+                spend_status: OutputSpendStatusQuery::only_unspent(),
+                pools: OutputPoolQuery::one_pool(Shielded(Orchard)),
+            })
+            .await;
+        // if 10_000 or more change incoming, would have used a smaller note
+        assert!(received_change_from_transaction_2 < 10_000);
 
         // with_assertions::propose_send_bump_sync_recipient(
         //     &mut environment,
