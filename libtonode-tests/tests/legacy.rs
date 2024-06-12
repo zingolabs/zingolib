@@ -2428,6 +2428,9 @@ mod slow {
         )
         .await
         .unwrap();
+        let fees = get_fees_paid_by_client(&recipient).await;
+        assert_eq!(value - fees, 90_000);
+        let balance_minus_step_one_fees = value - fees;
 
         // 3a. stash zcashd state
         log::debug!(
@@ -2494,33 +2497,37 @@ mod slow {
         .first()
         .to_string();
 
-        // Sync recipient
-        recipient.do_sync(false).await.unwrap();
-        dbg!(
-            &recipient
+        let second_transaction_fee;
+        {
+            let tmds = recipient
                 .wallet
                 .transaction_context
                 .transaction_metadata_set
                 .read()
-                .await
-                .witness_trees()
-                .unwrap()
-                .witness_tree_orchard
-        );
+                .await;
+            let record = tmds
+                .transaction_records_by_id
+                .get(
+                    &crate::utils::conversion::txid_from_hex_encoded_str(&sent_transaction_id)
+                        .unwrap(),
+                )
+                .unwrap();
+            second_transaction_fee = tmds
+                .transaction_records_by_id
+                .calculate_transaction_fee(record)
+                .unwrap();
+            // Sync recipient
+        } // drop transaction_record references and tmds read lock
+        recipient.do_sync(false).await.unwrap();
 
         // 4b write down state before clearing the mempool
         let notes_before = recipient.do_list_notes(true).await;
         let transactions_before = recipient.do_list_transactions().await;
-        println!("Transactions before {}", transactions_before.pretty(2));
 
         // Sync recipient again. We assert this should be a no-op, as we just synced
         recipient.do_sync(false).await.unwrap();
         let post_sync_notes_before = recipient.do_list_notes(true).await;
         let post_sync_transactions_before = recipient.do_list_transactions().await;
-        println!(
-            "Transactions before, post_sync {}",
-            post_sync_transactions_before.pretty(2)
-        );
         assert_eq!(post_sync_notes_before, notes_before);
         assert_eq!(post_sync_transactions_before, transactions_before);
 
@@ -2589,7 +2596,7 @@ mod slow {
         assert_eq!(note["created_in_txid"], sent_transaction_id);
         assert_eq!(
             note["value"].as_u64().unwrap(),
-            value - sent_value - (2 * u64::from(MINIMUM_FEE)) - sent_to_self
+            balance_minus_step_one_fees - sent_value - second_transaction_fee - sent_to_self
         );
         assert!(note["pending"].as_bool().unwrap());
         assert_eq!(transactions.len(), 3);
