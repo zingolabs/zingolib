@@ -384,6 +384,16 @@ pub mod fixtures {
             expected_fee_for_transaction_1
         );
 
+        assert_eq!(
+            secondary
+                .query_sum_value(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::only_unspent(),
+                    pools: OutputPoolQuery::one_pool(Shielded(Sapling)),
+                })
+                .await,
+            expected_value_from_transaction_1
+        );
+
         // toDo: these depend on the number_of_notes and value_from_transaction_2
         let expected_inputs_for_transaction_2 = 2;
         let expected_orchard_contribution_for_transaction_2 = 2;
