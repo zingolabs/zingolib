@@ -92,11 +92,7 @@ impl TransactionRecordsById {
                     .iter()
                     .find(|note| note.output_index() == &Some(note_id.output_index() as u32))
                     .and_then(|note| {
-                        if note.spend_status_query(OutputSpendStatusQuery {
-                            unspent: true,
-                            pending_spent: false,
-                            spent: false,
-                        }) {
+                        if note.spend_status_query(OutputSpendStatusQuery::only_unspent()) {
                             note.witnessed_position().map(|pos| {
                                 zcash_client_backend::wallet::ReceivedNote::from_parts(
                                     note_id,

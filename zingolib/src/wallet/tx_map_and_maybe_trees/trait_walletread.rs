@@ -41,11 +41,7 @@ fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
     let unspent_shield_output_ids = transaction.query_for_ids(OutputQuery {
-        spend_status: OutputSpendStatusQuery {
-            unspent: true,
-            pending_spent: false,
-            spent: false,
-        },
+        spend_status: OutputSpendStatusQuery::only_unspent(),
         pools: OutputPoolQuery {
             transparent: false,
             sapling: true,

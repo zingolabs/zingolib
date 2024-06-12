@@ -323,11 +323,7 @@ impl InputSource for TransactionRecordsById {
                     }
                 })
                 .filter(|(_height, output)| {
-                    output.spend_status_query(OutputSpendStatusQuery {
-                        unspent: true,
-                        pending_spent: false,
-                        spent: false,
-                    })
+                    output.spend_status_query(OutputSpendStatusQuery::only_unspent())
                 })
         }) else {
             return Ok(None);
@@ -376,11 +372,7 @@ impl InputSource for TransactionRecordsById {
                             .all(|excluded| excluded != &output.to_outpoint())
                     })
                     .filter(|output| {
-                        output.spend_status_query(OutputSpendStatusQuery {
-                            unspent: true,
-                            pending_spent: false,
-                            spent: false,
-                        })
+                        output.spend_status_query(OutputSpendStatusQuery::only_unspent())
                     })
                     .filter_map(move |output| {
                         let value = match NonNegativeAmount::from_u64(output.value)
