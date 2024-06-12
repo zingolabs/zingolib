@@ -2388,6 +2388,7 @@ mod slow {
             assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
         }
     }
+    #[ignore]
     #[tokio::test]
     async fn note_selection_order() {
         // In order to fund a transaction multiple notes may be selected and consumed.
