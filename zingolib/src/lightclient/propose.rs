@@ -12,8 +12,8 @@ use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNega
 
 use thiserror::Error;
 
-use crate::data::proposal::ShieldProposal;
-use crate::data::proposal::TransferProposal;
+use crate::data::proposal::ProportionalFeeProposal;
+use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
@@ -109,7 +109,7 @@ impl LightClient {
     pub(crate) async fn create_send_proposal(
         &self,
         request: TransactionRequest,
-    ) -> Result<TransferProposal, ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let memo = change_memo_from_transaction_request(&request);
 
         let input_selector = build_default_giskit(Some(memo));
@@ -145,7 +145,7 @@ impl LightClient {
     /// can be consumsed without costing more in zip317 fees than is being transferred.
     pub(crate) async fn create_shield_proposal(
         &self,
-    ) -> Result<crate::data::proposal::ShieldProposal, ProposeShieldError> {
+    ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
         let input_selector = build_default_giskit(None);
 
         let mut tmamt = self
@@ -180,7 +180,7 @@ impl LightClient {
     pub async fn propose_send(
         &self,
         request: TransactionRequest,
-    ) -> Result<TransferProposal, ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let proposal = self.create_send_proposal(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
@@ -193,7 +193,7 @@ impl LightClient {
         &self,
         address: zcash_keys::address::Address,
         memo: Option<zcash_primitives::memo::MemoBytes>,
-    ) -> Result<TransferProposal, ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let spendable_balance = self.get_spendable_shielded_balance(address.clone()).await?;
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
@@ -276,7 +276,9 @@ impl LightClient {
     }
 
     /// Unstable function to expose the zip317 interface for development
-    pub async fn propose_shield(&self) -> Result<ShieldProposal, ProposeShieldError> {
+    pub async fn propose_shield(
+        &self,
+    ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
         let proposal = self.create_shield_proposal().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))
             .await;
