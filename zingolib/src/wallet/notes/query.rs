@@ -30,6 +30,38 @@ impl OutputSpendStatusQuery {
             spent: true,
         }
     }
+    /// a query that only accepts unspent notes
+    pub fn only_unspent() -> Self {
+        Self {
+            unspent: true,
+            pending_spent: false,
+            spent: false,
+        }
+    }
+    /// a query that only accepts pending_spent notes
+    pub fn only_pending_spent() -> Self {
+        Self {
+            unspent: false,
+            pending_spent: true,
+            spent: false,
+        }
+    }
+    /// a query that only accepts spent notes
+    pub fn only_spent() -> Self {
+        Self {
+            unspent: false,
+            pending_spent: false,
+            spent: true,
+        }
+    }
+    /// a query that accepts pending_spent or spent notes
+    pub fn spentish() -> Self {
+        Self {
+            unspent: false,
+            pending_spent: true,
+            spent: true,
+        }
+    }
 }
 
 /// Selects received notes by pool
@@ -46,10 +78,18 @@ pub struct OutputPoolQuery {
     pub orchard: bool,
 }
 impl OutputPoolQuery {
-    /// a query that accepts notes from any pool.
+    /// a query that accepts outputs from any pool.
     pub fn any() -> Self {
         Self {
             transparent: true,
+            sapling: true,
+            orchard: true,
+        }
+    }
+    /// a query that accepts notes from a shielded pool.
+    pub fn shielded() -> Self {
+        Self {
+            transparent: false,
             sapling: true,
             orchard: true,
         }
