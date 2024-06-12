@@ -696,7 +696,7 @@ mod slow {
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::{consensus::NetworkConstants, transaction::fees::zip317::MARGINAL_FEE};
-    use zingo_testutils::lightclient::from_inputs;
+    use zingo_testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::{
         lightclient::{propose::ProposeSendError, send::send_with_proposal::QuickSendError},
         wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
@@ -3048,22 +3048,6 @@ mod slow {
         // app and are not recommended in production.
         // An example is a transaction that "shields" both transparent and
         // sapling value into the orchard value pool.
-        async fn fees(client: &LightClient) -> u64 {
-            client
-                .list_txsummaries()
-                .await
-                .into_iter()
-                .filter_map(|x| {
-                    if let zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } =
-                        x.kind
-                    {
-                        Some(amount)
-                    } else {
-                        None
-                    }
-                })
-                .sum::<u64>()
-        }
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
@@ -3103,7 +3087,10 @@ mod slow {
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 35_000 s: 0 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 3 pmc receives 50_000 sapling
         //  # Expected Fees to recipient:
@@ -3114,7 +3101,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 35_000 s: 50_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 4 pmc shields 40_000 from sapling to orchard and pays 10_000 fee (should be 20_000 post zip317)
         //  z -> o
@@ -3126,7 +3116,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 65_000 s: 0 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 5 Self send of 55_000 paying 10_000 fee
         //  o -> o
@@ -3138,7 +3131,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 55_000 s: 0 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 6 to transparent and sapling from orchard
         //  o -> tz
@@ -3153,7 +3149,10 @@ mod slow {
         .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 25_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 7 Receipt
         //  # Expected Fees:
@@ -3164,7 +3163,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 8 Shield transparent and sapling to orchard
         //  t -> o
@@ -3174,7 +3176,10 @@ mod slow {
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 500_000 s: 10_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 9 self o send orchard to orchard
         //  o -> o
@@ -3186,7 +3191,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 490_000 s: 10_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 10 Orchard and Sapling demote all to transparent self-send
         //  oz -> t
@@ -3198,7 +3206,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 10 transparent to transparent
         // Very explicit catch of reject sending from transparent to other than Self Orchard
@@ -3243,7 +3254,10 @@ mod slow {
         }
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 11 transparent to sapling
         //  t -> z
@@ -3271,7 +3285,10 @@ mod slow {
         // End of 11 no change
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 12 Orchard and Sapling demote all to transparent self-send
         //  t -> o
@@ -3281,7 +3298,10 @@ mod slow {
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 460_000 s: 10_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 13 Orchard and Sapling demote all to transparent self-send
         //  o -> z
@@ -3293,7 +3313,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 430_000 s: 20_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 14 Orchard and Sapling demote all to transparent self-send
         //  o -> o
@@ -3305,7 +3328,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 420_000 s: 20_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 14 Orchard and Sapling demote all to transparent self-send
         //  zo -> o
@@ -3317,7 +3343,10 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 10_000 s: 410_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
         // 15 Orchard and Sapling demote all to transparent self-send
         //  z -> z
@@ -3329,9 +3358,12 @@ mod slow {
             .unwrap();
         bump_and_check!(o: 10_000 s: 390_000 t: 0);
         test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
-        assert_eq!(fees(&client).await, test_dev_total_expected_fee);
+        assert_eq!(
+            get_fees_paid_by_client(&client).await,
+            test_dev_total_expected_fee
+        );
 
-        let total_fee = fees(&client).await;
+        let total_fee = get_fees_paid_by_client(&client).await;
         assert_eq!(total_fee, test_dev_total_expected_fee);
         let mut total_value_to_addrs_iter = client.do_total_value_to_address().await.0.into_iter();
         let from_finsight = total_value_to_addrs_iter.next().unwrap().1;
