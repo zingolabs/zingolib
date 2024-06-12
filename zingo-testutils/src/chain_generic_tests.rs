@@ -357,7 +357,7 @@ pub mod fixtures {
     {
         // toDo: proptest different values for these first two variables
         let number_of_notes = 4;
-        let value_from_transaction_2: u64 = 65_000;
+        let value_from_transaction_2: u64 = 40_000;
 
         let transaction_1_values = (1..=number_of_notes).map(|n| n * 10_000);
 
@@ -384,12 +384,13 @@ pub mod fixtures {
             expected_fee_for_transaction_1
         );
 
-        // toDo: these depend on the number_of_notes
-        let expected_inputs_for_transaction_2 = 3;
+        // toDo: these depend on the number_of_notes and value_from_transaction_2
+        let expected_inputs_for_transaction_2 = 2;
         let expected_orchard_contribution_for_transaction_2 = 2;
         let expected_fee_for_transaction_2 = (expected_inputs_for_transaction_2
             + expected_orchard_contribution_for_transaction_2)
             * MARGINAL_FEE.into_u64();
+        // the second client selects notes to cover the transaction.
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
