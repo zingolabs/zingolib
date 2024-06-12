@@ -396,7 +396,7 @@ pub mod fixtures {
 
         let expected_orchard_contribution_for_transaction_2 = 2;
 
-        // toDo: these depend on the number_of_notes and value_from_transaction_2
+        // calculate what will be spent
         let mut expected_highest_unselected = 10_000 * number_of_notes;
         let mut expected_inputs_for_transaction_2 = 0;
         let mut max_unselected_value_for_transaction_2: i64 =
@@ -413,7 +413,7 @@ pub mod fixtures {
                 break;
             }
             if expected_highest_unselected <= 0 {
-                // did not meet target. expect failure
+                // did not meet target. expect error on send
                 break;
             }
         }
@@ -452,5 +452,16 @@ pub mod fixtures {
             .await;
         // if 10_000 or more change, would have used a smaller note
         assert!(received_change_from_transaction_2 < 10_000);
+
+        assert_eq!(
+            secondary
+                .query_for_ids(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::only_spent(),
+                    pools: OutputPoolQuery::one_pool(Shielded(Sapling)),
+                })
+                .await
+                .len(),
+            expected_inputs_for_transaction_2 as usize
+        );
     }
 }
