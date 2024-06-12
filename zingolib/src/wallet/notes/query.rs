@@ -30,6 +30,30 @@ impl OutputSpendStatusQuery {
             spent: true,
         }
     }
+    /// a query that only accepts unspent notes
+    pub fn only_unspent() -> Self {
+        Self {
+            unspent: true,
+            pending_spent: false,
+            spent: false,
+        }
+    }
+    /// a query that only accepts pending_spent notes
+    pub fn only_pending_spent() -> Self {
+        Self {
+            unspent: false,
+            pending_spent: true,
+            spent: false,
+        }
+    }
+    /// a query that only accepts spent notes
+    pub fn only_spent() -> Self {
+        Self {
+            unspent: false,
+            pending_spent: false,
+            spent: true,
+        }
+    }
 }
 
 /// Selects received notes by pool
