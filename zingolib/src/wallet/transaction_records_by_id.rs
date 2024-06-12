@@ -92,11 +92,7 @@ impl TransactionRecordsById {
                     .iter()
                     .find(|note| note.output_index() == &Some(note_id.output_index() as u32))
                     .and_then(|note| {
-                        if note.spend_status_query(OutputSpendStatusQuery {
-                            unspent: true,
-                            pending_spent: false,
-                            spent: false,
-                        }) {
+                        if note.spend_status_query(OutputSpendStatusQuery::only_unspent()) {
                             note.witnessed_position().map(|pos| {
                                 zcash_client_backend::wallet::ReceivedNote::from_parts(
                                     note_id,
@@ -196,11 +192,7 @@ impl TransactionRecordsById {
             // Select only spent or pending_spent notes.
             D::WalletNote::transaction_record_to_outputs_vec_query_mut(
                 transaction_metadata,
-                OutputSpendStatusQuery {
-                    unspent: false,
-                    pending_spent: true,
-                    spent: true,
-                },
+                OutputSpendStatusQuery::spentish(),
             )
             .iter_mut()
             .for_each(|nd| {
@@ -769,11 +761,7 @@ mod tests {
             .get(&txid_containing_valid_note_with_invalid_spends)
             .unwrap();
 
-        let query_for_spentish_notes = OutputSpendStatusQuery {
-            unspent: false,
-            pending_spent: true,
-            spent: true,
-        };
+        let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
         let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(OutputQuery {
             spend_status: query_for_spentish_notes,
             pools: OutputPoolQuery::any(),
@@ -1066,11 +1054,9 @@ mod tests {
             );
 
             assert_eq!(
-                if record.sapling_notes[i].spend_status_query(OutputSpendStatusQuery {
-                    unspent: true,
-                    pending_spent: false,
-                    spent: false
-                }) {
+                if record.sapling_notes[i]
+                    .spend_status_query(OutputSpendStatusQuery::only_unspent())
+                {
                     Some(zcash_client_backend::wallet::Note::Sapling(
                         record.sapling_notes[i].sapling_crypto_note.clone(),
                     ))
