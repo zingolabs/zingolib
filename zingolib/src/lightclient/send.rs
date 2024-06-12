@@ -198,18 +198,18 @@ pub mod send_with_proposal {
     #[derive(Debug, Error)]
     pub enum QuickSendError {
         #[error("propose send {0:?}")]
-        ProposeSend(ProposeSendError),
+        ProposeSend(#[from] ProposeSendError),
         #[error("send {0:?}")]
-        CompleteAndBroadcast(CompleteAndBroadcastError),
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
     pub enum QuickShieldError {
         #[error("propose shield {0:?}")]
-        Propose(ProposeShieldError),
+        Propose(#[from] ProposeShieldError),
         #[error("send {0:?}")]
-        CompleteAndBroadcast(CompleteAndBroadcastError),
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
     }
 
     impl LightClient {
@@ -331,25 +331,15 @@ pub mod send_with_proposal {
             &self,
             request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
-            let proposal = self
-                .create_send_proposal(request)
-                .await
-                .map_err(QuickSendError::ProposeSend)?;
-            self.complete_and_broadcast::<NoteId>(&proposal)
-                .await
-                .map_err(QuickSendError::CompleteAndBroadcast)
+            let proposal = self.create_send_proposal(request).await?;
+            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
         }
 
         /// Unstable function to expose the zip317 interface for development
         // TODO: add correct functionality and doc comments / tests
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
-            let proposal = self
-                .create_shield_proposal()
-                .await
-                .map_err(QuickShieldError::Propose)?;
-            self.complete_and_broadcast::<Infallible>(&proposal)
-                .await
-                .map_err(QuickShieldError::CompleteAndBroadcast)
+            let proposal = self.create_shield_proposal().await?;
+            Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
         }
     }
 
