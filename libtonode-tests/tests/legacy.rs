@@ -2238,6 +2238,7 @@ mod slow {
         let post_rescan_transactions = faucet.do_list_transactions().await;
         assert_eq!(transactions, post_rescan_transactions);
     }
+    #[ignore]
     #[tokio::test]
     async fn note_selection_order() {
         // In order to fund a transaction multiple notes may be selected and consumed.

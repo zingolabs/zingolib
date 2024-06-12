@@ -359,40 +359,59 @@ pub mod fixtures {
     where
         CC: ConductChain,
     {
+        // toDo: proptest different values for these first two variables
         let number_of_notes = 4;
+        let value_from_transaction_2: u64 = 65_000;
 
-        let transaction_1_sends = (1..=number_of_notes).map(|n| n * 10_000);
+        let transaction_1_values = (1..=number_of_notes).map(|n| n * 10_000);
 
-        let expected_fee_for_transaction_1 = number_of_notes * 2 * MARGINAL_FEE.into_u64();
-        // let expected_funds_from_transaction_1 = oeui.map(x);
+        let expected_fee_for_transaction_1 = (number_of_notes + 2) * MARGINAL_FEE.into_u64();
+        let expected_value_from_transaction_1: u64 = transaction_1_values.clone().sum();
 
         let mut environment = CC::setup().await;
         let primary = environment
-            .fund_client_orchard(expected_fee_for_transaction_1)
+            .fund_client_orchard(expected_fee_for_transaction_1 + expected_value_from_transaction_1)
             .await;
         let secondary = environment.create_client().await;
 
-        // Send n=4 transfers in increasing 10_000 zat increments
+        // Send number_of_notes transfers in increasing 10_000 zat increments
         assert_eq!(
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &primary,
                 &secondary,
-                transaction_1_sends
+                transaction_1_values
                     .map(|value| (Shielded(Sapling), value))
                     .collect()
             )
             .await,
-            number_of_notes * 2 * MARGINAL_FEE.into_u64()
+            expected_fee_for_transaction_1
         );
 
-        with_assertions::propose_send_bump_sync_recipient(
-            &mut environment,
-            &primary,
-            &secondary,
-            vec![(Shielded(Orchard), 40_000)],
-        )
-        .await;
+        // toDo: these depend on the number_of_notes
+        let expected_inputs_for_transaction_2 = 3;
+        let expected_orchard_contribution_for_transaction_2 = 2;
+        let expected_fee_for_transaction_2 = (expected_inputs_for_transaction_2
+            + expected_orchard_contribution_for_transaction_2)
+            * MARGINAL_FEE.into_u64();
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &primary,
+                vec![(Shielded(Orchard), value_from_transaction_2)]
+            )
+            .await,
+            expected_fee_for_transaction_2
+        );
+
+        // with_assertions::propose_send_bump_sync_recipient(
+        //     &mut environment,
+        //     &primary,
+        //     &secondary,
+        //     vec![(shielded(orchard), 40_000)],
+        // )
+        // .await;
         /*
         let client_2_notes = recipient.do_list_notes(false).await;
         // The 30_000 zat note to cover the value, plus another for the tx-fee.
