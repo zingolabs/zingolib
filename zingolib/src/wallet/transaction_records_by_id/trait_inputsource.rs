@@ -444,11 +444,9 @@ mod tests {
                 .get_spendable_note(txid, ShieldedProtocol::Sapling, i as u32)
                 .unwrap();
             assert_eq!(
-                if record.sapling_notes[i].spend_status_query(OutputSpendStatusQuery {
-                    unspent: true,
-                    pending_spent: false,
-                    spent: false
-                }) {
+                if record.sapling_notes[i]
+                    .spend_status_query(OutputSpendStatusQuery::only_unspent())
+                {
                     Some(zcash_client_backend::wallet::Note::Sapling(
                         record.sapling_notes[i].sapling_crypto_note.clone(),
                     ))

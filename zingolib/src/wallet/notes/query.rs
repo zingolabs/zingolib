@@ -54,6 +54,14 @@ impl OutputSpendStatusQuery {
             spent: true,
         }
     }
+    /// a query that accepts pending_spent or spent notes
+    pub fn spentish() -> Self {
+        Self {
+            unspent: false,
+            pending_spent: true,
+            spent: true,
+        }
+    }
 }
 
 /// Selects received notes by pool
