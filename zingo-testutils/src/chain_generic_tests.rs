@@ -341,11 +341,7 @@ pub mod fixtures {
         assert_eq!(
             recipient
                 .query_sum_value(OutputQuery {
-                    spend_status: OutputSpendStatusQuery {
-                        unspent: true,
-                        pending_spent: false,
-                        spent: false,
-                    },
+                    spend_status: OutputSpendStatusQuery::only_unspent(),
                     pools: OutputPoolQuery::one_pool(pooltype),
                 })
                 .await,
