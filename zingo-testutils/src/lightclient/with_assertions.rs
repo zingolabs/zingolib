@@ -29,6 +29,7 @@ where
 
     environment.bump_chain().await;
 
+    assert_send_outputs_match_sender(client, &proposal, &txids).await;
     client.do_sync(false).await.unwrap();
 
     assert_send_outputs_match_sender(client, &proposal, &txids).await
@@ -71,6 +72,7 @@ where
     recipient.do_sync(false).await.unwrap();
     assert_send_outputs_match_recipient(recipient, &proposal, &txids).await;
 
+    assert_send_outputs_match_sender(sender, &proposal, &txids).await;
     sender.do_sync(false).await.unwrap();
     assert_send_outputs_match_sender(sender, &proposal, &txids).await
 }
@@ -91,6 +93,7 @@ where
 
     environment.bump_chain().await;
 
+    assert_send_outputs_match_sender(client, &proposal, &txids).await;
     client.do_sync(false).await.unwrap();
 
     assert_send_outputs_match_sender(client, &proposal, &txids).await
