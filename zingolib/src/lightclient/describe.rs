@@ -109,6 +109,8 @@ impl LightClient {
     /// Returns the wallet balance, broken out into several figures that are expected to be meaningful to the user.
     /// # Parameters
     /// * `auto_shielding` - if true, UTXOs will be considered immature rather than spendable.
+    #[allow(deprecated)]
+    #[deprecated(note = "uses unstable deprecated functions")]
     pub async fn get_user_balances(
         &self,
         auto_shielding: bool,
@@ -569,7 +571,6 @@ impl LightClient {
                             "created_in_txid"    => format!("{}", transaction_id.clone()),
                             "value"              => note_metadata.sapling_crypto_note.value().inner(),
                             "pending"        => !transaction_metadata.status.is_confirmed(),
-                            "is_change"          => note_metadata.is_change,
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
@@ -613,7 +614,6 @@ impl LightClient {
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => orch_note_metadata.orchard_crypto_note.value().inner(),
                             "pending"        => !transaction_metadata.status.is_confirmed(),
-                            "is_change"          => orch_note_metadata.is_change,
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
@@ -660,7 +660,6 @@ impl LightClient {
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => utxo.value,
                             "scriptkey"          => hex::encode(utxo.script.clone()),
-                            "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
                             "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spent"              => utxo.spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => utxo.spent().map(|(_, h)| h),
