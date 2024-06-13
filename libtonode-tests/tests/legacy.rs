@@ -1833,41 +1833,44 @@ mod slow {
         )
         .await
         .unwrap();
-
-        assert_eq!(recipient.do_list_transactions().await.len(), 1);
-        let spent_value = 250;
-
-        // Construct transaction to wallet-external recipient-address.
-        let exit_zaddr = get_base_address_macro!(faucet, "sapling");
-        let spent_txid = from_inputs::send(&recipient, vec![(&exit_zaddr, spent_value, None)])
-            .await
-            .unwrap();
-        //.first()
-        //.to_string();
+        // The initial funding is now received by the recipient, and called receipt.
         let receipt = recipient.do_list_transactions().await[0].clone();
-
-        assert_eq!(recipient.do_list_transactions().await.len(), 2);
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        assert_eq!(recipient.do_list_transactions().await.len(), 2);
-        // 5. Check the transaction list to make sure we got all transactions
-        let list = recipient.do_list_transactions().await;
-
         assert_eq!(receipt["block_height"].as_u64().unwrap(), 5);
         assert_eq!(receipt["txid"], txid.to_string());
         assert_eq!(receipt["amount"].as_i64().unwrap(), (value as i64));
 
-        assert_eq!(list[1]["block_height"].as_u64().unwrap(), 6);
-        assert_eq!(list[1]["txid"], spent_txid);
+        // The recipient, not sends a z->z tx of 250
+        let spent_value = 250;
+
+        // Construct transaction to wallet-external recipient-address.
+        let exit_zaddr = get_base_address_macro!(faucet, "sapling");
+        assert_eq!(recipient.do_list_transactions().await.len(), 1);
+        let spent_txid = from_inputs::send(&recipient, vec![(&exit_zaddr, spent_value, None)])
+            .await
+            .unwrap();
         assert_eq!(recipient.do_list_transactions().await.len(), 2);
+        //.first()
+        //.to_string();
+
+        let sap_to_ext_sap = recipient.do_list_transactions().await[1].clone();
+        assert_eq!(sap_to_ext_sap["block_height"].as_u64().unwrap(), 6);
+        assert_eq!(sap_to_ext_sap["txid"], spent_txid);
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
         assert_eq!(
-            list[1]["amount"].as_i64().unwrap(),
+            sap_to_ext_sap["amount"].as_i64().unwrap(),
             -((spent_value + u64::from(MINIMUM_FEE)) as i64)
         );
-        assert_eq!(list[1]["outgoing_metadata"][0]["address"], exit_zaddr);
         assert_eq!(
-            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            sap_to_ext_sap["outgoing_metadata"][0]["address"],
+            exit_zaddr
+        );
+        assert_eq!(
+            sap_to_ext_sap["outgoing_metadata"][0]["value"]
+                .as_u64()
+                .unwrap(),
             spent_value
         );
     }
