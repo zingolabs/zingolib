@@ -197,11 +197,7 @@ impl ZingoConfigBuilder {
 
     /// TODO: Add Doc Comment Here!
     pub fn create(&self) -> ZingoConfig {
-        let lightwalletd_uri = if let Some(uri) = self.lightwalletd_uri.clone() {
-            uri
-        } else {
-            http::Uri::default()
-        };
+        let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(lightwalletd_uri)),
             chain: self.chain,
