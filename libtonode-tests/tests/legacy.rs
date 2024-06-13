@@ -1865,6 +1865,9 @@ mod slow {
                 .unwrap(),
             spent_value
         );
+        let observed_omd = json::stringify(sap_to_ext_sap["outgoing_metadata"].clone());
+        let expected_omd = r#"[{"address":"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p","value":250,"memo":null}]"#;
+        assert_eq!(observed_omd, expected_omd);
     }
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
