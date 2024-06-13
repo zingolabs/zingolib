@@ -1817,10 +1817,6 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        // Give the faucet a block reward
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
         let value = 123_456;
 
         // Send some sapling value to the recipient
@@ -1835,7 +1831,7 @@ mod slow {
         .unwrap();
         // The initial funding is now received by the recipient, and called receipt.
         let receipt = recipient.do_list_transactions().await[0].clone();
-        assert_eq!(receipt["block_height"].as_u64().unwrap(), 5);
+        assert_eq!(receipt["block_height"].as_u64().unwrap(), 4);
         assert_eq!(receipt["txid"], txid.to_string());
         assert_eq!(receipt["amount"].as_i64().unwrap(), (value as i64));
 
@@ -1853,12 +1849,8 @@ mod slow {
         //.to_string();
 
         let sap_to_ext_sap = recipient.do_list_transactions().await[1].clone();
-        assert_eq!(sap_to_ext_sap["block_height"].as_u64().unwrap(), 6);
+        assert_eq!(sap_to_ext_sap["block_height"].as_u64().unwrap(), 5);
         assert_eq!(sap_to_ext_sap["txid"], spent_txid);
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-
         assert_eq!(
             sap_to_ext_sap["amount"].as_i64().unwrap(),
             -((spent_value + u64::from(MINIMUM_FEE)) as i64)
