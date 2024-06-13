@@ -123,10 +123,11 @@ impl LightClient {
         let mut consumer_ui_notes = tmds.transaction_records_by_id
             .iter()
             .flat_map(|(txid, wallet_transaction)| {
+                let is_received_transaction = tmds.transaction_records_by_id.transaction_is_received(wallet_transaction).expect("To not hit a fee error!");
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
                 let total_transparent_received = wallet_transaction.transparent_outputs.iter().map(|u| u.value).sum::<u64>();
-                if wallet_transaction.is_outgoing_transaction() {
+                if !is_received_transaction {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
                     consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received));
@@ -147,7 +148,7 @@ impl LightClient {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
 
-                        if !wallet_transaction.is_outgoing_transaction() {
+                        if is_received_transaction {
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
                             transaction.insert("amount", old_amount + net_transparent_value).unwrap();

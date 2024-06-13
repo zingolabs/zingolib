@@ -246,13 +246,6 @@ impl TransactionRecord {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    // TODO: This is incorrect in the edge case where where we have a send-to-self with
-    // no text memo and 0-value fee
-    pub fn is_outgoing_transaction(&self) -> bool {
-        (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
-    }
-
     /// This means there's at least one note that adds funds
     /// to this capabilities control
     pub fn is_incoming_transaction(&self) -> bool {
@@ -793,7 +786,6 @@ mod tests {
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
         assert_eq!(new.total_transparent_value_spent, 0);
-        assert!(!new.is_outgoing_transaction());
         assert!(!new.is_incoming_transaction());
         // assert_eq!(new.net_spent(), 0);
         assert_eq!(
