@@ -382,6 +382,36 @@ impl TransactionRecordsById {
             .map(TransactionRecord::total_value_spent)
             .unwrap_or(0)
     }
+    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
+    // transaction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
+    //
+    // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "uses unstable deprecated functions")]
+    pub fn check_notes_mark_change(&mut self, txid: &TxId) {
+        //TODO: Incorrect with a 0-value fee somehow
+        if self.total_funds_spent_in(txid) > 0 {
+            if let Some(transaction_metadata) = self.get_mut(txid) {
+                Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
+                Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);
+            }
+        }
+    }
+    fn mark_notes_as_change_for_pool<Note: crate::wallet::notes::ShieldedNoteInterface>(
+        notes: &mut [Note],
+    ) {
+        notes.iter_mut().for_each(|n| {
+            *n.is_change_mut() = match n.memo() {
+                Some(zcash_primitives::memo::Memo::Text(_)) => false,
+                Some(
+                    zcash_primitives::memo::Memo::Empty
+                    | zcash_primitives::memo::Memo::Arbitrary(_)
+                    | zcash_primitives::memo::Memo::Future(_),
+                )
+                | None => true,
+            }
+        });
+    }
     pub(crate) fn create_modify_get_transaction_metadata(
         &mut self,
         txid: &TxId,
