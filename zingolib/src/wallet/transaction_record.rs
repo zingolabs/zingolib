@@ -160,7 +160,7 @@ impl TransactionRecord {
                     if let Some(output_index) = note.output_index {
                         set.push(OutputId::from_parts(
                             self.txid,
-                            PoolType::Transparent,
+                            PoolType::Shielded(Sapling),
                             output_index,
                         ));
                     }
@@ -173,7 +173,7 @@ impl TransactionRecord {
                     if let Some(output_index) = note.output_index {
                         set.push(OutputId::from_parts(
                             self.txid,
-                            PoolType::Transparent,
+                            PoolType::Shielded(Orchard),
                             output_index,
                         ));
                     }
