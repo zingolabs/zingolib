@@ -11,7 +11,7 @@ zingo-testutils = { path = "../zingo-testutils" }
 clap = { workspace = true }
 http = { workspace = true }
 
-rustyline = "11.0.0"
-log = "0.4.17"
-shellwords = "1.1.0"
-json = "0.12.4"
+rustyline = { workspace = true }
+log = { workspace = true }
+shellwords = { workspace = true }
+json = { workspace = true }
