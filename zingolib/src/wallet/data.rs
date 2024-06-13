@@ -10,7 +10,6 @@ use prost::Message;
 
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use std::usize;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 
 use zcash_encoding::{Optional, Vector};
