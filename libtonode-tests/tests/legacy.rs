@@ -1855,16 +1855,6 @@ mod slow {
             sap_to_ext_sap["amount"].as_i64().unwrap(),
             -((spent_value + u64::from(MINIMUM_FEE)) as i64)
         );
-        assert_eq!(
-            sap_to_ext_sap["outgoing_metadata"][0]["address"],
-            exit_zaddr
-        );
-        assert_eq!(
-            sap_to_ext_sap["outgoing_metadata"][0]["value"]
-                .as_u64()
-                .unwrap(),
-            spent_value
-        );
         let observed_omd = json::stringify(sap_to_ext_sap["outgoing_metadata"].clone());
         let expected_omd = r#"[{"address":"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p","value":250,"memo":null}]"#;
         assert_eq!(observed_omd, expected_omd);
