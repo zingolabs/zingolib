@@ -1841,23 +1841,24 @@ mod slow {
         // Construct transaction to wallet-external recipient-address.
         let exit_zaddr = get_base_address_macro!(faucet, "sapling");
         assert_eq!(recipient.do_list_transactions().await.len(), 1);
-        let spent_txid = from_inputs::send(&recipient, vec![(&exit_zaddr, spent_value, None)])
-            .await
-            .unwrap();
+        let spent_txid =
+            from_inputs::quick_send(&recipient, vec![(&exit_zaddr, spent_value, None)])
+                .await
+                .unwrap()
+                .first()
+                .to_string();
         assert_eq!(recipient.do_list_transactions().await.len(), 2);
-        //.first()
-        //.to_string();
 
         let sap_to_ext_sap = recipient.do_list_transactions().await[1].clone();
         assert_eq!(sap_to_ext_sap["block_height"].as_u64().unwrap(), 5);
         assert_eq!(sap_to_ext_sap["txid"], spent_txid);
+        let observed_omd = json::stringify(sap_to_ext_sap["outgoing_metadata"].clone());
+        let expected_omd = r#"[{"address":"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p","value":250,"memo":null}]"#;
+        assert_eq!(observed_omd, expected_omd);
         assert_eq!(
             sap_to_ext_sap["amount"].as_i64().unwrap(),
             -((spent_value + u64::from(MINIMUM_FEE)) as i64)
         );
-        let observed_omd = json::stringify(sap_to_ext_sap["outgoing_metadata"].clone());
-        let expected_omd = r#"[{"address":"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p","value":250,"memo":null}]"#;
-        assert_eq!(observed_omd, expected_omd);
     }
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
