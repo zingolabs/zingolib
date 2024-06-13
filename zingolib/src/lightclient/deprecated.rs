@@ -112,13 +112,15 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_list_transactions(&self) -> JsonValue {
-        // Create a list of TransactionItems from wallet transactions
-        let mut consumer_ui_notes = self
+        // Get the tmds lock here so that we can refer to transaction_records_by_ids multiple times.
+        let tmds = self
             .wallet
-            .transaction_context.transaction_metadata_set
+            .transaction_context
+            .transaction_metadata_set
             .read()
-            .await
-            .transaction_records_by_id
+            .await;
+        // Create a list of TransactionItems from wallet transactions
+        let mut consumer_ui_notes = tmds.transaction_records_by_id
             .iter()
             .flat_map(|(txid, wallet_transaction)| {
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
