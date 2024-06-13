@@ -1821,7 +1821,7 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        let value = 100_000;
+        let value = 123_456;
 
         // Send some sapling value to the recipient
         let txid = zingo_testutils::send_value_between_clients_and_sync(
@@ -1834,29 +1834,33 @@ mod slow {
         .await
         .unwrap();
 
+        assert_eq!(recipient.do_list_transactions().await.len(), 1);
         let spent_value = 250;
 
         // Construct transaction to wallet-external recipient-address.
         let exit_zaddr = get_base_address_macro!(faucet, "sapling");
-        let spent_txid =
-            from_inputs::quick_send(&recipient, vec![(&exit_zaddr, spent_value, None)])
-                .await
-                .unwrap()
-                .first()
-                .to_string();
+        let spent_txid = from_inputs::send(&recipient, vec![(&exit_zaddr, spent_value, None)])
+            .await
+            .unwrap();
+        //.first()
+        //.to_string();
+        let receipt = recipient.do_list_transactions().await[0].clone();
 
+        assert_eq!(recipient.do_list_transactions().await.len(), 2);
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
+        assert_eq!(recipient.do_list_transactions().await.len(), 2);
         // 5. Check the transaction list to make sure we got all transactions
         let list = recipient.do_list_transactions().await;
 
-        assert_eq!(list[0]["block_height"].as_u64().unwrap(), 5);
-        assert_eq!(list[0]["txid"], txid.to_string());
-        assert_eq!(list[0]["amount"].as_i64().unwrap(), (value as i64));
+        assert_eq!(receipt["block_height"].as_u64().unwrap(), 5);
+        assert_eq!(receipt["txid"], txid.to_string());
+        assert_eq!(receipt["amount"].as_i64().unwrap(), (value as i64));
 
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 6);
         assert_eq!(list[1]["txid"], spent_txid);
+        assert_eq!(recipient.do_list_transactions().await.len(), 2);
         assert_eq!(
             list[1]["amount"].as_i64().unwrap(),
             -((spent_value + u64::from(MINIMUM_FEE)) as i64)
