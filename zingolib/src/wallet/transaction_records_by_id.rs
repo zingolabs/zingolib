@@ -9,7 +9,7 @@ use crate::wallet::{
         OrchardNote, OutputInterface, SaplingNote,
     },
     traits::{DomainWalletExt, Recipient},
-    transaction_record::TransactionRecord,
+    transaction_record::{SendType, TransactionKind, TransactionRecord},
 };
 use std::collections::HashMap;
 
@@ -211,6 +211,28 @@ impl TransactionRecordsById {
         });
     }
 
+    fn find_sapling_spend(&self, nullifier: &sapling_crypto::Nullifier) -> Option<&SaplingNote> {
+        self.values()
+            .flat_map(|wallet_transaction_record| wallet_transaction_record.sapling_notes())
+            .find(|&note| {
+                if let Some(nf) = note.nullifier() {
+                    nf == *nullifier
+                } else {
+                    false
+                }
+            })
+    }
+    fn find_orchard_spend(&self, nullifier: &orchard::note::Nullifier) -> Option<&OrchardNote> {
+        self.values()
+            .flat_map(|wallet_transaction_record| wallet_transaction_record.orchard_notes())
+            .find(|&note| {
+                if let Some(nf) = note.nullifier() {
+                    nf == *nullifier
+                } else {
+                    false
+                }
+            })
+    }
     fn get_sapling_notes_spent_in_tx(
         &self,
         query: &TransactionRecord,
@@ -219,15 +241,7 @@ impl TransactionRecordsById {
             .spent_sapling_nullifiers()
             .iter()
             .map(|nullifier| {
-                self.values()
-                    .flat_map(|wallet_transaction_record| wallet_transaction_record.sapling_notes())
-                    .find(|&note| {
-                        if let Some(nf) = note.nullifier() {
-                            nf == *nullifier
-                        } else {
-                            false
-                        }
-                    })
+                self.find_sapling_spend(nullifier)
                     .ok_or(FeeError::SaplingSpendNotFound(*nullifier))
             })
             .collect::<Result<Vec<&SaplingNote>, FeeError>>()
@@ -240,38 +254,12 @@ impl TransactionRecordsById {
             .spent_orchard_nullifiers()
             .iter()
             .map(|nullifier| {
-                self.values()
-                    .flat_map(|wallet_transaction_record| wallet_transaction_record.orchard_notes())
-                    .find(|&note| {
-                        if let Some(nf) = note.nullifier() {
-                            nf == *nullifier
-                        } else {
-                            false
-                        }
-                    })
+                self.find_orchard_spend(nullifier)
                     .ok_or(FeeError::OrchardSpendNotFound(*nullifier))
             })
             .collect::<Result<Vec<&OrchardNote>, FeeError>>()
     }
-    /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
-    /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
-    /// the Zcash protocol
-    ///  TODO:   Test and handle 0-value, 0-fee transaction
-    pub(crate) fn transaction_is_received(
-        &self,
-        query_record: &TransactionRecord,
-    ) -> Result<bool, FeeError> {
-        match self.total_value_input_to_transaction(query_record) {
-            Ok(amount) => {
-                if amount == 0 && query_record.outgoing_tx_data.is_empty() {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            Err(fee_error) => Err(fee_error),
-        }
-    }
+
     fn total_value_input_to_transaction(
         &self,
         query_record: &TransactionRecord,
@@ -311,6 +299,7 @@ impl TransactionRecordsById {
             + orchard_output_value
             + query_record.value_outgoing()
     }
+
     /// Calculate the fee for a transaction in the wallet
     ///
     /// # Error
@@ -376,6 +365,51 @@ impl TransactionRecordsById {
 
         self.invalidate_transactions(txids_to_remove);
     }
+
+    /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
+    /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
+    /// the Zcash protocol
+    ///  TODO:   Test and handle 0-value, 0-fee transaction    
+    pub(crate) fn transaction_kind(&self, query_record: &TransactionRecord) -> TransactionKind {
+        let mut sapling_spends: Vec<&SaplingNote> =
+            Vec::with_capacity(query_record.spent_sapling_nullifiers.len());
+        query_record
+            .spent_sapling_nullifiers()
+            .iter()
+            .for_each(|nullifier| {
+                if let Some(spend) = self.find_sapling_spend(nullifier) {
+                    sapling_spends.push(spend);
+                }
+            });
+        let mut orchard_spends: Vec<&OrchardNote> =
+            Vec::with_capacity(query_record.spent_orchard_nullifiers.len());
+        query_record
+            .spent_orchard_nullifiers()
+            .iter()
+            .for_each(|nullifier| {
+                if let Some(spend) = self.find_orchard_spend(nullifier) {
+                    orchard_spends.push(spend);
+                }
+            });
+
+        if sapling_spends.is_empty()
+            && orchard_spends.is_empty()
+            && query_record.total_transparent_value_spent == 0
+            && query_record.outgoing_tx_data.is_empty()
+        {
+            TransactionKind::Received
+        } else if sapling_spends.is_empty()
+            && orchard_spends.is_empty()
+            && query_record.total_transparent_value_spent > 0
+            && query_record.outgoing_tx_data.is_empty()
+        {
+            // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
+            TransactionKind::Sent(SendType::Shield)
+        } else {
+            TransactionKind::Sent(SendType::Send)
+        }
+    }
+
     /// TODO: Add Doc Comment Here!
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.get(txid)
