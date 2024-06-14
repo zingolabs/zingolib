@@ -2291,6 +2291,24 @@ mod slow {
                     .clone()
             };
         }
+        macro_rules! validate_otds {
+            ($faucet:ident, $nom_txid:ident, $memo_txid:ident) => {
+                let pre_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($faucet, $nom_txid);
+                let pre_rescan_with_memo_self_send_outgoing_tx_data = get_otd!($faucet, $memo_txid);
+                $faucet.do_rescan().await.unwrap();
+                let post_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($faucet, $nom_txid);
+                let post_rescan_with_memo_self_send_outgoing_tx_data =
+                    get_otd!($faucet, $memo_txid);
+                assert_eq!(
+                    pre_rescan_no_memo_self_send_outgoing_tx_data,
+                    post_rescan_no_memo_self_send_outgoing_tx_data
+                );
+                assert_eq!(
+                    pre_rescan_with_memo_self_send_outgoing_tx_data,
+                    post_rescan_with_memo_self_send_outgoing_tx_data
+                );
+            };
+        }
         #[tokio::test]
         async fn self_send() {
             let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
@@ -2326,31 +2344,33 @@ mod slow {
 
             let nom_txid = &txids[0];
             let memo_txid = &txids[1];
-            let pre_rescan_no_memo_self_send_outgoing_tx_data = get_otd!(faucet, nom_txid);
-            let pre_rescan_with_memo_self_send_outgoing_tx_data = get_otd!(faucet, memo_txid);
-            faucet.do_rescan().await.unwrap();
-            let post_rescan_no_memo_self_send_outgoing_tx_data = get_otd!(faucet, nom_txid);
-            let post_rescan_with_memo_self_send_outgoing_tx_data = get_otd!(faucet, memo_txid);
-            assert_eq!(
-                pre_rescan_no_memo_self_send_outgoing_tx_data,
-                post_rescan_no_memo_self_send_outgoing_tx_data
-            );
-            assert_eq!(
-                pre_rescan_with_memo_self_send_outgoing_tx_data,
-                post_rescan_with_memo_self_send_outgoing_tx_data
-            );
+            validate_otds!(faucet, nom_txid, memo_txid);
         }
         #[tokio::test]
         async fn external_send() {
             let (regtest_manager, _cph, faucet, recipient) =
                 scenarios::faucet_recipient_default().await;
-            let external_send_txid = &crate::utils::conversion::txid_from_hex_encoded_str(
+            let external_send_txid_with_memo =
+                &crate::utils::conversion::txid_from_hex_encoded_str(
+                    &from_inputs::send(
+                        &faucet,
+                        vec![(
+                            get_base_address_macro!(recipient, "sapling").as_str(),
+                            1_000,
+                            Some("foo"),
+                        )],
+                    )
+                    .await
+                    .unwrap(),
+                )
+                .unwrap();
+            let external_send_txid_no_memo = &crate::utils::conversion::txid_from_hex_encoded_str(
                 &from_inputs::send(
                     &faucet,
                     vec![(
                         get_base_address_macro!(recipient, "sapling").as_str(),
                         1_000,
-                        Some("foo"),
+                        None,
                     )],
                 )
                 .await
@@ -2360,10 +2380,11 @@ mod slow {
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
-            let pre_rescan_otd = get_otd!(faucet, external_send_txid);
-            faucet.do_rescan().await.unwrap();
-            let post_rescan_otd = get_otd!(faucet, external_send_txid);
-            assert_eq!(pre_rescan_otd, post_rescan_otd);
+            validate_otds!(
+                faucet,
+                external_send_txid_no_memo,
+                external_send_txid_with_memo
+            );
         }
     }
     #[tokio::test]
