@@ -18,8 +18,8 @@ use zcash_primitives::{
 use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
     self, build_fvk_client, check_client_balances, check_transaction_equality,
-    get_base_address_macro, increase_height_and_wait_for_client, paths::get_cargo_manifest_dir,
-    scenarios,
+    get_base_address_macro, get_otd, increase_height_and_wait_for_client,
+    paths::get_cargo_manifest_dir, scenarios, validate_otds,
 };
 use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
@@ -2273,42 +2273,10 @@ mod slow {
                 .max_leaf_position(0)
         );
     }
+    /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
     mod rescan_still_have_outgoing_metadata {
         use super::*;
         use crate::utils::conversion;
-        macro_rules! get_otd {
-            ($faucet:ident, $txid:ident) => {
-                $faucet
-                    .wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .read()
-                    .await
-                    .transaction_records_by_id
-                    .get($txid)
-                    .unwrap()
-                    .outgoing_tx_data
-                    .clone()
-            };
-        }
-        macro_rules! validate_otds {
-            ($faucet:ident, $nom_txid:ident, $memo_txid:ident) => {
-                let pre_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($faucet, $nom_txid);
-                let pre_rescan_with_memo_self_send_outgoing_tx_data = get_otd!($faucet, $memo_txid);
-                $faucet.do_rescan().await.unwrap();
-                let post_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($faucet, $nom_txid);
-                let post_rescan_with_memo_self_send_outgoing_tx_data =
-                    get_otd!($faucet, $memo_txid);
-                assert_eq!(
-                    pre_rescan_no_memo_self_send_outgoing_tx_data,
-                    post_rescan_no_memo_self_send_outgoing_tx_data
-                );
-                assert_eq!(
-                    pre_rescan_with_memo_self_send_outgoing_tx_data,
-                    post_rescan_with_memo_self_send_outgoing_tx_data
-                );
-            };
-        }
         #[tokio::test]
         async fn self_send() {
             let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
