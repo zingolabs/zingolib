@@ -60,7 +60,7 @@ pub async fn get_proposal_vs_records_matched_total_output_value<NoteId>(
             recorded_output,
             step.transaction_request().total().unwrap().into_u64()
         );
-        total_output = total_output + recorded_output;
+        total_output += recorded_output;
     }
     total_output
 }
