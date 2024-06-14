@@ -1,6 +1,6 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
-use crate::wallet::notes::OutputInterface;
 use crate::wallet::now;
+use crate::wallet::{notes::OutputInterface, traits::Bundle};
 use crate::{data::receivers::Receivers, wallet::data::SpendableSaplingNote};
 
 use futures::Future;
@@ -227,6 +227,12 @@ impl LightWallet {
             .await?;
 
         // Call the internal function
+        dbg!(&build_result
+            .transaction()
+            .orchard_bundle()
+            .unwrap()
+            .output_elements()
+            .len());
         match self
             .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
             .await
@@ -844,6 +850,7 @@ impl LightWallet {
             let price = self.price.read().await.clone();
 
             let status = ConfirmationStatus::Pending(submission_height);
+            dbg!("About to call scan_full_tx with pending tx");
             self.transaction_context
                 .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
                 .await;

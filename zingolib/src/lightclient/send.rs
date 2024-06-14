@@ -155,11 +155,11 @@ pub mod send_with_proposal {
     use thiserror::Error;
     use zcash_proofs::prover::LocalTxProver;
 
-    use crate::lightclient::LightClient;
     use crate::{
         lightclient::propose::{ProposeSendError, ProposeShieldError},
         wallet::utils::read_sapling_params,
     };
+    use crate::{lightclient::LightClient, wallet::traits::Bundle};
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
@@ -289,6 +289,12 @@ pub mod send_with_proposal {
                     Some(usk_to_tkey),
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
+            dbg!(&build_result
+                .transaction()
+                .orchard_bundle()
+                .unwrap()
+                .output_elements()
+                .len());
             let txid = self
                 .wallet
                 .send_to_addresses_inner(
