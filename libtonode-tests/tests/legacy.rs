@@ -2353,7 +2353,10 @@ mod slow {
                 external_send_txid_with_memo
             );
         }
-        #[ignore = "this test is redundant with the other rescan metadata checkers, those test now show correctness of list_txsummaries "]
+        #[ignore = "this test is redundant with the other rescan metadata checkers.
+         Tests that show correctness of list_txsummaries across rescan:
+           * external_send
+           * self_send "]
         #[tokio::test]
         async fn check_list_txsummaries_across_rescan() {
             let inital_value = 100_000;
