@@ -61,6 +61,35 @@
 
           # Additional environment variables can be set directly
           # MY_CUSTOM_VAR = "some value";
+
+          # See: https://github.com/zcash/librustzcash/issues/1420
+          # -and: https://github.com/zingolabs/zingolib/pull/1214#issuecomment-2168047527
+          buildPhaseCargoCommand = pkgs.writeScript "zcbi1420-workaround.sh" ''
+            #! ${pkgs.bash}/bin/bash
+            set -efuxo pipefail
+
+            cargo_config='.cargo-home/config.toml'
+
+            function get_nix_store_cargo_prereqs {
+              grep '^directory' "$cargo_config" \
+                | sed 's/^directory = "//; s/"$//'
+            }
+
+            mkdir ./rw_dependencies
+            for store_src in $(get_nix_store_cargo_prereqs)
+            do
+              rw_src_name="$(echo "$store_src" | tr '/' '_')"
+              rw_src="./rw_dependencies/$rw_src_name"
+              cp -r --dereference "$store_src" "$rw_src"
+              chmod -R u+w "$rw_src"
+              sed -i "s|$store_src|$rw_src|" "$cargo_config"
+            done
+
+            # For diagnostics (not necessary for build):
+            cat "$cargo_config"
+
+            set +x
+          '';
         };
 
         craneLibLLvmTools = craneLib.overrideToolchain
