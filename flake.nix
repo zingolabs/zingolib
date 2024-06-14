@@ -1,5 +1,5 @@
 {
-  description = "Build a cargo workspace";
+  description = "zingolib workspace";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -161,6 +161,8 @@
         packages = {
           inherit my-cli my-server;
         } // lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
+          default = craneLib.buildPackage commonArgs;
+
           my-workspace-llvm-coverage = craneLibLLvmTools.cargoLlvmCov (commonArgs // {
             inherit cargoArtifacts;
           });
