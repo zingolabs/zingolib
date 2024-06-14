@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `lightclient::LightClient::do_list_transactions`
 - `wallet::keys::is_shielded_address`
+- `TransactionRecord::is_outgoing_transaction``
 
 ### Added
 
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `quicksend` to `entries` behind "zip317" feature
 - `data::proposal` mod
 - `test_framework` mod behind "test-features" feature
+- `TransactionRecordsById::transaction_is_received``
 
 ### Changed
 
