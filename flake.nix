@@ -31,7 +31,11 @@
         inherit (pkgs) lib;
 
         craneLib = crane.mkLib pkgs;
-        src = craneLib.cleanCargoSource ./.;
+
+        # TODO: filter source to improve caching / source specificity.
+        # Source specificity means selecting only things which impact the resulting build. For example, `README.md` in most projects does not.
+        # For now we cast a wide net just to get the build to work.
+        src = ./.;
 
         # Common arguments can be set here to avoid repeating them later
         # Note: we include system dependencies commonly that only some (transitive) crates require.
@@ -104,45 +108,9 @@
         # It is *highly* recommended to use something like cargo-hakari to avoid
         # cache misses when building individual top-level-crates
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-
-        individualCrateArgs = commonArgs // {
-          inherit cargoArtifacts;
-          inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
-          # NB: we disable tests since we'll run them all via cargo-nextest
-          doCheck = false;
-        };
-
-        fileSetForCrate = crate: lib.fileset.toSource {
-          root = ./.;
-          fileset = lib.fileset.unions [
-            ./Cargo.toml
-            ./Cargo.lock
-            ./my-common
-            ./my-workspace-hack
-            crate
-          ];
-        };
-
-        # Build the top-level crates of the workspace as individual derivations.
-        # This allows consumers to only depend on (and build) only what they need.
-        # Though it is possible to build the entire workspace as a single derivation,
-        # so this is left up to you on how to organize things
-        my-cli = craneLib.buildPackage (individualCrateArgs // {
-          pname = "my-cli";
-          cargoExtraArgs = "-p my-cli";
-          src = fileSetForCrate ./my-cli;
-        });
-        my-server = craneLib.buildPackage (individualCrateArgs // {
-          pname = "my-server";
-          cargoExtraArgs = "-p my-server";
-          src = fileSetForCrate ./my-server;
-        });
       in
       {
         checks = {
-          # Build the crates as part of `nix flake check` for convenience
-          inherit my-cli my-server;
-
           # Run clippy (and deny all warnings) on the workspace source,
           # again, reusing the dependency artifacts from above.
           #
@@ -202,23 +170,14 @@
         };
 
         packages = {
-          inherit my-cli my-server;
-        } // lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
-          default = craneLib.buildPackage commonArgs;
+          default = craneLib.buildPackage (commonArgs // { inherit cargoArtifacts; });
 
           my-workspace-llvm-coverage = craneLibLLvmTools.cargoLlvmCov (commonArgs // {
             inherit cargoArtifacts;
           });
         };
 
-        apps = {
-          my-cli = flake-utils.lib.mkApp {
-            drv = my-cli;
-          };
-          my-server = flake-utils.lib.mkApp {
-            drv = my-server;
-          };
-        };
+        apps = {};
 
         devShells.default = craneLib.devShell {
           # Inherit inputs from checks.
