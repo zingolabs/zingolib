@@ -9,7 +9,7 @@ use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 /// currently only checks if the fee matches
 /// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
 /// returns the total fee for the transfer
-pub async fn get_proposal_vs_records_matched_total_fee<NoteId>(
+pub async fn assert_proposal_vs_records_matched_total_fee<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
@@ -37,7 +37,7 @@ pub async fn get_proposal_vs_records_matched_total_fee<NoteId>(
 }
 
 /// currently only checks if the received total matches
-pub async fn get_proposal_vs_records_matched_total_output_value<NoteId>(
+pub async fn assert_proposal_vs_records_matched_total_output_value<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
@@ -60,7 +60,7 @@ pub async fn get_proposal_vs_records_matched_total_output_value<NoteId>(
             recorded_output,
             step.transaction_request().total().unwrap().into_u64()
         );
-        total_output = total_output + recorded_output;
+        total_output += recorded_output;
     }
     total_output
 }
