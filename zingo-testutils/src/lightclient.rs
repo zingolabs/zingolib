@@ -109,7 +109,7 @@ pub mod from_inputs {
         proposer: &LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
-        zingolib::data::proposal::TransferProposal,
+        zingolib::data::proposal::ProportionalFeeProposal,
         zingolib::lightclient::propose::ProposeSendError,
     > {
         let request = transaction_request_from_send_inputs(proposer, raw_receivers)

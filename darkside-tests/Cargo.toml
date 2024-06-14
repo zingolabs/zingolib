@@ -12,8 +12,8 @@ zingolib = { path = "../zingolib", features = ["darkside_tests"] }
 zingo-testutils = { path = "../zingo-testutils" }
 zingo-testvectors = { path = "../zingo-testvectors" }
 zingoconfig = { path = "../zingoconfig" }
-tokio = { version = "1.25.0", features = ["full"] }
-json = "0.12.4"
+tokio = { workspace = true, features = ["full"] }
+json = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 tonic = { workspace = true }
@@ -25,12 +25,12 @@ hex = { workspace = true }
 zcash_primitives = { workspace = true }
 tempdir = { workspace = true }
 portpicker = { workspace = true }
-futures-util = "0.3.28"
+futures-util = { workspace = true }
 orchard = { workspace = true }
 zcash_client_backend = { workspace = true }
-serde_json = "1.0.107"
+serde_json = { workspace = true }
 sapling-crypto.workspace = true
-proptest = "1.4.0"
+proptest = { workspace = true }
 
 [build-dependencies]
-tonic-build = "0.10"
+tonic-build = { workspace = true }
