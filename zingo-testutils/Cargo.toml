@@ -23,9 +23,9 @@ portpicker = { workspace = true}
 tempdir = { workspace = true }
 incrementalmerkletree = { workspace = true }
 
-json = "0.12.4"
-log = "0.4.19"
-tokio = "1.28.2"
+json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
 http.workspace = true
 tonic = { workspace = true, optional = true }
 nonempty.workspace = true
