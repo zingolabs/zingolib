@@ -534,6 +534,7 @@ impl TransactionRecord {
 
 #[derive(Clone, Copy)]
 pub(crate) enum TransactionKind {
+    #[allow(dead_code)]
     Sent(SendType),
     Received,
 }
