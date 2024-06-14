@@ -4,7 +4,8 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::{assert_send_outputs_match_recipient, assert_send_outputs_match_sender},
+    assertions::get_proposal_vs_records_matched_total_fee,
+    assertions::get_proposal_vs_records_matched_total_output_value,
     chain_generic_tests::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -29,10 +30,10 @@ where
 
     environment.bump_chain().await;
 
-    assert_send_outputs_match_sender(client, &proposal, &txids).await;
+    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await;
     client.do_sync(false).await.unwrap();
 
-    assert_send_outputs_match_sender(client, &proposal, &txids).await
+    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await
 }
 
 /// this version assumes a single recipient and measures that the recipient also recieved the expected balances
@@ -70,11 +71,11 @@ where
     environment.bump_chain().await;
 
     recipient.do_sync(false).await.unwrap();
-    assert_send_outputs_match_recipient(recipient, &proposal, &txids).await;
+    get_proposal_vs_records_matched_total_output_value(recipient, &proposal, &txids).await;
 
-    assert_send_outputs_match_sender(sender, &proposal, &txids).await;
+    get_proposal_vs_records_matched_total_fee(sender, &proposal, &txids).await;
     sender.do_sync(false).await.unwrap();
-    assert_send_outputs_match_sender(sender, &proposal, &txids).await
+    get_proposal_vs_records_matched_total_fee(sender, &proposal, &txids).await
 }
 
 /// a test-only generic version of shield that includes assertions that the proposal was fulfilled
@@ -93,8 +94,8 @@ where
 
     environment.bump_chain().await;
 
-    assert_send_outputs_match_sender(client, &proposal, &txids).await;
+    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await;
     client.do_sync(false).await.unwrap();
 
-    assert_send_outputs_match_sender(client, &proposal, &txids).await
+    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await
 }
