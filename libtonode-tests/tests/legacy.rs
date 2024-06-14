@@ -2273,77 +2273,98 @@ mod slow {
                 .max_leaf_position(0)
         );
     }
-    #[tokio::test]
-    async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-        let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        let sapling_addr = get_base_address_macro!(faucet, "sapling");
-        for memo in [None, Some("foo")] {
-            from_inputs::send(
-                &faucet,
-                vec![(
-                    sapling_addr.as_str(),
-                    {
-                        let balance = faucet.do_balance().await;
-                        balance.spendable_sapling_balance.unwrap()
-                            + balance.spendable_orchard_balance.unwrap()
-                    } - u64::from(MINIMUM_FEE),
-                    memo,
-                )],
+    mod rescan_still_have_outgoing_metadata {
+        use super::*;
+        use crate::utils::conversion;
+        macro_rules! get_otd {
+            ($faucet:ident, $txid:ident) => {
+                $faucet
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .transaction_records_by_id
+                    .get($txid)
+                    .unwrap()
+                    .outgoing_tx_data
+                    .clone()
+            };
+        }
+        #[tokio::test]
+        async fn self_send() {
+            let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
+            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+                .await
+                .unwrap();
+            let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
+            let mut txids = vec![];
+            for memo in [None, Some("Second Transaction")] {
+                txids.push(
+                    conversion::txid_from_hex_encoded_str(
+                        &from_inputs::send(
+                            &faucet,
+                            vec![(
+                                faucet_sapling_addr.as_str(),
+                                {
+                                    let balance = faucet.do_balance().await;
+                                    dbg!(balance.spendable_sapling_balance.unwrap())
+                                        + dbg!(balance.spendable_orchard_balance.unwrap())
+                                } - u64::from(MINIMUM_FEE),
+                                memo,
+                            )],
+                        )
+                        .await
+                        .unwrap(),
+                    )
+                    .unwrap(),
+                );
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+                    .await
+                    .unwrap();
+            }
+
+            let nom_txid = &txids[0];
+            let memo_txid = &txids[1];
+            let pre_rescan_no_memo_self_send_outgoing_tx_data = get_otd!(faucet, nom_txid);
+            let pre_rescan_with_memo_self_send_outgoing_tx_data = get_otd!(faucet, memo_txid);
+            faucet.do_rescan().await.unwrap();
+            let post_rescan_no_memo_self_send_outgoing_tx_data = get_otd!(faucet, nom_txid);
+            let post_rescan_with_memo_self_send_outgoing_tx_data = get_otd!(faucet, memo_txid);
+            assert_eq!(
+                pre_rescan_no_memo_self_send_outgoing_tx_data,
+                post_rescan_no_memo_self_send_outgoing_tx_data
+            );
+            assert_eq!(
+                pre_rescan_with_memo_self_send_outgoing_tx_data,
+                post_rescan_with_memo_self_send_outgoing_tx_data
+            );
+        }
+        #[tokio::test]
+        async fn external_send() {
+            let (regtest_manager, _cph, faucet, recipient) =
+                scenarios::faucet_recipient_default().await;
+            let external_send_txid = &crate::utils::conversion::txid_from_hex_encoded_str(
+                &from_inputs::send(
+                    &faucet,
+                    vec![(
+                        get_base_address_macro!(recipient, "sapling").as_str(),
+                        1_000,
+                        Some("foo"),
+                    )],
+                )
+                .await
+                .unwrap(),
             )
-            .await
             .unwrap();
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
+            let pre_rescan_otd = get_otd!(faucet, external_send_txid);
+            faucet.do_rescan().await.unwrap();
+            let post_rescan_otd = get_otd!(faucet, external_send_txid);
+            assert_eq!(pre_rescan_otd, post_rescan_otd);
         }
-        let transactions = faucet.do_list_transactions().await;
-        let notes = faucet.do_list_notes(true).await;
-        faucet.do_rescan().await.unwrap();
-        let post_rescan_transactions = faucet.do_list_transactions().await;
-        let post_rescan_notes = faucet.do_list_notes(true).await;
-        assert_eq!(
-            transactions,
-            post_rescan_transactions,
-            "Pre-Rescan: {}\n\n\nPost-Rescan: {}",
-            json::stringify_pretty(transactions.clone(), 4),
-            json::stringify_pretty(post_rescan_transactions.clone(), 4)
-        );
-
-        // Notes are not in deterministic order after rescan. Instead, iterate over all
-        // the notes and check that they exist post-rescan
-        for (field_name, field) in notes.entries() {
-            for note in field.members() {
-                assert!(post_rescan_notes[field_name]
-                    .members()
-                    .any(|post_rescan_note| post_rescan_note == note));
-            }
-            assert_eq!(field.len(), post_rescan_notes[field_name].len());
-        }
-    }
-    #[tokio::test]
-    async fn rescan_still_have_outgoing_metadata() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
-        from_inputs::send(
-            &faucet,
-            vec![(
-                get_base_address_macro!(recipient, "sapling").as_str(),
-                1_000,
-                Some("foo"),
-            )],
-        )
-        .await
-        .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        let transactions = faucet.do_list_transactions().await;
-        faucet.do_rescan().await.unwrap();
-        let post_rescan_transactions = faucet.do_list_transactions().await;
-        assert_eq!(transactions, post_rescan_transactions);
     }
     #[tokio::test]
     async fn note_selection_order() {
