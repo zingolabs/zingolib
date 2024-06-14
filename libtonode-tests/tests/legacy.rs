@@ -2353,6 +2353,37 @@ mod slow {
                 external_send_txid_with_memo
             );
         }
+        #[ignore = "this test is redundant with the other rescan metadata checkers, those test now show correctness of list_txsummaries "]
+        #[tokio::test]
+        async fn check_list_txsummaries_across_rescan() {
+            let inital_value = 100_000;
+            let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
+                scenarios::faucet_funded_recipient_default(inital_value).await;
+            from_inputs::send(
+                recipient,
+                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
+            )
+            .await
+            .unwrap();
+            zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+                .await
+                .unwrap();
+            let pre_rescan_transactions = recipient.do_list_transactions().await;
+            let pre_rescan_summaries = recipient.list_txsummaries().await;
+            recipient.do_rescan().await.unwrap();
+            let post_rescan_transactions = recipient.do_list_transactions().await;
+            let post_rescan_summaries = recipient.list_txsummaries().await;
+            assert_eq!(pre_rescan_transactions, post_rescan_transactions);
+            assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+            let mut outgoing_metadata = pre_rescan_transactions
+                .members()
+                .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
+                .unwrap()
+                .1
+                .members();
+            // The two outgoing spends were identical. They should be represented as such
+            assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
+        }
     }
     #[tokio::test]
     async fn note_selection_order() {
