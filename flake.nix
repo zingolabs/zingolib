@@ -34,19 +34,26 @@
         src = craneLib.cleanCargoSource ./.;
 
         # Common arguments can be set here to avoid repeating them later
+        # Note: we include system dependencies commonly that only some (transitive) crates require.
         commonArgs = {
           inherit src;
           strictDeps = true;
 
-          nativeBuildInputs = [
-            pkgs.pkg-config
+          # All packages in `nativeBuildInputs` are required at build time but _must not_ be required at runtime:
+          nativeBuildInputs = with pkgs; [
+            # We include `pkg-config` because `openssl-sys` requires it.
+            pkg-config
+
+            # We include git because `zingolib` requires it in its `build.rs` script via the `build_utils` crate.
+            git
+
+            # We include `protobuf` because `darkside-tests` requires it.
+            protobuf
           ];
 
           buildInputs = [
             # We include `openssl` lib in all crates, even though it is only necessary for the `openssl-sys` crate.
-            # TODO: Include `openssl` only in `openssl-sys` crate, then include `pkg-config` only in crates that need it.
             pkgs.openssl
-            # Add additional build inputs here
           ] ++ lib.optionals pkgs.stdenv.isDarwin [
             # Additional darwin specific inputs can be set here
             pkgs.libiconv
