@@ -38,7 +38,14 @@
           inherit src;
           strictDeps = true;
 
+          nativeBuildInputs = [
+            pkgs.pkg-config
+          ];
+
           buildInputs = [
+            # We include `openssl` lib in all crates, even though it is only necessary for the `openssl-sys` crate.
+            # TODO: Include `openssl` only in `openssl-sys` crate, then include `pkg-config` only in crates that need it.
+            pkgs.openssl
             # Add additional build inputs here
           ] ++ lib.optionals pkgs.stdenv.isDarwin [
             # Additional darwin specific inputs can be set here
