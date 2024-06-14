@@ -2312,9 +2312,6 @@ mod slow {
         #[tokio::test]
         async fn self_send() {
             let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-                .await
-                .unwrap();
             let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
             let mut txids = vec![];
             for memo in [None, Some("Second Transaction")] {
@@ -2326,8 +2323,8 @@ mod slow {
                                 faucet_sapling_addr.as_str(),
                                 {
                                     let balance = faucet.do_balance().await;
-                                    dbg!(balance.spendable_sapling_balance.unwrap())
-                                        + dbg!(balance.spendable_orchard_balance.unwrap())
+                                    balance.spendable_sapling_balance.unwrap()
+                                        + balance.spendable_orchard_balance.unwrap()
                                 } - u64::from(MINIMUM_FEE),
                                 memo,
                             )],
