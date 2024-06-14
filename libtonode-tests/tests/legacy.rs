@@ -1857,35 +1857,60 @@ mod slow {
                 })
             );
         }
-        let send_to_faucet_value = 250;
+        let exit_funds = 250;
         let exit_zaddr = get_base_address_macro!(faucet, "sapling");
-        let exit_txid =
-            from_inputs::quick_send(&recipient, vec![(&exit_zaddr, send_to_faucet_value, None)])
-                .await
-                .unwrap()
-                .first()
-                .to_string();
+        let exit_txid = from_inputs::send(&recipient, vec![(&exit_zaddr, exit_funds, None)])
+            .await
+            .unwrap();
+        //.first()
+        //.to_string();
+        dbg!("send");
         {
-            let change_magnitude = start_funds - send_to_faucet_value - 20_000; // 1s in and 1o out
+            let change_magnitude = start_funds - exit_funds - 20_000; // 1s in and 1o out
             let tmds = recipient
                 .wallet
                 .transaction_context
                 .transaction_metadata_set
                 .read()
                 .await;
+            let receipt_tr = tmds
+                .transaction_records_by_id
+                .get(&txid_from_hex_encoded_str(&receipt_txid).unwrap())
+                .unwrap();
             let send_tr = tmds
                 .transaction_records_by_id
                 .get(&txid_from_hex_encoded_str(&exit_txid).unwrap())
                 .unwrap();
             // The state of the original funding note:
+            //dbg!(&send_tr.orchard_notes[0].orchard_crypto_note.value());
+            dbg!(&send_tr.txid);
+            assert_eq!(
+                start_funds,
+                receipt_tr.query_sum_value(OutputQuery {
+                    spend_status: OutputSpendStatusQuery {
+                        unspent: false,
+                        pending_spent: true,
+                        spent: false
+                    },
+                    pools: OutputPoolQuery {
+                        orchard: false,
+                        transparent: false,
+                        sapling: true
+                    }
+                })
+            );
             assert_eq!(
                 change_magnitude,
                 send_tr.query_sum_value(OutputQuery {
-                    spend_status: OutputSpendStatusQuery::any(),
+                    spend_status: OutputSpendStatusQuery {
+                        unspent: true,
+                        pending_spent: true,
+                        spent: true
+                    },
                     pools: OutputPoolQuery {
                         orchard: true,
-                        transparent: false,
-                        sapling: false
+                        transparent: true,
+                        sapling: true
                     }
                 })
             );
