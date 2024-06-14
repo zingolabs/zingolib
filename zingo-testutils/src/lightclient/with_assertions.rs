@@ -4,8 +4,8 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::get_proposal_vs_records_matched_total_fee,
-    assertions::get_proposal_vs_records_matched_total_output_value,
+    assertions::assert_receiver_fee,
+    assertions::assert_sender_fee,
     chain_generic_tests::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -30,10 +30,10 @@ where
 
     environment.bump_chain().await;
 
-    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await;
+    assert_sender_fee(client, &proposal, &txids).await;
     client.do_sync(false).await.unwrap();
 
-    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await
+    assert_sender_fee(client, &proposal, &txids).await
 }
 
 /// this version assumes a single recipient and measures that the recipient also recieved the expected balances
@@ -71,11 +71,11 @@ where
     environment.bump_chain().await;
 
     recipient.do_sync(false).await.unwrap();
-    get_proposal_vs_records_matched_total_output_value(recipient, &proposal, &txids).await;
+    assert_receiver_fee(recipient, &proposal, &txids).await;
 
-    get_proposal_vs_records_matched_total_fee(sender, &proposal, &txids).await;
+    assert_sender_fee(sender, &proposal, &txids).await;
     sender.do_sync(false).await.unwrap();
-    get_proposal_vs_records_matched_total_fee(sender, &proposal, &txids).await
+    assert_sender_fee(sender, &proposal, &txids).await
 }
 
 /// a test-only generic version of shield that includes assertions that the proposal was fulfilled
@@ -94,8 +94,8 @@ where
 
     environment.bump_chain().await;
 
-    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await;
+    assert_sender_fee(client, &proposal, &txids).await;
     client.do_sync(false).await.unwrap();
 
-    get_proposal_vs_records_matched_total_fee(client, &proposal, &txids).await
+    assert_sender_fee(client, &proposal, &txids).await
 }
