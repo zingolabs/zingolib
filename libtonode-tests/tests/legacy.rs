@@ -2342,6 +2342,8 @@ mod slow {
                 .unwrap(),
             )
             .unwrap();
+            // TODO:  This chain height bump should be unnecessary. I think removing
+            // this increase_height call reveals a bug!
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
