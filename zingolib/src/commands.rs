@@ -1297,56 +1297,52 @@ impl Command for SeedCommand {
     }
 }
 
-#[cfg(feature = "lightclient-deprecated")]
-struct TransactionsCommand {}
-#[cfg(feature = "lightclient-deprecated")]
-impl Command for TransactionsCommand {
+struct ValueTransfersCommand {}
+impl Command for ValueTransfersCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            List all incoming and outgoing transactions from this wallet
-            Usage:
-            list [allmemos]
+            List all value transfers for this wallet.
 
-            If you include the 'allmemos' argument, all memos are returned in their raw hex format
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "List all transactions in the wallet"
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() > 1 {
-            return format!("Didn't understand arguments\n{}", self.help());
-        }
-
-        RT.block_on(async move { lightclient.do_list_transactions().await.pretty(2) })
-    }
-}
-
-struct ValueTxSummariesCommand {}
-impl Command for ValueTxSummariesCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            List summaries of value transfers for this seed.
             Usage:
             summaries
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "List all value transfer summaries for this seed."
+        "List all value transfers for this wallet."
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         if args.len() > 1 {
-            return format!("Didn't understand arguments\n{}", self.help());
+            return format!("invalid arguments\n{}", self.help());
         }
 
-        RT.block_on(
-            async move { json::JsonValue::from(lightclient.list_txsummaries().await).pretty(2) },
-        )
+        RT.block_on(async move {
+            json::JsonValue::from(lightclient.list_value_transfers().await).pretty(2)
+        })
+    }
+}
+
+struct TransactionsCommand {}
+impl Command for TransactionsCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            List all transactions for this wallet.
+
+            Usage:
+            transactions
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "List all transactions for this wallet."
+    }
+
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        RT.block_on(async move {
+            // json::JsonValue::from(lightclient.list_value_transfers().await).pretty(2)
+            "".to_string()
+        })
     }
 }
 
@@ -1790,7 +1786,8 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
         ("setoption", Box::new(SetOptionCommand {})),
-        ("summaries", Box::new(ValueTxSummariesCommand {})),
+        ("summaries", Box::new(ValueTransfersCommand {})),
+        ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
         (
@@ -1813,10 +1810,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("wallet_kind", Box::new(WalletKindCommand {})),
         ("delete", Box::new(DeleteCommand {})),
     ];
-    #[cfg(feature = "lightclient-deprecated")]
-    {
-        entries.push(("list", Box::new(TransactionsCommand {})));
-    }
     #[cfg(feature = "zip317")]
     {
         entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));

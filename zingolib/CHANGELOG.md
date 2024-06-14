@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `lightclient::LightClient`:
   - `do_send` inputs from `Vec<(&str, u64, Option<MemoBytes>)>` to `Vec<(Address, NonNegativeAmount, Option<MemoBytes>)>`
   - `do_shield` inputs from `Option<String>` to `Option<Address>`
-  - `do_list_txsummaries` --> `list_txsummaries`
+  - `do_list_txsummaries` --> `list_value_transfers`
 
 - `TxMapAndMaybeTrees::A --> TransactionRecordsById::A` where A:
   - add_new_note<D>
