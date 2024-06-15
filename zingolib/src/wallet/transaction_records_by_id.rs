@@ -58,16 +58,19 @@ impl TransactionRecordsById {
 impl TransactionRecordsById {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
-        self.0.iter().fold(0, |partial_sum, transaction_record| {
-            partial_sum + transaction_record.1.query_sum_value(include_notes)
+        self.0.iter().fold(0, |partial_sum, (_id, record)| {
+            partial_sum + record.query_sum_value(include_notes)
         })
     }
 
     /// Uses a query to select all notes across all transactions with specific properties and sum them
-    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<crate::wallet::notes::OutputId> {
+    pub fn get_queried_outputs(
+        &self,
+        include_notes: OutputQuery,
+    ) -> Vec<crate::wallet::notes::OutputId> {
         self.0
             .iter()
-            .flat_map(|transaction_record| transaction_record.1.query_for_ids(include_notes))
+            .flat_map(|(_id, record)| record.query_for_ids(include_notes))
             .collect()
     }
 
