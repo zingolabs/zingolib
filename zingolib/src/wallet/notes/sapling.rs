@@ -9,6 +9,7 @@ use super::{
 };
 
 /// TODO: Add Doc Comment Here!
+#[derive(Clone)]
 pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,

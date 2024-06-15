@@ -14,6 +14,12 @@ use zcash_client_backend::PoolType;
 
 use zcash_primitives::transaction::TxId;
 
+#[non_exhaustive] // We can add new pools later
+pub enum AnyPoolOutput {
+    Transparent(TransparentOutput),
+    Sapling(SaplingNote),
+    Orchard(OrchardNote),
+}
 /// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.
 /// "Over" because pool is not necessary for a unique ID.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

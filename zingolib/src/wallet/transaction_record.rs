@@ -6,11 +6,11 @@ use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
+use crate::wallet::notes;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
     wallet::NoteId,
-    PoolType,
     ShieldedProtocol::{Orchard, Sapling},
 };
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -21,8 +21,8 @@ use crate::{
         data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
         keys::unified::WalletCapability,
         notes::{
-            query::OutputQuery, OrchardNote, OutputId, OutputInterface, SaplingNote,
-            ShieldedNoteInterface, TransparentOutput,
+            query::OutputQuery, OrchardNote, OutputInterface, SaplingNote, ShieldedNoteInterface,
+            TransparentOutput,
         },
         traits::{DomainWalletExt, ReadableWriteable as _},
     },
@@ -140,45 +140,36 @@ impl TransactionRecord {
     }
 
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn get_stipulated_outputs(&self, include_notes: OutputQuery) -> Vec<OutputId> {
+    pub fn get_stipulated_outputs(&self, include_notes: OutputQuery) -> Vec<notes::AnyPoolOutput> {
         let mut set = vec![];
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
-            for note in self.transparent_outputs.iter() {
-                if note.spend_status_query(spend_status_query) {
-                    set.push(OutputId::from_parts(
-                        self.txid,
-                        PoolType::Transparent,
-                        note.output_index as u32,
-                    ));
-                }
-            }
+            set.extend(
+                self.transparent_outputs
+                    .iter()
+                    .filter(|toutput| toutput.spend_status_query(spend_status_query))
+                    .clone()
+                    .map(|toutput| notes::AnyPoolOutput::Transparent(toutput.clone()))
+                    .collect::<Vec<notes::AnyPoolOutput>>(),
+            );
         }
         if *include_notes.sapling() {
-            for note in self.sapling_notes.iter() {
-                if note.spend_status_query(spend_status_query) {
-                    if let Some(output_index) = note.output_index {
-                        set.push(OutputId::from_parts(
-                            self.txid,
-                            PoolType::Shielded(Sapling),
-                            output_index,
-                        ));
-                    }
-                }
-            }
+            set.extend(
+                self.sapling_notes
+                    .iter()
+                    .filter(|soutput| soutput.spend_status_query(spend_status_query))
+                    .map(|soutput| notes::AnyPoolOutput::Sapling(soutput.clone()))
+                    .collect::<Vec<notes::AnyPoolOutput>>(),
+            );
         }
         if *include_notes.orchard() {
-            for note in self.orchard_notes.iter() {
-                if note.spend_status_query(spend_status_query) {
-                    if let Some(output_index) = note.output_index {
-                        set.push(OutputId::from_parts(
-                            self.txid,
-                            PoolType::Shielded(Orchard),
-                            output_index,
-                        ));
-                    }
-                }
-            }
+            set.extend(
+                self.orchard_notes
+                    .iter()
+                    .filter(|ooutput| ooutput.spend_status_query(spend_status_query))
+                    .map(|ooutput| notes::AnyPoolOutput::Orchard(ooutput.clone()))
+                    .collect::<Vec<notes::AnyPoolOutput>>(),
+            );
         }
         set
     }

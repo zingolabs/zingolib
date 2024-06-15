@@ -4,6 +4,7 @@
 use crate::wallet::{
     error::FeeError,
     notes::{
+        self,
         interface::ShieldedNoteInterface,
         query::{OutputQuery, OutputSpendStatusQuery},
         OrchardNote, OutputInterface, SaplingNote,
@@ -64,10 +65,7 @@ impl TransactionRecordsById {
     }
 
     /// Uses a query to select all notes across all transactions with specific properties and sum them
-    pub fn get_queried_outputs(
-        &self,
-        include_notes: OutputQuery,
-    ) -> Vec<crate::wallet::notes::OutputId> {
+    pub fn get_queried_outputs(&self, include_notes: OutputQuery) -> Vec<notes::AnyPoolOutput> {
         self.0
             .iter()
             .flat_map(|(_id, record)| record.get_stipulated_outputs(include_notes))
