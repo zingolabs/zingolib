@@ -70,7 +70,7 @@ impl TransactionRecordsById {
     ) -> Vec<crate::wallet::notes::OutputId> {
         self.0
             .iter()
-            .flat_map(|(_id, record)| record.query_for_ids(include_notes))
+            .flat_map(|(_id, record)| record.get_stipulated_outputs(include_notes))
             .collect()
     }
 
@@ -765,10 +765,11 @@ mod tests {
             .unwrap();
 
         let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
-        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(OutputQuery {
-            spend_status: query_for_spentish_notes,
-            pools: OutputPoolQuery::any(),
-        });
+        let spentish_notes_in_tx_cvnwis =
+            transaction_record_cvnwis.get_stipulated_outputs(OutputQuery {
+                spend_status: query_for_spentish_notes,
+                pools: OutputPoolQuery::any(),
+            });
         assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
         assert_ne!(

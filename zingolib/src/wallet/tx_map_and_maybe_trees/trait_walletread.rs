@@ -40,7 +40,7 @@ impl Account<AccountId> for ZingoAccount {
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
-    let unspent_shield_output_ids = transaction.query_for_ids(OutputQuery {
+    let unspent_shield_output_ids = transaction.get_stipulated_outputs(OutputQuery {
         spend_status: OutputSpendStatusQuery::only_unspent(),
         pools: OutputPoolQuery::shielded(),
     });

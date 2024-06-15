@@ -140,7 +140,7 @@ impl TransactionRecord {
     }
 
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
+    pub fn get_stipulated_outputs(&self, include_notes: OutputQuery) -> Vec<OutputId> {
         let mut set = vec![];
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
@@ -860,7 +860,7 @@ mod tests {
 
         assert_eq!(
             nine_note_transaction_record_default()
-                .query_for_ids(OutputQuery::stipulations(
+                .get_stipulated_outputs(OutputQuery::stipulations(
                     unspent,
                     pending_spent,
                     spent,
