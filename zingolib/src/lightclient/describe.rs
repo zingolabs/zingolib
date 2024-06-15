@@ -53,7 +53,7 @@ impl LightClient {
     pub async fn query_for_ids(
         &self,
         include_notes: OutputQuery,
-    ) -> Vec<crate::wallet::notes::OutputId> {
+    ) -> Vec<crate::wallet::notes::AnyPoolOutput> {
         self.wallet
             .transaction_context
             .transaction_metadata_set
