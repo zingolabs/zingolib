@@ -50,7 +50,7 @@ impl LightClient {
     }
 
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub async fn query_for_ids(
+    pub async fn get_queried_outputs(
         &self,
         include_notes: OutputQuery,
     ) -> Vec<crate::wallet::notes::AnyPoolOutput> {
