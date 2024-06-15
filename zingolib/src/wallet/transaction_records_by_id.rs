@@ -1,6 +1,7 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
+use crate::wallet::notes::interface::OutputConstructors;
 use crate::wallet::{
     error::FeeError,
     notes::{
@@ -89,7 +90,7 @@ impl TransactionRecordsById {
         let transaction = self.get(note_id.txid());
         if note_id.protocol() == D::SHIELDED_PROTOCOL {
             transaction.and_then(|transaction_record| {
-                D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
+                D::WalletNote::get_record_outputs(transaction_record)
                     .iter()
                     .find(|note| note.output_index() == &Some(note_id.output_index() as u32))
                     .and_then(|note| {
@@ -191,7 +192,7 @@ impl TransactionRecordsById {
         self.values_mut().for_each(|transaction_metadata| {
             // Update notes to rollback any spent notes
             // Select only spent or pending_spent notes.
-            D::WalletNote::transaction_record_to_outputs_vec_query_mut(
+            D::WalletNote::get_record_query_matching_outputs_mut(
                 transaction_metadata,
                 OutputSpendStatusQuery::spentish(),
             )
@@ -538,7 +539,7 @@ impl TransactionRecordsById {
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        match D::WalletNote::transaction_record_to_outputs_vec(transaction_record)
+        match D::WalletNote::get_record_outputs(transaction_record)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
@@ -684,6 +685,7 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
+    use crate::wallet::notes::interface::OutputConstructors;
     use crate::{
         mocks::{
             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
@@ -771,7 +773,7 @@ mod tests {
         assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
         assert_ne!(
-            SaplingNote::transaction_record_to_outputs_vec_query(
+            SaplingNote::get_record_query_matching_outputs(
                 transaction_record_cvnwis,
                 query_for_spentish_notes
             )

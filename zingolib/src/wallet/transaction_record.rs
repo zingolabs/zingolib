@@ -2,6 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
+use crate::wallet::notes::interface::OutputConstructors;
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
@@ -204,7 +205,7 @@ impl TransactionRecord {
 
     /// TODO: Add Doc Comment Here!
     pub fn pool_value_received<Pool: OutputInterface>(&self) -> u64 {
-        Pool::transaction_record_to_outputs_vec(self)
+        Pool::get_record_outputs(self)
             .iter()
             .map(|note_and_metadata| note_and_metadata.value())
             .sum()
@@ -308,7 +309,7 @@ impl TransactionRecord {
         D::Note: PartialEq + Clone,
         D::Recipient: super::traits::Recipient,
     {
-        let note = D::WalletNote::transaction_record_to_outputs_vec(self)
+        let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
