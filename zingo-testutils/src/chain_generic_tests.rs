@@ -368,5 +368,17 @@ pub mod fixtures {
             .await,
             20_000
         );
+
+        let tertiary = environment.create_client().await;
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &secondary,
+                &tertiary,
+                vec![(Shielded(Sapling), 80_000)]
+            )
+            .await,
+            20_000
+        );
     }
 }
