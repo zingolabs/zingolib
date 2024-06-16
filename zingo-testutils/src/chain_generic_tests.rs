@@ -349,13 +349,24 @@ pub mod fixtures {
         );
     }
 
+    /// send sapling to sapling, receive sapling change.
     pub async fn sapling_to_sapling<CC>()
     where
         CC: ConductChain,
     {
         let mut environment = CC::setup().await;
 
-        let primary = environment.fund_client_orchard(100_000).await;
+        let primary = environment.fund_client_orchard(1_000_000).await;
         let secondary = environment.create_client().await;
+        assert_eq!(
+            with_assertions::propose_send_bump_sync_recipient(
+                &mut environment,
+                &primary,
+                &secondary,
+                vec![(Shielded(Sapling), 100_000)]
+            )
+            .await,
+            20_000
+        );
     }
 }
