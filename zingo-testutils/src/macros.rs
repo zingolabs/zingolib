@@ -64,3 +64,42 @@ macro_rules! check_client_balances {
         );
     };
 }
+/// Given a client and txid, get the outgoing metadata from the tr
+#[macro_export]
+macro_rules! get_otd {
+    ($client:ident, $txid:ident) => {
+        $client
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .get($txid)
+            .unwrap()
+            .outgoing_tx_data
+            .clone()
+    };
+}
+/// Specific to two tests, validate outgoing metadata before and after rescan
+#[macro_export]
+macro_rules! validate_otds {
+    ($client:ident, $nom_txid:ident, $memo_txid:ident) => {
+        let pre_rescan_summaries = $client.list_txsummaries().await;
+        let pre_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($client, $nom_txid);
+        let pre_rescan_with_memo_self_send_outgoing_tx_data = get_otd!($client, $memo_txid);
+        $client.do_rescan().await.unwrap();
+        let post_rescan_summaries = $client.list_txsummaries().await;
+        let post_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($client, $nom_txid);
+        let post_rescan_with_memo_self_send_outgoing_tx_data = get_otd!($client, $memo_txid);
+        assert_eq!(
+            pre_rescan_no_memo_self_send_outgoing_tx_data,
+            post_rescan_no_memo_self_send_outgoing_tx_data
+        );
+        assert_eq!(
+            pre_rescan_with_memo_self_send_outgoing_tx_data,
+            post_rescan_with_memo_self_send_outgoing_tx_data
+        );
+        assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+    };
+}
