@@ -191,15 +191,6 @@ impl TransactionRecord {
         sum
     }
 
-    /*
-        /// TODO: Add Doc Comment Here!
-        pub fn pool_value_received<Pool: OutputInterface>(&self) -> u64 {
-            Pool::get_record_outputs(self)
-                .iter()
-                .map(|note_and_metadata| note_and_metadata.value())
-                .sum()
-        }
-    */
     /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
         self.query_sum_value(OutputQuery::any())
@@ -909,29 +900,6 @@ mod tests {
             expected,
         );
     }
-
-    /*
-    proptest! {
-        #[test]
-        #[allow(clippy::too_many_arguments)]
-        fn total_value_received(
-            transparent_unspent: u32,
-            transparent_spent: u32,
-            transparent_semi_spent: u32,
-            sapling_unspent: u32,
-            sapling_spent: u32,
-            sapling_semi_spent: u32,
-            orchard_unspent: u32,
-            orchard_spent: u32,
-            orchard_semi_spent: u32,
-            ) {
-            let transaction_record = nine_note_transaction_record(transparent_unspent.into(), transparent_spent.into(), transparent_semi_spent.into(), sapling_unspent.into(), sapling_spent.into(), sapling_semi_spent.into(), orchard_unspent.into(), orchard_spent.into(), orchard_semi_spent.into());
-
-            let old_total = transaction_record.pool_value_received::<TransparentOutput>() + transaction_record.pool_value_received::<SaplingNote>() + transaction_record.pool_value_received::<OrchardNote>();
-            assert_eq!(transaction_record.total_value_received(), old_total);
-        }
-    }
-    */
 
     #[test]
     fn select_spendable_note_ids_and_values() {
