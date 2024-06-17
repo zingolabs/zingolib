@@ -405,7 +405,7 @@ pub mod fixtures {
             // add an input
             expected_inputs_for_transaction_2 += 1;
             max_unselected_value_for_transaction_2 += MARGINAL_FEE.into_u64() as i64;
-            max_unselected_value_for_transaction_2 -= expected_highest_unselected as i64;
+            max_unselected_value_for_transaction_2 -= expected_highest_unselected;
             expected_highest_unselected -= 10_000;
 
             if max_unselected_value_for_transaction_2 <= 0 {
