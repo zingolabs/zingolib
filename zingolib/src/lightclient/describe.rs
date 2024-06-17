@@ -26,6 +26,7 @@ use crate::{
         },
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
+        transaction_record::TransactionKind,
         transaction_records_by_id::TransactionRecordsById,
         LightWallet,
     },
@@ -404,14 +405,7 @@ impl LightClient {
         transaction_record: &TransactionRecord,
         transaction_records: &TransactionRecordsById,
     ) -> Result<(), ValueTransferRecordingError> {
-        let is_received = match transaction_records.transaction_is_received(transaction_record) {
-            Ok(received) => received,
-            Err(fee_error) => {
-                return Err(ValueTransferRecordingError::FeeCalculationError(
-                    fee_error.to_string(),
-                ))
-            }
-        };
+        let transaction_kind = transaction_records.transaction_kind(transaction_record);
 
         let (block_height, datetime, price, pending) = (
             transaction_record.status.get_height(),
@@ -419,76 +413,27 @@ impl LightClient {
             transaction_record.price,
             !transaction_record.status.is_confirmed(),
         );
-        if is_received {
-            // This transaction is *NOT* outgoing, I *THINK* the TransactionRecord
-            // only write down outputs that are relevant to this Capability
-            // so that means everything we know about is Received.
-            for received_transparent in transaction_record.transparent_outputs.iter() {
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Received {
-                        pool_type: PoolType::Transparent,
-                        amount: received_transparent.value,
-                    },
-                    memos: vec![],
-                    price,
-                    txid,
-                    pending,
-                });
-            }
-            for received_sapling in transaction_record.sapling_notes.iter() {
-                let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
-                    vec![textmemo.clone()]
-                } else {
-                    vec![]
-                };
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Received {
-                        pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
-                        amount: received_sapling.value(),
-                    },
-                    memos,
-                    price,
-                    txid,
-                    pending,
-                });
-            }
-            for received_orchard in transaction_record.orchard_notes.iter() {
-                let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
-                    vec![textmemo.clone()]
-                } else {
-                    vec![]
-                };
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Received {
-                        pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
-                        amount: received_orchard.value(),
-                    },
-                    memos,
-                    price,
-                    txid,
-                    pending,
-                });
-            }
-        } else {
-            // These Value Transfers create resources that are controlled by
-            // a Capability other than the creator
-            for OutgoingTxData {
-                recipient_address,
-                value,
-                memo,
-                recipient_ua,
-            } in &transaction_record.outgoing_tx_data
-            {
-                if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
-                    recipient_ua.as_ref().unwrap_or(recipient_address),
-                ) {
-                    let memos = if let Memo::Text(textmemo) = memo {
+        match transaction_kind {
+            TransactionKind::Received => {
+                // This transaction is *NOT* outgoing, I *THINK* the TransactionRecord
+                // only write down outputs that are relevant to this Capability
+                // so that means everything we know about is Received.
+                for received_transparent in transaction_record.transparent_outputs.iter() {
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Received {
+                            pool_type: PoolType::Transparent,
+                            amount: received_transparent.value,
+                        },
+                        memos: vec![],
+                        price,
+                        txid,
+                        pending,
+                    });
+                }
+                for received_sapling in transaction_record.sapling_notes.iter() {
+                    let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
                         vec![textmemo.clone()]
                     } else {
                         vec![]
@@ -496,9 +441,28 @@ impl LightClient {
                     summaries.push(ValueTransfer {
                         block_height,
                         datetime,
-                        kind: ValueTransferKind::Sent {
-                            recipient_address,
-                            amount: *value,
+                        kind: ValueTransferKind::Received {
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Sapling),
+                            amount: received_sapling.value(),
+                        },
+                        memos,
+                        price,
+                        txid,
+                        pending,
+                    });
+                }
+                for received_orchard in transaction_record.orchard_notes.iter() {
+                    let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
+                        vec![textmemo.clone()]
+                    } else {
+                        vec![]
+                    };
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::Received {
+                            pool_type: PoolType::Shielded(ShieldedProtocol::Orchard),
+                            amount: received_orchard.value(),
                         },
                         memos,
                         price,
@@ -507,38 +471,71 @@ impl LightClient {
                     });
                 }
             }
-            // If the transaction is "received", and nothing is allocates to another capability
-            // then this is a special kind of **TRANSACTION** we call a "SendToSelf", and all
-            // ValueTransfers are typed to match.
-            //  TODO:  I think this violates a clean separation of concerns between ValueTransfers
-            //  and transactions, so I think we should redefine terms in the new architecture
-            if transaction_record.outgoing_tx_data.is_empty() {
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::SendToSelf,
-                    memos: transaction_record
-                        .sapling_notes
-                        .iter()
-                        .filter_map(|sapling_note| sapling_note.memo.clone())
-                        .chain(
-                            transaction_record
-                                .orchard_notes
-                                .iter()
-                                .filter_map(|orchard_note| orchard_note.memo.clone()),
-                        )
-                        .filter_map(|memo| {
-                            if let Memo::Text(text_memo) = memo {
-                                Some(text_memo)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
-                    price,
-                    txid,
-                    pending,
-                });
+            TransactionKind::Sent(_) => {
+                // These Value Transfers create resources that are controlled by
+                // a Capability other than the creator
+                for OutgoingTxData {
+                    recipient_address,
+                    value,
+                    memo,
+                    recipient_ua,
+                } in &transaction_record.outgoing_tx_data
+                {
+                    if let Ok(recipient_address) = ZcashAddress::try_from_encoded(
+                        recipient_ua.as_ref().unwrap_or(recipient_address),
+                    ) {
+                        let memos = if let Memo::Text(textmemo) = memo {
+                            vec![textmemo.clone()]
+                        } else {
+                            vec![]
+                        };
+                        summaries.push(ValueTransfer {
+                            block_height,
+                            datetime,
+                            kind: ValueTransferKind::Sent {
+                                recipient_address,
+                                amount: *value,
+                            },
+                            memos,
+                            price,
+                            txid,
+                            pending,
+                        });
+                    }
+                }
+                // If the transaction is "received", and nothing is allocates to another capability
+                // then this is a special kind of **TRANSACTION** we call a "SendToSelf", and all
+                // ValueTransfers are typed to match.
+                //  TODO:  I think this violates a clean separation of concerns between ValueTransfers
+                //  and transactions, so I think we should redefine terms in the new architecture
+                if transaction_record.outgoing_tx_data.is_empty() {
+                    summaries.push(ValueTransfer {
+                        block_height,
+                        datetime,
+                        kind: ValueTransferKind::SendToSelf,
+                        memos: transaction_record
+                            .sapling_notes
+                            .iter()
+                            .filter_map(|sapling_note| sapling_note.memo.clone())
+                            .chain(
+                                transaction_record
+                                    .orchard_notes
+                                    .iter()
+                                    .filter_map(|orchard_note| orchard_note.memo.clone()),
+                            )
+                            .filter_map(|memo| {
+                                if let Memo::Text(text_memo) = memo {
+                                    Some(text_memo)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                        price,
+                        txid,
+                        pending,
+                    });
+                }
             }
         }
         Ok(())

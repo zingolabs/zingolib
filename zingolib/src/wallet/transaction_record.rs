@@ -552,6 +552,19 @@ impl TransactionRecord {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum TransactionKind {
+    #[allow(dead_code)]
+    Sent(SendType),
+    Received,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SendType {
+    Send,
+    Shield,
+}
+
 #[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing

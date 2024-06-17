@@ -56,6 +56,7 @@ pub mod decrypt_transaction {
                 self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
                 ShieldedOutputExt as _, Spend as _, ToBytes as _,
             },
+            transaction_record::TransactionKind,
         },
     };
     use orchard::note_encryption::OrchardDomain;
@@ -106,10 +107,11 @@ pub mod decrypt_transaction {
                 if let Some(transaction_record) =
                     tx_map.transaction_records_by_id.get(&transaction.txid())
                 {
-                    if !tx_map
+                    // `transaction_kind` uses outgoing_tx_data to determine the SendType but not to distinguish Sent(_) from Received
+                    // therefore, its safe to use it here to establish whether the transaction was created by this capacility or not.
+                    if let TransactionKind::Sent(_) = tx_map
                         .transaction_records_by_id
-                        .transaction_is_received(transaction_record)
-                        .unwrap_or(true)
+                        .transaction_kind(transaction_record)
                     {
                         if let Some(t_bundle) = transaction.transparent_bundle() {
                             for vout in &t_bundle.vout {
