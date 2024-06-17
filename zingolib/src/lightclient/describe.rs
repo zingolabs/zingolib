@@ -322,8 +322,11 @@ impl LightClient {
     }
 
     /// Provides a list of transaction summaries related to this capability
+    /// UNDER DEVELOPMENT
+    /// DO NOT USE
     pub async fn list_transaction_summaries(&self) -> Vec<TransactionSummary> {
-        self.wallet
+        let _transaction_summaries = self
+            .wallet
             .transaction_context
             .transaction_metadata_set
             .read()
@@ -346,7 +349,9 @@ impl LightClient {
                     .build()
                     .expect("all fields should be populated")
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        unimplemented!()
     }
 
     /// TODO: Add Doc Comment Here!

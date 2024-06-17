@@ -567,6 +567,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
+    #[allow(dead_code)]
     pub struct TransactionSummary {
         txid: TxId,
         datetime: u64,
@@ -668,6 +669,7 @@ pub mod summaries {
     }
 
     #[derive(Clone)]
+    #[allow(dead_code)]
     pub(crate) struct OrchardNoteSummary {
         value: orchard::value::NoteValue,
         spend_status: SpendStatus,
@@ -676,6 +678,7 @@ pub mod summaries {
     }
 
     #[derive(Clone)]
+    #[allow(dead_code)]
     pub(crate) struct SaplingNoteSummary {
         value: sapling_crypto::value::NoteValue,
         spend_status: SpendStatus,
@@ -684,6 +687,7 @@ pub mod summaries {
     }
 
     #[derive(Clone)]
+    #[allow(dead_code)]
     pub(crate) struct TransparentCoinSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -691,6 +695,7 @@ pub mod summaries {
     }
 
     #[derive(Clone)]
+    #[allow(dead_code)]
     pub(crate) enum SpendStatus {
         Unspent,
         Spent(TxId),

@@ -1339,10 +1339,7 @@ impl Command for TransactionsCommand {
     }
 
     fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            // json::JsonValue::from(lightclient.list_value_transfers().await).pretty(2)
-            "".to_string()
-        })
+        "Error: transactions command is still under development".to_string()
     }
 }
 
