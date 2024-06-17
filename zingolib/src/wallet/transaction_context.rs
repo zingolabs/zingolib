@@ -107,7 +107,9 @@ pub mod decrypt_transaction {
                 if let Some(transaction_record) =
                     tx_map.transaction_records_by_id.get(&transaction.txid())
                 {
-                    if let TransactionKind::Received = tx_map
+                    // `transaction_kind` uses outgoing_tx_data to determine the SendType but not to distinguish Sent(_) from Received
+                    // therefore, its safe to use it here to establish whether the transaction was created by this capacility or not.
+                    if let TransactionKind::Sent(_) = tx_map
                         .transaction_records_by_id
                         .transaction_kind(transaction_record)
                     {
