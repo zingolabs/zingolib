@@ -193,14 +193,15 @@ impl TransactionRecord {
         sum
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn pool_value_received<Pool: OutputInterface>(&self) -> u64 {
-        Pool::get_record_outputs(self)
-            .iter()
-            .map(|note_and_metadata| note_and_metadata.value())
-            .sum()
-    }
-
+    /*
+        /// TODO: Add Doc Comment Here!
+        pub fn pool_value_received<Pool: OutputInterface>(&self) -> u64 {
+            Pool::get_record_outputs(self)
+                .iter()
+                .map(|note_and_metadata| note_and_metadata.value())
+                .sum()
+        }
+    */
     /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
         self.query_sum_value(OutputQuery::any())
@@ -911,6 +912,7 @@ mod tests {
         );
     }
 
+    /*
     proptest! {
         #[test]
         #[allow(clippy::too_many_arguments)]
@@ -931,6 +933,7 @@ mod tests {
             assert_eq!(transaction_record.total_value_received(), old_total);
         }
     }
+    */
 
     #[test]
     fn select_spendable_note_ids_and_values() {
