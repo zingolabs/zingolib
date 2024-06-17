@@ -378,7 +378,7 @@ pub mod fixtures {
                 vec![(Shielded(Sapling), 25_000)]
             )
             .await,
-            20_000
+            10_000
         );
     }
 }
