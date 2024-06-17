@@ -246,10 +246,8 @@ impl TransactionRecordsById {
         for nullifier in query_record.spent_sapling_nullifiers() {
             if let Some(spend) = self.find_sapling_spend(nullifier) {
                 sapling_spends.push(spend);
-            } else {
-                if fail_on_miss {
-                    return Err(FeeError::SaplingSpendNotFound(*nullifier));
-                }
+            } else if fail_on_miss {
+                return Err(FeeError::SaplingSpendNotFound(*nullifier));
             }
         }
         Ok(sapling_spends)
@@ -267,10 +265,8 @@ impl TransactionRecordsById {
         for nullifier in query_record.spent_orchard_nullifiers() {
             if let Some(spend) = self.find_orchard_spend(nullifier) {
                 orchard_spends.push(spend);
-            } else {
-                if fail_on_miss {
-                    return Err(FeeError::OrchardSpendNotFound(*nullifier));
-                }
+            } else if fail_on_miss {
+                return Err(FeeError::OrchardSpendNotFound(*nullifier));
             }
         }
         Ok(orchard_spends)
