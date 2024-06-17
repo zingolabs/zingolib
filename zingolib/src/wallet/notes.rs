@@ -14,11 +14,58 @@ use zcash_client_backend::PoolType;
 
 use zcash_primitives::transaction::TxId;
 
+use crate::wallet::notes::query::OutputQuery;
+use crate::wallet::notes::query::OutputSpendStatusQuery;
+use crate::wallet::notes::{interface::OutputConstructor, query::OutputPoolQuery};
+#[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
 pub enum AnyPoolOutput {
-    Transparent(TransparentOutput),
-    Sapling(SaplingNote),
-    Orchard(OrchardNote),
+    TransparentOutput,
+    SaplingNote,
+    OrchardNote,
+}
+impl AnyPoolOutput {
+    fn get_record_outputs(
+        transaction_record: &super::transaction_record::TransactionRecord,
+    ) -> Vec<Self> {
+        transaction_record
+            .transparent_outputs
+            .iter()
+            .map(|output| Self::TransparentOutput(output.clone()))
+            .chain(
+                transaction_record
+                    .sapling_notes
+                    .iter()
+                    .map(|output| Self::SaplingNote(output.clone())),
+            )
+            .chain(
+                transaction_record
+                    .orchard_notes
+                    .iter()
+                    .map(|output| Self::OrchardNote(output.clone())),
+            )
+            .collect()
+    }
+
+    fn get_record_query_matching_outputs(
+        transaction_record: &super::transaction_record::TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self> {
+        todo!()
+    }
+
+    fn get_record_to_outputs_mut(
+        transaction_record: &mut super::transaction_record::TransactionRecord,
+    ) -> Vec<&mut Self> {
+        todo!()
+    }
+
+    fn get_record_query_matching_outputs_mut(
+        transaction_record: &mut super::transaction_record::TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&mut Self> {
+        todo!()
+    }
 }
 /// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.
 /// "Over" because pool is not necessary for a unique ID.
