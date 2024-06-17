@@ -375,7 +375,7 @@ pub mod fixtures {
                 &mut environment,
                 &secondary,
                 &tertiary,
-                vec![(Shielded(Sapling), 80_000)]
+                vec![(Shielded(Sapling), 25_000)]
             )
             .await,
             20_000
