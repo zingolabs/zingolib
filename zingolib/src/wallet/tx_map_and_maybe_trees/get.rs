@@ -4,7 +4,7 @@
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::notes::interface::OutputConstructors;
+use crate::wallet::notes::interface::OutputConstructor;
 use crate::wallet::{
     data::{PoolNullifier, TransactionRecord},
     notes::OutputInterface,

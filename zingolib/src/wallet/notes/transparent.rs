@@ -7,7 +7,7 @@ use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 use crate::wallet::notes::{
-    interface::OutputConstructors, query::OutputSpendStatusQuery, OutputInterface,
+    interface::OutputConstructor, query::OutputSpendStatusQuery, OutputInterface,
 };
 use crate::wallet::transaction_record::TransactionRecord;
 
@@ -57,7 +57,7 @@ impl OutputInterface for TransparentOutput {
         &mut self.pending_spent
     }
 }
-impl OutputConstructors for TransparentOutput {
+impl OutputConstructor for TransparentOutput {
     fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self> {
         transaction_record.transparent_outputs.iter().collect()
     }

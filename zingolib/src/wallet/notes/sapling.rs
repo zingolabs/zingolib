@@ -3,7 +3,7 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
-use crate::wallet::notes::interface::OutputConstructors;
+use crate::wallet::notes::interface::OutputConstructor;
 
 use super::{
     super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
@@ -90,7 +90,7 @@ impl OutputInterface for SaplingNote {
         &mut self.pending_spent
     }
 }
-impl OutputConstructors for SaplingNote {
+impl OutputConstructor for SaplingNote {
     fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self> {
         transaction_record.sapling_notes.iter().collect()
     }

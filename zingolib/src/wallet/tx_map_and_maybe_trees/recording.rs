@@ -11,7 +11,7 @@ use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
         data::PoolNullifier,
-        notes::interface::OutputConstructors,
+        notes::interface::OutputConstructor,
         notes::OutputInterface,
         notes::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},

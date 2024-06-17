@@ -2,7 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::wallet::notes::interface::OutputConstructors;
+use crate::wallet::notes::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};

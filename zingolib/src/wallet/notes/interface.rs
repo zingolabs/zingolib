@@ -12,7 +12,7 @@ use crate::wallet::{
 };
 
 /// Trait methods of Outputs that aren't static (i.e. don't take self)
-pub trait OutputConstructors {
+pub trait OutputConstructor {
     /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
     fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self>;
     /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
@@ -29,7 +29,8 @@ pub trait OutputConstructors {
     ) -> Vec<&mut Self>;
 }
 /// Expresses the behavior that *all* value transfers MUST support (inclusive of transparent).
-pub trait OutputInterface: OutputConstructors + Sized {
+#[enum_dispatch::enum_dispatch]
+pub trait OutputInterface: Sized {
     /// returns the zcash_client_backend PoolType enum (one of 3)
     /// Where lrz splits between shielded and transparent, zingolib
     /// uses this type to discriminate among the three pools that we
@@ -93,7 +94,7 @@ pub trait OutputInterface: OutputConstructors + Sized {
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
-pub trait ShieldedNoteInterface: OutputInterface + OutputConstructors + Sized {
+pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
     /// TODO: Add Doc Comment Here!
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     /// TODO: Add Doc Comment Here!

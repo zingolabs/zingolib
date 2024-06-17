@@ -1,5 +1,5 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
-use crate::wallet::notes::interface::OutputConstructors;
+use crate::wallet::notes::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
 use crate::data::witness_trees::WitnessTrees;

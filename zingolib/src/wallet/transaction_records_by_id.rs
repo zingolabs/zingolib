@@ -1,7 +1,7 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::notes::interface::OutputConstructors;
+use crate::wallet::notes::interface::OutputConstructor;
 use crate::wallet::{
     error::FeeError,
     notes::{
@@ -685,7 +685,7 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet::notes::interface::OutputConstructors;
+    use crate::wallet::notes::interface::OutputConstructor;
     use crate::{
         mocks::{
             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
