@@ -22,7 +22,7 @@ zcash_client_backend = { path = "../../ecc_libs/librustzcashs/zupdate/zcash_clie
 zcash_encoding = { path = "../../ecc_libs/librustzcashs/zupdate" }
 zcash_keys = { path = "../../ecc_libs/librustzcashs/zupdate", features = ["orchard"] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { path = "../../ecc_libs/librustzcashs/zupdate" }
+zcash_primitives = { path = "../../ecc_libs/librustzcashs/zupdate/zcash_primitives" }
 zcash_proofs = { path = "../../ecc_libs/librustzcashs/zupdate" }
 zcash_protocol = { path = "../../ecc_libs/librustzcashs/zupdate" }
 sapling-crypto = "0.1.2"
