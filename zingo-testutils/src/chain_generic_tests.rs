@@ -397,7 +397,7 @@ pub mod fixtures {
         let expected_orchard_contribution_for_transaction_2 = 2;
 
         // calculate what will be spent
-        let mut expected_highest_unselected = 10_000 * number_of_notes;
+        let mut expected_highest_unselected: i64 = 10_000 * number_of_notes as i64;
         let mut expected_inputs_for_transaction_2 = 0;
         let mut max_unselected_value_for_transaction_2: i64 =
             (value_from_transaction_2 + expected_orchard_contribution_for_transaction_2) as i64;
