@@ -149,15 +149,13 @@ impl TransactionRecord {
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
             transparents =
-                notes::AnyPoolOutput::get_record_query_matching_outputs(&self, spend_status_query);
+                notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
         }
         if *include_notes.sapling() {
-            saplings =
-                notes::AnyPoolOutput::get_record_query_matching_outputs(&self, spend_status_query);
+            saplings = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
         }
         if *include_notes.orchard() {
-            orchards =
-                notes::AnyPoolOutput::get_record_query_matching_outputs(&self, spend_status_query);
+            orchards = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
         }
         set.extend(transparents);
         set.extend(saplings);
@@ -757,7 +755,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::proptest;
+    //use proptest::prelude::proptest;
     use test_case::test_matrix;
 
     use sapling_crypto::note_encryption::SaplingDomain;
@@ -766,7 +764,7 @@ mod tests {
 
     use crate::wallet::notes::query::OutputQuery;
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
-    use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentOutput};
+    //use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentOutput};
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,
