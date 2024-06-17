@@ -20,7 +20,7 @@ resolver = "2"
 zcash_address = { path = "../../ecc_libs/librustzcashs/zupdate/components/zcash_address" }
 zcash_client_backend = { path = "../../ecc_libs/librustzcashs/zupdate/zcash_client_backend", features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
 zcash_encoding = { path = "../../ecc_libs/librustzcashs/zupdate/components/zcash_encoding" }
-zcash_keys = { path = "../../ecc_libs/librustzcashs/zupdate", features = ["orchard"] }
+zcash_keys = { path = "../../ecc_libs/librustzcashs/zupdate/zcash_keys", features = ["orchard"] }
 zcash_note_encryption = "0.4"
 zcash_primitives = { path = "../../ecc_libs/librustzcashs/zupdate/zcash_primitives" }
 zcash_proofs = { path = "../../ecc_libs/librustzcashs/zupdate" }
