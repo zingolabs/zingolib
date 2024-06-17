@@ -143,35 +143,25 @@ impl TransactionRecord {
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
     pub fn get_stipulated_outputs(&self, include_notes: OutputQuery) -> Vec<notes::AnyPoolOutput> {
         let mut set = vec![];
+        let mut transparents = vec![];
+        let mut saplings = vec![];
+        let mut orchards = vec![];
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
-            set.extend(
-                self.transparent_outputs
-                    .iter()
-                    .filter(|toutput| toutput.spend_status_query(spend_status_query))
-                    .clone()
-                    .map(|toutput| notes::AnyPoolOutput::Transparent(toutput.clone()))
-                    .collect::<Vec<notes::AnyPoolOutput>>(),
-            );
+            transparents =
+                notes::AnyPoolOutput::get_record_query_matching_outputs(&self, spend_status_query);
         }
         if *include_notes.sapling() {
-            set.extend(
-                self.sapling_notes
-                    .iter()
-                    .filter(|soutput| soutput.spend_status_query(spend_status_query))
-                    .map(|soutput| notes::AnyPoolOutput::Sapling(soutput.clone()))
-                    .collect::<Vec<notes::AnyPoolOutput>>(),
-            );
+            saplings =
+                notes::AnyPoolOutput::get_record_query_matching_outputs(&self, spend_status_query);
         }
         if *include_notes.orchard() {
-            set.extend(
-                self.orchard_notes
-                    .iter()
-                    .filter(|ooutput| ooutput.spend_status_query(spend_status_query))
-                    .map(|ooutput| notes::AnyPoolOutput::Orchard(ooutput.clone()))
-                    .collect::<Vec<notes::AnyPoolOutput>>(),
-            );
+            orchards =
+                notes::AnyPoolOutput::get_record_query_matching_outputs(&self, spend_status_query);
         }
+        set.extend(transparents);
+        set.extend(saplings);
+        set.extend(orchards);
         set
     }
 

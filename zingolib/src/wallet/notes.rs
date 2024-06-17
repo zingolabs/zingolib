@@ -14,9 +14,9 @@ use zcash_client_backend::PoolType;
 
 use zcash_primitives::transaction::TxId;
 
+use crate::wallet::notes::query::OutputPoolQuery;
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
-use crate::wallet::notes::{interface::OutputConstructor, query::OutputPoolQuery};
 #[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
 pub enum AnyPoolOutput {
@@ -47,10 +47,10 @@ impl AnyPoolOutput {
             .collect()
     }
 
-    fn get_record_query_matching_outputs(
+    pub(crate) fn get_record_query_matching_outputs(
         transaction_record: &super::transaction_record::TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
-    ) -> Vec<&Self> {
+    ) -> Vec<Self> {
         todo!()
     }
 
