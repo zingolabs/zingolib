@@ -255,7 +255,7 @@ pub mod fixtures {
         // since we used our dust as a freebie in the last send, we should only have 2
         assert_eq!(
             secondary
-                .get_queried_outputs(OutputQuery::only_unspent())
+                .query_for_ids(OutputQuery::only_unspent())
                 .await
                 .len(),
             1

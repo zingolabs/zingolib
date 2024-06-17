@@ -2,7 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::notes::{interface::OutputConstructor, OutputId};
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
@@ -12,6 +12,7 @@ use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
     wallet::NoteId,
+    PoolType,
     ShieldedProtocol::{Orchard, Sapling},
 };
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -141,7 +142,54 @@ impl TransactionRecord {
     }
 
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn get_stipulated_outputs(&self, include_notes: OutputQuery) -> Vec<notes::AnyPoolOutput> {
+    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
+        let mut set = vec![];
+        let spend_status_query = *include_notes.spend_status();
+        if *include_notes.transparent() {
+            for note in self.transparent_outputs.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    set.push(OutputId::from_parts(
+                        self.txid,
+                        PoolType::Transparent,
+                        note.output_index as u32,
+                    ));
+                }
+            }
+        }
+        if *include_notes.sapling() {
+            for note in self.sapling_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    if let Some(output_index) = note.output_index {
+                        set.push(OutputId::from_parts(
+                            self.txid,
+                            PoolType::Shielded(Sapling),
+                            output_index,
+                        ));
+                    }
+                }
+            }
+        }
+        if *include_notes.orchard() {
+            for note in self.orchard_notes.iter() {
+                if note.spend_status_query(spend_status_query) {
+                    if let Some(output_index) = note.output_index {
+                        set.push(OutputId::from_parts(
+                            self.txid,
+                            PoolType::Shielded(Orchard),
+                            output_index,
+                        ));
+                    }
+                }
+            }
+        }
+        set
+    }
+
+    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
+    pub fn get_all_requested_outputs(
+        &self,
+        include_notes: OutputQuery,
+    ) -> Vec<notes::AnyPoolOutput> {
         let mut set = vec![];
         let mut transparents = vec![];
         let mut saplings = vec![];
@@ -756,6 +804,7 @@ mod tests {
     use crate::wallet::notes::query::OutputQuery;
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     //use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentOutput};
+    use crate::wallet::notes::OutputInterface;
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,
@@ -807,42 +856,34 @@ mod tests {
         sapling: bool,
         orchard: bool,
     ) {
-        let mut valid_spend_stati = 0;
+        let mut queried_spend_state = 0;
         if unspent {
-            valid_spend_stati += 1;
+            queried_spend_state += 1;
         }
         if pending_spent {
-            valid_spend_stati += 1;
+            queried_spend_state += 1;
         }
         if spent {
-            valid_spend_stati += 1;
+            queried_spend_state += 1;
         }
-        let mut valid_pools = 0;
+        let mut queried_pools = 0;
         if transparent {
-            valid_pools += 1;
+            queried_pools += 1;
         }
         if sapling {
-            valid_pools += 1;
+            queried_pools += 1;
         }
         if orchard {
-            valid_pools += 1;
+            queried_pools += 1;
         }
 
-        let expected = valid_spend_stati * valid_pools;
+        let expected = queried_spend_state * queried_pools;
 
-        assert_eq!(
-            nine_note_transaction_record_default()
-                .get_stipulated_outputs(OutputQuery::stipulations(
-                    unspent,
-                    pending_spent,
-                    spent,
-                    transparent,
-                    sapling,
-                    orchard,
-                ))
-                .len(),
-            expected,
+        let default_nn_transaction_record = dbg!(nine_note_transaction_record_default());
+        let requested_outputs = default_nn_transaction_record.query_for_ids(
+            OutputQuery::stipulations(unspent, pending_spent, spent, transparent, sapling, orchard),
         );
+        assert_eq!(requested_outputs.len(), expected);
     }
 
     #[test_matrix(
@@ -861,15 +902,15 @@ mod tests {
         sapling: bool,
         orchard: bool,
     ) {
-        let mut valid_spend_stati = 0;
+        let mut valid_spend_state = 0;
         if unspent {
-            valid_spend_stati += 1;
+            valid_spend_state += 1;
         }
         if pending_spent {
-            valid_spend_stati += 1;
+            valid_spend_state += 1;
         }
         if spent {
-            valid_spend_stati += 1;
+            valid_spend_state += 1;
         }
         //different pools have different mock values.
         let mut valid_pool_value = 0;
@@ -883,7 +924,7 @@ mod tests {
             valid_pool_value += 800_000;
         }
 
-        let expected = valid_spend_stati * valid_pool_value;
+        let expected = valid_spend_state * valid_pool_value;
 
         assert_eq!(
             nine_note_transaction_record(
