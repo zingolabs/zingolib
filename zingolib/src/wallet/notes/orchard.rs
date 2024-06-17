@@ -211,7 +211,7 @@ pub mod mocks {
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
     use crate::{
-        mocks::{build_method, orchard_note::OrchardCryptoNoteBuilder},
+        mocks::orchard_note::OrchardCryptoNoteBuilder, utils::build_method,
         wallet::notes::ShieldedNoteInterface,
     };
 

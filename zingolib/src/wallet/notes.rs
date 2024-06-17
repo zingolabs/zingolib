@@ -50,7 +50,7 @@ pub mod mocks {
     use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
     use zcash_primitives::transaction::TxId;
 
-    use crate::mocks::{build_method, default_txid};
+    use crate::{mocks::default_txid, utils::build_method};
 
     /// to build a mock NoteRecordIdentifier
     pub struct NoteIdBuilder {

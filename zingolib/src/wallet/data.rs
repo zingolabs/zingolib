@@ -417,12 +417,13 @@ pub mod finsight {
 /// TODO: Add Mod Description Here!
 pub mod summaries {
     use json::{object, JsonValue};
-    use thiserror::Error;
     use zcash_client_backend::PoolType;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use crate::wallet::transaction_record::TransactionKind;
+    use crate::{
+        error::BuildError, utils::build_method, wallet::transaction_record::TransactionKind,
+    };
 
     use super::OutgoingTxData;
 
@@ -565,7 +566,8 @@ pub mod summaries {
         }
     }
 
-    pub(crate) struct TransactionSummary {
+    /// TODO: doc comment
+    pub struct TransactionSummary {
         txid: TxId,
         datetime: u64,
         blockheight: BlockHeight,
@@ -593,15 +595,6 @@ pub mod summaries {
         outgoing_tx_data: Option<Vec<OutgoingTxData>>,
     }
 
-    macro_rules! build_method {
-        ($name:ident, $localtype:ty) => {
-            #[doc = "Set the $name field of the builder."]
-            pub fn $name(&mut self, $name: $localtype) -> &mut Self {
-                self.$name = Some($name);
-                self
-            }
-        };
-    }
     impl TransactionSummaryBuilder {
         pub(crate) fn new() -> TransactionSummaryBuilder {
             TransactionSummaryBuilder {
@@ -672,13 +665,6 @@ pub mod summaries {
                     .ok_or(BuildError::MissingField("outgoing_tx_data".to_string()))?,
             })
         }
-    }
-
-    /// Errors associated with builder patterns in production code
-    #[derive(Error, Debug)]
-    pub enum BuildError {
-        #[error("build failed. missing field {0}")]
-        MissingField(String),
     }
 
     #[derive(Clone)]
@@ -842,7 +828,7 @@ fn read_write_empty_sapling_tree() {
 pub(crate) mod mocks {
     use zcash_primitives::memo::Memo;
 
-    use crate::mocks::build_method;
+    use crate::utils::build_method;
 
     use super::OutgoingTxData;
 
