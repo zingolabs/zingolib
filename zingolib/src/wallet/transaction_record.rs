@@ -804,7 +804,6 @@ mod tests {
     use crate::wallet::notes::query::OutputQuery;
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
     //use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentOutput};
-    use crate::wallet::notes::OutputInterface;
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,

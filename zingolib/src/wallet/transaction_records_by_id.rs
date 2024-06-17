@@ -5,7 +5,6 @@ use crate::wallet::notes::interface::OutputConstructor;
 use crate::wallet::{
     error::FeeError,
     notes::{
-        self,
         interface::ShieldedNoteInterface,
         query::{OutputQuery, OutputSpendStatusQuery},
         OrchardNote, OutputInterface, SaplingNote,
