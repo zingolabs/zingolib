@@ -2,10 +2,12 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
+use crate::wallet::notes::{interface::OutputConstructor, OutputId};
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
+use crate::wallet::notes;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
@@ -21,8 +23,8 @@ use crate::{
         data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
         keys::unified::WalletCapability,
         notes::{
-            query::OutputQuery, OrchardNote, OutputId, OutputInterface, SaplingNote,
-            ShieldedNoteInterface, TransparentOutput,
+            query::OutputQuery, OrchardNote, OutputInterface, SaplingNote, ShieldedNoteInterface,
+            TransparentOutput,
         },
         traits::{DomainWalletExt, ReadableWriteable as _},
     },
@@ -183,6 +185,32 @@ impl TransactionRecord {
         set
     }
 
+    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
+    pub fn get_all_requested_outputs(
+        &self,
+        include_notes: OutputQuery,
+    ) -> Vec<notes::AnyPoolOutput> {
+        let mut set = vec![];
+        let mut transparents = vec![];
+        let mut saplings = vec![];
+        let mut orchards = vec![];
+        let spend_status_query = *include_notes.spend_status();
+        if *include_notes.transparent() {
+            transparents =
+                notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
+        }
+        if *include_notes.sapling() {
+            saplings = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
+        }
+        if *include_notes.orchard() {
+            orchards = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
+        }
+        set.extend(transparents);
+        set.extend(saplings);
+        set.extend(orchards);
+        set
+    }
+
     /// Uses a query to select all notes with specific properties and sum them
     pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
         let mut sum = 0;
@@ -209,14 +237,6 @@ impl TransactionRecord {
             }
         }
         sum
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn pool_value_received<Pool: OutputInterface>(&self) -> u64 {
-        Pool::transaction_record_to_outputs_vec(self)
-            .iter()
-            .map(|note_and_metadata| note_and_metadata.value())
-            .sum()
     }
 
     /// Sums all the received notes in the transaction.
@@ -317,7 +337,7 @@ impl TransactionRecord {
         D::Note: PartialEq + Clone,
         D::Recipient: super::traits::Recipient,
     {
-        let note = D::WalletNote::transaction_record_to_outputs_vec(self)
+        let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
             .find(|note| *note.output_index() == Some(index));
         note.and_then(|note| {
@@ -553,10 +573,10 @@ pub mod mocks {
 
     use crate::{
         mocks::{
-            build_method, build_method_push, build_push_list,
             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
             random_txid,
         },
+        utils::{build_method, build_method_push, build_push_list},
         wallet::{
             data::mocks::OutgoingTxDataBuilder,
             notes::{
@@ -787,7 +807,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::proptest;
+    //use proptest::prelude::proptest;
     use test_case::test_matrix;
 
     use sapling_crypto::note_encryption::SaplingDomain;
@@ -796,7 +816,7 @@ mod tests {
 
     use crate::wallet::notes::query::OutputQuery;
     use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
-    use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentOutput};
+    //use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentOutput};
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,
@@ -848,42 +868,34 @@ mod tests {
         sapling: bool,
         orchard: bool,
     ) {
-        let mut valid_spend_stati = 0;
+        let mut queried_spend_state = 0;
         if unspent {
-            valid_spend_stati += 1;
+            queried_spend_state += 1;
         }
         if pending_spent {
-            valid_spend_stati += 1;
+            queried_spend_state += 1;
         }
         if spent {
-            valid_spend_stati += 1;
+            queried_spend_state += 1;
         }
-        let mut valid_pools = 0;
+        let mut queried_pools = 0;
         if transparent {
-            valid_pools += 1;
+            queried_pools += 1;
         }
         if sapling {
-            valid_pools += 1;
+            queried_pools += 1;
         }
         if orchard {
-            valid_pools += 1;
+            queried_pools += 1;
         }
 
-        let expected = valid_spend_stati * valid_pools;
+        let expected = queried_spend_state * queried_pools;
 
-        assert_eq!(
-            nine_note_transaction_record_default()
-                .query_for_ids(OutputQuery::stipulations(
-                    unspent,
-                    pending_spent,
-                    spent,
-                    transparent,
-                    sapling,
-                    orchard,
-                ))
-                .len(),
-            expected,
+        let default_nn_transaction_record = dbg!(nine_note_transaction_record_default());
+        let requested_outputs = default_nn_transaction_record.query_for_ids(
+            OutputQuery::stipulations(unspent, pending_spent, spent, transparent, sapling, orchard),
         );
+        assert_eq!(requested_outputs.len(), expected);
     }
 
     #[test_matrix(
@@ -902,15 +914,15 @@ mod tests {
         sapling: bool,
         orchard: bool,
     ) {
-        let mut valid_spend_stati = 0;
+        let mut valid_spend_state = 0;
         if unspent {
-            valid_spend_stati += 1;
+            valid_spend_state += 1;
         }
         if pending_spent {
-            valid_spend_stati += 1;
+            valid_spend_state += 1;
         }
         if spent {
-            valid_spend_stati += 1;
+            valid_spend_state += 1;
         }
         //different pools have different mock values.
         let mut valid_pool_value = 0;
@@ -924,7 +936,7 @@ mod tests {
             valid_pool_value += 800_000;
         }
 
-        let expected = valid_spend_stati * valid_pool_value;
+        let expected = valid_spend_state * valid_pool_value;
 
         assert_eq!(
             nine_note_transaction_record(
@@ -940,27 +952,6 @@ mod tests {
             )),
             expected,
         );
-    }
-
-    proptest! {
-        #[test]
-        #[allow(clippy::too_many_arguments)]
-        fn total_value_received(
-            transparent_unspent: u32,
-            transparent_spent: u32,
-            transparent_semi_spent: u32,
-            sapling_unspent: u32,
-            sapling_spent: u32,
-            sapling_semi_spent: u32,
-            orchard_unspent: u32,
-            orchard_spent: u32,
-            orchard_semi_spent: u32,
-            ) {
-            let transaction_record = nine_note_transaction_record(transparent_unspent.into(), transparent_spent.into(), transparent_semi_spent.into(), sapling_unspent.into(), sapling_spent.into(), sapling_semi_spent.into(), orchard_unspent.into(), orchard_spent.into(), orchard_semi_spent.into());
-
-            let old_total = transaction_record.pool_value_received::<TransparentOutput>() + transaction_record.pool_value_received::<SaplingNote>() + transaction_record.pool_value_received::<OrchardNote>();
-            assert_eq!(transaction_record.total_value_received(), old_total);
-        }
     }
 
     #[test]

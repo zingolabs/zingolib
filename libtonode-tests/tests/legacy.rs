@@ -739,7 +739,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.list_txsummaries().await).pretty(4)
+            JsonValue::from(recipient.list_value_transfers().await).pretty(4)
         );
     }
     #[tokio::test]
@@ -1305,7 +1305,7 @@ mod slow {
             "{}",
             JsonValue::from(
                 recipient
-                    .list_txsummaries()
+                    .list_value_transfers()
                     .await
                     .into_iter()
                     .map(JsonValue::from)
@@ -1323,7 +1323,7 @@ mod slow {
             "{}",
             JsonValue::from(
                 recipient
-                    .list_txsummaries()
+                    .list_value_transfers()
                     .await
                     .into_iter()
                     .map(JsonValue::from)
@@ -1715,7 +1715,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.list_txsummaries().await).pretty(4)
+            JsonValue::from(faucet.list_value_transfers().await).pretty(4)
         );
         println!(
             "{}",
@@ -2355,11 +2355,11 @@ mod slow {
             );
         }
         #[ignore = "this test is redundant with the other rescan metadata checkers.
-         Tests that show correctness of list_txsummaries across rescan:
+         Tests that show correctness of list_value_transfers across rescan:
            * external_send
            * self_send "]
         #[tokio::test]
-        async fn check_list_txsummaries_across_rescan() {
+        async fn check_list_value_transfers_across_rescan() {
             let inital_value = 100_000;
             let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
                 scenarios::faucet_funded_recipient_default(inital_value).await;
@@ -2373,10 +2373,10 @@ mod slow {
                 .await
                 .unwrap();
             let pre_rescan_transactions = recipient.do_list_transactions().await;
-            let pre_rescan_summaries = recipient.list_txsummaries().await;
+            let pre_rescan_summaries = recipient.list_value_transfers().await;
             recipient.do_rescan().await.unwrap();
             let post_rescan_transactions = recipient.do_list_transactions().await;
-            let post_rescan_summaries = recipient.list_txsummaries().await;
+            let post_rescan_summaries = recipient.list_value_transfers().await;
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
             let mut outgoing_metadata = pre_rescan_transactions
@@ -3118,8 +3118,8 @@ mod slow {
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
     #[tokio::test]
-    async fn list_txsummaries_check_fees() {
-        // Check that list_txsummaries behaves correctly given different fee scenarios
+    async fn list_value_transfers_check_fees() {
+        // Check that list_value_transfers behaves correctly given different fee scenarios
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
@@ -3648,7 +3648,7 @@ mod slow {
         zingo_testutils::increase_server_height(&regtest_manager, 1).await;
 
         let _synciiyur = recipient.do_sync(false).await;
-        // let summ_sim = recipient.do_list_txsummaries().await;
+        // let summ_sim = recipient.list_value_transfers().await;
         let bala_sim = recipient.do_balance().await;
 
         recipient.clear_state().await;
@@ -3667,10 +3667,10 @@ mod slow {
             }
         }
 
-        // let summ_int = recipient.do_list_txsummaries().await;
+        // let summ_int = recipient.list_value_transfers().await;
         // let bala_int = recipient.do_balance().await;
         let _synciiyur = recipient.do_sync(false).await;
-        // let summ_syn = recipient.do_list_txsummaries().await;
+        // let summ_syn = recipient.list_value_transfers().await;
         let bala_syn = recipient.do_balance().await;
 
         dbg!(

@@ -11,6 +11,7 @@ use crate::{
     error::{ZingoLibError, ZingoLibResult},
     wallet::{
         data::PoolNullifier,
+        notes::interface::OutputConstructor,
         notes::OutputInterface,
         notes::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},
@@ -140,7 +141,7 @@ impl super::TxMapAndMaybeTrees {
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
                 if let Some(confirmed_spent_note) =
-                    D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_spent_from)
+                    D::WalletNote::get_record_to_outputs_mut(transaction_spent_from)
                         .iter_mut()
                         .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
@@ -160,7 +161,7 @@ impl super::TxMapAndMaybeTrees {
                 self.transaction_records_by_id.get_mut(&source_txid)
             {
                 if let Some(pending_spent_note) =
-                    D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_spent_from)
+                    D::WalletNote::get_record_to_outputs_mut(transaction_spent_from)
                         .iter_mut()
                         .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
@@ -200,19 +201,18 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(maybe_note) =
-            D::WalletNote::transaction_record_to_outputs_vec_mut(transaction_record)
-                .iter_mut()
-                .find_map(|nnmd| {
-                    if nnmd.output_index().is_some() != output_index.is_some() {
-                        return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
-                    }
-                    if *nnmd.output_index() == output_index {
-                        Some(Ok(nnmd))
-                    } else {
-                        None
-                    }
-                })
+        if let Some(maybe_note) = D::WalletNote::get_record_to_outputs_mut(transaction_record)
+            .iter_mut()
+            .find_map(|nnmd| {
+                if nnmd.output_index().is_some() != output_index.is_some() {
+                    return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
+                }
+                if *nnmd.output_index() == output_index {
+                    Some(Ok(nnmd))
+                } else {
+                    None
+                }
+            })
         {
             match maybe_note {
                 Ok(note_datum) => {
@@ -248,7 +248,7 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.transaction_records_by_id.get_mut(&txid) {
-            if let Some(maybe_nnmd) = &mut D::WalletNote::transaction_record_to_outputs_vec_mut(tmd)
+            if let Some(maybe_nnmd) = &mut D::WalletNote::get_record_to_outputs_mut(tmd)
                 .iter_mut()
                 .find_map(|nnmd| {
                     if nnmd.output_index().is_some() != output_index.is_some() {
