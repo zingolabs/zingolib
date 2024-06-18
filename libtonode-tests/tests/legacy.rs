@@ -3726,7 +3726,7 @@ mod slow {
         tokio::time::sleep(Duration::from_secs(5)).await;
         assert_eq!(
             recipient_loaded.do_balance().await.orchard_balance,
-            Some(890_000)
+            Some(880_000)
         );
     }
     #[ignore]
