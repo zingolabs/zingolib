@@ -1327,7 +1327,7 @@ struct TransactionsCommand {}
 impl Command for TransactionsCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            List all transactions for this wallet.
+            Provides a list of transaction summaries related to this wallet in order of blockheight.
 
             Usage:
             transactions
@@ -1335,11 +1335,15 @@ impl Command for TransactionsCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "List all transactions for this wallet."
+        "Provides a list of transaction summaries related to this wallet in order of blockheight."
     }
 
-    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
-        "Error: transactions command is still under development".to_string()
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if !args.is_empty() {
+            return "Error: invalid arguments\nTry 'help transactions' for correct usage and examples"
+                .to_string();
+        }
+        RT.block_on(async move { format!("{}", lightclient.transaction_summaries().await) })
     }
 }
 

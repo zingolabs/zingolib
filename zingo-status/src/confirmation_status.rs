@@ -240,15 +240,11 @@ impl ConfirmationStatus {
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Pending(self_height) => {
-                write!(f, "Transaction sent to mempool at height {}.", self_height)
+            Self::Pending(_) => {
+                write!(f, "pending")
             }
-            Self::Confirmed(self_height) => {
-                write!(
-                    f,
-                    "Transaction confirmed on chain at height {}.",
-                    self_height
-                )
+            Self::Confirmed(_) => {
+                write!(f, "confirmed")
             }
         }
     }
