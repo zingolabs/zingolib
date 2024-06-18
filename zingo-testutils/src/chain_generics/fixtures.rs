@@ -13,9 +13,9 @@ use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
 use crate::chain_generics::conduct_chain::ConductChain;
+use crate::chain_generics::with_assertions;
 use crate::lightclient::from_inputs;
 use crate::lightclient::get_base_address;
-use crate::lightclient::with_assertions;
 
 /// runs a send-to-receiver and receives it in a chain-generic context
 pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
