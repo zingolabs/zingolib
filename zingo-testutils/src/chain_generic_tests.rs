@@ -350,7 +350,7 @@ pub mod fixtures {
         );
     }
 
-    /// send sapling to sapling, receive sapling change.
+    /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
     pub async fn shpool_to_pool<CC>(shpool: ShieldedProtocol, pool: PoolType)
     where
         CC: ConductChain,
