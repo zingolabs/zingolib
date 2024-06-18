@@ -4421,28 +4421,3 @@ async fn zip317_send_all_zero_value() {
         Err(ProposeSendError::ZeroValueSendAll)
     ))
 }
-
-#[tokio::test]
-async fn list_tx_temp_test() {
-    let (regtest_manager, _cph, faucet, recipient, _) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
-
-    from_inputs::quick_send(
-        &recipient,
-        vec![(&get_base_address_macro!(faucet, "unified"), 20_000, None)],
-    )
-    .await
-    .unwrap();
-
-    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
-
-    // println!("{}", recipient.transaction_summaries().await);
-    println!("{}", recipient.transaction_summaries_json_string().await);
-
-    // println!(
-    //     "{}",
-    //     json::JsonValue::from(recipient.transaction_summaries().await).pretty(2)
-    // );
-}
