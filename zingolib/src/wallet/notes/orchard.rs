@@ -3,13 +3,15 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
+use crate::wallet::notes::interface::OutputConstructor;
+
 use super::{
     super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
     ShieldedNoteInterface,
 };
 
 /// TODO: Add Doc Comment Here!
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OrchardNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: orchard::keys::Diversifier,
@@ -66,11 +68,12 @@ impl OutputInterface for OrchardNote {
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.pending_spent
     }
-
-    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+}
+impl OutputConstructor for OrchardNote {
+    fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self> {
         transaction_record.orchard_notes.iter().collect()
     }
-    fn transaction_record_to_outputs_vec_query(
+    fn get_record_query_matching_outputs(
         transaction_record: &TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&Self> {
@@ -80,12 +83,10 @@ impl OutputInterface for OrchardNote {
             .filter(|output| output.spend_status_query(spend_status_query))
             .collect()
     }
-    fn transaction_record_to_outputs_vec_mut(
-        transaction_record: &mut TransactionRecord,
-    ) -> Vec<&mut Self> {
+    fn get_record_to_outputs_mut(transaction_record: &mut TransactionRecord) -> Vec<&mut Self> {
         transaction_record.orchard_notes.iter_mut().collect()
     }
-    fn transaction_record_to_outputs_vec_query_mut(
+    fn get_record_query_matching_outputs_mut(
         transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self> {

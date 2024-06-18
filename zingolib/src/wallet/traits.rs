@@ -1,4 +1,5 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
+use crate::wallet::notes::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
 use crate::data::witness_trees::WitnessTrees;
@@ -491,7 +492,7 @@ where
 
     /// TODO: Add Doc Comment Here!
     fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
-        Self::WalletNote::transaction_record_to_outputs_vec(transaction_md)
+        Self::WalletNote::get_record_outputs(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())
