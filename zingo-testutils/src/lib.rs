@@ -30,7 +30,7 @@ use zingolib::lightclient::LightClient;
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
 pub mod assertions;
-pub mod chain_generic_tests;
+pub mod chain_generics;
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
 /// lightclient helpers

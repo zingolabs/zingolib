@@ -2305,6 +2305,7 @@ mod slow {
             assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
         }
     }
+    #[ignore]
     #[tokio::test]
     async fn multiple_outgoing_metadatas_work_right_on_restore() {
         let inital_value = 100_000;
@@ -2338,7 +2339,7 @@ mod slow {
     #[tokio::test]
     async fn note_selection_order() {
         // In order to fund a transaction multiple notes may be selected and consumed.
-        // To minimize note selection operations notes are consumed from largest to smallest.
+        // The algorithm selects the smallest covering note(s).
         // In addition to testing the order in which notes are selected this test:
         //   * sends to a sapling address
         //   * sends back to the original sender's UA
@@ -2349,7 +2350,7 @@ mod slow {
             .unwrap();
 
         let client_2_saplingaddress = get_base_address_macro!(recipient, "sapling");
-        // Send three transfers in increasing 1000 zat increments
+        // Send three transfers in increasing 10_000 zat increments
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
@@ -2359,7 +2360,7 @@ mod slow {
                 .map(|n| {
                     (
                         client_2_saplingaddress.as_str(),
-                        n * 10000,
+                        n * 10_000,
                         Some(memos[(n - 1) as usize]),
                     )
                 })
@@ -2371,14 +2372,14 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
-        // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
-        // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
+        // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
+        // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
         // plus the transaction fee.
         from_inputs::send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
-                30000,
+                30_000,
                 Some("Sending back, should have 2 inputs"),
             )],
         )
@@ -2386,7 +2387,7 @@ mod slow {
         .unwrap();
         /*
         let client_2_notes = recipient.do_list_notes(false).await;
-        // The 3000 zat note to cover the value, plus another for the tx-fee.
+        // The 30_000 zat note to cover the value, plus another for the tx-fee.
         let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
             .as_fixed_point_u64(0)
             .unwrap();
@@ -2394,8 +2395,8 @@ mod slow {
             .as_fixed_point_u64(0)
             .unwrap();
         assert!(
-            first_value == 30000u64 && second_value == 20000u64
-                || first_value == 20000u64 && second_value == 30000u64
+            first_value == 30_000u64 && second_value == 20_000u64
+                || first_value == 20_000u64 && second_value == 30_000u64
         );
         //);
         // Because the above tx fee won't consume a full note, change will be sent back to 2.

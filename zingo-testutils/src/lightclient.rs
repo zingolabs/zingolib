@@ -121,5 +121,3 @@ pub mod from_inputs {
         proposer.propose_send(request).await
     }
 }
-
-pub mod with_assertions;

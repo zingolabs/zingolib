@@ -5,4 +5,4 @@ pub mod darkside_types {
 }
 
 #[cfg(test)] //TODO:  Evaluate necessity.
-pub mod chain_generic_tests;
+pub mod chain_generics;
