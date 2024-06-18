@@ -3431,12 +3431,12 @@ mod slow {
         //  z -> z
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    20_000  this transfer must require 4 sapling notes
+        //    - 317:    10_000  sapling->sapling change to sapling, with 2 or fewer inputs
         from_inputs::quick_send(&client, vec![(&pmc_sapling, 380_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 390_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        bump_and_check!(o: 10_000 s: 400_000 t: 0);
+        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
