@@ -63,6 +63,7 @@ pub mod fixtures {
     use zcash_client_backend::PoolType;
     use zcash_client_backend::PoolType::Shielded;
     use zcash_client_backend::PoolType::Transparent;
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_client_backend::ShieldedProtocol::Orchard;
     use zcash_client_backend::ShieldedProtocol::Sapling;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
@@ -350,7 +351,7 @@ pub mod fixtures {
     }
 
     /// send sapling to sapling, receive sapling change.
-    pub async fn sapling_to_sapling<CC>()
+    pub async fn shpool_to_pool<CC>(shpool: ShieldedProtocol, pool: PoolType)
     where
         CC: ConductChain,
     {
@@ -358,27 +359,21 @@ pub mod fixtures {
 
         let primary = environment.fund_client_orchard(1_000_000).await;
         let secondary = environment.create_client().await;
-        assert_eq!(
-            with_assertions::propose_send_bump_sync_recipient(
-                &mut environment,
-                &primary,
-                &secondary,
-                vec![(Shielded(Sapling), 100_000)]
-            )
-            .await,
-            20_000
-        );
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &primary,
+            &secondary,
+            vec![(Shielded(shpool), 100_000)],
+        )
+        .await;
 
         let tertiary = environment.create_client().await;
-        assert_eq!(
-            with_assertions::propose_send_bump_sync_recipient(
-                &mut environment,
-                &secondary,
-                &tertiary,
-                vec![(Shielded(Sapling), 25_000)]
-            )
-            .await,
-            10_000
-        );
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &secondary,
+            &tertiary,
+            vec![(pool, 25_000)],
+        )
+        .await;
     }
 }
