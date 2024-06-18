@@ -21,7 +21,9 @@ use crate::{
     wallet::{
         data::{
             finsight,
-            summaries::{ValueTransfer, ValueTransferKind},
+            summaries::{
+                TransactionSummary, TransactionSummaryBuilder, ValueTransfer, ValueTransferKind,
+            },
             OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
@@ -269,13 +271,13 @@ impl LightClient {
     }
 
     /// Provides a list of value transfers related to this capability
-    pub async fn list_txsummaries(&self) -> Vec<ValueTransfer> {
-        self.list_txsummaries_and_capture_errors().await.0
+    pub async fn list_value_transfers(&self) -> Vec<ValueTransfer> {
+        self.list_value_transfers_and_capture_errors().await.0
     }
-    async fn list_txsummaries_and_capture_errors(
+    async fn list_value_transfers_and_capture_errors(
         &self,
     ) -> (Vec<ValueTransfer>, Vec<ValueTransferRecordingError>) {
-        let mut summaries: Vec<ValueTransfer> = Vec::new();
+        let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let mut errors: Vec<ValueTransferRecordingError> = Vec::new();
         let transaction_records_by_id = &self
             .wallet
@@ -287,7 +289,7 @@ impl LightClient {
 
         for (txid, transaction_record) in transaction_records_by_id.iter() {
             if let Err(value_recording_error) = LightClient::record_value_transfers(
-                &mut summaries,
+                &mut value_transfers,
                 *txid,
                 transaction_record,
                 transaction_records_by_id,
@@ -304,7 +306,7 @@ impl LightClient {
                     transaction_record.price,
                     !transaction_record.status.is_confirmed(),
                 );
-                summaries.push(ValueTransfer {
+                value_transfers.push(ValueTransfer {
                     block_height,
                     datetime,
                     kind: ValueTransferKind::Fee { amount: tx_fee },
@@ -315,8 +317,41 @@ impl LightClient {
                 });
             };
         }
-        summaries.sort_by_key(|summary| summary.block_height);
-        (summaries, errors)
+        value_transfers.sort_by_key(|summary| summary.block_height);
+        (value_transfers, errors)
+    }
+
+    /// Provides a list of transaction summaries related to this capability
+    /// UNDER DEVELOPMENT
+    /// DO NOT USE
+    pub async fn list_transaction_summaries(&self) -> Vec<TransactionSummary> {
+        let _transaction_summaries = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .values()
+            .map(|t| {
+                TransactionSummaryBuilder::new()
+                    .txid(t.txid)
+                    .datetime(t.datetime)
+                    .blockheight(t.status.get_height())
+                    .kind(TransactionKind::Received)
+                    .value(0)
+                    .status(t.status)
+                    .zec_price(t.price)
+                    .orchard_notes(vec![])
+                    .sapling_notes(vec![])
+                    .transparent_coins(vec![])
+                    .outgoing_tx_data(vec![])
+                    .build()
+                    .expect("all fields should be populated")
+            })
+            .collect::<Vec<_>>();
+
+        unimplemented!()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -340,7 +375,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let summaries = self.list_txsummaries().await;
+        let summaries = self.list_value_transfers().await;
         let mut memobytes_by_address = HashMap::new();
         for summary in summaries {
             match summary.kind {
@@ -725,7 +760,7 @@ impl LightClient {
     }
 
     async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let summaries = self.list_txsummaries().await;
+        let summaries = self.list_value_transfers().await;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
             match summary.kind {

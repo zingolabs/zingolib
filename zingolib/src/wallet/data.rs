@@ -18,6 +18,8 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
+pub use crate::wallet::transaction_record::TransactionRecord; // TODO: is this necessary? can we import this directly where its used?
+
 /// TODO: Add Doc Comment Here!
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
@@ -416,7 +418,14 @@ pub mod finsight {
 pub mod summaries {
     use json::{object, JsonValue};
     use zcash_client_backend::PoolType;
-    use zcash_primitives::transaction::TxId;
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::{
+        error::BuildError, utils::build_method, wallet::transaction_record::TransactionKind,
+    };
+
+    use super::OutgoingTxData;
 
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
@@ -556,9 +565,143 @@ pub mod summaries {
             }
         }
     }
-}
 
-pub use crate::wallet::transaction_record::TransactionRecord;
+    /// TODO: doc comment
+    #[allow(dead_code)]
+    pub struct TransactionSummary {
+        txid: TxId,
+        datetime: u64,
+        blockheight: BlockHeight,
+        kind: TransactionKind,
+        value: u64,
+        status: ConfirmationStatus,
+        zec_price: Option<f64>,
+        orchard_notes: Vec<OrchardNoteSummary>,
+        sapling_notes: Vec<SaplingNoteSummary>,
+        transparent_coins: Vec<TransparentCoinSummary>,
+        outgoing_tx_data: Vec<OutgoingTxData>,
+    }
+
+    pub(crate) struct TransactionSummaryBuilder {
+        txid: Option<TxId>,
+        datetime: Option<u64>,
+        blockheight: Option<BlockHeight>,
+        kind: Option<TransactionKind>,
+        value: Option<u64>,
+        status: Option<ConfirmationStatus>,
+        zec_price: Option<Option<f64>>,
+        orchard_notes: Option<Vec<OrchardNoteSummary>>,
+        sapling_notes: Option<Vec<SaplingNoteSummary>>,
+        transparent_coins: Option<Vec<TransparentCoinSummary>>,
+        outgoing_tx_data: Option<Vec<OutgoingTxData>>,
+    }
+
+    impl TransactionSummaryBuilder {
+        pub(crate) fn new() -> TransactionSummaryBuilder {
+            TransactionSummaryBuilder {
+                txid: None,
+                datetime: None,
+                blockheight: None,
+                kind: None,
+                value: None,
+                status: None,
+                zec_price: None,
+                orchard_notes: None,
+                sapling_notes: None,
+                transparent_coins: None,
+                outgoing_tx_data: None,
+            }
+        }
+
+        build_method!(txid, TxId);
+        build_method!(datetime, u64);
+        build_method!(blockheight, BlockHeight);
+        build_method!(kind, TransactionKind);
+        build_method!(value, u64);
+        build_method!(status, ConfirmationStatus);
+        build_method!(zec_price, Option<f64>);
+        build_method!(orchard_notes, Vec<OrchardNoteSummary>);
+        build_method!(sapling_notes, Vec<SaplingNoteSummary>);
+        build_method!(transparent_coins, Vec<TransparentCoinSummary>);
+        build_method!(outgoing_tx_data, Vec<OutgoingTxData>);
+
+        pub(crate) fn build(&self) -> Result<TransactionSummary, BuildError> {
+            Ok(TransactionSummary {
+                txid: self
+                    .txid
+                    .ok_or(BuildError::MissingField("txid".to_string()))?,
+                datetime: self
+                    .datetime
+                    .ok_or(BuildError::MissingField("datetime".to_string()))?,
+                blockheight: self
+                    .blockheight
+                    .ok_or(BuildError::MissingField("blockheight".to_string()))?,
+                kind: self
+                    .kind
+                    .ok_or(BuildError::MissingField("kind".to_string()))?,
+                value: self
+                    .value
+                    .ok_or(BuildError::MissingField("value".to_string()))?,
+                status: self
+                    .status
+                    .ok_or(BuildError::MissingField("status".to_string()))?,
+                zec_price: self
+                    .zec_price
+                    .ok_or(BuildError::MissingField("zec_price".to_string()))?,
+                orchard_notes: self
+                    .orchard_notes
+                    .clone()
+                    .ok_or(BuildError::MissingField("orchard_notes".to_string()))?,
+                sapling_notes: self
+                    .sapling_notes
+                    .clone()
+                    .ok_or(BuildError::MissingField("sapling_notes".to_string()))?,
+                transparent_coins: self
+                    .transparent_coins
+                    .clone()
+                    .ok_or(BuildError::MissingField("transparent_coins".to_string()))?,
+                outgoing_tx_data: self
+                    .outgoing_tx_data
+                    .clone()
+                    .ok_or(BuildError::MissingField("outgoing_tx_data".to_string()))?,
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    #[allow(dead_code)]
+    pub(crate) struct OrchardNoteSummary {
+        value: orchard::value::NoteValue,
+        spend_status: SpendStatus,
+        output_index: Option<u32>,
+        memo: Option<String>,
+    }
+
+    #[derive(Clone)]
+    #[allow(dead_code)]
+    pub(crate) struct SaplingNoteSummary {
+        value: sapling_crypto::value::NoteValue,
+        spend_status: SpendStatus,
+        output_index: Option<u32>,
+        memo: Option<String>,
+    }
+
+    #[derive(Clone)]
+    #[allow(dead_code)]
+    pub(crate) struct TransparentCoinSummary {
+        value: u64,
+        spend_status: SpendStatus,
+        output_index: Option<u32>,
+    }
+
+    #[derive(Clone)]
+    #[allow(dead_code)]
+    pub(crate) enum SpendStatus {
+        Unspent,
+        Spent(TxId),
+        PendingSpent(TxId),
+    }
+}
 
 /// Convenience wrapper for primitive
 #[derive(Debug)]
@@ -690,7 +833,7 @@ fn read_write_empty_sapling_tree() {
 pub(crate) mod mocks {
     use zcash_primitives::memo::Memo;
 
-    use crate::mocks::build_method;
+    use crate::utils::build_method;
 
     use super::OutgoingTxData;
 

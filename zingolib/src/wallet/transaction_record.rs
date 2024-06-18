@@ -573,10 +573,10 @@ pub mod mocks {
 
     use crate::{
         mocks::{
-            build_method, build_method_push, build_push_list,
             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
             random_txid,
         },
+        utils::{build_method, build_method_push, build_push_list},
         wallet::{
             data::mocks::OutgoingTxDataBuilder,
             notes::{

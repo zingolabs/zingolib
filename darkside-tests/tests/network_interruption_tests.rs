@@ -197,7 +197,7 @@ async fn shielded_note_marked_as_change_test() {
         json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
     );
     println!("do list tx summaries:");
-    dbg!(scenario.get_lightclient(0).list_txsummaries().await);
+    dbg!(scenario.get_lightclient(0).list_value_transfers().await);
 
     // assert the balance is correct
     assert_eq!(
@@ -222,7 +222,7 @@ async fn shielded_note_marked_as_change_test() {
         }
     }
     // assert all fees are 10000 zats
-    let value_transfers = scenario.get_lightclient(0).list_txsummaries().await;
+    let value_transfers = scenario.get_lightclient(0).list_value_transfers().await;
     for value_transfer in &value_transfers {
         if let ValueTransferKind::Fee { amount } = value_transfer.kind {
             assert_eq!(amount, 10_000)
