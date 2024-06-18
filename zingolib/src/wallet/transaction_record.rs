@@ -244,6 +244,12 @@ impl TransactionRecord {
         self.query_sum_value(OutputQuery::any())
     }
 
+    // The value that's output, but *NOT* to an explicit receiver (unless this is running on the winning validator!)
+    // is the fee.
+    pub(crate) fn total_value_output_to_explicit_receivers(&self) -> u64 {
+        self.total_value_received() + self.value_outgoing()
+    }
+
     /// TODO: Add Doc Comment Here!
     #[deprecated(
         note = "replaced by `calculate_transaction_fee` method for [`crate::wallet::transaction_records_by_id::TransactionRecordsById`]"
@@ -552,16 +558,31 @@ impl TransactionRecord {
     }
 }
 
+/// TODO: doc comment
 #[derive(Clone, Copy)]
-pub(crate) enum TransactionKind {
-    #[allow(dead_code)]
+pub enum TransactionKind {
+    /// TODO: doc comment
     Sent(SendType),
+    /// TODO: doc comment
     Received,
 }
 
+impl std::fmt::Display for TransactionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            TransactionKind::Received => write!(f, "received"),
+            TransactionKind::Sent(SendType::Send) => write!(f, "sent"),
+            TransactionKind::Sent(SendType::Shield) => write!(f, "shield"),
+        }
+    }
+}
+
+/// TODO: doc comment
 #[derive(Clone, Copy)]
-pub(crate) enum SendType {
+pub enum SendType {
+    /// TODO: doc comment
     Send,
+    /// TODO: doc comment
     Shield,
 }
 
