@@ -4,6 +4,7 @@
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
+use crate::wallet::notes::interface::OutputConstructor;
 use crate::wallet::{
     data::{PoolNullifier, TransactionRecord},
     notes::OutputInterface,
@@ -84,7 +85,7 @@ impl TxMapAndMaybeTrees {
         self.transaction_records_by_id
             .iter()
             .flat_map(|(_, transaction_record)| {
-                D::WalletNote::transaction_record_to_outputs_vec_query(
+                D::WalletNote::get_record_query_matching_outputs(
                     transaction_record,
                     OutputSpendStatusQuery::only_unspent(),
                 )
