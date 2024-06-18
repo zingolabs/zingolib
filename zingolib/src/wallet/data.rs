@@ -448,6 +448,7 @@ pub mod finsight {
 
 /// TODO: Add Mod Description Here!
 pub mod summaries {
+    use chrono::DateTime;
     use json::JsonValue;
     use zcash_client_backend::PoolType;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -670,6 +671,11 @@ pub mod summaries {
 
     impl std::fmt::Display for TransactionSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
+                format!("{}", dt)
+            } else {
+                "datetime not available".to_string()
+            };
             let fee = if let Some(f) = self.fee {
                 f.to_string()
             } else {
@@ -701,7 +707,7 @@ pub mod summaries {
     outgoing data: {}
 }}",
                 self.txid,
-                self.datetime,
+                datetime,
                 self.status,
                 u64::from(self.blockheight),
                 self.kind,
