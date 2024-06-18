@@ -3,12 +3,15 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
+use crate::wallet::notes::interface::OutputConstructor;
+
 use super::{
     super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
     ShieldedNoteInterface,
 };
 
 /// TODO: Add Doc Comment Here!
+#[derive(Clone)]
 pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
@@ -86,11 +89,12 @@ impl OutputInterface for SaplingNote {
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.pending_spent
     }
-
-    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self> {
+}
+impl OutputConstructor for SaplingNote {
+    fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self> {
         transaction_record.sapling_notes.iter().collect()
     }
-    fn transaction_record_to_outputs_vec_query(
+    fn get_record_query_matching_outputs(
         transaction_record: &TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&Self> {
@@ -100,12 +104,10 @@ impl OutputInterface for SaplingNote {
             .filter(|output| output.spend_status_query(spend_status_query))
             .collect()
     }
-    fn transaction_record_to_outputs_vec_mut(
-        transaction_record: &mut TransactionRecord,
-    ) -> Vec<&mut Self> {
+    fn get_record_to_outputs_mut(transaction_record: &mut TransactionRecord) -> Vec<&mut Self> {
         transaction_record.sapling_notes.iter_mut().collect()
     }
-    fn transaction_record_to_outputs_vec_query_mut(
+    fn get_record_query_matching_outputs_mut(
         transaction_record: &mut TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self> {
