@@ -697,8 +697,16 @@ mod fast {
 mod slow {
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_primitives::consensus::NetworkConstants;
+    use zcash_primitives::{consensus::NetworkConstants, memo::Memo};
+    use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
+    use zingolib::{
+        utils::conversion::txid_from_hex_encoded_str,
+        wallet::{
+            data::{summaries::TransactionSummaryBuilder, OutgoingTxData},
+            transaction_record::TransactionKind,
+        },
+    };
 
     use super::*;
 
@@ -1390,6 +1398,76 @@ mod slow {
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
+        let expected_tx_summary_1 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(5))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
+            .datetime(0)
+            .txid(
+                txid_from_hex_encoded_str(
+                    "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
+                )
+                .unwrap(),
+            )
+            .value(100_000_000)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(None)
+            .orchard_notes(vec![])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![])
+            .build()
+            .unwrap();
+        let expected_tx_summary_2 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(6))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
+            .datetime(0)
+            .txid(
+                txid_from_hex_encoded_str(
+                    "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
+                )
+                .unwrap(),
+            )
+            .value(20_000)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(Some(10_000))
+            .orchard_notes(vec![])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(), 
+                 value: 20_000, 
+                 memo: Memo::Empty,
+                 recipient_ua: None 
+             }])
+            .build()
+            .unwrap();
+        let expected_tx_summary_3 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(7))
+            .status(ConfirmationStatus::Pending(BlockHeight::from_u32(7)))
+            .datetime(0)
+            .txid(
+                txid_from_hex_encoded_str(
+                    "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
+                )
+                .unwrap(),
+            )
+            .value(20_000)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(Some(10_000))
+            .orchard_notes(vec![])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                 recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(), 
+                 value: 20_000, 
+                 memo: Memo::Empty,
+                 recipient_ua: None 
+             }])
+            .build()
+            .unwrap();
         let expected_transactions = json::parse(
         r#"
         [
@@ -1480,11 +1558,13 @@ mod slow {
             Some(0)
         );
 
-        let transactions = recipient.do_list_transactions().await;
+        // let transactions = recipient.do_list_transactions().await;
+        let transactions = recipient.transaction_summaries().await.0.iter();
         assert_eq!(
-            transactions.members().len(),
-            expected_transactions.members().len()
+            transactions.len(),
+            3
         );
+
         for (t1, t2) in transactions.members().zip(expected_transactions.members()) {
             assert!(
                 check_transaction_equality(t1, t2),
