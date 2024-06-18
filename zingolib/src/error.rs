@@ -132,3 +132,11 @@ impl From<ZingoLibError> for String {
 }
 
 impl Error for ZingoLibError {}
+
+/// Errors associated with builder patterns in production code
+#[derive(thiserror::Error, Debug)]
+pub enum BuildError {
+    /// build failed. missing field.
+    #[error("build failed. missing field {0}")]
+    MissingField(String),
+}

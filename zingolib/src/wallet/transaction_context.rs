@@ -56,6 +56,7 @@ pub mod decrypt_transaction {
                 self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
                 ShieldedOutputExt as _, Spend as _, ToBytes as _,
             },
+            transaction_record::TransactionKind,
         },
     };
     use orchard::note_encryption::OrchardDomain;
@@ -83,51 +84,49 @@ pub mod decrypt_transaction {
         ) {
             // Set up data structures to record scan results
             let mut txid_indexed_zingo_memos = Vec::new();
-            // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
-            let mut is_outgoing_transaction = false;
+
             // Collect our t-addresses for easy checking
             let taddrs_set = self.key.get_all_taddrs(&self.config);
-            // Process t-address outputs
-            // If the there's funding known to be input to this transaction by this Capability
-            // then it's known to be Outgoing.  It may still be outgoing but those funds may not be known
-            // at this point.
-            if self
-                .transaction_metadata_set
-                .read()
-                .await
-                .transaction_records_by_id
-                .total_funds_spent_in(&transaction.txid())
-                > 0
-            {
-                is_outgoing_transaction = true;
-            }
+
             let mut outgoing_metadatas = vec![];
+
             // Execute scanning operations
             self.decrypt_transaction_to_record(
                 transaction,
                 status,
                 block_time,
-                &mut is_outgoing_transaction,
                 &mut outgoing_metadatas,
                 &mut txid_indexed_zingo_memos,
                 &taddrs_set,
             )
             .await;
+
             // Post process scan results
-            if is_outgoing_transaction {
-                if let Some(t_bundle) = transaction.transparent_bundle() {
-                    for vout in &t_bundle.vout {
-                        if let Some(taddr) = vout
-                            .recipient_address()
-                            .map(|raw_taddr| address_from_pubkeyhash(&self.config, raw_taddr))
-                        {
-                            if !taddrs_set.contains(&taddr) {
-                                outgoing_metadatas.push(OutgoingTxData {
-                                    recipient_address: taddr,
-                                    value: u64::from(vout.value),
-                                    memo: Memo::Empty,
-                                    recipient_ua: None,
-                                });
+            {
+                let tx_map = self.transaction_metadata_set.write().await;
+                if let Some(transaction_record) =
+                    tx_map.transaction_records_by_id.get(&transaction.txid())
+                {
+                    // `transaction_kind` uses outgoing_tx_data to determine the SendType but not to distinguish Sent(_) from Received
+                    // therefore, its safe to use it here to establish whether the transaction was created by this capacility or not.
+                    if let TransactionKind::Sent(_) = tx_map
+                        .transaction_records_by_id
+                        .transaction_kind(transaction_record)
+                    {
+                        if let Some(t_bundle) = transaction.transparent_bundle() {
+                            for vout in &t_bundle.vout {
+                                if let Some(taddr) = vout.recipient_address().map(|raw_taddr| {
+                                    address_from_pubkeyhash(&self.config, raw_taddr)
+                                }) {
+                                    if !taddrs_set.contains(&taddr) {
+                                        outgoing_metadatas.push(OutgoingTxData {
+                                            recipient_address: taddr,
+                                            value: u64::from(vout.value),
+                                            memo: Memo::Empty,
+                                            recipient_ua: None,
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
@@ -161,7 +160,6 @@ pub mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
-            is_outgoing_transaction: &mut bool,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
             taddrs_set: &HashSet<String>,
@@ -172,7 +170,6 @@ pub mod decrypt_transaction {
                 transaction,
                 status,
                 block_time,
-                is_outgoing_transaction,
                 taddrs_set,
             )
             .await;
@@ -180,7 +177,6 @@ pub mod decrypt_transaction {
                 transaction,
                 status,
                 block_time,
-                is_outgoing_transaction,
                 outgoing_metadatas,
                 arbitrary_memos_with_txids,
             )
@@ -189,7 +185,6 @@ pub mod decrypt_transaction {
                 transaction,
                 status,
                 block_time,
-                is_outgoing_transaction,
                 outgoing_metadatas,
                 arbitrary_memos_with_txids,
             )
@@ -201,7 +196,6 @@ pub mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
-            is_outgoing_transaction: &mut bool,
             taddrs_set: &HashSet<String>,
         ) {
             // Scan all transparent outputs to see if we received any money
@@ -269,9 +263,6 @@ pub mod decrypt_transaction {
 
             // Mark all the UTXOs that were spent here back in their original txns.
             for (prev_transaction_id, prev_n, transaction_id) in spent_utxos {
-                // Mark that this Tx spent some funds
-                *is_outgoing_transaction = true;
-
                 self.transaction_metadata_set
                     .write()
                     .await
@@ -281,8 +272,6 @@ pub mod decrypt_transaction {
 
             // If this transaction spent value, add the spent amount to the TxID
             if total_transparent_value_spent > 0 {
-                *is_outgoing_transaction = true;
-
                 self.transaction_metadata_set
                     .write()
                     .await
@@ -356,7 +345,6 @@ pub mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
-            is_outgoing_transaction: &mut bool,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) {
@@ -364,7 +352,6 @@ pub mod decrypt_transaction {
                 transaction,
                 status,
                 block_time,
-                is_outgoing_transaction,
                 outgoing_metadatas,
                 arbitrary_memos_with_txids,
             )
@@ -377,7 +364,6 @@ pub mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
-            is_outgoing_transaction: &mut bool,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) {
@@ -385,7 +371,6 @@ pub mod decrypt_transaction {
                 transaction,
                 status,
                 block_time,
-                is_outgoing_transaction,
                 outgoing_metadatas,
                 arbitrary_memos_with_txids,
             )
@@ -403,7 +388,6 @@ pub mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
-            is_outgoing_transaction: &mut bool, // Isn't this also NA for pending?
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) where
@@ -532,8 +516,6 @@ pub mod decrypt_transaction {
                         &output.out_ciphertext(),
                     ) {
                         Some((note, payment_address, memo_bytes)) => {
-                            // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
-                            *is_outgoing_transaction = true;
                             let address = payment_address.b32encode_for_network(&self.config.chain);
 
                             // Check if this is change, and if it also doesn't have a memo, don't add
@@ -570,16 +552,7 @@ pub mod decrypt_transaction {
                                         .map(|addr| addr.encode(&self.config.chain))
                                         .any(|addr| addr == address)
                                     }) {
-                                        if let Memo::Text(_) = memo {
-                                            Some(OutgoingTxData {
-                                                recipient_address: address,
-                                                value: D::WalletNote::value_from_note(&note),
-                                                memo,
-                                                recipient_ua: None,
-                                            })
-                                        } else {
-                                            None
-                                        }
+                                        None
                                     } else {
                                         Some(OutgoingTxData {
                                             recipient_address: address,

@@ -6,11 +6,11 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
 use incrementalmerkletree::{Hashable, Position};
 
+use json::JsonValue;
 use prost::Message;
 
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use std::usize;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 
 use zcash_encoding::{Optional, Vector};
@@ -18,6 +18,8 @@ use zcash_encoding::{Optional, Vector};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::{memo::Memo, transaction::TxId};
+
+pub use crate::wallet::transaction_record::TransactionRecord; // TODO: is this necessary? can we import this directly where its used?
 
 /// TODO: Add Doc Comment Here!
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
@@ -292,9 +294,9 @@ impl std::fmt::Display for OutgoingTxData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Format the recipient address or unified address if provided.
         let address_display = if let Some(ref ua) = self.recipient_ua {
-            format!("Unified Address: {}", ua)
+            format!("unified address: {}", ua)
         } else {
-            format!("Recipient Address: {}", self.recipient_address)
+            format!("recipient address: {}", self.recipient_address)
         };
         let memo_text = if let Memo::Text(mt) = self.memo.clone() {
             mt.to_string()
@@ -304,12 +306,32 @@ impl std::fmt::Display for OutgoingTxData {
 
         write!(
             f,
-            "{}\nValue: {}\nMemo: {}",
+            "\t{{
+            {}
+            value: {}
+            memo: {}
+        }}",
             address_display, self.value, memo_text
         )
     }
 }
-
+impl From<OutgoingTxData> for JsonValue {
+    fn from(outgoing_tx_data: OutgoingTxData) -> Self {
+        let address = outgoing_tx_data
+            .recipient_ua
+            .unwrap_or(outgoing_tx_data.recipient_address);
+        let memo = if let Memo::Text(memo_text) = outgoing_tx_data.memo {
+            Some(memo_text.to_string())
+        } else {
+            None
+        };
+        json::object! {
+            "address" => address,
+            "value" => outgoing_tx_data.value,
+            "memo" => memo,
+        }
+    }
+}
 impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
         (self.recipient_address == other.recipient_address
@@ -367,6 +389,17 @@ impl OutgoingTxData {
     }
 }
 
+struct OutgoingTxDataSummaries(Vec<OutgoingTxData>);
+
+impl std::fmt::Display for OutgoingTxDataSummaries {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for outgoing_tx_data in &self.0 {
+            write!(f, "\n{}", outgoing_tx_data)?;
+        }
+        Ok(())
+    }
+}
+
 /// TODO: Add Mod Description Here!
 pub mod finsight {
     /// TODO: Add Doc Comment Here!
@@ -415,9 +448,19 @@ pub mod finsight {
 
 /// TODO: Add Mod Description Here!
 pub mod summaries {
-    use json::{object, JsonValue};
+    use chrono::DateTime;
+    use json::JsonValue;
     use zcash_client_backend::PoolType;
-    use zcash_primitives::transaction::TxId;
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::{
+        error::BuildError,
+        utils::build_method,
+        wallet::{data::OutgoingTxDataSummaries, transaction_record::TransactionKind},
+    };
+
+    use super::OutgoingTxData;
 
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
@@ -514,7 +557,7 @@ pub mod summaries {
 
     impl From<ValueTransfer> for JsonValue {
         fn from(value: ValueTransfer) -> Self {
-            let mut temp_object = object! {
+            let mut temp_object = json::object! {
                     "amount": "",
                     "block_height": u32::from(value.block_height),
                     "datetime": value.datetime,
@@ -557,9 +600,500 @@ pub mod summaries {
             }
         }
     }
-}
 
-pub use crate::wallet::transaction_record::TransactionRecord;
+    /// TODO: doc comment
+    pub struct TransactionSummary {
+        txid: TxId,
+        datetime: u64,
+        status: ConfirmationStatus,
+        blockheight: BlockHeight,
+        kind: TransactionKind,
+        value: u64,
+        fee: Option<u64>,
+        zec_price: Option<f64>,
+        orchard_notes: Vec<OrchardNoteSummary>,
+        sapling_notes: Vec<SaplingNoteSummary>,
+        transparent_coins: Vec<TransparentCoinSummary>,
+        outgoing_tx_data: Vec<OutgoingTxData>,
+    }
+
+    #[allow(dead_code)]
+    impl TransactionSummary {
+        /// TODO: doc comment
+        pub fn txid(&self) -> TxId {
+            self.txid
+        }
+        /// TODO: doc comment
+        pub fn datetime(&self) -> u64 {
+            self.datetime
+        }
+        /// TODO: doc comment
+        pub fn status(&self) -> ConfirmationStatus {
+            self.status
+        }
+        /// TODO: doc comment
+        pub fn blockheight(&self) -> BlockHeight {
+            self.blockheight
+        }
+        /// TODO: doc comment
+        pub fn kind(&self) -> TransactionKind {
+            self.kind
+        }
+        /// TODO: doc comment
+        pub fn value(&self) -> u64 {
+            self.value
+        }
+        /// TODO: doc comment
+        pub fn fee(&self) -> Option<u64> {
+            self.fee
+        }
+        /// TODO: doc comment
+        pub fn zec_price(&self) -> Option<f64> {
+            self.zec_price
+        }
+        /// TODO: doc comment
+        pub fn orchard_notes(&self) -> &[OrchardNoteSummary] {
+            &self.orchard_notes
+        }
+        /// TODO: doc comment
+        pub fn sapling_notes(&self) -> &[SaplingNoteSummary] {
+            &self.sapling_notes
+        }
+        /// TODO: doc comment
+        pub fn transparent_coins(&self) -> &[TransparentCoinSummary] {
+            &self.transparent_coins
+        }
+        /// TODO: doc comment
+        pub fn outgoing_tx_data(&self) -> &[OutgoingTxData] {
+            &self.outgoing_tx_data
+        }
+    }
+
+    impl std::fmt::Display for TransactionSummary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
+                format!("{}", dt)
+            } else {
+                "not available".to_string()
+            };
+            let fee = if let Some(f) = self.fee {
+                f.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let zec_price = if let Some(price) = self.zec_price {
+                price.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let orchard_notes = OrchardNoteSummaries(self.orchard_notes.clone());
+            let sapling_notes = SaplingNoteSummaries(self.sapling_notes.clone());
+            let transparent_coins = TransparentCoinSummaries(self.transparent_coins.clone());
+            let outgoing_tx_data_summaries = OutgoingTxDataSummaries(self.outgoing_tx_data.clone());
+            write!(
+                f,
+                "{{
+    txid: {}
+    datetime: {}
+    status: {}
+    blockheight: {}
+    kind: {}
+    value: {}
+    fee: {}
+    zec price: {}
+    orchard notes: {}
+    sapling notes: {}
+    transparent coins: {}
+    outgoing data: {}
+}}",
+                self.txid,
+                datetime,
+                self.status,
+                u64::from(self.blockheight),
+                self.kind,
+                self.value,
+                fee,
+                zec_price,
+                orchard_notes,
+                sapling_notes,
+                transparent_coins,
+                outgoing_tx_data_summaries
+            )
+        }
+    }
+
+    impl From<TransactionSummary> for JsonValue {
+        fn from(transaction: TransactionSummary) -> Self {
+            json::object! {
+                "txid" => transaction.txid.to_string(),
+                "datetime" => transaction.datetime,
+                "status" => transaction.status.to_string(),
+                "blockheight" => u64::from(transaction.blockheight),
+                "kind" => transaction.kind.to_string(),
+                "value" => transaction.value,
+                "fee" => transaction.fee,
+                "zec_price" => transaction.zec_price,
+                "orchard_notes" => JsonValue::from(transaction.orchard_notes),
+                "sapling_notes" => JsonValue::from(transaction.sapling_notes),
+                "transparent_coins" => JsonValue::from(transaction.transparent_coins),
+                "outgoing_tx_data" => JsonValue::from(transaction.outgoing_tx_data),
+            }
+        }
+    }
+
+    /// TODO: doc comment
+    pub struct TransactionSummaries(Vec<TransactionSummary>);
+
+    impl TransactionSummaries {
+        /// TODO: doc comment
+        pub fn new(transaction_summaries: Vec<TransactionSummary>) -> Self {
+            TransactionSummaries(transaction_summaries)
+        }
+    }
+
+    impl std::fmt::Display for TransactionSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for transaction_summary in &self.0 {
+                write!(f, "\n{}", transaction_summary)?;
+            }
+            Ok(())
+        }
+    }
+
+    impl From<TransactionSummaries> for JsonValue {
+        fn from(transaction_summaries: TransactionSummaries) -> Self {
+            let transaction_summaries: Vec<JsonValue> = transaction_summaries
+                .0
+                .into_iter()
+                .map(JsonValue::from)
+                .collect();
+            json::object! {
+                "transaction_summaries" => transaction_summaries
+            }
+        }
+    }
+
+    /// TODO: doc comment
+    pub struct TransactionSummaryBuilder {
+        txid: Option<TxId>,
+        datetime: Option<u64>,
+        status: Option<ConfirmationStatus>,
+        blockheight: Option<BlockHeight>,
+        kind: Option<TransactionKind>,
+        value: Option<u64>,
+        fee: Option<Option<u64>>,
+        zec_price: Option<Option<f64>>,
+        orchard_notes: Option<Vec<OrchardNoteSummary>>,
+        sapling_notes: Option<Vec<SaplingNoteSummary>>,
+        transparent_coins: Option<Vec<TransparentCoinSummary>>,
+        outgoing_tx_data: Option<Vec<OutgoingTxData>>,
+    }
+
+    impl TransactionSummaryBuilder {
+        /// TODO: doc comment
+        pub fn new() -> TransactionSummaryBuilder {
+            TransactionSummaryBuilder {
+                txid: None,
+                datetime: None,
+                status: None,
+                blockheight: None,
+                kind: None,
+                value: None,
+                fee: None,
+                zec_price: None,
+                orchard_notes: None,
+                sapling_notes: None,
+                transparent_coins: None,
+                outgoing_tx_data: None,
+            }
+        }
+
+        build_method!(txid, TxId);
+        build_method!(datetime, u64);
+        build_method!(status, ConfirmationStatus);
+        build_method!(blockheight, BlockHeight);
+        build_method!(kind, TransactionKind);
+        build_method!(value, u64);
+        build_method!(fee, Option<u64>);
+        build_method!(zec_price, Option<f64>);
+        build_method!(orchard_notes, Vec<OrchardNoteSummary>);
+        build_method!(sapling_notes, Vec<SaplingNoteSummary>);
+        build_method!(transparent_coins, Vec<TransparentCoinSummary>);
+        build_method!(outgoing_tx_data, Vec<OutgoingTxData>);
+
+        /// TODO: doc comment
+        pub fn build(&self) -> Result<TransactionSummary, BuildError> {
+            Ok(TransactionSummary {
+                txid: self
+                    .txid
+                    .ok_or(BuildError::MissingField("txid".to_string()))?,
+                datetime: self
+                    .datetime
+                    .ok_or(BuildError::MissingField("datetime".to_string()))?,
+                status: self
+                    .status
+                    .ok_or(BuildError::MissingField("status".to_string()))?,
+                blockheight: self
+                    .blockheight
+                    .ok_or(BuildError::MissingField("blockheight".to_string()))?,
+                kind: self
+                    .kind
+                    .ok_or(BuildError::MissingField("kind".to_string()))?,
+                value: self
+                    .value
+                    .ok_or(BuildError::MissingField("value".to_string()))?,
+                fee: self
+                    .fee
+                    .ok_or(BuildError::MissingField("fee".to_string()))?,
+                zec_price: self
+                    .zec_price
+                    .ok_or(BuildError::MissingField("zec_price".to_string()))?,
+                orchard_notes: self
+                    .orchard_notes
+                    .clone()
+                    .ok_or(BuildError::MissingField("orchard_notes".to_string()))?,
+                sapling_notes: self
+                    .sapling_notes
+                    .clone()
+                    .ok_or(BuildError::MissingField("sapling_notes".to_string()))?,
+                transparent_coins: self
+                    .transparent_coins
+                    .clone()
+                    .ok_or(BuildError::MissingField("transparent_coins".to_string()))?,
+                outgoing_tx_data: self
+                    .outgoing_tx_data
+                    .clone()
+                    .ok_or(BuildError::MissingField("outgoing_tx_data".to_string()))?,
+            })
+        }
+    }
+
+    impl Default for TransactionSummaryBuilder {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    /// TODO: doc comment
+    #[derive(Clone)]
+    pub struct OrchardNoteSummary {
+        value: u64,
+        spend_status: SpendStatus,
+        output_index: Option<u32>,
+        memo: Option<String>,
+    }
+
+    impl OrchardNoteSummary {
+        /// TODO: doc comment
+        pub fn from_parts(
+            value: u64,
+            spend_status: SpendStatus,
+            output_index: Option<u32>,
+            memo: Option<String>,
+        ) -> Self {
+            OrchardNoteSummary {
+                value,
+                spend_status,
+                output_index,
+                memo,
+            }
+        }
+    }
+
+    impl std::fmt::Display for OrchardNoteSummary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let output_index = if let Some(i) = self.output_index {
+                i.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let memo = if let Some(m) = self.memo.clone() {
+                m
+            } else {
+                "".to_string()
+            };
+            write!(
+                f,
+                "\t{{
+            value: {}
+            spend status: {}
+            output index: {}
+            memo: {}
+        }}",
+                self.value, self.spend_status, output_index, memo,
+            )
+        }
+    }
+
+    impl From<OrchardNoteSummary> for JsonValue {
+        fn from(note: OrchardNoteSummary) -> Self {
+            json::object! {
+                "value" => note.value,
+                "spend_status" => note.spend_status.to_string(),
+                "output_index" => note.output_index,
+                "memo" => note.memo,
+            }
+        }
+    }
+
+    struct OrchardNoteSummaries(Vec<OrchardNoteSummary>);
+
+    impl std::fmt::Display for OrchardNoteSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for note in &self.0 {
+                write!(f, "\n{}", note)?;
+            }
+            Ok(())
+        }
+    }
+
+    /// TODO: doc comment
+    #[derive(Clone)]
+    pub struct SaplingNoteSummary {
+        value: u64,
+        spend_status: SpendStatus,
+        output_index: Option<u32>,
+        memo: Option<String>,
+    }
+
+    impl SaplingNoteSummary {
+        /// TODO: doc comment
+        pub fn from_parts(
+            value: u64,
+            spend_status: SpendStatus,
+            output_index: Option<u32>,
+            memo: Option<String>,
+        ) -> Self {
+            SaplingNoteSummary {
+                value,
+                spend_status,
+                output_index,
+                memo,
+            }
+        }
+    }
+
+    impl std::fmt::Display for SaplingNoteSummary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let output_index = if let Some(i) = self.output_index {
+                i.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let memo = if let Some(m) = self.memo.clone() {
+                m
+            } else {
+                "no memo".to_string()
+            };
+            write!(
+                f,
+                "\t{{
+            value: {}
+            spend status: {}
+            output index: {}
+            memo: {}
+        }}",
+                self.value, self.spend_status, output_index, memo,
+            )
+        }
+    }
+
+    impl From<SaplingNoteSummary> for JsonValue {
+        fn from(note: SaplingNoteSummary) -> Self {
+            json::object! {
+                "value" => note.value,
+                "spend_status" => note.spend_status.to_string(),
+                "output_index" => note.output_index,
+                "memo" => note.memo,
+            }
+        }
+    }
+
+    struct SaplingNoteSummaries(Vec<SaplingNoteSummary>);
+
+    impl std::fmt::Display for SaplingNoteSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for note in &self.0 {
+                write!(f, "\n{}", note)?;
+            }
+            Ok(())
+        }
+    }
+
+    /// TODO: doc comment
+    #[derive(Clone)]
+    pub struct TransparentCoinSummary {
+        value: u64,
+        spend_status: SpendStatus,
+        output_index: u64,
+    }
+
+    impl TransparentCoinSummary {
+        /// TODO: doc comment
+        pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u64) -> Self {
+            TransparentCoinSummary {
+                value,
+                spend_status,
+                output_index,
+            }
+        }
+    }
+
+    impl std::fmt::Display for TransparentCoinSummary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "\t{{
+            value: {}
+            spend status: {}
+            output index: {}
+        }}",
+                self.value, self.spend_status, self.output_index,
+            )
+        }
+    }
+    impl From<TransparentCoinSummary> for JsonValue {
+        fn from(note: TransparentCoinSummary) -> Self {
+            json::object! {
+                "value" => note.value,
+                "spend_status" => note.spend_status.to_string(),
+                "output_index" => note.output_index,
+            }
+        }
+    }
+
+    struct TransparentCoinSummaries(Vec<TransparentCoinSummary>);
+
+    impl std::fmt::Display for TransparentCoinSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for coin in &self.0 {
+                write!(f, "\n{}", coin)?;
+            }
+            Ok(())
+        }
+    }
+
+    /// TODO: doc comment
+    #[derive(Clone)]
+    pub enum SpendStatus {
+        /// TODO: doc comment
+        Unspent,
+        /// TODO: doc comment
+        Spent(TxId),
+        /// TODO: doc comment
+        PendingSpent(TxId),
+    }
+
+    impl std::fmt::Display for SpendStatus {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                SpendStatus::Unspent => write!(f, "unspent"),
+                SpendStatus::Spent(txid) => write!(f, "spent in {}", txid),
+                SpendStatus::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
+            }
+        }
+    }
+}
 
 /// Convenience wrapper for primitive
 #[derive(Debug)]
@@ -691,7 +1225,7 @@ fn read_write_empty_sapling_tree() {
 pub(crate) mod mocks {
     use zcash_primitives::memo::Memo;
 
-    use crate::mocks::build_method;
+    use crate::utils::build_method;
 
     use super::OutgoingTxData;
 
