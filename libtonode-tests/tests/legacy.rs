@@ -1869,6 +1869,7 @@ mod slow {
     }
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
+        // TODO:  Add assertions about Sapling change note.
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         let value = 100_000;
