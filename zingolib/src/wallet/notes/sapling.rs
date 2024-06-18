@@ -234,7 +234,8 @@ pub mod mocks {
     use zcash_primitives::{memo::Memo, transaction::TxId};
 
     use crate::{
-        mocks::{build_method, SaplingCryptoNoteBuilder},
+        mocks::SaplingCryptoNoteBuilder,
+        utils::build_method,
         wallet::{notes::ShieldedNoteInterface, traits::FromBytes},
     };
 
