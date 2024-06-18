@@ -2,35 +2,6 @@
 
 //! Tools to facilitate mocks for structs of external crates and general mocking utilities for testing
 
-macro_rules! build_method {
-    ($name:ident, $localtype:ty) => {
-        #[doc = "Set the $name field of the builder."]
-        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
-            self.$name = Some($name);
-            self
-        }
-    };
-}
-macro_rules! build_method_push {
-    ($name:ident, $localtype:ty) => {
-        #[doc = "Push a $ty to the builder."]
-        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
-            self.$name.push($name);
-            self
-        }
-    };
-}
-macro_rules! build_push_list {
-    ($name:ident, $builder:ident, $struct:ident) => {
-        for i in &$builder.$name {
-            $struct.$name.push(i.build());
-        }
-    };
-}
-
-pub(crate) use build_method;
-pub(crate) use build_method_push;
-pub(crate) use build_push_list;
 pub use proposal::{ProposalBuilder, StepBuilder};
 pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
@@ -93,6 +64,8 @@ pub fn random_zaddr() -> (
 
 pub mod nullifier {
     //! Module for mocking nullifiers from [`sapling_crypto::note::Nullifier`] and [`orchard::note::Nullifier`]
+
+    use crate::utils::build_method;
 
     macro_rules! build_assign_unique_nullifier {
         () => {
@@ -186,6 +159,8 @@ mod sapling_crypto_note {
     use sapling_crypto::PaymentAddress;
     use sapling_crypto::Rseed;
 
+    use crate::utils::build_method;
+
     use super::default_zaddr;
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
@@ -251,6 +226,8 @@ pub mod orchard_note {
     };
     use rand::{rngs::OsRng, Rng};
     use zip32::Scope;
+
+    use crate::utils::build_method;
 
     /// A struct to build a mock orchard::Note from scratch.
     /// Distinguish [`orchard::Note`] from [`crate::wallet::notes::OrchardNote`]. The latter wraps the former with some other attributes.
@@ -386,6 +363,7 @@ pub mod proposal {
     use zingoconfig::{ChainType, RegtestNetwork};
 
     use crate::utils::conversion::address_from_str;
+    use crate::utils::{build_method, build_method_push};
 
     use super::{default_txid, default_zaddr};
 

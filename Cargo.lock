@@ -503,7 +503,9 @@ checksum = "a21f936df1771bf62b77f047b726c4625ff2e8aa607c01ec06e5a05bd8463401"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
+ "wasm-bindgen",
  "windows-targets 0.52.5",
 ]
 
@@ -812,9 +814,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 
 [[package]]
+name = "enum_dispatch"
+version = "0.3.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa18ce2bc66555b3218614519ac839ddb759a7d6720732f979ef8d13be147ecd"
+dependencies = [
+ "once_cell",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
+]
+
+[[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -849,7 +863,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "blake2b_simd",
 ]
@@ -4152,7 +4166,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "bech32",
  "bs58",
@@ -4164,7 +4178,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -4206,7 +4220,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4215,7 +4229,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "bech32",
  "blake2b_simd",
@@ -4256,7 +4270,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "aes",
  "bip0039",
@@ -4294,7 +4308,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4316,7 +4330,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=fix_change_required#471a062dcd5b55a3f57b4861453c080eeae88f22"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
 dependencies = [
  "document-features",
  "memuse",
@@ -4499,7 +4513,9 @@ dependencies = [
  "build_utils",
  "byteorder",
  "bytes 0.4.12",
+ "chrono",
  "concat-idents",
+ "enum_dispatch",
  "ff",
  "futures",
  "getset",

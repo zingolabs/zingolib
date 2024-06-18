@@ -63,6 +63,7 @@ pub mod fixtures {
     use zcash_client_backend::PoolType;
     use zcash_client_backend::PoolType::Shielded;
     use zcash_client_backend::PoolType::Transparent;
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_client_backend::ShieldedProtocol::Orchard;
     use zcash_client_backend::ShieldedProtocol::Sapling;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
@@ -412,7 +413,7 @@ pub mod fixtures {
                 // met target
                 break;
             }
-            if expected_highest_unselected <= 0 {
+            if expected_highest_unselected == 0 {
                 // did not meet target. expect error on send
                 break;
             }
@@ -463,5 +464,32 @@ pub mod fixtures {
                 .len(),
             expected_inputs_for_transaction_2 as usize
         );
+    }
+
+    /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
+    pub async fn shpool_to_pool<CC>(shpool: ShieldedProtocol, pool: PoolType)
+    where
+        CC: ConductChain,
+    {
+        let mut environment = CC::setup().await;
+
+        let primary = environment.fund_client_orchard(1_000_000).await;
+        let secondary = environment.create_client().await;
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &primary,
+            &secondary,
+            vec![(Shielded(shpool), 100_000)],
+        )
+        .await;
+
+        let tertiary = environment.create_client().await;
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &secondary,
+            &tertiary,
+            vec![(pool, 25_000)],
+        )
+        .await;
     }
 }

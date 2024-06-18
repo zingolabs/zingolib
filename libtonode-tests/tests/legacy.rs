@@ -18,8 +18,8 @@ use zcash_primitives::{
 use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
     self, build_fvk_client, check_client_balances, check_transaction_equality,
-    get_base_address_macro, increase_height_and_wait_for_client, paths::get_cargo_manifest_dir,
-    scenarios,
+    get_base_address_macro, get_otd, increase_height_and_wait_for_client,
+    paths::get_cargo_manifest_dir, scenarios, validate_otds,
 };
 use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
@@ -737,7 +737,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.list_txsummaries().await).pretty(4)
+            JsonValue::from(recipient.list_value_transfers().await).pretty(4)
         );
     }
     #[tokio::test]
@@ -1188,7 +1188,7 @@ mod slow {
             "{}",
             JsonValue::from(
                 recipient
-                    .list_txsummaries()
+                    .list_value_transfers()
                     .await
                     .into_iter()
                     .map(JsonValue::from)
@@ -1206,7 +1206,7 @@ mod slow {
             "{}",
             JsonValue::from(
                 recipient
-                    .list_txsummaries()
+                    .list_value_transfers()
                     .await
                     .into_iter()
                     .map(JsonValue::from)
@@ -1600,7 +1600,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.list_txsummaries().await).pretty(4)
+            JsonValue::from(faucet.list_value_transfers().await).pretty(4)
         );
         println!(
             "{}",
@@ -1942,6 +1942,7 @@ mod slow {
         // 5.1 Check notes
 
         let notes = recipient.do_list_notes(true).await;
+
         // Has a new (pending) unspent note (the change)
         assert_eq!(notes["unspent_orchard_notes"].len(), 1);
         assert_eq!(
@@ -2162,77 +2163,147 @@ mod slow {
                 .max_leaf_position(0)
         );
     }
-    #[tokio::test]
-    async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-        let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        let sapling_addr = get_base_address_macro!(faucet, "sapling");
-        for memo in [None, Some("foo")] {
-            from_inputs::quick_send(
-                &faucet,
-                vec![(
-                    sapling_addr.as_str(),
-                    {
-                        let balance = faucet.do_balance().await;
-                        balance.spendable_sapling_balance.unwrap()
-                            + balance.spendable_orchard_balance.unwrap()
-                    } - u64::from(MINIMUM_FEE),
-                    memo,
-                )],
+    /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
+    mod rescan_still_have_outgoing_metadata {
+        #[ignore = "redundant with tests that validate with validate_otd"]
+        #[tokio::test]
+        async fn multiple_outgoing_metadatas_work_right_on_restore() {
+            let inital_value = 100_000;
+            let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
+                scenarios::faucet_funded_recipient_default(inital_value).await;
+            from_inputs::send(
+                recipient,
+                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
             )
             .await
             .unwrap();
+            zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+                .await
+                .unwrap();
+            let pre_rescan_transactions = recipient.do_list_transactions().await;
+            let pre_rescan_summaries = recipient.transaction_summaries().await;
+            recipient.do_rescan().await.unwrap();
+            let post_rescan_transactions = recipient.do_list_transactions().await;
+            let post_rescan_summaries = recipient.transaction_summaries().await;
+            assert_eq!(pre_rescan_transactions, post_rescan_transactions);
+            assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+            let mut outgoing_metadata = pre_rescan_transactions
+                .members()
+                .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
+                .unwrap()
+                .1
+                .members();
+            // The two outgoing spends were identical. They should be represented as such
+            assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
+        }
+        use super::*;
+        use crate::utils::conversion;
+        #[tokio::test]
+        async fn self_send() {
+            let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
+            let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
+            let mut txids = vec![];
+            for memo in [None, Some("Second Transaction")] {
+                txids.push(
+                    conversion::txid_from_hex_encoded_str(
+                        &from_inputs::send(
+                            &faucet,
+                            vec![(
+                                faucet_sapling_addr.as_str(),
+                                {
+                                    let balance = faucet.do_balance().await;
+                                    balance.spendable_sapling_balance.unwrap()
+                                        + balance.spendable_orchard_balance.unwrap()
+                                } - u64::from(MINIMUM_FEE),
+                                memo,
+                            )],
+                        )
+                        .await
+                        .unwrap(),
+                    )
+                    .unwrap(),
+                );
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+                    .await
+                    .unwrap();
+            }
+
+            let nom_txid = &txids[0];
+            let memo_txid = &txids[1];
+            validate_otds!(faucet, nom_txid, memo_txid);
+        }
+        #[tokio::test]
+        async fn external_send() {
+            let (regtest_manager, _cph, faucet, recipient) =
+                scenarios::faucet_recipient_default().await;
+            let external_send_txid_with_memo =
+                &crate::utils::conversion::txid_from_hex_encoded_str(
+                    &from_inputs::send(
+                        &faucet,
+                        vec![(
+                            get_base_address_macro!(recipient, "sapling").as_str(),
+                            1_000,
+                            Some("foo"),
+                        )],
+                    )
+                    .await
+                    .unwrap(),
+                )
+                .unwrap();
+            let external_send_txid_no_memo = &crate::utils::conversion::txid_from_hex_encoded_str(
+                &from_inputs::send(
+                    &faucet,
+                    vec![(
+                        get_base_address_macro!(recipient, "sapling").as_str(),
+                        1_000,
+                        None,
+                    )],
+                )
+                .await
+                .unwrap(),
+            )
+            .unwrap();
+            // TODO:  This chain height bump should be unnecessary. I think removing
+            // this increase_height call reveals a bug!
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
+            validate_otds!(
+                faucet,
+                external_send_txid_no_memo,
+                external_send_txid_with_memo
+            );
         }
-        let transactions = faucet.do_list_transactions().await;
-        let notes = faucet.do_list_notes(true).await;
-        faucet.do_rescan().await.unwrap();
-        let post_rescan_transactions = faucet.do_list_transactions().await;
-        let post_rescan_notes = faucet.do_list_notes(true).await;
-        assert_eq!(
-            transactions,
-            post_rescan_transactions,
-            "Pre-Rescan: {}\n\n\nPost-Rescan: {}",
-            json::stringify_pretty(transactions.clone(), 4),
-            json::stringify_pretty(post_rescan_transactions.clone(), 4)
-        );
-
-        // Notes are not in deterministic order after rescan. Instead, iterate over all
-        // the notes and check that they exist post-rescan
-        for (field_name, field) in notes.entries() {
-            for note in field.members() {
-                assert!(post_rescan_notes[field_name]
-                    .members()
-                    .any(|post_rescan_note| post_rescan_note == note));
-            }
-            assert_eq!(field.len(), post_rescan_notes[field_name].len());
-        }
-    }
-    #[tokio::test]
-    async fn rescan_still_have_outgoing_metadata() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
-        from_inputs::quick_send(
-            &faucet,
-            vec![(
-                get_base_address_macro!(recipient, "sapling").as_str(),
-                1_000,
-                Some("foo"),
-            )],
-        )
-        .await
-        .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        #[tokio::test]
+        async fn check_list_value_transfers_across_rescan() {
+            let inital_value = 100_000;
+            let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
+                scenarios::faucet_funded_recipient_default(inital_value).await;
+            from_inputs::send(
+                recipient,
+                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
+            )
             .await
             .unwrap();
-        let transactions = faucet.do_list_transactions().await;
-        faucet.do_rescan().await.unwrap();
-        let post_rescan_transactions = faucet.do_list_transactions().await;
-        assert_eq!(transactions, post_rescan_transactions);
+            zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+                .await
+                .unwrap();
+            let pre_rescan_transactions = recipient.do_list_transactions().await;
+            let pre_rescan_summaries = recipient.list_value_transfers().await;
+            recipient.do_rescan().await.unwrap();
+            let post_rescan_transactions = recipient.do_list_transactions().await;
+            let post_rescan_summaries = recipient.list_value_transfers().await;
+            assert_eq!(pre_rescan_transactions, post_rescan_transactions);
+            assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+            let mut outgoing_metadata = pre_rescan_transactions
+                .members()
+                .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
+                .unwrap()
+                .1
+                .members();
+            // The two outgoing spends were identical. They should be represented as such
+            assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
+        }
     }
     #[tokio::test]
     async fn multiple_outgoing_metadatas_work_right_on_restore() {
@@ -2249,10 +2320,10 @@ mod slow {
             .await
             .unwrap();
         let pre_rescan_transactions = recipient.do_list_transactions().await;
-        let pre_rescan_summaries = recipient.list_txsummaries().await;
+        let pre_rescan_summaries = recipient.transaction_summaries().await;
         recipient.do_rescan().await.unwrap();
         let post_rescan_transactions = recipient.do_list_transactions().await;
-        let post_rescan_summaries = recipient.list_txsummaries().await;
+        let post_rescan_summaries = recipient.transaction_summaries().await;
         assert_eq!(pre_rescan_transactions, post_rescan_transactions);
         assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         let mut outgoing_metadata = pre_rescan_transactions
@@ -2263,6 +2334,123 @@ mod slow {
             .members();
         // The two outgoing spends were identical. They should be represented as such
         assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
+    }
+    #[tokio::test]
+    async fn note_selection_order() {
+        // In order to fund a transaction multiple notes may be selected and consumed.
+        // To minimize note selection operations notes are consumed from largest to smallest.
+        // In addition to testing the order in which notes are selected this test:
+        //   * sends to a sapling address
+        //   * sends back to the original sender's UA
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
+            .await
+            .unwrap();
+
+        let client_2_saplingaddress = get_base_address_macro!(recipient, "sapling");
+        // Send three transfers in increasing 1000 zat increments
+        // These are sent from the coinbase funded client which will
+        // subsequently receive funding via it's orchard-packed UA.
+        let memos = ["1", "2", "3"];
+        from_inputs::send(
+            &faucet,
+            (1..=3)
+                .map(|n| {
+                    (
+                        client_2_saplingaddress.as_str(),
+                        n * 10000,
+                        Some(memos[(n - 1) as usize]),
+                    )
+                })
+                .collect(),
+        )
+        .await
+        .unwrap();
+
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+            .await
+            .unwrap();
+        // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
+        // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
+        // plus the transaction fee.
+        from_inputs::send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "unified"),
+                30000,
+                Some("Sending back, should have 2 inputs"),
+            )],
+        )
+        .await
+        .unwrap();
+        /*
+        let client_2_notes = recipient.do_list_notes(false).await;
+        // The 3000 zat note to cover the value, plus another for the tx-fee.
+        let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
+            .as_fixed_point_u64(0)
+            .unwrap();
+        let second_value = client_2_notes["pending_sapling_notes"][1]["value"]
+            .as_fixed_point_u64(0)
+            .unwrap();
+        assert!(
+            first_value == 30000u64 && second_value == 20000u64
+                || first_value == 20000u64 && second_value == 30000u64
+        );
+        //);
+        // Because the above tx fee won't consume a full note, change will be sent back to 2.
+        // This implies that client_2 will have a total of 2 unspent notes:
+        //  * one (sapling) from client_1 sent above (and never used) + 1 (orchard) as change to itself
+        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 1);
+        assert_eq!(client_2_notes["unspent_orchard_notes"].len(), 1);
+        let change_note = client_2_notes["unspent_orchard_notes"]
+            .members()
+            .filter(|note| note["is_change"].as_bool().unwrap())
+            .collect::<Vec<_>>()[0];
+        // Because 2000 is the size of the second largest note.
+        assert_eq!(change_note["value"], 20000 - u64::from(MINIMUM_FEE));
+        let non_change_note_values = client_2_notes["unspent_sapling_notes"]
+            .members()
+            .filter(|note| !note["is_change"].as_bool().unwrap())
+            .map(extract_value_as_u64)
+            .collect::<Vec<u64>>();
+        */
+        // client_2 got a total of 3000+2000+1000
+        // It sent 3000 to the client_1, and also
+        // paid the default transaction fee.
+        // In non change notes it has 1000.
+        // There is an outstanding 2000 that is marked as change.
+        // After sync the unspent_sapling_notes should go to 3000.
+        /*
+        assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
+
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+            .await
+            .unwrap();
+        let client_2_post_transaction_notes = recipient.do_list_notes(false).await;
+        assert_eq!(
+            client_2_post_transaction_notes["pending_sapling_notes"].len(),
+            0
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_sapling_notes"].len(),
+            1
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_orchard_notes"].len(),
+            1
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_sapling_notes"]
+                .members()
+                .chain(client_2_post_transaction_notes["unspent_orchard_notes"].members())
+                .map(extract_value_as_u64)
+                .sum::<u64>(),
+            20000u64 // 10000 received and unused + (20000 - 10000 txfee)
+        );
+
+        // More explicit than ignoring the unused variable, we only care about this in order to drop it
+        */
     }
     #[tokio::test]
     async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
@@ -2890,8 +3078,8 @@ mod slow {
     }
 
     #[tokio::test]
-    async fn pool_migration_check_fees() {
-        // Check that list_txsummaries behaves correctly given different fee scenarios
+    async fn list_value_transfers_check_fees() {
+        // Check that list_value_transfers behaves correctly given different fee scenarios
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let faucet = client_builder.build_faucet(false, regtest_network).await;
@@ -3567,7 +3755,7 @@ mod slow {
         zingo_testutils::increase_server_height(&regtest_manager, 1).await;
 
         let _synciiyur = recipient.do_sync(false).await;
-        // let summ_sim = recipient.do_list_txsummaries().await;
+        // let summ_sim = recipient.list_value_transfers().await;
         let bala_sim = recipient.do_balance().await;
 
         recipient.clear_state().await;
@@ -3586,10 +3774,10 @@ mod slow {
             }
         }
 
-        // let summ_int = recipient.do_list_txsummaries().await;
+        // let summ_int = recipient.list_value_transfers().await;
         // let bala_int = recipient.do_balance().await;
         let _synciiyur = recipient.do_sync(false).await;
-        // let summ_syn = recipient.do_list_txsummaries().await;
+        // let summ_syn = recipient.list_value_transfers().await;
         let bala_syn = recipient.do_balance().await;
 
         dbg!(
