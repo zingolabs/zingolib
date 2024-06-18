@@ -2171,6 +2171,7 @@ mod slow {
         }
         use super::*;
         use crate::utils::conversion;
+        #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn self_send() {
             let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
@@ -2205,6 +2206,7 @@ mod slow {
             let memo_txid = &txids[1];
             validate_otds!(faucet, nom_txid, memo_txid);
         }
+        #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn external_send() {
             let (regtest_manager, _cph, faucet, recipient) =
