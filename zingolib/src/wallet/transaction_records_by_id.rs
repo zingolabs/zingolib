@@ -299,29 +299,6 @@ impl TransactionRecordsById {
 
         Ok(query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value)
     }
-    // The value that's output, but *NOT* to an explicit receiver (unless this is running on the winning validator!)
-    // is the fee.
-    fn total_value_output_to_explicit_receivers(&self, query_record: &TransactionRecord) -> u64 {
-        let transparent_output_value: u64 = query_record
-            .transparent_outputs()
-            .iter()
-            .map(|note| note.value())
-            .sum();
-        let sapling_output_value: u64 = query_record
-            .sapling_notes()
-            .iter()
-            .map(|note| note.value())
-            .sum();
-        let orchard_output_value: u64 = query_record
-            .orchard_notes()
-            .iter()
-            .map(|note| note.value())
-            .sum();
-        transparent_output_value
-            + sapling_output_value
-            + orchard_output_value
-            + query_record.value_outgoing()
-    }
 
     /// Calculate the fee for a transaction in the wallet
     ///
@@ -345,7 +322,7 @@ impl TransactionRecordsById {
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
         let input_value = self.total_value_input_to_transaction(query_record)?;
-        let explicit_output_value = self.total_value_output_to_explicit_receivers(query_record);
+        let explicit_output_value = query_record.total_value_output_to_explicit_receivers();
 
         if input_value >= explicit_output_value {
             Ok(input_value - explicit_output_value)

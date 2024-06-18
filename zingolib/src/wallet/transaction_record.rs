@@ -2,7 +2,10 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use std::io::{self, Read, Write};
+use std::{
+    fmt,
+    io::{self, Read, Write},
+};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
@@ -222,6 +225,12 @@ impl TransactionRecord {
     /// Sums all the received notes in the transaction.
     pub fn total_value_received(&self) -> u64 {
         self.query_sum_value(OutputQuery::any())
+    }
+
+    // The value that's output, but *NOT* to an explicit receiver (unless this is running on the winning validator!)
+    // is the fee.
+    pub(crate) fn total_value_output_to_explicit_receivers(&self) -> u64 {
+        self.total_value_received() + self.value_outgoing()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -532,16 +541,31 @@ impl TransactionRecord {
     }
 }
 
+/// TODO: doc comment
 #[derive(Clone, Copy)]
-pub(crate) enum TransactionKind {
-    #[allow(dead_code)]
+pub enum TransactionKind {
+    /// TODO: doc comment
     Sent(SendType),
+    /// TODO: doc comment
     Received,
 }
 
+impl fmt::Display for TransactionKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TransactionKind::Received => write!(f, "received"),
+            TransactionKind::Sent(SendType::Send) => write!(f, "sent"),
+            TransactionKind::Sent(SendType::Shield) => write!(f, "shield"),
+        }
+    }
+}
+
+/// TODO: doc comment
 #[derive(Clone, Copy)]
-pub(crate) enum SendType {
+pub enum SendType {
+    /// TODO: doc comment
     Send,
+    /// TODO: doc comment
     Shield,
 }
 
