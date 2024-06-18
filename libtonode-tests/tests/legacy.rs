@@ -1922,7 +1922,7 @@ mod slow {
         }
 
         // 4. Send z-to-z transaction to external z address with a memo
-        let sent_value = 2000;
+        let sent_value = 2_000;
         let outgoing_memo = "Outgoing Memo";
 
         let sent_transaction_id = from_inputs::quick_send(
@@ -1944,14 +1944,7 @@ mod slow {
         let notes = recipient.do_list_notes(true).await;
 
         // Has a new (pending) unspent note (the change)
-        assert_eq!(notes["unspent_orchard_notes"].len(), 1);
-        assert_eq!(
-            notes["unspent_orchard_notes"][0]["created_in_txid"],
-            sent_transaction_id
-        );
-        assert!(notes["unspent_orchard_notes"][0]["pending"]
-            .as_bool()
-            .unwrap());
+        assert_eq!(notes["unspent_orchard_notes"].len(), 0); // Change for z-to-z is now sapling
 
         assert_eq!(notes["spent_sapling_notes"].len(), 0);
         assert_eq!(notes["pending_sapling_notes"].len(), 1);
@@ -2010,27 +2003,6 @@ mod slow {
         // Which is immediately spendable.
         let notes = recipient.do_list_notes(true).await;
         println!("{}", json::stringify_pretty(notes.clone(), 4));
-        assert_eq!(notes["unspent_orchard_notes"].len(), 1);
-        assert_eq!(
-            notes["unspent_orchard_notes"][0]["created_in_block"]
-                .as_u64()
-                .unwrap(),
-            5
-        );
-        assert_eq!(
-            notes["unspent_orchard_notes"][0]["created_in_txid"],
-            sent_transaction_id
-        );
-        assert_eq!(
-            notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-            value - sent_value - u64::from(MINIMUM_FEE)
-        );
-        assert!(notes["unspent_orchard_notes"][0]["is_change"]
-            .as_bool()
-            .unwrap());
-        assert!(notes["unspent_orchard_notes"][0]["spendable"]
-            .as_bool()
-            .unwrap()); // Spendable
 
         assert_eq!(notes["spent_sapling_notes"].len(), 1);
         assert_eq!(
