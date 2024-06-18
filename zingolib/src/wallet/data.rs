@@ -674,7 +674,7 @@ pub mod summaries {
             let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
                 format!("{}", dt)
             } else {
-                "datetime not available".to_string()
+                "not available".to_string()
             };
             let fee = if let Some(f) = self.fee {
                 f.to_string()
