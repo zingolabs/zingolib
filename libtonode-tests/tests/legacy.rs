@@ -2053,6 +2053,7 @@ mod slow {
         // 5.1 Check notes
 
         let notes = recipient.do_list_notes(true).await;
+
         // Has a new (pending) unspent note (the change)
         assert_eq!(notes["unspent_orchard_notes"].len(), 1);
         assert_eq!(
