@@ -1727,7 +1727,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         let recipient_unified_address = get_base_address_macro!(recipient, "unified");
-        let sent_value = 50_000;
+        let sent_value = 80_000;
         from_inputs::quick_send(
             &faucet,
             vec![(recipient_unified_address.as_str(), sent_value, None)],
