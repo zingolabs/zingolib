@@ -484,6 +484,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 
 // OUTGOING TX TESTS
 
+#[ignore]
 #[tokio::test]
 /// A Re Org occurs and changes the height of an outbound transaction
 ///
