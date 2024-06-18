@@ -6,7 +6,7 @@ use zingolib::lightclient::LightClient;
 use crate::{
     assertions::assert_receiver_fee,
     assertions::assert_sender_fee,
-    chain_generic_tests::conduct_chain::ConductChain,
+    chain_generics::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
 

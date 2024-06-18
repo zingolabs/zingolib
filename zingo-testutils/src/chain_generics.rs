@@ -72,7 +72,7 @@ pub mod fixtures {
     use zingolib::wallet::notes::query::OutputQuery;
     use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
-    use crate::chain_generic_tests::conduct_chain::ConductChain;
+    use crate::chain_generics::conduct_chain::ConductChain;
     use crate::lightclient::from_inputs;
     use crate::lightclient::get_base_address;
     use crate::lightclient::with_assertions;
