@@ -1309,7 +1309,7 @@ mod slow {
                 "datetime": 1694825735,
                 "txid": "55de92ebf5effc3ed67a289788ede88514a9d2c407af6154b00969325e2fdf00",
                 "zec_price": null,
-                "amount": -30000,
+                "amount": -35000,
                 "outgoing_metadata": [
                     {
                         "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
@@ -1435,7 +1435,7 @@ mod slow {
             - second_send_to_sapling
             - second_send_to_transparent
             - third_send_to_transparent
-            - (3 * u64::from(MINIMUM_FEE));
+            - (5 * u64::from(MINIMUM_FEE));
         assert_eq!(
             recipient
                 .wallet
