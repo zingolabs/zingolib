@@ -742,7 +742,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    pub struct TransactionSummaries(pub Vec<TransactionSummary>);
+    pub struct TransactionSummaries(Vec<TransactionSummary>);
 
     impl TransactionSummaries {
         /// TODO: doc comment
