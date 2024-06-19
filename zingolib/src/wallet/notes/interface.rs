@@ -11,7 +11,25 @@ use crate::wallet::{
     transaction_record::TransactionRecord,
 };
 
+/// Trait methods of Outputs that aren't static (i.e. don't take self)
+pub trait OutputConstructor {
+    /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self>;
+    /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn get_record_query_matching_outputs(
+        transaction_record: &TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&Self>;
+    /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn get_record_to_outputs_mut(transaction_record: &mut TransactionRecord) -> Vec<&mut Self>;
+    /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    fn get_record_query_matching_outputs_mut(
+        transaction_record: &mut TransactionRecord,
+        spend_status_query: OutputSpendStatusQuery,
+    ) -> Vec<&mut Self>;
+}
 /// Expresses the behavior that *all* value transfers MUST support (inclusive of transparent).
+#[enum_dispatch::enum_dispatch]
 pub trait OutputInterface: Sized {
     /// returns the zcash_client_backend PoolType enum (one of 3)
     /// Where lrz splits between shielded and transparent, zingolib
@@ -73,27 +91,10 @@ pub trait OutputInterface: Sized {
     fn query(&self, query: OutputQuery) -> bool {
         self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
-
-    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
-    fn transaction_record_to_outputs_vec(transaction_record: &TransactionRecord) -> Vec<&Self>;
-    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
-    fn transaction_record_to_outputs_vec_query(
-        transaction_record: &TransactionRecord,
-        spend_status_query: OutputSpendStatusQuery,
-    ) -> Vec<&Self>;
-    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
-    fn transaction_record_to_outputs_vec_mut(
-        transaction_record: &mut TransactionRecord,
-    ) -> Vec<&mut Self>;
-    /// Returns a vec of the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
-    fn transaction_record_to_outputs_vec_query_mut(
-        transaction_record: &mut TransactionRecord,
-        spend_status_query: OutputSpendStatusQuery,
-    ) -> Vec<&mut Self>;
 }
 
 ///   ShieldedNotes are either part of a Sapling or Orchard Pool
-pub trait ShieldedNoteInterface: OutputInterface + Sized {
+pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
     /// TODO: Add Doc Comment Here!
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     /// TODO: Add Doc Comment Here!

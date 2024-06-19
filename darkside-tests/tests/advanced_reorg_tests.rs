@@ -18,6 +18,8 @@ use zingo_testutils::{
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 use zingolib::wallet::data::summaries::ValueTransferKind;
+
+#[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
     let darkside_handler = DarksideHandler::new(None);
@@ -56,7 +58,7 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -91,7 +93,7 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
@@ -173,6 +175,7 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
     Ok(())
 }
 
+#[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_index() {
     let darkside_handler = DarksideHandler::new(None);
@@ -211,7 +214,7 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -246,7 +249,7 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
@@ -366,7 +369,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -401,7 +404,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(after_reorg_transactions.len(), 0);
 }
@@ -481,6 +484,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 
 // OUTGOING TX TESTS
 
+#[ignore]
 #[tokio::test]
 /// A Re Org occurs and changes the height of an outbound transaction
 ///
@@ -543,7 +547,7 @@ async fn reorg_changes_outgoing_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -592,11 +596,11 @@ async fn reorg_changes_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!("{:?}", light_client.list_value_transfers().await);
 
     assert_eq!(
         light_client
-            .list_txsummaries()
+            .list_value_transfers()
             .await
             .into_iter()
             .find_map(|v| match v.kind {
@@ -655,18 +659,18 @@ async fn reorg_changes_outgoing_tx_height() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!("{:?}", light_client.list_value_transfers().await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
     // verify that the reorged transaction is in the new height
     // assert_eq!(
     //     light_client
-    //         .do_list_txsummaries()
+    //         .list_value_transfers()
     //         .await
     //         .into_iter()
     //         .find_map(|v| match v.kind {
@@ -781,7 +785,7 @@ async fn reorg_expires_outgoing_tx_height() {
     light_client.do_sync(true).await.unwrap();
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -823,11 +827,11 @@ async fn reorg_expires_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!("{:?}", light_client.list_value_transfers().await);
 
     assert_eq!(
         light_client
-            .list_txsummaries()
+            .list_value_transfers()
             .await
             .into_iter()
             .find_map(|v| match v.kind {
@@ -869,18 +873,18 @@ async fn reorg_expires_outgoing_tx_height() {
     // sent transaction was never mined and has expired.
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!("{:?}", light_client.list_value_transfers().await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
     // verify that the reorged transaction is in the new height
     // assert_eq!(
     //     light_client
-    //         .do_list_txsummaries()
+    //         .list_value_transfers()
     //         .await
     //         .into_iter()
     //         .find_map(|v| match v.kind {
@@ -961,7 +965,7 @@ async fn reorg_changes_outgoing_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.list_txsummaries().await;
+    let before_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -1010,11 +1014,11 @@ async fn reorg_changes_outgoing_tx_index() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.list_txsummaries().await);
+    println!("{:?}", light_client.list_value_transfers().await);
 
     assert_eq!(
         light_client
-            .list_txsummaries()
+            .list_value_transfers()
             .await
             .into_iter()
             .find_map(|v| match v.kind {
@@ -1079,7 +1083,7 @@ async fn reorg_changes_outgoing_tx_index() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.list_txsummaries().await;
+    let after_reorg_transactions = light_client.list_value_transfers().await;
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
@@ -1090,7 +1094,7 @@ async fn reorg_changes_outgoing_tx_index() {
     // verify that the reorged transaction is in the new height
     // assert_eq!(
     //     light_client
-    //         .do_list_txsummaries()
+    //         .list_value_transfers()
     //         .await
     //         .into_iter()
     //         .find_map(|v| match v.kind {

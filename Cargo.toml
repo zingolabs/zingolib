@@ -17,14 +17,14 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "fix_change_required" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "fix_change_required", features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "fix_change_required" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", tag = "fix_change_required", features = ["orchard"] }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "override_sapling_change_address" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "override_sapling_change_address", features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "override_sapling_change_address" }
+zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", tag = "override_sapling_change_address", features = ["orchard"] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "fix_change_required" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "fix_change_required" }
-zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", tag = "fix_change_required" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "override_sapling_change_address" }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "override_sapling_change_address" }
+zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", tag = "override_sapling_change_address" }
 sapling-crypto = "0.1.2"
 orchard = "0.8"
 zip32 = "0.1"
@@ -55,6 +55,7 @@ bls12_381 = "0.8"
 byteorder = "1"
 bytes = "0.4"
 concat-idents = "1.1.3"
+chrono = "0.4"
 dirs = "5.0"
 ff = "0.13"
 futures-util = "0.3.28"
@@ -88,6 +89,7 @@ test-case = "3.3.1"
 tokio = "1.28.2"
 tonic-build = "0.10"
 tracing-subscriber = "0.3.15"
+enum_dispatch = "0.3.13"
 
 [profile.release]
 debug = false

@@ -283,6 +283,7 @@ pub mod send_with_proposal {
                     &[],
                     step,
                     Some(usk_to_tkey),
+                    Some(self.wallet.wallet_capability().first_sapling_address()),
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
             let txid = self

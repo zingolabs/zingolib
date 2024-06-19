@@ -4,7 +4,7 @@ mod chain_generics {
     use zcash_client_backend::ShieldedProtocol::Orchard;
     use zcash_client_backend::ShieldedProtocol::Sapling;
 
-    use zingo_testutils::chain_generic_tests::fixtures;
+    use zingo_testutils::chain_generics::fixtures;
 
     use environment::LibtonodeEnvironment;
     #[tokio::test]
@@ -63,12 +63,40 @@ mod chain_generics {
     async fn send_required_dust() {
         fixtures::send_required_dust::<LibtonodeEnvironment>().await;
     }
+    #[tokio::test]
+    async fn note_selection_order() {
+        fixtures::note_selection_order::<LibtonodeEnvironment>().await;
+    }
+    #[tokio::test]
+    async fn simpool_sapling_to_transparent() {
+        fixtures::shpool_to_pool::<LibtonodeEnvironment>(Sapling, Transparent).await;
+    }
+    #[tokio::test]
+    async fn simpool_sapling_to_sapling() {
+        fixtures::shpool_to_pool::<LibtonodeEnvironment>(Sapling, Shielded(Sapling)).await;
+    }
+    #[tokio::test]
+    async fn simpool_sapling_to_orchard() {
+        fixtures::shpool_to_pool::<LibtonodeEnvironment>(Sapling, Shielded(Orchard)).await;
+    }
+    #[tokio::test]
+    async fn simpool_orchard_to_transparent() {
+        fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Transparent).await;
+    }
+    #[tokio::test]
+    async fn simpool_orchard_to_sapling() {
+        fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Shielded(Sapling)).await;
+    }
+    #[tokio::test]
+    async fn simpool_orchard_to_orchard() {
+        fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Shielded(Orchard)).await;
+    }
     mod environment {
         use zcash_client_backend::PoolType;
 
         use zcash_client_backend::ShieldedProtocol::Sapling;
 
-        use zingo_testutils::chain_generic_tests::conduct_chain::ConductChain;
+        use zingo_testutils::chain_generics::conduct_chain::ConductChain;
         use zingo_testutils::scenarios::setup::ScenarioBuilder;
         use zingoconfig::RegtestNetwork;
         use zingolib::lightclient::LightClient;
