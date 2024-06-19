@@ -17,9 +17,8 @@ use zcash_primitives::{
 };
 use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
-    self, build_fvk_client, check_client_balances, check_transaction_equality,
-    get_base_address_macro, get_otd, increase_height_and_wait_for_client,
-    paths::get_cargo_manifest_dir, scenarios, validate_otds,
+    self, build_fvk_client, check_client_balances, get_base_address_macro, get_otd,
+    increase_height_and_wait_for_client, paths::get_cargo_manifest_dir, scenarios, validate_otds,
 };
 use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
@@ -697,8 +696,17 @@ mod fast {
 mod slow {
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_primitives::consensus::NetworkConstants;
-    use zingo_testutils::lightclient::from_inputs;
+    use zcash_primitives::{consensus::NetworkConstants, memo::Memo};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_testutils::{check_transaction_summary_equality, lightclient::from_inputs};
+    use zingo_testvectors::TEST_TXID;
+    use zingolib::wallet::{
+        data::{
+            summaries::{OrchardNoteSummary, SpendStatus, TransactionSummaryBuilder},
+            OutgoingTxData,
+        },
+        transaction_record::{SendType, TransactionKind},
+    };
 
     use super::*;
 
@@ -1390,52 +1398,85 @@ mod slow {
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
-        let expected_transactions = json::parse(
-        r#"
-        [
-            {
-                "block_height": 5,
-                "pending": false,
-                "datetime": 1694820763,
-                "position": 0,
-                "txid": "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
-                "amount": 100000000,
-                "zec_price": null,
-                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-                "memo": null
-            },
-            {
-                "block_height": 6,
-                "pending": false,
-                "datetime": 1694825595,
-                "txid": "4ee5a583e6462eb4c39f9d8188e855bb1e37d989fcb8b417cff93c27b006e72d",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "pending": true,
-                "datetime": 1694825735,
-                "txid": "55de92ebf5effc3ed67a289788ede88514a9d2c407af6154b00969325e2fdf00",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            }
-        ]"#,
-    ).unwrap();
+        let expected_tx_summary_1 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(5))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(recipient_initial_funds)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(None)
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                recipient_initial_funds,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![])
+            .build()
+            .unwrap();
+        let expected_tx_summary_2 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(6))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(first_send_to_sapling)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(10_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_970_000,
+                SpendStatus::PendingSpent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
+                 value: first_send_to_sapling,
+                 memo: Memo::Empty,
+                 recipient_ua: None
+             }])
+            .build()
+            .unwrap();
+        let expected_tx_summary_3 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(7))
+            .status(ConfirmationStatus::Pending(BlockHeight::from_u32(7)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(first_send_to_transparent)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(10_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_940_000,
+                SpendStatus::Unspent,
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                value: first_send_to_transparent,
+                memo: Memo::Empty,
+                recipient_ua: None,
+            }])
+            .build()
+            .unwrap();
+        let expected_transaction_summaries = vec![
+            expected_tx_summary_1,
+            expected_tx_summary_2,
+            expected_tx_summary_3,
+        ];
 
         from_inputs::send(
             &recipient,
@@ -1480,21 +1521,23 @@ mod slow {
             Some(0)
         );
 
-        let transactions = recipient.do_list_transactions().await;
-        assert_eq!(
-            transactions.members().len(),
-            expected_transactions.members().len()
-        );
-        for (t1, t2) in transactions.members().zip(expected_transactions.members()) {
+        let transactions = recipient.transaction_summaries().await.0;
+        assert_eq!(transactions.len(), expected_transaction_summaries.len());
+        for i in 0..transactions.len() {
             assert!(
-                check_transaction_equality(t1, t2),
+                check_transaction_summary_equality(
+                    &transactions[i],
+                    &expected_transaction_summaries[i]
+                ),
                 "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
-                t1.pretty(4),
-                t2.pretty(4)
+                &transactions[i],
+                &expected_transaction_summaries[i]
             );
         }
 
-        faucet.do_sync(false).await.unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
         from_inputs::send(
             &faucet,
             vec![(
@@ -1559,119 +1602,202 @@ mod slow {
             Some(second_wave_expected_funds),
         );
 
-        let second_wave_expected_transactions = json::parse(r#"
-        [
-            {
-                "block_height": 5,
-                "pending": false,
-                "datetime": 1686330002,
-                "position": 0,
-                "txid": "f040440eade0afc99800fee54753afb71fb09894483f1f1fa7462dedb63e7c02",
-                "amount": 100000000,
-                "zec_price": null,
-                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-                "memo": null
-            },
-            {
-                "block_height": 6,
-                "pending": false,
-                "datetime": 1686330013,
-                "txid": "db532064c89c7d8266e107ffefc614f3c34050af922973199e398fcd18c43ea5",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "pending": false,
-                "datetime": 1686330006,
-                "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "pending": false,
-                "datetime": 1686330013,
-                "position": 0,
-                "txid": "caf9438c9c61923d24a9594651cc694edc660eabb0082122c4588ae381edc3b4",
-                "amount": 1000000,
-                "zec_price": null,
-                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-                "memo": "Second wave incoming"
-            },
-            {
-                "block_height": 8,
-                "pending": false,
-                "datetime": 1686330021,
-                "txid": "95a41ba1c6e2b7edf63ddde7899567431a6b36b7583ba1e359560041e5f8ce2b",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 8,
-                "pending": false,
-                "datetime": 1686330021,
-                "txid": "c1004c32395ff45448fb943a7da4cc2819762066eea2628cd0a4aee65106207d",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 9,
-                "pending": false,
-                "datetime": 1686330024,
-                "txid": "c5e94f462218634b37a2a3324f89bd288bc55ab877ea516a6203e48c207ba955",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            }
-        ]"#)
-    .unwrap();
-        let second_wave_transactions = recipient.do_list_transactions().await;
-        assert_eq!(
-            second_wave_transactions.len(),
-            second_wave_expected_transactions.len()
-        );
-        for transaction in second_wave_transactions.members() {
+        let expected_tx_summary_1 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(5))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(recipient_initial_funds)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(None)
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                recipient_initial_funds,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![])
+            .build()
+            .unwrap();
+        let expected_tx_summary_2 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(6))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(first_send_to_sapling)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(10_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_970_000,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
+                 value: first_send_to_sapling,
+                 memo: Memo::Empty,
+                 recipient_ua: None
+             }])
+            .build()
+            .unwrap();
+        let expected_tx_summary_3 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(7))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(7)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(first_send_to_transparent)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(10_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_940_000,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                value: first_send_to_transparent,
+                memo: Memo::Empty,
+                recipient_ua: None,
+            }])
+            .build()
+            .unwrap();
+        let expected_tx_summary_4 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(8))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(recipient_second_wave)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(None)
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                recipient_second_wave,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                Some("Second wave incoming".to_string()),
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![])
+            .build()
+            .unwrap();
+        let expected_tx_summary_5 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(9))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(second_send_to_transparent)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(10_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_910_000,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                value: second_send_to_transparent,
+                memo: Memo::Empty,
+                recipient_ua: None,
+            }])
+            .build()
+            .unwrap();
+        let expected_tx_summary_6 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(9))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(second_send_to_sapling)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(10_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                970_000,
+                SpendStatus::Unspent,
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
+                 value: second_send_to_sapling,
+                 memo: Memo::Empty,
+                 recipient_ua: None
+             }])
+            .build()
+            .unwrap();
+        let expected_tx_summary_7 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(10))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(third_send_to_transparent)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(10_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_880_000,
+                SpendStatus::Unspent,
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                value: third_send_to_transparent,
+                memo: Memo::Empty,
+                recipient_ua: None,
+            }])
+            .build()
+            .unwrap();
+
+        let expected_transaction_summaries = vec![
+            expected_tx_summary_1,
+            expected_tx_summary_2,
+            expected_tx_summary_3,
+            expected_tx_summary_4,
+            expected_tx_summary_5,
+            expected_tx_summary_6,
+            expected_tx_summary_7,
+        ];
+        let transactions = recipient.transaction_summaries().await.0;
+        assert_eq!(transactions.len(), expected_transaction_summaries.len());
+        for i in 0..transactions.len() {
             assert!(
-                second_wave_expected_transactions
-                    .members()
-                    .any(|t2| check_transaction_equality(transaction, t2)),
-                "fail on: {:#?}",
-                transaction
+                check_transaction_summary_equality(
+                    &transactions[i],
+                    &expected_transaction_summaries[i]
+                ),
+                "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
+                &transactions[i],
+                &expected_transaction_summaries[i]
             );
         }
     }

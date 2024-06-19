@@ -566,7 +566,7 @@ impl TransactionRecord {
 }
 
 /// TODO: doc comment
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum TransactionKind {
     /// TODO: doc comment
     Sent(SendType),
@@ -585,7 +585,7 @@ impl std::fmt::Display for TransactionKind {
 }
 
 /// TODO: doc comment
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum SendType {
     /// TODO: doc comment
     Send,
