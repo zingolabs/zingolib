@@ -17,6 +17,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
+use zingolib::wallet::data::summaries::{
+    OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary, TransparentCoinSummary,
+};
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 
@@ -119,21 +122,88 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
 /// Transaction creation involves using a nonce, which means a non-deterministic txid.
 /// Datetime is also based on time of run.
 /// Check all the other fields
-pub fn check_transaction_equality(first: &JsonValue, second: &JsonValue) -> bool {
-    for (t1, t2) in [(first, second), (second, first)] {
-        for (key1, val1) in t1.entries() {
-            if key1 == "txid" || key1 == "datetime" {
-                continue;
-            }
-            if !t2
-                .entries()
-                .any(|(key2, val2)| key1 == key2 && val1 == val2)
-            {
-                return false;
-            }
+pub fn check_transaction_summary_equality(
+    first: &TransactionSummary,
+    second: &TransactionSummary,
+) -> bool {
+    first.status() == second.status()
+        && first.blockheight() == second.blockheight()
+        && first.kind() == second.kind()
+        && first.value() == second.value()
+        && first.fee() == second.fee()
+        && first.zec_price() == second.zec_price()
+        && check_orchard_note_summary_equality(first.orchard_notes(), second.orchard_notes())
+        && check_sapling_note_summary_equality(first.sapling_notes(), second.sapling_notes())
+        && check_transparent_coin_summary_equality(
+            first.transparent_coins(),
+            second.transparent_coins(),
+        )
+        && first.outgoing_tx_data() == second.outgoing_tx_data()
+}
+
+/// TODO: doc comment
+fn check_orchard_note_summary_equality(
+    first: &[OrchardNoteSummary],
+    second: &[OrchardNoteSummary],
+) -> bool {
+    if first.len() != second.len() {
+        return false;
+    };
+    for i in 0..first.len() {
+        if !(first[i].value() == second[i].value()
+            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && first[i].memo() == second[i].memo())
+        {
+            return false;
         }
     }
     true
+}
+
+/// TODO: doc comment
+fn check_sapling_note_summary_equality(
+    first: &[SaplingNoteSummary],
+    second: &[SaplingNoteSummary],
+) -> bool {
+    if first.len() != second.len() {
+        return false;
+    };
+    for i in 0..first.len() {
+        if !(first[i].value() == second[i].value()
+            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && first[i].memo() == second[i].memo())
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// TODO: doc comment
+fn check_transparent_coin_summary_equality(
+    first: &[TransparentCoinSummary],
+    second: &[TransparentCoinSummary],
+) -> bool {
+    if first.len() != second.len() {
+        return false;
+    };
+    for i in 0..first.len() {
+        if !(first[i].value() == second[i].value()
+            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status()))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool {
+    matches!(
+        (first, second),
+        (SpendStatus::Unspent, SpendStatus::Unspent)
+            | (SpendStatus::Spent(_), SpendStatus::Spent(_))
+            | (SpendStatus::PendingSpent(_), SpendStatus::PendingSpent(_))
+    )
 }
 
 /// Send from sender to recipient and then sync the recipient
