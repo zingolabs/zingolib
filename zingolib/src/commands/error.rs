@@ -3,8 +3,6 @@ use std::fmt;
 #[derive(Debug)]
 pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
-    #[cfg(feature = "zip317")]
-    #[allow(dead_code)]
     ArgNotJsonOrValidAddress,
     SingleArgNotJsonArray(String),
     EmptyJsonArray,
@@ -16,10 +14,6 @@ pub(crate) enum CommandError {
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
     ConversionFailed(crate::utils::error::ConversionError),
-    #[cfg(not(feature = "zip317"))]
-    InvalidPool,
-    #[cfg(feature = "zip317")]
-    #[allow(dead_code)]
     MultipleReceivers,
 }
 
@@ -29,7 +23,6 @@ impl fmt::Display for CommandError {
 
         match self {
             ArgsNotJson(e) => write!(f, "failed to parse argument. {}", e),
-            #[cfg(feature = "zip317")]
             ArgNotJsonOrValidAddress => write!(
                 f,
                 "argument cannot be converted to a valid address or parsed as json."
@@ -48,9 +41,6 @@ impl fmt::Display for CommandError {
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
             ConversionFailed(e) => write!(f, "conversion failed. {}", e),
-            #[cfg(not(feature = "zip317"))]
-            InvalidPool => write!(f, "invalid pool."),
-            #[cfg(feature = "zip317")]
             MultipleReceivers => write!(f, "'send all' can only accept one receiver."),
         }
     }
