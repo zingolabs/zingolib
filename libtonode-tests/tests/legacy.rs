@@ -1440,7 +1440,7 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_tx_data(vec![OutgoingTxData {
-                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(), 
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                  value: first_send_to_sapling,
                  memo: Memo::Empty,
                  recipient_ua: None
@@ -1644,7 +1644,7 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_tx_data(vec![OutgoingTxData {
-                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(), 
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                  value: first_send_to_sapling,
                  memo: Memo::Empty,
                  recipient_ua: None
@@ -1745,7 +1745,7 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_tx_data(vec![OutgoingTxData {
-                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(), 
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                  value: second_send_to_sapling,
                  memo: Memo::Empty,
                  recipient_ua: None
