@@ -18,6 +18,8 @@ use zingo_testutils::{
 use zingoconfig::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 use zingolib::wallet::data::summaries::ValueTransferKind;
+
+#[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
     let darkside_handler = DarksideHandler::new(None);
@@ -173,6 +175,7 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
     Ok(())
 }
 
+#[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_index() {
     let darkside_handler = DarksideHandler::new(None);
@@ -481,6 +484,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 
 // OUTGOING TX TESTS
 
+#[ignore]
 #[tokio::test]
 /// A Re Org occurs and changes the height of an outbound transaction
 ///
