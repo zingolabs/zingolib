@@ -198,12 +198,12 @@ fn check_transparent_coin_summary_equality(
 }
 
 fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool {
-    match (first, second) {
-        (SpendStatus::Unspent, SpendStatus::Unspent) => true,
-        (SpendStatus::Spent(_), SpendStatus::Spent(_)) => true,
-        (SpendStatus::PendingSpent(_), SpendStatus::PendingSpent(_)) => true,
-        _ => false,
-    }
+    matches!(
+        (first, second),
+        (SpendStatus::Unspent, SpendStatus::Unspent)
+            | (SpendStatus::Spent(_), SpendStatus::Spent(_))
+            | (SpendStatus::PendingSpent(_), SpendStatus::PendingSpent(_))
+    )
 }
 
 /// Send from sender to recipient and then sync the recipient
