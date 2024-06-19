@@ -2138,39 +2138,9 @@ mod slow {
     }
     /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
     mod rescan_still_have_outgoing_metadata {
-        #[ignore = "redundant with tests that validate with validate_otd"]
-        #[tokio::test]
-        async fn multiple_outgoing_metadatas_work_right_on_restore() {
-            let inital_value = 100_000;
-            let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-                scenarios::faucet_funded_recipient_default(inital_value).await;
-            from_inputs::send(
-                recipient,
-                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
-            )
-            .await
-            .unwrap();
-            zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
-                .await
-                .unwrap();
-            let pre_rescan_transactions = recipient.do_list_transactions().await;
-            let pre_rescan_summaries = recipient.transaction_summaries().await;
-            recipient.do_rescan().await.unwrap();
-            let post_rescan_transactions = recipient.do_list_transactions().await;
-            let post_rescan_summaries = recipient.transaction_summaries().await;
-            assert_eq!(pre_rescan_transactions, post_rescan_transactions);
-            assert_eq!(pre_rescan_summaries, post_rescan_summaries);
-            let mut outgoing_metadata = pre_rescan_transactions
-                .members()
-                .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
-                .unwrap()
-                .1
-                .members();
-            // The two outgoing spends were identical. They should be represented as such
-            assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
-        }
         use super::*;
         use crate::utils::conversion;
+
         #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn self_send() {
@@ -2280,7 +2250,7 @@ mod slow {
             assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
         }
     }
-    #[ignore]
+    #[ignore = "redundant with tests that validate with validate_otd"]
     #[tokio::test]
     async fn multiple_outgoing_metadatas_work_right_on_restore() {
         let inital_value = 100_000;
