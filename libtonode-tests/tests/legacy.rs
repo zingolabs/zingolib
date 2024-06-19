@@ -1317,9 +1317,9 @@ mod slow {
             .value(first_send_to_sapling)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(10_000))
+            .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_970_000,
+                99_960_000,
                 SpendStatus::PendingSpent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
@@ -1344,9 +1344,9 @@ mod slow {
             .value(first_send_to_transparent)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(10_000))
+            .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_940_000,
+                99_925_000,
                 SpendStatus::Unspent,
                 Some(0),
                 None,
@@ -1522,9 +1522,9 @@ mod slow {
             .value(first_send_to_sapling)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(10_000))
+            .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_970_000,
+                99_960_000,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
@@ -1549,9 +1549,9 @@ mod slow {
             .value(first_send_to_transparent)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(10_000))
+            .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_940_000,
+                99_925_000,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
@@ -1598,9 +1598,9 @@ mod slow {
             .value(second_send_to_transparent)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(10_000))
+            .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_910_000,
+                965_000,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
@@ -1625,9 +1625,9 @@ mod slow {
             .value(second_send_to_sapling)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(10_000))
+            .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                970_000,
+                99_885_000,
                 SpendStatus::Unspent,
                 Some(0),
                 None,
@@ -1650,9 +1650,9 @@ mod slow {
             .value(third_send_to_transparent)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(10_000))
+            .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_880_000,
+                99_870_000,
                 SpendStatus::Unspent,
                 Some(0),
                 None,
