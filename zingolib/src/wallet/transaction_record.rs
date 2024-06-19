@@ -368,8 +368,9 @@ impl TransactionRecord {
         &self,
         sources: &[zcash_client_backend::ShieldedProtocol],
         exclude: &[NoteId],
-    ) -> Vec<(NoteId, u64)> {
+    ) -> Result<Vec<(NoteId, u64)>, ()> {
         let mut all = vec![];
+        let mut missing_output_index = false;
         if sources.contains(&Sapling) {
             self.sapling_notes.iter().for_each(|zingo_sapling_note| {
                 if zingo_sapling_note.is_unspent() {
@@ -380,6 +381,7 @@ impl TransactionRecord {
                         }
                     } else {
                         println!("note has no index");
+                        missing_output_index = true;
                     }
                 }
             });
@@ -394,11 +396,16 @@ impl TransactionRecord {
                         }
                     } else {
                         println!("note has no index");
+                        missing_output_index = true;
                     }
                 }
             });
         }
-        all
+        if missing_output_index {
+            Err(())
+        } else {
+            Ok(all)
+        }
     }
 }
 // read/write
@@ -979,8 +986,9 @@ mod tests {
     fn select_spendable_note_ids_and_values() {
         let transaction_record = nine_note_transaction_record_default();
 
-        let unspent_ids_and_values =
-            transaction_record.get_spendable_note_ids_and_values(&[Sapling, Orchard], &[]);
+        let unspent_ids_and_values = transaction_record
+            .get_spendable_note_ids_and_values(&[Sapling, Orchard], &[])
+            .unwrap();
 
         assert_eq!(
             unspent_ids_and_values,
