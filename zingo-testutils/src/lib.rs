@@ -122,6 +122,7 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
 /// Transaction creation involves using a nonce, which means a non-deterministic txid.
 /// Datetime is also based on time of run.
 /// Check all the other fields
+///   TODO:  seed random numbers in tests deterministically
 pub fn check_transaction_summary_equality(
     first: &TransactionSummary,
     second: &TransactionSummary,
