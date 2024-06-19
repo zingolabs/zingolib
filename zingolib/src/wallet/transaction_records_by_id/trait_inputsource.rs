@@ -38,9 +38,7 @@ pub enum InputSourceError {
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(BalanceError),
     /// Wallet data is out of date
-    #[error(
-        "Output index data is missing! Wallet data is from an ancient version, please rescan."
-    )]
+    #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
     MissingOutputIndexes(Vec<TxId>),
 }
 
