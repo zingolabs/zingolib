@@ -2,10 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::{
-    error::ZingoLibResult,
-    wallet::notes::{interface::OutputConstructor, OutputId},
-};
+use crate::wallet::notes::{interface::OutputConstructor, OutputId};
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
@@ -371,7 +368,7 @@ impl TransactionRecord {
         &self,
         sources: &[zcash_client_backend::ShieldedProtocol],
         exclude: &[NoteId],
-    ) -> ZingoLibResult<Vec<(NoteId, u64)>> {
+    ) -> Result<Vec<(NoteId, u64)>, ()> {
         let mut all = vec![];
         let mut missing_output_index = false;
         if sources.contains(&Sapling) {
@@ -405,7 +402,7 @@ impl TransactionRecord {
             });
         }
         if missing_output_index {
-            Err(ZingoLibError::MissingOutputIndexInThisTx)
+            Err(())
         } else {
             Ok(all)
         }

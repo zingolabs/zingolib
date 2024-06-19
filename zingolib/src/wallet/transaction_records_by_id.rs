@@ -1,7 +1,6 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::error::{ZingoLibError, ZingoLibResult};
 use crate::wallet::notes::interface::OutputConstructor;
 use crate::wallet::{
     error::FeeError,
@@ -678,10 +677,10 @@ impl TransactionRecordsById {
                     .status
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    if let Ok(lalala) =
+                    if let Ok(notes_from_tx) =
                         transaction_record.get_spendable_note_ids_and_values(sources, exclude)
                     {
-                        lalala
+                        notes_from_tx
                     } else {
                         missing_output_index.push(transaction_record.txid);
                         vec![]
