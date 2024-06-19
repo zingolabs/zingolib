@@ -1365,12 +1365,15 @@ mod slow {
             Some(0)
         );
 
-        let transactions = recipient.do_list_transactions().await;
+        let transactions = recipient.transaction_summaries().await;
         assert_eq!(
-            transactions.members().len(),
+            transactions.iter().len(),
             expected_transactions.members().len()
         );
-        for (t1, t2) in transactions.members().zip(expected_transactions.members()) {
+        for (t1, t2) in JsonValue::from(transactions)
+            .members()
+            .zip(expected_transactions.members())
+        {
             assert!(
                 check_transaction_equality(t1, t2),
                 "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
@@ -1478,7 +1481,7 @@ mod slow {
                 "datetime": 1686330006,
                 "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
                 "zec_price": null,
-                "amount": -30000,
+                "amount": -35000,
                 "outgoing_metadata": [
                     {
                         "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
@@ -1545,12 +1548,12 @@ mod slow {
             }
         ]"#)
     .unwrap();
-        let second_wave_transactions = recipient.do_list_transactions().await;
+        let second_wave_transactions = recipient.transaction_summaries().await;
         assert_eq!(
-            second_wave_transactions.len(),
+            second_wave_transactions.iter().len(),
             second_wave_expected_transactions.len()
         );
-        for transaction in second_wave_transactions.members() {
+        for transaction in JsonValue::from(second_wave_transactions).members() {
             assert!(
                 second_wave_expected_transactions
                     .members()
@@ -1785,12 +1788,9 @@ mod slow {
             .unwrap();
         println!(
             "{}",
-            json::stringify_pretty(recipient.do_list_transactions().await, 4)
+            json::stringify_pretty(recipient.transaction_summaries().await, 4)
         );
-        let transactions = recipient.do_list_transactions().await;
-        let mut txids = transactions
-            .members()
-            .map(|transaction| transaction["txid"].as_str());
+        let mut txids = recipient.transaction_summaries().await.txids().into_iter();
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
     #[tokio::test]

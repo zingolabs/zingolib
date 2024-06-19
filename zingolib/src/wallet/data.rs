@@ -751,9 +751,17 @@ pub mod summaries {
         pub fn new(transaction_summaries: Vec<TransactionSummary>) -> Self {
             TransactionSummaries(transaction_summaries)
         }
+        /// Implicitly dispatch to the wrapped data
+        pub fn iter(&self) -> std::slice::Iter<TransactionSummary> {
+            self.0.iter()
+        }
         /// Total fees captures by these summaries
         pub fn paid_fees(&self) -> u64 {
-            self.0.iter().filter_map(|summary| summary.fee()).sum()
+            self.iter().filter_map(|summary| summary.fee()).sum()
+        }
+        /// A Vec of the txids
+        pub fn txids(&self) -> Vec<TxId> {
+            self.iter().map(|summary| summary.txid()).collect()
         }
     }
 
