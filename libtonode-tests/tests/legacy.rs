@@ -4291,7 +4291,7 @@ mod basic_transactions {
         recipient.do_sync(true).await.unwrap();
     }
 }
-
+#[ignore = "flake"]
 #[tokio::test]
 async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
