@@ -35,6 +35,8 @@ pub enum ZingoLibError {
     /// TODO: Add Doc Comment Here!
     MissingOutputIndex(TxId),
     /// TODO: Add Doc Comment Here!
+    MissingOutputIndexInThisTx,
+    /// TODO: Add Doc Comment Here!
     CouldNotDecodeMemo(std::io::Error),
 }
 
@@ -120,6 +122,10 @@ impl std::fmt::Display for ZingoLibError {
             MissingOutputIndex(txid) => write!(
                 f,
                 "{txid} is missing output_index for note, cannot mark change"
+            ),
+            MissingOutputIndexInThisTx => write!(
+                f,
+                "this tx is missing output_index for note, cannot mark change"
             ),
         }
     }
