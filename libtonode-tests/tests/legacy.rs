@@ -2188,7 +2188,6 @@ mod slow {
     /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
     mod rescan_still_have_outgoing_metadata {
         use super::*;
-        use crate::utils::conversion;
 
         #[tokio::test]
         async fn self_send() {
@@ -2197,23 +2196,14 @@ mod slow {
             let mut txids = vec![];
             for memo in [None, Some("Second Transaction")] {
                 txids.push(
-                    conversion::txid_from_hex_encoded_str(
-                        &from_inputs::send(
-                            &faucet,
-                            vec![(
-                                faucet_sapling_addr.as_str(),
-                                {
-                                    let balance = faucet.do_balance().await;
-                                    balance.spendable_sapling_balance.unwrap()
-                                        + balance.spendable_orchard_balance.unwrap()
-                                } - u64::from(MINIMUM_FEE),
-                                memo,
-                            )],
-                        )
-                        .await
-                        .unwrap(),
+                    from_inputs::quick_send(
+                        &faucet,
+                        vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
                     )
-                    .unwrap(),
+                    .await
+                    .unwrap()
+                    .first()
+                    .clone(),
                 );
                 zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                     .await
@@ -2228,42 +2218,41 @@ mod slow {
         async fn external_send() {
             let (regtest_manager, _cph, faucet, recipient) =
                 scenarios::faucet_recipient_default().await;
-            let external_send_txid_with_memo =
-                &crate::utils::conversion::txid_from_hex_encoded_str(
-                    &from_inputs::send(
-                        &faucet,
-                        vec![(
-                            get_base_address_macro!(recipient, "sapling").as_str(),
-                            1_000,
-                            Some("foo"),
-                        )],
-                    )
-                    .await
-                    .unwrap(),
-                )
-                .unwrap();
-            let external_send_txid_no_memo = &crate::utils::conversion::txid_from_hex_encoded_str(
-                &from_inputs::send(
-                    &faucet,
-                    vec![(
-                        get_base_address_macro!(recipient, "sapling").as_str(),
-                        1_000,
-                        None,
-                    )],
-                )
-                .await
-                .unwrap(),
+            let external_send_txid_with_memo = from_inputs::quick_send(
+                &faucet,
+                vec![(
+                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    1_000,
+                    Some("foo"),
+                )],
             )
-            .unwrap();
+            .await
+            .unwrap()
+            .first()
+            .clone();
+            let external_send_txid_no_memo = from_inputs::quick_send(
+                &faucet,
+                vec![(
+                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    1_000,
+                    None,
+                )],
+            )
+            .await
+            .unwrap()
+            .first()
+            .clone();
             // TODO:  This chain height bump should be unnecessary. I think removing
             // this increase_height call reveals a bug!
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
+            let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
+            let external_send_txid_with_memo_ref = &external_send_txid_with_memo;
             validate_otds!(
                 faucet,
-                external_send_txid_no_memo,
-                external_send_txid_with_memo
+                external_send_txid_no_memo_ref,
+                external_send_txid_with_memo_ref
             );
         }
         #[tokio::test]
@@ -2271,7 +2260,7 @@ mod slow {
             let inital_value = 100_000;
             let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
                 scenarios::faucet_funded_recipient_default(inital_value).await;
-            from_inputs::send(
+            from_inputs::quick_send(
                 recipient,
                 vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
             )
@@ -2346,7 +2335,7 @@ mod slow {
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
-        from_inputs::send(
+        from_inputs::quick_send(
             &faucet,
             (1..=3)
                 .map(|n| {
@@ -2367,7 +2356,7 @@ mod slow {
         // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
         // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
         // plus the transaction fee.
-        from_inputs::send(
+        from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -2377,6 +2366,8 @@ mod slow {
         )
         .await
         .unwrap();
+
+        // FIXME: this test has all its assertions commented out !?
         /*
         let client_2_notes = recipient.do_list_notes(false).await;
         // The 30_000 zat note to cover the value, plus another for the tx-fee.
@@ -4356,7 +4347,7 @@ async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 5_000, None)],
     )
@@ -4365,7 +4356,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(&recipient, "sapling"),
@@ -4378,7 +4369,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
     )
@@ -4387,7 +4378,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
