@@ -66,15 +66,14 @@ impl LightWallet {
                 .transaction_records_by_id
                 .values()
                 .map(|transaction| {
-                    let mut unfiltered_notes: Box<dyn Iterator<Item = &D::WalletNote>> =
+                    let mut selected_notes: Box<dyn Iterator<Item = &D::WalletNote>> =
                         Box::new(D::WalletNote::transaction_metadata_notes(transaction).iter());
                     // All filters in iterator are applied, by this loop
                     for filtering_fn in filters {
-                        unfiltered_notes = Box::new(
-                            unfiltered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)),
-                        )
+                        selected_notes =
+                            Box::new(selected_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
                     }
-                    unfiltered_notes
+                    selected_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
                                 <D::WalletNote as OutputInterface>::value(notedata)
