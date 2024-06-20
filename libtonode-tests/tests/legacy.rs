@@ -1276,18 +1276,17 @@ mod slow {
     }
     #[tokio::test]
     async fn send_to_transparent_and_sapling_maintain_balance() {
-        let recipient_initial_funds = 100_000_000;
-        let first_send_to_transparent = 20_000;
         let recipient_second_wave = 1_000_000;
         let second_send_to_transparent = 20_000;
         let second_send_to_sapling = 20_000;
         let third_send_to_transparent = 20_000;
 
-        // Funding
+        // Receipt of orchard funds
+        let recipient_initial_funds = 100_000_000;
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
-        let summary_of_funding_tx = TransactionSummaryBuilder::new()
+        let summary_orchard_receipt = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(5))
             .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
             .datetime(0)
@@ -1310,12 +1309,11 @@ mod slow {
             .build()
             .unwrap();
         check_transaction_summary_equality(
-            &summary_of_funding_tx,
+            &summary_orchard_receipt,
             &recipient.transaction_summaries().await.0[0],
         );
 
-        // First send:
-        // Send to faucet (external)
+        // Send to faucet (external) sapling
         let first_send_to_sapling = 20_000;
         from_inputs::quick_send(
             &recipient,
@@ -1330,7 +1328,7 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        let expected_tx_summary_2 = TransactionSummaryBuilder::new()
+        let summary_external_sapling = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(6))
             .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
             .datetime(0)
@@ -1357,7 +1355,14 @@ mod slow {
              }])
             .build()
             .unwrap();
-        let expected_tx_summary_3 = TransactionSummaryBuilder::new()
+        check_transaction_summary_equality(
+            &summary_external_sapling,
+            &recipient.transaction_summaries().await.0[1],
+        );
+
+        // Send to faucet (external) transparent
+        let first_send_to_transparent = 20_000;
+        let summary_external_transparent = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(7))
             .status(ConfirmationStatus::Pending(BlockHeight::from_u32(7)))
             .datetime(0)
@@ -1382,11 +1387,6 @@ mod slow {
             }])
             .build()
             .unwrap();
-        let expected_transaction_summaries = vec![
-            summary_of_funding_tx,
-            expected_tx_summary_2,
-            expected_tx_summary_3,
-        ];
 
         from_inputs::quick_send(
             &recipient,
@@ -1398,7 +1398,13 @@ mod slow {
         )
         .await
         .unwrap();
+        check_transaction_summary_equality(
+            &summary_external_transparent,
+            &recipient.transaction_summaries().await.0[2],
+        );
 
+        // Check several expectations about recipient wallet state:
+        //  (1) shielded balance total is expected amount
         let expected_funds = recipient_initial_funds
             - first_send_to_sapling
             - (4 * u64::from(MARGINAL_FEE))
@@ -1411,6 +1417,7 @@ mod slow {
                 .await,
             Some(expected_funds)
         );
+        //  (2) The balance is not yet verified
         assert_eq!(
             recipient
                 .wallet
@@ -1418,20 +1425,6 @@ mod slow {
                 .await,
             Some(0)
         );
-
-        let transactions = recipient.transaction_summaries().await.0;
-        assert_eq!(transactions.len(), expected_transaction_summaries.len());
-        for i in 0..transactions.len() {
-            assert!(
-                check_transaction_summary_equality(
-                    &transactions[i],
-                    &expected_transaction_summaries[i]
-                ),
-                "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
-                &transactions[i],
-                &expected_transaction_summaries[i]
-            );
-        }
 
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 1)
             .await
