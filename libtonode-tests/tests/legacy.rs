@@ -695,7 +695,7 @@ mod slow {
     };
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::{
-        check_transaction_summary_equality,
+        assert_transaction_summary_equality, assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
     };
     use zingo_testvectors::TEST_TXID;
@@ -1304,10 +1304,6 @@ mod slow {
             .outgoing_tx_data(vec![])
             .build()
             .unwrap();
-        check_transaction_summary_equality(
-            &summary_orchard_receipt,
-            &recipient.transaction_summaries().await.0[0],
-        );
 
         // Send to faucet (external) sapling
         let first_send_to_sapling = 20_000;
@@ -1351,10 +1347,6 @@ mod slow {
              }])
             .build()
             .unwrap();
-        check_transaction_summary_equality(
-            &summary_external_sapling,
-            &recipient.transaction_summaries().await.0[1],
-        );
 
         // Send to faucet (external) transparent
         let first_send_to_transparent = 20_000;
@@ -1394,9 +1386,19 @@ mod slow {
         )
         .await
         .unwrap();
-        check_transaction_summary_equality(
-            &summary_external_transparent,
+
+        // Assert transactions are as expected
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[0],
+            &summary_orchard_receipt,
+        );
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[1],
+            &summary_external_sapling,
+        );
+        assert_transaction_summary_equality(
             &recipient.transaction_summaries().await.0[2],
+            &summary_external_transparent,
         );
 
         // Check several expectations about recipient wallet state:
@@ -1427,6 +1429,28 @@ mod slow {
             .unwrap();
 
         let recipient_second_funding = 1_000_000;
+        let summary_orchard_receipt_2 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(8))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(recipient_second_funding)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(None)
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                recipient_second_funding,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                Some("Second wave incoming".to_string()),
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![])
+            .build()
+            .unwrap();
         from_inputs::send(
             &faucet,
             vec![(
@@ -1480,10 +1504,7 @@ mod slow {
         )
         .await
         .unwrap();
-        check_transaction_summary_equality(
-            &summary_exteranl_transparent_2,
-            &recipient.transaction_summaries().await.0[3],
-        );
+
         // Send to faucet (external) sapling 2
         let second_send_to_sapling = 20_000;
         let summary_external_sapling_2 = TransactionSummaryBuilder::new()
@@ -1524,10 +1545,6 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        check_transaction_summary_equality(
-            &summary_external_sapling_2,
-            &recipient.transaction_summaries().await.0[4],
-        );
 
         // Third external transparent
         let external_transparent_3 = 20_000;
@@ -1541,7 +1558,7 @@ mod slow {
             .kind(TransactionKind::Sent(SendType::Send))
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_870_000,
+                930_000,
                 SpendStatus::Unspent,
                 Some(0),
                 None,
@@ -1569,12 +1586,18 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        check_transaction_summary_equality(
-            &summary_external_transparent_3,
-            &recipient.transaction_summaries().await.0[5],
-        );
 
         // Final check
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[3],
+            &summary_orchard_receipt_2,
+        );
+        assert_transaction_summary_exists(&recipient, &summary_exteranl_transparent_2).await; // due to summaries of the same blockheight changing order
+        assert_transaction_summary_exists(&recipient, &summary_external_sapling_2).await; // we check all summaries for these expected transactions
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[6],
+            &summary_external_transparent_3,
+        );
         let second_wave_expected_funds = expected_funds + recipient_second_funding
             - second_send_to_sapling
             - second_send_to_transparent

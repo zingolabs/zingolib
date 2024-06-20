@@ -119,6 +119,51 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
     }
 }
 
+/// TODO: doc comment
+pub async fn assert_transaction_summary_exists(
+    lightclient: &LightClient,
+    expected: &TransactionSummary,
+) {
+    assert!(
+        check_transaction_summary_exists(lightclient, expected).await,
+        "wallet summaries: {}\n\n\nexpected: {}\n\n\n",
+        lightclient.transaction_summaries().await,
+        expected,
+    );
+}
+
+/// TODO: doc comment
+pub async fn check_transaction_summary_exists(
+    lightclient: &LightClient,
+    transaction_summary: &TransactionSummary,
+) -> bool {
+    if let Some(_) = lightclient
+        .transaction_summaries()
+        .await
+        .iter()
+        .find(|wallet_summary| {
+            check_transaction_summary_equality(wallet_summary, transaction_summary)
+        })
+    {
+        true
+    } else {
+        false
+    }
+}
+
+/// TODO: doc comment
+pub fn assert_transaction_summary_equality(
+    observed: &TransactionSummary,
+    expected: &TransactionSummary,
+) {
+    assert!(
+        check_transaction_summary_equality(observed, expected),
+        "observed: {}\n\n\nexpected: {}\n\n\n",
+        observed,
+        expected,
+    );
+}
+
 /// Transaction creation involves using a nonce, which means a non-deterministic txid.
 /// Datetime is also based on time of run.
 /// Check all the other fields
