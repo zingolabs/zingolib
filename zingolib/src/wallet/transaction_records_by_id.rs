@@ -397,6 +397,7 @@ impl TransactionRecordsById {
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "uses unstable deprecated functions")]
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
         if self.total_funds_spent_in(txid) > 0 {
@@ -449,8 +450,6 @@ impl TransactionRecordsById {
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
-
-        self.check_notes_mark_change(&txid);
     }
 
     /// TODO: Add Doc Comment Here!
@@ -668,19 +667,33 @@ impl TransactionRecordsById {
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[NoteId],
-    ) -> Vec<(NoteId, u64)> {
-        self.values()
+    ) -> Result<Vec<(NoteId, u64)>, Vec<TxId>> {
+        let mut missing_output_index = vec![];
+        let ok = self
+            .values()
             .flat_map(|transaction_record| {
                 if transaction_record
                     .status
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    transaction_record.get_spendable_note_ids_and_values(sources, exclude)
+                    if let Ok(notes_from_tx) =
+                        transaction_record.get_spendable_note_ids_and_values(sources, exclude)
+                    {
+                        notes_from_tx
+                    } else {
+                        missing_output_index.push(transaction_record.txid);
+                        vec![]
+                    }
                 } else {
                     vec![]
                 }
             })
-            .collect()
+            .collect();
+        if missing_output_index.is_empty() {
+            Ok(ok)
+        } else {
+            Err(missing_output_index)
+        }
     }
 }
 

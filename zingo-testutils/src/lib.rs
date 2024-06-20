@@ -17,6 +17,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
+use zingolib::wallet::data::summaries::{
+    OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary, TransparentCoinSummary,
+};
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 
@@ -116,24 +119,132 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
     }
 }
 
+/// TODO: doc comment
+pub async fn assert_transaction_summary_exists(
+    lightclient: &LightClient,
+    expected: &TransactionSummary,
+) {
+    assert!(
+        check_transaction_summary_exists(lightclient, expected).await,
+        "wallet summaries: {}\n\n\nexpected: {}\n\n\n",
+        lightclient.transaction_summaries().await,
+        expected,
+    );
+}
+
+/// TODO: doc comment
+pub async fn check_transaction_summary_exists(
+    lightclient: &LightClient,
+    transaction_summary: &TransactionSummary,
+) -> bool {
+    lightclient
+        .transaction_summaries()
+        .await
+        .iter()
+        .any(|wallet_summary| {
+            check_transaction_summary_equality(wallet_summary, transaction_summary)
+        })
+}
+
+/// TODO: doc comment
+pub fn assert_transaction_summary_equality(
+    observed: &TransactionSummary,
+    expected: &TransactionSummary,
+) {
+    assert!(
+        check_transaction_summary_equality(observed, expected),
+        "observed: {}\n\n\nexpected: {}\n\n\n",
+        observed,
+        expected,
+    );
+}
+
 /// Transaction creation involves using a nonce, which means a non-deterministic txid.
 /// Datetime is also based on time of run.
 /// Check all the other fields
-pub fn check_transaction_equality(first: &JsonValue, second: &JsonValue) -> bool {
-    for (t1, t2) in [(first, second), (second, first)] {
-        for (key1, val1) in t1.entries() {
-            if key1 == "txid" || key1 == "datetime" {
-                continue;
-            }
-            if !t2
-                .entries()
-                .any(|(key2, val2)| key1 == key2 && val1 == val2)
-            {
-                return false;
-            }
+///   TODO:  seed random numbers in tests deterministically
+pub fn check_transaction_summary_equality(
+    first: &TransactionSummary,
+    second: &TransactionSummary,
+) -> bool {
+    first.status() == second.status()
+        && first.blockheight() == second.blockheight()
+        && first.kind() == second.kind()
+        && first.value() == second.value()
+        && first.fee() == second.fee()
+        && first.zec_price() == second.zec_price()
+        && check_orchard_note_summary_equality(first.orchard_notes(), second.orchard_notes())
+        && check_sapling_note_summary_equality(first.sapling_notes(), second.sapling_notes())
+        && check_transparent_coin_summary_equality(
+            first.transparent_coins(),
+            second.transparent_coins(),
+        )
+        && first.outgoing_tx_data() == second.outgoing_tx_data()
+}
+
+/// TODO: doc comment
+fn check_orchard_note_summary_equality(
+    first: &[OrchardNoteSummary],
+    second: &[OrchardNoteSummary],
+) -> bool {
+    if first.len() != second.len() {
+        return false;
+    };
+    for i in 0..first.len() {
+        if !(first[i].value() == second[i].value()
+            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && first[i].memo() == second[i].memo())
+        {
+            return false;
         }
     }
     true
+}
+
+/// TODO: doc comment
+fn check_sapling_note_summary_equality(
+    first: &[SaplingNoteSummary],
+    second: &[SaplingNoteSummary],
+) -> bool {
+    if first.len() != second.len() {
+        return false;
+    };
+    for i in 0..first.len() {
+        if !(first[i].value() == second[i].value()
+            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && first[i].memo() == second[i].memo())
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// TODO: doc comment
+fn check_transparent_coin_summary_equality(
+    first: &[TransparentCoinSummary],
+    second: &[TransparentCoinSummary],
+) -> bool {
+    if first.len() != second.len() {
+        return false;
+    };
+    for i in 0..first.len() {
+        if !(first[i].value() == second[i].value()
+            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status()))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool {
+    matches!(
+        (first, second),
+        (SpendStatus::Unspent, SpendStatus::Unspent)
+            | (SpendStatus::Spent(_), SpendStatus::Spent(_))
+            | (SpendStatus::PendingSpent(_), SpendStatus::PendingSpent(_))
+    )
 }
 
 /// Send from sender to recipient and then sync the recipient
@@ -148,7 +259,7 @@ pub async fn send_value_between_clients_and_sync(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
     );
-    let txid = crate::lightclient::from_inputs::send(
+    let txid = crate::lightclient::from_inputs::quick_send(
         sender,
         vec![(
             &crate::get_base_address_macro!(recipient, address_type),
@@ -160,7 +271,7 @@ pub async fn send_value_between_clients_and_sync(
     .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
     recipient.do_sync(false).await?;
-    Ok(txid)
+    Ok(txid.first().to_string())
 }
 
 /// This function increases the chain height reliably (with polling) but
@@ -1033,31 +1144,35 @@ pub mod scenarios {
             .unwrap();
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                crate::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .first()
+                .to_string(),
             )
         } else {
             None
         };
         let sapling_txid = if let Some(funds) = sapling_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                crate::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .first()
+                .to_string(),
             )
         } else {
             None
         };
         let transparent_txid = if let Some(funds) = transparent_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                crate::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(
                         &get_base_address_macro!(recipient, "transparent"),
@@ -1066,7 +1181,9 @@ pub mod scenarios {
                     )],
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .first()
+                .to_string(),
             )
         } else {
             None
@@ -1192,7 +1309,7 @@ pub mod scenarios {
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1232,7 +1349,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1242,7 +1359,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1256,7 +1373,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1300,7 +1417,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to orchard
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1314,7 +1431,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to sapling
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1328,7 +1445,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to transparent
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1342,7 +1459,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1356,7 +1473,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self orchard
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1370,7 +1487,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1384,7 +1501,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self transparent
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1398,20 +1515,10 @@ pub mod scenarios {
             .await
             .unwrap();
         // shield transparent
-        crate::lightclient::from_inputs::shield(&recipient, &[PoolType::Transparent], None)
-            .await
-            .unwrap();
+        recipient.quick_shield().await.unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        // upgrade sapling
-        crate::lightclient::from_inputs::shield(
-            &recipient,
-            &[PoolType::Shielded(ShieldedProtocol::Sapling)],
-            None,
-        )
-        .await
-        .unwrap();
         // end
         scenario_builder
             .regtest_manager

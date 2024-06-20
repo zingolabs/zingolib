@@ -103,7 +103,7 @@ pub mod decrypt_transaction {
 
             // Post process scan results
             {
-                let mut tx_map = self.transaction_metadata_set.write().await;
+                let tx_map = self.transaction_metadata_set.write().await;
                 if let Some(transaction_record) =
                     tx_map.transaction_records_by_id.get(&transaction.txid())
                 {
@@ -129,14 +129,8 @@ pub mod decrypt_transaction {
                                 }
                             }
                         }
-                        // Also, if this is an outgoing transaction, then mark all the *incoming* notes to this transaction as change.
-                        // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
-                        // so we'll do it again here.
-                        tx_map
-                            .transaction_records_by_id
-                            .check_notes_mark_change(&transaction.txid());
                     }
-                };
+                }
             }
 
             if !outgoing_metadatas.is_empty() {

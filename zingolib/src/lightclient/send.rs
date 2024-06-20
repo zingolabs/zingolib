@@ -133,7 +133,6 @@ impl LightClient {
     }
 }
 
-#[cfg(feature = "zip317")]
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
     use std::{convert::Infallible, ops::DerefMut as _};

@@ -11,7 +11,7 @@ default = ["grpc-proxy"]
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
-zingolib = { path = "../zingolib", features = ["zip317"] }
+zingolib = { path = "../zingolib" }
 zingo-netutils = { path = "../zingo-netutils", features = ["test-features"] }
 zingo-testvectors = { path = "../zingo-testvectors" }
 

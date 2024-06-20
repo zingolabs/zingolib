@@ -598,9 +598,7 @@ impl Command for BalanceCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
 struct SpendableBalanceCommand {}
-#[cfg(feature = "zip317")]
 impl Command for SpendableBalanceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -806,101 +804,7 @@ impl Command for DecryptMessageCommand {
     }
 }
 
-#[cfg(not(feature = "zip317"))]
 struct SendCommand {}
-#[cfg(not(feature = "zip317"))]
-impl Command for SendCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Send ZEC to the given address(es).
-            The 10_000 zat fee required to send this transaction is additionally deducted from your balance.
-            Usage:
-                send <address> <amount in zatoshis> "<optional memo>"
-                OR
-                send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
-            Example:
-                send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Send ZEC to the given address(es)."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let send_inputs = match utils::parse_send_args(args, &lightclient.config().chain) {
-            Ok(args) => args,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    e
-                )
-            }
-        };
-        RT.block_on(async move {
-            match lightclient.do_send(send_inputs).await {
-                Ok(txid) => {
-                    object! { "txid" => txid.to_string() }
-                }
-                Err(e) => {
-                    object! { "error" => e }
-                }
-            }
-            .pretty(2)
-        })
-    }
-}
-
-#[cfg(not(feature = "zip317"))]
-struct ShieldCommand {}
-#[cfg(not(feature = "zip317"))]
-impl Command for ShieldCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Shield all your transparent and/or sapling funds
-            Usage:
-            shield ['transparent' or 'sapling' or 'all'] [optional address]
-
-            NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
-            Example:
-            shield all
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Shield your transparent and/or sapling ZEC into the orchard pool"
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (pools_to_shield, address) =
-            match utils::parse_shield_args(args, &lightclient.config().chain) {
-                Ok(args) => args,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help shield' for correct usage and examples.",
-                        e
-                    )
-                }
-            };
-        RT.block_on(async move {
-            match lightclient.do_shield(&pools_to_shield, address).await {
-                Ok(txid) => {
-                    object! { "txid" => txid.to_string() }
-                }
-                Err(e) => {
-                    object! { "error" => e }
-                }
-            }
-            .pretty(2)
-        })
-    }
-}
-
-#[cfg(feature = "zip317")]
-struct SendCommand {}
-#[cfg(feature = "zip317")]
 impl Command for SendCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -960,9 +864,7 @@ impl Command for SendCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
 struct SendAllCommand {}
-#[cfg(feature = "zip317")]
 impl Command for SendAllCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1022,9 +924,7 @@ impl Command for SendAllCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
 struct QuickSendCommand {}
-#[cfg(feature = "zip317")]
 impl Command for QuickSendCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1079,9 +979,7 @@ impl Command for QuickSendCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
 struct ShieldCommand {}
-#[cfg(feature = "zip317")]
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1140,9 +1038,7 @@ impl Command for ShieldCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
 struct QuickShieldCommand {}
-#[cfg(feature = "zip317")]
 impl Command for QuickShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1184,9 +1080,7 @@ impl Command for QuickShieldCommand {
     }
 }
 
-#[cfg(feature = "zip317")]
 struct ConfirmCommand {}
-#[cfg(feature = "zip317")]
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1652,17 +1546,17 @@ struct NotesCommand {}
 impl Command for NotesCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Show all sapling notes and utxos in this wallet
+            Show all shielded notes and transparent coins in this wallet
             Usage:
             notes [all]
 
-            If you supply the "all" parameter, all previously spent sapling notes and spent utxos are also included
+            If you supply the "all" parameter, all previously spent shielded notes and transparent coins are also included
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "List all sapling notes and utxos in the wallet"
+        "Show all shielded notes and transparent coins in this wallet"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -1811,7 +1705,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("wallet_kind", Box::new(WalletKindCommand {})),
         ("delete", Box::new(DeleteCommand {})),
     ];
-    #[cfg(feature = "zip317")]
     {
         entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));
         entries.push(("sendall", Box::new(SendAllCommand {})));

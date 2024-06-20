@@ -251,6 +251,7 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
     #[deprecated(
         note = "replaced by `calculate_transaction_fee` method for [`crate::wallet::transaction_records_by_id::TransactionRecordsById`]"
     )]
@@ -275,12 +276,14 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
+    #[deprecated(note = "uses unstable deprecated is_change")]
     pub fn is_outgoing_transaction(&self) -> bool {
         (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
     }
 
     /// This means there's at least one note that adds funds
     /// to this capabilities control
+    #[deprecated(note = "uses unstable deprecated is_change")]
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes
             .iter()
@@ -302,6 +305,7 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "uses unstable deprecated functions")]
     pub fn total_change_returned(&self) -> u64 {
         self.pool_change_returned::<sapling_crypto::note_encryption::SaplingDomain>()
             + self.pool_change_returned::<orchard::note_encryption::OrchardDomain>()
@@ -368,8 +372,9 @@ impl TransactionRecord {
         &self,
         sources: &[zcash_client_backend::ShieldedProtocol],
         exclude: &[NoteId],
-    ) -> Vec<(NoteId, u64)> {
+    ) -> Result<Vec<(NoteId, u64)>, ()> {
         let mut all = vec![];
+        let mut missing_output_index = false;
         if sources.contains(&Sapling) {
             self.sapling_notes.iter().for_each(|zingo_sapling_note| {
                 if zingo_sapling_note.is_unspent() {
@@ -380,6 +385,7 @@ impl TransactionRecord {
                         }
                     } else {
                         println!("note has no index");
+                        missing_output_index = true;
                     }
                 }
             });
@@ -394,11 +400,16 @@ impl TransactionRecord {
                         }
                     } else {
                         println!("note has no index");
+                        missing_output_index = true;
                     }
                 }
             });
         }
-        all
+        if missing_output_index {
+            Err(())
+        } else {
+            Ok(all)
+        }
     }
 }
 // read/write
@@ -559,7 +570,7 @@ impl TransactionRecord {
 }
 
 /// TODO: doc comment
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TransactionKind {
     /// TODO: doc comment
     Sent(SendType),
@@ -578,7 +589,7 @@ impl std::fmt::Display for TransactionKind {
 }
 
 /// TODO: doc comment
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum SendType {
     /// TODO: doc comment
     Send,
@@ -836,8 +847,6 @@ mod tests {
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 
     use crate::wallet::notes::query::OutputQuery;
-    use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
-    //use crate::wallet::notes::{OrchardNote, SaplingNote, TransparentOutput};
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,
@@ -847,9 +856,6 @@ mod tests {
     pub fn blank_record() {
         let new = TransactionRecordBuilder::default().build();
         assert_eq!(new.total_transparent_value_spent, 0);
-        assert!(!new.is_outgoing_transaction());
-        assert!(!new.is_incoming_transaction());
-        // assert_eq!(new.net_spent(), 0);
         assert_eq!(
             new.pool_change_returned::<orchard::note_encryption::OrchardDomain>(),
             0
@@ -863,14 +869,6 @@ mod tests {
         assert_eq!(new.value_outgoing(), 0);
         let t: [u64; 3] = [0, 0, 0];
         assert_eq!(new.value_spent_by_pool(), t);
-    }
-    #[test]
-    fn single_transparent_note_makes_is_incoming_true() {
-        // A single transparent note makes is_incoming_transaction true.
-        let transaction_record = TransactionRecordBuilder::default()
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .build();
-        assert!(transaction_record.is_incoming_transaction());
     }
 
     #[test_matrix(
@@ -979,8 +977,9 @@ mod tests {
     fn select_spendable_note_ids_and_values() {
         let transaction_record = nine_note_transaction_record_default();
 
-        let unspent_ids_and_values =
-            transaction_record.get_spendable_note_ids_and_values(&[Sapling, Orchard], &[]);
+        let unspent_ids_and_values = transaction_record
+            .get_spendable_note_ids_and_values(&[Sapling, Orchard], &[])
+            .unwrap();
 
         assert_eq!(
             unspent_ids_and_values,

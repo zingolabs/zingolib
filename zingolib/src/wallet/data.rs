@@ -602,6 +602,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
+    #[derive(Clone, PartialEq, Debug)]
     pub struct TransactionSummary {
         txid: TxId,
         datetime: u64,
@@ -617,7 +618,6 @@ pub mod summaries {
         outgoing_tx_data: Vec<OutgoingTxData>,
     }
 
-    #[allow(dead_code)]
     impl TransactionSummary {
         /// TODO: doc comment
         pub fn txid(&self) -> TxId {
@@ -741,13 +741,26 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
-    pub struct TransactionSummaries(Vec<TransactionSummary>);
+    /// Summary of transactions
+    #[derive(PartialEq, Debug)]
+    pub struct TransactionSummaries(pub Vec<TransactionSummary>);
 
     impl TransactionSummaries {
         /// TODO: doc comment
         pub fn new(transaction_summaries: Vec<TransactionSummary>) -> Self {
             TransactionSummaries(transaction_summaries)
+        }
+        /// Implicitly dispatch to the wrapped data
+        pub fn iter(&self) -> std::slice::Iter<TransactionSummary> {
+            self.0.iter()
+        }
+        /// Total fees captures by these summaries
+        pub fn paid_fees(&self) -> u64 {
+            self.iter().filter_map(|summary| summary.fee()).sum()
+        }
+        /// A Vec of the txids
+        pub fn txids(&self) -> Vec<TxId> {
+            self.iter().map(|summary| summary.txid()).collect()
         }
     }
 
@@ -875,7 +888,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct OrchardNoteSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -897,6 +910,22 @@ pub mod summaries {
                 output_index,
                 memo,
             }
+        }
+        /// TODO: doc comment
+        pub fn value(&self) -> u64 {
+            self.value
+        }
+        /// TODO: doc comment
+        pub fn spend_status(&self) -> SpendStatus {
+            self.spend_status
+        }
+        /// TODO: doc comment
+        pub fn output_index(&self) -> Option<u32> {
+            self.output_index
+        }
+        /// TODO: doc comment
+        pub fn memo(&self) -> Option<&str> {
+            self.memo.as_deref()
         }
     }
 
@@ -948,7 +977,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct SaplingNoteSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -970,6 +999,22 @@ pub mod summaries {
                 output_index,
                 memo,
             }
+        }
+        /// TODO: doc comment
+        pub fn value(&self) -> u64 {
+            self.value
+        }
+        /// TODO: doc comment
+        pub fn spend_status(&self) -> SpendStatus {
+            self.spend_status
+        }
+        /// TODO: doc comment
+        pub fn output_index(&self) -> Option<u32> {
+            self.output_index
+        }
+        /// TODO: doc comment
+        pub fn memo(&self) -> Option<&str> {
+            self.memo.as_deref()
         }
     }
 
@@ -1021,7 +1066,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct TransparentCoinSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -1036,6 +1081,18 @@ pub mod summaries {
                 spend_status,
                 output_index,
             }
+        }
+        /// TODO: doc comment
+        pub fn value(&self) -> u64 {
+            self.value
+        }
+        /// TODO: doc comment
+        pub fn spend_status(&self) -> SpendStatus {
+            self.spend_status
+        }
+        /// TODO: doc comment
+        pub fn output_index(&self) -> u64 {
+            self.output_index
         }
     }
 
@@ -1074,7 +1131,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone)]
+    #[derive(Clone, Copy, PartialEq, Debug)]
     pub enum SpendStatus {
         /// TODO: doc comment
         Unspent,

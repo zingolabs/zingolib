@@ -38,7 +38,7 @@ pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
 
-    /// TODO: Add Doc Comment Here!
+    /// DEPRECATED
     pub is_change: bool,
 
     /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date) Todo should this data point really be here?
