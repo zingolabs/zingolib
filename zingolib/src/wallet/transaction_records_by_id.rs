@@ -397,6 +397,7 @@ impl TransactionRecordsById {
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "uses unstable deprecated functions")]
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
         if self.total_funds_spent_in(txid) > 0 {
@@ -449,8 +450,6 @@ impl TransactionRecordsById {
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
-
-        self.check_notes_mark_change(&txid);
     }
 
     /// TODO: Add Doc Comment Here!

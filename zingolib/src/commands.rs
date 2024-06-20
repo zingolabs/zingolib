@@ -1546,17 +1546,17 @@ struct NotesCommand {}
 impl Command for NotesCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Show all sapling notes and utxos in this wallet
+            Show all shielded notes and transparent coins in this wallet
             Usage:
             notes [all]
 
-            If you supply the "all" parameter, all previously spent sapling notes and spent utxos are also included
+            If you supply the "all" parameter, all previously spent shielded notes and transparent coins are also included
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "List all sapling notes and utxos in the wallet"
+        "Show all shielded notes and transparent coins in this wallet"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {

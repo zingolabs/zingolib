@@ -2065,9 +2065,6 @@ mod slow {
             notes["spent_sapling_notes"][0]["value"].as_u64().unwrap(),
             value
         );
-        assert!(!notes["spent_sapling_notes"][0]["is_change"]
-            .as_bool()
-            .unwrap());
         assert!(!notes["spent_sapling_notes"][0]["spendable"]
             .as_bool()
             .unwrap()); // Already spent
@@ -2963,7 +2960,6 @@ mod slow {
                 "created_in_txid" => "",
                 "value" =>  24_000,
                 "pending" =>  false,
-                "is_change" =>  false,
                 "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
                 "spendable" =>  true,
                 "spent" =>  JsonValue::Null,

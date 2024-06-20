@@ -111,6 +111,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         let mut consumer_ui_notes = self

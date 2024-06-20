@@ -112,10 +112,6 @@ impl super::TxMapAndMaybeTrees {
             transaction_metadata.add_spent_nullifier(spent_nullifier.into(), value)
         }
 
-        // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-        self.transaction_records_by_id
-            .check_notes_mark_change(&spending_txid);
-
         Ok(())
     }
 
