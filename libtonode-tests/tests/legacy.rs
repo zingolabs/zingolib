@@ -1451,7 +1451,7 @@ mod slow {
             .outgoing_tx_data(vec![])
             .build()
             .unwrap();
-        from_inputs::send(
+        from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -2188,9 +2188,7 @@ mod slow {
     /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
     mod rescan_still_have_outgoing_metadata {
         use super::*;
-        use crate::utils::conversion;
 
-        #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn self_send() {
             let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
@@ -2198,23 +2196,13 @@ mod slow {
             let mut txids = vec![];
             for memo in [None, Some("Second Transaction")] {
                 txids.push(
-                    conversion::txid_from_hex_encoded_str(
-                        &from_inputs::send(
-                            &faucet,
-                            vec![(
-                                faucet_sapling_addr.as_str(),
-                                {
-                                    let balance = faucet.do_balance().await;
-                                    balance.spendable_sapling_balance.unwrap()
-                                        + balance.spendable_orchard_balance.unwrap()
-                                } - u64::from(MINIMUM_FEE),
-                                memo,
-                            )],
-                        )
-                        .await
-                        .unwrap(),
+                    *from_inputs::quick_send(
+                        &faucet,
+                        vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
                     )
-                    .unwrap(),
+                    .await
+                    .unwrap()
+                    .first(),
                 );
                 zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                     .await
@@ -2225,47 +2213,43 @@ mod slow {
             let memo_txid = &txids[1];
             validate_otds!(faucet, nom_txid, memo_txid);
         }
-        #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn external_send() {
             let (regtest_manager, _cph, faucet, recipient) =
                 scenarios::faucet_recipient_default().await;
-            let external_send_txid_with_memo =
-                &crate::utils::conversion::txid_from_hex_encoded_str(
-                    &from_inputs::send(
-                        &faucet,
-                        vec![(
-                            get_base_address_macro!(recipient, "sapling").as_str(),
-                            1_000,
-                            Some("foo"),
-                        )],
-                    )
-                    .await
-                    .unwrap(),
-                )
-                .unwrap();
-            let external_send_txid_no_memo = &crate::utils::conversion::txid_from_hex_encoded_str(
-                &from_inputs::send(
-                    &faucet,
-                    vec![(
-                        get_base_address_macro!(recipient, "sapling").as_str(),
-                        1_000,
-                        None,
-                    )],
-                )
-                .await
-                .unwrap(),
+            let external_send_txid_with_memo = *from_inputs::quick_send(
+                &faucet,
+                vec![(
+                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    1_000,
+                    Some("foo"),
+                )],
             )
-            .unwrap();
+            .await
+            .unwrap()
+            .first();
+            let external_send_txid_no_memo = *from_inputs::quick_send(
+                &faucet,
+                vec![(
+                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    1_000,
+                    None,
+                )],
+            )
+            .await
+            .unwrap()
+            .first();
             // TODO:  This chain height bump should be unnecessary. I think removing
             // this increase_height call reveals a bug!
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
+            let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
+            let external_send_txid_with_memo_ref = &external_send_txid_with_memo;
             validate_otds!(
                 faucet,
-                external_send_txid_no_memo,
-                external_send_txid_with_memo
+                external_send_txid_no_memo_ref,
+                external_send_txid_with_memo_ref
             );
         }
         #[tokio::test]
@@ -2273,7 +2257,7 @@ mod slow {
             let inital_value = 100_000;
             let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
                 scenarios::faucet_funded_recipient_default(inital_value).await;
-            from_inputs::send(
+            from_inputs::quick_send(
                 recipient,
                 vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
             )
@@ -2348,7 +2332,7 @@ mod slow {
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
-        from_inputs::send(
+        from_inputs::quick_send(
             &faucet,
             (1..=3)
                 .map(|n| {
@@ -2369,7 +2353,7 @@ mod slow {
         // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
         // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
         // plus the transaction fee.
-        from_inputs::send(
+        from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -2379,6 +2363,8 @@ mod slow {
         )
         .await
         .unwrap();
+
+        // FIXME: this test has all its assertions commented out !?
         /*
         let client_2_notes = recipient.do_list_notes(false).await;
         // The 30_000 zat note to cover the value, plus another for the tx-fee.
@@ -3172,7 +3158,7 @@ mod slow {
         //    - 317:    15_000 1-orchard + 1-dummy + 1-transparent in
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 35_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3186,7 +3172,6 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 35_000 s: 50_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3201,7 +3186,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 65_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3216,7 +3201,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 55_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3234,7 +3219,7 @@ mod slow {
         .await
         .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 25_000;
+        test_dev_total_expected_fee += 25_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3248,7 +3233,6 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3261,7 +3245,7 @@ mod slow {
         //    - 317:    20_000 = 10_000 orchard and o-dummy + 10_000 (2 t-notes)
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 500_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3276,7 +3260,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 490_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3291,7 +3275,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3339,7 +3323,6 @@ mod slow {
             _ => panic!(),
         }
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3370,7 +3353,6 @@ mod slow {
         }
         // End of 11 no change
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3383,7 +3365,7 @@ mod slow {
         //    - 317:    15_000 1t and 2o
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 460_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3398,7 +3380,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 430_000 s: 20_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3413,7 +3395,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 420_000 s: 20_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3428,7 +3410,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 410_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3443,7 +3425,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 400_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -4329,12 +4311,13 @@ async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
 
+// FIXME: does not assert dust was included in the proposal
 #[tokio::test]
 async fn propose_orchard_dust_to_sapling() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
@@ -4357,7 +4340,7 @@ async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 5_000, None)],
     )
@@ -4366,7 +4349,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(&recipient, "sapling"),
@@ -4379,7 +4362,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
     )
@@ -4388,7 +4371,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
