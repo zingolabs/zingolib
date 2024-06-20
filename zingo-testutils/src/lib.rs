@@ -137,18 +137,13 @@ pub async fn check_transaction_summary_exists(
     lightclient: &LightClient,
     transaction_summary: &TransactionSummary,
 ) -> bool {
-    if let Some(_) = lightclient
+    lightclient
         .transaction_summaries()
         .await
         .iter()
-        .find(|wallet_summary| {
+        .any(|wallet_summary| {
             check_transaction_summary_equality(wallet_summary, transaction_summary)
         })
-    {
-        true
-    } else {
-        false
-    }
 }
 
 /// TODO: doc comment
