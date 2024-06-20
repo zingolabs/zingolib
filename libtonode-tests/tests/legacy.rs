@@ -2916,8 +2916,7 @@ mod slow {
             vec![(&get_base_address_macro!(faucet, "unified"), 14000, None)],
         )
         .await;
-        if let 
-            Err(QuickSendError::ProposeSend(Proposal(
+        if let Err(QuickSendError::ProposeSend(Proposal(
                 zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
                     zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(output_error)
                 )),
