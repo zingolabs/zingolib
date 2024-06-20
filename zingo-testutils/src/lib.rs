@@ -119,9 +119,50 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
     }
 }
 
+/// TODO: doc comment
+pub async fn assert_transaction_summary_exists(
+    lightclient: &LightClient,
+    expected: &TransactionSummary,
+) {
+    assert!(
+        check_transaction_summary_exists(lightclient, expected).await,
+        "wallet summaries: {}\n\n\nexpected: {}\n\n\n",
+        lightclient.transaction_summaries().await,
+        expected,
+    );
+}
+
+/// TODO: doc comment
+pub async fn check_transaction_summary_exists(
+    lightclient: &LightClient,
+    transaction_summary: &TransactionSummary,
+) -> bool {
+    lightclient
+        .transaction_summaries()
+        .await
+        .iter()
+        .any(|wallet_summary| {
+            check_transaction_summary_equality(wallet_summary, transaction_summary)
+        })
+}
+
+/// TODO: doc comment
+pub fn assert_transaction_summary_equality(
+    observed: &TransactionSummary,
+    expected: &TransactionSummary,
+) {
+    assert!(
+        check_transaction_summary_equality(observed, expected),
+        "observed: {}\n\n\nexpected: {}\n\n\n",
+        observed,
+        expected,
+    );
+}
+
 /// Transaction creation involves using a nonce, which means a non-deterministic txid.
 /// Datetime is also based on time of run.
 /// Check all the other fields
+///   TODO:  seed random numbers in tests deterministically
 pub fn check_transaction_summary_equality(
     first: &TransactionSummary,
     second: &TransactionSummary,
@@ -218,7 +259,7 @@ pub async fn send_value_between_clients_and_sync(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
     );
-    let txid = crate::lightclient::from_inputs::send(
+    let txid = crate::lightclient::from_inputs::quick_send(
         sender,
         vec![(
             &crate::get_base_address_macro!(recipient, address_type),
@@ -230,7 +271,7 @@ pub async fn send_value_between_clients_and_sync(
     .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
     recipient.do_sync(false).await?;
-    Ok(txid)
+    Ok(txid.first().to_string())
 }
 
 /// This function increases the chain height reliably (with polling) but
@@ -1103,31 +1144,35 @@ pub mod scenarios {
             .unwrap();
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                crate::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .first()
+                .to_string(),
             )
         } else {
             None
         };
         let sapling_txid = if let Some(funds) = sapling_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                crate::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .first()
+                .to_string(),
             )
         } else {
             None
         };
         let transparent_txid = if let Some(funds) = transparent_funds {
             Some(
-                crate::lightclient::from_inputs::send(
+                crate::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(
                         &get_base_address_macro!(recipient, "transparent"),
@@ -1136,7 +1181,9 @@ pub mod scenarios {
                     )],
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .first()
+                .to_string(),
             )
         } else {
             None
@@ -1262,7 +1309,7 @@ pub mod scenarios {
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1302,7 +1349,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1312,7 +1359,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1326,7 +1373,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1370,7 +1417,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to orchard
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1384,7 +1431,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to sapling
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1398,7 +1445,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to transparent
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1412,7 +1459,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1426,7 +1473,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self orchard
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1440,7 +1487,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1454,7 +1501,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self transparent
-        crate::lightclient::from_inputs::send(
+        crate::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1468,20 +1515,10 @@ pub mod scenarios {
             .await
             .unwrap();
         // shield transparent
-        crate::lightclient::from_inputs::shield(&recipient, &[PoolType::Transparent], None)
-            .await
-            .unwrap();
+        recipient.quick_shield().await.unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        // upgrade sapling
-        crate::lightclient::from_inputs::shield(
-            &recipient,
-            &[PoolType::Shielded(ShieldedProtocol::Sapling)],
-            None,
-        )
-        .await
-        .unwrap();
         // end
         scenario_builder
             .regtest_manager

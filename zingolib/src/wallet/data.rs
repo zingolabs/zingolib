@@ -602,7 +602,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct TransactionSummary {
         txid: TxId,
         datetime: u64,
@@ -741,13 +741,26 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Summary of transactions
+    #[derive(PartialEq, Debug)]
     pub struct TransactionSummaries(pub Vec<TransactionSummary>);
 
     impl TransactionSummaries {
         /// TODO: doc comment
         pub fn new(transaction_summaries: Vec<TransactionSummary>) -> Self {
             TransactionSummaries(transaction_summaries)
+        }
+        /// Implicitly dispatch to the wrapped data
+        pub fn iter(&self) -> std::slice::Iter<TransactionSummary> {
+            self.0.iter()
+        }
+        /// Total fees captures by these summaries
+        pub fn paid_fees(&self) -> u64 {
+            self.iter().filter_map(|summary| summary.fee()).sum()
+        }
+        /// A Vec of the txids
+        pub fn txids(&self) -> Vec<TxId> {
+            self.iter().map(|summary| summary.txid()).collect()
         }
     }
 
@@ -875,7 +888,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct OrchardNoteSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -964,7 +977,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct SaplingNoteSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -1053,7 +1066,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct TransparentCoinSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -1118,7 +1131,7 @@ pub mod summaries {
     }
 
     /// TODO: doc comment
-    #[derive(Clone, Copy, PartialEq)]
+    #[derive(Clone, Copy, PartialEq, Debug)]
     pub enum SpendStatus {
         /// TODO: doc comment
         Unspent,

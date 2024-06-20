@@ -29,6 +29,10 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
         }
     }
 }
+/// Get the total fees paid by a given client (assumes 1 capability per client).
+pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
+    client.transaction_summaries().await.paid_fees()
+}
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
     use zcash_client_backend::PoolType;
