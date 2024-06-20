@@ -1277,17 +1277,17 @@ mod slow {
     #[tokio::test]
     async fn send_to_transparent_and_sapling_maintain_balance() {
         let recipient_initial_funds = 100_000_000;
-        let first_send_to_sapling = 20_000;
         let first_send_to_transparent = 20_000;
         let recipient_second_wave = 1_000_000;
         let second_send_to_transparent = 20_000;
         let second_send_to_sapling = 20_000;
         let third_send_to_transparent = 20_000;
 
+        // Funding
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
-        let expected_tx_summary_1 = TransactionSummaryBuilder::new()
+        let summary_of_funding_tx = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(5))
             .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
             .datetime(0)
@@ -1308,6 +1308,27 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_tx_data(vec![])
             .build()
+            .unwrap();
+        check_transaction_summary_equality(
+            &summary_of_funding_tx,
+            &recipient.transaction_summaries().await.0[0],
+        );
+
+        // First send:
+        // Send to faucet (external)
+        let first_send_to_sapling = 20_000;
+        from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "sapling"),
+                first_send_to_sapling,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+            .await
             .unwrap();
         let expected_tx_summary_2 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(6))
@@ -1362,24 +1383,11 @@ mod slow {
             .build()
             .unwrap();
         let expected_transaction_summaries = vec![
-            expected_tx_summary_1,
+            summary_of_funding_tx,
             expected_tx_summary_2,
             expected_tx_summary_3,
         ];
 
-        from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "sapling"),
-                first_send_to_sapling,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
         from_inputs::quick_send(
             &recipient,
             vec![(
@@ -1680,6 +1688,7 @@ mod slow {
         let transactions = recipient.transaction_summaries().await.0;
         assert_eq!(transactions.len(), expected_transaction_summaries.len());
         for i in 0..transactions.len() {
+            dbg!(i);
             assert!(
                 check_transaction_summary_equality(
                     &transactions[i],
