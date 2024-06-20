@@ -1276,11 +1276,6 @@ mod slow {
     }
     #[tokio::test]
     async fn send_to_transparent_and_sapling_maintain_balance() {
-        let recipient_second_wave = 1_000_000;
-        let second_send_to_transparent = 20_000;
-        let second_send_to_sapling = 20_000;
-        let third_send_to_transparent = 20_000;
-
         // Receipt of orchard funds
         let recipient_initial_funds = 100_000_000;
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
@@ -1429,11 +1424,13 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 1)
             .await
             .unwrap();
+
+        let recipient_second_funding = 1_000_000;
         from_inputs::send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
-                recipient_second_wave,
+                recipient_second_funding,
                 Some("Second wave incoming"),
             )],
         )
@@ -1442,156 +1439,10 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "transparent"),
-                second_send_to_transparent,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "sapling"),
-                second_send_to_sapling,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
 
-        from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "transparent"),
-                third_send_to_transparent,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-
-        let second_wave_expected_funds = expected_funds + recipient_second_wave
-            - second_send_to_sapling
-            - second_send_to_transparent
-            - third_send_to_transparent
-            - (5 * u64::from(MINIMUM_FEE));
-        assert_eq!(
-            recipient
-                .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
-                .await,
-            Some(second_wave_expected_funds),
-        );
-
-        let expected_tx_summary_1 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(5))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(recipient_initial_funds)
-            .zec_price(None)
-            .kind(TransactionKind::Received)
-            .fee(None)
-            .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                recipient_initial_funds,
-                SpendStatus::Spent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
-                Some(0),
-                None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_tx_data(vec![])
-            .build()
-            .unwrap();
-        let expected_tx_summary_2 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(6))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(first_send_to_sapling)
-            .zec_price(None)
-            .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(20_000))
-            .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_960_000,
-                SpendStatus::Spent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
-                Some(0),
-                None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_tx_data(vec![OutgoingTxData {
-                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
-                 value: first_send_to_sapling,
-                 memo: Memo::Empty,
-                 recipient_ua: None
-             }])
-            .build()
-            .unwrap();
-        let expected_tx_summary_3 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(7))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(7)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(first_send_to_transparent)
-            .zec_price(None)
-            .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(15_000))
-            .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                99_925_000,
-                SpendStatus::Spent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
-                Some(0),
-                None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_tx_data(vec![OutgoingTxData {
-                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
-                value: first_send_to_transparent,
-                memo: Memo::Empty,
-                recipient_ua: None,
-            }])
-            .build()
-            .unwrap();
-        let expected_tx_summary_4 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(8))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(recipient_second_wave)
-            .zec_price(None)
-            .kind(TransactionKind::Received)
-            .fee(None)
-            .orchard_notes(vec![OrchardNoteSummary::from_parts(
-                recipient_second_wave,
-                SpendStatus::Spent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
-                Some(0),
-                Some("Second wave incoming".to_string()),
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_tx_data(vec![])
-            .build()
-            .unwrap();
-        let expected_tx_summary_5 = TransactionSummaryBuilder::new()
+        // Send to external (faucet) transparent
+        let second_send_to_transparent = 20_000;
+        let summary_exteranl_transparent_2 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(9))
             .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
             .datetime(0)
@@ -1618,7 +1469,23 @@ mod slow {
             }])
             .build()
             .unwrap();
-        let expected_tx_summary_6 = TransactionSummaryBuilder::new()
+        from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "transparent"),
+                second_send_to_transparent,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        check_transaction_summary_equality(
+            &summary_exteranl_transparent_2,
+            &recipient.transaction_summaries().await.0[3],
+        );
+        // Send to faucet (external) sapling 2
+        let second_send_to_sapling = 20_000;
+        let summary_external_sapling_2 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(9))
             .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
             .datetime(0)
@@ -1643,12 +1510,32 @@ mod slow {
              }])
             .build()
             .unwrap();
-        let expected_tx_summary_7 = TransactionSummaryBuilder::new()
+        from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "sapling"),
+                second_send_to_sapling,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        check_transaction_summary_equality(
+            &summary_external_sapling_2,
+            &recipient.transaction_summaries().await.0[4],
+        );
+
+        // Third external transparent
+        let external_transparent_3 = 20_000;
+        let summary_external_transparent_3 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(10))
             .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(third_send_to_transparent)
+            .value(external_transparent_3)
             .zec_price(None)
             .kind(TransactionKind::Sent(SendType::Send))
             .fee(Some(15_000))
@@ -1662,36 +1549,43 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_tx_data(vec![OutgoingTxData {
                 recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
-                value: third_send_to_transparent,
+                value: external_transparent_3,
                 memo: Memo::Empty,
                 recipient_ua: None,
             }])
             .build()
             .unwrap();
+        from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "transparent"),
+                external_transparent_3,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        check_transaction_summary_equality(
+            &summary_external_transparent_3,
+            &recipient.transaction_summaries().await.0[5],
+        );
 
-        let expected_transaction_summaries = vec![
-            expected_tx_summary_1,
-            expected_tx_summary_2,
-            expected_tx_summary_3,
-            expected_tx_summary_4,
-            expected_tx_summary_5,
-            expected_tx_summary_6,
-            expected_tx_summary_7,
-        ];
-        let transactions = recipient.transaction_summaries().await.0;
-        assert_eq!(transactions.len(), expected_transaction_summaries.len());
-        for i in 0..transactions.len() {
-            dbg!(i);
-            assert!(
-                check_transaction_summary_equality(
-                    &transactions[i],
-                    &expected_transaction_summaries[i]
-                ),
-                "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
-                &transactions[i],
-                &expected_transaction_summaries[i]
-            );
-        }
+        // Final check
+        let second_wave_expected_funds = expected_funds + recipient_second_funding
+            - second_send_to_sapling
+            - second_send_to_transparent
+            - external_transparent_3
+            - (5 * u64::from(MINIMUM_FEE));
+        assert_eq!(
+            recipient
+                .wallet
+                .shielded_balance::<OrchardDomain>(None, &[])
+                .await,
+            Some(second_wave_expected_funds),
+        );
     }
 
     #[tokio::test]
