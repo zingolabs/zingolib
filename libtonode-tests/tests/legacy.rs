@@ -700,6 +700,7 @@ mod slow {
     };
     use zingo_testvectors::TEST_TXID;
     use zingolib::{
+        lightclient::propose::ProposeSendError::Proposal,
         lightclient::send::send_with_proposal::QuickSendError,
         wallet::{
             data::{
@@ -2910,12 +2911,22 @@ mod slow {
             transparent_balance: Some(0),
         };
         assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
-        from_inputs::quick_send(
+        let missing_output_index = from_inputs::quick_send(
             &recipient,
             vec![(&get_base_address_macro!(faucet, "unified"), 14000, None)],
         )
-        .await
-        .unwrap();
+        .await;
+        match missing_output_index {
+            Err(QuickSendError::ProposeSend(Proposal(
+                zcash_client_backend::data_api::error::Error::DataSource(output_error),
+            ))) => assert!(matches!(
+                output_error,
+                zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
+                    zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(_)
+                )
+            )),
+            _ => panic!(),
+        };
     }
     /// An arbitrary number of diversified addresses may be generated
     /// from a seed.  If the wallet is subsequently lost-or-destroyed
