@@ -13,8 +13,6 @@ use zcash_primitives::zip339::Mnemonic;
 
 use zcash_note_encryption::Domain;
 
-use zcash_primitives::consensus::BlockHeight;
-
 use crate::utils;
 use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::OutputInterface;
@@ -121,14 +119,9 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
         let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| {
-                transaction
-                    .status
-                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
-            }),
+            Box::new(|_, transaction| transaction.status.is_confirmed()),
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
         ];
         self.shielded_balance::<D>(filters).await
