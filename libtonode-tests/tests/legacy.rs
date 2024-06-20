@@ -1451,7 +1451,7 @@ mod slow {
             .outgoing_tx_data(vec![])
             .build()
             .unwrap();
-        from_inputs::send(
+        from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -2190,7 +2190,6 @@ mod slow {
         use super::*;
         use crate::utils::conversion;
 
-        #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn self_send() {
             let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
@@ -2225,7 +2224,6 @@ mod slow {
             let memo_txid = &txids[1];
             validate_otds!(faucet, nom_txid, memo_txid);
         }
-        #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn external_send() {
             let (regtest_manager, _cph, faucet, recipient) =
@@ -4329,12 +4327,13 @@ async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
 
+// FIXME: does not assert dust was included in the proposal
 #[tokio::test]
 async fn propose_orchard_dust_to_sapling() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
