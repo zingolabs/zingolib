@@ -2196,14 +2196,13 @@ mod slow {
             let mut txids = vec![];
             for memo in [None, Some("Second Transaction")] {
                 txids.push(
-                    from_inputs::quick_send(
+                    *from_inputs::quick_send(
                         &faucet,
                         vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
                     )
                     .await
                     .unwrap()
-                    .first()
-                    .clone(),
+                    .first(),
                 );
                 zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                     .await
@@ -2218,7 +2217,7 @@ mod slow {
         async fn external_send() {
             let (regtest_manager, _cph, faucet, recipient) =
                 scenarios::faucet_recipient_default().await;
-            let external_send_txid_with_memo = from_inputs::quick_send(
+            let external_send_txid_with_memo = *from_inputs::quick_send(
                 &faucet,
                 vec![(
                     get_base_address_macro!(recipient, "sapling").as_str(),
@@ -2228,9 +2227,8 @@ mod slow {
             )
             .await
             .unwrap()
-            .first()
-            .clone();
-            let external_send_txid_no_memo = from_inputs::quick_send(
+            .first();
+            let external_send_txid_no_memo = *from_inputs::quick_send(
                 &faucet,
                 vec![(
                     get_base_address_macro!(recipient, "sapling").as_str(),
@@ -2240,8 +2238,7 @@ mod slow {
             )
             .await
             .unwrap()
-            .first()
-            .clone();
+            .first();
             // TODO:  This chain height bump should be unnecessary. I think removing
             // this increase_height call reveals a bug!
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
@@ -3161,7 +3158,7 @@ mod slow {
         //    - 317:    15_000 1-orchard + 1-dummy + 1-transparent in
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 35_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3175,7 +3172,6 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 35_000 s: 50_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3190,7 +3186,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 65_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3205,7 +3201,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 55_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3223,7 +3219,7 @@ mod slow {
         .await
         .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 25_000;
+        test_dev_total_expected_fee += 25_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3237,7 +3233,6 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3250,7 +3245,7 @@ mod slow {
         //    - 317:    20_000 = 10_000 orchard and o-dummy + 10_000 (2 t-notes)
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 500_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3265,7 +3260,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 490_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3280,7 +3275,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3328,7 +3323,6 @@ mod slow {
             _ => panic!(),
         }
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3359,7 +3353,6 @@ mod slow {
         }
         // End of 11 no change
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3372,7 +3365,7 @@ mod slow {
         //    - 317:    15_000 1t and 2o
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 460_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3387,7 +3380,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 430_000 s: 20_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3402,7 +3395,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 420_000 s: 20_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3417,7 +3410,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 410_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3432,7 +3425,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 400_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
