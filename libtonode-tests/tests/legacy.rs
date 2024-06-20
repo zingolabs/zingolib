@@ -17,9 +17,8 @@ use zcash_primitives::{
 };
 use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
-    self, build_fvk_client, check_client_balances, check_transaction_equality,
-    get_base_address_macro, get_otd, increase_height_and_wait_for_client,
-    paths::get_cargo_manifest_dir, scenarios, validate_otds,
+    self, build_fvk_client, check_client_balances, get_base_address_macro, get_otd,
+    increase_height_and_wait_for_client, paths::get_cargo_manifest_dir, scenarios, validate_otds,
 };
 use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
@@ -691,11 +690,26 @@ mod fast {
 mod slow {
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_primitives::{consensus::NetworkConstants, transaction::fees::zip317::MARGINAL_FEE};
-    use zingo_testutils::lightclient::{from_inputs, get_fees_paid_by_client};
+    use zcash_primitives::{
+        consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
+    };
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_testutils::{
+        assert_transaction_summary_equality, assert_transaction_summary_exists,
+        lightclient::{from_inputs, get_fees_paid_by_client},
+    };
+    use zingo_testvectors::TEST_TXID;
     use zingolib::{
-        lightclient::{propose::ProposeSendError, send::send_with_proposal::QuickSendError},
-        wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+        lightclient::propose::ProposeSendError::Proposal,
+        lightclient::send::send_with_proposal::QuickSendError,
+        wallet::{
+            data::{
+                summaries::{OrchardNoteSummary, SpendStatus, TransactionSummaryBuilder},
+                OutgoingTxData,
+            },
+            transaction_record::{SendType, TransactionKind},
+            tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+        },
     };
 
     use super::*;
@@ -1263,64 +1277,36 @@ mod slow {
     }
     #[tokio::test]
     async fn send_to_transparent_and_sapling_maintain_balance() {
+        // Receipt of orchard funds
         let recipient_initial_funds = 100_000_000;
-        let first_send_to_sapling = 20_000;
-        let first_send_to_transparent = 20_000;
-        let recipient_second_wave = 1_000_000;
-        let second_send_to_transparent = 20_000;
-        let second_send_to_sapling = 20_000;
-        let third_send_to_transparent = 20_000;
-
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
-        let expected_transactions = json::parse(
-        r#"
-        [
-            {
-                "block_height": 5,
-                "pending": false,
-                "datetime": 1694820763,
-                "position": 0,
-                "txid": "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
-                "amount": 100000000,
-                "zec_price": null,
-                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-                "memo": null
-            },
-            {
-                "block_height": 6,
-                "pending": false,
-                "datetime": 1718023286,
-                "txid": "392da4b0abfc2b3938741301fc109ad2de7641a8054f2cda8c6fa33804b6385a",
-                "zec_price": null,
-                "amount": -40000,
-                "outgoing_metadata": [
-                    {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "pending": true,
-                "datetime": 1694825735,
-                "txid": "55de92ebf5effc3ed67a289788ede88514a9d2c407af6154b00969325e2fdf00",
-                "zec_price": null,
-                "amount": -35000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            }
-        ]"#,
-    ).unwrap();
+        let summary_orchard_receipt = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(5))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(recipient_initial_funds)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(None)
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                recipient_initial_funds,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![])
+            .build()
+            .unwrap();
 
+        // Send to faucet (external) sapling
+        let first_send_to_sapling = 20_000;
         from_inputs::quick_send(
             &recipient,
             vec![(
@@ -1334,6 +1320,62 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
+        let summary_external_sapling = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(6))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(first_send_to_sapling)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(20_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_960_000,
+                SpendStatus::PendingSpent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
+                 value: first_send_to_sapling,
+                 memo: Memo::Empty,
+                 recipient_ua: None
+             }])
+            .build()
+            .unwrap();
+
+        // Send to faucet (external) transparent
+        let first_send_to_transparent = 20_000;
+        let summary_external_transparent = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(7))
+            .status(ConfirmationStatus::Pending(BlockHeight::from_u32(7)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(first_send_to_transparent)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(15_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_925_000,
+                SpendStatus::Unspent,
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                value: first_send_to_transparent,
+                memo: Memo::Empty,
+                recipient_ua: None,
+            }])
+            .build()
+            .unwrap();
+
         from_inputs::quick_send(
             &recipient,
             vec![(
@@ -1345,6 +1387,22 @@ mod slow {
         .await
         .unwrap();
 
+        // Assert transactions are as expected
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[0],
+            &summary_orchard_receipt,
+        );
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[1],
+            &summary_external_sapling,
+        );
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[2],
+            &summary_external_transparent,
+        );
+
+        // Check several expectations about recipient wallet state:
+        //  (1) shielded balance total is expected amount
         let expected_funds = recipient_initial_funds
             - first_send_to_sapling
             - (4 * u64::from(MARGINAL_FEE))
@@ -1357,6 +1415,7 @@ mod slow {
                 .await,
             Some(expected_funds)
         );
+        //  (2) The balance is not yet verified
         assert_eq!(
             recipient
                 .wallet
@@ -1365,29 +1424,38 @@ mod slow {
             Some(0)
         );
 
-        let transactions = recipient.transaction_summaries().await;
-        assert_eq!(
-            transactions.iter().len(),
-            expected_transactions.members().len()
-        );
-        for (t1, t2) in JsonValue::from(transactions)
-            .members()
-            .zip(expected_transactions.members())
-        {
-            assert!(
-                check_transaction_equality(t1, t2),
-                "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
-                t1.pretty(4),
-                t2.pretty(4)
-            );
-        }
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
 
-        faucet.do_sync(false).await.unwrap();
+        let recipient_second_funding = 1_000_000;
+        let summary_orchard_receipt_2 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(8))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(recipient_second_funding)
+            .zec_price(None)
+            .kind(TransactionKind::Received)
+            .fee(None)
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                recipient_second_funding,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                Some("Second wave incoming".to_string()),
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![])
+            .build()
+            .unwrap();
         from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
-                recipient_second_wave,
+                recipient_second_funding,
                 Some("Second wave incoming"),
             )],
         )
@@ -1395,6 +1463,36 @@ mod slow {
         .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
+            .unwrap();
+
+        // Send to external (faucet) transparent
+        let second_send_to_transparent = 20_000;
+        let summary_exteranl_transparent_2 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(9))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(second_send_to_transparent)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(15_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                965_000,
+                SpendStatus::Spent(
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+                ),
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                value: second_send_to_transparent,
+                memo: Memo::Empty,
+                recipient_ua: None,
+            }])
+            .build()
             .unwrap();
         from_inputs::quick_send(
             &recipient,
@@ -1406,6 +1504,34 @@ mod slow {
         )
         .await
         .unwrap();
+
+        // Send to faucet (external) sapling 2
+        let second_send_to_sapling = 20_000;
+        let summary_external_sapling_2 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(9))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(second_send_to_sapling)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(20_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                99_885_000,
+                SpendStatus::Unspent,
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                 recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
+                 value: second_send_to_sapling,
+                 memo: Memo::Empty,
+                 recipient_ua: None
+             }])
+            .build()
+            .unwrap();
         from_inputs::quick_send(
             &recipient,
             vec![(
@@ -1420,11 +1546,38 @@ mod slow {
             .await
             .unwrap();
 
+        // Third external transparent
+        let external_transparent_3 = 20_000;
+        let summary_external_transparent_3 = TransactionSummaryBuilder::new()
+            .blockheight(BlockHeight::from_u32(10))
+            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)))
+            .datetime(0)
+            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
+            .value(external_transparent_3)
+            .zec_price(None)
+            .kind(TransactionKind::Sent(SendType::Send))
+            .fee(Some(15_000))
+            .orchard_notes(vec![OrchardNoteSummary::from_parts(
+                930_000,
+                SpendStatus::Unspent,
+                Some(0),
+                None,
+            )])
+            .sapling_notes(vec![])
+            .transparent_coins(vec![])
+            .outgoing_tx_data(vec![OutgoingTxData {
+                recipient_address: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                value: external_transparent_3,
+                memo: Memo::Empty,
+                recipient_ua: None,
+            }])
+            .build()
+            .unwrap();
         from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "transparent"),
-                third_send_to_transparent,
+                external_transparent_3,
                 None,
             )],
         )
@@ -1434,10 +1587,21 @@ mod slow {
             .await
             .unwrap();
 
-        let second_wave_expected_funds = expected_funds + recipient_second_wave
+        // Final check
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[3],
+            &summary_orchard_receipt_2,
+        );
+        assert_transaction_summary_exists(&recipient, &summary_exteranl_transparent_2).await; // due to summaries of the same blockheight changing order
+        assert_transaction_summary_exists(&recipient, &summary_external_sapling_2).await; // we check all summaries for these expected transactions
+        assert_transaction_summary_equality(
+            &recipient.transaction_summaries().await.0[6],
+            &summary_external_transparent_3,
+        );
+        let second_wave_expected_funds = expected_funds + recipient_second_funding
             - second_send_to_sapling
             - second_send_to_transparent
-            - third_send_to_transparent
+            - external_transparent_3
             - (5 * u64::from(MINIMUM_FEE));
         assert_eq!(
             recipient
@@ -1446,123 +1610,8 @@ mod slow {
                 .await,
             Some(second_wave_expected_funds),
         );
-
-        let second_wave_expected_transactions = json::parse(r#"
-        [
-            {
-                "block_height": 5,
-                "pending": false,
-                "datetime": 1686330002,
-                "position": 0,
-                "txid": "f040440eade0afc99800fee54753afb71fb09894483f1f1fa7462dedb63e7c02",
-                "amount": 100000000,
-                "zec_price": null,
-                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-                "memo": null
-            },
-            {
-                "block_height": 6,
-                "pending": false,
-                "datetime": 1686330013,
-                "txid": "db532064c89c7d8266e107ffefc614f3c34050af922973199e398fcd18c43ea5",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "pending": false,
-                "datetime": 1686330006,
-                "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
-                "zec_price": null,
-                "amount": -35000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "pending": false,
-                "datetime": 1686330013,
-                "position": 0,
-                "txid": "caf9438c9c61923d24a9594651cc694edc660eabb0082122c4588ae381edc3b4",
-                "amount": 1000000,
-                "zec_price": null,
-                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-                "memo": "Second wave incoming"
-            },
-            {
-                "block_height": 8,
-                "pending": false,
-                "datetime": 1686330021,
-                "txid": "95a41ba1c6e2b7edf63ddde7899567431a6b36b7583ba1e359560041e5f8ce2b",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 8,
-                "pending": false,
-                "datetime": 1686330021,
-                "txid": "c1004c32395ff45448fb943a7da4cc2819762066eea2628cd0a4aee65106207d",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 9,
-                "pending": false,
-                "datetime": 1686330024,
-                "txid": "c5e94f462218634b37a2a3324f89bd288bc55ab877ea516a6203e48c207ba955",
-                "zec_price": null,
-                "amount": -30000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 20000,
-                        "memo": null
-                    }
-                ]
-            }
-        ]"#)
-    .unwrap();
-        let second_wave_transactions = recipient.transaction_summaries().await;
-        assert_eq!(
-            second_wave_transactions.iter().len(),
-            second_wave_expected_transactions.len()
-        );
-        for transaction in JsonValue::from(second_wave_transactions).members() {
-            assert!(
-                second_wave_expected_transactions
-                    .members()
-                    .any(|t2| check_transaction_equality(transaction, t2)),
-                "fail on: {:#?}",
-                transaction
-            );
-        }
     }
+
     #[tokio::test]
     async fn send_orchard_back_and_forth() {
         // setup
@@ -2135,40 +2184,8 @@ mod slow {
     }
     /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
     mod rescan_still_have_outgoing_metadata {
-        #[ignore = "redundant with tests that validate with validate_otd"]
-        #[tokio::test]
-        async fn multiple_outgoing_metadatas_work_right_on_restore() {
-            let inital_value = 100_000;
-            let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-                scenarios::faucet_funded_recipient_default(inital_value).await;
-            from_inputs::send(
-                recipient,
-                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
-            )
-            .await
-            .unwrap();
-            zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
-                .await
-                .unwrap();
-            let pre_rescan_transactions = recipient.do_list_transactions().await;
-            let pre_rescan_summaries = recipient.transaction_summaries().await;
-            recipient.do_rescan().await.unwrap();
-            let post_rescan_transactions = recipient.do_list_transactions().await;
-            let post_rescan_summaries = recipient.transaction_summaries().await;
-            assert_eq!(pre_rescan_transactions, post_rescan_transactions);
-            assert_eq!(pre_rescan_summaries, post_rescan_summaries);
-            let mut outgoing_metadata = pre_rescan_transactions
-                .members()
-                .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
-                .unwrap()
-                .1
-                .members();
-            // The two outgoing spends were identical. They should be represented as such
-            assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
-        }
         use super::*;
-        use crate::utils::conversion;
-        #[ignore = "This test passes intermittently"]
+
         #[tokio::test]
         async fn self_send() {
             let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
@@ -2176,23 +2193,13 @@ mod slow {
             let mut txids = vec![];
             for memo in [None, Some("Second Transaction")] {
                 txids.push(
-                    conversion::txid_from_hex_encoded_str(
-                        &from_inputs::send(
-                            &faucet,
-                            vec![(
-                                faucet_sapling_addr.as_str(),
-                                {
-                                    let balance = faucet.do_balance().await;
-                                    balance.spendable_sapling_balance.unwrap()
-                                        + balance.spendable_orchard_balance.unwrap()
-                                } - u64::from(MINIMUM_FEE),
-                                memo,
-                            )],
-                        )
-                        .await
-                        .unwrap(),
+                    *from_inputs::quick_send(
+                        &faucet,
+                        vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
                     )
-                    .unwrap(),
+                    .await
+                    .unwrap()
+                    .first(),
                 );
                 zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                     .await
@@ -2203,47 +2210,43 @@ mod slow {
             let memo_txid = &txids[1];
             validate_otds!(faucet, nom_txid, memo_txid);
         }
-        #[ignore = "This test passes intermittently"]
         #[tokio::test]
         async fn external_send() {
             let (regtest_manager, _cph, faucet, recipient) =
                 scenarios::faucet_recipient_default().await;
-            let external_send_txid_with_memo =
-                &crate::utils::conversion::txid_from_hex_encoded_str(
-                    &from_inputs::send(
-                        &faucet,
-                        vec![(
-                            get_base_address_macro!(recipient, "sapling").as_str(),
-                            1_000,
-                            Some("foo"),
-                        )],
-                    )
-                    .await
-                    .unwrap(),
-                )
-                .unwrap();
-            let external_send_txid_no_memo = &crate::utils::conversion::txid_from_hex_encoded_str(
-                &from_inputs::send(
-                    &faucet,
-                    vec![(
-                        get_base_address_macro!(recipient, "sapling").as_str(),
-                        1_000,
-                        None,
-                    )],
-                )
-                .await
-                .unwrap(),
+            let external_send_txid_with_memo = *from_inputs::quick_send(
+                &faucet,
+                vec![(
+                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    1_000,
+                    Some("foo"),
+                )],
             )
-            .unwrap();
+            .await
+            .unwrap()
+            .first();
+            let external_send_txid_no_memo = *from_inputs::quick_send(
+                &faucet,
+                vec![(
+                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    1_000,
+                    None,
+                )],
+            )
+            .await
+            .unwrap()
+            .first();
             // TODO:  This chain height bump should be unnecessary. I think removing
             // this increase_height call reveals a bug!
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
+            let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
+            let external_send_txid_with_memo_ref = &external_send_txid_with_memo;
             validate_otds!(
                 faucet,
-                external_send_txid_no_memo,
-                external_send_txid_with_memo
+                external_send_txid_no_memo_ref,
+                external_send_txid_with_memo_ref
             );
         }
         #[tokio::test]
@@ -2251,7 +2254,7 @@ mod slow {
             let inital_value = 100_000;
             let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
                 scenarios::faucet_funded_recipient_default(inital_value).await;
-            from_inputs::send(
+            from_inputs::quick_send(
                 recipient,
                 vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
             )
@@ -2277,7 +2280,7 @@ mod slow {
             assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
         }
     }
-    #[ignore]
+    #[ignore = "redundant with tests that validate with validate_otd"]
     #[tokio::test]
     async fn multiple_outgoing_metadatas_work_right_on_restore() {
         let inital_value = 100_000;
@@ -2326,7 +2329,7 @@ mod slow {
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
-        from_inputs::send(
+        from_inputs::quick_send(
             &faucet,
             (1..=3)
                 .map(|n| {
@@ -2347,7 +2350,7 @@ mod slow {
         // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
         // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
         // plus the transaction fee.
-        from_inputs::send(
+        from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -2357,6 +2360,8 @@ mod slow {
         )
         .await
         .unwrap();
+
+        // FIXME: this test has all its assertions commented out !?
         /*
         let client_2_notes = recipient.do_list_notes(false).await;
         // The 30_000 zat note to cover the value, plus another for the tx-fee.
@@ -2912,12 +2917,25 @@ mod slow {
             transparent_balance: Some(0),
         };
         assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
-        from_inputs::quick_send(
+        let missing_output_index = from_inputs::quick_send(
             &recipient,
             vec![(&get_base_address_macro!(faucet, "unified"), 14000, None)],
         )
-        .await
-        .unwrap();
+        .await;
+        if let Err(QuickSendError::ProposeSend(Proposal(
+                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
+                    zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(output_error)
+                )),
+            ))) = missing_output_index {
+            let txid1 = utils::conversion::txid_from_hex_encoded_str("122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841").unwrap();
+            let txid2 = utils::conversion::txid_from_hex_encoded_str("7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e").unwrap();
+            let expected_txids = vec![txid1, txid2];
+            // in case the txids are in reverse order
+            if output_error != expected_txids {
+                let expected_txids = vec![txid2, txid1];
+                assert!(output_error == expected_txids, "{:?}\n\n{:?}", output_error, expected_txids);
+            }
+        };
     }
     /// An arbitrary number of diversified addresses may be generated
     /// from a seed.  If the wallet is subsequently lost-or-destroyed
@@ -3136,7 +3154,7 @@ mod slow {
         //    - 317:    15_000 1-orchard + 1-dummy + 1-transparent in
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 35_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3150,7 +3168,6 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 35_000 s: 50_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3165,7 +3182,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 65_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3180,7 +3197,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 55_000 s: 0 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3198,7 +3215,7 @@ mod slow {
         .await
         .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 25_000;
+        test_dev_total_expected_fee += 25_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3212,7 +3229,6 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3225,7 +3241,7 @@ mod slow {
         //    - 317:    20_000 = 10_000 orchard and o-dummy + 10_000 (2 t-notes)
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 500_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3240,7 +3256,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 490_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3255,7 +3271,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3303,7 +3319,6 @@ mod slow {
             _ => panic!(),
         }
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3334,7 +3349,6 @@ mod slow {
         }
         // End of 11 no change
         bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 0;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3347,7 +3361,7 @@ mod slow {
         //    - 317:    15_000 1t and 2o
         client.quick_shield().await.unwrap();
         bump_and_check!(o: 460_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 15_000;
+        test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3362,7 +3376,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 430_000 s: 20_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3377,7 +3391,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 420_000 s: 20_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3392,7 +3406,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 410_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 20_000;
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3407,7 +3421,7 @@ mod slow {
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 400_000 t: 0);
-        test_dev_total_expected_fee = test_dev_total_expected_fee + 10_000;
+        test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -4293,12 +4307,13 @@ async fn proxy_server_worky() {
     zingo_testutils::check_proxy_server_works().await
 }
 
+// FIXME: does not assert dust was included in the proposal
 #[tokio::test]
 async fn propose_orchard_dust_to_sapling() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
@@ -4321,7 +4336,7 @@ async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 5_000, None)],
     )
@@ -4330,7 +4345,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(&recipient, "sapling"),
@@ -4343,7 +4358,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
     )
@@ -4352,7 +4367,7 @@ async fn zip317_send_all() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    from_inputs::send(
+    from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )

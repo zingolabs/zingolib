@@ -12,6 +12,7 @@ use zcash_primitives::{
     transaction::{
         components::{amount::NonNegativeAmount, TxOut},
         fees::zip317::MARGINAL_FEE,
+        TxId,
     },
 };
 
@@ -36,6 +37,9 @@ pub enum InputSourceError {
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(BalanceError),
+    /// Wallet data is out of date
+    #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
+    MissingOutputIndexes(Vec<TxId>),
 }
 
 // Calculate remaining difference between target and selected.
@@ -191,6 +195,7 @@ impl InputSource for TransactionRecordsById {
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         let mut unselected = self
             .get_spendable_note_ids_and_values(sources, anchor_height, exclude)
+            .map_err(InputSourceError::MissingOutputIndexes)?
             .into_iter()
             .map(|(id, value)| NonNegativeAmount::from_u64(value).map(|value| (id, value)))
             .collect::<Result<Vec<_>, _>>()
