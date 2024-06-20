@@ -2916,17 +2916,17 @@ mod slow {
             vec![(&get_base_address_macro!(faucet, "unified"), 14000, None)],
         )
         .await;
-        match missing_output_index {
+        if let 
             Err(QuickSendError::ProposeSend(Proposal(
-                zcash_client_backend::data_api::error::Error::DataSource(output_error),
-            ))) => assert!(matches!(
-                output_error,
-                zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
-                    zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(_)
-                )
-            )),
-            _ => panic!(),
-        };
+                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
+                    zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(output_error)
+                )),
+            ))) = missing_output_index{
+            let txid1 = utils::conversion::txid_from_hex_encoded_str("122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841").unwrap();
+            let txid2 = utils::conversion::txid_from_hex_encoded_str("7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e").unwrap();
+            let expected_txids = vec![txid1, txid2];
+            assert_eq!(output_error.len(), expected_txids.len());
+        } ;
     }
     /// An arbitrary number of diversified addresses may be generated
     /// from a seed.  If the wallet is subsequently lost-or-destroyed
