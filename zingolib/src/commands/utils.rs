@@ -431,6 +431,15 @@ mod tests {
             super::parse_send_all_args(send_args, &chain),
             Err(CommandError::MultipleReceivers)
         ));
+        // JSON single receivers
+        let single_receiver =
+            &["[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                 \"memo\":\"test memo\"}]",
+                 "false"];
+        assert_eq!(
+            super::parse_send_all_args(single_receiver, &chain).unwrap(),
+            (address.clone(), false, Some(memo.clone()))
+        );
     }
 
     #[test]
