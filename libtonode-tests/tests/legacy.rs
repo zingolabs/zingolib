@@ -4332,6 +4332,29 @@ async fn propose_orchard_dust_to_sapling() {
 }
 
 #[tokio::test]
+async fn send_all_toggle_zennies_for_zingo() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+
+    from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(&recipient, "unified"),
+            1_000_000,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    let external_uaddress = address_from_str(
+        &get_base_address_macro!(faucet, "unified"),
+        &faucet.config().chain,
+    )
+    .unwrap();
+}
+#[tokio::test]
 async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;

@@ -215,6 +215,8 @@ impl LightClient {
 
     /// Returns the total confirmed shielded balance minus any fees required to send those funds to
     /// a given address
+    /// Take zennies_for_zingo flag that if set true, will create a receiver of 1_000_000 ZAT at the
+    /// ZingoLabs developer address.
     ///
     /// # Error
     ///
