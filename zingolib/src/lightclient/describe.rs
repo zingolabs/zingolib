@@ -42,6 +42,9 @@ pub enum ValueTransferRecordingError {
     #[error("Fee was not calculable because of error:  {0}")]
     FeeCalculationError(String), // TODO: revisit passed type
 }
+fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
+}
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
@@ -90,22 +93,25 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_balance(&self) -> PoolBalances {
-        PoolBalances {
-            sapling_balance: self
-                .wallet
-                .pending_and_confirmed_balance::<SaplingDomain>()
-                .await,
-            verified_sapling_balance: self.wallet.confirmed_balance::<SaplingDomain>().await,
-            spendable_sapling_balance: self.wallet.spendable_balance::<SaplingDomain>().await,
-            unverified_sapling_balance: self.wallet.pending_balance::<SaplingDomain>().await,
+        let verified_sapling_balance = self.wallet.confirmed_balance::<SaplingDomain>().await;
+        let unverified_sapling_balance = self.wallet.pending_balance::<SaplingDomain>().await;
+        let spendable_sapling_balance = self.wallet.spendable_balance::<SaplingDomain>().await;
+        let sapling_balance = some_sum(verified_sapling_balance, unverified_sapling_balance);
 
-            orchard_balance: self
-                .wallet
-                .pending_and_confirmed_balance::<OrchardDomain>()
-                .await,
-            verified_orchard_balance: self.wallet.confirmed_balance::<OrchardDomain>().await,
-            spendable_orchard_balance: self.wallet.spendable_balance::<OrchardDomain>().await,
-            unverified_orchard_balance: self.wallet.pending_balance::<OrchardDomain>().await,
+        let verified_orchard_balance = self.wallet.confirmed_balance::<OrchardDomain>().await;
+        let unverified_orchard_balance = self.wallet.pending_balance::<OrchardDomain>().await;
+        let spendable_orchard_balance = self.wallet.spendable_balance::<OrchardDomain>().await;
+        let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
+        PoolBalances {
+            sapling_balance,
+            verified_sapling_balance,
+            spendable_sapling_balance,
+            unverified_sapling_balance,
+
+            orchard_balance,
+            verified_orchard_balance,
+            spendable_orchard_balance,
+            unverified_orchard_balance,
 
             transparent_balance: self.wallet.tbalance().await,
         }
