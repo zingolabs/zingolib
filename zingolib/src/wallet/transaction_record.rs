@@ -185,30 +185,13 @@ impl TransactionRecord {
         set
     }
 
-    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
+    /// Uses a query to select all notes with specific properties and returns
+    /// a vector packing them in the AnyPoolOutput
     pub fn get_all_requested_outputs(
         &self,
         include_notes: OutputQuery,
     ) -> Vec<notes::AnyPoolOutput> {
-        let mut set = vec![];
-        let mut transparents = vec![];
-        let mut saplings = vec![];
-        let mut orchards = vec![];
-        let spend_status_query = *include_notes.spend_status();
-        if *include_notes.transparent() {
-            transparents =
-                notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
-        }
-        if *include_notes.sapling() {
-            saplings = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
-        }
-        if *include_notes.orchard() {
-            orchards = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
-        }
-        set.extend(transparents);
-        set.extend(saplings);
-        set.extend(orchards);
-        set
+        notes::AnyPoolOutput::get_all_outputs_with_status(self, *include_notes.spend_status())
     }
 
     /// Uses a query to select all notes with specific properties and sum them

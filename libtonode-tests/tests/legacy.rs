@@ -4330,7 +4330,26 @@ async fn propose_orchard_dust_to_sapling() {
     .await
     .unwrap();
 }
-
+#[tokio::test]
+async fn audit_anyp_outputs() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+    assert_eq!(recipient.list_anypool_outputs().await.len(), 0);
+    from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            600_000,
+            Some("600_000 orchard funds"),
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    let lapo = dbg!(recipient.list_anypool_outputs().await);
+    assert_eq!(lapo.len(), 1);
+}
 #[tokio::test]
 async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =

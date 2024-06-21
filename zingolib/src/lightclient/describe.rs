@@ -800,12 +800,28 @@ impl LightClient {
         )
     }
 
+    /// Get all the outputs packed into an AnyPoolOutput vector
+    ///  This method will replace do_list_notes
+    pub async fn list_anypool_outputs(&self) -> Vec<crate::wallet::notes::AnyPoolOutput> {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .0
+            .values()
+            .flat_map(|record| record.get_all_requested_outputs(OutputQuery::any()))
+            .collect()
+    }
+
     /// Return a list of notes, if `all_notes` is false, then only return unspent notes
     ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
     ///  * TODO:  The Err variant of the result must be a proper type
     ///  * TODO:  remove all_notes bool
     ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
     ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
+    ///  * TODO:  DEPRECATE in favor of list_anypool_outputs
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 

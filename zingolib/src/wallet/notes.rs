@@ -21,6 +21,7 @@ use crate::wallet::notes::query::OutputSpendStatusQuery;
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
+#[derive(Debug)]
 pub enum AnyPoolOutput {
     /// Transparent Outputs
     TransparentOutput,
