@@ -470,10 +470,10 @@ pub mod summaries {
         datetime: u64,
         status: ConfirmationStatus,
         blockheight: BlockHeight,
-        kind: ValueTransferKind,
-        value: u64,
         transaction_fee: Option<u64>,
         zec_price: Option<f64>,
+        kind: ValueTransferKind,
+        value: u64,
         recipient_address: Option<String>,
         pool_received: Option<String>,
         memos: Vec<String>,
@@ -497,20 +497,20 @@ pub mod summaries {
             self.blockheight
         }
         /// TODO: doc comment
-        pub fn kind(&self) -> ValueTransferKind {
-            self.kind
-        }
-        /// TODO: doc comment
-        pub fn value(&self) -> u64 {
-            self.value
-        }
-        /// TODO: doc comment
         pub fn transaction_fee(&self) -> Option<u64> {
             self.transaction_fee
         }
         /// TODO: doc comment
         pub fn zec_price(&self) -> Option<f64> {
             self.zec_price
+        }
+        /// TODO: doc comment
+        pub fn kind(&self) -> ValueTransferKind {
+            self.kind
+        }
+        /// TODO: doc comment
+        pub fn value(&self) -> u64 {
+            self.value
         }
         /// TODO: doc comment
         pub fn recipient_address(&self) -> Option<&str> {
@@ -531,10 +531,10 @@ pub mod summaries {
                 .field("datetime", &self.datetime)
                 .field("status", &self.status)
                 .field("blockheight", &self.blockheight)
-                .field("kind", &self.kind)
-                .field("value", &self.value)
                 .field("transaction_fee", &self.transaction_fee)
                 .field("zec_price", &self.zec_price)
+                .field("kind", &self.kind)
+                .field("value", &self.value)
                 .field("recipient_address", &self.recipient_address)
                 .field("pool_received", &self.pool_received)
                 .field("memos", &self.memos)
@@ -580,10 +580,10 @@ pub mod summaries {
     datetime: {}
     status: {}
     blockheight: {}
+    transaction fee: {}
+    zec price: {}
     kind: {}
     value: {}
-    fee: {}
-    zec price: {}
     recipient_address: {}
     pool_received: {}
     memos: {}
@@ -610,10 +610,10 @@ pub mod summaries {
                 "datetime" => value_transfer.datetime,
                 "status" => value_transfer.status.to_string(),
                 "blockheight" => u64::from(value_transfer.blockheight),
-                "kind" => value_transfer.kind.to_string(),
-                "value" => value_transfer.value,
                 "transaction_fee" => value_transfer.transaction_fee,
                 "zec_price" => value_transfer.zec_price,
+                "kind" => value_transfer.kind.to_string(),
+                "value" => value_transfer.value,
                 "recipient_address" => value_transfer.recipient_address,
                 "pool_received" => value_transfer.pool_received,
                 "memos" => value_transfer.memos
