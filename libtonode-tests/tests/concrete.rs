@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+use zingolib::wallet::notes::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery};
+
 use json::JsonValue;
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
@@ -4532,5 +4534,26 @@ pub mod send_all {
             1_000_000
         );
         assert_eq!(recipient.list_anypool_outputs().await.len(), 2);
+
+        // Complete set up such that the client has 1 orchard and 1 sapling note
+        let faucet_unified_zcash_address = address_from_str(
+            &get_base_address_macro!(faucet, "sapling"),
+            &faucet.config().chain,
+        )
+        .unwrap();
+        let send_all_proposal = recipient
+            .propose_send_all(faucet_unified_zcash_address, None)
+            .await
+            .unwrap();
+        assert_eq!(&send_all_proposal.steps().len(), &1usize);
+        assert_eq!(
+            &send_all_proposal.steps().head.balance().fee_required(),
+            &NonNegativeAmount::from_u64(20_000).unwrap()
+        );
+        let txids = recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+        dbg!(txids);
     }
 }
