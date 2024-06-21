@@ -751,7 +751,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.list_value_transfers().await).pretty(4)
+            JsonValue::from(recipient.value_transfers().await).pretty(4)
         );
     }
     #[tokio::test]
@@ -1202,7 +1202,7 @@ mod slow {
             "{}",
             JsonValue::from(
                 recipient
-                    .list_value_transfers()
+                    .value_transfers()
                     .await
                     .into_iter()
                     .map(JsonValue::from)
@@ -1220,7 +1220,7 @@ mod slow {
             "{}",
             JsonValue::from(
                 recipient
-                    .list_value_transfers()
+                    .value_transfers()
                     .await
                     .into_iter()
                     .map(JsonValue::from)
@@ -1652,7 +1652,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.list_value_transfers().await).pretty(4)
+            JsonValue::from(faucet.value_transfers().await).pretty(4)
         );
         println!(
             "{}",
@@ -2264,10 +2264,10 @@ mod slow {
                 .await
                 .unwrap();
             let pre_rescan_transactions = recipient.do_list_transactions().await;
-            let pre_rescan_summaries = recipient.list_value_transfers().await;
+            let pre_rescan_summaries = recipient.value_transfers().await;
             recipient.do_rescan().await.unwrap();
             let post_rescan_transactions = recipient.do_list_transactions().await;
-            let post_rescan_summaries = recipient.list_value_transfers().await;
+            let post_rescan_summaries = recipient.value_transfers().await;
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
             let mut outgoing_metadata = pre_rescan_transactions

@@ -275,7 +275,23 @@ impl LightClient {
     }
 
     /// Provides a list of value transfers related to this capability
-    pub async fn list_value_transfers(&self) -> Vec<ValueTransfer> {
+    /// A value transfer is a group of all notes to a specific receiver in a transaction.
+    pub async fn value_transfers(&self) -> Vec<ValueTransfer> {
+        let mut value_transfers: Vec<ValueTransfer> = Vec::new();
+        let tx_summaries = self.transaction_summaries().await;
+
+        for tx in tx_summaries.iter() {
+            value_transfers.push(ValueTransfer {
+                block_height,
+                datetime,
+                kind,
+                memos,
+                price,
+                txid,
+                pending,
+            });
+        }
+
         self.list_value_transfers_and_capture_errors().await.0
     }
     async fn list_value_transfers_and_capture_errors(
@@ -466,7 +482,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let summaries = self.list_value_transfers().await;
+        let summaries = self.value_transfers().await;
         let mut memobytes_by_address = HashMap::new();
         for summary in summaries {
             match summary.kind {
@@ -848,7 +864,7 @@ impl LightClient {
     }
 
     async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let summaries = self.list_value_transfers().await;
+        let summaries = self.value_transfers().await;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
             match summary.kind {

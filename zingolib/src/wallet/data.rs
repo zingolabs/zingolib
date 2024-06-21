@@ -450,6 +450,7 @@ pub mod finsight {
 pub mod summaries {
     use chrono::DateTime;
     use json::JsonValue;
+    use zcash_address::ZcashAddress;
     use zcash_client_backend::PoolType;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -462,59 +463,161 @@ pub mod summaries {
 
     use super::OutgoingTxData;
 
-    /// The MobileTx is the zingolib representation of
-    /// transactions in the format most useful for
-    /// consumption in mobile and mobile-like UI
+    /// A value transfer is a group of all notes sent to a specific address in a transaction.
     #[derive(PartialEq)]
     pub struct ValueTransfer {
-        /// TODO: Add Doc Comment Here!
-        pub block_height: zcash_primitives::consensus::BlockHeight,
-        /// TODO: Add Doc Comment Here!
-        pub datetime: u64,
-        /// TODO: Add Doc Comment Here!
-        pub kind: ValueTransferKind,
-        /// TODO: Add Doc Comment Here!
-        pub memos: Vec<zcash_primitives::memo::TextMemo>,
-        /// TODO: Add Doc Comment Here!
-        pub price: Option<f64>,
-        /// TODO: Add Doc Comment Here!
-        pub txid: TxId,
-        /// TODO: Add Doc Comment Here!
-        pub pending: bool,
+        txid: TxId,
+        datetime: u64,
+        status: ConfirmationStatus,
+        blockheight: BlockHeight,
+        kind: ValueTransferKind,
+        value: u64,
+        transaction_fee: Option<u64>,
+        zec_price: Option<f64>,
+        recipient_address: Option<String>,
+        pool_received: Option<String>,
+        memos: Vec<String>,
     }
 
     impl ValueTransfer {
-        /// Depending on the relationship of this Capability to the
-        /// receiver capability assign polarity to amount transferred.
-        pub fn balance_delta(&self) -> i64 {
-            match self.kind {
-                ValueTransferKind::Sent { amount, .. } => -(amount as i64),
-                ValueTransferKind::Fee { amount, .. } => -(amount as i64),
-                ValueTransferKind::Received { amount, .. } => amount as i64,
-                ValueTransferKind::SendToSelf => 0,
-            }
+        /// TODO: doc comment
+        pub fn txid(&self) -> TxId {
+            self.txid
+        }
+        /// TODO: doc comment
+        pub fn datetime(&self) -> u64 {
+            self.datetime
+        }
+        /// TODO: doc comment
+        pub fn status(&self) -> ConfirmationStatus {
+            self.status
+        }
+        /// TODO: doc comment
+        pub fn blockheight(&self) -> BlockHeight {
+            self.blockheight
+        }
+        /// TODO: doc comment
+        pub fn kind(&self) -> ValueTransferKind {
+            self.kind
+        }
+        /// TODO: doc comment
+        pub fn value(&self) -> u64 {
+            self.value
+        }
+        /// TODO: doc comment
+        pub fn transaction_fee(&self) -> Option<u64> {
+            self.transaction_fee
+        }
+        /// TODO: doc comment
+        pub fn zec_price(&self) -> Option<f64> {
+            self.zec_price
+        }
+        /// TODO: doc comment
+        pub fn recipient_address(&self) -> Option<&str> {
+            self.recipient_address.as_deref()
+        }
+        pub fn pool_received(&self) -> Option<&str> {
+            self.pool_received.as_deref()
+        }
+        pub fn memos(&self) -> Vec<&str> {
+            self.memos.iter().map(|s| s.as_str()).collect()
         }
     }
 
     impl std::fmt::Debug for ValueTransfer {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            use core::ops::Deref as _;
             f.debug_struct("ValueTransfer")
-                .field("block_height", &self.block_height)
-                .field("datetime", &self.datetime)
-                .field("kind", &self.kind)
-                .field(
-                    "memos",
-                    &self
-                        .memos
-                        .iter()
-                        .map(zcash_primitives::memo::TextMemo::deref)
-                        .collect::<Vec<_>>(),
-                )
-                .field("price", &self.price)
                 .field("txid", &self.txid)
-                .field("pending", &self.pending)
+                .field("datetime", &self.datetime)
+                .field("status", &self.status)
+                .field("blockheight", &self.blockheight)
+                .field("kind", &self.kind)
+                .field("value", &self.value)
+                .field("transaction_fee", &self.transaction_fee)
+                .field("zec_price", &self.zec_price)
+                .field("recipient_address", &self.recipient_address)
+                .field("pool_received", &self.pool_received)
+                .field("memos", &self.memos)
                 .finish()
+        }
+    }
+
+    impl std::fmt::Display for ValueTransfer {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
+                format!("{}", dt)
+            } else {
+                "not available".to_string()
+            };
+            let transaction_fee = if let Some(f) = self.transaction_fee {
+                f.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let zec_price = if let Some(price) = self.zec_price {
+                price.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let recipient_address = if let Some(addr) = self.recipient_address {
+                addr
+            } else {
+                "not available".to_string()
+            };
+            let pool_received = if let Some(pool) = self.pool_received {
+                pool
+            } else {
+                "not available".to_string()
+            };
+            let mut memos = String::new();
+            for (index, memo) in self.memos.iter().enumerate() {
+                memos.push_str(&format!("\n\tmemo {}: {}", index, memo));
+            }
+            write!(
+                f,
+                "{{
+    txid: {}
+    datetime: {}
+    status: {}
+    blockheight: {}
+    kind: {}
+    value: {}
+    fee: {}
+    zec price: {}
+    recipient_address: {}
+    pool_received: {}
+    memos: {}
+}}",
+                self.txid,
+                datetime,
+                self.status,
+                u64::from(self.blockheight),
+                self.kind,
+                self.value,
+                transaction_fee,
+                zec_price,
+                recipient_address,
+                pool_received,
+                memos
+            )
+        }
+    }
+
+    impl From<ValueTransfer> for JsonValue {
+        fn from(value_transfer: ValueTransfer) -> Self {
+            json::object! {
+                "txid" => value_transfer.txid.to_string(),
+                "datetime" => value_transfer.datetime,
+                "status" => value_transfer.status.to_string(),
+                "blockheight" => u64::from(value_transfer.blockheight),
+                "kind" => value_transfer.kind.to_string(),
+                "value" => value_transfer.value,
+                "transaction_fee" => value_transfer.transaction_fee,
+                "zec_price" => value_transfer.zec_price,
+                "recipient_address" => value_transfer.recipient_address,
+                "pool_received" => value_transfer.pool_received,
+                "memos" => value_transfer.memos
+            }
         }
     }
 
@@ -522,81 +625,22 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
         /// TODO: Add Doc Comment Here!
-        Sent {
-            /// TODO: Add Doc Comment Here!
-            amount: u64,
-            /// TODO: Add Doc Comment Here!
-            recipient_address: zcash_address::ZcashAddress,
-        },
+        Sent,
         /// TODO: Add Doc Comment Here!
-        Received {
-            /// TODO: Add Doc Comment Here!
-            pool_type: PoolType,
-            /// TODO: Add Doc Comment Here!
-            amount: u64,
-        },
+        Shield,
         /// TODO: Add Doc Comment Here!
-        SendToSelf,
+        NoteToSelf,
         /// TODO: Add Doc Comment Here!
-        Fee {
-            /// TODO: Add Doc Comment Here!
-            amount: u64,
-        },
+        Received,
     }
 
-    impl From<&ValueTransferKind> for JsonValue {
-        fn from(value: &ValueTransferKind) -> Self {
-            match value {
-                ValueTransferKind::Sent { .. } => JsonValue::String(String::from("Sent")),
-                ValueTransferKind::Received { .. } => JsonValue::String(String::from("Received")),
-                ValueTransferKind::SendToSelf => JsonValue::String(String::from("SendToSelf")),
-                ValueTransferKind::Fee { .. } => JsonValue::String(String::from("Fee")),
-            }
-        }
-    }
-
-    impl From<ValueTransfer> for JsonValue {
-        fn from(value: ValueTransfer) -> Self {
-            let mut temp_object = json::object! {
-                    "amount": "",
-                    "block_height": u32::from(value.block_height),
-                    "datetime": value.datetime,
-                    "kind": "",
-                    "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
-                    "pool_type": "",
-                    "price": value.price,
-                    "txid": value.txid.to_string(),
-                    "pending": value.pending,
-            };
-            match value.kind {
-                ValueTransferKind::Sent {
-                    ref recipient_address,
-                    amount,
-                } => {
-                    temp_object["amount"] = JsonValue::from(amount);
-                    temp_object["kind"] = JsonValue::from(&value.kind);
-                    temp_object["to_address"] = JsonValue::from(recipient_address.encode());
-                    temp_object
-                }
-                ValueTransferKind::Fee { amount } => {
-                    temp_object["amount"] = JsonValue::from(amount);
-                    temp_object["kind"] = JsonValue::from(&value.kind);
-                    temp_object
-                }
-                ValueTransferKind::Received { pool_type, amount } => {
-                    temp_object["amount"] = JsonValue::from(amount);
-                    temp_object["kind"] = JsonValue::from(&value.kind);
-                    temp_object["pool_type"] = JsonValue::from(pool_type.to_string());
-                    temp_object
-                }
-                ValueTransferKind::SendToSelf => {
-                    temp_object["amount"] = JsonValue::from(0);
-                    temp_object["kind"] = JsonValue::from(&value.kind);
-                    temp_object["pool"] = JsonValue::from("None".to_string());
-                    temp_object["price"] = JsonValue::from("None".to_string());
-                    temp_object["to_address"] = JsonValue::from("None".to_string());
-                    temp_object
-                }
+    impl std::fmt::Display for ValueTransferKind {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            match self {
+                ValueTransferKind::Sent => write!(f, "sent"),
+                ValueTransferKind::Shield => write!(f, "shield"),
+                ValueTransferKind::NoteToSelf => write!(f, "note-to-self"),
+                ValueTransferKind::Received => write!(f, "received"),
             }
         }
     }
