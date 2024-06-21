@@ -9,6 +9,9 @@ use shardtree::ShardTree;
 use std::{fs::File, path::Path, time::Duration};
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_client_backend::PoolType::Shielded;
+use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
@@ -125,7 +128,6 @@ fn check_view_capability_bounds(
 
 mod fast {
     use zcash_address::unified::Encoding;
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_testutils::lightclient::from_inputs;
     use zingolib::wallet::WalletBase;
@@ -4457,5 +4459,78 @@ pub mod send_all {
             proposal_error,
             Err(ProposeSendError::ZeroValueSendAll)
         ))
+    }
+    #[tokio::test]
+    async fn audit_anyp_outputs() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        assert_eq!(recipient.list_anypool_outputs().await.len(), 0);
+        from_inputs::quick_send(
+            &faucet,
+            vec![(
+                &get_base_address_macro!(recipient, "unified"),
+                600_000,
+                Some("600_000 orchard funds"),
+            )],
+        )
+        .await
+        .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        let lapo = dbg!(recipient.list_anypool_outputs().await);
+        assert_eq!(lapo.len(), 1);
+    }
+    #[tokio::test]
+    async fn sap_and_orchard_funded_sendall_fee_issue_1233() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        assert_eq!(recipient.list_anypool_outputs().await.len(), 0);
+        from_inputs::quick_send(
+            &faucet,
+            vec![
+                (
+                    &get_base_address_macro!(recipient, "sapling"),
+                    400_000,
+                    Some("400_000 sapling funds"),
+                ),
+                (
+                    &get_base_address_macro!(recipient, "unified"),
+                    600_000,
+                    Some("600_000 orchard funds"),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        let lapo = dbg!(recipient.list_anypool_outputs().await);
+        assert_eq!(lapo.len(), 2);
+        assert_eq!(
+            recipient
+                .query_sum_value(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::any(),
+                    pools: OutputPoolQuery::one_pool(Shielded(Sapling))
+                })
+                .await,
+            400_000
+        );
+        assert_eq!(recipient.list_anypool_outputs().await.len(), 2);
+        assert_eq!(
+            recipient
+                .query_sum_value(OutputQuery {
+                    spend_status: OutputSpendStatusQuery::any(),
+                    pools: OutputPoolQuery::one_pool(Shielded(Orchard))
+                })
+                .await,
+            600_000
+        );
+        assert_eq!(
+            recipient.query_sum_value(OutputQuery::any()).await,
+            1_000_000
+        );
+        assert_eq!(recipient.list_anypool_outputs().await.len(), 2);
     }
 }

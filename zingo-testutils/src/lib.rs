@@ -1098,6 +1098,7 @@ pub mod scenarios {
                 regtest_network,
             )
             .await;
+        dbg!(recipient.list_anypool_outputs().await);
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),

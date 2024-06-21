@@ -29,7 +29,7 @@ use crate::{
             OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
-        notes::{query::OutputQuery, OutputInterface},
+        notes::{query::OutputQuery, AnyPoolOutput, OutputInterface},
         transaction_record::{SendType, TransactionKind},
         transaction_records_by_id::TransactionRecordsById,
         LightWallet,
@@ -798,6 +798,20 @@ impl LightClient {
             spent_transparent_notes,
             pending_transparent_notes,
         )
+    }
+
+    /// Get all the outputs packed into an AnyPoolOutput vector
+    pub async fn list_anypool_outputs(&self) -> Vec<AnyPoolOutput> {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .0
+            .values()
+            .flat_map(|record| record.get_all_requested_outputs(OutputQuery::any()))
+            .collect()
     }
 
     /// Return a list of notes, if `all_notes` is false, then only return unspent notes
