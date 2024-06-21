@@ -4335,17 +4335,20 @@ async fn propose_orchard_dust_to_sapling() {
 async fn send_all_toggle_zennies_for_zingo() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
 
+    let initial_funds = 2_000_000;
+    let zennies_magnitude = 1_000_000;
+    let expected_fee = 15_000; // 1 orchard note in, and 3 out
     from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(&recipient, "unified"),
-            1_000_000,
+            initial_funds,
             None,
         )],
     )
     .await
     .unwrap();
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
     let external_uaddress = address_from_str(
@@ -4353,6 +4356,15 @@ async fn send_all_toggle_zennies_for_zingo() {
         &faucet.config().chain,
     )
     .unwrap();
+    let expected_balance =
+        NonNegativeAmount::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
+    assert_eq!(
+        recipient
+            .get_spendable_shielded_balance(external_uaddress, true)
+            .await
+            .unwrap(),
+        expected_balance
+    );
 }
 #[tokio::test]
 async fn zip317_send_all() {
