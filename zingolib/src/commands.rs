@@ -885,7 +885,7 @@ impl Command for SendAllCommand {
             Usage:
                 sendall <address> <zennies_for_zingo> "<optional memo>"
                 OR
-                sendall '[{"address":"<address>", "memo":"<optional memo>"}]'
+                sendall '[{"address":"<address>", "memo":"<optional memo>"}]' <zennies_for_zingo>
             Example:
                 sendall ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
                 confirm
