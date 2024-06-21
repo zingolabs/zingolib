@@ -607,9 +607,11 @@ impl Command for SpendableBalanceCommand {
             the given address.
             An address must be specified as fees, and therefore spendable balance, depends on the receiver
             type.
+            zennies_for_zingo must also be specified as "true"|"false".  If set to "true" 1_000_000 ZAT will
+            earmarked to the zingolabs developer fund with each transaction.
 
             Usage:
-            spendablebalance <address>
+            spendablebalance <address> [zennies_for_zingo]
 
         "#}
     }
@@ -619,17 +621,21 @@ impl Command for SpendableBalanceCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let address = match parse_spendable_balance_args(args, &lightclient.config.chain) {
-            Ok(addr) => addr,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
-                    e
-                );
-            }
-        };
+        let (address, zennies_for_zingo) =
+            match parse_spendable_balance_args(args, &lightclient.config.chain) {
+                Ok(addr) => addr,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                        e
+                    );
+                }
+            };
         RT.block_on(async move {
-            match lightclient.get_spendable_shielded_balance(address).await {
+            match lightclient
+                .get_spendable_shielded_balance(address, zennies_for_zingo)
+                .await
+            {
                 Ok(bal) => {
                     object! {
                         "balance" => bal.into_u64(),
@@ -871,11 +877,13 @@ impl Command for SendAllCommand {
             Propose to transfer all ZEC from shielded pools to a given address.
             The fee required to send this transaction will be added to the proposal and displayed to the user.
             The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
+            "zennies_for_zingo" must be specified, if set to 'true' 1_000_000 ZAT will be sent to the zingolabs
+            developer address with each transaction.
 
             Warning:
                 Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.
             Usage:
-                sendall <address> "<optional memo>"
+                sendall <address> <zennies_for_zingo> "<optional memo>"
                 OR
                 sendall '[{"address":"<address>", "memo":"<optional memo>"}]'
             Example:
@@ -890,17 +898,21 @@ impl Command for SendAllCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, memo) = match utils::parse_send_all_args(args, &lightclient.config().chain) {
-            Ok(args) => args,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help sendall' for correct usage and examples.",
-                    e
-                )
-            }
-        };
+        let (address, zennies_for_zingo, memo) =
+            match utils::parse_send_all_args(args, &lightclient.config().chain) {
+                Ok(parse_results) => parse_results,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help sendall' for correct usage and examples.",
+                        e
+                    )
+                }
+            };
         RT.block_on(async move {
-            match lightclient.propose_send_all(address, memo).await {
+            match lightclient
+                .propose_send_all(address, zennies_for_zingo, memo)
+                .await
+            {
                 Ok(proposal) => {
                     let amount = match proposal::total_payment_amount(&proposal) {
                         Ok(amount) => amount,

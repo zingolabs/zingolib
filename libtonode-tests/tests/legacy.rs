@@ -4385,6 +4385,7 @@ async fn zip317_send_all() {
                 &recipient.config().chain,
             )
             .unwrap(),
+            false,
             None,
         )
         .await
@@ -4426,6 +4427,7 @@ async fn zip317_send_all_insufficient_funds() {
                 &recipient.config().chain,
             )
             .unwrap(),
+            false,
             None,
         )
         .await;
@@ -4456,6 +4458,7 @@ async fn zip317_send_all_zero_value() {
                 &recipient.config().chain,
             )
             .unwrap(),
+            false,
             None,
         )
         .await;

@@ -70,20 +70,29 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
 
     Ok(send_args)
 }
-
-// Parse the send arguments for `propose_send` when sending all funds from shielded pools.
 // The send arguments have two possible formats:
-// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
-// - 1 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
+// - 2 arguments in the form of:
+//    *  a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
+//    * true|false
+// - 2 (+1 optional) arguments for a single address send.
+//    * &["<address>", "true|false", "<optional memo>"]
 pub(super) fn parse_send_all_args(
     args: &[&str],
     chain: &ChainType,
-) -> Result<(Address, Option<MemoBytes>), CommandError> {
+) -> Result<(Address, bool, Option<MemoBytes>), CommandError> {
     let address: Address;
     let memo: Option<MemoBytes>;
-
-    if args.len() == 1 {
+    let zennies_for_zingo: bool;
+    if args[1] == "false" {
+        zennies_for_zingo = false;
+    } else if args[1] == "true" {
+        zennies_for_zingo = true;
+    } else {
+        return Err(CommandError::MissingZenniesForZingoFlag);
+    }
+    if args.len() == 2 {
         if let Ok(addr) = address_from_str(args[0], chain) {
+            // Address from first string, zennies for zingo from second
             address = addr;
             memo = None;
             check_memo_compatibility(&address, &memo)?;
@@ -110,10 +119,10 @@ pub(super) fn parse_send_all_args(
             memo = memo_from_json(json_args)?;
             check_memo_compatibility(&address, &memo)?;
         }
-    } else if args.len() == 2 {
+    } else if args.len() == 3 {
         address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
         memo = Some(
-            wallet::utils::interpret_memo_string(args[1].to_string())
+            wallet::utils::interpret_memo_string(args[2].to_string())
                 .map_err(CommandError::InvalidMemo)?,
         );
         check_memo_compatibility(&address, &memo)?;
@@ -121,7 +130,7 @@ pub(super) fn parse_send_all_args(
         return Err(CommandError::InvalidArguments);
     }
 
-    Ok((address, memo))
+    Ok((address, zennies_for_zingo, memo))
 }
 
 // Parse the arguments for `spendable_balance`.
@@ -131,13 +140,16 @@ pub(super) fn parse_send_all_args(
 pub(super) fn parse_spendable_balance_args(
     args: &[&str],
     chain: &ChainType,
-) -> Result<Address, CommandError> {
+) -> Result<(Address, bool), CommandError> {
     let address: Address;
 
-    if args.len() != 1 {
+    let mut zennies_for_zingo = false;
+    if args.len() > 2 {
         return Err(CommandError::InvalidArguments);
     }
-
+    if args.len() == 2 && args[1] == "true" {
+        zennies_for_zingo = true;
+    }
     if let Ok(addr) = address_from_str(args[0], chain) {
         address = addr;
     } else {
@@ -162,7 +174,7 @@ pub(super) fn parse_spendable_balance_args(
         address = address_from_json(json_args, chain)?;
     }
 
-    Ok(address)
+    Ok((address, zennies_for_zingo))
 }
 
 // Checks send inputs do not contain memo's to transparent addresses.
@@ -393,14 +405,19 @@ mod tests {
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
         // with memo
-        let send_args = &[address_str, memo_str];
+        let send_args = &[address_str, "false", memo_str];
         assert_eq!(
             super::parse_send_all_args(send_args, &chain).unwrap(),
-            (address.clone(), Some(memo.clone()))
+            (address.clone(), false, Some(memo.clone()))
+        );
+        let send_args = &[address_str, "true", memo_str];
+        assert_eq!(
+            super::parse_send_all_args(send_args, &chain).unwrap(),
+            (address.clone(), true, Some(memo.clone()))
         );
 
         // invalid address
-        let send_args = &["invalid_address"];
+        let send_args = &["invalid_address", "false"];
         assert!(matches!(
             super::parse_send_all_args(send_args, &chain),
             Err(CommandError::ArgNotJsonOrValidAddress)
@@ -409,7 +426,7 @@ mod tests {
         // multiple receivers
         let send_args = &["[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\"}, \
                     {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
-                    \"memo\":\"test memo\"}]"];
+                    \"memo\":\"test memo\"}]", "false"];
         assert!(matches!(
             super::parse_send_all_args(send_args, &chain),
             Err(CommandError::MultipleReceivers)
