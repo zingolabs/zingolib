@@ -623,7 +623,7 @@ impl Command for SpendableBalanceCommand {
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         let (address, zennies_for_zingo) =
             match parse_spendable_balance_args(args, &lightclient.config.chain) {
-                Ok(addr) => addr,
+                Ok(address_and_zennies) => address_and_zennies,
                 Err(e) => {
                     return format!(
                         "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
