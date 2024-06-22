@@ -468,7 +468,7 @@ mod decrypt_transaction {
         {
             let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
                 &[ivk.ivk],
-                &domain_tagged_outputs,
+                domain_tagged_outputs,
             )
             .into_iter()
             .enumerate();
