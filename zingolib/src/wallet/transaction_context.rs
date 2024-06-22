@@ -173,58 +173,16 @@ pub mod decrypt_transaction {
             // Collect our t-addresses for easy checking
             let taddrs_set = self.key.get_all_taddrs(&self.config);
 
-            let mut outgoing_metadatas = vec![];
-
             // Execute scanning operations
             self.decrypt_transaction_to_record(
                 transaction,
                 status,
                 block_time,
-                &mut outgoing_metadatas,
+                &mut vec![],
                 &mut txid_indexed_zingo_memos,
                 &taddrs_set,
             )
             .await;
-
-            // Post process scan results
-            {
-                let tx_map = self.transaction_metadata_set.write().await;
-                if let Some(transaction_record) =
-                    tx_map.transaction_records_by_id.get(&transaction.txid())
-                {
-                    // `transaction_kind` uses outgoing_tx_data to determine the SendType but not to distinguish Sent(_) from Received
-                    // therefore, its safe to use it here to establish whether the transaction was created by this capacility or not.
-                    if let TransactionKind::Sent(_) = tx_map
-                        .transaction_records_by_id
-                        .transaction_kind(transaction_record)
-                    {
-                        if let Some(t_bundle) = transaction.transparent_bundle() {
-                            for vout in &t_bundle.vout {
-                                if let Some(taddr) = vout.recipient_address().map(|raw_taddr| {
-                                    address_from_pubkeyhash(&self.config, raw_taddr)
-                                }) {
-                                    if !taddrs_set.contains(&taddr) {
-                                        outgoing_metadatas.push(OutgoingTxData {
-                                            recipient_address: taddr,
-                                            value: u64::from(vout.value),
-                                            memo: Memo::Empty,
-                                            recipient_ua: None,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !outgoing_metadatas.is_empty() {
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
-            }
 
             self.update_outgoing_txdatas_with_uas(txid_indexed_zingo_memos)
                 .await;
