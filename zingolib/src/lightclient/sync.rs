@@ -194,12 +194,12 @@ impl LightClient {
                             // If the txid is already in the db, then it's already recorded
                             // there's nothing new to do until it's read from chain.
                             // ASSUMPTION: A transaction from the mempool_receiver is not on-chain
-                            if !transaction_metadata_set
+                            if transaction_metadata_set
                                 .read()
                                 .await
                                 .transaction_records_by_id
                                 .get(&transaction.txid())
-                                .is_some()
+                                .is_none()
                             {
                                 let price = price.read().await.clone();
                                 //debug!("Mempool attempting to scan {}", tx.txid());
