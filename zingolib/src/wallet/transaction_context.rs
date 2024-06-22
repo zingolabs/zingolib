@@ -233,6 +233,17 @@ mod decrypt_transaction {
             .await;
         }
 
+        async fn decrypt_incoming_transaction_to_record_transparent(
+            &self,
+            transaction: &Transaction,
+            status: ConfirmationStatus,
+            block_time: u32,
+            taddrs_set: &HashSet<String>,
+        ) {
+            // Scan all transparent outputs to see if we received any money
+            self.account_for_transparent_receipts(transaction, status, block_time, taddrs_set)
+                .await;
+        }
         async fn decrypt_transaction_to_record_transparent(
             &self,
             transaction: &Transaction,
@@ -241,6 +252,19 @@ mod decrypt_transaction {
             taddrs_set: &HashSet<String>,
         ) {
             // Scan all transparent outputs to see if we received any money
+            self.account_for_transparent_receipts(transaction, status, block_time, taddrs_set)
+                .await;
+            // Scan transparent spends
+            self.account_for_transparent_spending(transaction, status, block_time)
+                .await;
+        }
+        async fn account_for_transparent_receipts(
+            &self,
+            transaction: &Transaction,
+            status: ConfirmationStatus,
+            block_time: u32,
+            taddrs_set: &HashSet<String>,
+        ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
@@ -263,10 +287,6 @@ mod decrypt_transaction {
                     }
                 }
             }
-
-            // Scan transparent spends
-            self.account_for_transparent_spending(transaction, status, block_time)
-                .await;
         }
         async fn account_for_transparent_spending(
             &self,
