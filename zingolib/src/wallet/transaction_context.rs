@@ -265,7 +265,15 @@ mod decrypt_transaction {
             }
 
             // Scan transparent spends
-
+            self.account_for_transparent_spending(transaction, status, block_time)
+                .await;
+        }
+        async fn account_for_transparent_spending(
+            &self,
+            transaction: &Transaction,
+            status: ConfirmationStatus,
+            block_time: u32,
+        ) {
             // Scan all the inputs to see if we spent any transparent funds in this tx
             let mut total_transparent_value_spent = 0;
             let mut spent_utxos = vec![];
