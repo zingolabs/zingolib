@@ -42,7 +42,7 @@ impl TransactionContext {
 /// unlike a viewkey wallet, a spendkey wallet MUST pass reread the block to find a witnessed position to pass to add_new_note. scan_full_tx cannot do this.
 /// thus, scan_full_tx is incomplete and skips some steps on the assumption that they will be covered elsewhere. Notably, add_note is not called inside scan_full_tx.
 /// (A viewkey wallet, on the other hand, doesnt need witness and could maybe get away with only calling scan_full_tx)
-pub mod decrypt_transaction {
+mod decrypt_transaction {
     use crate::{
         error::{ZingoLibError, ZingoLibResult},
         wallet::{
