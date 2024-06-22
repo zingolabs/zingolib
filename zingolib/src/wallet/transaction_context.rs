@@ -154,6 +154,12 @@ pub mod decrypt_transaction {
             }
         }
 
+        /// INVARIANT: All transaction from the mempool are received.
+        /// If the transaction was created locally and broadcast then:
+        ///  * it is in the database "trbid", unless that structure was wiped
+        ///  * if memory was lost after broadcast, we'll just wait for a transaction
+        ///     that we broadcast to show up on chain, after all until it's validated..
+        ///     it's just gossip, this is an edge case we are safe ignoring
         pub(crate) async fn receive_transaction_from_mempool(
             &self,
             transaction: &Transaction,
