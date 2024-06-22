@@ -46,10 +46,11 @@ mod decrypt_transaction {
     use crate::{
         error::{ZingoLibError, ZingoLibResult},
         wallet::{
+            self,
             data::OutgoingTxData,
             keys::{
                 address_from_pubkeyhash,
-                unified::{External, Fvk},
+                unified::{External, Fvk, Ivk},
             },
             notes::ShieldedNoteInterface,
             traits::{
@@ -64,7 +65,7 @@ mod decrypt_transaction {
     use std::{collections::HashSet, convert::TryInto};
 
     use zcash_client_backend::address::{Address, UnifiedAddress};
-    use zcash_note_encryption::try_output_recovery_with_ovk;
+    use zcash_note_encryption::{try_output_recovery_with_ovk, Domain};
     use zcash_primitives::{
         memo::{Memo, MemoBytes},
         transaction::{Transaction, TxId},
@@ -233,7 +234,7 @@ mod decrypt_transaction {
             .await;
         }
 
-        async fn decrypt_incoming_transaction_to_record_transparent(
+        async fn _decrypt_incoming_transaction_to_record_transparent(
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
@@ -447,6 +448,73 @@ mod decrypt_transaction {
             .await;
         }
 
+        async fn account_for_shielded_receipts<Q>(
+            &self,
+            ivk: Ivk<Q, External>,
+            domain_tagged_outputs: &[(
+                Q,
+                <<Q as DomainWalletExt>::Bundle as wallet::traits::Bundle<Q>>::Output,
+            )],
+            status: ConfirmationStatus,
+            transaction: &Transaction,
+            block_time: u32,
+            arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
+        ) where
+            Q: zingo_traits::DomainWalletExt,
+            <Q as Domain>::Recipient: wallet::traits::Recipient,
+            <Q as Domain>::Note: PartialEq,
+            <Q as Domain>::Note: Clone,
+            Q::Memo: zingo_traits::ToBytes<512>,
+        {
+            let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
+                &[ivk.ivk],
+                &domain_tagged_outputs,
+            )
+            .into_iter()
+            .enumerate();
+            for (output_index, decrypt_attempt) in decrypt_attempts {
+                let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
+                    Some(plaintext) => plaintext,
+                    _ => continue,
+                };
+                let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
+                if let Some(height) = status.get_pending_height() {
+                    self.transaction_metadata_set
+                        .write()
+                        .await
+                        .transaction_records_by_id
+                        .add_pending_note::<Q>(
+                            transaction.txid(),
+                            height,
+                            block_time as u64,
+                            note.clone(),
+                            to,
+                            output_index,
+                        );
+                }
+                let memo = memo_bytes
+                    .clone()
+                    .try_into()
+                    .unwrap_or(Memo::Future(memo_bytes));
+                if let Memo::Arbitrary(ref wallet_internal_data) = memo {
+                    match parse_zingo_memo(*wallet_internal_data.as_ref()) {
+                        Ok(parsed_zingo_memo) => {
+                            arbitrary_memos_with_txids
+                                .push((parsed_zingo_memo, transaction.txid()));
+                        }
+                        Err(e) => {
+                            let _memo_error: ZingoLibResult<()> =
+                                ZingoLibError::CouldNotDecodeMemo(e).handle();
+                        }
+                    }
+                }
+                self.transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id
+                    .add_memo_to_note_metadata::<Q::WalletNote>(&transaction.txid(), note, memo);
+            }
+        }
         /// Transactions contain per-protocol "bundles" of components.
         /// The component details vary by protocol.
         /// In Sapling the components are "Spends" and "Outputs"
@@ -525,6 +593,16 @@ mod decrypt_transaction {
             };
             let (ivk, ovk) = (fvk.derive_ivk::<External>(), fvk.derive_ovk::<External>());
 
+            self.account_for_shielded_receipts(
+                ivk,
+                &domain_tagged_outputs,
+                status,
+                transaction,
+                block_time,
+                arbitrary_memos_with_txids,
+            )
+            .await;
+            /*
             let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
                 &[ivk.ivk],
                 &domain_tagged_outputs,
@@ -572,7 +650,7 @@ mod decrypt_transaction {
                     .await
                     .transaction_records_by_id
                     .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
-            }
+            }*/
             for (_domain, output) in domain_tagged_outputs {
                 outgoing_metadatas.extend(
                     match try_output_recovery_with_ovk::<
