@@ -2,7 +2,7 @@
 
 use crate::wallet::notes::{
     query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
-    AnyPoolOutput,
+    AnyPoolOutput, OutputInterface,
 };
 
 use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
@@ -43,11 +43,9 @@ impl Account<AccountId> for ZingoAccount {
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
-    !AnyPoolOutput::filter_outputs_pools(transaction.get_all_outputs(), OutputPoolQuery::shielded())
+    AnyPoolOutput::filter_outputs_pools(transaction.get_all_outputs(), OutputPoolQuery::shielded())
         .iter()
-        .filter(|output| crate::wallet::notes::OutputInterface::is_unspent(*output))
-        .next()
-        .is_some()
+        .any(|output| output.is_unspent())
     // let unspent_shield_output_ids = transaction.query_for_ids(OutputQuery {
     //     spend_status: OutputSpendStatusQuery::only_unspent(),
     //     pools: OutputPoolQuery::shielded(),
