@@ -195,14 +195,7 @@ where
     );
 
     // since we used our dust as a freebie in the last send, we should only have 1
-    let all_outputs = secondary
-        .wallet
-        .transaction_context
-        .transaction_metadata_set
-        .read()
-        .await
-        .transaction_records_by_id
-        .get_all_outputs();
+    let all_outputs = secondary.list_anypool_outputs().await;
     assert_eq!(
         AnyPoolOutput::filter_outputs(
             all_outputs,
@@ -407,14 +400,7 @@ where
     // if 10_000 or more change, would have used a smaller note
     assert!(received_change_from_transaction_2 < 10_000);
 
-    let all_outputs = secondary
-        .wallet
-        .transaction_context
-        .transaction_metadata_set
-        .read()
-        .await
-        .transaction_records_by_id
-        .get_all_outputs();
+    let all_outputs = secondary.list_anypool_outputs().await;
     assert_eq!(
         AnyPoolOutput::filter_outputs(
             all_outputs,
