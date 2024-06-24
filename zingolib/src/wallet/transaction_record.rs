@@ -2,7 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::wallet::notes::{interface::OutputConstructor, OutputId};
+use crate::wallet::notes::{interface::OutputConstructor};
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
@@ -11,7 +11,6 @@ use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
     wallet::NoteId,
-    PoolType,
     ShieldedProtocol::{Orchard, Sapling},
 };
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};

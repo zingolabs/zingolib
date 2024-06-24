@@ -708,7 +708,7 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet::notes::interface::OutputConstructor;
+    
     use crate::wallet::notes::AnyPoolOutput;
     use crate::{
         mocks::{
@@ -723,7 +723,7 @@ mod tests {
                 query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
                 sapling::mocks::SaplingNoteBuilder,
                 transparent::mocks::TransparentOutputBuilder,
-                OutputInterface, SaplingNote,
+                OutputInterface,
             },
             transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
         },
