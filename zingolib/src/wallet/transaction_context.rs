@@ -537,6 +537,33 @@ mod decrypt_transaction {
             D::IncomingViewingKey: Clone,
         {
             type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
+            let domain_tagged_outputs =
+                <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)
+                    .into_iter()
+                    .flat_map(|bundle| bundle.output_elements().into_iter())
+                    .map(|output| {
+                        (
+                            output.domain(status.get_height(), self.config.chain),
+                            output.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
+            let Ok(fvk) = D::wc_to_fvk(&self.key) else {
+                // skip scanning if wallet has not viewing capability
+                return;
+            };
+            let (ivk, ovk) = (fvk.derive_ivk::<External>(), fvk.derive_ovk::<External>());
+
+            self.account_for_shielded_receipts(
+                ivk,
+                &domain_tagged_outputs,
+                status,
+                transaction,
+                block_time,
+                arbitrary_memos_with_txids,
+            )
+            .await;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
             if status.is_pending() {
@@ -575,82 +602,6 @@ mod decrypt_transaction {
             //     1. There's more than one way to be "spent".
             //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
             //     <https://github.com/zingolabs/zingolib/issues/65>
-            let domain_tagged_outputs =
-                <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)
-                    .into_iter()
-                    .flat_map(|bundle| bundle.output_elements().into_iter())
-                    .map(|output| {
-                        (
-                            output.domain(status.get_height(), self.config.chain),
-                            output.clone(),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-
-            let Ok(fvk) = D::wc_to_fvk(&self.key) else {
-                // skip scanning if wallet has not viewing capability
-                return;
-            };
-            let (ivk, ovk) = (fvk.derive_ivk::<External>(), fvk.derive_ovk::<External>());
-
-            self.account_for_shielded_receipts(
-                ivk,
-                &domain_tagged_outputs,
-                status,
-                transaction,
-                block_time,
-                arbitrary_memos_with_txids,
-            )
-            .await;
-            /*
-            let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
-                &[ivk.ivk],
-                &domain_tagged_outputs,
-            )
-            .into_iter()
-            .enumerate();
-            for (output_index, decrypt_attempt) in decrypt_attempts {
-                let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
-                    Some(plaintext) => plaintext,
-                    _ => continue,
-                };
-                let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-                if let Some(height) = status.get_pending_height() {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .add_pending_note::<D>(
-                            transaction.txid(),
-                            height,
-                            block_time as u64,
-                            note.clone(),
-                            to,
-                            output_index,
-                        );
-                }
-                let memo = memo_bytes
-                    .clone()
-                    .try_into()
-                    .unwrap_or(Memo::Future(memo_bytes));
-                if let Memo::Arbitrary(ref wallet_internal_data) = memo {
-                    match parse_zingo_memo(*wallet_internal_data.as_ref()) {
-                        Ok(parsed_zingo_memo) => {
-                            arbitrary_memos_with_txids
-                                .push((parsed_zingo_memo, transaction.txid()));
-                        }
-                        Err(e) => {
-                            let _memo_error: ZingoLibResult<()> =
-                                ZingoLibError::CouldNotDecodeMemo(e).handle();
-                        }
-                    }
-                }
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
-            }*/
             for (_domain, output) in domain_tagged_outputs {
                 outgoing_metadatas.extend(
                     match try_output_recovery_with_ovk::<
