@@ -658,15 +658,109 @@ pub mod summaries {
         }
     }
 
+    /// TODO: doc comment
+    pub struct ValueTransferBuilder {
+        txid: Option<TxId>,
+        datetime: Option<u64>,
+        status: Option<ConfirmationStatus>,
+        blockheight: Option<BlockHeight>,
+        transaction_fee: Option<Option<u64>>,
+        zec_price: Option<Option<f64>>,
+        kind: Option<ValueTransferKind>,
+        value: Option<u64>,
+        recipient_address: Option<Option<String>>,
+        pool_received: Option<Option<String>>,
+        memos: Option<Vec<String>>,
+    }
+
+    impl ValueTransferBuilder {
+        /// TODO: doc comment
+        pub fn new() -> ValueTransferBuilder {
+            ValueTransferBuilder {
+                txid: None,
+                datetime: None,
+                status: None,
+                blockheight: None,
+                transaction_fee: None,
+                zec_price: None,
+                kind: None,
+                value: None,
+                recipient_address: None,
+                pool_received: None,
+                memos: None,
+            }
+        }
+
+        build_method!(txid, TxId);
+        build_method!(datetime, u64);
+        build_method!(status, ConfirmationStatus);
+        build_method!(blockheight, BlockHeight);
+        build_method!(transaction_fee, Option<u64>);
+        build_method!(zec_price, Option<f64>);
+        build_method!(kind, ValueTransferKind);
+        build_method!(value, u64);
+        build_method!(recipient_address, Option<String>);
+        build_method!(pool_received, Option<String>);
+        build_method!(memos, Vec<String>);
+
+        /// TODO: doc comment
+        pub fn build(&self) -> Result<ValueTransfer, BuildError> {
+            Ok(ValueTransfer {
+                txid: self
+                    .txid
+                    .ok_or(BuildError::MissingField("txid".to_string()))?,
+                datetime: self
+                    .datetime
+                    .ok_or(BuildError::MissingField("datetime".to_string()))?,
+                status: self
+                    .status
+                    .ok_or(BuildError::MissingField("status".to_string()))?,
+                blockheight: self
+                    .blockheight
+                    .ok_or(BuildError::MissingField("blockheight".to_string()))?,
+                transaction_fee: self
+                    .transaction_fee
+                    .ok_or(BuildError::MissingField("transaction_fee".to_string()))?,
+                zec_price: self
+                    .zec_price
+                    .ok_or(BuildError::MissingField("zec_price".to_string()))?,
+                kind: self
+                    .kind
+                    .ok_or(BuildError::MissingField("kind".to_string()))?,
+                value: self
+                    .value
+                    .ok_or(BuildError::MissingField("value".to_string()))?,
+                recipient_address: self
+                    .recipient_address
+                    .clone()
+                    .ok_or(BuildError::MissingField("recipient_address".to_string()))?,
+                pool_received: self
+                    .pool_received
+                    .clone()
+                    .ok_or(BuildError::MissingField("pool_received".to_string()))?,
+                memos: self
+                    .memos
+                    .clone()
+                    .ok_or(BuildError::MissingField("memos".to_string()))?,
+            })
+        }
+    }
+
+    impl Default for ValueTransferBuilder {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     /// TODO: Add Doc Comment Here!
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
         /// TODO: Add Doc Comment Here!
         Sent,
         /// TODO: Add Doc Comment Here!
-        Shield,
-        /// TODO: Add Doc Comment Here!
         NoteToSelf,
+        /// TODO: Add Doc Comment Here!
+        Shield,
         /// TODO: Add Doc Comment Here!
         Received,
     }
@@ -675,8 +769,8 @@ pub mod summaries {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             match self {
                 ValueTransferKind::Sent => write!(f, "sent"),
-                ValueTransferKind::Shield => write!(f, "shield"),
                 ValueTransferKind::NoteToSelf => write!(f, "note-to-self"),
+                ValueTransferKind::Shield => write!(f, "shield"),
                 ValueTransferKind::Received => write!(f, "received"),
             }
         }
