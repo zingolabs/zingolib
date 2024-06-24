@@ -1,7 +1,7 @@
 //! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
 
 use crate::wallet::notes::{
-    query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+    query::{OutputPoolQuery},
     AnyPoolOutput, OutputInterface,
 };
 
