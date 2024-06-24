@@ -707,6 +707,7 @@ impl Default for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
     use crate::wallet::notes::interface::OutputConstructor;
+    use crate::wallet::notes::AnyPoolOutput;
     use crate::{
         mocks::{
             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
@@ -786,20 +787,18 @@ mod tests {
             .unwrap();
 
         let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
-        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(OutputQuery {
-            spend_status: query_for_spentish_notes,
-            pools: OutputPoolQuery::any(),
-        });
-        assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
+        let all_outputs_in_tx_cvnwis = transaction_record_cvnwis.get_all_outputs();
+        let spentish_sapling_notes_in_tx_cvnwis = AnyPoolOutput::filter_outputs(
+            all_outputs_in_tx_cvnwis,
+            OutputQuery {
+                spend_status: query_for_spentish_notes,
+                pools: OutputPoolQuery::any(),
+            },
+        );
+        assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
         assert_ne!(
-            SaplingNote::get_record_query_matching_outputs(
-                transaction_record_cvnwis,
-                query_for_spentish_notes
-            )
-            .first()
-            .unwrap()
-            .spent(),
+            spentish_sapling_notes_in_tx_cvnwis.first().unwrap().spent(),
             &Some((spending_txid, 15u32))
         );
         // ^ but it was not spent in the deleted txid
