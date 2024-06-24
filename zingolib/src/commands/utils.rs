@@ -141,17 +141,25 @@ pub(super) fn parse_spendable_balance_args(
     args: &[&str],
     chain: &ChainType,
 ) -> Result<(Address, bool), CommandError> {
-    let address: Address;
-
-    let mut zennies_for_zingo = false;
     if args.len() > 2 {
         return Err(CommandError::InvalidArguments);
     }
-    if args.len() == 2 && args[1] == "true" {
-        zennies_for_zingo = true;
-    }
+    let address: Address;
+    let zennies_for_zingo;
+
     if let Ok(addr) = address_from_str(args[0], chain) {
         address = addr;
+        if args.len() == 2 {
+            if args[1] == "true" {
+                zennies_for_zingo = true;
+            } else if args[1] == "false" {
+                zennies_for_zingo = false;
+            } else {
+                return Err(CommandError::MissingZenniesForZingoFlag);
+            }
+        } else {
+            return Err(CommandError::MissingZenniesForZingoFlag);
+        }
     } else {
         let json_args =
             json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
@@ -162,16 +170,20 @@ pub(super) fn parse_spendable_balance_args(
         if json_args.is_empty() {
             return Err(CommandError::EmptyJsonArray);
         }
-        let json_args = if json_args.len() == 1 {
+        let address_arg = if json_args.len() == 2 {
             json_args
                 .members()
                 .next()
-                .expect("should have a single json member")
+                .expect("should have two json members")
         } else {
             return Err(CommandError::MultipleReceivers);
         };
 
-        address = address_from_json(json_args, chain)?;
+        address = address_from_json(address_arg, chain)?;
+        let zfz_arg = json_args
+            .members()
+            .next()
+            .expect("Required second argument.");
     }
 
     Ok((address, zennies_for_zingo))
