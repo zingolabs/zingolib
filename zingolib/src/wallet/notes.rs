@@ -81,7 +81,7 @@ impl AnyPoolOutput {
             .collect()
     }
 
-    /// this method helps filter a vec of outputs
+    /// this function filters a vec of outputs by pool
     pub fn filter_outputs_pools(list: Vec<Self>, filter: OutputPoolQuery) -> Vec<Self> {
         list.into_iter()
             .filter_map(|any_pool_output| {
@@ -98,12 +98,17 @@ impl AnyPoolOutput {
             .collect()
     }
 
-    /// this method helps filter a vec of outputs
+    /// this function filters a vec of outputs
     pub fn filter_outputs(list: Vec<Self>, filter: OutputQuery) -> Vec<Self> {
         AnyPoolOutput::filter_outputs_pools(list, filter.pools)
             .into_iter()
             .filter(|output| output.spend_status_query(filter.spend_status))
             .collect()
+    }
+
+    /// this sums the value of a vec of outputs, ignoring marginal fees
+    pub fn sum_gross_value(list: Vec<Self>) -> u64 {
+        list.iter().fold(0, |total, output| total + output.value())
     }
 }
 /// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.
