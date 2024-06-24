@@ -3413,10 +3413,10 @@ mod slow {
 
         let total_fee = get_fees_paid_by_client(&client).await;
         assert_eq!(total_fee, test_dev_total_expected_fee);
-        // let mut total_value_to_addrs_iter = client.do_total_value_to_address().await.0.into_iter();
-        // let from_finsight = total_value_to_addrs_iter.next().unwrap().1;
-        // assert_eq!(from_finsight, total_fee);
-        // assert!(total_value_to_addrs_iter.next().is_none());
+        let mut total_value_to_addrs_iter = client.do_total_value_to_address().await.0.into_iter();
+        let from_finsight = total_value_to_addrs_iter.next().unwrap().1;
+        assert_eq!(from_finsight, total_fee);
+        assert!(total_value_to_addrs_iter.next().is_none());
     }
     #[tokio::test]
     async fn factor_do_shield_to_call_do_send() {
