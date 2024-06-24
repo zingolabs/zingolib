@@ -2,7 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::wallet::notes::{interface::OutputConstructor, OutputId};
+use crate::wallet::notes::{interface::OutputConstructor, query::OutputSpendStatusQuery, OutputId};
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
@@ -183,15 +183,6 @@ impl TransactionRecord {
             }
         }
         set
-    }
-
-    /// Uses a query to select all notes with specific properties and returns
-    /// a vector packing them in the AnyPoolOutput
-    pub fn get_all_requested_outputs(
-        &self,
-        include_notes: OutputQuery,
-    ) -> Vec<notes::AnyPoolOutput> {
-        notes::AnyPoolOutput::get_all_outputs_with_status(self, *include_notes.spend_status())
     }
 
     /// Uses a query to select all notes with specific properties and sum them

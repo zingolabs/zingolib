@@ -14,9 +14,9 @@ use zcash_client_backend::PoolType;
 
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::notes::query::OutputPoolQuery;
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
+use crate::wallet::{notes::query::OutputPoolQuery, transaction_record::TransactionRecord};
 
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
@@ -55,7 +55,7 @@ impl AnyPoolOutput {
     }
 
     /// Every notes' outputinterface for a given spend status
-    pub fn get_all_outputs_with_status(
+    pub fn get_outputs_by_status(
         transaction_record: &super::transaction_record::TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<Self> {
@@ -79,6 +79,11 @@ impl AnyPoolOutput {
                     .map(|output| Self::OrchardNote(output.clone())),
             )
             .collect()
+    }
+    /// Uses a query to select all notes with specific properties and returns
+    /// a vector packing them in the AnyPoolOutput
+    pub fn get_all_outputs(query: &TransactionRecord) -> Vec<Self> {
+        Self::get_outputs_by_status(query, OutputSpendStatusQuery::any())
     }
 }
 /// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.

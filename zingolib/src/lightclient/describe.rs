@@ -29,7 +29,7 @@ use crate::{
             OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
-        notes::{query::OutputQuery, OutputInterface},
+        notes::{query::OutputQuery, AnyPoolOutput, OutputInterface},
         transaction_record::{SendType, TransactionKind},
         transaction_records_by_id::TransactionRecordsById,
         LightWallet,
@@ -811,7 +811,7 @@ impl LightClient {
             .transaction_records_by_id
             .0
             .values()
-            .flat_map(|record| record.get_all_requested_outputs(OutputQuery::any()))
+            .flat_map(|record| AnyPoolOutput::get_all_outputs(record))
             .collect()
     }
 
