@@ -841,6 +841,7 @@ mod tests {
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 
     use crate::wallet::notes::query::OutputQuery;
+    use crate::wallet::notes::AnyPoolOutput;
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,
@@ -905,7 +906,9 @@ mod tests {
         let expected = queried_spend_state * queried_pools;
 
         let default_nn_transaction_record = dbg!(nine_note_transaction_record_default());
-        let requested_outputs = default_nn_transaction_record.query_for_ids(
+        let all_outputs = default_nn_transaction_record.get_all_outputs();
+        let requested_outputs = AnyPoolOutput::filter_outputs(
+            all_outputs,
             OutputQuery::stipulations(unspent, pending_spent, spent, transparent, sapling, orchard),
         );
         assert_eq!(requested_outputs.len(), expected);
