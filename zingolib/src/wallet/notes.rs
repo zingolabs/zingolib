@@ -97,6 +97,14 @@ impl AnyPoolOutput {
             })
             .collect()
     }
+
+    /// this method helps filter a vec of outputs
+    pub fn filter_outputs(list: Vec<Self>, filter: OutputQuery) -> Vec<Self> {
+        AnyPoolOutput::filter_outputs_pools(list, filter.pools)
+            .into_iter()
+            .filter(|output| output.spend_status_query(filter.spend_status))
+            .collect()
+    }
 }
 /// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.
 /// "Over" because pool is not necessary for a unique ID.
