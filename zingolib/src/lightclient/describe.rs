@@ -788,7 +788,7 @@ impl LightClient {
 
     /// Get all the outputs packed into an AnyPoolOutput vector
     ///  This method will replace do_list_notes
-    pub async fn list_anypool_outputs(&self) -> Vec<crate::wallet::notes::AnyPoolOutput> {
+    pub async fn get_outputs(&self) -> Vec<crate::wallet::notes::AnyPoolOutput> {
         self.wallet
             .transaction_context
             .transaction_metadata_set
@@ -797,7 +797,7 @@ impl LightClient {
             .transaction_records_by_id
             .0
             .values()
-            .flat_map(|record| record.get_all_outputs())
+            .flat_map(|record| record.get_outputs())
             .collect()
     }
 

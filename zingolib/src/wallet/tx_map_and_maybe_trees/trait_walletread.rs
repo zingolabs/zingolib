@@ -43,7 +43,7 @@ impl Account<AccountId> for ZingoAccount {
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
-    AnyPoolOutput::filter_outputs_pools(transaction.get_all_outputs(), OutputPoolQuery::shielded())
+    AnyPoolOutput::filter_outputs_pools(transaction.get_outputs(), OutputPoolQuery::shielded())
         .iter()
         .any(|output| output.spend_status_query(OutputSpendStatusQuery::only_unspent()))
 }

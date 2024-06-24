@@ -142,7 +142,7 @@ impl TransactionRecord {
     }
 
     /// Return all outputs in the TransactionRecord as a vector
-    pub fn get_all_outputs(&self) -> Vec<AnyPoolOutput> {
+    pub fn get_outputs(&self) -> Vec<AnyPoolOutput> {
         self.transparent_outputs
             .iter()
             .map(|output| AnyPoolOutput::TransparentOutput(output.clone()))
@@ -860,7 +860,7 @@ mod tests {
         let expected = queried_spend_state * queried_pools;
 
         let default_nn_transaction_record = dbg!(nine_note_transaction_record_default());
-        let all_outputs = default_nn_transaction_record.get_all_outputs();
+        let all_outputs = default_nn_transaction_record.get_outputs();
         let requested_outputs = AnyPoolOutput::filter_outputs(
             all_outputs,
             OutputQuery::stipulations(unspent, pending_spent, spent, transparent, sapling, orchard),

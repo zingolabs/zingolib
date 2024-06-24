@@ -70,7 +70,7 @@ impl TransactionRecordsById {
     pub fn get_all_outputs(&self) -> Vec<AnyPoolOutput> {
         self.0
             .iter()
-            .flat_map(|transaction_record| transaction_record.1.get_all_outputs())
+            .flat_map(|transaction_record| transaction_record.1.get_outputs())
             .collect()
     }
 
@@ -789,7 +789,7 @@ mod tests {
             .unwrap();
 
         let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
-        let all_outputs_in_tx_cvnwis = transaction_record_cvnwis.get_all_outputs();
+        let all_outputs_in_tx_cvnwis = transaction_record_cvnwis.get_outputs();
         let spentish_sapling_notes_in_tx_cvnwis = AnyPoolOutput::filter_outputs(
             all_outputs_in_tx_cvnwis,
             OutputQuery {
