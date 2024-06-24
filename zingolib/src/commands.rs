@@ -612,6 +612,8 @@ impl Command for SpendableBalanceCommand {
 
             Usage:
             spendablebalance <address> [zennies_for_zingo]
+            OR
+            spendablebalance { "address": "<address>", "zennies_for_zingo": "<true|false>" }
 
         "#}
     }
@@ -885,7 +887,7 @@ impl Command for SendAllCommand {
             Usage:
                 sendall <address> <zennies_for_zingo> "<optional memo>"
                 OR
-                sendall '[{"address":"<address>", "memo":"<optional memo>"}]' <zennies_for_zingo>
+                sendall '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": "<true|false>" }'
             Example:
                 sendall ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
                 confirm
