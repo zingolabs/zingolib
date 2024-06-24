@@ -30,6 +30,8 @@ use crate::{
     },
 };
 
+use super::notes::AnyPoolOutput;
+
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionRecord {
@@ -187,11 +189,21 @@ impl TransactionRecord {
 
     /// Uses a query to select all notes with specific properties and returns
     /// a vector packing them in the AnyPoolOutput
-    pub fn get_all_requested_outputs(
-        &self,
-        include_notes: OutputQuery,
-    ) -> Vec<notes::AnyPoolOutput> {
-        notes::AnyPoolOutput::get_all_outputs_with_status(self, *include_notes.spend_status())
+    pub fn get_all_requested_outputs(&self, include_notes: OutputQuery) -> Vec<AnyPoolOutput> {
+        self.transparent_outputs
+            .iter()
+            .map(|output| AnyPoolOutput::TransparentOutput(output.clone()))
+            .chain(
+                self.sapling_notes
+                    .iter()
+                    .map(|output| AnyPoolOutput::SaplingNote(output.clone())),
+            )
+            .chain(
+                self.orchard_notes
+                    .iter()
+                    .map(|output| AnyPoolOutput::OrchardNote(output.clone())),
+            )
+            .collect()
     }
 
     /// Uses a query to select all notes with specific properties and sum them
