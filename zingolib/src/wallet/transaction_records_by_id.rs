@@ -708,7 +708,7 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    
+
     use crate::wallet::notes::AnyPoolOutput;
     use crate::{
         mocks::{
