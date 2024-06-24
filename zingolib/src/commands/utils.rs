@@ -170,20 +170,17 @@ pub(super) fn parse_spendable_balance_args(
         if json_args.is_empty() {
             return Err(CommandError::EmptyJsonArray);
         }
-        let address_arg = if json_args.len() == 2 {
-            json_args
-                .members()
-                .next()
-                .expect("should have two json members")
+        if json_args.len() == 2 {
+            let mut members = json_args.members();
+            let address_arg = members.next().expect("should have two json members");
+            address = address_from_json(address_arg, chain)?;
+            zennies_for_zingo = match members.next().expect("Required second argument.").as_bool() {
+                Some(boolean) => boolean,
+                None => return Err(CommandError::MissingZenniesForZingoFlag),
+            };
         } else {
             return Err(CommandError::MultipleReceivers);
         };
-
-        address = address_from_json(address_arg, chain)?;
-        let zfz_arg = json_args
-            .members()
-            .next()
-            .expect("Required second argument.");
     }
 
     Ok((address, zennies_for_zingo))
