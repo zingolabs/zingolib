@@ -1,6 +1,9 @@
 //! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
 
-use crate::wallet::notes::{query::OutputPoolQuery, AnyPoolOutput, OutputInterface};
+use crate::wallet::notes::{
+    query::{OutputPoolQuery, OutputSpendStatusQuery},
+    AnyPoolOutput, OutputInterface,
+};
 
 use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 use secrecy::SecretVec;
@@ -42,7 +45,7 @@ fn has_unspent_shielded_outputs(
 ) -> bool {
     AnyPoolOutput::filter_outputs_pools(transaction.get_all_outputs(), OutputPoolQuery::shielded())
         .iter()
-        .any(|output| output.is_unspent())
+        .any(|output| output.spend_status_query(OutputSpendStatusQuery::only_unspent()))
 }
 /// some of these functions, initially those required for calculate_transaction, will be implemented
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
