@@ -1,6 +1,9 @@
 //! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
 
-use crate::wallet::notes::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery};
+use crate::wallet::notes::{
+    query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+    AnyPoolOutput,
+};
 
 use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 use secrecy::SecretVec;
@@ -40,8 +43,7 @@ impl Account<AccountId> for ZingoAccount {
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
-    !transaction
-        .get_all_outputs()
+    !AnyPoolOutput::filter_outputs_pools(transaction.get_all_outputs(), OutputPoolQuery::shielded())
         .iter()
         .filter(|output| crate::wallet::notes::OutputInterface::is_unspent(*output))
         .next()
