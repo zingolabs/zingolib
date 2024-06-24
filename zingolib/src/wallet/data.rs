@@ -450,15 +450,16 @@ pub mod finsight {
 pub mod summaries {
     use chrono::DateTime;
     use json::JsonValue;
-    use zcash_address::ZcashAddress;
-    use zcash_client_backend::PoolType;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
         error::BuildError,
         utils::build_method,
-        wallet::{data::OutgoingTxDataSummaries, transaction_record::TransactionKind},
+        wallet::{
+            data::OutgoingTxDataSummaries,
+            transaction_record::{SendType, TransactionKind},
+        },
     };
 
     use super::OutgoingTxData;
@@ -516,9 +517,11 @@ pub mod summaries {
         pub fn recipient_address(&self) -> Option<&str> {
             self.recipient_address.as_deref()
         }
+        /// TODO: doc comment
         pub fn pool_received(&self) -> Option<&str> {
             self.pool_received.as_deref()
         }
+        /// TODO: doc comment
         pub fn memos(&self) -> Vec<&str> {
             self.memos.iter().map(|s| s.as_str()).collect()
         }
@@ -549,28 +552,28 @@ pub mod summaries {
             } else {
                 "not available".to_string()
             };
-            let transaction_fee = if let Some(f) = self.transaction_fee {
+            let transaction_fee = if let Some(f) = self.transaction_fee() {
                 f.to_string()
             } else {
                 "not available".to_string()
             };
-            let zec_price = if let Some(price) = self.zec_price {
+            let zec_price = if let Some(price) = self.zec_price() {
                 price.to_string()
             } else {
                 "not available".to_string()
             };
-            let recipient_address = if let Some(addr) = self.recipient_address {
-                addr
+            let recipient_address = if let Some(addr) = self.recipient_address() {
+                addr.to_string()
             } else {
                 "not available".to_string()
             };
-            let pool_received = if let Some(pool) = self.pool_received {
-                pool
+            let pool_received = if let Some(pool) = self.pool_received() {
+                pool.to_string()
             } else {
                 "not available".to_string()
             };
             let mut memos = String::new();
-            for (index, memo) in self.memos.iter().enumerate() {
+            for (index, memo) in self.memos().into_iter().enumerate() {
                 memos.push_str(&format!("\n\tmemo {}: {}", index, memo));
             }
             write!(
@@ -621,8 +624,42 @@ pub mod summaries {
         }
     }
 
+    /// Summary of transactions
+    #[derive(PartialEq, Debug)]
+    pub struct ValueTransfers(pub Vec<ValueTransfer>);
+
+    impl ValueTransfers {
+        /// TODO: doc comment
+        pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
+            ValueTransfers(value_transfers)
+        }
+        /// Implicitly dispatch to the wrapped data
+        pub fn iter(&self) -> std::slice::Iter<ValueTransfer> {
+            self.0.iter()
+        }
+    }
+
+    impl std::fmt::Display for ValueTransfers {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for value_transfer in &self.0 {
+                write!(f, "\n{}", value_transfer)?;
+            }
+            Ok(())
+        }
+    }
+
+    impl From<ValueTransfers> for JsonValue {
+        fn from(value_transfers: ValueTransfers) -> Self {
+            let value_transfers: Vec<JsonValue> =
+                value_transfers.0.into_iter().map(JsonValue::from).collect();
+            json::object! {
+                "value_transfers" => value_transfers
+            }
+        }
+    }
+
     /// TODO: Add Doc Comment Here!
-    #[derive(Clone, PartialEq, Eq, Debug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
         /// TODO: Add Doc Comment Here!
         Sent,
@@ -710,6 +747,29 @@ pub mod summaries {
         /// TODO: doc comment
         pub fn outgoing_tx_data(&self) -> &[OutgoingTxData] {
             &self.outgoing_tx_data
+        }
+
+        /// Depending on the relationship of this capability to the
+        /// receiver capability, assign polarity to value transferred.
+        /// Returns None if fields expecting Som(_) are None
+        pub fn balance_delta(&self) -> Option<i64> {
+            match self.kind {
+                TransactionKind::Sent(SendType::Send) => {
+                    if let Some(fee) = self.fee() {
+                        Some(-((self.value() + fee) as i64))
+                    } else {
+                        None
+                    }
+                }
+                TransactionKind::Sent(SendType::Shield) => {
+                    if let Some(fee) = self.fee() {
+                        Some(-(fee as i64))
+                    } else {
+                        None
+                    }
+                }
+                TransactionKind::Received => Some(self.value() as i64),
+            }
         }
     }
 

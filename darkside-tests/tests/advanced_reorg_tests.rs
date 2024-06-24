@@ -58,11 +58,11 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.value_transfers().await;
+    let before_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].block_height,
+        before_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(203)
     );
 
@@ -93,11 +93,11 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let after_reorg_transactions = light_client.value_transfers().await;
+    let after_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
-        after_reorg_transactions[0].block_height,
+        after_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(206)
     );
 }
@@ -214,11 +214,11 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.value_transfers().await;
+    let before_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].block_height,
+        before_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(203)
     );
 
@@ -249,11 +249,11 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let after_reorg_transactions = light_client.value_transfers().await;
+    let after_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
-        after_reorg_transactions[0].block_height,
+        after_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(203)
     );
 }
@@ -369,11 +369,11 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let before_reorg_transactions = light_client.value_transfers().await;
+    let before_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].block_height,
+        before_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(203)
     );
 
@@ -404,7 +404,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let after_reorg_transactions = light_client.value_transfers().await;
+    let after_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(after_reorg_transactions.len(), 0);
 }
@@ -547,11 +547,11 @@ async fn reorg_changes_outgoing_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.value_transfers().await;
+    let before_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].block_height,
+        before_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(203)
     );
 
@@ -603,14 +603,15 @@ async fn reorg_changes_outgoing_tx_height() {
         light_client
             .value_transfers()
             .await
-            .into_iter()
-            .find_map(|v| match v.kind {
-                ValueTransferKind::Sent {
-                    recipient_address,
-                    amount,
-                } => {
-                    if recipient_address.to_string() == recipient_string && amount == 100000 {
-                        Some(v.block_height)
+            .iter()
+            .find_map(|v| match v.kind() {
+                ValueTransferKind::Sent => {
+                    if let Some(addr) = v.recipient_address() {
+                        if addr.to_string() == recipient_string && v.value() == 100_000 {
+                            Some(v.blockheight())
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -660,7 +661,7 @@ async fn reorg_changes_outgoing_tx_height() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.value_transfers().await;
+    let after_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
@@ -785,11 +786,11 @@ async fn reorg_expires_outgoing_tx_height() {
     light_client.do_sync(true).await.unwrap();
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
-    let before_reorg_transactions = light_client.value_transfers().await;
+    let before_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].block_height,
+        before_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(203)
     );
 
@@ -834,14 +835,15 @@ async fn reorg_expires_outgoing_tx_height() {
         light_client
             .value_transfers()
             .await
-            .into_iter()
-            .find_map(|v| match v.kind {
-                ValueTransferKind::Sent {
-                    recipient_address,
-                    amount,
-                } => {
-                    if recipient_address.to_string() == recipient_string && amount == 100000 {
-                        Some(v.block_height)
+            .iter()
+            .find_map(|v| match v.kind() {
+                ValueTransferKind::Sent => {
+                    if let Some(addr) = v.recipient_address() {
+                        if addr.to_string() == recipient_string && v.value() == 100_000 {
+                            Some(v.blockheight())
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -874,7 +876,7 @@ async fn reorg_expires_outgoing_tx_height() {
     // sent transaction was never mined and has expired.
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
-    let after_reorg_transactions = light_client.value_transfers().await;
+    let after_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
@@ -966,11 +968,11 @@ async fn reorg_changes_outgoing_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.value_transfers().await;
+    let before_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].block_height,
+        before_reorg_transactions[0].blockheight(),
         BlockHeight::from_u32(203)
     );
 
@@ -1022,14 +1024,15 @@ async fn reorg_changes_outgoing_tx_index() {
         light_client
             .value_transfers()
             .await
-            .into_iter()
-            .find_map(|v| match v.kind {
-                ValueTransferKind::Sent {
-                    recipient_address,
-                    amount,
-                } => {
-                    if recipient_address.to_string() == recipient_string && amount == 100000 {
-                        Some(v.block_height)
+            .iter()
+            .find_map(|v| match v.kind() {
+                ValueTransferKind::Sent => {
+                    if let Some(addr) = v.recipient_address() {
+                        if addr.to_string() == recipient_string && v.value() == 100_000 {
+                            Some(v.blockheight())
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -1085,7 +1088,7 @@ async fn reorg_changes_outgoing_tx_index() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.value_transfers().await;
+    let after_reorg_transactions = light_client.value_transfers().await.0;
 
     assert_eq!(after_reorg_transactions.len(), 3);
 

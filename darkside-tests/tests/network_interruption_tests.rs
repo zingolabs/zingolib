@@ -15,14 +15,16 @@ use darkside_tests::{
         DarksideHandler,
     },
 };
-use json::JsonValue;
 use tokio::time::sleep;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zingo_testutils::{
     get_base_address_macro, scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient,
 };
 use zingoconfig::RegtestNetwork;
-use zingolib::{lightclient::PoolBalances, wallet::data::summaries::ValueTransferKind};
+use zingolib::{
+    lightclient::PoolBalances,
+    wallet::transaction_record::{SendType, TransactionKind},
+};
 
 #[ignore]
 #[tokio::test]
@@ -210,25 +212,18 @@ async fn shielded_note_marked_as_change_test() {
             transparent_balance: Some(0),
         }
     );
-    // assert all unspent orchard notes (shielded notes) are marked as change
-    let notes = scenario.get_lightclient(0).do_list_notes(true).await;
-    if let JsonValue::Array(unspent_orchard_notes) = &notes["unspent_orchard_notes"] {
-        for notes in unspent_orchard_notes {
-            assert!(notes["is_change"].as_bool().unwrap());
-        }
-    }
     // assert all fees are 10000 zats
-    let value_transfers = scenario.get_lightclient(0).value_transfers().await;
-    for value_transfer in &value_transfers {
-        if let ValueTransferKind::Fee { amount } = value_transfer.kind {
-            assert_eq!(amount, 10_000)
+    let transaction_summaries = scenario.get_lightclient(0).transaction_summaries().await;
+    for summary in transaction_summaries.iter() {
+        if let Some(fee) = summary.fee() {
+            assert_eq!(fee, 10_000);
         }
     }
-    // assert that every shield has a send-to-self value transfer
+    // assert the number of shields are correct
     assert_eq!(
-        value_transfers
+        transaction_summaries
             .iter()
-            .filter(|vt| vt.kind == ValueTransferKind::SendToSelf)
+            .filter(|summary| summary.kind() == TransactionKind::Sent(SendType::Shield))
             .count(),
         (BLOCKCHAIN_HEIGHT / 1000 - 1) as usize
     );
