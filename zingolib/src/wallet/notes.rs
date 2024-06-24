@@ -31,56 +31,6 @@ pub enum AnyPoolOutput {
     OrchardNote,
 }
 impl AnyPoolOutput {
-    /// All the output records
-    pub fn get_record_outputs(
-        transaction_record: &super::transaction_record::TransactionRecord,
-    ) -> Vec<Self> {
-        transaction_record
-            .transparent_outputs
-            .iter()
-            .map(|output| Self::TransparentOutput(output.clone()))
-            .chain(
-                transaction_record
-                    .sapling_notes
-                    .iter()
-                    .map(|output| Self::SaplingNote(output.clone())),
-            )
-            .chain(
-                transaction_record
-                    .orchard_notes
-                    .iter()
-                    .map(|output| Self::OrchardNote(output.clone())),
-            )
-            .collect()
-    }
-
-    /// Every notes' outputinterface for a given spend status
-    pub fn get_all_outputs_with_status(
-        transaction_record: &super::transaction_record::TransactionRecord,
-        spend_status_query: OutputSpendStatusQuery,
-    ) -> Vec<Self> {
-        transaction_record
-            .transparent_outputs
-            .iter()
-            .filter(|output| output.spend_status_query(spend_status_query))
-            .map(|output| Self::TransparentOutput(output.clone()))
-            .chain(
-                transaction_record
-                    .sapling_notes
-                    .iter()
-                    .filter(|output| output.spend_status_query(spend_status_query))
-                    .map(|output| Self::SaplingNote(output.clone())),
-            )
-            .chain(
-                transaction_record
-                    .orchard_notes
-                    .iter()
-                    .filter(|output| output.spend_status_query(spend_status_query))
-                    .map(|output| Self::OrchardNote(output.clone())),
-            )
-            .collect()
-    }
-
     /// this function filters a vec of outputs by pool
     pub fn filter_outputs_pools(list: Vec<Self>, filter: OutputPoolQuery) -> Vec<Self> {
         list.into_iter()
