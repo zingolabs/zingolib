@@ -142,52 +142,7 @@ impl TransactionRecord {
         &self.spent_orchard_nullifiers
     }
 
-    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<OutputId> {
-        let mut set = vec![];
-        let spend_status_query = *include_notes.spend_status();
-        if *include_notes.transparent() {
-            for note in self.transparent_outputs.iter() {
-                if note.spend_status_query(spend_status_query) {
-                    set.push(OutputId::from_parts(
-                        self.txid,
-                        PoolType::Transparent,
-                        note.output_index as u32,
-                    ));
-                }
-            }
-        }
-        if *include_notes.sapling() {
-            for note in self.sapling_notes.iter() {
-                if note.spend_status_query(spend_status_query) {
-                    if let Some(output_index) = note.output_index {
-                        set.push(OutputId::from_parts(
-                            self.txid,
-                            PoolType::Shielded(Sapling),
-                            output_index,
-                        ));
-                    }
-                }
-            }
-        }
-        if *include_notes.orchard() {
-            for note in self.orchard_notes.iter() {
-                if note.spend_status_query(spend_status_query) {
-                    if let Some(output_index) = note.output_index {
-                        set.push(OutputId::from_parts(
-                            self.txid,
-                            PoolType::Shielded(Orchard),
-                            output_index,
-                        ));
-                    }
-                }
-            }
-        }
-        set
-    }
-
-    /// Uses a query to select all notes with specific properties and returns
-    /// a vector packing them in the AnyPoolOutput
+    /// Return all outputs in the TransactionRecord as a vector
     pub fn get_all_outputs(&self) -> Vec<AnyPoolOutput> {
         self.transparent_outputs
             .iter()

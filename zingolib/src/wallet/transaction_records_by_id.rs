@@ -66,16 +66,7 @@ impl TransactionRecordsById {
         })
     }
 
-    /// Uses a query to select all notes across all transactions with specific properties and sum them
-    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<crate::wallet::notes::OutputId> {
-        self.0
-            .iter()
-            .flat_map(|transaction_record| transaction_record.1.query_for_ids(include_notes))
-            .collect()
-    }
-
-    /// Uses a query to select all notes with specific properties and returns
-    /// a vector packing them in the AnyPoolOutput
+    /// Return all outputs in the TransactionRecord as a vector
     pub fn get_all_outputs(&self) -> Vec<AnyPoolOutput> {
         self.0
             .iter()
