@@ -21,7 +21,7 @@ use crate::wallet::notes::query::OutputSpendStatusQuery;
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum AnyPoolOutput {
     /// Transparent Outputs
     TransparentOutput,
@@ -78,6 +78,23 @@ impl AnyPoolOutput {
                     .filter(|output| output.spend_status_query(spend_status_query))
                     .map(|output| Self::OrchardNote(output.clone())),
             )
+            .collect()
+    }
+
+    /// this method helps filter a vec of outputs
+    pub fn filter_outputs_pools(list: Vec<Self>, filter: OutputPoolQuery) -> Vec<Self> {
+        list.into_iter()
+            .filter_map(|any_pool_output| {
+                if match any_pool_output {
+                    Self::TransparentOutput(ref _transparent_output) => *filter.transparent(),
+                    Self::SaplingNote(ref _sapling_output) => *filter.sapling(),
+                    Self::OrchardNote(ref _orchard_output) => *filter.orchard(),
+                } {
+                    Some(any_pool_output)
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 }
