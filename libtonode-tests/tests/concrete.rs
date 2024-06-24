@@ -4333,7 +4333,7 @@ async fn propose_orchard_dust_to_sapling() {
 #[tokio::test]
 async fn audit_anyp_outputs() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
-    assert_eq!(recipient.get_outputs().await.len(), 0);
+    assert_eq!(recipient.list_outputs().await.len(), 0);
     from_inputs::quick_send(
         &faucet,
         vec![(
@@ -4347,7 +4347,7 @@ async fn audit_anyp_outputs() {
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    let lapo = dbg!(recipient.get_outputs().await);
+    let lapo = dbg!(recipient.list_outputs().await);
     assert_eq!(lapo.len(), 1);
 }
 #[tokio::test]
