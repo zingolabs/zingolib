@@ -40,11 +40,17 @@ impl Account<AccountId> for ZingoAccount {
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
-    let unspent_shield_output_ids = transaction.query_for_ids(OutputQuery {
-        spend_status: OutputSpendStatusQuery::only_unspent(),
-        pools: OutputPoolQuery::shielded(),
-    });
-    !unspent_shield_output_ids.is_empty()
+    !transaction
+        .get_all_outputs()
+        .iter()
+        .filter(|output| crate::wallet::notes::OutputInterface::is_unspent(*output))
+        .next()
+        .is_some()
+    // let unspent_shield_output_ids = transaction.query_for_ids(OutputQuery {
+    //     spend_status: OutputSpendStatusQuery::only_unspent(),
+    //     pools: OutputPoolQuery::shielded(),
+    // });
+    // !unspent_shield_output_ids.is_empty()
 }
 /// some of these functions, initially those required for calculate_transaction, will be implemented
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
