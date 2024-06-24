@@ -7,7 +7,6 @@ use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
-
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
@@ -189,7 +188,7 @@ impl TransactionRecord {
 
     /// Uses a query to select all notes with specific properties and returns
     /// a vector packing them in the AnyPoolOutput
-    pub fn get_all_requested_outputs(&self) -> Vec<AnyPoolOutput> {
+    pub fn get_all_outputs(&self) -> Vec<AnyPoolOutput> {
         self.transparent_outputs
             .iter()
             .map(|output| AnyPoolOutput::TransparentOutput(output.clone()))
