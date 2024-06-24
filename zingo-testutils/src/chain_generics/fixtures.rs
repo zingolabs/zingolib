@@ -11,6 +11,7 @@ use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zingolib::wallet::notes::query::OutputPoolQuery;
 use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
+use zingolib::wallet::notes::AnyPoolOutput;
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
@@ -193,12 +194,24 @@ where
         2 * MARGINAL_FEE.into_u64()
     );
 
-    // since we used our dust as a freebie in the last send, we should only have 2
+    // since we used our dust as a freebie in the last send, we should only have 1
+    let all_outputs = secondary
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id
+        .get_all_outputs();
     assert_eq!(
-        secondary
-            .query_for_ids(OutputQuery::only_unspent())
-            .await
-            .len(),
+        AnyPoolOutput::filter_outputs(
+            all_outputs,
+            OutputQuery {
+                spend_status: OutputSpendStatusQuery::only_spent(),
+                pools: OutputPoolQuery::one_pool(Shielded(Orchard)),
+            }
+        )
+        .len(),
         1
     );
 }
@@ -394,14 +407,23 @@ where
     // if 10_000 or more change, would have used a smaller note
     assert!(received_change_from_transaction_2 < 10_000);
 
+    let all_outputs = secondary
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id
+        .get_all_outputs();
     assert_eq!(
-        secondary
-            .query_for_ids(OutputQuery {
+        AnyPoolOutput::filter_outputs(
+            all_outputs,
+            OutputQuery {
                 spend_status: OutputSpendStatusQuery::only_spent(),
                 pools: OutputPoolQuery::one_pool(Shielded(Sapling)),
-            })
-            .await
-            .len(),
+            }
+        )
+        .len(),
         expected_inputs_for_transaction_2 as usize
     );
 }
