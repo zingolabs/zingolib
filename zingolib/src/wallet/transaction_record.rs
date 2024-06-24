@@ -7,7 +7,7 @@ use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
-use crate::wallet::notes;
+
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
