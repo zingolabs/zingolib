@@ -2,12 +2,11 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::wallet::notes::{interface::OutputConstructor, query::OutputSpendStatusQuery, OutputId};
+use crate::wallet::notes::{interface::OutputConstructor, OutputId};
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
-use crate::wallet::notes;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
