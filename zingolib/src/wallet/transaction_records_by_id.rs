@@ -23,6 +23,8 @@ use zcash_primitives::consensus::BlockHeight;
 
 use zcash_primitives::transaction::TxId;
 
+use super::notes::AnyPoolOutput;
+
 pub mod trait_inputsource;
 
 /// A convenience wrapper, to impl behavior on.
@@ -69,6 +71,15 @@ impl TransactionRecordsById {
         self.0
             .iter()
             .flat_map(|transaction_record| transaction_record.1.query_for_ids(include_notes))
+            .collect()
+    }
+
+    /// Uses a query to select all notes with specific properties and returns
+    /// a vector packing them in the AnyPoolOutput
+    pub fn get_all_outputs(&self) -> Vec<AnyPoolOutput> {
+        self.0
+            .iter()
+            .flat_map(|transaction_record| transaction_record.1.get_all_outputs())
             .collect()
     }
 
