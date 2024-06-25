@@ -15,7 +15,6 @@ pub(crate) enum CommandError {
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
     ConversionFailed(crate::utils::error::ConversionError),
-    MultipleReceivers,
     MissingZenniesForZingoFlag,
     ZenniesFlagNonBool(String),
 }
@@ -50,7 +49,6 @@ impl fmt::Display for CommandError {
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
             ConversionFailed(e) => write!(f, "conversion failed. {}", e),
-            MultipleReceivers => write!(f, "'send all' can only accept one receiver."),
             MissingZenniesForZingoFlag => {
                 write!(f, "Zennies flag must be set to 'true' or 'false'.")
             }
