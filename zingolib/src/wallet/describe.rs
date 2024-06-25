@@ -105,13 +105,14 @@ impl LightWallet {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Sums the transparent balance (unspent)
     pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
                 self.get_utxos()
                     .await
                     .iter()
+                    .filter(|transparent_output| transparent_output.is_unspent())
                     .filter(|utxo| match addr.as_ref() {
                         Some(a) => utxo.address == *a,
                         None => true,
