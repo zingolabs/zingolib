@@ -611,9 +611,9 @@ impl Command for SpendableBalanceCommand {
             earmarked to the zingolabs developer fund with each transaction.
 
             Usage:
-            spendablebalance <address> [zennies_for_zingo]
+            spendablebalance <address>
             OR
-            spendablebalance { "address": "<address>", "zennies_for_zingo": "<true|false>" }
+            spendablebalance { "address": "<address>", "zennies_for_zingo": <true|false> }
 
         "#}
     }
