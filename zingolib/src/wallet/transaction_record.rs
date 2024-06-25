@@ -186,24 +186,20 @@ impl TransactionRecord {
     }
 
     /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn get_all_requested_outputs(
-        &self,
-        include_notes: OutputQuery,
-    ) -> Vec<notes::AnyPoolOutput> {
+    pub fn get_all_requested_outputs(&self, include_notes: OutputQuery) -> Vec<notes::Output> {
         let mut set = vec![];
         let mut transparents = vec![];
         let mut saplings = vec![];
         let mut orchards = vec![];
         let spend_status_query = *include_notes.spend_status();
         if *include_notes.transparent() {
-            transparents =
-                notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
+            transparents = notes::Output::get_all_outputs_with_status(self, spend_status_query);
         }
         if *include_notes.sapling() {
-            saplings = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
+            saplings = notes::Output::get_all_outputs_with_status(self, spend_status_query);
         }
         if *include_notes.orchard() {
-            orchards = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
+            orchards = notes::Output::get_all_outputs_with_status(self, spend_status_query);
         }
         set.extend(transparents);
         set.extend(saplings);
