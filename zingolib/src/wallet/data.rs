@@ -849,19 +849,9 @@ pub mod summaries {
         pub fn balance_delta(&self) -> Option<i64> {
             match self.kind {
                 TransactionKind::Sent(SendType::Send) => {
-                    if let Some(fee) = self.fee() {
-                        Some(-((self.value() + fee) as i64))
-                    } else {
-                        None
-                    }
+                    self.fee().map(|fee| -((self.value() + fee) as i64))
                 }
-                TransactionKind::Sent(SendType::Shield) => {
-                    if let Some(fee) = self.fee() {
-                        Some(-(fee as i64))
-                    } else {
-                        None
-                    }
-                }
+                TransactionKind::Sent(SendType::Shield) => self.fee().map(|fee| -(fee as i64)),
                 TransactionKind::Received => Some(self.value() as i64),
             }
         }

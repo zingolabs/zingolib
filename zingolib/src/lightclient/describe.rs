@@ -5,12 +5,10 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::{HashMap, HashSet};
 use tokio::runtime::Runtime;
 
-use zcash_address::ZcashAddress;
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants},
     memo::Memo,
-    transaction::TxId,
 };
 
 use zingoconfig::margin_fee;
@@ -26,12 +24,11 @@ use crate::{
                 TransactionSummaryBuilder, TransparentCoinSummary, ValueTransfer,
                 ValueTransferBuilder, ValueTransferKind, ValueTransfers,
             },
-            OutgoingTxData, TransactionRecord,
+            OutgoingTxData,
         },
         keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, OutputInterface},
         transaction_record::{SendType, TransactionKind},
-        transaction_records_by_id::TransactionRecordsById,
         LightWallet,
     },
 };
