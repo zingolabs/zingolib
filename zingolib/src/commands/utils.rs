@@ -119,8 +119,10 @@ pub(super) fn parse_send_all_args(
 
 // Parse the arguments for `spendable_balance`.
 // The arguments have two possible formats:
-// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>"}]'
+// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "zennies_for_zingo": <true|false>}]'
 // - 1 argument for a single address. &["<address>"]
+// NOTE: zennies_for_zingo can only be set true in a JSON
+// string.
 pub(super) fn parse_spendable_balance_args(
     args: &[&str],
     chain: &ChainType,
@@ -129,42 +131,24 @@ pub(super) fn parse_spendable_balance_args(
         return Err(CommandError::InvalidArguments);
     }
     let address: Address;
-    let zennies_for_zingo;
+    let zennies_for_zingo: bool;
 
     if let Ok(addr) = address_from_str(args[0], chain) {
         address = addr;
-        if args.len() == 2 {
-            if args[1] == "true" {
-                zennies_for_zingo = true;
-            } else if args[1] == "false" {
-                zennies_for_zingo = false;
-            } else {
-                return Err(CommandError::MissingZenniesForZingoFlag);
-            }
-        } else {
-            return Err(CommandError::MissingZenniesForZingoFlag);
-        }
+        zennies_for_zingo = false;
     } else {
-        let json_args =
-            json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+        let json_arg = json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
 
-        if !json_args.is_array() {
-            return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
+        if json_arg.is_array() {
+            return Err(CommandError::JsonArrayNotObj(
+                "Pass an object, not an array.".to_string(),
+            ));
         }
-        if json_args.is_empty() {
+        if json_arg.is_empty() {
             return Err(CommandError::EmptyJsonArray);
         }
-        if json_args.len() == 2 {
-            let mut members = json_args.members();
-            let address_arg = members.next().expect("should have two json members");
-            address = address_from_json(address_arg, chain)?;
-            zennies_for_zingo = match members.next().expect("Required second argument.").as_bool() {
-                Some(boolean) => boolean,
-                None => return Err(CommandError::MissingZenniesForZingoFlag),
-            };
-        } else {
-            return Err(CommandError::MultipleReceivers);
-        };
+        address = address_from_json(&json_arg, chain)?;
+        zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
     }
 
     Ok((address, zennies_for_zingo))
