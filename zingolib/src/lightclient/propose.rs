@@ -95,6 +95,18 @@ pub enum ProposeShieldError {
     ),
 }
 
+fn append_zingo_zenny_receiver(receivers: &mut Vec<Receiver>) {
+    let dev_donation_receiver = Receiver::new(
+        crate::utils::conversion::address_from_str(
+            zingoconfig::DEVELOPER_DONATION_ADDRESS,
+            &ChainType::Mainnet,
+        )
+        .expect("Hard coded str"),
+        NonNegativeAmount::from_u64(1_000_000).expect("Hard coded u64."),
+        Some(MemoBytes::from_bytes(b"A Zenny for Zingo!").expect("Hard Coded memo bytes.")),
+    );
+    receivers.push(dev_donation_receiver);
+}
 impl LightClient {
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
@@ -192,18 +204,21 @@ impl LightClient {
     pub async fn propose_send_all(
         &self,
         address: zcash_keys::address::Address,
+        zennies_for_zingo: bool,
         memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
-        let spendable_balance = self.get_spendable_shielded_balance(address.clone()).await?;
+        let spendable_balance = self
+            .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
+            .await?;
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
-        let request = transaction_request_from_receivers(vec![Receiver::new(
-            address,
-            spendable_balance,
-            memo,
-        )])
-        .map_err(ProposeSendError::TransactionRequestFailed)?;
+        let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
+        if zennies_for_zingo {
+            append_zingo_zenny_receiver(&mut receivers);
+        }
+        let request = transaction_request_from_receivers(receivers)
+            .map_err(ProposeSendError::TransactionRequestFailed)?;
         let proposal = self.create_send_proposal(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
@@ -212,6 +227,8 @@ impl LightClient {
 
     /// Returns the total confirmed shielded balance minus any fees required to send those funds to
     /// a given address
+    /// Take zennies_for_zingo flag that if set true, will create a receiver of 1_000_000 ZAT at the
+    /// ZingoLabs developer address.
     ///
     /// # Error
     ///
@@ -221,16 +238,21 @@ impl LightClient {
     pub async fn get_spendable_shielded_balance(
         &self,
         address: zcash_keys::address::Address,
+        zennies_for_zingo: bool,
     ) -> Result<NonNegativeAmount, ProposeSendError> {
         let confirmed_shielded_balance = self
             .wallet
             .confirmed_shielded_balance_excluding_dust()
             .await?;
-        let request = transaction_request_from_receivers(vec![Receiver::new(
+        let mut receivers = vec![Receiver::new(
             address.clone(),
             confirmed_shielded_balance,
             None,
-        )])?;
+        )];
+        if zennies_for_zingo {
+            append_zingo_zenny_receiver(&mut receivers);
+        }
+        let request = transaction_request_from_receivers(receivers)?;
         let failing_proposal = self.create_send_proposal(request).await;
 
         let shortfall = match failing_proposal {

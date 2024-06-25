@@ -5,6 +5,7 @@ pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
     ArgNotJsonOrValidAddress,
     SingleArgNotJsonArray(String),
+    JsonArrayNotObj(String),
     EmptyJsonArray,
     ParseIntFromString(std::num::ParseIntError),
     UnexpectedType(String),
@@ -14,7 +15,8 @@ pub(crate) enum CommandError {
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
     ConversionFailed(crate::utils::error::ConversionError),
-    MultipleReceivers,
+    MissingZenniesForZingoFlag,
+    ZenniesFlagNonBool(String),
 }
 
 impl fmt::Display for CommandError {
@@ -30,6 +32,12 @@ impl fmt::Display for CommandError {
             SingleArgNotJsonArray(e) => {
                 write!(f, "argument cannot be parsed to a json array. {}", e)
             }
+            JsonArrayNotObj(e) => {
+                write!(f, "argument cannot be a json array. {}", e)
+            }
+            ZenniesFlagNonBool(e) => {
+                write!(f, "Argument must be a JSON bool. {}", e)
+            }
             EmptyJsonArray => write!(f, "json array has no arguments"),
             ParseIntFromString(e) => write!(f, "failed to parse argument. {}", e),
             UnexpectedType(e) => write!(f, "arguments cannot be parsed to expected type. {}", e),
@@ -41,7 +49,9 @@ impl fmt::Display for CommandError {
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
             ConversionFailed(e) => write!(f, "conversion failed. {}", e),
-            MultipleReceivers => write!(f, "'send all' can only accept one receiver."),
+            MissingZenniesForZingoFlag => {
+                write!(f, "Zennies flag must be set to 'true' or 'false'.")
+            }
         }
     }
 }
