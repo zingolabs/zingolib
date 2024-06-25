@@ -121,7 +121,7 @@ pub(super) fn parse_send_all_args(
 // The arguments have two possible formats:
 // - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "zennies_for_zingo": <true|false>}]'
 // - 1 argument for a single address. &["<address>"]
-// NOTE: zennies_for_zingo can only be set true in a JSON
+// NOTE: zennies_for_zingo can only be set in a JSON
 // string.
 pub(super) fn parse_spendable_balance_args(
     args: &[&str],
