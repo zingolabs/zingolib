@@ -879,15 +879,15 @@ impl Command for SendAllCommand {
             Propose to transfer all ZEC from shielded pools to a given address.
             The fee required to send this transaction will be added to the proposal and displayed to the user.
             The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
-            "zennies_for_zingo" must be specified, if set to 'true' 1_000_000 ZAT will be sent to the zingolabs
-            developer address with each transaction.
+            If invoked with a JSON arg "zennies_for_zingo" must be specified, if set to 'true' 1_000_000 ZAT
+            will be sent to the zingolabs developer address with each transaction.
 
             Warning:
                 Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.
             Usage:
-                sendall <address> <zennies_for_zingo> "<optional memo>"
+                sendall <address> "<optional memo>"
                 OR
-                sendall '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": "<true|false>" }'
+                sendall '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": <true|false> }'
             Example:
                 sendall ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
                 confirm

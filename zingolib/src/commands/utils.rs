@@ -83,53 +83,37 @@ pub(super) fn parse_send_all_args(
     let address: Address;
     let memo: Option<MemoBytes>;
     let zennies_for_zingo: bool;
-    if args[1] == "false" {
-        zennies_for_zingo = false;
-    } else if args[1] == "true" {
-        zennies_for_zingo = true;
-    } else {
-        return Err(CommandError::MissingZenniesForZingoFlag);
-    }
-    if args.len() == 2 {
+    if args.len() == 1 {
         if let Ok(addr) = address_from_str(args[0], chain) {
-            // Address from first string, zennies for zingo from second
             address = addr;
             memo = None;
             check_memo_compatibility(&address, &memo)?;
+            zennies_for_zingo = false;
         } else {
-            let json_args =
+            let json_arg =
                 json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
-
-            if !json_args.is_array() {
-                return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
+            if json_arg.is_array() {
+                return Err(CommandError::JsonArrayNotObj(json_arg.to_string()));
             }
-            if json_args.is_empty() {
+            if json_arg.is_empty() {
                 return Err(CommandError::EmptyJsonArray);
             }
-            let json_args = if json_args.len() == 1 {
-                json_args
-                    .members()
-                    .next()
-                    .expect("should have a single json member")
-            } else {
-                return Err(CommandError::MultipleReceivers);
-            };
-
-            address = address_from_json(json_args, chain)?;
-            memo = memo_from_json(json_args)?;
+            address = address_from_json(&json_arg, chain)?;
+            memo = memo_from_json(&json_arg)?;
             check_memo_compatibility(&address, &memo)?;
+            zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
         }
-    } else if args.len() == 3 {
+    } else if args.len() == 2 {
+        zennies_for_zingo = false;
         address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
         memo = Some(
-            wallet::utils::interpret_memo_string(args[2].to_string())
+            wallet::utils::interpret_memo_string(args[1].to_string())
                 .map_err(CommandError::InvalidMemo)?,
         );
         check_memo_compatibility(&address, &memo)?;
     } else {
         return Err(CommandError::InvalidArguments);
     }
-
     Ok((address, zennies_for_zingo, memo))
 }
 
@@ -212,6 +196,17 @@ fn address_from_json(json_array: &JsonValue, chain: &ChainType) -> Result<Addres
     address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)
 }
 
+fn zennies_flag_from_json(json_arg: &JsonValue) -> Result<bool, CommandError> {
+    if !json_arg.has_key("zennies_for_zingo") {
+        return Err(CommandError::MissingZenniesForZingoFlag);
+    }
+    match json_arg["zennies_for_zingo"].as_bool() {
+        Some(boolean) => Ok(boolean),
+        None => Err(CommandError::ZenniesFlagNonBool(
+            json_arg["zennies_for_zingo"].to_string(),
+        )),
+    }
+}
 fn zatoshis_from_json(json_array: &JsonValue) -> Result<NonNegativeAmount, CommandError> {
     if !json_array.has_key("amount") {
         return Err(CommandError::MissingKey("amount".to_string()));
@@ -413,42 +408,42 @@ mod tests {
         let memo_str = "test memo";
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
-        // with memo
-        let send_args = &[address_str, "false", memo_str];
-        assert_eq!(
-            super::parse_send_all_args(send_args, &chain).unwrap(),
-            (address.clone(), false, Some(memo.clone()))
-        );
-        let send_args = &[address_str, "true", memo_str];
-        assert_eq!(
-            super::parse_send_all_args(send_args, &chain).unwrap(),
-            (address.clone(), true, Some(memo.clone()))
-        );
-
-        // invalid address
-        let send_args = &["invalid_address", "false"];
-        assert!(matches!(
-            super::parse_send_all_args(send_args, &chain),
-            Err(CommandError::ArgNotJsonOrValidAddress)
-        ));
-
-        // multiple receivers
-        let send_args = &["[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\"}, \
-                    {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
-                    \"memo\":\"test memo\"}]", "false"];
-        assert!(matches!(
-            super::parse_send_all_args(send_args, &chain),
-            Err(CommandError::MultipleReceivers)
-        ));
-        // JSON single receivers
+        // JSON single receiver
         let single_receiver =
-            &["[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
-                 \"memo\":\"test memo\"}]",
-                 "false"];
+            &["{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                 \"memo\":\"test memo\", \
+                 \"zennies_for_zingo\":false}"];
         assert_eq!(
             super::parse_send_all_args(single_receiver, &chain).unwrap(),
             (address.clone(), false, Some(memo.clone()))
         );
+        // NonBool Zenny Flag
+        let nb_zenny =
+            &["{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                 \"memo\":\"test memo\", \
+                 \"zennies_for_zingo\":\"false\"}"];
+        assert!(matches!(
+            super::parse_send_all_args(nb_zenny, &chain),
+            Err(CommandError::ZenniesFlagNonBool(_))
+        ));
+        // with memo
+        let send_args = &[address_str, memo_str];
+        assert_eq!(
+            super::parse_send_all_args(send_args, &chain).unwrap(),
+            (address.clone(), false, Some(memo.clone()))
+        );
+        let send_args = &[address_str, memo_str];
+        assert_eq!(
+            super::parse_send_all_args(send_args, &chain).unwrap(),
+            (address.clone(), false, Some(memo.clone()))
+        );
+
+        // invalid address
+        let send_args = &["invalid_address"];
+        assert!(matches!(
+            super::parse_send_all_args(send_args, &chain),
+            Err(CommandError::ArgNotJsonOrValidAddress)
+        ));
     }
 
     #[test]

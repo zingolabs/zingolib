@@ -5,6 +5,7 @@ pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
     ArgNotJsonOrValidAddress,
     SingleArgNotJsonArray(String),
+    JsonArrayNotObj(String),
     EmptyJsonArray,
     ParseIntFromString(std::num::ParseIntError),
     UnexpectedType(String),
@@ -16,6 +17,7 @@ pub(crate) enum CommandError {
     ConversionFailed(crate::utils::error::ConversionError),
     MultipleReceivers,
     MissingZenniesForZingoFlag,
+    ZenniesFlagNonBool(String),
 }
 
 impl fmt::Display for CommandError {
@@ -30,6 +32,12 @@ impl fmt::Display for CommandError {
             ),
             SingleArgNotJsonArray(e) => {
                 write!(f, "argument cannot be parsed to a json array. {}", e)
+            }
+            JsonArrayNotObj(e) => {
+                write!(f, "argument cannot be a json array. {}", e)
+            }
+            ZenniesFlagNonBool(e) => {
+                write!(f, "Argument must be a JSON bool. {}", e)
             }
             EmptyJsonArray => write!(f, "json array has no arguments"),
             ParseIntFromString(e) => write!(f, "failed to parse argument. {}", e),
