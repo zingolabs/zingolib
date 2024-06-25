@@ -37,4 +37,5 @@ namespace zingo {
   string save_to_b64();
   string get_latest_block_server(string serveruri);
   string get_developer_donation_address();
+  string get_value_transfers();
 };
