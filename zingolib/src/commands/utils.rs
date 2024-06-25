@@ -71,7 +71,7 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
     Ok(send_args)
 }
 // The send arguments have two possible formats:
-// - 3 arguments in the form of:
+// - 1 arguments in the form of:
 //    *  a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>", "zennies_for_zingo":<true|false>}]'
 // - 1 + 1 optional arguments for a single address send. &["<address>", "<optional memo>"]
 pub(super) fn parse_send_all_args(
