@@ -574,7 +574,7 @@ pub mod summaries {
             };
             let mut memos = String::new();
             for (index, memo) in self.memos().into_iter().enumerate() {
-                memos.push_str(&format!("\n\tmemo {}: {}", index, memo));
+                memos.push_str(&format!("\n\tmemo {}: {}", (index + 1), memo));
             }
             write!(
                 f,
@@ -595,10 +595,10 @@ pub mod summaries {
                 datetime,
                 self.status,
                 u64::from(self.blockheight),
-                self.kind,
-                self.value,
                 transaction_fee,
                 zec_price,
+                self.kind,
+                self.value,
                 recipient_address,
                 pool_received,
                 memos
