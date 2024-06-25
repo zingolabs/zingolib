@@ -95,6 +95,18 @@ pub enum ProposeShieldError {
     ),
 }
 
+fn append_zingo_zenny_receiver(receivers: &mut Vec<Receiver>) {
+    let dev_donation_receiver = Receiver::new(
+        crate::utils::conversion::address_from_str(
+            zingoconfig::DEVELOPER_DONATION_ADDRESS,
+            &ChainType::Mainnet,
+        )
+        .expect("Hard coded str"),
+        NonNegativeAmount::from_u64(1_000_000).expect("Hard coded u64."),
+        Some(MemoBytes::from_bytes(b"A Zenny for Zingo!").expect("Hard Coded memo bytes.")),
+    );
+    receivers.push(dev_donation_receiver);
+}
 impl LightClient {
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
@@ -201,12 +213,12 @@ impl LightClient {
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
-        let request = transaction_request_from_receivers(vec![Receiver::new(
-            address,
-            spendable_balance,
-            memo,
-        )])
-        .map_err(ProposeSendError::TransactionRequestFailed)?;
+        let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
+        if zennies_for_zingo {
+            append_zingo_zenny_receiver(&mut receivers);
+        }
+        let request = transaction_request_from_receivers(receivers)
+            .map_err(ProposeSendError::TransactionRequestFailed)?;
         let proposal = self.create_send_proposal(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
@@ -238,16 +250,7 @@ impl LightClient {
             None,
         )];
         if zennies_for_zingo {
-            let dev_donation_receiver = Receiver::new(
-                crate::utils::conversion::address_from_str(
-                    zingoconfig::DEVELOPER_DONATION_ADDRESS,
-                    &ChainType::Mainnet,
-                )
-                .expect("Hard coded str"),
-                NonNegativeAmount::from_u64(1_000_000).expect("Hard coded u64."),
-                Some(MemoBytes::from_bytes(b"A Zenny for Zingo!").expect("Hard Coded memo bytes.")),
-            );
-            receivers.push(dev_donation_receiver);
+            append_zingo_zenny_receiver(&mut receivers);
         }
         let request = transaction_request_from_receivers(receivers)?;
         let failing_proposal = self.create_send_proposal(request).await;
