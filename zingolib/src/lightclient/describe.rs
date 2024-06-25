@@ -522,53 +522,6 @@ impl LightClient {
         json::JsonValue::from(self.value_transfers().await).pretty(2)
     }
 
-    // async fn list_value_transfers_and_capture_errors(
-    //     &self,
-    // ) -> (Vec<ValueTransfer>, Vec<ValueTransferRecordingError>) {
-    //     let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-    //     let mut errors: Vec<ValueTransferRecordingError> = Vec::new();
-    //     let transaction_records_by_id = &self
-    //         .wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .read()
-    //         .await
-    //         .transaction_records_by_id;
-
-    //     for (txid, transaction_record) in transaction_records_by_id.iter() {
-    //         if let Err(value_recording_error) = LightClient::record_value_transfers(
-    //             &mut value_transfers,
-    //             *txid,
-    //             transaction_record,
-    //             transaction_records_by_id,
-    //         ) {
-    //             errors.push(value_recording_error)
-    //         };
-
-    //         if let Ok(tx_fee) =
-    //             transaction_records_by_id.calculate_transaction_fee(transaction_record)
-    //         {
-    //             let (block_height, datetime, price, pending) = (
-    //                 transaction_record.status.get_height(),
-    //                 transaction_record.datetime,
-    //                 transaction_record.price,
-    //                 !transaction_record.status.is_confirmed(),
-    //             );
-    //             value_transfers.push(ValueTransfer {
-    //                 block_height,
-    //                 datetime,
-    //                 kind: ValueTransferKind::Fee { amount: tx_fee },
-    //                 memos: vec![],
-    //                 price,
-    //                 txid: *txid,
-    //                 pending,
-    //             });
-    //         };
-    //     }
-    //     value_transfers.sort_by_key(|summary| summary.block_height);
-    //     (value_transfers, errors)
-    // }
-
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
     pub async fn transaction_summaries(&self) -> TransactionSummaries {
         let transaction_map = self
@@ -708,42 +661,41 @@ impl LightClient {
             .block_on(async move { self.do_seed_phrase().await })
     }
 
-    // /// TODO: Add Doc Comment Here!
-    // pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-    //     let summaries = self.value_transfers().await;
-    //     let mut memobytes_by_address = HashMap::new();
-    //     for summary in summaries {
-    //         match summary.kind {
-    //             ValueTransferKind::Sent {
-    //                 recipient_address, ..
-    //             } => {
-    //                 let address = recipient_address.encode();
-    //                 let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
-    //                 memobytes_by_address
-    //                     .entry(address)
-    //                     .and_modify(|e| *e += bytes)
-    //                     .or_insert(bytes);
-    //             }
-    //             ValueTransferKind::SendToSelf { .. }
-    //             | ValueTransferKind::Received { .. }
-    //             | ValueTransferKind::Fee { .. } => (),
-    //         }
-    //     }
-    //     finsight::TotalMemoBytesToAddress(memobytes_by_address)
-    // }
+    /// TODO: Add Doc Comment Here!
+    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
+        let value_transfers = self.value_transfers().await.0;
+        let mut memobytes_by_address = HashMap::new();
+        for value_transfer in value_transfers {
+            if let ValueTransferKind::Sent = value_transfer.kind() {
+                let address = value_transfer
+                    .recipient_address()
+                    .expect("sent value transfer should always have a recipient_address")
+                    .to_string();
+                let bytes = value_transfer
+                    .memos()
+                    .iter()
+                    .fold(0, |sum, m| sum + m.len());
+                memobytes_by_address
+                    .entry(address)
+                    .and_modify(|e| *e += bytes)
+                    .or_insert(bytes);
+            }
+        }
+        finsight::TotalMemoBytesToAddress(memobytes_by_address)
+    }
 
-    // /// TODO: Add Doc Comment Here!
-    // pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
-    //     let values_sent_to_addresses = self.value_transfer_by_to_address().await;
-    //     let mut by_address_number_sends = HashMap::new();
-    //     for key in values_sent_to_addresses.0.keys() {
-    //         let number_sends = values_sent_to_addresses.0[key].len() as u64;
-    //         by_address_number_sends.insert(key.clone(), number_sends);
-    //     }
-    //     finsight::TotalSendsToAddress(by_address_number_sends)
-    // }
+    /// TODO: Add Doc Comment Here!
+    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_number_sends = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let number_sends = values_sent_to_addresses.0[key].len() as u64;
+            by_address_number_sends.insert(key.clone(), number_sends);
+        }
+        finsight::TotalSendsToAddress(by_address_number_sends)
+    }
 
-    // /// TODO: Add Doc Comment Here!
+    /// TODO: Add Doc Comment Here!
     pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
         let values_sent_to_addresses = self.value_transfer_by_to_address().await;
         let mut by_address_total = HashMap::new();
@@ -958,16 +910,10 @@ impl LightClient {
                     .recipient_address()
                     .expect("sent value transfer should always have a recipient_address")
                     .to_string();
-                if let std::collections::hash_map::Entry::Vacant(e) =
-                    amount_by_address.entry(address.clone())
-                {
-                    e.insert(vec![value_transfer.value()]);
-                } else {
-                    amount_by_address
-                        .get_mut(&address)
-                        .expect("should not reach this part of logic if key didnt already exist")
-                        .push(value_transfer.value());
-                };
+                amount_by_address
+                    .entry(address)
+                    .and_modify(|e: &mut Vec<u64>| e.push(value_transfer.value()))
+                    .or_insert(vec![value_transfer.value()]);
             }
         }
         finsight::ValuesSentToAddress(amount_by_address)

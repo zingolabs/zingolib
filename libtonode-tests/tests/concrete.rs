@@ -3413,10 +3413,6 @@ mod slow {
 
         let total_fee = get_fees_paid_by_client(&client).await;
         assert_eq!(total_fee, test_dev_total_expected_fee);
-        let mut total_value_to_addrs_iter = client.do_total_value_to_address().await.0.into_iter();
-        let from_finsight = total_value_to_addrs_iter.next().unwrap().1;
-        assert_eq!(from_finsight, total_fee);
-        assert!(total_value_to_addrs_iter.next().is_none());
     }
     #[tokio::test]
     async fn factor_do_shield_to_call_do_send() {
@@ -3545,17 +3541,17 @@ mod slow {
         from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
-        // assert_eq!(
-        //     JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
-        //     "2".to_string()
-        // );
-        // from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
-        //     .await
-        //     .unwrap();
-        // assert_eq!(
-        //     JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
-        //     "6".to_string()
-        // );
+        assert_eq!(
+            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+            "2".to_string()
+        );
+        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
+            .await
+            .unwrap();
+        assert_eq!(
+            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+            "6".to_string()
+        );
     }
 
     #[tokio::test]
@@ -4447,20 +4443,4 @@ async fn zip317_send_all_zero_value() {
         proposal_error,
         Err(ProposeSendError::ZeroValueSendAll)
     ))
-}
-
-#[tokio::test]
-async fn list_tx_temp_test() {
-    let (_regtest_manager, _cph, faucet, recipient, _) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
-
-    from_inputs::quick_send(
-        &recipient,
-        vec![(&get_base_address_macro!(faucet, "unified"), 20_000, None)],
-    )
-    .await
-    .unwrap();
-
-    // dbg!(recipient.do_list_transactions().await);
-    println!("{}", recipient.value_transfers().await);
 }

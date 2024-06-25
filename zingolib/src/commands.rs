@@ -1261,8 +1261,7 @@ impl Command for MemoBytesToAddressCommand {
         }
 
         RT.block_on(async move {
-            // json::JsonValue::from(lightclient.do_total_memobytes_to_address().await).pretty(2)
-            todo!()
+            json::JsonValue::from(lightclient.do_total_memobytes_to_address().await).pretty(2)
         })
     }
 }
@@ -1287,8 +1286,7 @@ impl Command for ValueToAddressCommand {
         }
 
         RT.block_on(async move {
-            // json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
-            todo!()
+            json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
         })
     }
 }
@@ -1313,8 +1311,7 @@ impl Command for SendsToAddressCommand {
         }
 
         RT.block_on(async move {
-            // json::JsonValue::from(lightclient.do_total_spends_to_address().await).pretty(2)
-            todo!()
+            json::JsonValue::from(lightclient.do_total_spends_to_address().await).pretty(2)
         })
     }
 }
