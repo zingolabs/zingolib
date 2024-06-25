@@ -906,7 +906,7 @@ mod tests {
 
         let expected = queried_spend_state * queried_pools;
 
-        let default_nn_transaction_record = dbg!(nine_note_transaction_record_default());
+        let default_nn_transaction_record = nine_note_transaction_record_default();
         let requested_outputs = default_nn_transaction_record.query_for_ids(
             OutputQuery::stipulations(unspent, pending_spent, spent, transparent, sapling, orchard),
         );
