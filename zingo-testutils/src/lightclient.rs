@@ -35,7 +35,7 @@ pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
 }
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
-    
+
     use zingolib::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
 
     /// Panics if the address, amount or memo conversion fails.

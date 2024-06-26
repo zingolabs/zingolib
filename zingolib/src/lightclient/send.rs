@@ -1,14 +1,6 @@
 //! TODO: Add Mod Description Here!
 
-
-
 use zcash_primitives::consensus::BlockHeight;
-
-
-
-
-
-
 
 use super::LightClient;
 use super::LightWalletSendProgress;
