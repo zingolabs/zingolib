@@ -700,13 +700,15 @@ mod slow {
     };
     use zingo_testvectors::TEST_TXID;
     use zingolib::{
-        lightclient::propose::ProposeSendError::Proposal,
-        lightclient::send::send_with_proposal::QuickSendError,
+        lightclient::{
+            propose::ProposeSendError::Proposal, send::send_with_proposal::QuickSendError,
+        },
         wallet::{
             data::{
                 summaries::{OrchardNoteSummary, SpendStatus, TransactionSummaryBuilder},
                 OutgoingTxData,
             },
+            notes::OutputInterface,
             transaction_record::{SendType, TransactionKind},
             tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
         },
@@ -3567,7 +3569,7 @@ mod slow {
     }
 
     #[tokio::test]
-    async fn orchard_note_existence() {
+    async fn zero_value_change_to_orchard_created() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(100_000).await;
 
@@ -3604,7 +3606,7 @@ mod slow {
                 .collect::<Vec<_>>()
                 .as_slice(),
         );
-        let _orchard_note = recipient
+        let orchard_note = recipient
             .wallet
             .transaction_context
             .transaction_metadata_set
@@ -3615,7 +3617,9 @@ mod slow {
             .unwrap()
             .orchard_notes
             .first()
-            .unwrap();
+            .unwrap()
+            .clone();
+        assert_eq!(orchard_note.value(), 0);
     }
     #[tokio::test]
     async fn aborted_resync() {
