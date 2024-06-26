@@ -132,6 +132,42 @@ mod fast {
 
     use super::*;
     #[tokio::test]
+    async fn sapling_to_transparent() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        dbg!(recipient.do_balance().await);
+
+        from_inputs::quick_send(
+            &faucet,
+            vec![(
+                &get_base_address_macro!(recipient, "sapling"),
+                1_000_000,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        dbg!(recipient.do_balance().await);
+        from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(recipient, "transparent"),
+                500_000,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        dbg!(recipient.do_balance().await);
+        panic!();
+    }
+    #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
