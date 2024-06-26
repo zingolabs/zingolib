@@ -40,7 +40,10 @@ pub fn one_to_one(source_protocol: ShieldedProtocol, target_pool: PoolType, chan
     if sapling_outputs > 0 || sapling_inputs > 0 {
         sapling_outputs = max(sapling_outputs, 2); //MIN_SHIELDED_OUTPUTS;
     }
-    let orchard_actions = max(orchard_inputs, orchard_outputs);
+    let mut orchard_actions = max(orchard_inputs, orchard_outputs);
+    if orchard_actions > 0 {
+        orchard_actions = max(orchard_actions, 2); //MIN_SHIELDED_OUTPUTS;
+    }
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
     let contribution_sapling = max(sapling_outputs, sapling_inputs);
     let contribution_orchard = orchard_actions;
