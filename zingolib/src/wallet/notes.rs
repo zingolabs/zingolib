@@ -21,8 +21,7 @@ use crate::wallet::{notes::query::OutputPoolQuery, transaction_record::Transacti
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
-#[derive(Debug)]
-pub enum AnyPoolOutput {
+pub enum Output {
     /// Transparent Outputs
     TransparentOutput,
     /// Sapling Notes
@@ -30,7 +29,7 @@ pub enum AnyPoolOutput {
     /// Orchard Notes
     OrchardNote,
 }
-impl AnyPoolOutput {
+impl Output {
     /// All the output records
     pub fn get_record_outputs(
         transaction_record: &super::transaction_record::TransactionRecord,
