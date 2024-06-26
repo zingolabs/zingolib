@@ -210,6 +210,7 @@ impl LightClient {
         let spendable_balance = self
             .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
             .await?;
+        dbg!(&spendable_balance);
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }

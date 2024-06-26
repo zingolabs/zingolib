@@ -163,6 +163,10 @@ mod fast {
             )
             .await
             .unwrap();
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
     }
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
