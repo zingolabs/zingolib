@@ -29,7 +29,7 @@ use crate::{
             OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
-        notes::{query::OutputQuery, AnyPoolOutput, OutputInterface},
+        notes::{query::OutputQuery, Output, OutputInterface},
         transaction_record::{SendType, TransactionKind},
         transaction_records_by_id::TransactionRecordsById,
         LightWallet,
@@ -808,7 +808,7 @@ impl LightClient {
 
     /// Get all the outputs packed into an AnyPoolOutput vector
     ///  This method will replace do_list_notes
-    pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::AnyPoolOutput> {
+    pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
         self.wallet
             .transaction_context
             .transaction_metadata_set
@@ -817,7 +817,7 @@ impl LightClient {
             .transaction_records_by_id
             .0
             .values()
-            .flat_map(|record| AnyPoolOutput::get_all_outputs(record))
+            .flat_map(|record| Output::get_all_outputs(record))
             .collect()
     }
 
