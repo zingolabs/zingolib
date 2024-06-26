@@ -71,15 +71,6 @@ pub mod from_inputs {
             .collect()
     }
 
-    /// In a test give sender a raw_receiver to encode and send to
-    pub async fn send(
-        sender: &zingolib::lightclient::LightClient,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<String, String> {
-        let receivers = receivers_from_send_inputs(raw_receivers, &sender.config().chain);
-        sender.do_send(receivers).await.map(|txid| txid.to_string())
-    }
-
     /// Panics if the address conversion fails.
     pub async fn shield(
         shielder: &LightClient,
