@@ -14,6 +14,7 @@ use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
+use crate::fee_tables;
 use crate::lightclient::from_inputs;
 use crate::lightclient::get_base_address;
 
@@ -424,11 +425,15 @@ where
     .await;
 
     let tertiary = environment.create_client().await;
-    with_assertions::propose_send_bump_sync_recipient(
-        &mut environment,
-        &secondary,
-        &tertiary,
-        vec![(pool, 25_000)],
-    )
-    .await;
+    let expected_fee = fee_tables::one_to_one_no_change(shpool, pool);
+    assert_eq!(
+        expected_fee,
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &secondary,
+            &tertiary,
+            vec![(pool, 100_000 - expected_fee)],
+        )
+        .await
+    );
 }
