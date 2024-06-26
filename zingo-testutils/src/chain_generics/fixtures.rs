@@ -430,6 +430,14 @@ where
     } else {
         fee_tables::one_to_one(shpool, pool, true)
     };
+    // assert_eq!(
+    //     secondary
+    //         .propose_send_all(tertiary,
+    //         get_base_address(tertiary, pool))
+    //         .await
+    //         .into_u64(),
+    //     0
+    // );
     assert_eq!(
         expected_fee,
         with_assertions::propose_send_bump_sync_recipient(

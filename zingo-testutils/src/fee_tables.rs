@@ -47,12 +47,12 @@ pub fn one_to_one(source_protocol: ShieldedProtocol, target_pool: PoolType, chan
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
     let contribution_sapling = max(sapling_outputs, sapling_inputs);
     let contribution_orchard = orchard_actions;
-    let whattype = MARGINAL_FEE
+    let total_fee = MARGINAL_FEE
         * max(
             contribution_transparent + contribution_sapling + contribution_orchard,
             GRACE_ACTIONS,
         );
-    whattype
+    total_fee
         .expect("actions expected to be in numberical range")
         .into_u64()
 }
