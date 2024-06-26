@@ -3569,7 +3569,7 @@ mod slow {
     #[tokio::test]
     async fn orchard_note_existence() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::orchard_funded_recipient(500_000).await;
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -3619,7 +3619,7 @@ mod slow {
     #[tokio::test]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::orchard_funded_recipient(500_000).await;
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
             .await
