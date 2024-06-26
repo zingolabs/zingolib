@@ -22,40 +22,6 @@ impl LightClient {
         ) + 1)
     }
 
-    /// Send funds
-    pub async fn do_send(&self, receivers: Receivers) -> Result<TxId, String> {
-        let transaction_submission_height = self.get_submission_height().await?;
-        // First, get the consensus branch ID
-        debug!("Creating transaction");
-
-        let _lock = self.sync_lock.lock().await;
-        // I am not clear on how long this operation may take, but it's
-        // clearly unnecessary in a send that doesn't include sapling
-        // TODO: Remove from sends that don't include Sapling
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()?;
-
-        let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-        self.wallet
-            .send_to_addresses(
-                sapling_prover,
-                vec![
-                    PoolType::Shielded(ShieldedProtocol::Orchard),
-                    PoolType::Shielded(ShieldedProtocol::Sapling),
-                ], // This policy doesn't allow
-                // spend from transparent.
-                receivers,
-                transaction_submission_height,
-                |transaction_bytes| {
-                    crate::grpc_connector::send_transaction(
-                        self.get_server_uri(),
-                        transaction_bytes,
-                    )
-                },
-            )
-            .await
-    }
-
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
