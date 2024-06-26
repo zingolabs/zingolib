@@ -71,22 +71,6 @@ pub mod from_inputs {
             .collect()
     }
 
-    /// Panics if the address conversion fails.
-    pub async fn shield(
-        shielder: &LightClient,
-        pools_to_shield: &[PoolType],
-        address: Option<&str>,
-    ) -> Result<String, String> {
-        let address = address.map(|addr| {
-            zingolib::utils::conversion::address_from_str(addr, &shielder.config().chain)
-                .expect("should be a valid address")
-        });
-        shielder
-            .do_shield(pools_to_shield, address)
-            .await
-            .map(|txid| txid.to_string())
-    }
-
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
     pub fn transaction_request_from_send_inputs(
         requester: &zingolib::lightclient::LightClient,
