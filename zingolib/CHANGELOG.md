@@ -61,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `load_clientconfig` moved to zingoconfig crate
 - `lightclient::LightClient`:
   - `do_save`
+  - `do_send`
+  - `do_shield`
   - `do_save_to_buffer`
   - `do_save_to_buffer_sync`
   - `fix_spent_at_height`
