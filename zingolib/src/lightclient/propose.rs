@@ -242,7 +242,7 @@ impl LightClient {
     ) -> Result<NonNegativeAmount, ProposeSendError> {
         let confirmed_shielded_balance = self
             .wallet
-            .confirmed_shielded_balance_excluding_dust(None)
+            .confirmed_shielded_balance_excluding_dust()
             .await?;
         let mut receivers = vec![Receiver::new(
             address.clone(),

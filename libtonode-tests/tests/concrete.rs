@@ -1409,18 +1409,12 @@ mod slow {
             - first_send_to_transparent
             - (3 * u64::from(MARGINAL_FEE));
         assert_eq!(
-            recipient
-                .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
-                .await,
+            recipient.wallet.pending_balance::<OrchardDomain>().await,
             Some(expected_funds)
         );
         //  (2) The balance is not yet verified
         assert_eq!(
-            recipient
-                .wallet
-                .verified_balance::<OrchardDomain>(None)
-                .await,
+            recipient.wallet.confirmed_balance::<OrchardDomain>().await,
             Some(0)
         );
 
@@ -1604,10 +1598,7 @@ mod slow {
             - external_transparent_3
             - (5 * u64::from(MINIMUM_FEE));
         assert_eq!(
-            recipient
-                .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
-                .await,
+            recipient.wallet.spendable_balance::<OrchardDomain>().await,
             Some(second_wave_expected_funds),
         );
     }
@@ -4437,14 +4428,14 @@ async fn zip317_send_all() {
     assert_eq!(
         recipient
             .wallet
-            .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+            .confirmed_balance_excluding_dust::<SaplingDomain>()
             .await,
         Some(0)
     );
     assert_eq!(
         recipient
             .wallet
-            .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+            .confirmed_balance_excluding_dust::<OrchardDomain>()
             .await,
         Some(0)
     );
