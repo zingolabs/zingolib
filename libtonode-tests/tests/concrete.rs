@@ -717,7 +717,7 @@ mod slow {
     #[tokio::test]
     async fn zero_value_receipts() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
+            scenarios::orchard_funded_recipient(100_000).await;
 
         let sent_value = 0;
         let _sent_transaction_id = from_inputs::quick_send(
@@ -759,7 +759,7 @@ mod slow {
         // 2. Send an incoming transaction to fill the wallet
         let value = 100_000;
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(value).await;
+            scenarios::orchard_funded_recipient(value).await;
 
         let sent_value = value - u64::from(MINIMUM_FEE);
         let sent_transaction_id = from_inputs::quick_send(
@@ -803,7 +803,7 @@ mod slow {
     #[tokio::test]
     async fn witness_clearing() {
         let (regtest_manager, _cph, faucet, recipient, txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
+            scenarios::orchard_funded_recipient(100_000).await;
         let txid = utils::conversion::txid_from_hex_encoded_str(&txid).unwrap();
 
         // 3. Send z-to-z transaction to external z address with a memo
@@ -1280,7 +1280,7 @@ mod slow {
         // Receipt of orchard funds
         let recipient_initial_funds = 100_000_000;
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
+            scenarios::orchard_funded_recipient(recipient_initial_funds).await;
 
         let summary_orchard_receipt = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(5))
@@ -2113,7 +2113,7 @@ mod slow {
     #[tokio::test]
     async fn sandblast_filter_preserves_trees() {
         let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
+            scenarios::orchard_funded_recipient(100_000).await;
         recipient
             .wallet
             .wallet_options
@@ -2244,7 +2244,7 @@ mod slow {
         async fn check_list_value_transfers_across_rescan() {
             let inital_value = 100_000;
             let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-                scenarios::faucet_funded_recipient_default(inital_value).await;
+                scenarios::orchard_funded_recipient(inital_value).await;
             from_inputs::quick_send(
                 recipient,
                 vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
@@ -2276,7 +2276,7 @@ mod slow {
     async fn multiple_outgoing_metadatas_work_right_on_restore() {
         let inital_value = 100_000;
         let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(inital_value).await;
+            scenarios::orchard_funded_recipient(inital_value).await;
         from_inputs::quick_send(
             recipient,
             vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
@@ -2711,7 +2711,7 @@ mod slow {
     async fn mempool_and_balance() {
         let value = 100_000;
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(value).await;
+            scenarios::orchard_funded_recipient(value).await;
 
         let bal = recipient.do_balance().await;
         println!("{}", serde_json::to_string_pretty(&bal).unwrap());
@@ -3446,7 +3446,7 @@ mod slow {
     #[tokio::test]
     async fn dust_sends_change_correctly() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
+            scenarios::orchard_funded_recipient(100_000).await;
 
         // Send of less that transaction fee
         let sent_value = 1000;
@@ -3569,7 +3569,7 @@ mod slow {
     #[tokio::test]
     async fn orchard_note_existence() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
+            scenarios::orchard_funded_recipient(100_000).await;
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -3619,7 +3619,7 @@ mod slow {
     #[tokio::test]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
+            scenarios::orchard_funded_recipient(100_000).await;
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
             .await
@@ -3728,7 +3728,7 @@ mod slow {
     #[tokio::test]
     async fn mempool_spends_correctly_marked_pending_spent() {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(1_000_000).await;
+            scenarios::orchard_funded_recipient(1_000_000).await;
         from_inputs::quick_send(
             &recipient,
             vec![(
@@ -4352,7 +4352,7 @@ async fn proxy_server_worky() {
 #[tokio::test]
 async fn propose_orchard_dust_to_sapling() {
     let (regtest_manager, _cph, faucet, recipient, _) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
+        scenarios::orchard_funded_recipient(100_000).await;
 
     from_inputs::quick_send(
         &faucet,
@@ -4410,7 +4410,7 @@ async fn send_all_toggle_zennies_for_zingo() {
 #[tokio::test]
 async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
+        scenarios::orchard_funded_recipient(100_000).await;
 
     from_inputs::quick_send(
         &faucet,
@@ -4494,7 +4494,7 @@ async fn zip317_send_all() {
 #[tokio::test]
 async fn zip317_send_all_insufficient_funds() {
     let (_regtest_manager, _cph, faucet, recipient, _) =
-        scenarios::faucet_funded_recipient_default(10_000).await;
+        scenarios::orchard_funded_recipient(10_000).await;
 
     let proposal_error = recipient
         .propose_send_all(
@@ -4525,7 +4525,7 @@ async fn zip317_send_all_insufficient_funds() {
 #[tokio::test]
 async fn zip317_send_all_zero_value() {
     let (_regtest_manager, _cph, faucet, recipient, _) =
-        scenarios::faucet_funded_recipient_default(10_000).await;
+        scenarios::orchard_funded_recipient(10_000).await;
 
     let proposal_error = recipient
         .propose_send_all(
