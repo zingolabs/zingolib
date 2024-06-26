@@ -40,12 +40,10 @@ pub fn one_to_one(source_protocol: ShieldedProtocol, target_pool: PoolType, chan
     if sapling_outputs > 0 || sapling_inputs > 0 {
         sapling_outputs = max(sapling_outputs, 2); //MIN_SHIELDED_OUTPUTS;
     }
-    if orchard_outputs > 0 || orchard_inputs > 0 {
-        orchard_outputs = max(orchard_outputs, 2); //MIN_SHIELDED_OUTPUTS;
-    }
+    let orchard_actions = max(orchard_inputs, orchard_outputs);
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
     let contribution_sapling = max(sapling_outputs, sapling_inputs);
-    let contribution_orchard = orchard_outputs + orchard_inputs;
+    let contribution_orchard = orchard_actions;
     let whattype = MARGINAL_FEE
         * max(
             contribution_transparent + contribution_sapling + contribution_orchard,
