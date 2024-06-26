@@ -21,6 +21,7 @@ use crate::wallet::{notes::query::OutputPoolQuery, transaction_record::Transacti
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
+#[derive(Debug)]
 pub enum Output {
     /// Transparent Outputs
     TransparentOutput,

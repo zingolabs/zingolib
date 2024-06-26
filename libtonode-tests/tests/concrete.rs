@@ -4338,7 +4338,7 @@ async fn audit_anyp_outputs() {
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    let lapo = dbg!(recipient.list_outputs().await);
+    let lapo = recipient.list_outputs().await;
     assert_eq!(lapo.len(), 1);
 }
 #[tokio::test]
