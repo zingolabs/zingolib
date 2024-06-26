@@ -29,7 +29,7 @@ pub fn one_to_one(source_protocol: ShieldedProtocol, target_pool: PoolType, chan
         Shielded(Orchard) => orchard_outputs += 1,
     }
     if change {
-        if orchard_outputs + orchard_outputs == 0 {
+        if orchard_inputs + orchard_outputs == 0 {
             // sapling change
             sapling_outputs += 1;
         } else {
