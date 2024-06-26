@@ -817,7 +817,7 @@ impl LightClient {
             .transaction_records_by_id
             .0
             .values()
-            .flat_map(Output::get_all_outputs)
+            .flat_map(Output::get_record_outputs)
             .collect()
     }
 

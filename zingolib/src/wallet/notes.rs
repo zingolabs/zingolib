@@ -80,11 +80,6 @@ impl Output {
             )
             .collect()
     }
-    /// Uses a query to select all notes with specific properties and returns
-    /// a vector packing them in the AnyPoolOutput
-    pub fn get_all_outputs(query: &TransactionRecord) -> Vec<Self> {
-        Self::get_outputs_by_status(query, OutputSpendStatusQuery::any())
-    }
 }
 /// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.
 /// "Over" because pool is not necessary for a unique ID.
