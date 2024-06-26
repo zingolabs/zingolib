@@ -151,21 +151,18 @@ mod fast {
             .await
             .unwrap();
         dbg!(recipient.do_balance().await);
-        from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(recipient, "transparent"),
-                500_000,
+        let _all_proposal = recipient
+            .propose_send_all(
+                address_from_str(
+                    &get_base_address_macro!(faucet, "transparent"),
+                    &recipient.config().chain,
+                )
+                .unwrap(),
+                false,
                 None,
-            )],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            )
             .await
             .unwrap();
-        dbg!(recipient.do_balance().await);
-        panic!();
     }
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
