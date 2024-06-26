@@ -35,7 +35,7 @@ where
         .map(|(address, amount, opt_memo)| (address.as_str(), *amount, *opt_memo))
         .collect();
 
-    let proposal = from_inputs::propose(sender, raw_receivers).await.unwrap();
+    let proposal = dbg!(from_inputs::propose(sender, raw_receivers).await.unwrap());
 
     let txids = sender
         .complete_and_broadcast_stored_proposal()
