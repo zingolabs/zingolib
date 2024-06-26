@@ -3569,13 +3569,13 @@ mod slow {
     #[tokio::test]
     async fn orchard_note_existence() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(500_000).await;
+            scenarios::orchard_funded_recipient(100_000).await;
 
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
-        // 1. Send a transaction to both external t-addr and external z addr and mine it
+        // 1. Send a transaction to an external z addr
         let sent_zvalue = 80_000;
         let sent_zmemo = "Ext z";
         let sent_transaction_id = from_inputs::quick_send(
@@ -3591,6 +3591,7 @@ mod slow {
         .first()
         .to_string();
 
+        // Validate transaction
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
