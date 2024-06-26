@@ -14,6 +14,7 @@ use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
+use crate::fee_tables;
 use crate::lightclient::from_inputs;
 use crate::lightclient::get_base_address;
 
@@ -407,7 +408,7 @@ where
 }
 
 /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
-pub async fn shpool_to_pool<CC>(shpool: ShieldedProtocol, pool: PoolType)
+pub async fn shpool_to_pool<CC>(shpool: ShieldedProtocol, pool: PoolType, make_change: u64)
 where
     CC: ConductChain,
 {
@@ -419,16 +420,32 @@ where
         &mut environment,
         &primary,
         &secondary,
-        vec![(Shielded(shpool), 100_000)],
+        vec![(Shielded(shpool), 100_000 + make_change)],
     )
     .await;
 
     let tertiary = environment.create_client().await;
-    with_assertions::propose_send_bump_sync_recipient(
-        &mut environment,
-        &secondary,
-        &tertiary,
-        vec![(pool, 25_000)],
-    )
-    .await;
+    let expected_fee = if make_change == 0 {
+        fee_tables::one_to_one(shpool, pool, false)
+    } else {
+        fee_tables::one_to_one(shpool, pool, true)
+    };
+    // assert_eq!(
+    //     secondary
+    //         .propose_send_all(tertiary,
+    //         get_base_address(tertiary, pool))
+    //         .await
+    //         .into_u64(),
+    //     0
+    // );
+    assert_eq!(
+        expected_fee,
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &secondary,
+            &tertiary,
+            vec![(pool, 100_000 - expected_fee)],
+        )
+        .await
+    );
 }

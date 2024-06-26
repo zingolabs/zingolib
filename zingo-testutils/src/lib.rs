@@ -34,6 +34,7 @@ use crate::scenarios::setup::TestEnvironmentGenerator;
 
 pub mod assertions;
 pub mod chain_generics;
+pub mod fee_tables;
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
 /// lightclient helpers
