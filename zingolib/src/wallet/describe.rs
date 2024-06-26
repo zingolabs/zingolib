@@ -1,7 +1,9 @@
-//! TODO: Add Mod Discription Here!
-use orchard::note_encryption::OrchardDomain;
+//! Wallet-State reporters as LightWallet methods.
+use zcash_client_backend::ShieldedProtocol;
 
+use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
+
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
@@ -11,8 +13,6 @@ use zcash_primitives::zip339::Mnemonic;
 
 use zcash_note_encryption::Domain;
 
-use zcash_primitives::consensus::BlockHeight;
-
 use crate::utils;
 use crate::wallet::data::TransactionRecord;
 use crate::wallet::notes::OutputInterface;
@@ -20,21 +20,22 @@ use crate::wallet::notes::ShieldedNoteInterface;
 
 use crate::wallet::traits::Diversifiable as _;
 
-use super::error::BalanceError;
-use super::keys::unified::{Capability, WalletCapability};
-use super::notes::TransparentOutput;
-use super::traits::DomainWalletExt;
-use super::traits::Recipient;
+use crate::wallet::error::BalanceError;
+use crate::wallet::keys::unified::{Capability, WalletCapability};
+use crate::wallet::notes::TransparentOutput;
+use crate::wallet::traits::DomainWalletExt;
+use crate::wallet::traits::Recipient;
 
-use super::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::LightWallet;
+use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
-use super::LightWallet;
 impl LightWallet {
-    /// TODO: Add Doc Comment Here!
+    // Core shielded_balance function, other public methods dispatch specific sets of filters to this
+    // method for processing.
+    // This methods ensures that None is returned in the case of a missing view capability
     #[allow(clippy::type_complexity)]
-    pub async fn shielded_balance<D>(
+    async fn get_filtered_balance<D>(
         &self,
-        target_addr: Option<String>,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
     ) -> Option<u64>
     where
@@ -42,17 +43,19 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
-        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
-        let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
-            Some(addr) => {
-                let diversified_address =
-                    &fvk.diversified_address(*notedata.diversifier()).unwrap();
-                *addr
-                    == diversified_address
-                        .b32encode_for_network(&self.transaction_context.config.chain)
+        // For the moment we encode lack of view capability as None
+        match D::SHIELDED_PROTOCOL {
+            ShieldedProtocol::Sapling => {
+                if !self.wallet_capability().sapling.can_view() {
+                    return None;
+                }
             }
-            None => true, // If the addr is none, then get all addrs.
-        };
+            ShieldedProtocol::Orchard => {
+                if !self.wallet_capability().orchard.can_view() {
+                    return None;
+                }
+            }
+        }
         Some(
             self.transaction_context
                 .transaction_metadata_set
@@ -61,17 +64,14 @@ impl LightWallet {
                 .transaction_records_by_id
                 .values()
                 .map(|transaction| {
-                    let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
-                        D::WalletNote::transaction_metadata_notes(transaction)
-                            .iter()
-                            .filter(filter_notes_by_target_addr),
-                    );
+                    let mut selected_notes: Box<dyn Iterator<Item = &D::WalletNote>> =
+                        Box::new(D::WalletNote::transaction_metadata_notes(transaction).iter());
                     // All filters in iterator are applied, by this loop
                     for filtering_fn in filters {
-                        filtered_notes =
-                            Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
+                        selected_notes =
+                            Box::new(selected_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
                     }
-                    filtered_notes
+                    selected_notes
                         .map(|notedata| {
                             if notedata.spent().is_none() && notedata.pending_spent().is_none() {
                                 <D::WalletNote as OutputInterface>::value(notedata)
@@ -85,38 +85,26 @@ impl LightWallet {
         )
     }
 
-    /// TODO: Add Doc Comment Here!
-    // TODO: this should minus the fee of sending the confirmed balance!
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    /// Spendable balance is confirmed balance, that we have the *spend* capability for
+    pub async fn spendable_balance<D: DomainWalletExt>(&self) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
-            self.verified_balance::<OrchardDomain>(target_addr).await
+            self.confirmed_balance::<D>().await
         } else {
             None
         }
     }
-
-    /// TODO: Add Doc Comment Here!
-    // TODO: this should minus the fee of sending the confirmed balance!
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        if let Capability::Spend(_) = self.wallet_capability().sapling {
-            self.verified_balance::<SaplingDomain>(target_addr).await
-        } else {
-            None
-        }
-    }
-
     /// Sums the transparent balance (unspent)
-    pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
+    pub async fn tbalance(&self) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
                 self.get_utxos()
                     .await
                     .iter()
                     .filter(|transparent_output| transparent_output.is_unspent())
-                    .filter(|utxo| match addr.as_ref() {
-                        Some(a) => utxo.address == *a,
-                        None => true,
-                    })
                     .map(|utxo| utxo.value)
                     .sum::<u64>(),
             )
@@ -125,55 +113,32 @@ impl LightWallet {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn unverified_balance<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
+    /// On chain balance
+    pub async fn confirmed_balance<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
-            &[Box::new(|nnmd, transaction| {
-                !transaction
-                    .status
-                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
-                    || nnmd.pending_receipt()
-            })];
-        self.shielded_balance::<D>(target_addr, filters).await
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn verified_balance<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
         let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| {
-                transaction
-                    .status
-                    .is_confirmed_before_or_at(&BlockHeight::from_u32(anchor_height))
-            }),
+            Box::new(|_, transaction| transaction.status.is_confirmed()),
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
         ];
-        self.shielded_balance::<D>(target_addr, filters).await
+        self.get_filtered_balance::<D>(filters).await
+    }
+    /// The amount in orchard notes, not yet on chain
+    pub async fn pending_balance<D: DomainWalletExt>(&self) -> Option<u64>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.get_filtered_balance::<D>(&[Box::new(|note, _| note.pending_receipt())])
+            .await
     }
 
     /// Returns balance for a given shielded pool excluding any notes with value less than marginal fee
     /// that are confirmed on the block chain (the block has at least 1 confirmation)
-    pub async fn confirmed_balance_excluding_dust<D: DomainWalletExt>(
-        &self,
-        target_addr: Option<String>,
-    ) -> Option<u64>
+    pub async fn confirmed_balance_excluding_dust<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -184,7 +149,7 @@ impl LightWallet {
             Box::new(|note, _| !note.pending_receipt()),
             Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
         ];
-        self.shielded_balance::<D>(target_addr, filters).await
+        self.get_filtered_balance::<D>(filters).await
     }
 
     /// Returns total balance of all shielded pools excluding any notes with value less than marginal fee
@@ -196,36 +161,17 @@ impl LightWallet {
     /// Returns an error if the full viewing key is not found or if the balance summation exceeds the valid range of zatoshis.
     pub async fn confirmed_shielded_balance_excluding_dust(
         &self,
-        target_addr: Option<String>,
     ) -> Result<NonNegativeAmount, BalanceError> {
         Ok(utils::conversion::zatoshis_from_u64(
-            self.confirmed_balance_excluding_dust::<OrchardDomain>(target_addr.clone())
+            self.confirmed_balance_excluding_dust::<OrchardDomain>()
                 .await
                 .ok_or(BalanceError::NoFullViewingKey)?
                 + self
-                    .confirmed_balance_excluding_dust::<SaplingDomain>(target_addr)
+                    .confirmed_balance_excluding_dust::<SaplingDomain>()
                     .await
                     .ok_or(BalanceError::NoFullViewingKey)?,
         )?)
     }
-
-    /// Deprecated for `shielded_balance`
-    #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
-        self.shielded_balance::<OrchardDomain>(addr, &[]).await
-    }
-
-    /// Deprecated for `shielded_balance`
-    #[deprecated(note = "deprecated for `shielded_balance` as incorrectly named and unnecessary")]
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
-        self.shielded_balance::<SaplingDomain>(addr, &[]).await
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
-        self.transaction_context.key.clone()
-    }
-
     /// TODO: Add Doc Comment Here!
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &zingoconfig::ChainType,
@@ -426,13 +372,13 @@ mod tests {
 
         assert_eq!(
             wallet
-                .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+                .confirmed_balance_excluding_dust::<SaplingDomain>()
                 .await,
             Some(400_000)
         );
         assert_eq!(
             wallet
-                .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+                .confirmed_balance_excluding_dust::<OrchardDomain>()
                 .await,
             Some(1_605_000)
         );
