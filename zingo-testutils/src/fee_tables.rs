@@ -13,7 +13,7 @@ use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 /// wip
 pub fn one_to_one_no_change(source_protocol: ShieldedProtocol, target_pool: PoolType) -> u64 {
-    let mut transparent_inputs = 0;
+    let transparent_inputs = 0;
     let mut transparent_outputs = 0;
     let mut sapling_inputs = 0;
     let mut sapling_outputs = 0;
@@ -28,9 +28,9 @@ pub fn one_to_one_no_change(source_protocol: ShieldedProtocol, target_pool: Pool
         Shielded(Sapling) => sapling_outputs += 1,
         Shielded(Orchard) => orchard_outputs += 1,
     }
-    let mut contribution_transparent = max(transparent_outputs, transparent_inputs);
-    let mut contribution_sapling = max(sapling_outputs, sapling_inputs);
-    let mut contribution_orchard = max(orchard_outputs, orchard_inputs);
+    let contribution_transparent = max(transparent_outputs, transparent_inputs);
+    let contribution_sapling = max(sapling_outputs, sapling_inputs);
+    let contribution_orchard = max(orchard_outputs, orchard_inputs);
     let whattype = MARGINAL_FEE
         * max(
             contribution_transparent + contribution_sapling + contribution_orchard,
@@ -43,7 +43,7 @@ pub fn one_to_one_no_change(source_protocol: ShieldedProtocol, target_pool: Pool
 
 /// wip
 pub fn one_to_one_with_change(source_protocol: ShieldedProtocol, target_pool: PoolType) -> u64 {
-    let mut transparent_inputs = 0;
+    let transparent_inputs = 0;
     let mut transparent_outputs = 0;
     let mut sapling_inputs = 0;
     let mut sapling_outputs = 0;
@@ -65,9 +65,9 @@ pub fn one_to_one_with_change(source_protocol: ShieldedProtocol, target_pool: Po
         //orchard change
         orchard_outputs += 1;
     }
-    let mut contribution_transparent = max(transparent_outputs, transparent_inputs);
-    let mut contribution_sapling = max(sapling_outputs, sapling_inputs);
-    let mut contribution_orchard = max(orchard_outputs, orchard_inputs);
+    let contribution_transparent = max(transparent_outputs, transparent_inputs);
+    let contribution_sapling = max(sapling_outputs, sapling_inputs);
+    let contribution_orchard = max(orchard_outputs, orchard_inputs);
     let whattype = MARGINAL_FEE
         * max(
             contribution_transparent + contribution_sapling + contribution_orchard,
