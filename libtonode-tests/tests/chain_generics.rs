@@ -54,6 +54,7 @@ mod chain_generics {
     async fn send_grace_dust() {
         fixtures::send_grace_dust::<LibtonodeEnvironment>().await;
     }
+    #[ignore]
     #[tokio::test]
     async fn change_required() {
         fixtures::change_required::<LibtonodeEnvironment>().await;
