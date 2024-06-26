@@ -12,7 +12,7 @@ use zcash_primitives::transaction::fees::zip317::GRACE_ACTIONS;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 /// estimates a fee based on the zip317 protocol rules
-/// https://zips.z.cash/zip-0317
+/// <https://zips.z.cash/zip-0317>
 pub fn one_to_one(source_protocol: ShieldedProtocol, target_pool: PoolType, change: bool) -> u64 {
     let transparent_inputs = 0;
     let mut transparent_outputs = 0;
