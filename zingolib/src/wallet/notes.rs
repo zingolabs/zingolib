@@ -14,9 +14,9 @@ use zcash_client_backend::PoolType;
 
 use zcash_primitives::transaction::TxId;
 
+use crate::wallet::notes::query::OutputPoolQuery;
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
-use crate::wallet::{notes::query::OutputPoolQuery, transaction_record::TransactionRecord};
 
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
