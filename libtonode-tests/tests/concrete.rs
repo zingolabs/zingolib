@@ -3567,6 +3567,56 @@ mod slow {
     }
 
     #[tokio::test]
+    async fn orchard_note_existence() {
+        let (regtest_manager, _cph, faucet, recipient, _txid) =
+            scenarios::faucet_funded_recipient_default(100_000).await;
+
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        // 1. Send a transaction to both external t-addr and external z addr and mine it
+        let sent_zvalue = 80_000;
+        let sent_zmemo = "Ext z";
+        let sent_transaction_id = from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "sapling"),
+                sent_zvalue,
+                Some(sent_zmemo),
+            )],
+        )
+        .await
+        .unwrap()
+        .first()
+        .to_string();
+
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        let requested_txid = &zingolib::wallet::utils::txid_from_slice(
+            hex::decode(sent_transaction_id.clone())
+                .unwrap()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        let _orchard_note = recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .get(requested_txid)
+            .unwrap()
+            .orchard_notes
+            .first()
+            .unwrap();
+    }
+    #[tokio::test]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
@@ -3575,7 +3625,7 @@ mod slow {
             .await
             .unwrap();
 
-        // 4. Send a transaction to both external t-addr and external z addr and mine it
+        // 1. Send a transaction to both external t-addr and external z addr and mine it
         let sent_zvalue = 80_000;
         let sent_zmemo = "Ext z";
         let sent_transaction_id = from_inputs::quick_send(
