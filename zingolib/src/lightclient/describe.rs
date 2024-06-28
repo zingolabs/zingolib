@@ -827,7 +827,7 @@ impl LightClient {
     ///  * TODO:  remove all_notes bool
     ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
     ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
-    ///  * TODO:  DEPRECATE in favor of list_anypool_outputs
+    ///  * TODO:  DEPRECATE in favor of list_outputs
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 
