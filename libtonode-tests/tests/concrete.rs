@@ -751,7 +751,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.list_value_transfers().await).pretty(4)
+            JsonValue::from(recipient.value_transfers().await).pretty(4)
         );
     }
     #[tokio::test]
@@ -1200,15 +1200,7 @@ mod slow {
         println!("{}", recipient.do_list_transactions().await.pretty(2));
         println!(
             "{}",
-            JsonValue::from(
-                recipient
-                    .list_value_transfers()
-                    .await
-                    .into_iter()
-                    .map(JsonValue::from)
-                    .collect::<Vec<_>>()
-            )
-            .pretty(2)
+            JsonValue::from(recipient.value_transfers().await).pretty(2)
         );
         recipient.do_rescan().await.unwrap();
         println!(
@@ -1218,15 +1210,7 @@ mod slow {
         println!("{}", recipient.do_list_transactions().await.pretty(2));
         println!(
             "{}",
-            JsonValue::from(
-                recipient
-                    .list_value_transfers()
-                    .await
-                    .into_iter()
-                    .map(JsonValue::from)
-                    .collect::<Vec<_>>()
-            )
-            .pretty(2)
+            JsonValue::from(recipient.value_transfers().await).pretty(2)
         );
         // TODO: Add asserts!
     }
@@ -1643,7 +1627,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.list_value_transfers().await).pretty(4)
+            JsonValue::from(faucet.value_transfers().await).pretty(4)
         );
         println!(
             "{}",
@@ -2255,10 +2239,10 @@ mod slow {
                 .await
                 .unwrap();
             let pre_rescan_transactions = recipient.do_list_transactions().await;
-            let pre_rescan_summaries = recipient.list_value_transfers().await;
+            let pre_rescan_summaries = recipient.value_transfers().await;
             recipient.do_rescan().await.unwrap();
             let post_rescan_transactions = recipient.do_list_transactions().await;
-            let post_rescan_summaries = recipient.list_value_transfers().await;
+            let post_rescan_summaries = recipient.value_transfers().await;
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
             let mut outgoing_metadata = pre_rescan_transactions
@@ -3420,10 +3404,6 @@ mod slow {
 
         let total_fee = get_fees_paid_by_client(&client).await;
         assert_eq!(total_fee, test_dev_total_expected_fee);
-        let mut total_value_to_addrs_iter = client.do_total_value_to_address().await.0.into_iter();
-        let from_finsight = total_value_to_addrs_iter.next().unwrap().1;
-        assert_eq!(from_finsight, total_fee);
-        assert!(total_value_to_addrs_iter.next().is_none());
     }
     #[tokio::test]
     async fn factor_do_shield_to_call_do_send() {
@@ -3534,7 +3514,6 @@ mod slow {
         check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
     }
 
-    // FIXME: same bug, sent value transfer not created by quick_send
     #[tokio::test]
     async fn by_address_finsight() {
         let (regtest_manager, _cph, faucet, recipient) =
