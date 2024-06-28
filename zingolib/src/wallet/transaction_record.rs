@@ -7,7 +7,6 @@ use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
-use crate::wallet::notes;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use zcash_client_backend::{
@@ -182,32 +181,6 @@ impl TransactionRecord {
                 }
             }
         }
-        set
-    }
-
-    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub fn get_all_requested_outputs(
-        &self,
-        include_notes: OutputQuery,
-    ) -> Vec<notes::AnyPoolOutput> {
-        let mut set = vec![];
-        let mut transparents = vec![];
-        let mut saplings = vec![];
-        let mut orchards = vec![];
-        let spend_status_query = *include_notes.spend_status();
-        if *include_notes.transparent() {
-            transparents =
-                notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
-        }
-        if *include_notes.sapling() {
-            saplings = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
-        }
-        if *include_notes.orchard() {
-            orchards = notes::AnyPoolOutput::get_all_outputs_with_status(self, spend_status_query);
-        }
-        set.extend(transparents);
-        set.extend(saplings);
-        set.extend(orchards);
         set
     }
 
@@ -910,7 +883,7 @@ mod tests {
 
         let expected = queried_spend_state * queried_pools;
 
-        let default_nn_transaction_record = dbg!(nine_note_transaction_record_default());
+        let default_nn_transaction_record = nine_note_transaction_record_default();
         let requested_outputs = default_nn_transaction_record.query_for_ids(
             OutputQuery::stipulations(unspent, pending_spent, spent, transparent, sapling, orchard),
         );

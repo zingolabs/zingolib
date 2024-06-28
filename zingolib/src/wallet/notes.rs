@@ -21,7 +21,8 @@ use crate::wallet::notes::query::OutputSpendStatusQuery;
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
-pub enum AnyPoolOutput {
+#[derive(Debug)]
+pub enum Output {
     /// Transparent Outputs
     TransparentOutput,
     /// Sapling Notes
@@ -29,7 +30,7 @@ pub enum AnyPoolOutput {
     /// Orchard Notes
     OrchardNote,
 }
-impl AnyPoolOutput {
+impl Output {
     /// All the output records
     pub fn get_record_outputs(
         transaction_record: &super::transaction_record::TransactionRecord,
@@ -54,7 +55,7 @@ impl AnyPoolOutput {
     }
 
     /// Every notes' outputinterface for a given spend status
-    pub fn get_all_outputs_with_status(
+    pub fn get_outputs_by_status(
         transaction_record: &super::transaction_record::TransactionRecord,
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<Self> {

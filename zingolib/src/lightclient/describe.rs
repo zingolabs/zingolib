@@ -27,7 +27,7 @@ use crate::{
             OutgoingTxData,
         },
         keys::address_from_pubkeyhash,
-        notes::{query::OutputQuery, OutputInterface},
+        notes::{query::OutputQuery, Output, OutputInterface},
         transaction_record::{SendType, TransactionKind},
         LightWallet,
     },
@@ -38,6 +38,9 @@ use crate::{
 pub enum ValueTransferRecordingError {
     #[error("Fee was not calculable because of error:  {0}")]
     FeeCalculationError(String), // TODO: revisit passed type
+}
+fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
 }
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
@@ -87,24 +90,27 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_balance(&self) -> PoolBalances {
+        let verified_sapling_balance = self.wallet.confirmed_balance::<SaplingDomain>().await;
+        let unverified_sapling_balance = self.wallet.pending_balance::<SaplingDomain>().await;
+        let spendable_sapling_balance = self.wallet.spendable_balance::<SaplingDomain>().await;
+        let sapling_balance = some_sum(verified_sapling_balance, unverified_sapling_balance);
+
+        let verified_orchard_balance = self.wallet.confirmed_balance::<OrchardDomain>().await;
+        let unverified_orchard_balance = self.wallet.pending_balance::<OrchardDomain>().await;
+        let spendable_orchard_balance = self.wallet.spendable_balance::<OrchardDomain>().await;
+        let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
         PoolBalances {
-            sapling_balance: self
-                .wallet
-                .shielded_balance::<SaplingDomain>(None, &[])
-                .await,
-            verified_sapling_balance: self.wallet.verified_balance::<SaplingDomain>(None).await,
-            spendable_sapling_balance: self.wallet.spendable_sapling_balance(None).await,
-            unverified_sapling_balance: self.wallet.unverified_balance::<SaplingDomain>(None).await,
+            sapling_balance,
+            verified_sapling_balance,
+            spendable_sapling_balance,
+            unverified_sapling_balance,
 
-            orchard_balance: self
-                .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
-                .await,
-            verified_orchard_balance: self.wallet.verified_balance::<OrchardDomain>(None).await,
-            spendable_orchard_balance: self.wallet.spendable_orchard_balance(None).await,
-            unverified_orchard_balance: self.wallet.unverified_balance::<OrchardDomain>(None).await,
+            orchard_balance,
+            verified_orchard_balance,
+            spendable_orchard_balance,
+            unverified_orchard_balance,
 
-            transparent_balance: self.wallet.tbalance(None).await,
+            transparent_balance: self.wallet.tbalance().await,
         }
     }
 
@@ -851,12 +857,28 @@ impl LightClient {
         )
     }
 
+    /// Get all the outputs packed into an Output vector
+    ///  This method will replace do_list_notes
+    pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .0
+            .values()
+            .flat_map(Output::get_record_outputs)
+            .collect()
+    }
+
     /// Return a list of notes, if `all_notes` is false, then only return unspent notes
     ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
     ///  * TODO:  The Err variant of the result must be a proper type
     ///  * TODO:  remove all_notes bool
     ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
     ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
+    ///  * TODO:  DEPRECATE in favor of list_outputs
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 

@@ -75,14 +75,14 @@ impl LightClient {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
                                           // as a fn of the transactions structure.
-        let tbal = self
-            .wallet
-            .tbalance(None)
-            .await
-            .expect("to receive a balance");
+        let tbal = if let Some(tbal) = self.wallet.tbalance().await {
+            tbal
+        } else {
+            return Err("no tbal!".to_string());
+        };
         let sapling_bal = self
             .wallet
-            .spendable_sapling_balance(None)
+            .spendable_balance::<sapling_crypto::note_encryption::SaplingDomain>()
             .await
             .unwrap_or(0);
 

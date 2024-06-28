@@ -1393,18 +1393,12 @@ mod slow {
             - first_send_to_transparent
             - (3 * u64::from(MARGINAL_FEE));
         assert_eq!(
-            recipient
-                .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
-                .await,
+            recipient.wallet.pending_balance::<OrchardDomain>().await,
             Some(expected_funds)
         );
         //  (2) The balance is not yet verified
         assert_eq!(
-            recipient
-                .wallet
-                .verified_balance::<OrchardDomain>(None)
-                .await,
+            recipient.wallet.confirmed_balance::<OrchardDomain>().await,
             Some(0)
         );
 
@@ -1588,10 +1582,7 @@ mod slow {
             - external_transparent_3
             - (5 * u64::from(MINIMUM_FEE));
         assert_eq!(
-            recipient
-                .wallet
-                .shielded_balance::<OrchardDomain>(None, &[])
-                .await,
+            recipient.wallet.spendable_balance::<OrchardDomain>().await,
             Some(second_wave_expected_funds),
         );
     }
@@ -4309,7 +4300,61 @@ async fn propose_orchard_dust_to_sapling() {
     .await
     .unwrap();
 }
+#[tokio::test]
+async fn audit_anyp_outputs() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+    assert_eq!(recipient.list_outputs().await.len(), 0);
+    from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            600_000,
+            Some("600_000 orchard funds"),
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    let lapo = recipient.list_outputs().await;
+    assert_eq!(lapo.len(), 1);
+}
+#[tokio::test]
+async fn send_all_toggle_zennies_for_zingo() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
 
+    let initial_funds = 2_000_000;
+    let zennies_magnitude = 1_000_000;
+    let expected_fee = 15_000; // 1 orchard note in, and 3 out
+    from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(&recipient, "unified"),
+            initial_funds,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    let external_uaddress = address_from_str(
+        &get_base_address_macro!(faucet, "unified"),
+        &faucet.config().chain,
+    )
+    .unwrap();
+    let expected_balance =
+        NonNegativeAmount::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
+    assert_eq!(
+        recipient
+            .get_spendable_shielded_balance(external_uaddress, true)
+            .await
+            .unwrap(),
+        expected_balance
+    );
+}
 #[tokio::test]
 async fn zip317_send_all() {
     let (regtest_manager, _cph, faucet, recipient, _) =
@@ -4364,6 +4409,7 @@ async fn zip317_send_all() {
                 &recipient.config().chain,
             )
             .unwrap(),
+            false,
             None,
         )
         .await
@@ -4380,14 +4426,14 @@ async fn zip317_send_all() {
     assert_eq!(
         recipient
             .wallet
-            .confirmed_balance_excluding_dust::<SaplingDomain>(None)
+            .confirmed_balance_excluding_dust::<SaplingDomain>()
             .await,
         Some(0)
     );
     assert_eq!(
         recipient
             .wallet
-            .confirmed_balance_excluding_dust::<OrchardDomain>(None)
+            .confirmed_balance_excluding_dust::<OrchardDomain>()
             .await,
         Some(0)
     );
@@ -4405,6 +4451,7 @@ async fn zip317_send_all_insufficient_funds() {
                 &recipient.config().chain,
             )
             .unwrap(),
+            false,
             None,
         )
         .await;
@@ -4435,6 +4482,7 @@ async fn zip317_send_all_zero_value() {
                 &recipient.config().chain,
             )
             .unwrap(),
+            false,
             None,
         )
         .await;
