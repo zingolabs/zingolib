@@ -29,7 +29,7 @@ use crate::{
             OutgoingTxData, TransactionRecord,
         },
         keys::address_from_pubkeyhash,
-        notes::{query::OutputQuery, OutputInterface},
+        notes::{query::OutputQuery, Output, OutputInterface},
         transaction_record::{SendType, TransactionKind},
         transaction_records_by_id::TransactionRecordsById,
         LightWallet,
@@ -806,12 +806,28 @@ impl LightClient {
         )
     }
 
+    /// Get all the outputs packed into an Output vector
+    ///  This method will replace do_list_notes
+    pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .0
+            .values()
+            .flat_map(Output::get_record_outputs)
+            .collect()
+    }
+
     /// Return a list of notes, if `all_notes` is false, then only return unspent notes
     ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
     ///  * TODO:  The Err variant of the result must be a proper type
     ///  * TODO:  remove all_notes bool
     ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
     ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
+    ///  * TODO:  DEPRECATE in favor of list_outputs
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 
