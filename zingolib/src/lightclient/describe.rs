@@ -806,7 +806,7 @@ impl LightClient {
         )
     }
 
-    /// Get all the outputs packed into an AnyPoolOutput vector
+    /// Get all the outputs packed into an Output vector
     ///  This method will replace do_list_notes
     pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
         self.wallet
