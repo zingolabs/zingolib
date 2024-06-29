@@ -198,13 +198,7 @@ where
     let secondary_outputs = secondary.list_outputs().await;
     let spent_orchard_outputs: Vec<_> = secondary_outputs
         .iter()
-        .filter(|o| {
-            if let Shielded(Orchard) = o.pool_type() {
-                true
-            } else {
-                false
-            }
-        })
+        .filter(|o| matches!(o.pool_type(), Shielded(Orchard)))
         .filter(|o| o.is_spent())
         .collect();
     assert_eq!(spent_orchard_outputs.len(), 1);
@@ -404,13 +398,7 @@ where
     let all_outputs = secondary.list_outputs().await;
     let spent_sapling_outputs: Vec<_> = all_outputs
         .iter()
-        .filter(|o| {
-            if let Shielded(Sapling) = o.pool_type() {
-                true
-            } else {
-                false
-            }
-        })
+        .filter(|o| matches!(o.pool_type(), Shielded(Sapling)))
         .filter(|o| o.is_spent())
         .collect();
     assert_eq!(

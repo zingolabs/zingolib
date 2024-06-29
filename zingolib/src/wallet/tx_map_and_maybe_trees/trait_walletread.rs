@@ -43,13 +43,9 @@ fn has_unspent_shielded_outputs(
 ) -> bool {
     let outputs =
         Output::get_all_outputs_with_status(transaction, OutputSpendStatusQuery::only_unspent());
-    outputs.iter().any(|output| {
-        if let PoolType::Shielded(_) = output.pool_type() {
-            true
-        } else {
-            false
-        }
-    })
+    outputs
+        .iter()
+        .any(|output| matches!(output.pool_type(), PoolType::Shielded(_)))
     /*Output::filter_outputs_pools(transaction.get_outputs(), OutputPoolQuery::shielded())
         .iter()
         .any(|output| output.spend_status_query(OutputSpendStatusQuery::only_unspent()))
