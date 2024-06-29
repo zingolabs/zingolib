@@ -1210,9 +1210,10 @@ impl Command for ValueTransfersCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             List all value transfers for this wallet.
+            A value transfer is a group of all notes to a specific receiver in a transaction.
 
             Usage:
-            summaries
+            valuetransfers
         "#}
     }
 
@@ -1221,13 +1222,12 @@ impl Command for ValueTransfersCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() > 1 {
-            return format!("invalid arguments\n{}", self.help());
+        if !args.is_empty() {
+            return "Error: invalid arguments\nTry 'help valuetransfers' for correct usage and examples"
+                .to_string();
         }
 
-        RT.block_on(async move {
-            json::JsonValue::from(lightclient.list_value_transfers().await).pretty(2)
-        })
+        RT.block_on(async move { format!("{}", lightclient.value_transfers().await) })
     }
 }
 
@@ -1695,7 +1695,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
         ("setoption", Box::new(SetOptionCommand {})),
-        ("summaries", Box::new(ValueTransfersCommand {})),
+        ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
