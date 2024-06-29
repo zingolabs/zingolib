@@ -425,11 +425,7 @@ where
     .await;
 
     let tertiary = environment.create_client().await;
-    let expected_fee = if make_change == 0 {
-        fee_tables::one_to_one(shpool, pool, false)
-    } else {
-        fee_tables::one_to_one(shpool, pool, true)
-    };
+    let expected_fee = fee_tables::one_to_one(shpool, pool, true);
     // assert_eq!(
     //     secondary
     //         .propose_send_all(tertiary,

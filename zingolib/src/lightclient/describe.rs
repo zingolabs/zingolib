@@ -347,7 +347,7 @@ impl LightClient {
 
                     // create 1 note-to-self if a sending transaction receives any number of memos
                     if tx.orchard_notes().iter().any(|note| note.memo().is_some())
-                        || tx.orchard_notes().iter().any(|note| note.memo().is_some())
+                        || tx.sapling_notes().iter().any(|note| note.memo().is_some())
                     {
                         let memos: Vec<String> = tx
                             .orchard_notes()
