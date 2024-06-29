@@ -54,20 +54,6 @@ impl LightClient {
             .query_sum_value(include_notes)
     }
 
-    /// Uses a query to select all notes with specific properties and return a vector of their identifiers
-    pub async fn query_for_ids(
-        &self,
-        include_notes: OutputQuery,
-    ) -> Vec<crate::wallet::notes::OutputId> {
-        self.wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .transaction_records_by_id
-            .query_for_ids(include_notes)
-    }
-
     /// TODO: Add Doc Comment Here!
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();

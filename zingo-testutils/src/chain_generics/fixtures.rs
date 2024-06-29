@@ -8,9 +8,9 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use zingolib::wallet::notes::query::OutputPoolQuery;
 use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
+use zingolib::wallet::notes::{query::OutputPoolQuery, OutputInterface};
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
@@ -194,14 +194,14 @@ where
         2 * MARGINAL_FEE.into_u64()
     );
 
-    // since we used our dust as a freebie in the last send, we should only have 2
-    assert_eq!(
-        secondary
-            .query_for_ids(OutputQuery::only_unspent())
-            .await
-            .len(),
-        1
-    );
+    // since we used our dust as a freebie in the last send, we should only have 1
+    let secondary_outputs = secondary.list_outputs().await;
+    let spent_orchard_outputs: Vec<_> = secondary_outputs
+        .iter()
+        .filter(|o| matches!(o.pool_type(), Shielded(Orchard)))
+        .filter(|o| o.is_spent())
+        .collect();
+    assert_eq!(spent_orchard_outputs.len(), 1);
 }
 
 /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
@@ -395,14 +395,14 @@ where
     // if 10_000 or more change, would have used a smaller note
     assert!(received_change_from_transaction_2 < 10_000);
 
+    let all_outputs = secondary.list_outputs().await;
+    let spent_sapling_outputs: Vec<_> = all_outputs
+        .iter()
+        .filter(|o| matches!(o.pool_type(), Shielded(Sapling)))
+        .filter(|o| o.is_spent())
+        .collect();
     assert_eq!(
-        secondary
-            .query_for_ids(OutputQuery {
-                spend_status: OutputSpendStatusQuery::only_spent(),
-                pools: OutputPoolQuery::one_pool(Shielded(Sapling)),
-            })
-            .await
-            .len(),
+        spent_sapling_outputs.len(),
         expected_inputs_for_transaction_2 as usize
     );
 }

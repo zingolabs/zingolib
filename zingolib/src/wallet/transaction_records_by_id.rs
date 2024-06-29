@@ -64,14 +64,6 @@ impl TransactionRecordsById {
         })
     }
 
-    /// Uses a query to select all notes across all transactions with specific properties and sum them
-    pub fn query_for_ids(&self, include_notes: OutputQuery) -> Vec<crate::wallet::notes::OutputId> {
-        self.0
-            .iter()
-            .flat_map(|transaction_record| transaction_record.1.query_for_ids(include_notes))
-            .collect()
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn get_received_spendable_note_from_identifier<D: DomainWalletExt>(
         &self,
@@ -706,7 +698,7 @@ impl Default for TransactionRecordsById {
 
 #[cfg(test)]
 mod tests {
-    use crate::wallet::notes::interface::OutputConstructor;
+
     use crate::{
         mocks::{
             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
@@ -716,11 +708,9 @@ mod tests {
         wallet::{
             data::mocks::OutgoingTxDataBuilder,
             notes::{
-                orchard::mocks::OrchardNoteBuilder,
-                query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
-                sapling::mocks::SaplingNoteBuilder,
-                transparent::mocks::TransparentOutputBuilder,
-                OutputInterface, SaplingNote,
+                orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
+                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
+                Output, OutputInterface,
             },
             transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
         },
@@ -786,20 +776,14 @@ mod tests {
             .unwrap();
 
         let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
-        let spentish_notes_in_tx_cvnwis = transaction_record_cvnwis.query_for_ids(OutputQuery {
-            spend_status: query_for_spentish_notes,
-            pools: OutputPoolQuery::any(),
-        });
-        assert_eq!(spentish_notes_in_tx_cvnwis.len(), 1);
+        let spentish_sapling_notes_in_tx_cvnwis = Output::get_all_outputs_with_status(
+            transaction_record_cvnwis,
+            query_for_spentish_notes,
+        );
+        assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
         assert_ne!(
-            SaplingNote::get_record_query_matching_outputs(
-                transaction_record_cvnwis,
-                query_for_spentish_notes
-            )
-            .first()
-            .unwrap()
-            .spent(),
+            spentish_sapling_notes_in_tx_cvnwis.first().unwrap().spent(),
             &Some((spending_txid, 15u32))
         );
         // ^ but it was not spent in the deleted txid
