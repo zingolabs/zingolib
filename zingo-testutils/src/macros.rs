@@ -48,19 +48,22 @@ macro_rules! check_client_balances {
             balance.transparent_balance.unwrap(),
             $transparent
         );
-        let value_transfers = $client.list_value_transfers().await;
-        let value_transfer_balance = value_transfers
+        let summaries = $client.transaction_summaries().await;
+        let summaries_balance = summaries
             .iter()
-            .map(|transfer| transfer.balance_delta())
+            .map(|summary| {
+                summary
+                    .balance_delta()
+                    .unwrap_or_else(|| panic!("field not correctly populated"))
+            })
             .sum::<i64>();
         assert_eq!(
             (balance.orchard_balance.unwrap()
                 + balance.sapling_balance.unwrap()
                 + balance.transparent_balance.unwrap()) as i64,
-            value_transfer_balance,
-            "do_list_transactions: {}\nlist_value_transfers: {}",
-            ::json::JsonValue::from($client.do_list_transactions().await).pretty(4),
-            ::json::JsonValue::from(value_transfers).pretty(4)
+            summaries_balance,
+            "transaction_summaries: {}",
+            summaries
         );
     };
 }

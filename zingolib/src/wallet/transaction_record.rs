@@ -28,8 +28,6 @@ use crate::{
     },
 };
 
-use super::notes::AnyPoolOutput;
-
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionRecord {
@@ -140,25 +138,6 @@ impl TransactionRecord {
     pub fn spent_orchard_nullifiers(&self) -> &[orchard::note::Nullifier] {
         &self.spent_orchard_nullifiers
     }
-
-    /// Return all outputs in the TransactionRecord as a vector
-    pub fn get_outputs(&self) -> Vec<AnyPoolOutput> {
-        self.transparent_outputs
-            .iter()
-            .map(|output| AnyPoolOutput::TransparentOutput(output.clone()))
-            .chain(
-                self.sapling_notes
-                    .iter()
-                    .map(|output| AnyPoolOutput::SaplingNote(output.clone())),
-            )
-            .chain(
-                self.orchard_notes
-                    .iter()
-                    .map(|output| AnyPoolOutput::OrchardNote(output.clone())),
-            )
-            .collect()
-    }
-
     /// Uses a query to select all notes with specific properties and sum them
     pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
         let mut sum = 0;
@@ -794,8 +773,7 @@ mod tests {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 
-    use crate::wallet::notes::query::OutputQuery;
-    use crate::wallet::notes::AnyPoolOutput;
+    use crate::wallet::notes::{query::OutputQuery, Output};
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,
@@ -859,12 +837,8 @@ mod tests {
 
         let expected = queried_spend_state * queried_pools;
 
-        let default_nn_transaction_record = dbg!(nine_note_transaction_record_default());
-        let all_outputs = default_nn_transaction_record.get_outputs();
-        let requested_outputs = AnyPoolOutput::filter_outputs(
-            all_outputs,
-            OutputQuery::stipulations(unspent, pending_spent, spent, transparent, sapling, orchard),
-        );
+        let default_nn_transaction_record = nine_note_transaction_record_default();
+        let requested_outputs = Output::get_record_outputs(&default_nn_transaction_record);
         assert_eq!(requested_outputs.len(), expected);
     }
 

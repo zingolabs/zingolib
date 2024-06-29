@@ -102,6 +102,12 @@ impl Default for WalletCapability {
     }
 }
 
+impl crate::wallet::LightWallet {
+    /// This is the interface to expose the wallet key
+    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
+        self.transaction_context.key.clone()
+    }
+}
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]

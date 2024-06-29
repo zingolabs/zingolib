@@ -8,13 +8,13 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use zingolib::wallet::notes::query::OutputPoolQuery;
 use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
-use zingolib::wallet::notes::AnyPoolOutput;
+use zingolib::wallet::notes::{query::OutputPoolQuery, OutputInterface};
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
+use crate::fee_tables;
 use crate::lightclient::from_inputs;
 use crate::lightclient::get_base_address;
 
@@ -195,18 +195,19 @@ where
     );
 
     // since we used our dust as a freebie in the last send, we should only have 1
-    let all_outputs = secondary.list_outputs().await;
-    assert_eq!(
-        AnyPoolOutput::filter_outputs(
-            all_outputs,
-            OutputQuery {
-                spend_status: OutputSpendStatusQuery::only_spent(),
-                pools: OutputPoolQuery::one_pool(Shielded(Orchard)),
+    let secondary_outputs = secondary.list_outputs().await;
+    let spent_orchard_outputs: Vec<_> = secondary_outputs
+        .iter()
+        .filter(|o| {
+            if let Shielded(Orchard) = o.pool_type() {
+                true
+            } else {
+                false
             }
-        )
-        .len(),
-        1
-    );
+        })
+        .filter(|o| o.is_spent())
+        .collect();
+    assert_eq!(spent_orchard_outputs.len(), 1);
 }
 
 /// overlooks a bunch of dust inputs to find a pair of inputs marginally big enough to send
@@ -401,21 +402,25 @@ where
     assert!(received_change_from_transaction_2 < 10_000);
 
     let all_outputs = secondary.list_outputs().await;
-    assert_eq!(
-        AnyPoolOutput::filter_outputs(
-            all_outputs,
-            OutputQuery {
-                spend_status: OutputSpendStatusQuery::only_spent(),
-                pools: OutputPoolQuery::one_pool(Shielded(Sapling)),
+    let spent_sapling_outputs: Vec<_> = all_outputs
+        .iter()
+        .filter(|o| {
+            if let Shielded(Sapling) = o.pool_type() {
+                true
+            } else {
+                false
             }
-        )
-        .len(),
+        })
+        .filter(|o| o.is_spent())
+        .collect();
+    assert_eq!(
+        spent_sapling_outputs.len(),
         expected_inputs_for_transaction_2 as usize
     );
 }
 
 /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
-pub async fn shpool_to_pool<CC>(shpool: ShieldedProtocol, pool: PoolType)
+pub async fn shpool_to_pool<CC>(shpool: ShieldedProtocol, pool: PoolType, make_change: u64)
 where
     CC: ConductChain,
 {
@@ -427,16 +432,28 @@ where
         &mut environment,
         &primary,
         &secondary,
-        vec![(Shielded(shpool), 100_000)],
+        vec![(Shielded(shpool), 100_000 + make_change)],
     )
     .await;
 
     let tertiary = environment.create_client().await;
-    with_assertions::propose_send_bump_sync_recipient(
-        &mut environment,
-        &secondary,
-        &tertiary,
-        vec![(pool, 25_000)],
-    )
-    .await;
+    let expected_fee = fee_tables::one_to_one(shpool, pool, true);
+    // assert_eq!(
+    //     secondary
+    //         .propose_send_all(tertiary,
+    //         get_base_address(tertiary, pool))
+    //         .await
+    //         .into_u64(),
+    //     0
+    // );
+    assert_eq!(
+        expected_fee,
+        with_assertions::propose_send_bump_sync_recipient(
+            &mut environment,
+            &secondary,
+            &tertiary,
+            vec![(pool, 100_000 - expected_fee)],
+        )
+        .await
+    );
 }

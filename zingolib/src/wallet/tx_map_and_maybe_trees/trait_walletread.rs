@@ -1,9 +1,6 @@
 //! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
 
-use crate::wallet::notes::{
-    query::{OutputPoolQuery, OutputSpendStatusQuery},
-    AnyPoolOutput, OutputInterface,
-};
+use crate::wallet::notes::{query::OutputSpendStatusQuery, Output, OutputInterface};
 
 use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 use secrecy::SecretVec;
@@ -12,6 +9,7 @@ use zcash_client_backend::{
     data_api::{Account, WalletRead},
     keys::UnifiedFullViewingKey,
     wallet::TransparentAddressMetadata,
+    PoolType,
 };
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -43,9 +41,19 @@ impl Account<AccountId> for ZingoAccount {
 fn has_unspent_shielded_outputs(
     transaction: &crate::wallet::transaction_record::TransactionRecord,
 ) -> bool {
-    AnyPoolOutput::filter_outputs_pools(transaction.get_outputs(), OutputPoolQuery::shielded())
+    let outputs =
+        Output::get_all_outputs_with_status(transaction, OutputSpendStatusQuery::only_unspent());
+    outputs.iter().any(|output| {
+        if let PoolType::Shielded(_) = output.pool_type() {
+            true
+        } else {
+            false
+        }
+    })
+    /*Output::filter_outputs_pools(transaction.get_outputs(), OutputPoolQuery::shielded())
         .iter()
         .any(|output| output.spend_status_query(OutputSpendStatusQuery::only_unspent()))
+    */
 }
 /// some of these functions, initially those required for calculate_transaction, will be implemented
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend

@@ -23,8 +23,6 @@ use zcash_primitives::consensus::BlockHeight;
 
 use zcash_primitives::transaction::TxId;
 
-use super::notes::AnyPoolOutput;
-
 pub mod trait_inputsource;
 
 /// A convenience wrapper, to impl behavior on.
@@ -64,14 +62,6 @@ impl TransactionRecordsById {
         self.0.iter().fold(0, |partial_sum, (_id, record)| {
             partial_sum + record.query_sum_value(include_notes)
         })
-    }
-
-    /// Return all outputs in the TransactionRecord as a vector
-    pub fn get_all_outputs(&self) -> Vec<AnyPoolOutput> {
-        self.0
-            .iter()
-            .flat_map(|transaction_record| transaction_record.1.get_outputs())
-            .collect()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -709,7 +699,6 @@ impl Default for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
 
-    use crate::wallet::notes::AnyPoolOutput;
     use crate::{
         mocks::{
             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
@@ -719,11 +708,9 @@ mod tests {
         wallet::{
             data::mocks::OutgoingTxDataBuilder,
             notes::{
-                orchard::mocks::OrchardNoteBuilder,
-                query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
-                sapling::mocks::SaplingNoteBuilder,
-                transparent::mocks::TransparentOutputBuilder,
-                OutputInterface,
+                orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
+                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
+                Output, OutputInterface,
             },
             transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
         },
@@ -789,13 +776,9 @@ mod tests {
             .unwrap();
 
         let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
-        let all_outputs_in_tx_cvnwis = transaction_record_cvnwis.get_outputs();
-        let spentish_sapling_notes_in_tx_cvnwis = AnyPoolOutput::filter_outputs(
-            all_outputs_in_tx_cvnwis,
-            OutputQuery {
-                spend_status: query_for_spentish_notes,
-                pools: OutputPoolQuery::any(),
-            },
+        let spentish_sapling_notes_in_tx_cvnwis = Output::get_all_outputs_with_status(
+            transaction_record_cvnwis,
+            query_for_spentish_notes,
         );
         assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
