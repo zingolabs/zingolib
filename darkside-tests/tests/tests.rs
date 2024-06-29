@@ -150,7 +150,7 @@ async fn sent_transaction_reorged_into_mempool() {
     .unwrap();
     println!("{}", one_txid.first());
     recipient.do_sync(false).await.unwrap();
-    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    dbg!(recipient.list_outputs().await);
 
     let connector = DarksideConnector(server_id.clone());
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
@@ -168,10 +168,7 @@ async fn sent_transaction_reorged_into_mempool() {
 
     recipient.do_sync(false).await.unwrap();
     //  light_client.do_sync(false).await.unwrap();
-    println!(
-        "Recipient pre-reorg: {}",
-        recipient.do_list_transactions().await.pretty(2)
-    );
+    dbg!("Recipient pre-reorg: {}", recipient.list_outputs().await);
     println!(
         "Recipient pre-reorg: {}",
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
@@ -199,18 +196,12 @@ async fn sent_transaction_reorged_into_mempool() {
         "Sender post-reorg: {}",
         serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
     );
-    println!(
-        "Sender post-reorg: {}",
-        light_client.do_list_transactions().await.pretty(2)
-    );
+    dbg!("Sender post-reorg: {}", light_client.list_outputs().await);
     let loaded_client = zingo_testutils::lightclient::new_client_from_save_buffer(&light_client)
         .await
         .unwrap();
     loaded_client.do_sync(false).await.unwrap();
-    println!(
-        "Sender post-load: {}",
-        loaded_client.do_list_transactions().await.pretty(2)
-    );
+    dbg!("Sender post-load: {}", loaded_client.list_outputs().await);
     assert_eq!(
         loaded_client.do_balance().await.orchard_balance,
         Some(100000000)
