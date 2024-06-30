@@ -88,8 +88,7 @@ where
     let recorded_fee = with_assertions::propose_send_bump_sync_recipient(
         &mut environment,
         &sender,
-        &recipient,
-        vec![(pooltype, send_value, None)],
+        vec![(&recipient, pooltype, send_value, None)],
     )
     .await;
 
@@ -109,10 +108,9 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &primary,
-            &secondary,
             vec![
-                (Shielded(Orchard), 1, None),
-                (Shielded(Orchard), 29_999, None)
+                (&secondary, Shielded(Orchard), 1, None),
+                (&secondary, Shielded(Orchard), 29_999, None)
             ]
         )
         .await,
@@ -136,8 +134,10 @@ where
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &primary,
-                &secondary,
-                vec![(Transparent, 100_000, None), (Transparent, 4_000, None)],
+                vec![
+                    (&secondary, Transparent, 100_000, None),
+                    (&secondary, Transparent, 4_000, None)
+                ],
             )
             .await,
             MARGINAL_FEE.into_u64() * 4
@@ -152,8 +152,7 @@ where
             with_assertions::propose_send_bump_sync_recipient(
                 &mut environment,
                 &secondary,
-                &primary,
-                vec![(Shielded(Orchard), 50_000, None)],
+                vec![(&primary, Shielded(Orchard), 50_000, None)],
             )
             .await,
             MARGINAL_FEE.into_u64() * 2
@@ -174,10 +173,9 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &primary,
-            &secondary,
             vec![
-                (Shielded(Orchard), 1, None),
-                (Shielded(Orchard), 99_999, None)
+                (&secondary, Shielded(Orchard), 1, None),
+                (&secondary, Shielded(Orchard), 99_999, None)
             ]
         )
         .await,
@@ -188,8 +186,7 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &secondary,
-            &primary,
-            vec![(Shielded(Orchard), 90_000, None)]
+            vec![(&primary, Shielded(Orchard), 90_000, None)]
         )
         .await,
         2 * MARGINAL_FEE.into_u64()
@@ -209,10 +206,9 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &primary,
-            &secondary,
             vec![
-                (Shielded(Orchard), 1, None),
-                (Shielded(Orchard), 99_999, None)
+                (&secondary, Shielded(Orchard), 1, None),
+                (&secondary, Shielded(Orchard), 99_999, None)
             ]
         )
         .await,
@@ -223,8 +219,7 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &secondary,
-            &primary,
-            vec![(Shielded(Orchard), 30_000, None)]
+            vec![(&primary, Shielded(Orchard), 30_000, None)]
         )
         .await,
         2 * MARGINAL_FEE.into_u64()
@@ -255,18 +250,17 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &primary,
-            &secondary,
             vec![
-                (Shielded(Sapling), 1_000, None),
-                (Shielded(Sapling), 1_000, None),
-                (Shielded(Sapling), 1_000, None),
-                (Shielded(Sapling), 1_000, None),
-                (Shielded(Sapling), 15_000, None),
-                (Shielded(Orchard), 1_000, None),
-                (Shielded(Orchard), 1_000, None),
-                (Shielded(Orchard), 1_000, None),
-                (Shielded(Orchard), 1_000, None),
-                (Shielded(Orchard), 15_000, None),
+                (&secondary, Shielded(Sapling), 1_000, None),
+                (&secondary, Shielded(Sapling), 1_000, None),
+                (&secondary, Shielded(Sapling), 1_000, None),
+                (&secondary, Shielded(Sapling), 1_000, None),
+                (&secondary, Shielded(Sapling), 15_000, None),
+                (&secondary, Shielded(Orchard), 1_000, None),
+                (&secondary, Shielded(Orchard), 1_000, None),
+                (&secondary, Shielded(Orchard), 1_000, None),
+                (&secondary, Shielded(Orchard), 1_000, None),
+                (&secondary, Shielded(Orchard), 15_000, None),
             ],
         )
         .await,
@@ -278,8 +272,7 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &secondary,
-            &primary,
-            vec![(Shielded(Orchard), 10_000, None),],
+            vec![(&primary, Shielded(Orchard), 10_000, None),],
         )
         .await,
         4 * MARGINAL_FEE.into_u64()
@@ -353,9 +346,8 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &primary,
-            &secondary,
             transaction_1_values
-                .map(|value| (Shielded(Sapling), value, None))
+                .map(|value| (&secondary, Shielded(Sapling), value, None))
                 .collect()
         )
         .await,
@@ -403,8 +395,7 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &secondary,
-            &primary,
-            vec![(Shielded(Orchard), value_from_transaction_2, None)]
+            vec![(&primary, Shielded(Orchard), value_from_transaction_2, None)]
         )
         .await,
         expected_fee_for_transaction_2
@@ -455,8 +446,7 @@ where
     with_assertions::propose_send_bump_sync_recipient(
         &mut environment,
         &primary,
-        &secondary,
-        vec![(Shielded(shpool), 100_000 + make_change, None)],
+        vec![(&secondary, Shielded(shpool), 100_000 + make_change, None)],
     )
     .await;
 
@@ -475,8 +465,7 @@ where
         with_assertions::propose_send_bump_sync_recipient(
             &mut environment,
             &secondary,
-            &tertiary,
-            vec![(pool, 100_000 - expected_fee, None)],
+            vec![(&tertiary, pool, 100_000 - expected_fee, None)],
         )
         .await
     );

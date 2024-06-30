@@ -24,16 +24,14 @@ where
     CC: ConductChain,
 {
     let mut subraw_receivers = vec![];
-    for (recipient, pooltype, amount, memo_str) in &sends {
+    for (recipient, pooltype, amount, memo_str) in sends.clone() {
         let address = get_base_address(recipient, pooltype.clone()).await;
         subraw_receivers.push((address, amount, memo_str));
     }
 
     let raw_receivers = subraw_receivers
         .iter()
-        .map(|(address, amount, opt_memo)| {
-            (address.as_str().clone(), *amount.clone(), *opt_memo.clone())
-        })
+        .map(|(address, amount, opt_memo)| (address.as_str(), *amount, *opt_memo))
         .collect();
 
     let proposal = from_inputs::propose(sender, raw_receivers).await.unwrap();
