@@ -33,17 +33,24 @@ where
     let _recorded_fee = with_assertions::propose_send_bump_sync_recipient(
         &mut environment,
         &sender,
-        vec![(
-            &recipient,
-            PoolType::Shielded(Orchard),
-            send_value,
-            Some("Orchard sender to recipient"),
-        )],
+        vec![
+            (
+                &recipient,
+                PoolType::Shielded(Orchard),
+                send_value,
+                Some("Orchard sender to recipient"),
+            ),
+            (
+                &sender,
+                PoolType::Shielded(Orchard),
+                send_value,
+                Some("Orchard sender to SELF"),
+            ),
+        ],
     )
     .await;
     dbg!(sender.value_transfers().await);
     dbg!(recipient.value_transfers().await);
-    assert_eq!(1, 2);
 }
 /// runs a send-to-receiver and receives it in a chain-generic context
 pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
