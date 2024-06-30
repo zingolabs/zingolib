@@ -6,7 +6,10 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
 use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 
-/// currently only checks if the fee matches
+/// currently checks:
+/// 1. len of txids == num steps
+/// 2. the txid is stored in the records_by_ids database
+/// 3. if the fee from the calculate_transaction_fee matches the sum of the per-step fees
 /// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
 /// returns the total fee for the transfer
 pub async fn assert_sender_fee<NoteId>(

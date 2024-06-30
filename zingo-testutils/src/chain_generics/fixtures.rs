@@ -41,6 +41,9 @@ where
         )],
     )
     .await;
+    dbg!(sender.value_transfers().await);
+    dbg!(recipient.value_transfers().await);
+    assert_eq!(1, 2);
 }
 /// runs a send-to-receiver and receives it in a chain-generic context
 pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)

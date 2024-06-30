@@ -7,6 +7,12 @@ mod chain_generics {
     use zingo_testutils::chain_generics::fixtures;
 
     use environment::LibtonodeEnvironment;
+    use zingolib::wallet::data::summaries::ValueTransferKind;
+    #[tokio::test]
+    async fn generate_a_range_of_value_transfers() {
+        fixtures::create_various_value_transfers::<LibtonodeEnvironment>(ValueTransferKind::Sent)
+            .await;
+    }
     #[tokio::test]
     async fn send_40_000_to_transparent() {
         fixtures::send_value_to_pool::<LibtonodeEnvironment>(40_000, Transparent).await;
