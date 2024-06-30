@@ -74,7 +74,8 @@ impl LightClient {
         JsonValue::Array(objectified_addresses)
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// TODO: Redefine the wallet balance functions as non-generics that take a
+    /// PoolType variant as an argument, and iterate over a Vec<Output>
     pub async fn do_balance(&self) -> PoolBalances {
         let verified_sapling_balance = self.wallet.confirmed_balance::<SaplingDomain>().await;
         let unverified_sapling_balance = self.wallet.pending_balance::<SaplingDomain>().await;
