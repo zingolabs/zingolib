@@ -8,9 +8,9 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 use zingolib::wallet::notes::{query::OutputPoolQuery, OutputInterface};
+use zingolib::wallet::{data::summaries::ValueTransferKind, notes::query::OutputQuery};
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
@@ -18,6 +18,17 @@ use crate::fee_tables;
 use crate::lightclient::from_inputs;
 use crate::lightclient::get_base_address;
 
+pub async fn create_various_value_transfers<CC>(vt_kinds: ValueTransferKind)
+where
+    CC: ConductChain,
+{
+    let mut environment = CC::setup().await;
+    let sender = environment.fund_client_orchard(250_000).await;
+
+    println!("client is ready to send");
+
+    let recipient = environment.create_client().await;
+}
 /// runs a send-to-receiver and receives it in a chain-generic context
 pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
 where
