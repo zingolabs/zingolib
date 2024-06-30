@@ -19,15 +19,15 @@ pub async fn propose_send_bump_sync_recipient<CC>(
     environment: &mut CC,
     sender: &LightClient,
     recipient: &LightClient,
-    sends: Vec<(PoolType, u64)>,
+    sends: Vec<(PoolType, u64, Option<&str>)>,
 ) -> u64
 where
     CC: ConductChain,
 {
     let mut subraw_receivers = vec![];
-    for (pooltype, amount) in sends {
+    for (pooltype, amount, memo_str) in sends {
         let address = get_base_address(recipient, pooltype).await;
-        subraw_receivers.push((address, amount, None));
+        subraw_receivers.push((address, amount, memo_str));
     }
 
     let raw_receivers = subraw_receivers

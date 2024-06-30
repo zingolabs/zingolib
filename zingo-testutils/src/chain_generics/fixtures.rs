@@ -18,16 +18,29 @@ use crate::fee_tables;
 use crate::lightclient::from_inputs;
 use crate::lightclient::get_base_address;
 
-pub async fn create_various_value_transfers<CC>(vt_kinds: ValueTransferKind)
+/// Fixture for testing various vt transactions
+pub async fn create_various_value_transfers<CC>(_vt_kinds: ValueTransferKind)
 where
     CC: ConductChain,
 {
     let mut environment = CC::setup().await;
     let sender = environment.fund_client_orchard(250_000).await;
+    let send_value = 15_000;
 
     println!("client is ready to send");
 
     let recipient = environment.create_client().await;
+    let _recorded_fee = with_assertions::propose_send_bump_sync_recipient(
+        &mut environment,
+        &sender,
+        &recipient,
+        vec![(
+            PoolType::Shielded(Orchard),
+            send_value,
+            Some("Orchard sender to recipient"),
+        )],
+    )
+    .await;
 }
 /// runs a send-to-receiver and receives it in a chain-generic context
 pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
@@ -73,7 +86,7 @@ where
         &mut environment,
         &sender,
         &recipient,
-        vec![(pooltype, send_value)],
+        vec![(pooltype, send_value, None)],
     )
     .await;
 
@@ -94,7 +107,10 @@ where
             &mut environment,
             &primary,
             &secondary,
-            vec![(Shielded(Orchard), 1), (Shielded(Orchard), 29_999)]
+            vec![
+                (Shielded(Orchard), 1, None),
+                (Shielded(Orchard), 29_999, None)
+            ]
         )
         .await,
         3 * MARGINAL_FEE.into_u64()
@@ -118,7 +134,7 @@ where
                 &mut environment,
                 &primary,
                 &secondary,
-                vec![(Transparent, 100_000), (Transparent, 4_000)],
+                vec![(Transparent, 100_000, None), (Transparent, 4_000, None)],
             )
             .await,
             MARGINAL_FEE.into_u64() * 4
@@ -134,7 +150,7 @@ where
                 &mut environment,
                 &secondary,
                 &primary,
-                vec![(Shielded(Orchard), 50_000)],
+                vec![(Shielded(Orchard), 50_000, None)],
             )
             .await,
             MARGINAL_FEE.into_u64() * 2
@@ -156,7 +172,10 @@ where
             &mut environment,
             &primary,
             &secondary,
-            vec![(Shielded(Orchard), 1), (Shielded(Orchard), 99_999)]
+            vec![
+                (Shielded(Orchard), 1, None),
+                (Shielded(Orchard), 99_999, None)
+            ]
         )
         .await,
         3 * MARGINAL_FEE.into_u64()
@@ -167,7 +186,7 @@ where
             &mut environment,
             &secondary,
             &primary,
-            vec![(Shielded(Orchard), 90_000)]
+            vec![(Shielded(Orchard), 90_000, None)]
         )
         .await,
         2 * MARGINAL_FEE.into_u64()
@@ -188,7 +207,10 @@ where
             &mut environment,
             &primary,
             &secondary,
-            vec![(Shielded(Orchard), 1), (Shielded(Orchard), 99_999)]
+            vec![
+                (Shielded(Orchard), 1, None),
+                (Shielded(Orchard), 99_999, None)
+            ]
         )
         .await,
         3 * MARGINAL_FEE.into_u64()
@@ -199,7 +221,7 @@ where
             &mut environment,
             &secondary,
             &primary,
-            vec![(Shielded(Orchard), 30_000)]
+            vec![(Shielded(Orchard), 30_000, None)]
         )
         .await,
         2 * MARGINAL_FEE.into_u64()
@@ -232,16 +254,16 @@ where
             &primary,
             &secondary,
             vec![
-                (Shielded(Sapling), 1_000),
-                (Shielded(Sapling), 1_000),
-                (Shielded(Sapling), 1_000),
-                (Shielded(Sapling), 1_000),
-                (Shielded(Sapling), 15_000),
-                (Shielded(Orchard), 1_000),
-                (Shielded(Orchard), 1_000),
-                (Shielded(Orchard), 1_000),
-                (Shielded(Orchard), 1_000),
-                (Shielded(Orchard), 15_000),
+                (Shielded(Sapling), 1_000, None),
+                (Shielded(Sapling), 1_000, None),
+                (Shielded(Sapling), 1_000, None),
+                (Shielded(Sapling), 1_000, None),
+                (Shielded(Sapling), 15_000, None),
+                (Shielded(Orchard), 1_000, None),
+                (Shielded(Orchard), 1_000, None),
+                (Shielded(Orchard), 1_000, None),
+                (Shielded(Orchard), 1_000, None),
+                (Shielded(Orchard), 15_000, None),
             ],
         )
         .await,
@@ -254,7 +276,7 @@ where
             &mut environment,
             &secondary,
             &primary,
-            vec![(Shielded(Orchard), 10_000),],
+            vec![(Shielded(Orchard), 10_000, None),],
         )
         .await,
         4 * MARGINAL_FEE.into_u64()
@@ -330,7 +352,7 @@ where
             &primary,
             &secondary,
             transaction_1_values
-                .map(|value| (Shielded(Sapling), value))
+                .map(|value| (Shielded(Sapling), value, None))
                 .collect()
         )
         .await,
@@ -379,7 +401,7 @@ where
             &mut environment,
             &secondary,
             &primary,
-            vec![(Shielded(Orchard), value_from_transaction_2)]
+            vec![(Shielded(Orchard), value_from_transaction_2, None)]
         )
         .await,
         expected_fee_for_transaction_2
@@ -431,7 +453,7 @@ where
         &mut environment,
         &primary,
         &secondary,
-        vec![(Shielded(shpool), 100_000 + make_change)],
+        vec![(Shielded(shpool), 100_000 + make_change, None)],
     )
     .await;
 
@@ -451,7 +473,7 @@ where
             &mut environment,
             &secondary,
             &tertiary,
-            vec![(pool, 100_000 - expected_fee)],
+            vec![(pool, 100_000 - expected_fee, None)],
         )
         .await
     );
