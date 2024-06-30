@@ -12,20 +12,20 @@ use crate::utils::scenarios::DarksideEnvironment;
 
 #[tokio::test]
 #[ignore] // darkside cant handle transparent?
-async fn darkside_send_40_000_to_transparent() {
+async fn send_40_000_to_transparent() {
     send_value_to_pool::<DarksideEnvironment>(40_000, Transparent).await;
 }
 
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
     #[test]
-    fn darkside_send_pvalue_to_orchard(value in 0..90u64) {
+    fn send_pvalue_to_orchard(value in 0..90u64) {
         Runtime::new().unwrap().block_on(async {
     send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Orchard)).await;
         });
      }
     #[test]
-    fn darkside_send_pvalue_to_sapling(value in 0..90u64) {
+    fn send_pvalue_to_sapling(value in 0..90u64) {
         Runtime::new().unwrap().block_on(async {
     send_value_to_pool::<DarksideEnvironment>(value * 1_000, Shielded(Sapling)).await;
         });
