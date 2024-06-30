@@ -8,9 +8,9 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
+use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 use zingolib::wallet::notes::{query::OutputPoolQuery, OutputInterface};
-use zingolib::wallet::{data::summaries::ValueTransferKind, notes::query::OutputQuery};
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
@@ -19,7 +19,7 @@ use crate::lightclient::from_inputs;
 use crate::lightclient::get_base_address;
 
 /// Fixture for testing various vt transactions
-pub async fn create_various_value_transfers<CC>(_vt_kinds: ValueTransferKind)
+pub async fn create_various_value_transfers<CC>()
 where
     CC: ConductChain,
 {
@@ -33,8 +33,8 @@ where
     let _recorded_fee = with_assertions::propose_send_bump_sync_recipient(
         &mut environment,
         &sender,
-        &recipient,
         vec![(
+            &recipient,
             PoolType::Shielded(Orchard),
             send_value,
             Some("Orchard sender to recipient"),

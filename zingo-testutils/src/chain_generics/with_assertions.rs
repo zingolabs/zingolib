@@ -18,21 +18,22 @@ use crate::{
 pub async fn propose_send_bump_sync_recipient<CC>(
     environment: &mut CC,
     sender: &LightClient,
-    recipient: &LightClient,
-    sends: Vec<(PoolType, u64, Option<&str>)>,
+    sends: Vec<(&LightClient, PoolType, u64, Option<&str>)>,
 ) -> u64
 where
     CC: ConductChain,
 {
     let mut subraw_receivers = vec![];
-    for (pooltype, amount, memo_str) in sends {
-        let address = get_base_address(recipient, pooltype).await;
+    for (recipient, pooltype, amount, memo_str) in &sends {
+        let address = get_base_address(recipient, pooltype.clone()).await;
         subraw_receivers.push((address, amount, memo_str));
     }
 
     let raw_receivers = subraw_receivers
         .iter()
-        .map(|(address, amount, opt_memo)| (address.as_str(), *amount, *opt_memo))
+        .map(|(address, amount, opt_memo)| {
+            (address.as_str().clone(), *amount.clone(), *opt_memo.clone())
+        })
         .collect();
 
     let proposal = from_inputs::propose(sender, raw_receivers).await.unwrap();
@@ -55,9 +56,10 @@ where
     // chain scan shows the same
     sender.do_sync(false).await.unwrap();
     assert_sender_fee(sender, &proposal, &txids).await;
-    recipient.do_sync(false).await.unwrap();
-    assert_receiver_fee(recipient, &proposal, &txids).await;
-
+    for (recipient, _, _, _) in sends {
+        recipient.do_sync(false).await.unwrap();
+        assert_receiver_fee(recipient, &proposal, &txids).await;
+    }
     recorded_fee
 }
 
