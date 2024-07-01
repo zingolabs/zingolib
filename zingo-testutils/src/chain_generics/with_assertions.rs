@@ -24,7 +24,7 @@ where
 {
     let mut subraw_receivers = vec![];
     for (recipient, pooltype, amount, memo_str) in sends.clone() {
-        let address = get_base_address(recipient, pooltype.clone()).await;
+        let address = get_base_address(recipient, pooltype).await;
         subraw_receivers.push((address, amount, memo_str));
     }
 
