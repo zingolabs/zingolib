@@ -4195,7 +4195,7 @@ dependencies = [
  "hyper 0.14.29",
  "hyper-rustls",
  "prost",
- "rustls-pemfile 1.0.4",
+ "rustls-pemfile 2.1.2",
  "thiserror",
  "tokio-rustls 0.23.4",
  "tonic",
