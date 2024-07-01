@@ -126,7 +126,7 @@ impl LightWallet {
         ];
         self.get_filtered_balance::<D>(filters).await
     }
-    /// The amount in orchard notes, not yet on chain
+    /// The amount in pending notes, not yet on chain
     pub async fn pending_balance<D: DomainWalletExt>(&self) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
