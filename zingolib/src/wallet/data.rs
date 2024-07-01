@@ -752,16 +752,20 @@ pub mod summaries {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Variants of within transaction outputs grouped by receiver
+    /// non_exhaustive to permit expanding to include an
+    /// Deshield variant fo sending to transparent
+    #[non_exhaustive]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
-        /// TODO: Add Doc Comment Here!
+        /// The recipient is different than this creator
         Sent,
-        /// TODO: Add Doc Comment Here!
+        /// The recipient is the creator and a shielded address
         NoteToSelf,
-        /// TODO: Add Doc Comment Here!
+        /// The recipient is the creator and this is a shield transaction
         Shield,
-        /// TODO: Add Doc Comment Here!
+        /// The wallet capability is receiving funds in a transaction
+        /// that was created by a different capability
         Received,
     }
 
