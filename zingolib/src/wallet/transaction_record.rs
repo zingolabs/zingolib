@@ -773,7 +773,10 @@ mod tests {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 
-    use crate::wallet::notes::{query::OutputQuery, Output};
+    use crate::wallet::notes::{
+        query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+        Output, OutputInterface,
+    };
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,
@@ -806,7 +809,7 @@ mod tests {
         [true, false],
         [true, false]
     )]
-    fn query_for_ids(
+    fn query_for_outputs(
         unspent: bool,
         pending_spent: bool,
         spent: bool,
@@ -814,31 +817,47 @@ mod tests {
         sapling: bool,
         orchard: bool,
     ) {
-        let mut queried_spend_state = 0;
+        let queried_spend_state = OutputSpendStatusQuery {
+            unspent,
+            pending_spent,
+            spent,
+        };
+        let queried_pools = OutputPoolQuery {
+            transparent,
+            sapling,
+            orchard,
+        };
+        let mut queried_spend_state_count = 0;
         if unspent {
-            queried_spend_state += 1;
+            queried_spend_state_count += 1;
         }
         if pending_spent {
-            queried_spend_state += 1;
+            queried_spend_state_count += 1;
         }
         if spent {
-            queried_spend_state += 1;
+            queried_spend_state_count += 1;
         }
-        let mut queried_pools = 0;
+        let mut queried_pools_count = 0;
         if transparent {
-            queried_pools += 1;
+            queried_pools_count += 1;
         }
         if sapling {
-            queried_pools += 1;
+            queried_pools_count += 1;
         }
         if orchard {
-            queried_pools += 1;
+            queried_pools_count += 1;
         }
 
-        let expected = queried_spend_state * queried_pools;
+        let expected = queried_spend_state_count * queried_pools_count;
 
         let default_nn_transaction_record = nine_note_transaction_record_default();
-        let requested_outputs = Output::get_record_outputs(&default_nn_transaction_record);
+        let requested_outputs: Vec<Output> =
+            Output::get_record_outputs(&default_nn_transaction_record)
+                .iter()
+                .filter(|o| o.spend_status_query(queried_spend_state))
+                .cloned()
+                .filter(|o| o.pool_query(queried_pools))
+                .collect();
         assert_eq!(requested_outputs.len(), expected);
     }
 
