@@ -6,7 +6,10 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
 use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 
-/// currently only checks if the fee matches
+/// currently checks:
+/// 1. len of txids == num steps
+/// 2. the txid is stored in the records_by_ids database
+/// 3. if the fee from the calculate_transaction_fee matches the sum of the per-step fees
 /// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
 /// returns the total fee for the transfer
 pub async fn assert_sender_fee<NoteId>(
@@ -37,12 +40,12 @@ pub async fn assert_sender_fee<NoteId>(
 }
 
 /// currently only checks if the received total matches
-pub async fn assert_receiver_fee<NoteId>(
-    client: &LightClient,
+pub async fn assert_recipient_total_lte_to_proposal_total<NoteId>(
+    recipient: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
 ) -> u64 {
-    let records = &client
+    let records = &recipient
         .wallet
         .transaction_context
         .transaction_metadata_set
@@ -56,10 +59,7 @@ pub async fn assert_receiver_fee<NoteId>(
         let record = records.get(&txids[i]).expect("sender must recognize txid");
 
         let recorded_output = record.query_sum_value(OutputQuery::any());
-        assert_eq!(
-            recorded_output,
-            step.transaction_request().total().unwrap().into_u64()
-        );
+        assert!(recorded_output <= step.transaction_request().total().unwrap().into_u64());
         total_output += recorded_output;
     }
     total_output

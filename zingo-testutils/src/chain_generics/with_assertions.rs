@@ -4,8 +4,7 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::assert_receiver_fee,
-    assertions::assert_sender_fee,
+    assertions::{assert_recipient_total_lte_to_proposal_total, assert_sender_fee},
     chain_generics::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -18,16 +17,15 @@ use crate::{
 pub async fn propose_send_bump_sync_recipient<CC>(
     environment: &mut CC,
     sender: &LightClient,
-    recipient: &LightClient,
-    sends: Vec<(PoolType, u64)>,
+    sends: Vec<(&LightClient, PoolType, u64, Option<&str>)>,
 ) -> u64
 where
     CC: ConductChain,
 {
     let mut subraw_receivers = vec![];
-    for (pooltype, amount) in sends {
+    for (recipient, pooltype, amount, memo_str) in sends.clone() {
         let address = get_base_address(recipient, pooltype).await;
-        subraw_receivers.push((address, amount, None));
+        subraw_receivers.push((address, amount, memo_str));
     }
 
     let raw_receivers = subraw_receivers
@@ -55,9 +53,13 @@ where
     // chain scan shows the same
     sender.do_sync(false).await.unwrap();
     assert_sender_fee(sender, &proposal, &txids).await;
-    recipient.do_sync(false).await.unwrap();
-    assert_receiver_fee(recipient, &proposal, &txids).await;
-
+    let send_ua_id = sender.do_addresses().await[0]["address"].clone();
+    for (recipient, _, _, _) in sends {
+        if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
+            recipient.do_sync(false).await.unwrap();
+            assert_recipient_total_lte_to_proposal_total(recipient, &proposal, &txids).await;
+        }
+    }
     recorded_fee
 }
 

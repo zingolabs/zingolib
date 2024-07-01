@@ -31,7 +31,6 @@ proptest! {
         });
      }
 }
-
 pub(crate) mod impl_conduct_chain_for_darkside_environment {
     //! known issues include
     //!   - transparent sends do not work
