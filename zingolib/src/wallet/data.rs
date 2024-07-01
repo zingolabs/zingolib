@@ -761,6 +761,7 @@ pub mod summaries {
         /// The recipient is different than this creator
         Sent,
         /// The recipient is the creator and a shielded address
+        /// and the memo field includes a Text Memo
         NoteToSelf,
         /// The recipient is the creator and this is a shield transaction
         Shield,
