@@ -8,9 +8,9 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use zingolib::wallet::notes::query::OutputQuery;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 use zingolib::wallet::notes::{query::OutputPoolQuery, OutputInterface};
+use zingolib::wallet::{data::summaries::ValueTransferKind, notes::query::OutputQuery};
 
 use crate::chain_generics::conduct_chain::ConductChain;
 use crate::chain_generics::with_assertions;
@@ -43,15 +43,38 @@ where
             ),
             (
                 &sender,
-                PoolType::Shielded(Orchard),
+                PoolType::Shielded(Sapling),
                 send_value_self,
-                Some("Orchard sender to SELF"),
+                Some("Orchard sender to self"),
             ),
+            (&sender, PoolType::Transparent, send_value_self, None),
         ],
     )
     .await;
-    dbg!(sender.value_transfers().await);
-    dbg!(recipient.value_transfers().await);
+    assert_eq!(sender.value_transfers().await.0.len(), 3);
+    assert_eq!(
+        sender.value_transfers().await.0[0].kind(),
+        ValueTransferKind::Received
+    );
+    assert_eq!(
+        sender.value_transfers().await.0[1].kind(),
+        ValueTransferKind::Sent
+    );
+    assert_eq!(
+        sender.value_transfers().await.0[2].kind(),
+        ValueTransferKind::NoteToSelf
+    );
+    assert_eq!(recipient.value_transfers().await.0.len(), 1);
+    assert_eq!(
+        recipient.value_transfers().await.0[0].kind(),
+        ValueTransferKind::Received
+    );
+    let _shield_fee = with_assertions::propose_shield_bump_sync(&mut environment, &sender).await;
+    assert_eq!(sender.value_transfers().await.0.len(), 4);
+    assert_eq!(
+        sender.value_transfers().await.0[3].kind(),
+        ValueTransferKind::Shield
+    );
 }
 /// runs a send-to-receiver and receives it in a chain-generic context
 pub async fn propose_and_broadcast_value_to_pool<CC>(send_value: u64, pooltype: PoolType)
