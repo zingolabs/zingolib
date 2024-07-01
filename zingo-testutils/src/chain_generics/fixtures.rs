@@ -25,7 +25,8 @@ where
 {
     let mut environment = CC::setup().await;
     let sender = environment.fund_client_orchard(250_000).await;
-    let send_value = 15_000;
+    let send_value_for_recipient = 23_000;
+    let send_value_self = 17_000;
 
     println!("client is ready to send");
 
@@ -37,13 +38,13 @@ where
             (
                 &recipient,
                 PoolType::Shielded(Orchard),
-                send_value,
+                send_value_for_recipient,
                 Some("Orchard sender to recipient"),
             ),
             (
                 &sender,
                 PoolType::Shielded(Orchard),
-                send_value,
+                send_value_self,
                 Some("Orchard sender to SELF"),
             ),
         ],
