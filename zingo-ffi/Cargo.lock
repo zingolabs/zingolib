@@ -537,7 +537,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 
 [[package]]
 name = "bumpalo"
@@ -610,9 +610,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.0.100"
+version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c891175c3fb232128f48de6590095e59198bbeb8620c310be349bfc3afd12c7b"
+checksum = "ac367972e516d45567c7eafc73d24e1c193dcf200a8d94e9db7b3d38b349572d"
 
 [[package]]
 name = "cfg-if"
@@ -800,7 +800,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "futures-util",
  "hex",
@@ -906,9 +906,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dca9240753cf90908d7e4aac30f630662b02aebaa1b58a3cadabdb23385b58b"
+checksum = "60b1af1c220855b6ceac025d3f6ecdd2b7c4894bfe9cd9bda4fbb4bc7c0d4cf0"
 
 [[package]]
 name = "encoding_rs"
@@ -947,7 +947,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -972,7 +972,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1782,9 +1782,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.21"
+version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
+checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 dependencies = [
  "serde",
 ]
@@ -1947,9 +1947,9 @@ dependencies = [
 
 [[package]]
 name = "num-bigint"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c165a9ab64cf766f73521c0dd2cfdff64f488b8f0b3e621face3462d3db536d7"
+checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
 dependencies = [
  "num-integer",
  "num-traits",
@@ -2352,7 +2352,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes 1.6.0",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -4327,7 +4327,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "bech32",
  "bs58",
@@ -4339,7 +4339,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -4381,7 +4381,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4390,7 +4390,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "bech32",
  "blake2b_simd",
@@ -4431,7 +4431,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "aes",
  "bip0039",
@@ -4469,7 +4469,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4491,7 +4491,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=override_sapling_change_address#527256afa3a691fd3280cd16ae2ed8e2426ebe73"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=revert_always_change#50ffcd4504d2683fa24ac2f4af2bb328d69d0ad1"
 dependencies = [
  "document-features",
  "memuse",
@@ -4545,7 +4545,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4557,7 +4557,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
@@ -4576,7 +4576,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "zcash_primitives",
 ]
@@ -4584,7 +4584,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "http 0.2.12",
  "incrementalmerkletree",
@@ -4608,7 +4608,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "zcash_primitives",
  "zingoconfig",
@@ -4617,7 +4617,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "dirs",
  "http 0.2.12",
@@ -4630,7 +4630,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#9ab69d49617d8227a740378762f892dfed7a5262"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=value_transfer_rewrite#82ca6f14f276e06d8fe07861491cfc7c4c036f21"
 dependencies = [
  "append-only-vec",
  "base58",
