@@ -29,11 +29,9 @@ pub(crate) type ProportionalFeeShieldProposal =
 pub(crate) enum ZingoProposal {
     /// Destination somewhere else.
     /// Can propose any valid recipient.
-    #[allow(dead_code)] // TOdo use it
     Transfer(ProportionalFeeProposal),
     /// For now this is constrained by lrz zcash_client_backend transaction construction
     /// to send to the proposing capability's receiver for its fanciest shielded pool
-    #[allow(dead_code)] // TOdo construct it
     Shield(ProportionalFeeShieldProposal),
 }
 
