@@ -70,47 +70,39 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
 
     Ok(send_args)
 }
-
-// Parse the send arguments for `propose_send` when sending all funds from shielded pools.
 // The send arguments have two possible formats:
-// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
-// - 1 (+1 optional) arguments for a single address send. &["<address>", "<optional memo>"]
+// - 1 arguments in the form of:
+//    *  a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>", "zennies_for_zingo":<true|false>}]'
+// - 1 + 1 optional arguments for a single address send. &["<address>", "<optional memo>"]
 pub(super) fn parse_send_all_args(
     args: &[&str],
     chain: &ChainType,
-) -> Result<(Address, Option<MemoBytes>), CommandError> {
+) -> Result<(Address, bool, Option<MemoBytes>), CommandError> {
     let address: Address;
     let memo: Option<MemoBytes>;
-
+    let zennies_for_zingo: bool;
     if args.len() == 1 {
         if let Ok(addr) = address_from_str(args[0], chain) {
             address = addr;
             memo = None;
             check_memo_compatibility(&address, &memo)?;
+            zennies_for_zingo = false;
         } else {
-            let json_args =
+            let json_arg =
                 json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
-
-            if !json_args.is_array() {
-                return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
+            if json_arg.is_array() {
+                return Err(CommandError::JsonArrayNotObj(json_arg.to_string()));
             }
-            if json_args.is_empty() {
+            if json_arg.is_empty() {
                 return Err(CommandError::EmptyJsonArray);
             }
-            let json_args = if json_args.len() == 1 {
-                json_args
-                    .members()
-                    .next()
-                    .expect("should have a single json member")
-            } else {
-                return Err(CommandError::MultipleReceivers);
-            };
-
-            address = address_from_json(json_args, chain)?;
-            memo = memo_from_json(json_args)?;
+            address = address_from_json(&json_arg, chain)?;
+            memo = memo_from_json(&json_arg)?;
             check_memo_compatibility(&address, &memo)?;
+            zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
         }
     } else if args.len() == 2 {
+        zennies_for_zingo = false;
         address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
         memo = Some(
             wallet::utils::interpret_memo_string(args[1].to_string())
@@ -120,49 +112,44 @@ pub(super) fn parse_send_all_args(
     } else {
         return Err(CommandError::InvalidArguments);
     }
-
-    Ok((address, memo))
+    Ok((address, zennies_for_zingo, memo))
 }
 
 // Parse the arguments for `spendable_balance`.
 // The arguments have two possible formats:
-// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>"}]'
+// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "zennies_for_zingo": <true|false>}]'
 // - 1 argument for a single address. &["<address>"]
+// NOTE: zennies_for_zingo can only be set in a JSON
+// string.
 pub(super) fn parse_spendable_balance_args(
     args: &[&str],
     chain: &ChainType,
-) -> Result<Address, CommandError> {
-    let address: Address;
-
-    if args.len() != 1 {
+) -> Result<(Address, bool), CommandError> {
+    if args.len() > 2 {
         return Err(CommandError::InvalidArguments);
     }
+    let address: Address;
+    let zennies_for_zingo: bool;
 
     if let Ok(addr) = address_from_str(args[0], chain) {
         address = addr;
+        zennies_for_zingo = false;
     } else {
-        let json_args =
-            json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+        let json_arg = json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
 
-        if !json_args.is_array() {
-            return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
+        if json_arg.is_array() {
+            return Err(CommandError::JsonArrayNotObj(
+                "Pass an object, not an array.".to_string(),
+            ));
         }
-        if json_args.is_empty() {
+        if json_arg.is_empty() {
             return Err(CommandError::EmptyJsonArray);
         }
-        let json_args = if json_args.len() == 1 {
-            json_args
-                .members()
-                .next()
-                .expect("should have a single json member")
-        } else {
-            return Err(CommandError::MultipleReceivers);
-        };
-
-        address = address_from_json(json_args, chain)?;
+        address = address_from_json(&json_arg, chain)?;
+        zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
     }
 
-    Ok(address)
+    Ok((address, zennies_for_zingo))
 }
 
 // Checks send inputs do not contain memo's to transparent addresses.
@@ -191,6 +178,17 @@ fn address_from_json(json_array: &JsonValue, chain: &ChainType) -> Result<Addres
     address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)
 }
 
+fn zennies_flag_from_json(json_arg: &JsonValue) -> Result<bool, CommandError> {
+    if !json_arg.has_key("zennies_for_zingo") {
+        return Err(CommandError::MissingZenniesForZingoFlag);
+    }
+    match json_arg["zennies_for_zingo"].as_bool() {
+        Some(boolean) => Ok(boolean),
+        None => Err(CommandError::ZenniesFlagNonBool(
+            json_arg["zennies_for_zingo"].to_string(),
+        )),
+    }
+}
 fn zatoshis_from_json(json_array: &JsonValue) -> Result<NonNegativeAmount, CommandError> {
     if !json_array.has_key("amount") {
         return Err(CommandError::MissingKey("amount".to_string()));
@@ -392,11 +390,34 @@ mod tests {
         let memo_str = "test memo";
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
+        // JSON single receiver
+        let single_receiver =
+            &["{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                 \"memo\":\"test memo\", \
+                 \"zennies_for_zingo\":false}"];
+        assert_eq!(
+            super::parse_send_all_args(single_receiver, &chain).unwrap(),
+            (address.clone(), false, Some(memo.clone()))
+        );
+        // NonBool Zenny Flag
+        let nb_zenny =
+            &["{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+                 \"memo\":\"test memo\", \
+                 \"zennies_for_zingo\":\"false\"}"];
+        assert!(matches!(
+            super::parse_send_all_args(nb_zenny, &chain),
+            Err(CommandError::ZenniesFlagNonBool(_))
+        ));
         // with memo
         let send_args = &[address_str, memo_str];
         assert_eq!(
             super::parse_send_all_args(send_args, &chain).unwrap(),
-            (address.clone(), Some(memo.clone()))
+            (address.clone(), false, Some(memo.clone()))
+        );
+        let send_args = &[address_str, memo_str];
+        assert_eq!(
+            super::parse_send_all_args(send_args, &chain).unwrap(),
+            (address.clone(), false, Some(memo.clone()))
         );
 
         // invalid address
@@ -404,15 +425,6 @@ mod tests {
         assert!(matches!(
             super::parse_send_all_args(send_args, &chain),
             Err(CommandError::ArgNotJsonOrValidAddress)
-        ));
-
-        // multiple receivers
-        let send_args = &["[{\"address\":\"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd\"}, \
-                    {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
-                    \"memo\":\"test memo\"}]"];
-        assert!(matches!(
-            super::parse_send_all_args(send_args, &chain),
-            Err(CommandError::MultipleReceivers)
         ));
     }
 

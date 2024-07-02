@@ -21,8 +21,8 @@ use crate::wallet::notes::query::OutputSpendStatusQuery;
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
 #[non_exhaustive] // We can add new pools later
-#[derive(Debug)]
-pub enum AnyPoolOutput {
+#[derive(Clone, Debug)]
+pub enum Output {
     /// Transparent Outputs
     TransparentOutput,
     /// Sapling Notes
@@ -30,7 +30,7 @@ pub enum AnyPoolOutput {
     /// Orchard Notes
     OrchardNote,
 }
-impl AnyPoolOutput {
+impl Output {
     /// All the output records
     pub fn get_record_outputs(
         transaction_record: &super::transaction_record::TransactionRecord,
@@ -79,6 +79,11 @@ impl AnyPoolOutput {
                     .map(|output| Self::OrchardNote(output.clone())),
             )
             .collect()
+    }
+
+    /// this sums the value of a vec of outputs, ignoring marginal fees
+    pub fn sum_gross_value(list: Vec<Self>) -> u64 {
+        list.iter().fold(0, |total, output| total + output.value())
     }
 }
 /// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.

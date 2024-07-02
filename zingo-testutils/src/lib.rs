@@ -34,6 +34,7 @@ use crate::scenarios::setup::TestEnvironmentGenerator;
 
 pub mod assertions;
 pub mod chain_generics;
+pub mod fee_tables;
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
 /// lightclient helpers
@@ -1204,7 +1205,7 @@ pub mod scenarios {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn faucet_funded_recipient_default(
+    pub async fn orchard_funded_recipient(
         orchard_funds: u64,
     ) -> (
         RegtestManager,
