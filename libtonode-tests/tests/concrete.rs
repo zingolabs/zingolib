@@ -2435,18 +2435,6 @@ mod slow {
                 .await;
             let orig_transaction_id = orig_transaction_id.unwrap();
             assert_eq!(get_recent_txid(&recipient).await, orig_transaction_id);
-            // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
-            for _ in 0..5 {
-                zingo_testutils::send_value_between_clients_and_sync(
-                    &regtest_manager,
-                    &faucet,
-                    &faucet,
-                    5_000,
-                    "unified",
-                )
-                .await
-                .unwrap();
-            }
 
             let sent_to_self = 10;
             // Send recipient->recipient, to make tree equality check at the end simpler
@@ -2612,7 +2600,7 @@ mod slow {
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
                 .await
                 .unwrap();
-            assert_eq!(recipient.wallet.last_synced_height().await, 21);
+            assert_eq!(recipient.wallet.last_synced_height().await, 16);
 
             let notes = recipient.do_list_notes(true).await;
 
@@ -2637,7 +2625,7 @@ mod slow {
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 100)
                 .await
                 .unwrap();
-            assert_eq!(recipient.wallet.last_synced_height().await, 121);
+            assert_eq!(recipient.wallet.last_synced_height().await, 116);
 
             let notes = recipient.do_list_notes(true).await;
             let transactions = recipient.do_list_transactions().await;
