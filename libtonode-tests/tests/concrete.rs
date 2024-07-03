@@ -2459,9 +2459,10 @@ mod slow {
             )
             .await
             .unwrap();
-            let fees = get_fees_paid_by_client(&recipient).await;
-            assert_eq!(value - fees, 90_000);
-            let balance_minus_step_one_fees = value - fees;
+            let recipient_total_fees = get_fees_paid_by_client(&recipient).await;
+            assert_eq!(recipient_total_fees, 10_000); // Pay to send orchard to orchard once
+            assert_eq!(value - recipient_total_fees, 90_000);
+            let balance_minus_step_one_fees = value - recipient_total_fees;
 
             // 3a. stash zcashd state
             log::debug!(
