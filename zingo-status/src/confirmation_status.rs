@@ -1,5 +1,5 @@
 //! A note can either be:
-//!  Pending === not on-record on-chain
+//!  Pending === not on-record on-chain, but broadcast when the tip was at BlockHeight
 //!  Confirmed === on-record on-chain at BlockHeight
 
 use zcash_primitives::consensus::BlockHeight;
