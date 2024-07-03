@@ -2413,10 +2413,14 @@ mod slow {
 
         #[tokio::test]
         async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
-            async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
-                json::object! {
-                    "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
-                }
+            async fn get_recent_txid(lc: &LightClient) -> String {
+                lc.wallet
+                    .transactions()
+                    .read()
+                    .await
+                    .get_some_txid_from_highest_wallet_block()
+                    .map(|t| t.to_string())
+                    .expect("A string")
             }
             let value = 100_000;
             let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -2430,10 +2434,7 @@ mod slow {
                 )
                 .await;
             let orig_transaction_id = orig_transaction_id.unwrap();
-            assert_eq!(
-                do_maybe_recent_txid(&recipient).await["last_txid"],
-                orig_transaction_id
-            );
+            assert_eq!(get_recent_txid(&recipient).await, orig_transaction_id);
             // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
             for _ in 0..5 {
                 zingo_testutils::send_value_between_clients_and_sync(

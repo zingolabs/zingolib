@@ -111,6 +111,8 @@ impl TxMapAndMaybeTrees {
     }
 
     /// This returns an _arbitrary_ confirmed txid from the latest block the wallet is aware of.
+    /// It's only used in test as far as we are aware.
+    /// TODO:  Select the txid with the highest index from the highest block?
     pub fn get_some_txid_from_highest_wallet_block(&self) -> Option<TxId> {
         self.transaction_records_by_id
             .values()
