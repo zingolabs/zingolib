@@ -194,8 +194,6 @@ mod fast {
         dbg!(recipient.value_transfers().await);
         assert_eq!(post_self_send, expected_post_self_send_balances);
         assert_eq!(recipient.list_outputs().await.len(), 3);
-        dbg!(recipient.list_outputs().await);
-        panic!();
     }
 
     #[tokio::test]
