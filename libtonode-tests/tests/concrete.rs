@@ -131,6 +131,7 @@ mod fast {
     use zingolib::wallet::WalletBase;
 
     use super::*;
+
     #[tokio::test]
     async fn self_send_sapling_to_orchard() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -149,7 +150,6 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        dbg!(&recipient.do_balance().await);
         let funded_pre_self_send = recipient.do_balance().await;
         let expected_funded_pre_self_send_balances = PoolBalances {
             sapling_balance: Some(initial_deposit),
@@ -164,32 +164,40 @@ mod fast {
         };
 
         assert_eq!(funded_pre_self_send, expected_funded_pre_self_send_balances);
+        let distinct_amount = 1_234;
         from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
-                1_234,
+                distinct_amount,
                 Some("Promote distinct amount from sap to orch."),
             )],
         )
         .await
         .unwrap();
-        let distinct_amount = 1_234;
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
         let expected_fee = 20_000;
         let post_self_send = recipient.do_balance().await;
         let expected_post_self_send_balances = PoolBalances {
-            sapling_balance: Some(initial_deposit - distinct_amount - expected_fee),
+            sapling_balance: Some(0),
             verified_sapling_balance: Some(0),
             spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(initial_deposit - distinct_amount - expected_fee),
-            orchard_balance: Some(0),
-            verified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(0),
-            unverified_orchard_balance: Some(distinct_amount),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(initial_deposit - expected_fee),
+            verified_orchard_balance: Some(initial_deposit - expected_fee),
+            spendable_orchard_balance: Some(initial_deposit - expected_fee),
+            unverified_orchard_balance: Some(0),
             transparent_balance: Some(0),
         };
+        dbg!(recipient.value_transfers().await);
         assert_eq!(post_self_send, expected_post_self_send_balances);
+        assert_eq!(recipient.list_outputs().await.len(), 3);
+        dbg!(recipient.list_outputs().await);
+        panic!();
     }
+
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
