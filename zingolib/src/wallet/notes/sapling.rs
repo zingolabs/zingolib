@@ -3,7 +3,7 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::notes::interface::{OutputConstructor, SpendTxId};
 
 use super::{
     super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
@@ -74,19 +74,19 @@ impl OutputInterface for SaplingNote {
         self.sapling_crypto_note.value().inner()
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
+    fn spent(&self) -> &Option<(SpendTxId, u32)> {
         &self.spent
     }
 
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn spent_mut(&mut self) -> &mut Option<(SpendTxId, u32)> {
         &mut self.spent
     }
 
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
+    fn pending_spent(&self) -> &Option<(SpendTxId, u32)> {
         &self.pending_spent
     }
 
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn pending_spent_mut(&mut self) -> &mut Option<(SpendTxId, u32)> {
         &mut self.pending_spent
     }
 }
