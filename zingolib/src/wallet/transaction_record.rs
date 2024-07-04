@@ -528,7 +528,9 @@ pub enum SendType {
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
 
     use crate::{
         mocks::{
@@ -661,8 +663,8 @@ pub mod mocks {
         orchard_spent: u64,
         orchard_semi_spent: u64,
     ) -> TransactionRecord {
-        let spend = Some((random_txid(), 112358));
-        let semi_spend = Some((random_txid(), 853211));
+        let spend = Some((random_txid(), Confirmed(112358.into())));
+        let pending_spend = Some((random_txid(), Pending(853211.into())));
 
         TransactionRecordBuilder::default()
             .transparent_outputs(
@@ -672,39 +674,39 @@ pub mod mocks {
             )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .spent(spend)
+                    .spend(spend)
                     .value(transparent_spent)
                     .clone(),
             )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .pending_spent(semi_spend)
+                    .spend(pending_spend)
                     .value(transparent_semi_spent)
                     .clone(),
             )
             .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent).clone())
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .spent(spend)
+                    .spend(spend)
                     .value(sapling_spent)
                     .clone(),
             )
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .pending_spent(semi_spend)
+                    .spend(pending_spend)
                     .value(sapling_semi_spent)
                     .clone(),
             )
             .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent).clone())
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spent(spend)
+                    .spend(spend)
                     .value(orchard_spent)
                     .clone(),
             )
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .pending_spent(semi_spend)
+                    .spend(pending_spend)
                     .value(orchard_semi_spent)
                     .clone(),
             )
