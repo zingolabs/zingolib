@@ -768,10 +768,7 @@ where
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
     ) -> bool {
-        note_and_metadata.spent().is_none()
-            && note_and_metadata.pending_spent().is_none()
-            && spend_key.is_some()
-            && note_and_metadata.value() != 0
+        note_and_metadata.spend().is_none() && spend_key.is_some() && note_and_metadata.value() != 0
     }
 
     /// The checks needed are shared between domains, and thus are performed in the
