@@ -5,6 +5,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::notes::{
     interface::OutputConstructor, query::OutputSpendStatusQuery, OutputInterface,
@@ -25,11 +26,8 @@ pub struct TransparentOutput {
     /// TODO: Add Doc Comment Here!
     pub value: u64,
 
-    spent: Option<(TxId, u32)>, // If this utxo was confirmed spent Todo: potential data incoherence with pending_spent
-
-    /// If this utxo was spent in a send, but has not yet been confirmed.
-    /// Contains the txid and height at which the Tx was broadcast
-    pending_spent: Option<(TxId, u32)>,
+    /// whether, where, and when it was spent
+    spend: Option<(TxId, ConfirmationStatus)>,
 }
 
 impl OutputInterface for TransparentOutput {
@@ -41,20 +39,12 @@ impl OutputInterface for TransparentOutput {
         self.value
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent
+    fn spend(&self) -> &Option<(TxId, ConfirmationStatus)> {
+        &self.spend
     }
 
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent
-    }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.pending_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.pending_spent
+    fn spend_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)> {
+        &mut self.spend
     }
 }
 impl OutputConstructor for TransparentOutput {
@@ -103,7 +93,7 @@ impl TransparentOutput {
             output_index,
             script,
             value,
-            spent,
+            spend: spent,
             pending_spent,
         }
     }
@@ -131,7 +121,7 @@ impl TransparentOutput {
         writer.write_u64::<byteorder::LittleEndian>(self.value)?;
         writer.write_i32::<byteorder::LittleEndian>(0)?;
 
-        let (spent, spent_at_height) = if let Some(spent_tuple) = self.spent {
+        let (spent, spent_at_height) = if let Some(spent_tuple) = self.spend {
             (Some(spent_tuple.0), Some(spent_tuple.1 as i32))
         } else {
             (None, None)
@@ -216,7 +206,7 @@ impl TransparentOutput {
             output_index,
             script,
             value,
-            spent: spent_tuple,
+            spend: spent_tuple,
             pending_spent: None,
         })
     }

@@ -160,7 +160,7 @@ impl TransactionRecordsById {
                 .transparent_outputs
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.is_confirmed_spent()
+                    if utxo.is_spent_confirmed()
                         && invalidated_txids.contains(&utxo.spent().unwrap().0)
                     {
                         *utxo.spent_mut() = None;

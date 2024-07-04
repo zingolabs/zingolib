@@ -619,7 +619,7 @@ impl LightWallet {
                         .get_utxos()
                         .await
                         .iter()
-                        .filter(|utxo| utxo.pending_spent().is_none() && !utxo.is_confirmed_spent())
+                        .filter(|utxo| utxo.pending_spent().is_none() && !utxo.is_spent_confirmed())
                         .cloned()
                         .collect::<Vec<_>>();
                     all_transparent_value_in_wallet =
