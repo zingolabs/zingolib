@@ -212,6 +212,7 @@ pub mod mocks {
     use incrementalmerkletree::Position;
     use sapling_crypto::value::NoteValue;
     use zcash_primitives::{memo::Memo, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
         mocks::SaplingCryptoNoteBuilder,
@@ -229,8 +230,7 @@ pub mod mocks {
         witnessed_position: Option<Option<Position>>,
         pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<sapling_crypto::Nullifier>>,
-        spent: Option<Option<(TxId, u32)>>,
-        pending_spent: Option<Option<(TxId, u32)>>,
+        spend: Option<Option<(TxId, ConfirmationStatus)>>,
         memo: Option<Option<Memo>>,
         is_change: Option<bool>,
         have_spending_key: Option<bool>,
@@ -246,8 +246,7 @@ pub mod mocks {
                 witnessed_position: None,
                 output_index: None,
                 nullifier: None,
-                spent: None,
-                pending_spent: None,
+                spend: None,
                 memo: None,
                 is_change: None,
                 have_spending_key: None,
@@ -260,8 +259,7 @@ pub mod mocks {
         build_method!(witnessed_position, Option<Position>);
         build_method!(output_index, Option<u32>);
         build_method!(nullifier, Option<sapling_crypto::Nullifier>);
-        build_method!(spent, Option<(TxId, u32)>);
-        build_method!(pending_spent, Option<(TxId, u32)>);
+        build_method!(spend, Option<(TxId, ConfirmationStatus)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
         pub fn set_change(&mut self, is_change: bool) -> &mut Self {
@@ -284,8 +282,7 @@ pub mod mocks {
                 self.note.clone().unwrap().build(),
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
-                self.spent.unwrap(),
-                self.pending_spent.unwrap(),
+                self.spend.unwrap(),
                 self.memo.clone().unwrap(),
                 self.is_change.unwrap(),
                 self.have_spending_key.unwrap(),

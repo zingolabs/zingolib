@@ -334,6 +334,7 @@ mod tests {
 
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
+    use zingo_status::confirmation_status::ConfirmationStatus::Broadcast;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
     use crate::{
@@ -407,12 +408,13 @@ mod tests {
                         .status(Confirmed(1000000.into()))
                         .build(),
                 );
-            let spend = Some((default_txid(), 112358));
+            let spend = Some((default_txid(), Confirmed(112358.into())));
+            let pending_spend = Some((default_txid(), Broadcast(112357.into())));
             transaction_records_and_maybe_trees
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .sapling_notes(SaplingNoteBuilder::default().spent(spend).clone())
+                        .sapling_notes(SaplingNoteBuilder::default().spend(spend).clone())
                         .status(Confirmed(2000000.into()))
                         .randomize_txid()
                         .build(),
@@ -421,7 +423,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().pending_spent(spend).clone())
+                        .orchard_notes(OrchardNoteBuilder::default().spend(pending_spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
                         .build(),
