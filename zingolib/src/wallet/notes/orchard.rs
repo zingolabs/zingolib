@@ -28,7 +28,7 @@ pub struct OrchardNote {
     pub(crate) nullifier: Option<orchard::note::Nullifier>,
 
     /// If this note was confirmed spent
-    pub spent: Option<(TxId, u32)>, // Todo: as related to pending spent, this is potential data incoherence
+    spent: Option<(TxId, u32)>, // Todo: as related to pending spent, this is potential data incoherence
 
     /// If this note was spent in a send, but has not yet been confirmed.
     /// Contains the transaction id and height at which it was broadcast

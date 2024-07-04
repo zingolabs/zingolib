@@ -770,7 +770,7 @@ impl LightClient {
                         None
                     } else {
                         let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
-                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent.is_none() && orch_note_metadata.pending_spent().is_none();
+                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent().is_none() && orch_note_metadata.pending_spent().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         Some(object!{
@@ -781,8 +781,8 @@ impl LightClient {
                             "pending"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
                             "spendable"          => spendable,
-                            "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            "spent_at_height"    => orch_note_metadata.spent.map(|(_, h)| h),
+                            "spent"              => orch_note_metadata.spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "spent_at_height"    => orch_note_metadata.spent().map(|(_, h)| h),
                             "pending_spent"  => orch_note_metadata.pending_spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
