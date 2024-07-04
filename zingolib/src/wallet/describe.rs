@@ -299,18 +299,17 @@ pub fn get_spend_status<OI>(
 where
     OI: OutputInterface,
 {
-    if let Some(spending_txid) = output
+    output
         .spent()
         .or(*output.pending_spent())
         .map(|(txid, _height)| txid)
-    {
-        records
-            .get(&spending_txid)
-            .map(|transaction_record| Some(transaction_record.status))
-            .ok_or(spending_txid)
-    } else {
-        Ok(None)
-    }
+        .map(|spending_txid| {
+            records
+                .get(&spending_txid)
+                .map(|transaction_record| Some(transaction_record.status))
+                .ok_or(spending_txid)
+        })
+        .unwrap_or(Ok(None))
 }
 
 #[cfg(test)]
