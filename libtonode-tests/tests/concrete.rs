@@ -128,7 +128,7 @@ mod fast {
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_testutils::lightclient::from_inputs;
-    use zingolib::wallet::WalletBase;
+    use zingolib::wallet::{notes::OutputInterface as _, WalletBase};
 
     use super::*;
     #[tokio::test]
@@ -158,8 +158,8 @@ mod fast {
         );
         assert_eq!(preshield_utxos[0].value, postshield_utxos[0].value);
         assert_eq!(preshield_utxos[0].script, postshield_utxos[0].script);
-        assert!(preshield_utxos[0].pending_spent.is_none());
-        assert!(postshield_utxos[0].pending_spent.is_some());
+        assert!(preshield_utxos[0].pending_spent().is_none());
+        assert!(postshield_utxos[0].pending_spent().is_some());
     }
 
     // TODO: zip317 - check reorg buffer offset is still accounted for in  zip317 sends, fix or delete this test

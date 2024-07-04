@@ -181,7 +181,7 @@ impl LightClient {
 
                 tx.transparent_outputs
                     .iter()
-                    .filter(|n| !n.is_confirmed_spent() && n.pending_spent.is_none())
+                    .filter(|n| !n.is_confirmed_spent() && n.pending_spent().is_none())
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
@@ -828,7 +828,7 @@ impl LightClient {
                             "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spent"              => utxo.spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => utxo.spent().map(|(_, h)| h),
-                            "pending_spent"  => utxo.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => utxo.pending_spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )

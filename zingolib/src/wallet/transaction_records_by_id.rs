@@ -465,9 +465,9 @@ impl TransactionRecordsById {
                     // Mark this utxo as spent
                     *spent_utxo.spent_mut() =
                         Some((source_txid, spending_tx_status.get_height().into()));
-                    spent_utxo.pending_spent = None;
+                    *spent_utxo.pending_spent_mut() = None;
                 } else {
-                    spent_utxo.pending_spent =
+                    *spent_utxo.pending_spent_mut() =
                         Some((source_txid, u32::from(spending_tx_status.get_height())));
                 }
 
