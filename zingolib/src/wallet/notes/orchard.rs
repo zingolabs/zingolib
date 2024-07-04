@@ -2,6 +2,7 @@
 use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::notes::interface::OutputConstructor;
 
@@ -105,8 +106,7 @@ impl ShieldedNoteInterface for OrchardNote {
         orchard_crypto_note: Self::Note,
         witnessed_position: Option<Position>,
         nullifier: Option<Self::Nullifier>,
-        spent: Option<(TxId, u32)>,
-        pending_spent: Option<(TxId, u32)>,
+        spend: Option<(TxId, ConfirmationStatus)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
@@ -117,8 +117,7 @@ impl ShieldedNoteInterface for OrchardNote {
             orchard_crypto_note,
             witnessed_position,
             nullifier,
-            spent,
-            pending_spent,
+            spend,
             memo,
             is_change,
             have_spending_key,
