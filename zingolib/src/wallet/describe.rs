@@ -6,6 +6,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_primitives::transaction::TxId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use std::{cmp, sync::Arc};
@@ -294,7 +295,7 @@ impl LightWallet {
 pub fn get_spend_status<OI>(
     output: OI,
     records: TransactionRecordsById,
-) -> Option<ConfirmationStatus>
+) -> Result<Option<ConfirmationStatus>, TxId>
 where
     OI: OutputInterface,
 {
@@ -305,9 +306,10 @@ where
     {
         records
             .get(&spending_txid)
-            .map(|transaction_record| transaction_record.status)
+            .map(|transaction_record| Some(transaction_record.status))
+            .ok_or(spending_txid)
     } else {
-        None
+        Ok(None)
     }
 }
 
