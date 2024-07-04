@@ -20,7 +20,7 @@ use crate::{
         data::{
             finsight,
             summaries::{
-                OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummaries,
+                OrchardNoteSummary, SaplingNoteSummary, TransactionSummaries,
                 TransactionSummaryBuilder, TransparentCoinSummary, ValueTransfer,
                 ValueTransferBuilder, ValueTransferKind, ValueTransfers,
             },

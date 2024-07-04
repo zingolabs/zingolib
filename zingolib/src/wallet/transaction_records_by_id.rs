@@ -163,7 +163,7 @@ impl TransactionRecordsById {
                     // Mark utxo as unspent if the txid being removed spent it.
                     if utxo
                         .spend()
-                        .filter(|(txid, status)| invalidated_txids.contains(&txid))
+                        .filter(|(txid, _status)| invalidated_txids.contains(txid))
                         .is_some()
                     {
                         *utxo.spend_mut() = None;
@@ -191,7 +191,7 @@ impl TransactionRecordsById {
                 // Mark note as unspent if the txid being removed spent it.
                 if note
                     .spend()
-                    .filter(|(txid, status)| invalidated_txids.contains(&txid))
+                    .filter(|(txid, _status)| invalidated_txids.contains(txid))
                     .is_some()
                 {
                     *note.spend_mut() = None;

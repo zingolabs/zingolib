@@ -186,7 +186,7 @@ pub mod tests {
 
     use super::query::{OutputPoolQuery, OutputSpendStatusQuery};
 
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
     use zingo_status::confirmation_status::ConfirmationStatus::Pending;
 
