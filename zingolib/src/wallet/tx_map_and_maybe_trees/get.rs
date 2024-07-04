@@ -32,7 +32,7 @@ impl TxMapAndMaybeTrees {
                     .iter()
                     .filter_map(move |sapling_note_description| {
                         if sapling_note_description.have_spending_key
-                            && sapling_note_description.spent().is_none()
+                            && !sapling_note_description.is_spent_confirmed()
                         {
                             Some((
                                 *txid,
@@ -50,7 +50,7 @@ impl TxMapAndMaybeTrees {
                     .chain(transaction_metadata.orchard_notes.iter().filter_map(
                         move |orchard_note_description| {
                             if orchard_note_description.have_spending_key
-                                && orchard_note_description.spent().is_none()
+                                && !orchard_note_description.is_spent_confirmed()
                             {
                                 Some((
                                     *txid,
