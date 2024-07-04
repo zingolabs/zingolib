@@ -557,13 +557,7 @@ impl LightClient {
                     .sapling_notes
                     .iter()
                     .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
-                        } else {
-                            SpendStatus::Unspent
-                        };
+                        let spend_status = output.spend_status();
 
                         let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
                             Some(memo_text.to_string())
@@ -583,13 +577,7 @@ impl LightClient {
                     .transparent_outputs
                     .iter()
                     .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
-                        } else {
-                            SpendStatus::Unspent
-                        };
+                        let spend_status = output.spend_status();
 
                         TransparentCoinSummary::from_parts(
                             output.value(),

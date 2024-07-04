@@ -77,7 +77,7 @@ impl LightWallet {
                     }
                     selected_notes
                         .map(|notedata| {
-                            if notedata.spent().is_none() && notedata.pending_spent().is_none() {
+                            if notedata.spend().is_none() {
                                 <D::WalletNote as OutputInterface>::value(notedata)
                             } else {
                                 0
