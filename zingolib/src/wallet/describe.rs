@@ -6,6 +6,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use std::{cmp, sync::Arc};
 use tokio::sync::RwLock;
@@ -28,6 +29,8 @@ use crate::wallet::traits::Recipient;
 
 use crate::wallet::LightWallet;
 use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+
+use super::transaction_records_by_id::TransactionRecordsById;
 
 impl LightWallet {
     // Core shielded_balance function, other public methods dispatch specific sets of filters to this
@@ -284,6 +287,26 @@ impl LightWallet {
     /// TODO: Add Doc Comment Here!
     pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
         self.transaction_context.transaction_metadata_set.clone()
+    }
+}
+
+pub fn get_spend_status<OI>(
+    output: OI,
+    records: TransactionRecordsById,
+) -> Option<ConfirmationStatus>
+where
+    OI: OutputInterface,
+{
+    if let Some(spending_txid) = output
+        .spent()
+        .or(*output.pending_spent())
+        .map(|(txid, height)| txid)
+    {
+        records
+            .get(&spending_txid)
+            .map(|transaction_record| transaction_record.status)
+    } else {
+        None
     }
 }
 
