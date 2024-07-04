@@ -57,7 +57,7 @@ pub trait OutputInterface: Sized {
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
     /// returns the id of the spending transaction, whether pending or no
-    fn spending_txid(&mut self) -> Option<TxId> {
+    fn spending_txid(&self) -> Option<TxId> {
         self.spent()
             .or(*self.pending_spent())
             .map(|(txid, _height)| txid)

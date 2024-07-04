@@ -301,9 +301,7 @@ where
     OI: OutputInterface,
 {
     output
-        .spent()
-        .or(*output.pending_spent())
-        .map(|(txid, _height)| txid)
+        .spending_txid()
         .map(|spending_txid| {
             records
                 .get(&spending_txid)
