@@ -50,6 +50,7 @@ use zcash_primitives::{
         Transaction, TxId,
     },
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::ChainType;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
@@ -1131,6 +1132,9 @@ where
             Ok((TxId::from_bytes(transaction_id_bytes), height))
         })?;
 
+        let spend =
+            spent.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
+
         if external_version < 3 {
             let _pending_spent = {
                 Optional::read(&mut reader, |r| {
@@ -1178,8 +1182,7 @@ where
             note,
             Some(witnessed_position),
             Some(nullifier),
-            spent,
-            None,
+            spend,
             memo,
             is_change,
             have_spending_key,
