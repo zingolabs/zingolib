@@ -798,7 +798,7 @@ impl LightClient {
         )
     }
 
-    async fn list_transparent_notes(
+    async fn list_transparent_outputs(
         &self,
         all_notes: bool,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
@@ -877,7 +877,7 @@ impl LightClient {
             mut unspent_transparent_notes,
             mut spent_transparent_notes,
             mut pending_transparent_notes,
-        ) = self.list_transparent_notes(all_notes).await;
+        ) = self.list_transparent_outputs(all_notes).await;
 
         unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
