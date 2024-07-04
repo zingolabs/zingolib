@@ -290,6 +290,7 @@ impl LightWallet {
     }
 }
 
+/// checks whether the spending txid for a note is confirmed
 pub fn get_spend_status<OI>(
     output: OI,
     records: TransactionRecordsById,
@@ -300,7 +301,7 @@ where
     if let Some(spending_txid) = output
         .spent()
         .or(*output.pending_spent())
-        .map(|(txid, height)| txid)
+        .map(|(txid, _height)| txid)
     {
         records
             .get(&spending_txid)
