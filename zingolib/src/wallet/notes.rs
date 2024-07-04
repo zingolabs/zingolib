@@ -185,25 +185,33 @@ pub mod tests {
 
     use super::query::{OutputPoolQuery, OutputSpendStatusQuery};
 
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
+
     #[test]
     fn note_queries() {
-        let spend = Some((default_txid(), 112358));
+        let confirmed_spend = Some((default_txid(), Confirmed(112358.into())));
+        let pending_spend = Some((default_txid(), Pending(112357.into())));
 
         let transparent_unspent_note = TransparentOutputBuilder::default().build();
         let transparent_pending_spent_note = TransparentOutputBuilder::default()
-            .pending_spent(spend)
+            .spend(pending_spend)
             .clone()
             .build();
         let transparent_spent_note = TransparentOutputBuilder::default()
-            .spent(spend)
+            .spend(confirmed_spend)
             .clone()
             .build();
         let sapling_unspent_note = SaplingNoteBuilder::default().build();
         let sapling_pending_spent_note = SaplingNoteBuilder::default()
-            .pending_spent(spend)
+            .spend(pending_spend)
             .clone()
             .build();
-        let sapling_spent_note = SaplingNoteBuilder::default().spent(spend).clone().build();
+        let sapling_spent_note = SaplingNoteBuilder::default()
+            .spend(confirmed_spend)
+            .clone()
+            .build();
 
         let unspent_query = OutputSpendStatusQuery::only_unspent();
         let pending_or_spent_query = OutputSpendStatusQuery::spentish();

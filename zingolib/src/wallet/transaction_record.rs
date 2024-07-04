@@ -529,6 +529,7 @@ pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
 
+    use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
     use zingo_status::confirmation_status::ConfirmationStatus::Pending;
 
