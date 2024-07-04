@@ -84,8 +84,7 @@ impl TransparentOutput {
         output_index: u64,
         script: Vec<u8>,
         value: u64,
-        spent: Option<(TxId, u32)>,
-        pending_spent: Option<(TxId, u32)>,
+        spend: Option<(TxId, ConfirmationStatus)>,
     ) -> Self {
         Self {
             address,
@@ -93,8 +92,7 @@ impl TransparentOutput {
             output_index,
             script,
             value,
-            spend: spent,
-            pending_spent,
+            spend,
         }
     }
 
@@ -207,7 +205,6 @@ impl TransparentOutput {
             script,
             value,
             spend: spent_tuple,
-            pending_spent: None,
         })
     }
 }
@@ -216,6 +213,7 @@ impl TransparentOutput {
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{utils::build_method, wallet::notes::TransparentOutput};
 
@@ -227,8 +225,7 @@ pub mod mocks {
         pub output_index: Option<u64>,
         script: Option<Vec<u8>>,
         value: Option<u64>,
-        spent: Option<Option<(TxId, u32)>>,
-        pending_spent: Option<Option<(TxId, u32)>>,
+        spend: Option<Option<(TxId, ConfirmationStatus)>>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransparentOutputBuilder {
@@ -240,8 +237,7 @@ pub mod mocks {
                 output_index: None,
                 script: None,
                 value: None,
-                spent: None,
-                pending_spent: None,
+                spend: None,
             }
         }
         // Methods to set each field
@@ -250,8 +246,7 @@ pub mod mocks {
         build_method!(output_index, u64);
         build_method!(script, Vec<u8>);
         build_method!(value, u64);
-        build_method!(spent, Option<(TxId, u32)>);
-        build_method!(pending_spent, Option<(TxId, u32)>);
+        build_method!(spend, Option<(TxId, ConfirmationStatus)>);
 
         /// builds a mock TransparentNote after all pieces are supplied
         pub fn build(&self) -> TransparentOutput {
@@ -261,8 +256,7 @@ pub mod mocks {
                 self.output_index.unwrap(),
                 self.script.clone().unwrap(),
                 self.value.unwrap(),
-                self.spent.unwrap(),
-                self.pending_spent.unwrap(),
+                self.spend.unwrap(),
             )
         }
     }
@@ -276,8 +270,7 @@ pub mod mocks {
                 .output_index(0)
                 .script(TransparentAddress::ScriptHash([0; 20]).script().0)
                 .value(100_000)
-                .spent(None)
-                .pending_spent(None);
+                .spend(None)
             builder
         }
     }

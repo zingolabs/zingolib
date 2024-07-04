@@ -539,7 +539,6 @@ impl TransactionRecordsById {
                     None,
                     None,
                     None,
-                    None,
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
                     false,
@@ -577,7 +576,6 @@ impl TransactionRecordsById {
             note.clone(),
             Some(position),
             nullifier,
-            None,
             None,
             None,
             // if this is change, we'll mark it later in check_notes_mark_change
