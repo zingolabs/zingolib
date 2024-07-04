@@ -145,7 +145,7 @@ impl LightClient {
 
                 tx.orchard_notes
                     .iter()
-                    .filter(|n| n.spent().is_none() && n.pending_spent().is_none())
+                    .filter(|n| n.spend().is_none())
                     .for_each(|n| {
                         let value = n.orchard_crypto_note.value().inner();
                         if !incoming && n.is_change {
@@ -163,7 +163,7 @@ impl LightClient {
 
                 tx.sapling_notes
                     .iter()
-                    .filter(|n| n.spent().is_none() && n.pending_spent().is_none())
+                    .filter(|n| n.spend().is_none())
                     .for_each(|n| {
                         let value = n.sapling_crypto_note.value().inner();
                         if !incoming && n.is_change {
@@ -181,7 +181,7 @@ impl LightClient {
 
                 tx.transparent_outputs
                     .iter()
-                    .filter(|n| !n.is_spent_confirmed() && n.pending_spent().is_none())
+                    .filter(|n| n.spend().is_none())
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
@@ -537,13 +537,7 @@ impl LightClient {
                     .orchard_notes
                     .iter()
                     .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
-                        } else {
-                            SpendStatus::Unspent
-                        };
+                        let spend_status = output.spend_status();
 
                         let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
                             Some(memo_text.to_string())
