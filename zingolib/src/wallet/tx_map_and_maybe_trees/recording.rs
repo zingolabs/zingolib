@@ -189,7 +189,7 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
         {
             match maybe_note {
                 Ok(note_datum) => {
-                    *note_datum.spent_mut() = Some((txid, height.into()));
+                    *note_datum.spend_mut() = Some((txid, ConfirmationStatus::Confirmed(height)));
                     if let Some(position) = *note_datum.witnessed_position() {
                         if let Some(ref mut tree) =
                             D::transaction_metadata_set_to_shardtree_mut(self)
