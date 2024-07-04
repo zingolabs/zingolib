@@ -819,28 +819,29 @@ mod tests {
         // t-note + s-note + o-note + outgoing_tx_data
         let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000;
 
+        let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
         let first_received_transaction_record = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(5.into()))
             .sapling_notes(spent_sapling_note_builder(
                 175_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &first_sapling_nullifier,
             ))
             .sapling_notes(spent_sapling_note_builder(
                 325_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &second_sapling_nullifier,
             ))
             .orchard_notes(spent_orchard_note_builder(
                 500_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &first_orchard_nullifier,
             ))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .spent(Some((random_txid(), 12)))
+                    .spend(Some((random_txid(), Confirmed(12.into()))))
                     .to_owned(),
             )
             .orchard_notes(OrchardNoteBuilder::default())
@@ -851,14 +852,14 @@ mod tests {
             .status(Confirmed(7.into()))
             .orchard_notes(spent_orchard_note_builder(
                 200_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &second_orchard_nullifier,
             ))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default().clone())
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spent(Some((random_txid(), 13)))
+                    .spend(Some((random_txid(), Confirmed(13.into()))))
                     .to_owned(),
             )
             .set_output_indexes()
