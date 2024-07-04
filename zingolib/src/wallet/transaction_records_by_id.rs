@@ -708,7 +708,7 @@ mod tests {
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::confirmation_status::ConfirmationStatus::{self, Confirmed};
 
     #[test]
     fn invalidate_all_transactions_after_or_at_height() {
@@ -767,7 +767,7 @@ mod tests {
 
     fn spent_sapling_note_builder(
         amount: u64,
-        sent: (TxId, u32),
+        sent: (TxId, ConfirmationStatus),
         sapling_nullifier: &sapling_crypto::Nullifier,
     ) -> SaplingNoteBuilder {
         SaplingNoteBuilder::default()
@@ -776,13 +776,13 @@ mod tests {
                     .value(sapling_crypto::value::NoteValue::from_raw(amount))
                     .to_owned(),
             )
-            .spent(Some(sent))
+            .spend(Some(sent))
             .nullifier(Some(*sapling_nullifier))
             .to_owned()
     }
     fn spent_orchard_note_builder(
         amount: u64,
-        sent: (TxId, u32),
+        sent: (TxId, ConfirmationStatus),
         orchard_nullifier: &orchard::note::Nullifier,
     ) -> OrchardNoteBuilder {
         OrchardNoteBuilder::default()
@@ -791,7 +791,7 @@ mod tests {
                     .value(orchard::value::NoteValue::from_raw(amount))
                     .to_owned(),
             )
-            .spent(Some(sent))
+            .spend(Some(sent))
             .nullifier(Some(*orchard_nullifier))
             .to_owned()
     }
