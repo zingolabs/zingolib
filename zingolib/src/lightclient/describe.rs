@@ -181,7 +181,7 @@ impl LightClient {
 
                 tx.transparent_outputs
                     .iter()
-                    .filter(|n| !n.is_spent() && n.pending_spent.is_none())
+                    .filter(|n| !n.is_confirmed_spent() && n.pending_spent.is_none())
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
@@ -766,7 +766,7 @@ impl LightClient {
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
                 transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
-                    if !all_notes && orch_note_metadata.is_spent() {
+                    if !all_notes && orch_note_metadata.is_confirmed_spent() {
                         None
                     } else {
                         let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
@@ -809,7 +809,7 @@ impl LightClient {
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, wtx)| {
                 wtx.transparent_outputs.iter().filter_map(move |utxo|
-                    if !all_notes && utxo.is_spent() {
+                    if !all_notes && utxo.is_confirmed_spent() {
                         None
                     } else {
                         let created_block:u32 = wtx.status.get_height().into();

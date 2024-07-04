@@ -258,7 +258,7 @@ impl LightWallet {
                 transaction
                     .transparent_outputs
                     .iter()
-                    .filter(|utxo| !utxo.is_spent())
+                    .filter(|utxo| !utxo.is_confirmed_spent())
             })
             .cloned()
             .collect::<Vec<TransparentOutput>>()

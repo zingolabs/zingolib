@@ -62,15 +62,15 @@ pub trait OutputInterface: Sized {
     }
 
     /// returns true if the note is confirmed spent
-    fn is_spent(&self) -> bool {
+    fn is_confirmed_spent(&self) -> bool {
         self.spent().is_some()
     }
 
     /// Returns true if the note has one of the spend statuses enumerated by the query
     fn spend_status_query(&self, query: OutputSpendStatusQuery) -> bool {
-        (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
+        (*query.unspent() && !self.is_confirmed_spent() && !self.is_pending_spent())
             || (*query.pending_spent() && self.is_pending_spent())
-            || (*query.spent() && self.is_spent())
+            || (*query.spent() && self.is_confirmed_spent())
     }
 
     /// Returns true if the note is unspent (spendable).
