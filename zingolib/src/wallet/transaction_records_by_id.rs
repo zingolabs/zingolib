@@ -719,29 +719,15 @@ mod tests {
             .build();
         let spending_txid = transaction_record_later.txid;
 
+        let spend = Some((spending_txid, Confirmed(15.into())));
+
         let transaction_record_early = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(5.into()))
-            .transparent_outputs(
-                TransparentOutputBuilder::default()
-                    .spent(Some((spending_txid, 15)))
-                    .clone(),
-            )
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .spent(Some((spending_txid, 15)))
-                    .clone(),
-            )
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .spent(Some((spending_txid, 15)))
-                    .clone(),
-            )
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .spent(Some((random_txid(), 15)))
-                    .clone(),
-            )
+            .transparent_outputs(TransparentOutputBuilder::default().spend(spend).clone())
+            .sapling_notes(SaplingNoteBuilder::default().spend(spend).clone())
+            .orchard_notes(OrchardNoteBuilder::default().spend(spend).clone())
+            .sapling_notes(SaplingNoteBuilder::default().spend(spend).clone())
             .orchard_notes(OrchardNoteBuilder::default())
             .set_output_indexes()
             .build();
