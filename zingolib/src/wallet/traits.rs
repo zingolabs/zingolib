@@ -1214,12 +1214,17 @@ where
                 .to_bytes(),
         )?;
 
+        let confirmed_spend = self
+            .spend()
+            .as_ref()
+            .and_then(|(txid, status)| status.get_confirmed_height().map(|height| (txid, height)));
+
         Optional::write(
             &mut writer,
-            self.spent().as_ref(),
+            confirmed_spend,
             |w, (transaction_id, height)| {
                 w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(*height)
+                w.write_u32::<LittleEndian>(height.into())
             },
         )?;
 
