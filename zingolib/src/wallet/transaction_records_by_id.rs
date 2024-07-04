@@ -455,15 +455,8 @@ impl TransactionRecordsById {
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
-                if spending_tx_status.is_confirmed() {
-                    // Mark this utxo as spent
-                    *spent_utxo.spent_mut() =
-                        Some((source_txid, spending_tx_status.get_height().into()));
-                    *spent_utxo.pending_spent_mut() = None;
-                } else {
-                    *spent_utxo.pending_spent_mut() =
-                        Some((source_txid, u32::from(spending_tx_status.get_height())));
-                }
+                // Mark this utxo as spent
+                *spent_utxo.spend_mut() = Some((source_txid, spending_tx_status));
 
                 spent_utxo.value
             } else {
