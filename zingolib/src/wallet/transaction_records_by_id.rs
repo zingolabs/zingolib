@@ -160,16 +160,13 @@ impl TransactionRecordsById {
                 .transparent_outputs
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.is_spent_confirmed()
-                        && invalidated_txids.contains(&utxo.spent().unwrap().0)
+                    // Mark utxo as unspent if the txid being removed spent it.
+                    if utxo
+                        .spend()
+                        .filter(|(txid, status)| invalidated_txids.contains(&txid))
+                        .is_some()
                     {
-                        *utxo.spent_mut() = None;
-                    }
-
-                    if utxo.pending_spent().is_some()
-                        && invalidated_txids.contains(&utxo.pending_spent().unwrap().0)
-                    {
-                        *utxo.pending_spent_mut() = None;
+                        *utxo.spend_mut() = None;
                     }
                 })
         });
@@ -190,17 +187,14 @@ impl TransactionRecordsById {
                 OutputSpendStatusQuery::spentish(),
             )
             .iter_mut()
-            .for_each(|nd| {
+            .for_each(|note| {
                 // Mark note as unspent if the txid being removed spent it.
-                if nd.spent().is_some() && invalidated_txids.contains(&nd.spent().unwrap().0) {
-                    *nd.spent_mut() = None;
-                }
-
-                // Remove pending spends too
-                if nd.pending_spent().is_some()
-                    && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
+                if note
+                    .spend()
+                    .filter(|(txid, status)| invalidated_txids.contains(&txid))
+                    .is_some()
                 {
-                    *nd.pending_spent_mut() = None;
+                    *note.spend_mut() = None;
                 }
             });
         });
