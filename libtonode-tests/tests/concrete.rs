@@ -158,8 +158,8 @@ mod fast {
         );
         assert_eq!(preshield_utxos[0].value, postshield_utxos[0].value);
         assert_eq!(preshield_utxos[0].script, postshield_utxos[0].script);
-        assert!(preshield_utxos[0].pending_spent().is_none());
-        assert!(postshield_utxos[0].pending_spent().is_some());
+        assert!(preshield_utxos[0].spend().is_none());
+        assert!(postshield_utxos[0].spend().is_some());
     }
 
     // TODO: zip317 - check reorg buffer offset is still accounted for in  zip317 sends, fix or delete this test
