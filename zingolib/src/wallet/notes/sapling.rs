@@ -2,6 +2,7 @@
 use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::notes::interface::OutputConstructor;
 
@@ -28,12 +29,8 @@ pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub nullifier: Option<sapling_crypto::Nullifier>,
 
-    /// TODO: Add Doc Comment Here!
-    spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to pending spent, this is potential data incoherence
-
-    /// If this note was spent in a send, but has not yet been confirmed.
-    /// Contains the transaction id and height at which it was broadcast
-    pending_spent: Option<(TxId, u32)>,
+    /// whether, where, and when it was spent
+    spend: Option<(TxId, ConfirmationStatus)>,
 
     /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
@@ -74,20 +71,12 @@ impl OutputInterface for SaplingNote {
         self.sapling_crypto_note.value().inner()
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent
+    fn spend(&self) -> &Option<(TxId, ConfirmationStatus)> {
+        &self.spend
     }
 
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent
-    }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.pending_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.pending_spent
+    fn spend_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)> {
+        &mut self.spend
     }
 }
 impl OutputConstructor for SaplingNote {
