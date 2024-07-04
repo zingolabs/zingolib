@@ -163,7 +163,7 @@ impl LightClient {
 
                 tx.sapling_notes
                     .iter()
-                    .filter(|n| n.spent().is_none() && n.pending_spent.is_none())
+                    .filter(|n| n.spent().is_none() && n.pending_spent().is_none())
                     .for_each(|n| {
                         let value = n.sapling_crypto_note.value().inner();
                         if !incoming && n.is_change {
@@ -727,7 +727,7 @@ impl LightClient {
                         None
                     } else {
                         let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
-                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spent.is_none() && note_metadata.pending_spent.is_none();
+                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spent.is_none() && note_metadata.pending_spent().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         Some(object!{
@@ -740,7 +740,7 @@ impl LightClient {
                             "spendable"          => spendable,
                             "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             "spent_at_height"    => note_metadata.spent.map(|(_, h)| h),
-                            "pending_spent"  => note_metadata.pending_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "pending_spent"  => note_metadata.pending_spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                         })
                     }
                 )

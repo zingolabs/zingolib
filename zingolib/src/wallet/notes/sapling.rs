@@ -33,7 +33,7 @@ pub struct SaplingNote {
 
     /// If this note was spent in a send, but has not yet been confirmed.
     /// Contains the transaction id and height at which it was broadcast
-    pub pending_spent: Option<(TxId, u32)>,
+    pending_spent: Option<(TxId, u32)>,
 
     /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
