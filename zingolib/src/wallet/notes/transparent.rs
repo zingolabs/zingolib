@@ -197,6 +197,8 @@ impl TransparentOutput {
         } else {
             None
         };
+        let spend =
+            spent_tuple.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
 
         Ok(TransparentOutput {
             address,
@@ -204,7 +206,7 @@ impl TransparentOutput {
             output_index,
             script,
             value,
-            spend: spent_tuple,
+            spend,
         })
     }
 }
