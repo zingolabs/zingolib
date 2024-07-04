@@ -119,11 +119,13 @@ impl TransparentOutput {
         writer.write_u64::<byteorder::LittleEndian>(self.value)?;
         writer.write_i32::<byteorder::LittleEndian>(0)?;
 
-        let (spent, spent_at_height) = if let Some(spent_tuple) = self.spend {
-            (Some(spent_tuple.0), Some(spent_tuple.1 as i32))
-        } else {
-            (None, None)
-        };
+        let confirmed_spend = self
+            .spend()
+            .as_ref()
+            .and_then(|(txid, status)| status.get_confirmed_height().map(|height| (txid, height)));
+
+        let spent = confirmed_spend.map(|(txid, _height)| txid);
+        let spent_at_height = confirmed_spend.map(|(_txid, height)| u32::from(height) as i32);
 
         zcash_encoding::Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
 
