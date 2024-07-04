@@ -270,7 +270,7 @@ pub mod mocks {
                 .output_index(0)
                 .script(TransparentAddress::ScriptHash([0; 20]).script().0)
                 .value(100_000)
-                .spend(None)
+                .spend(None);
             builder
         }
     }
