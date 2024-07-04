@@ -56,6 +56,13 @@ pub trait OutputInterface: Sized {
     /// TODO: Add Doc Comment Here!
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
 
+    /// returns the id of the spending transaction, whether pending or no
+    fn spending_txid(&mut self) -> Option<TxId> {
+        self.spent()
+            .or(*self.pending_spent())
+            .map(|(txid, _height)| txid)
+    }
+
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
         self.pending_spent().is_some()
