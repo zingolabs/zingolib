@@ -29,7 +29,7 @@ pub struct TransparentOutput {
 
     /// If this utxo was spent in a send, but has not yet been confirmed.
     /// Contains the txid and height at which the Tx was broadcast
-    pub pending_spent: Option<(TxId, u32)>,
+    pending_spent: Option<(TxId, u32)>,
 }
 
 impl OutputInterface for TransparentOutput {

@@ -166,10 +166,10 @@ impl TransactionRecordsById {
                         *utxo.spent_mut() = None;
                     }
 
-                    if utxo.pending_spent.is_some()
-                        && invalidated_txids.contains(&utxo.pending_spent.unwrap().0)
+                    if utxo.pending_spent().is_some()
+                        && invalidated_txids.contains(&utxo.pending_spent().unwrap().0)
                     {
-                        utxo.pending_spent = None;
+                        *utxo.pending_spent_mut() = None;
                     }
                 })
         });
