@@ -770,7 +770,7 @@ impl LightClient {
                         None
                     } else {
                         let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
-                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spent().is_none() && orch_note_metadata.pending_spent().is_none();
+                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && orch_note_metadata.spend().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         Some(object!{
@@ -778,12 +778,12 @@ impl LightClient {
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => orch_note_metadata.orchard_crypto_note.value().inner(),
-                            "pending"        => !transaction_metadata.status.is_confirmed(),
+                            "creation_pending"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
                             "spendable"          => spendable,
-                            "spent"              => orch_note_metadata.spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            "spent_at_height"    => orch_note_metadata.spent().map(|(_, h)| h),
-                            "pending_spent"  => orch_note_metadata.pending_spent().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "spent_in_txid"              => orch_note_metadata.spend().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            "spent_is_confirmed"    => orch_note_metadata.spend().map(|(_, status)| status.is_confirmed()),
+                            "spent_at_height"    => orch_note_metadata.spend().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
                 )
