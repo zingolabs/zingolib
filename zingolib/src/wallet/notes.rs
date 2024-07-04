@@ -11,12 +11,12 @@ pub use orchard::OrchardNote;
 pub mod query;
 
 use zcash_client_backend::PoolType;
-
 use zcash_primitives::transaction::TxId;
 
 use crate::wallet::notes::query::OutputPoolQuery;
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// An interface for accessing all the common functionality of all the outputs
 #[enum_dispatch::enum_dispatch(OutputInterface)]
