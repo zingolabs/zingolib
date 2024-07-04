@@ -46,17 +46,10 @@ impl std::fmt::Debug for SaplingNote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("diversifier", &self.diversifier)
-            .field("diversifier", &self.diversifier)
-            .field("memo", &self.memo)
             .field("memo", &self.memo)
             .field("note", &self.sapling_crypto_note)
-            .field("note", &self.sapling_crypto_note)
             .field("nullifier", &self.nullifier)
-            .field("nullifier", &self.nullifier)
-            .field("pending_spent", &self.pending_spent)
-            .field("pending_spent", &self.pending_spent)
-            .field("spent", &self.spent)
-            .field("spent", &self.spent)
+            .field("spend", &self.spend)
             .field("is_change", &self.is_change)
             .finish_non_exhaustive()
     }
