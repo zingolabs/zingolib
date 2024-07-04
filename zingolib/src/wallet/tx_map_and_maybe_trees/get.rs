@@ -32,7 +32,7 @@ impl TxMapAndMaybeTrees {
                     .iter()
                     .filter_map(move |sapling_note_description| {
                         if sapling_note_description.have_spending_key
-                            && sapling_note_description.spent.is_none()
+                            && sapling_note_description.spent().is_none()
                         {
                             Some((
                                 *txid,

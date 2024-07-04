@@ -29,7 +29,7 @@ pub struct SaplingNote {
     pub nullifier: Option<sapling_crypto::Nullifier>,
 
     /// TODO: Add Doc Comment Here!
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to pending spent, this is potential data incoherence
+    spent: Option<(TxId, u32)>, // If this note was confirmed spent. Todo: as related to pending spent, this is potential data incoherence
 
     /// If this note was spent in a send, but has not yet been confirmed.
     /// Contains the transaction id and height at which it was broadcast
