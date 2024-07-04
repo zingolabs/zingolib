@@ -785,8 +785,11 @@ mod tests {
         assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 1);
         // ^ so there is one spent note still in this transaction
         assert_ne!(
-            spentish_sapling_notes_in_tx_cvnwis.first().unwrap().spent(),
-            &Some((spending_txid, 15u32))
+            spentish_sapling_notes_in_tx_cvnwis.first().unwrap().spend(),
+            &Some((
+                spending_txid,
+                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(15.into())
+            ))
         );
         // ^ but it was not spent in the deleted txid
     }
