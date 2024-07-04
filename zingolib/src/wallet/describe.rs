@@ -291,7 +291,8 @@ impl LightWallet {
     }
 }
 
-/// checks whether the spending txid for a note is confirmed
+/// checks whether the spending Tx for a note is confirmed
+/// returns an error if the referenced TxId is not found in the record book.  
 pub fn get_spend_status<OI>(
     output: OI,
     records: TransactionRecordsById,
