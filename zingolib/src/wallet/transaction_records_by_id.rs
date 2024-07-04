@@ -503,7 +503,6 @@ impl TransactionRecordsById {
                     vout.script_pubkey.0.clone(),
                     u64::from(vout.value),
                     None,
-                    None,
                 ),
             );
         }
@@ -930,7 +929,7 @@ mod tests {
                                 .value(sapling_crypto::value::NoteValue::from_raw(175_000))
                                 .to_owned(),
                         )
-                        .spent(Some((sent_txid, 15)))
+                        .spend(Some((sent_txid, Confirmed(15.into()))))
                         .nullifier(Some(sapling_nullifier))
                         .to_owned(),
                 )

@@ -334,8 +334,8 @@ mod tests {
 
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
-    use zingo_status::confirmation_status::ConfirmationStatus::Broadcast;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
 
     use crate::{
         mocks::default_txid,
@@ -409,7 +409,7 @@ mod tests {
                         .build(),
                 );
             let spend = Some((default_txid(), Confirmed(112358.into())));
-            let pending_spend = Some((default_txid(), Broadcast(112357.into())));
+            let pending_spend = Some((default_txid(), Pending(112357.into())));
             transaction_records_and_maybe_trees
                 .transaction_records_by_id
                 .insert_transaction_record(
