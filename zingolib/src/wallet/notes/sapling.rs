@@ -300,8 +300,7 @@ pub mod mocks {
                 .witnessed_position(Some(Position::from(0)))
                 .output_index(Some(0))
                 .nullifier(Some(sapling_crypto::Nullifier::from_bytes([0; 32])))
-                .spent(None)
-                .pending_spent(None)
+                .spend(None)
                 .memo(None)
                 .set_change(false)
                 .have_spending_key(true);
