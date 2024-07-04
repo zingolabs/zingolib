@@ -189,59 +189,6 @@ impl LightWallet {
         self.send_progress.read().await.clone()
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn send_to_addresses<F, Fut, P: SpendProver + OutputProver>(
-        &self,
-        sapling_prover: P,
-        policy: NoteSelectionPolicy,
-        receivers: Receivers,
-        submission_height: BlockHeight,
-        broadcast_fn: F,
-    ) -> Result<TxId, String>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
-    {
-        // Reset the progress to start. Any errors will get recorded here
-        self.reset_send_progress().await;
-
-        // Sanity check that this is a spending wallet.  Why isn't this done earlier?
-        if !self.wallet_capability().can_spend_from_all_pools() {
-            // Creating transactions in context of all possible combinations
-            // of wallet capabilities requires a rigorous case study
-            // and can have undesired effects if not implemented properly.
-            //
-            // Thus we forbid spending for wallets without complete spending capability for now
-            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
-        }
-        // Create the transaction
-        let start_time = now();
-        let build_result = self
-            .create_publication_ready_transaction(
-                submission_height,
-                start_time,
-                receivers,
-                policy,
-                sapling_prover,
-            )
-            .await?;
-
-        // Call the internal function
-        match self
-            .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
-            .await
-        {
-            Ok(transaction_id) => {
-                self.set_send_success(transaction_id.to_string()).await;
-                Ok(transaction_id)
-            }
-            Err(e) => {
-                self.set_send_error(e.to_string()).await;
-                Err(e)
-            }
-        }
-    }
-
     async fn create_publication_ready_transaction<P: SpendProver + OutputProver>(
         &self,
         submission_height: BlockHeight,
