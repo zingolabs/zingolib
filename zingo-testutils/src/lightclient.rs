@@ -35,7 +35,7 @@ pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
 }
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
-    use zcash_client_backend::PoolType;
+
     use zingolib::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
 
     /// Panics if the address, amount or memo conversion fails.
@@ -69,31 +69,6 @@ pub mod from_inputs {
                 zingolib::data::receivers::Receiver::new(recipient_address, amount, memo)
             })
             .collect()
-    }
-
-    /// In a test give sender a raw_receiver to encode and send to
-    pub async fn send(
-        sender: &zingolib::lightclient::LightClient,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<String, String> {
-        let receivers = receivers_from_send_inputs(raw_receivers, &sender.config().chain);
-        sender.do_send(receivers).await.map(|txid| txid.to_string())
-    }
-
-    /// Panics if the address conversion fails.
-    pub async fn shield(
-        shielder: &LightClient,
-        pools_to_shield: &[PoolType],
-        address: Option<&str>,
-    ) -> Result<String, String> {
-        let address = address.map(|addr| {
-            zingolib::utils::conversion::address_from_str(addr, &shielder.config().chain)
-                .expect("should be a valid address")
-        });
-        shielder
-            .do_shield(pools_to_shield, address)
-            .await
-            .map(|txid| txid.to_string())
     }
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
