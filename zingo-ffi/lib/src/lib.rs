@@ -247,6 +247,29 @@ pub fn get_developer_donation_address() -> String {
     zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string()
 }
 
+pub fn get_transaction_summaries() -> String {
+    let resp: String;
+    {
+        let lightclient: Arc<LightClient>;
+        {
+            let lc = LIGHTCLIENT.lock().unwrap();
+
+            if lc.borrow().is_none() {
+                return "Error: Lightclient is not initialized".to_string();
+            }
+
+            lightclient = lc.borrow().as_ref().unwrap().clone();
+        };
+
+        let rt = Runtime::new().unwrap();
+        resp = rt.block_on(async {
+            lightclient.transaction_summaries_json_string().await
+        });
+    };
+
+    resp
+}
+
 pub fn get_value_transfers() -> String {
     let resp: String;
     {
