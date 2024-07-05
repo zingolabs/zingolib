@@ -450,7 +450,7 @@ pub mod finsight {
 pub mod summaries {
     use chrono::DateTime;
     use json::JsonValue;
-    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+    use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
@@ -458,11 +458,13 @@ pub mod summaries {
         utils::build_method,
         wallet::{
             data::OutgoingTxDataSummaries,
+            notes::OutputInterface as _,
             transaction_record::{SendType, TransactionKind},
+            transaction_records_by_id::TransactionRecordsById,
         },
     };
 
-    use super::OutgoingTxData;
+    use super::{OutgoingTxData, TransactionRecord};
 
     /// A value transfer is a group of all notes sent to a specific address in a transaction.
     #[derive(PartialEq)]
@@ -1077,6 +1079,339 @@ pub mod summaries {
 
     /// TODO: doc comment
     #[derive(Clone, PartialEq, Debug)]
+    pub struct DetailedTransactionSummary {
+        txid: TxId,
+        datetime: u64,
+        status: ConfirmationStatus,
+        blockheight: BlockHeight,
+        kind: TransactionKind,
+        value: u64,
+        fee: Option<u64>,
+        zec_price: Option<f64>,
+        orchard_notes: Vec<OrchardNoteSummary>,
+        sapling_notes: Vec<SaplingNoteSummary>,
+        transparent_coins: Vec<TransparentCoinSummary>,
+        outgoing_tx_data: Vec<OutgoingTxData>,
+        orchard_nullifiers: Vec<String>,
+        sapling_nullifiers: Vec<String>,
+    }
+
+    impl DetailedTransactionSummary {
+        /// TODO: doc comment
+        pub fn txid(&self) -> TxId {
+            self.txid
+        }
+        /// TODO: doc comment
+        pub fn datetime(&self) -> u64 {
+            self.datetime
+        }
+        /// TODO: doc comment
+        pub fn status(&self) -> ConfirmationStatus {
+            self.status
+        }
+        /// TODO: doc comment
+        pub fn blockheight(&self) -> BlockHeight {
+            self.blockheight
+        }
+        /// TODO: doc comment
+        pub fn kind(&self) -> TransactionKind {
+            self.kind
+        }
+        /// TODO: doc comment
+        pub fn value(&self) -> u64 {
+            self.value
+        }
+        /// TODO: doc comment
+        pub fn fee(&self) -> Option<u64> {
+            self.fee
+        }
+        /// TODO: doc comment
+        pub fn zec_price(&self) -> Option<f64> {
+            self.zec_price
+        }
+        /// TODO: doc comment
+        pub fn orchard_notes(&self) -> &[OrchardNoteSummary] {
+            &self.orchard_notes
+        }
+        /// TODO: doc comment
+        pub fn sapling_notes(&self) -> &[SaplingNoteSummary] {
+            &self.sapling_notes
+        }
+        /// TODO: doc comment
+        pub fn transparent_coins(&self) -> &[TransparentCoinSummary] {
+            &self.transparent_coins
+        }
+        /// TODO: doc comment
+        pub fn outgoing_tx_data(&self) -> &[OutgoingTxData] {
+            &self.outgoing_tx_data
+        }
+        /// TODO: doc comment
+        pub fn orchard_nullifiers(&self) -> Vec<&str> {
+            self.orchard_nullifiers.iter().map(|n| n.as_str()).collect()
+        }
+        /// TODO: doc comment
+        pub fn sapling_nullifiers(&self) -> Vec<&str> {
+            self.sapling_nullifiers.iter().map(|n| n.as_str()).collect()
+        }
+
+        /// Depending on the relationship of this capability to the
+        /// receiver capability, assign polarity to value transferred.
+        /// Returns None if fields expecting Som(_) are None
+        pub fn balance_delta(&self) -> Option<i64> {
+            match self.kind {
+                TransactionKind::Sent(SendType::Send) => {
+                    self.fee().map(|fee| -((self.value() + fee) as i64))
+                }
+                TransactionKind::Sent(SendType::Shield) => self.fee().map(|fee| -(fee as i64)),
+                TransactionKind::Received => Some(self.value() as i64),
+            }
+        }
+    }
+
+    impl std::fmt::Display for DetailedTransactionSummary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
+                format!("{}", dt)
+            } else {
+                "not available".to_string()
+            };
+            let fee = if let Some(f) = self.fee {
+                f.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let zec_price = if let Some(price) = self.zec_price {
+                price.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let orchard_notes = OrchardNoteSummaries(self.orchard_notes.clone());
+            let sapling_notes = SaplingNoteSummaries(self.sapling_notes.clone());
+            let transparent_coins = TransparentCoinSummaries(self.transparent_coins.clone());
+            let outgoing_tx_data_summaries = OutgoingTxDataSummaries(self.outgoing_tx_data.clone());
+            let orchard_nullifier_summaries =
+                OrchardNullifierSummaries(self.orchard_nullifiers.clone());
+            let sapling_nullifier_summaries =
+                SaplingNullifierSummaries(self.sapling_nullifiers.clone());
+            write!(
+                f,
+                "{{
+    txid: {}
+    datetime: {}
+    status: {}
+    blockheight: {}
+    kind: {}
+    value: {}
+    fee: {}
+    zec price: {}
+    orchard notes: {}
+    sapling notes: {}
+    transparent coins: {}
+    outgoing data: {}
+    orchard_nullifiers: {}
+    sapling_nullifiers: {}
+}}",
+                self.txid,
+                datetime,
+                self.status,
+                u64::from(self.blockheight),
+                self.kind,
+                self.value,
+                fee,
+                zec_price,
+                orchard_notes,
+                sapling_notes,
+                transparent_coins,
+                outgoing_tx_data_summaries,
+                orchard_nullifier_summaries,
+                sapling_nullifier_summaries,
+            )
+        }
+    }
+
+    impl From<DetailedTransactionSummary> for JsonValue {
+        fn from(transaction: DetailedTransactionSummary) -> Self {
+            json::object! {
+                "txid" => transaction.txid.to_string(),
+                "datetime" => transaction.datetime,
+                "status" => transaction.status.to_string(),
+                "blockheight" => u64::from(transaction.blockheight),
+                "kind" => transaction.kind.to_string(),
+                "value" => transaction.value,
+                "fee" => transaction.fee,
+                "zec_price" => transaction.zec_price,
+                "orchard_notes" => JsonValue::from(transaction.orchard_notes),
+                "sapling_notes" => JsonValue::from(transaction.sapling_notes),
+                "transparent_coins" => JsonValue::from(transaction.transparent_coins),
+                "outgoing_tx_data" => JsonValue::from(transaction.outgoing_tx_data),
+                "orchard_nullifiers" => JsonValue::from(transaction.orchard_nullifiers),
+                "sapling_nullifiers" => JsonValue::from(transaction.sapling_nullifiers),
+            }
+        }
+    }
+
+    /// Summary of transactions
+    #[derive(PartialEq, Debug)]
+    pub struct DetailedTransactionSummaries(pub Vec<DetailedTransactionSummary>);
+
+    impl DetailedTransactionSummaries {
+        /// TODO: doc comment
+        pub fn new(transaction_summaries: Vec<DetailedTransactionSummary>) -> Self {
+            DetailedTransactionSummaries(transaction_summaries)
+        }
+        /// Implicitly dispatch to the wrapped data
+        pub fn iter(&self) -> std::slice::Iter<DetailedTransactionSummary> {
+            self.0.iter()
+        }
+        /// Total fees captures by these summaries
+        pub fn paid_fees(&self) -> u64 {
+            self.iter().filter_map(|summary| summary.fee()).sum()
+        }
+        /// A Vec of the txids
+        pub fn txids(&self) -> Vec<TxId> {
+            self.iter().map(|summary| summary.txid()).collect()
+        }
+    }
+
+    impl std::fmt::Display for DetailedTransactionSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for transaction_summary in &self.0 {
+                write!(f, "\n{}", transaction_summary)?;
+            }
+            Ok(())
+        }
+    }
+
+    impl From<DetailedTransactionSummaries> for JsonValue {
+        fn from(transaction_summaries: DetailedTransactionSummaries) -> Self {
+            let transaction_summaries: Vec<JsonValue> = transaction_summaries
+                .0
+                .into_iter()
+                .map(JsonValue::from)
+                .collect();
+            json::object! {
+                "detailed_transaction_summaries" => transaction_summaries
+            }
+        }
+    }
+
+    /// TODO: doc comment
+    pub struct DetailedTransactionSummaryBuilder {
+        txid: Option<TxId>,
+        datetime: Option<u64>,
+        status: Option<ConfirmationStatus>,
+        blockheight: Option<BlockHeight>,
+        kind: Option<TransactionKind>,
+        value: Option<u64>,
+        fee: Option<Option<u64>>,
+        zec_price: Option<Option<f64>>,
+        orchard_notes: Option<Vec<OrchardNoteSummary>>,
+        sapling_notes: Option<Vec<SaplingNoteSummary>>,
+        transparent_coins: Option<Vec<TransparentCoinSummary>>,
+        outgoing_tx_data: Option<Vec<OutgoingTxData>>,
+        orchard_nullifiers: Option<Vec<String>>,
+        sapling_nullifiers: Option<Vec<String>>,
+    }
+
+    impl DetailedTransactionSummaryBuilder {
+        /// TODO: doc comment
+        pub fn new() -> DetailedTransactionSummaryBuilder {
+            DetailedTransactionSummaryBuilder {
+                txid: None,
+                datetime: None,
+                status: None,
+                blockheight: None,
+                kind: None,
+                value: None,
+                fee: None,
+                zec_price: None,
+                orchard_notes: None,
+                sapling_notes: None,
+                transparent_coins: None,
+                outgoing_tx_data: None,
+                orchard_nullifiers: None,
+                sapling_nullifiers: None,
+            }
+        }
+
+        build_method!(txid, TxId);
+        build_method!(datetime, u64);
+        build_method!(status, ConfirmationStatus);
+        build_method!(blockheight, BlockHeight);
+        build_method!(kind, TransactionKind);
+        build_method!(value, u64);
+        build_method!(fee, Option<u64>);
+        build_method!(zec_price, Option<f64>);
+        build_method!(orchard_notes, Vec<OrchardNoteSummary>);
+        build_method!(sapling_notes, Vec<SaplingNoteSummary>);
+        build_method!(transparent_coins, Vec<TransparentCoinSummary>);
+        build_method!(outgoing_tx_data, Vec<OutgoingTxData>);
+        build_method!(orchard_nullifiers, Vec<String>);
+        build_method!(sapling_nullifiers, Vec<String>);
+
+        /// TODO: doc comment
+        pub fn build(&self) -> Result<DetailedTransactionSummary, BuildError> {
+            Ok(DetailedTransactionSummary {
+                txid: self
+                    .txid
+                    .ok_or(BuildError::MissingField("txid".to_string()))?,
+                datetime: self
+                    .datetime
+                    .ok_or(BuildError::MissingField("datetime".to_string()))?,
+                status: self
+                    .status
+                    .ok_or(BuildError::MissingField("status".to_string()))?,
+                blockheight: self
+                    .blockheight
+                    .ok_or(BuildError::MissingField("blockheight".to_string()))?,
+                kind: self
+                    .kind
+                    .ok_or(BuildError::MissingField("kind".to_string()))?,
+                value: self
+                    .value
+                    .ok_or(BuildError::MissingField("value".to_string()))?,
+                fee: self
+                    .fee
+                    .ok_or(BuildError::MissingField("fee".to_string()))?,
+                zec_price: self
+                    .zec_price
+                    .ok_or(BuildError::MissingField("zec_price".to_string()))?,
+                orchard_notes: self
+                    .orchard_notes
+                    .clone()
+                    .ok_or(BuildError::MissingField("orchard_notes".to_string()))?,
+                sapling_notes: self
+                    .sapling_notes
+                    .clone()
+                    .ok_or(BuildError::MissingField("sapling_notes".to_string()))?,
+                transparent_coins: self
+                    .transparent_coins
+                    .clone()
+                    .ok_or(BuildError::MissingField("transparent_coins".to_string()))?,
+                outgoing_tx_data: self
+                    .outgoing_tx_data
+                    .clone()
+                    .ok_or(BuildError::MissingField("outgoing_tx_data".to_string()))?,
+                orchard_nullifiers: self
+                    .orchard_nullifiers
+                    .clone()
+                    .ok_or(BuildError::MissingField("orchard_nullifiers".to_string()))?,
+                sapling_nullifiers: self
+                    .sapling_nullifiers
+                    .clone()
+                    .ok_or(BuildError::MissingField("sapling_nullifiers".to_string()))?,
+            })
+        }
+    }
+
+    impl Default for DetailedTransactionSummaryBuilder {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    /// TODO: doc comment
+    #[derive(Clone, PartialEq, Debug)]
     pub struct OrchardNoteSummary {
         value: u64,
         spend_status: SpendStatus,
@@ -1318,6 +1653,28 @@ pub mod summaries {
         }
     }
 
+    struct OrchardNullifierSummaries(Vec<String>);
+
+    impl std::fmt::Display for OrchardNullifierSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for nullifier in &self.0 {
+                write!(f, "\n{}", nullifier)?;
+            }
+            Ok(())
+        }
+    }
+
+    struct SaplingNullifierSummaries(Vec<String>);
+
+    impl std::fmt::Display for SaplingNullifierSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for nullifier in &self.0 {
+                write!(f, "\n{}", nullifier)?;
+            }
+            Ok(())
+        }
+    }
+
     /// TODO: doc comment
     #[derive(Clone, Copy, PartialEq, Debug)]
     pub enum SpendStatus {
@@ -1337,6 +1694,108 @@ pub mod summaries {
                 SpendStatus::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
             }
         }
+    }
+
+    pub(crate) fn basic_transaction_summary_parts(
+        transaction: &TransactionRecord,
+        transaction_records: &TransactionRecordsById,
+    ) -> (
+        TransactionKind,
+        u64,
+        Option<u64>,
+        Vec<OrchardNoteSummary>,
+        Vec<SaplingNoteSummary>,
+        Vec<TransparentCoinSummary>,
+    ) {
+        let kind = transaction_records.transaction_kind(transaction);
+        let value = match kind {
+            TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
+                transaction.total_value_received()
+            }
+            TransactionKind::Sent(SendType::Send) => transaction.value_outgoing(),
+        };
+        let fee = transaction_records
+            .calculate_transaction_fee(transaction)
+            .ok();
+        let orchard_notes = transaction
+            .orchard_notes
+            .iter()
+            .map(|output| {
+                let spend_status = if let Some((txid, _)) = output.spent() {
+                    SpendStatus::Spent(*txid)
+                } else if let Some((txid, _)) = output.pending_spent() {
+                    SpendStatus::PendingSpent(*txid)
+                } else {
+                    SpendStatus::Unspent
+                };
+
+                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
+                    Some(memo_text.to_string())
+                } else {
+                    None
+                };
+
+                OrchardNoteSummary::from_parts(
+                    output.value(),
+                    spend_status,
+                    output.output_index,
+                    memo,
+                )
+            })
+            .collect::<Vec<_>>();
+        let sapling_notes = transaction
+            .sapling_notes
+            .iter()
+            .map(|output| {
+                let spend_status = if let Some((txid, _)) = output.spent() {
+                    SpendStatus::Spent(*txid)
+                } else if let Some((txid, _)) = output.pending_spent() {
+                    SpendStatus::PendingSpent(*txid)
+                } else {
+                    SpendStatus::Unspent
+                };
+
+                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
+                    Some(memo_text.to_string())
+                } else {
+                    None
+                };
+
+                SaplingNoteSummary::from_parts(
+                    output.value(),
+                    spend_status,
+                    output.output_index,
+                    memo,
+                )
+            })
+            .collect::<Vec<_>>();
+        let transparent_coins = transaction
+            .transparent_outputs
+            .iter()
+            .map(|output| {
+                let spend_status = if let Some((txid, _)) = output.spent() {
+                    SpendStatus::Spent(*txid)
+                } else if let Some((txid, _)) = output.pending_spent() {
+                    SpendStatus::PendingSpent(*txid)
+                } else {
+                    SpendStatus::Unspent
+                };
+
+                TransparentCoinSummary::from_parts(
+                    output.value(),
+                    spend_status,
+                    output.output_index,
+                )
+            })
+            .collect::<Vec<_>>();
+        (
+            kind,
+            value,
+            fee,
+            orchard_notes,
+            sapling_notes,
+            transparent_coins,
+        )
     }
 }
 
