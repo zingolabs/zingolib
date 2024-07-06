@@ -797,7 +797,6 @@ mod tests {
             0
         );
         assert_eq!(new.total_value_received(), 0);
-        assert_eq!(new.total_value_spent(), 0);
         assert_eq!(new.value_outgoing(), 0);
         let t: [u64; 3] = [0, 0, 0];
         assert_eq!(new.value_spent_by_pool(), t);
