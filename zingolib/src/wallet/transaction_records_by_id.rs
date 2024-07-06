@@ -270,6 +270,8 @@ impl TransactionRecordsById {
             .flat_map(|r: &TransactionRecord| Output::get_record_outputs(r))
             .collect()
     }
+    /// Because this method needs access to all outputs to query their
+    /// "spent" txid it is a method of the TransactionRecordsById
     fn get_inputs_to_transaction(&self, query_record: &TransactionRecord) -> Vec<Output> {
         self.get_all_outputs()
             .into_iter()
