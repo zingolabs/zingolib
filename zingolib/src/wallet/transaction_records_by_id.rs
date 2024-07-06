@@ -786,6 +786,16 @@ mod tests {
         // ^ but it was not spent in the deleted txid
     }
 
+    fn spent_transparent_output_builder(
+        amount: u64,
+        sent: (TxId, u32),
+    ) -> TransparentOutputBuilder {
+        TransparentOutputBuilder::default()
+            .value(amount)
+            .spent(Some(sent))
+            .to_owned()
+    }
+
     fn spent_sapling_note_builder(
         amount: u64,
         sent: (TxId, u32),
@@ -817,7 +827,7 @@ mod tests {
             .to_owned()
     }
     #[test]
-    fn calculate_transaction_fee_FOO() {
+    fn calculate_transaction_fee() {
         let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
         let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
 
@@ -859,7 +869,7 @@ mod tests {
                 (sent_txid, 15),
                 &first_orchard_nullifier,
             ))
-            .transparent_outputs(TransparentOutputBuilder::default()) // 100_000
+            .transparent_outputs(spent_transparent_output_builder(30_000, (sent_txid, 15))) // 100_000
             .sapling_notes(
                 SaplingNoteBuilder::default() // 200_000
                     .spent(Some((random_txid(), 12)))
