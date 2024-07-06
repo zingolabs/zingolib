@@ -578,7 +578,7 @@ impl LightClient {
                 let sapling_nullifiers: Vec<String> = tx
                     .spent_sapling_nullifiers
                     .iter()
-                    .map(|nullifier| hex::encode(nullifier))
+                    .map(hex::encode)
                     .collect();
 
                 DetailedTransactionSummaryBuilder::new()
