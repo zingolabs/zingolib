@@ -817,7 +817,7 @@ mod tests {
             .to_owned()
     }
     #[test]
-    fn calculate_transaction_fee() {
+    fn calculate_transaction_fee_FOO() {
         let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
         let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
 
@@ -827,11 +827,11 @@ mod tests {
             .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default())
-            .orchard_notes(OrchardNoteBuilder::default())
+            .transparent_outputs(TransparentOutputBuilder::default()) // value 100_000
+            .sapling_notes(SaplingNoteBuilder::default()) // value 200_000
+            .orchard_notes(OrchardNoteBuilder::default()) // value 800_000
+            .outgoing_tx_data(OutgoingTxDataBuilder::default()) // value 50_000
             .total_transparent_value_spent(30_000)
-            .outgoing_tx_data(OutgoingTxDataBuilder::default())
             .build();
         let sent_txid = sent_transaction_record.txid;
         let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
@@ -839,7 +839,7 @@ mod tests {
         let first_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[0];
         let second_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[1];
         // t-note + s-note + o-note + outgoing_tx_data
-        let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000;
+        let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000; // 1_150_000
 
         let first_received_transaction_record = TransactionRecordBuilder::default()
             .randomize_txid()
@@ -859,13 +859,13 @@ mod tests {
                 (sent_txid, 15),
                 &first_orchard_nullifier,
             ))
-            .transparent_outputs(TransparentOutputBuilder::default())
+            .transparent_outputs(TransparentOutputBuilder::default()) // 100_000
             .sapling_notes(
-                SaplingNoteBuilder::default()
+                SaplingNoteBuilder::default() // 200_000
                     .spent(Some((random_txid(), 12)))
                     .to_owned(),
             )
-            .orchard_notes(OrchardNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default()) // 800_000
             .set_output_indexes()
             .build();
         let second_received_transaction_record = TransactionRecordBuilder::default()
