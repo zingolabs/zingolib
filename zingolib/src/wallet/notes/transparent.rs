@@ -3,11 +3,13 @@ use std::io::Write;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
-use zcash_client_backend::PoolType;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 use crate::wallet::notes::{
-    interface::OutputConstructor, query::OutputSpendStatusQuery, OutputInterface,
+    interface::OutputConstructor,
+    query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
+    OutputInterface,
 };
 use crate::wallet::transaction_record::TransactionRecord;
 
@@ -33,6 +35,9 @@ pub struct TransparentOutput {
 }
 
 impl OutputInterface for TransparentOutput {
+    fn receiver_address(&self, _chain_params: zingoconfig::ChainType) -> String {
+        self.address.clone()
+    }
     fn pool_type(&self) -> PoolType {
         PoolType::Transparent
     }
@@ -55,6 +60,42 @@ impl OutputInterface for TransparentOutput {
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.pending_spent
+    }
+
+    #[doc = r" Returns true if the note has been presumptively spent but the spent has not been validated."]
+    fn is_pending_spent(&self) -> bool {
+        self.pending_spent().is_some()
+    }
+
+    #[doc = r" returns true if the note is confirmed spent"]
+    fn is_spent(&self) -> bool {
+        self.spent().is_some()
+    }
+
+    #[doc = r" Returns true if the note has one of the spend statuses enumerated by the query"]
+    fn spend_status_query(&self, query: OutputSpendStatusQuery) -> bool {
+        (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
+            || (*query.pending_spent() && self.is_pending_spent())
+            || (*query.spent() && self.is_spent())
+    }
+
+    #[doc = r" Returns true if the note is unspent (spendable)."]
+    fn is_unspent(&self) -> bool {
+        self.spend_status_query(OutputSpendStatusQuery::only_unspent())
+    }
+
+    #[doc = r" Returns true if the note is one of the pools enumerated by the query."]
+    fn pool_query(&self, query: OutputPoolQuery) -> bool {
+        (*query.transparent() && self.pool_type() == PoolType::Transparent)
+            || (*query.sapling()
+                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Sapling))
+            || (*query.orchard()
+                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Orchard))
+    }
+
+    #[doc = r" Returns true if the note is one of the spend statuses enumerated by the query AND one of the pools enumerated by the query."]
+    fn query(&self, query: OutputQuery) -> bool {
+        self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
     }
 }
 impl OutputConstructor for TransparentOutput {

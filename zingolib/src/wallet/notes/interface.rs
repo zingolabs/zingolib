@@ -31,6 +31,8 @@ pub trait OutputConstructor {
 /// Expresses the behavior that *all* value transfers MUST support (inclusive of transparent).
 #[enum_dispatch::enum_dispatch]
 pub trait OutputInterface: Sized {
+    /// Every Output is addressed to a unique receiver
+    fn receiver_address(&self, chain_params: zingoconfig::ChainType) -> String;
     /// returns the zcash_client_backend PoolType enum (one of 3)
     /// Where lrz splits between shielded and transparent, zingolib
     /// uses this type to discriminate among the three pools that we

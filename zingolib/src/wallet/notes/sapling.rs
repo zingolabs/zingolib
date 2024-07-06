@@ -1,6 +1,7 @@
 //! TODO: Add Mod Description Here!
 use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
+use zcash_keys::encoding::AddressCodec;
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 use crate::wallet::notes::interface::OutputConstructor;
@@ -88,6 +89,10 @@ impl OutputInterface for SaplingNote {
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.pending_spent
+    }
+
+    fn receiver_address(&self, chain_params: zingoconfig::ChainType) -> String {
+        self.sapling_crypto_note.recipient().encode(&chain_params)
     }
 }
 impl OutputConstructor for SaplingNote {

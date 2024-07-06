@@ -3,7 +3,7 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::{notes::interface::OutputConstructor, traits::Recipient};
 
 use super::{
     super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
@@ -67,6 +67,12 @@ impl OutputInterface for OrchardNote {
 
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.pending_spent
+    }
+
+    fn receiver_address(&self, chain_params: zingoconfig::ChainType) -> String {
+        self.orchard_crypto_note
+            .recipient()
+            .b32encode_for_network(&chain_params)
     }
 }
 impl OutputConstructor for OrchardNote {

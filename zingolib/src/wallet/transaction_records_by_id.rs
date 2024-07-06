@@ -281,33 +281,6 @@ impl TransactionRecordsById {
         });
         Ok(input_outputs.map(|o| o.value()).sum())
     }
-    // returns total sum of spends for a given transaction.
-    // will fail if a spend is not found in the wallet
-    fn total_value_input_to_transaction(
-        &self,
-        query_record: &TransactionRecord,
-    ) -> Result<u64, FeeError> {
-        let sapling_spends = self.get_sapling_notes_spent_in_tx(query_record, true)?;
-        let orchard_spends = self.get_orchard_notes_spent_in_tx(query_record, true)?;
-
-        if sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent == 0
-        {
-            if query_record.outgoing_tx_data.is_empty() {
-                return Err(FeeError::ReceivedTransaction);
-            } else {
-                return Err(FeeError::OutgoingWithoutSpends(
-                    query_record.outgoing_tx_data.to_vec(),
-                ));
-            }
-        }
-
-        let sapling_spend_value = sapling_spends.iter().map(|&note| note.value()).sum::<u64>();
-        let orchard_spend_value = orchard_spends.iter().map(|&note| note.value()).sum::<u64>();
-
-        Ok(query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value)
-    }
 
     /// Calculate the fee for a transaction in the wallet
     ///
@@ -330,7 +303,7 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
-        let input_value = self.total_value_input_to_transaction(query_record)?;
+        let input_value = self.get_total_value_input_to_transaction(query_record)?;
         let explicit_output_value = query_record.total_value_output_to_explicit_receivers();
 
         if input_value >= explicit_output_value {
@@ -369,6 +342,7 @@ impl TransactionRecordsById {
     /// the Zcash protocol
     ///  TODO:   Test and handle 0-value, 0-fee transaction
     pub(crate) fn transaction_kind(&self, query_record: &TransactionRecord) -> TransactionKind {
+        let created_outputs = Output::get_record_outputs(query_record);
         let sapling_spends = self
             .get_sapling_notes_spent_in_tx(query_record, false)
             .expect("cannot fail. fail_on_miss is set false");
@@ -376,11 +350,7 @@ impl TransactionRecordsById {
             .get_orchard_notes_spent_in_tx(query_record, false)
             .expect("cannot fail. fail_on_miss is set false");
 
-        if sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent == 0
-            && query_record.outgoing_tx_data.is_empty()
-        {
+        if created_outputs.is_empty() && query_record.outgoing_tx_data.is_empty() {
             TransactionKind::Received
         } else if sapling_spends.is_empty()
             && orchard_spends.is_empty()
