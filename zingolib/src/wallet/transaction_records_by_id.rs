@@ -272,6 +272,9 @@ impl TransactionRecordsById {
     }
     /// Because this method needs access to all outputs to query their
     /// "spent" txid it is a method of the TransactionRecordsById
+    /// It's theoretically possible to have a 0-input transaction, but I
+    /// don't know if it's allowed in protocol.  For the moment I conservatively
+    /// assume that a 0-input transaction is unexpected behavior.
     fn get_inputs_to_transaction(&self, query_record: &TransactionRecord) -> Vec<Output> {
         self.get_all_outputs()
             .into_iter()
