@@ -1,7 +1,7 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::notes::{interface::OutputConstructor, Output};
+use crate::wallet::notes::{error::OutputConstructionError, interface::OutputConstructor, Output};
 use crate::wallet::{
     error::FeeError,
     notes::{
@@ -275,22 +275,33 @@ impl TransactionRecordsById {
     /// It's theoretically possible to have a 0-input transaction, but I
     /// don't know if it's allowed in protocol.  For the moment I conservatively
     /// assume that a 0-input transaction is unexpected behavior.
-    fn get_inputs_to_transaction(&self, query_record: &TransactionRecord) -> Vec<Output> {
-        self.get_all_outputs()
+    fn get_inputs_to_transaction(
+        &self,
+        query_record: &TransactionRecord,
+    ) -> Result<Vec<Output>, OutputConstructionError> {
+        let outs: Vec<Output> = self
+            .get_all_outputs()
             .into_iter()
             .filter(|o| {
                 o.spent()
                     .as_ref()
                     .map_or(false, |(txid, _)| txid == &query_record.txid)
             })
-            .collect()
+            .collect();
+        if outs.is_empty() {
+            Err(OutputConstructionError::ZeroInputTransaction(
+                query_record.txid,
+            ))
+        } else {
+            Ok(outs)
+        }
     }
     fn get_total_value_input_to_transaction(
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
         Ok(self
-            .get_inputs_to_transaction(query_record)
+            .get_inputs_to_transaction(query_record)?
             .iter()
             .map(|o| o.value())
             .sum())

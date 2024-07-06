@@ -2,9 +2,10 @@
 
 use thiserror::Error;
 
-use crate::wallet::data::OutgoingTxData;
+use crate::wallet::{data::OutgoingTxData, notes};
 
 /// Errors associated with transaction fee calculation
+#[allow(missing_docs)] // Self documenting
 #[derive(Debug, Error)]
 pub enum FeeError {
     /// Sapling notes spent in a transaction not found in the wallet
@@ -29,6 +30,8 @@ pub enum FeeError {
         /// total value of all outputs to receivers including change
         explicit_output_value: u64,
     },
+    #[error("We do not support inputless transactions.")]
+    InputlessTransaction(#[from] notes::error::OutputConstructionError),
 }
 
 /// Errors associated with balance calculation
