@@ -270,16 +270,25 @@ impl TransactionRecordsById {
             .flat_map(|r: &TransactionRecord| Output::get_record_outputs(r))
             .collect()
     }
+    fn get_inputs_to_transaction(&self, query_record: &TransactionRecord) -> Vec<Output> {
+        self.get_all_outputs()
+            .into_iter()
+            .filter(|o| {
+                o.spent()
+                    .as_ref()
+                    .map_or(false, |(txid, _)| txid == &query_record.txid)
+            })
+            .collect()
+    }
     fn get_total_value_input_to_transaction(
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
-        let input_outputs = self.get_all_outputs().into_iter().filter(|o| {
-            o.spent()
-                .as_ref()
-                .map_or(false, |(txid, _)| txid == &query_record.txid)
-        });
-        Ok(input_outputs.map(|o| o.value()).sum())
+        Ok(self
+            .get_inputs_to_transaction(query_record)
+            .iter()
+            .map(|o| o.value())
+            .sum())
     }
 
     /// Calculate the fee for a transaction in the wallet
