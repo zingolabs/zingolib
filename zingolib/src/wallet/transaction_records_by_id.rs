@@ -1,7 +1,7 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::notes::{interface::OutputConstructor, Output};
 use crate::wallet::{
     error::FeeError,
     notes::{
@@ -265,6 +265,22 @@ impl TransactionRecordsById {
         Ok(orchard_spends)
     }
 
+    fn get_all_outputs(&self) -> Vec<Output> {
+        self.values()
+            .flat_map(|r: &TransactionRecord| Output::get_record_outputs(r))
+            .collect()
+    }
+    fn get_total_value_input_to_transaction(
+        &self,
+        query_record: &TransactionRecord,
+    ) -> Result<u64, FeeError> {
+        let input_outputs = self.get_all_outputs().into_iter().filter(|o| {
+            o.spent()
+                .as_ref()
+                .map_or(false, |(txid, _)| txid == &query_record.txid)
+        });
+        Ok(input_outputs.map(|o| o.value()).sum())
+    }
     // returns total sum of spends for a given transaction.
     // will fail if a spend is not found in the wallet
     fn total_value_input_to_transaction(
