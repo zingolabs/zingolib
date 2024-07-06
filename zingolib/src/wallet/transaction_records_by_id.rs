@@ -827,11 +827,11 @@ mod tests {
             .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
+            .total_transparent_value_spent(30_000)
             .transparent_outputs(TransparentOutputBuilder::default()) // value 100_000
             .sapling_notes(SaplingNoteBuilder::default()) // value 200_000
             .orchard_notes(OrchardNoteBuilder::default()) // value 800_000
             .outgoing_tx_data(OutgoingTxDataBuilder::default()) // value 50_000
-            .total_transparent_value_spent(30_000)
             .build();
         let sent_txid = sent_transaction_record.txid;
         let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
