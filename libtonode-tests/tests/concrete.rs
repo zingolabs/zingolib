@@ -131,6 +131,43 @@ mod fast {
     use zingolib::wallet::WalletBase;
 
     use super::*;
+
+    #[tokio::test]
+    async fn tx_status_pending_to_confirmed() {
+        let (regtest_manager, _cph, faucet, recipient, _txid) =
+            scenarios::orchard_funded_recipient(100_000).await;
+
+        let recipient = std::sync::Arc::new(recipient);
+
+        let txid = from_inputs::quick_send(
+            &recipient,
+            vec![(&get_base_address_macro!(faucet, "sapling"), 20_000, None)],
+        )
+        .await
+        .unwrap();
+
+        recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await
+            .transaction_records_by_id
+            .remove(txid.first());
+
+        LightClient::start_mempool_monitor(recipient.clone());
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        println!("pre bump and sync");
+        println!("{}", &recipient.transaction_summaries().await);
+
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        println!("post bump and sync");
+        println!("{}", &recipient.transaction_summaries().await);
+    }
+
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -2407,6 +2444,8 @@ mod slow {
         // More explicit than ignoring the unused variable, we only care about this in order to drop it
         */
     }
+
+    // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
     #[tokio::test]
     async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
@@ -2693,6 +2732,7 @@ mod slow {
                 .unwrap()
         )
     }
+    // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
     #[tokio::test]
     async fn mempool_and_balance() {
         let value = 100_000;
