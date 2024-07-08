@@ -1974,6 +1974,8 @@ mod slow {
         assert_eq!(notes["unspent_orchard_notes"].len(), 0); // Change for z-to-z is now sapling
 
         assert_eq!(notes["spent_sapling_notes"].len(), 0);
+
+        // note is now pending_spent
         assert_eq!(notes["pending_sapling_notes"].len(), 1);
         assert_eq!(
             notes["pending_sapling_notes"][0]["created_in_txid"],
