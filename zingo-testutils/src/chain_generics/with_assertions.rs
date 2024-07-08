@@ -4,7 +4,7 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::{assert_recipient_total_lte_to_proposal_total, assert_sender_fee_and_status},
+    assertions::{assert_recipient_total_lte_to_proposal_total, assert_record_fee_and_status},
     chain_generics::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -46,7 +46,7 @@ where
     let send_height = environment.get_chain_height() + 1;
 
     // digesting the calculated transaction
-    let recorded_fee = assert_sender_fee_and_status(
+    let recorded_fee = assert_record_fee_and_status(
         sender,
         &proposal,
         &txids,
@@ -54,32 +54,44 @@ where
     )
     .await;
 
+    let send_ua_id = sender.do_addresses().await[0]["address"].clone();
+
     if test_mempool {
         // mempool scan shows the same
         sender.do_sync(false).await.unwrap();
-        assert_sender_fee_and_status(
+        assert_record_fee_and_status(
             sender,
             &proposal,
             &txids,
             ConfirmationStatus::Pending(send_height.into()),
         )
         .await;
+
         // TODO: distribute receivers
-        // recipient.do_sync(false).await.unwrap();
-        // assert_receiver_fee(recipient, &proposal, &txids).await;
+        for (recipient, _, _, _) in sends.clone() {
+            if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
+                recipient.do_sync(false).await.unwrap();
+                assert_record_fee_and_status(
+                    recipient,
+                    &proposal,
+                    &txids,
+                    ConfirmationStatus::Pending(send_height.into()),
+                )
+                .await;
+            }
+        }
     }
 
     environment.bump_chain().await;
     // chain scan shows the same
     sender.do_sync(false).await.unwrap();
-    assert_sender_fee_and_status(
+    assert_record_fee_and_status(
         sender,
         &proposal,
         &txids,
         ConfirmationStatus::Confirmed((send_height).into()),
     )
     .await;
-    let send_ua_id = sender.do_addresses().await[0]["address"].clone();
     for (recipient, _, _, _) in sends {
         if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
             recipient.do_sync(false).await.unwrap();
@@ -110,7 +122,7 @@ where
         .unwrap();
 
     // digesting the calculated transaction
-    let recorded_fee = assert_sender_fee_and_status(
+    let recorded_fee = assert_record_fee_and_status(
         client,
         &proposal,
         &txids,
@@ -121,7 +133,7 @@ where
     if test_mempool {
         // mempool scan shows the same
         client.do_sync(false).await.unwrap();
-        assert_sender_fee_and_status(
+        assert_record_fee_and_status(
             client,
             &proposal,
             &txids,
@@ -133,7 +145,7 @@ where
     environment.bump_chain().await;
     // chain scan shows the same
     client.do_sync(false).await.unwrap();
-    assert_sender_fee_and_status(
+    assert_record_fee_and_status(
         client,
         &proposal,
         &txids,
