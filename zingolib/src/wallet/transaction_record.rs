@@ -395,8 +395,8 @@ impl TransactionRecord {
 
         let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
 
-        let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
+        let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_orchard_value_spent = if version >= 22 {
             reader.read_u64::<LittleEndian>()?
         } else {
