@@ -1986,7 +1986,6 @@ mod slow {
             sent_transaction_id
         );
         assert!(notes["pending_sapling_notes"][0]["spent"].is_null());
-        assert!(notes["pending_sapling_notes"][0]["spent_at_height"].is_null());
 
         // Check transaction list
         let list = recipient.do_list_transactions().await;

@@ -520,19 +520,12 @@ impl LightClient {
         spend_is_pending: &mut Vec<JsonValue>,
         spend_is_confirmed: &mut Vec<JsonValue>,
     ) {
-        if note["spent"].is_null() {
+        if note["spent"].is_null() && note["pending_spent"].is_null() {
             unspent.push(note);
+        } else if !note["spent"].is_null() {
+            spend_is_confirmed.push(note);
         } else {
-            match note["pending_spent"] {
-                JsonValue::Boolean(pending) => {
-                    if pending {
-                        spend_is_pending.push(note);
-                    } else {
-                        spend_is_confirmed.push(note);
-                    }
-                }
-                _ => (),
-            }
+            spend_is_pending.push(note);
         }
     }
 }
