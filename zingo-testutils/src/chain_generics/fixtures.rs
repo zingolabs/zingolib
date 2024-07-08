@@ -1,5 +1,7 @@
 //! these functions are each meant to be 'test-in-a-box'
 //! simply plug in a mock server as a chain conductor and provide some values
+use std::sync::Arc;
+
 use zcash_client_backend::PoolType;
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::PoolType::Transparent;
@@ -8,6 +10,7 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
+use zingolib::lightclient::LightClient;
 use zingolib::wallet::notes::query::OutputSpendStatusQuery;
 use zingolib::wallet::notes::{query::OutputPoolQuery, OutputInterface};
 use zingolib::wallet::{data::summaries::ValueTransferKind, notes::query::OutputQuery};
@@ -519,12 +522,16 @@ where
     //         .into_u64(),
     //     0
     // );
+
+    let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+    LightClient::start_mempool_monitor(ref_tertiary.clone());
+
     assert_eq!(
         expected_fee,
         with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &secondary,
-            vec![(&tertiary, pool, 100_000 - expected_fee, None)],
+            vec![(&ref_tertiary, pool, 100_000 - expected_fee, None)],
             false,
         )
         .await
