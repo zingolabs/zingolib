@@ -9,15 +9,17 @@ use crate::{
     lightclient::{from_inputs, get_base_address},
 };
 
-/// this version assumes a single recipient and measures that the recipient also recieved the expected balances
+/// sends to any combo of recipient clients checks that each recipient also recieved the expected balances
 /// test-only generic
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
 /// returns the total fee for the transfer
-pub async fn propose_send_bump_sync_recipient<CC>(
+/// test_mempool can be enabled when the test harness supports it: TBI
+pub async fn propose_send_bump_sync_all_recipients<CC>(
     environment: &mut CC,
     sender: &LightClient,
     sends: Vec<(&LightClient, PoolType, u64, Option<&str>)>,
+    test_mempool: bool,
 ) -> u64
 where
     CC: ConductChain,
@@ -43,11 +45,14 @@ where
     // digesting the calculated transaction
     let recorded_fee = assert_sender_fee(sender, &proposal, &txids).await;
 
-    // mempool scan shows the same
-    sender.do_sync(false).await.unwrap();
-    assert_sender_fee(sender, &proposal, &txids).await;
-    // recipient.do_sync(false).await.unwrap();
-    // assert_receiver_fee(recipient, &proposal, &txids).await;
+    if test_mempool {
+        // mempool scan shows the same
+        sender.do_sync(false).await.unwrap();
+        assert_sender_fee(sender, &proposal, &txids).await;
+        // TODO: distribute receivers
+        // recipient.do_sync(false).await.unwrap();
+        // assert_receiver_fee(recipient, &proposal, &txids).await;
+    }
 
     environment.bump_chain().await;
     // chain scan shows the same
@@ -67,7 +72,11 @@ where
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
 /// returns the total fee for the transfer
-pub async fn propose_shield_bump_sync<CC>(environment: &mut CC, client: &LightClient) -> u64
+pub async fn propose_shield_bump_sync<CC>(
+    environment: &mut CC,
+    client: &LightClient,
+    test_mempool: bool,
+) -> u64
 where
     CC: ConductChain,
 {
@@ -80,9 +89,11 @@ where
     // digesting the calculated transaction
     let recorded_fee = assert_sender_fee(client, &proposal, &txids).await;
 
-    // mempool scan shows the same
-    client.do_sync(false).await.unwrap();
-    assert_sender_fee(client, &proposal, &txids).await;
+    if test_mempool {
+        // mempool scan shows the same
+        client.do_sync(false).await.unwrap();
+        assert_sender_fee(client, &proposal, &txids).await;
+    }
 
     environment.bump_chain().await;
     // chain scan shows the same

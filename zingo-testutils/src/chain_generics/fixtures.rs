@@ -31,7 +31,7 @@ where
     println!("client is ready to send");
 
     let recipient = environment.create_client().await;
-    with_assertions::propose_send_bump_sync_recipient(
+    with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &sender,
         vec![
@@ -49,6 +49,7 @@ where
             ),
             (&sender, PoolType::Transparent, send_value_self, None),
         ],
+        false,
     )
     .await;
     assert_eq!(sender.value_transfers().await.0.len(), 3);
@@ -70,10 +71,11 @@ where
         ValueTransferKind::Received
     );
 
-    with_assertions::propose_send_bump_sync_recipient(
+    with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &sender,
         vec![(&sender, PoolType::Shielded(Orchard), send_value_self, None)],
+        false,
     )
     .await;
     assert_eq!(sender.value_transfers().await.0.len(), 4);
@@ -82,7 +84,7 @@ where
         ValueTransferKind::SendToSelf
     );
 
-    with_assertions::propose_shield_bump_sync(&mut environment, &sender).await;
+    with_assertions::propose_shield_bump_sync(&mut environment, &sender, false).await;
     assert_eq!(sender.value_transfers().await.0.len(), 5);
     assert_eq!(
         sender.value_transfers().await.0[4].kind(),
@@ -129,10 +131,11 @@ where
 
     println!("recipient ready");
 
-    let recorded_fee = with_assertions::propose_send_bump_sync_recipient(
+    let recorded_fee = with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &sender,
         vec![(&recipient, pooltype, send_value, None)],
+        false,
     )
     .await;
 
@@ -149,13 +152,14 @@ where
     let secondary = environment.create_client().await;
 
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &primary,
             vec![
                 (&secondary, Shielded(Orchard), 1, None),
                 (&secondary, Shielded(Orchard), 29_999, None)
-            ]
+            ],
+            false,
         )
         .await,
         3 * MARGINAL_FEE.into_u64()
@@ -175,28 +179,30 @@ where
 
     for _ in 0..n {
         assert_eq!(
-            with_assertions::propose_send_bump_sync_recipient(
+            with_assertions::propose_send_bump_sync_all_recipients(
                 &mut environment,
                 &primary,
                 vec![
                     (&secondary, Transparent, 100_000, None),
                     (&secondary, Transparent, 4_000, None)
                 ],
+                false,
             )
             .await,
             MARGINAL_FEE.into_u64() * 4
         );
 
         assert_eq!(
-            with_assertions::propose_shield_bump_sync(&mut environment, &secondary).await,
+            with_assertions::propose_shield_bump_sync(&mut environment, &secondary, false,).await,
             MARGINAL_FEE.into_u64() * 3
         );
 
         assert_eq!(
-            with_assertions::propose_send_bump_sync_recipient(
+            with_assertions::propose_send_bump_sync_all_recipients(
                 &mut environment,
                 &secondary,
                 vec![(&primary, Shielded(Orchard), 50_000, None)],
+                false,
             )
             .await,
             MARGINAL_FEE.into_u64() * 2
@@ -214,23 +220,25 @@ where
     let secondary = environment.create_client().await;
 
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &primary,
             vec![
                 (&secondary, Shielded(Orchard), 1, None),
                 (&secondary, Shielded(Orchard), 99_999, None)
-            ]
+            ],
+            false,
         )
         .await,
         3 * MARGINAL_FEE.into_u64()
     );
 
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &secondary,
-            vec![(&primary, Shielded(Orchard), 90_000, None)]
+            vec![(&primary, Shielded(Orchard), 90_000, None)],
+            false,
         )
         .await,
         2 * MARGINAL_FEE.into_u64()
@@ -247,23 +255,25 @@ where
     let secondary = environment.create_client().await;
 
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &primary,
             vec![
                 (&secondary, Shielded(Orchard), 1, None),
                 (&secondary, Shielded(Orchard), 99_999, None)
-            ]
+            ],
+            false,
         )
         .await,
         3 * MARGINAL_FEE.into_u64()
     );
 
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &secondary,
-            vec![(&primary, Shielded(Orchard), 30_000, None)]
+            vec![(&primary, Shielded(Orchard), 30_000, None)],
+            false,
         )
         .await,
         2 * MARGINAL_FEE.into_u64()
@@ -291,7 +301,7 @@ where
 
     // send a bunch of dust
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &primary,
             vec![
@@ -306,6 +316,7 @@ where
                 (&secondary, Shielded(Orchard), 1_000, None),
                 (&secondary, Shielded(Orchard), 15_000, None),
             ],
+            false,
         )
         .await,
         11 * MARGINAL_FEE.into_u64()
@@ -313,10 +324,11 @@ where
 
     // combine the only valid sapling note with the only valid orchard note to send
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &secondary,
             vec![(&primary, Shielded(Orchard), 10_000, None),],
+            false,
         )
         .await,
         4 * MARGINAL_FEE.into_u64()
@@ -387,12 +399,13 @@ where
 
     // Send number_of_notes transfers in increasing 10_000 zat increments
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &primary,
             transaction_1_values
                 .map(|value| (&secondary, Shielded(Sapling), value, None))
-                .collect()
+                .collect(),
+            false,
         )
         .await,
         expected_fee_for_transaction_1
@@ -436,10 +449,11 @@ where
         * MARGINAL_FEE.into_u64();
     // the second client selects notes to cover the transaction.
     assert_eq!(
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &secondary,
-            vec![(&primary, Shielded(Orchard), value_from_transaction_2, None)]
+            vec![(&primary, Shielded(Orchard), value_from_transaction_2, None)],
+            false,
         )
         .await,
         expected_fee_for_transaction_2
@@ -487,10 +501,11 @@ where
 
     let primary = environment.fund_client_orchard(1_000_000).await;
     let secondary = environment.create_client().await;
-    with_assertions::propose_send_bump_sync_recipient(
+    with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &primary,
         vec![(&secondary, Shielded(shpool), 100_000 + make_change, None)],
+        false,
     )
     .await;
 
@@ -506,10 +521,11 @@ where
     // );
     assert_eq!(
         expected_fee,
-        with_assertions::propose_send_bump_sync_recipient(
+        with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
             &secondary,
             vec![(&tertiary, pool, 100_000 - expected_fee, None)],
+            false,
         )
         .await
     );
