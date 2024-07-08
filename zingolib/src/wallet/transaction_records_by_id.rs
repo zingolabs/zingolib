@@ -366,9 +366,12 @@ impl TransactionRecordsById {
             && orchard_spends.is_empty()
             && query_record.total_transparent_value_spent > 0
             && query_record.outgoing_tx_data.is_empty()
+            && (!query_record.orchard_notes().is_empty() | !query_record.sapling_notes().is_empty())
         {
             // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
             TransactionKind::Sent(SendType::Shield)
+        } else if query_record.outgoing_tx_data.is_empty() {
+            TransactionKind::Sent(SendType::SendToSelf)
         } else {
             TransactionKind::Sent(SendType::Send)
         }

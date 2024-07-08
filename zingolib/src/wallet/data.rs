@@ -760,11 +760,12 @@ pub mod summaries {
     pub enum ValueTransferKind {
         /// The recipient is different than this creator
         Sent,
-        /// The recipient is the creator and a shielded address
-        /// and the memo field includes a Text Memo
-        NoteToSelf,
         /// The recipient is the creator and this is a shield transaction
         Shield,
+        /// The recipient is the creator and the transaction has no recipients that are not the creator
+        SendToSelf,
+        /// The recipient is the creator and is receiving at least 1 note with a TEXT memo
+        MemoToSelf,
         /// The wallet capability is receiving funds in a transaction
         /// that was created by a different capability
         Received,
@@ -774,8 +775,9 @@ pub mod summaries {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             match self {
                 ValueTransferKind::Sent => write!(f, "sent"),
-                ValueTransferKind::NoteToSelf => write!(f, "note-to-self"),
                 ValueTransferKind::Shield => write!(f, "shield"),
+                ValueTransferKind::SendToSelf => write!(f, "send-to-self"),
+                ValueTransferKind::MemoToSelf => write!(f, "memo-to-self"),
                 ValueTransferKind::Received => write!(f, "received"),
             }
         }
@@ -856,7 +858,10 @@ pub mod summaries {
                 TransactionKind::Sent(SendType::Send) => {
                     self.fee().map(|fee| -((self.value() + fee) as i64))
                 }
-                TransactionKind::Sent(SendType::Shield) => self.fee().map(|fee| -(fee as i64)),
+                TransactionKind::Sent(SendType::Shield)
+                | TransactionKind::Sent(SendType::SendToSelf) => {
+                    self.fee().map(|fee| -(fee as i64))
+                }
                 TransactionKind::Received => Some(self.value() as i64),
             }
         }
