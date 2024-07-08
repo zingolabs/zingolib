@@ -524,7 +524,14 @@ where
     // );
 
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
-    LightClient::start_mempool_monitor(ref_tertiary.clone());
+
+    // mempool monitor
+    let check_mempool = false;
+    if check_mempool {
+        LightClient::start_mempool_monitor(ref_tertiary.clone());
+        dbg!("mm started");
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
 
     assert_eq!(
         expected_fee,
@@ -532,7 +539,7 @@ where
             &mut environment,
             &secondary,
             vec![(&ref_tertiary, pool, 100_000 - expected_fee, None)],
-            false,
+            check_mempool,
         )
         .await
     );
