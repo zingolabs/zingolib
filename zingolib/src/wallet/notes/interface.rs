@@ -57,7 +57,7 @@ pub trait OutputInterface: Sized {
         self.spend().map(|(txid, _status)| txid)
     }
 
-    /// Returns true if the note has ever been spent.
+    /// Returns Unspent if the note has never been spent. Otherwise, points to the txid.
     fn spend_status(&self) -> SpendStatus {
         match self.spend() {
             None => SpendStatus::Unspent,
