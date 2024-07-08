@@ -43,7 +43,7 @@ where
         .await
         .unwrap();
 
-    let send_height = environment.get_chain_height();
+    let send_height = environment.get_chain_height() + 1;
 
     // digesting the calculated transaction
     let recorded_fee = assert_sender_fee_and_status(
@@ -76,7 +76,7 @@ where
         sender,
         &proposal,
         &txids,
-        ConfirmationStatus::Confirmed((send_height + 1).into()),
+        ConfirmationStatus::Confirmed((send_height).into()),
     )
     .await;
     let send_ua_id = sender.do_addresses().await[0]["address"].clone();
@@ -102,6 +102,8 @@ where
     CC: ConductChain,
 {
     let proposal = client.propose_shield().await.unwrap();
+
+    let send_height = environment.get_chain_height() + 1;
     let txids = client
         .complete_and_broadcast_stored_proposal()
         .await
@@ -112,7 +114,7 @@ where
         client,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(0.into()),
+        ConfirmationStatus::Pending(send_height.into()),
     )
     .await;
 
@@ -123,7 +125,7 @@ where
             client,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(0.into()),
+            ConfirmationStatus::Pending(send_height.into()),
         )
         .await;
     }
@@ -135,7 +137,7 @@ where
         client,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(0.into()),
+        ConfirmationStatus::Confirmed(send_height.into()),
     )
     .await;
 
