@@ -717,11 +717,11 @@ impl LightClient {
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => note_metadata.sapling_crypto_note.value().inner(),
-                            "creation_pending"        => !transaction_metadata.status.is_confirmed(),
+                            "credit_is_confirmed"        => transaction_metadata.status.is_confirmed(),
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent_in_txid"              => note_metadata.spend().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            "spent_is_confirmed"    => note_metadata.spend().map(|(_, status)| status.is_confirmed()),
+                            "spend_is_confirmed"    => note_metadata.spend().map(|(_, status)| status.is_confirmed()),
                             "spent_at_height"    => note_metadata.spend().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
@@ -760,11 +760,11 @@ impl LightClient {
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => note_metadata.orchard_crypto_note.value().inner(),
-                            "creation_pending"        => !transaction_metadata.status.is_confirmed(),
+                            "credit_is_confirmed"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent_in_txid"              => note_metadata.spend().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            "spent_is_confirmed"    => note_metadata.spend().map(|(_, status)| status.is_confirmed()),
+                            "spend_is_confirmed"    => note_metadata.spend().map(|(_, status)| status.is_confirmed()),
                             "spent_at_height"    => note_metadata.spend().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
@@ -811,7 +811,7 @@ impl LightClient {
                             "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spendable"          => spendable,
                             "spent_in_txid"              => utxo.spend().map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            "spent_is_confirmed"    => utxo.spend().map(|(_, status)| status.is_confirmed()),
+                            "spend_is_confirmed"    => utxo.spend().map(|(_, status)| status.is_confirmed()),
                             "spent_at_height"    => utxo.spend().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
