@@ -4,6 +4,8 @@ use nonempty::NonEmpty;
 
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
+
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 
 /// currently checks:
@@ -12,10 +14,11 @@ use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 /// 3. if the fee from the calculate_transaction_fee matches the sum of the per-step fees
 /// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
 /// returns the total fee for the transfer
-pub async fn assert_sender_fee<NoteId>(
+pub async fn assert_sender_fee_and_status<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
+    expected_status: ConfirmationStatus,
 ) -> u64 {
     let records = &client
         .wallet
@@ -30,6 +33,8 @@ pub async fn assert_sender_fee<NoteId>(
     for (i, step) in proposal.steps().iter().enumerate() {
         let record = records.get(&txids[i]).expect("sender must recognize txid");
         // does this record match this step?
+        // we can check that it has the expected status
+        assert_eq!(record.status, expected_status);
         // may fail in uncertain ways if used on a transaction we dont have an OutgoingViewingKey for
         let recorded_fee = records.calculate_transaction_fee(record).unwrap();
         assert_eq!(recorded_fee, step.balance().fee_required().into_u64());

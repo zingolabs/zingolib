@@ -4,10 +4,11 @@ use zcash_client_backend::PoolType;
 use zingolib::lightclient::LightClient;
 
 use crate::{
-    assertions::{assert_recipient_total_lte_to_proposal_total, assert_sender_fee},
+    assertions::{assert_recipient_total_lte_to_proposal_total, assert_sender_fee_and_status},
     chain_generics::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// sends to any combo of recipient clients checks that each recipient also recieved the expected balances
 /// test-only generic
@@ -43,12 +44,24 @@ where
         .unwrap();
 
     // digesting the calculated transaction
-    let recorded_fee = assert_sender_fee(sender, &proposal, &txids).await;
+    let recorded_fee = assert_sender_fee_and_status(
+        sender,
+        &proposal,
+        &txids,
+        ConfirmationStatus::Pending(0.into()),
+    )
+    .await;
 
     if test_mempool {
         // mempool scan shows the same
         sender.do_sync(false).await.unwrap();
-        assert_sender_fee(sender, &proposal, &txids).await;
+        assert_sender_fee_and_status(
+            sender,
+            &proposal,
+            &txids,
+            ConfirmationStatus::Pending(0.into()),
+        )
+        .await;
         // TODO: distribute receivers
         // recipient.do_sync(false).await.unwrap();
         // assert_receiver_fee(recipient, &proposal, &txids).await;
@@ -57,7 +70,13 @@ where
     environment.bump_chain().await;
     // chain scan shows the same
     sender.do_sync(false).await.unwrap();
-    assert_sender_fee(sender, &proposal, &txids).await;
+    assert_sender_fee_and_status(
+        sender,
+        &proposal,
+        &txids,
+        ConfirmationStatus::Pending(0.into()),
+    )
+    .await;
     let send_ua_id = sender.do_addresses().await[0]["address"].clone();
     for (recipient, _, _, _) in sends {
         if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
@@ -87,18 +106,36 @@ where
         .unwrap();
 
     // digesting the calculated transaction
-    let recorded_fee = assert_sender_fee(client, &proposal, &txids).await;
+    let recorded_fee = assert_sender_fee_and_status(
+        client,
+        &proposal,
+        &txids,
+        ConfirmationStatus::Pending(0.into()),
+    )
+    .await;
 
     if test_mempool {
         // mempool scan shows the same
         client.do_sync(false).await.unwrap();
-        assert_sender_fee(client, &proposal, &txids).await;
+        assert_sender_fee_and_status(
+            client,
+            &proposal,
+            &txids,
+            ConfirmationStatus::Pending(0.into()),
+        )
+        .await;
     }
 
     environment.bump_chain().await;
     // chain scan shows the same
     client.do_sync(false).await.unwrap();
-    assert_sender_fee(client, &proposal, &txids).await;
+    assert_sender_fee_and_status(
+        client,
+        &proposal,
+        &txids,
+        ConfirmationStatus::Pending(0.into()),
+    )
+    .await;
 
     recorded_fee
 }

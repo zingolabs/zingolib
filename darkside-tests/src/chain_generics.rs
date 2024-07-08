@@ -124,5 +124,8 @@ pub(crate) mod impl_conduct_chain_for_darkside_environment {
             self.staged_blockheight = self.staged_blockheight + 1;
             self.apply_blocks(u64::from(self.staged_blockheight)).await;
         }
+        async fn get_height(&mut self) -> u32 {
+            0
+        }
     }
 }

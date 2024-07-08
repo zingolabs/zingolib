@@ -23,6 +23,8 @@ pub trait ConductChain {
     /// and confirming transactions that were received by the server
     async fn bump_chain(&mut self);
 
+    async fn get_height(&mut self) -> u32;
+
     /// builds a client and funds it in orchard and syncs it
     async fn fund_client_orchard(&mut self, value: u64) -> LightClient {
         let faucet = self.create_faucet().await;
