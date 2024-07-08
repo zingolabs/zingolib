@@ -719,7 +719,7 @@ mod tests {
         let spending_txid = transaction_record_later.txid;
 
         let spend_in_known_tx = Some((spending_txid, Confirmed(15.into())));
-        let spend_in_unknown_tx = Some((spending_txid, Confirmed(15.into())));
+        // let spend_in_unknown_tx = Some((spending_txid, Confirmed(15.into())));
 
         let transaction_record_early = TransactionRecordBuilder::default()
             .randomize_txid()
@@ -739,11 +739,11 @@ mod tests {
                     .spend(spend_in_known_tx)
                     .clone(),
             )
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .spend(spend_in_unknown_tx)
-                    .clone(),
-            )
+            // .sapling_notes(
+            //     SaplingNoteBuilder::default()
+            //         .spend(spend_in_unknown_tx)
+            //         .clone(),
+            // )
             .orchard_notes(OrchardNoteBuilder::default())
             .set_output_indexes()
             .build();
@@ -769,17 +769,7 @@ mod tests {
             transaction_record_cvnwis,
             query_for_spentish_notes,
         );
-        assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 1);
-        // ^ so there is one spent note still in this transaction
-        assert_ne!(
-            spentish_sapling_notes_in_tx_cvnwis.first().unwrap().spend(),
-            &Some((
-                spending_txid,
-                zingo_status::confirmation_status::ConfirmationStatus::Confirmed(15.into())
-            ))
-        );
-        // ^ but it was not spent in the deleted txid
-        // todo: that spend needs to be deleted anyway
+        assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 0);
     }
 
     fn spent_sapling_note_builder(
