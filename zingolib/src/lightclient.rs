@@ -509,19 +509,23 @@ impl LightClient {
         }
     }
 
+    /// TODO!! This function sorts notes into
+    /// unspent
+    /// spend_is_pending
+    /// spend_is_confirmed
     fn unspent_pending_spent(
         &self,
         note: JsonValue,
         unspent: &mut Vec<JsonValue>,
-        pending: &mut Vec<JsonValue>,
-        spent: &mut Vec<JsonValue>,
+        spend_is_pending: &mut Vec<JsonValue>,
+        spend_is_confirmed: &mut Vec<JsonValue>,
     ) {
         if note["spent"].is_null() && note["pending_spent"].is_null() {
             unspent.push(note);
         } else if !note["spent"].is_null() {
-            spent.push(note);
+            spend_is_confirmed.push(note);
         } else {
-            pending.push(note);
+            spend_is_pending.push(note);
         }
     }
 }

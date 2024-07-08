@@ -1968,7 +1968,7 @@ mod slow {
         // 5. Check the pending transaction is present
         // 5.1 Check notes
 
-        let notes = recipient.do_list_notes(true).await;
+        let notes = dbg!(recipient.do_list_notes(true).await);
 
         // Has a new (pending) unspent note (the change)
         assert_eq!(notes["unspent_orchard_notes"].len(), 0); // Change for z-to-z is now sapling
