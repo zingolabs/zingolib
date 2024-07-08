@@ -718,15 +718,32 @@ mod tests {
             .build();
         let spending_txid = transaction_record_later.txid;
 
-        let spend = Some((spending_txid, Confirmed(15.into())));
+        let spend_in_known_tx = Some((spending_txid, Confirmed(15.into())));
+        let spend_in_unknown_tx = Some((spending_txid, Confirmed(15.into())));
 
         let transaction_record_early = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(5.into()))
-            .transparent_outputs(TransparentOutputBuilder::default().spend(spend).clone())
-            .sapling_notes(SaplingNoteBuilder::default().spend(spend).clone())
-            .orchard_notes(OrchardNoteBuilder::default().spend(spend).clone())
-            .sapling_notes(SaplingNoteBuilder::default().spend(spend).clone())
+            .transparent_outputs(
+                TransparentOutputBuilder::default()
+                    .spend(spend_in_known_tx)
+                    .clone(),
+            )
+            .sapling_notes(
+                SaplingNoteBuilder::default()
+                    .spend(spend_in_known_tx)
+                    .clone(),
+            )
+            .orchard_notes(
+                OrchardNoteBuilder::default()
+                    .spend(spend_in_known_tx)
+                    .clone(),
+            )
+            .sapling_notes(
+                SaplingNoteBuilder::default()
+                    .spend(spend_in_unknown_tx)
+                    .clone(),
+            )
             .orchard_notes(OrchardNoteBuilder::default())
             .set_output_indexes()
             .build();
@@ -762,6 +779,7 @@ mod tests {
             ))
         );
         // ^ but it was not spent in the deleted txid
+        // todo: that spend needs to be deleted anyway
     }
 
     fn spent_sapling_note_builder(
