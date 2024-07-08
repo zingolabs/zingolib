@@ -375,6 +375,8 @@ impl TransactionRecordsById {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
+    #[deprecated(note = "uses unstable deprecated functions")]
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.get(txid)
             .map(TransactionRecord::total_value_spent)
@@ -385,6 +387,7 @@ impl TransactionRecordsById {
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
     #[deprecated(note = "uses unstable deprecated functions")]
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
