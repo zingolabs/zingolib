@@ -43,12 +43,14 @@ where
         .await
         .unwrap();
 
+    let send_height = environment.get_chain_height();
+
     // digesting the calculated transaction
     let recorded_fee = assert_sender_fee_and_status(
         sender,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(0.into()),
+        ConfirmationStatus::Pending(send_height.into()),
     )
     .await;
 
@@ -59,7 +61,7 @@ where
             sender,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(0.into()),
+            ConfirmationStatus::Pending(send_height.into()),
         )
         .await;
         // TODO: distribute receivers
@@ -74,7 +76,7 @@ where
         sender,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(0.into()),
+        ConfirmationStatus::Confirmed((send_height + 1).into()),
     )
     .await;
     let send_ua_id = sender.do_addresses().await[0]["address"].clone();

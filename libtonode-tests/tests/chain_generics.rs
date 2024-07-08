@@ -267,7 +267,7 @@ mod chain_generics {
                 );
             }
 
-            async fn get_height(&mut self) -> u32 {
+            fn get_chain_height(&mut self) -> u32 {
                 self.scenario_builder
                     .regtest_manager
                     .get_current_height()
