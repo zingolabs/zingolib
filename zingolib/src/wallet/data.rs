@@ -762,11 +762,12 @@ pub mod summaries {
     pub enum ValueTransferKind {
         /// The recipient is different than this creator
         Sent,
-        /// The recipient is the creator and a shielded address
-        /// and the memo field includes a Text Memo
-        NoteToSelf,
         /// The recipient is the creator and this is a shield transaction
         Shield,
+        /// The recipient is the creator and the transaction has no recipients that are not the creator
+        SendToSelf,
+        /// The recipient is the creator and is receiving at least 1 note with a TEXT memo
+        MemoToSelf,
         /// The wallet capability is receiving funds in a transaction
         /// that was created by a different capability
         Received,
@@ -776,8 +777,9 @@ pub mod summaries {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             match self {
                 ValueTransferKind::Sent => write!(f, "sent"),
-                ValueTransferKind::NoteToSelf => write!(f, "note-to-self"),
                 ValueTransferKind::Shield => write!(f, "shield"),
+                ValueTransferKind::SendToSelf => write!(f, "send-to-self"),
+                ValueTransferKind::MemoToSelf => write!(f, "memo-to-self"),
                 ValueTransferKind::Received => write!(f, "received"),
             }
         }
@@ -852,13 +854,16 @@ pub mod summaries {
 
         /// Depending on the relationship of this capability to the
         /// receiver capability, assign polarity to value transferred.
-        /// Returns None if fields expecting Som(_) are None
+        /// Returns None if fields expecting Some(_) are None
         pub fn balance_delta(&self) -> Option<i64> {
             match self.kind {
                 TransactionKind::Sent(SendType::Send) => {
                     self.fee().map(|fee| -((self.value() + fee) as i64))
                 }
-                TransactionKind::Sent(SendType::Shield) => self.fee().map(|fee| -(fee as i64)),
+                TransactionKind::Sent(SendType::Shield)
+                | TransactionKind::Sent(SendType::SendToSelf) => {
+                    self.fee().map(|fee| -(fee as i64))
+                }
                 TransactionKind::Received => Some(self.value() as i64),
             }
         }
@@ -1161,13 +1166,16 @@ pub mod summaries {
 
         /// Depending on the relationship of this capability to the
         /// receiver capability, assign polarity to value transferred.
-        /// Returns None if fields expecting Som(_) are None
+        /// Returns None if fields expecting Some(_) are None
         pub fn balance_delta(&self) -> Option<i64> {
             match self.kind {
                 TransactionKind::Sent(SendType::Send) => {
                     self.fee().map(|fee| -((self.value() + fee) as i64))
                 }
-                TransactionKind::Sent(SendType::Shield) => self.fee().map(|fee| -(fee as i64)),
+                TransactionKind::Sent(SendType::Shield)
+                | TransactionKind::Sent(SendType::SendToSelf) => {
+                    self.fee().map(|fee| -(fee as i64))
+                }
                 TransactionKind::Received => Some(self.value() as i64),
             }
         }
@@ -1702,7 +1710,7 @@ pub mod summaries {
     }
 
     pub(crate) fn basic_transaction_summary_parts(
-        transaction: &TransactionRecord,
+        transaction_record: &TransactionRecord,
         transaction_records: &TransactionRecordsById,
     ) -> (
         TransactionKind,
@@ -1712,17 +1720,19 @@ pub mod summaries {
         Vec<SaplingNoteSummary>,
         Vec<TransparentCoinSummary>,
     ) {
-        let kind = transaction_records.transaction_kind(transaction);
+        let kind = transaction_records.transaction_kind(transaction_record);
         let value = match kind {
-            TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
-                transaction.total_value_received()
+            TransactionKind::Received
+            | TransactionKind::Sent(SendType::Shield)
+            | TransactionKind::Sent(SendType::SendToSelf) => {
+                transaction_record.total_value_received()
             }
-            TransactionKind::Sent(SendType::Send) => transaction.value_outgoing(),
+            TransactionKind::Sent(SendType::Send) => transaction_record.value_outgoing(),
         };
         let fee = transaction_records
-            .calculate_transaction_fee(transaction)
+            .calculate_transaction_fee(transaction_record)
             .ok();
-        let orchard_notes = transaction
+        let orchard_notes = transaction_record
             .orchard_notes
             .iter()
             .map(|output| {
@@ -1748,7 +1758,7 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
-        let sapling_notes = transaction
+        let sapling_notes = transaction_record
             .sapling_notes
             .iter()
             .map(|output| {
@@ -1774,7 +1784,7 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
-        let transparent_coins = transaction
+        let transparent_coins = transaction_record
             .transparent_outputs
             .iter()
             .map(|output| {

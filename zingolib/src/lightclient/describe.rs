@@ -332,7 +332,7 @@ impl LightClient {
                         );
                     });
 
-                    // create 1 note-to-self if a sending transaction receives any number of memos
+                    // create 1 memo-to-self if a sending transaction receives any number of memos
                     if tx.orchard_notes().iter().any(|note| note.memo().is_some())
                         || tx.sapling_notes().iter().any(|note| note.memo().is_some())
                     {
@@ -354,7 +354,7 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::NoteToSelf)
+                                .kind(ValueTransferKind::MemoToSelf)
                                 .value(0)
                                 .recipient_address(None)
                                 .pool_received(None)
@@ -365,7 +365,7 @@ impl LightClient {
                     }
                 }
                 TransactionKind::Sent(SendType::Shield) => {
-                    // create 1 shielding value tansfer for each pool shielded to
+                    // create 1 shielding value transfer for each pool shielded to
                     if !tx.orchard_notes().is_empty() {
                         let value: u64 =
                             tx.orchard_notes().iter().map(|output| output.value()).sum();
@@ -416,6 +416,58 @@ impl LightClient {
                                     PoolType::Shielded(ShieldedProtocol::Sapling).to_string(),
                                 ))
                                 .memos(memos)
+                                .build()
+                                .expect("all fields should be populated"),
+                        );
+                    }
+                }
+                TransactionKind::Sent(SendType::SendToSelf) => {
+                    // create 1 memo-to-self if a sending transaction receives any number of memos
+                    // otherwise, create 1 send-to-self value transfer so every transaction creates at least 1 value transfer
+                    // eventually we may replace send-to-self with a range of kinds such as deshield and migrate etc.
+                    if tx.orchard_notes().iter().any(|note| note.memo().is_some())
+                        || tx.sapling_notes().iter().any(|note| note.memo().is_some())
+                    {
+                        let memos: Vec<String> = tx
+                            .orchard_notes()
+                            .iter()
+                            .filter_map(|note| note.memo().map(|memo| memo.to_string()))
+                            .chain(
+                                tx.sapling_notes()
+                                    .iter()
+                                    .filter_map(|note| note.memo().map(|memo| memo.to_string())),
+                            )
+                            .collect();
+                        value_transfers.push(
+                            ValueTransferBuilder::new()
+                                .txid(tx.txid())
+                                .datetime(tx.datetime())
+                                .status(tx.status())
+                                .blockheight(tx.blockheight())
+                                .transaction_fee(tx.fee())
+                                .zec_price(tx.zec_price())
+                                .kind(ValueTransferKind::MemoToSelf)
+                                .value(0)
+                                .recipient_address(None)
+                                .pool_received(None)
+                                .memos(memos)
+                                .build()
+                                .expect("all fields should be populated"),
+                        );
+                    } else {
+                        value_transfers.push(
+                            ValueTransferBuilder::new()
+                                .txid(tx.txid())
+                                .datetime(tx.datetime())
+                                .status(tx.status())
+                                .blockheight(tx.blockheight())
+                                .transaction_fee(tx.fee())
+                                .zec_price(tx.zec_price())
+                                .kind(ValueTransferKind::SendToSelf)
+                                .value(0)
+                                .recipient_address(None)
+                                .pool_received(None)
+                                .memos(vec![])
                                 .build()
                                 .expect("all fields should be populated"),
                         );
