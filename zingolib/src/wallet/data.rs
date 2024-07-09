@@ -954,7 +954,7 @@ pub mod summaries {
         pub fn iter(&self) -> std::slice::Iter<TransactionSummary> {
             self.0.iter()
         }
-        /// Total fees captures by these summaries
+        /// Total fees captured by these summaries
         pub fn paid_fees(&self) -> u64 {
             self.iter().filter_map(|summary| summary.fee()).sum()
         }
@@ -1098,12 +1098,12 @@ pub mod summaries {
         value: u64,
         fee: Option<u64>,
         zec_price: Option<f64>,
+        orchard_nullifiers: Vec<String>,
+        sapling_nullifiers: Vec<String>,
         orchard_notes: Vec<OrchardNoteSummary>,
         sapling_notes: Vec<SaplingNoteSummary>,
         transparent_coins: Vec<TransparentCoinSummary>,
         outgoing_tx_data: Vec<OutgoingTxData>,
-        orchard_nullifiers: Vec<String>,
-        sapling_nullifiers: Vec<String>,
     }
 
     impl DetailedTransactionSummary {
@@ -1217,12 +1217,12 @@ pub mod summaries {
     value: {}
     fee: {}
     zec price: {}
+    orchard_nullifiers: {}
+    sapling_nullifiers: {}
     orchard notes: {}
     sapling notes: {}
     transparent coins: {}
     outgoing data: {}
-    orchard_nullifiers: {}
-    sapling_nullifiers: {}
 }}",
                 self.txid,
                 datetime,
@@ -1253,12 +1253,12 @@ pub mod summaries {
                 "value" => transaction.value,
                 "fee" => transaction.fee,
                 "zec_price" => transaction.zec_price,
+                "orchard_nullifiers" => JsonValue::from(transaction.orchard_nullifiers),
+                "sapling_nullifiers" => JsonValue::from(transaction.sapling_nullifiers),
                 "orchard_notes" => JsonValue::from(transaction.orchard_notes),
                 "sapling_notes" => JsonValue::from(transaction.sapling_notes),
                 "transparent_coins" => JsonValue::from(transaction.transparent_coins),
                 "outgoing_tx_data" => JsonValue::from(transaction.outgoing_tx_data),
-                "orchard_nullifiers" => JsonValue::from(transaction.orchard_nullifiers),
-                "sapling_nullifiers" => JsonValue::from(transaction.sapling_nullifiers),
             }
         }
     }
@@ -1276,7 +1276,7 @@ pub mod summaries {
         pub fn iter(&self) -> std::slice::Iter<DetailedTransactionSummary> {
             self.0.iter()
         }
-        /// Total fees captures by these summaries
+        /// Total fees captured by these summaries
         pub fn paid_fees(&self) -> u64 {
             self.iter().filter_map(|summary| summary.fee()).sum()
         }
