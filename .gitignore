@@ -2,14 +2,14 @@
 !zingolib/test-data/openssl_cfg
 *.json.txt
 .DS_Store
+.helix
 /procgov
 /testdata
 cobertura.xml
 docker-ci/lightwalletd
 target
 wallets/*
-zingocli/regtest/logs/
-zingocli/regtest/zingo-wallet.dat
+zingocli/regtest/
 zingocli/target
 zingocli/tests/data/basic_zcashd.conf
 zingocli/tests/data/externalwallet_coinbaseaddress.conf
@@ -17,8 +17,12 @@ zingocli/tests/data/lightwalletd.yml
 zingocli/tests/times/*
 zingocli/wallets/*
 zingolib/target
+zingolib/proptest-regressions
 zingolib/test-data/*
 zingo-testutils/test_binaries/bins/lightwalletd
 zingo-testutils/test_binaries/bins/zcash-cli
 zingo-testutils/test_binaries/bins/zcashd
+test_binaries/bins/lightwalletd
+test_binaries/bins/zcash-cli
+test_binaries/bins/zcashd
 

@@ -162,7 +162,7 @@ impl FetchTaddrTransactions {
 // TODO: Reexamine this test, which relies on explicit creation of transparent spend auths
 /*
 #[cfg(test)]
-mod test {
+mod tests {
     use futures::future::join_all;
     use rand::Rng;
     use std::sync::Arc;

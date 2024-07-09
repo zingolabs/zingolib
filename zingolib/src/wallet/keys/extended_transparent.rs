@@ -1,3 +1,4 @@
+//! TODO: Add Mod Discription Here!
 use std::io;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -5,6 +6,7 @@ use lazy_static::lazy_static;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
 use zcash_encoding::Vector;
+use zcash_primitives::consensus::NetworkConstants;
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
@@ -46,18 +48,18 @@ impl KeyIndex {
     }
 
     /// Generate KeyIndex from raw index value.
-    pub fn from_index(i: u32) -> Result<Self, Error> {
+    pub fn from_index(i: u32) -> Self {
         if i < HARDENED_KEY_START_INDEX {
-            Ok(KeyIndex::Normal(i))
+            KeyIndex::Normal(i)
         } else {
-            Ok(KeyIndex::Hardened(i))
+            KeyIndex::Hardened(i)
         }
     }
 }
 
 impl From<u32> for KeyIndex {
     fn from(index: u32) -> Self {
-        KeyIndex::from_index(index).expect("KeyIndex")
+        KeyIndex::from_index(index)
     }
 }
 
@@ -65,7 +67,9 @@ impl From<u32> for KeyIndex {
 /// See [secp256k1 crate documentation](https://docs.rs/secp256k1) for SecretKey signatures usage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtendedPrivKey {
+    /// TODO: Add Doc Comment Here!
     pub private_key: SecretKey,
+    /// TODO: Add Doc Comment Here!
     pub chain_code: ChainCode,
 }
 
@@ -87,6 +91,7 @@ impl ExtendedPrivKey {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_ext_taddr_from_bip39seed(
         config: &ZingoConfig,
         bip39_seed: &[u8],
@@ -99,7 +104,7 @@ impl ExtendedPrivKey {
             .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
             .unwrap()
             .derive_private_key(
-                KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap(),
+                KeyIndex::hardened_from_normalize_index(config.chain.coin_type()).unwrap(),
             )
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(position).unwrap())
@@ -185,7 +190,9 @@ impl ReadableWriteable<()> for ExtendedPrivKey {
 /// ExtendedPubKey is used for child pub key derivation in watch-only mode
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtendedPubKey {
+    /// TODO: Add Doc Comment Here!
     pub public_key: PublicKey,
+    /// TODO: Add Doc Comment Here!
     pub chain_code: ChainCode,
 }
 
@@ -271,7 +278,7 @@ fn test_commutativity_of_key_derivation_mechanisms() {
     // pk ---> pk_i
 
     // initial key derivation material
-    let i = KeyIndex::from_index(42).unwrap();
+    let i = KeyIndex::from_index(42);
     let sk = ExtendedPrivKey::with_seed(&[0xcd; 64]).unwrap();
 
     // sk -> sk_i -> pk_i derivation

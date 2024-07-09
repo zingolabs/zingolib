@@ -1,31 +1,38 @@
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
+//! ZingoLib
+//! Zingo backend code base
+//! Use this high level API to do things like submit transactions to the zcash blockchain
+
 #[macro_use]
 extern crate rust_embed;
 
 pub mod blaze;
 pub mod commands;
+pub mod data;
 pub mod error;
 pub mod grpc_connector;
 pub mod lightclient;
+pub mod utils;
 pub mod wallet;
-#[cfg(feature = "test")]
-pub use zingo_testvectors as testvectors;
-#[cfg(feature = "test")]
-pub(crate) mod test_framework;
+
+#[cfg(test)]
+pub mod mocks;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 
-#[cfg(feature = "embed_params")]
+/// TODO: Add Doc Comment Here!
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
 pub struct SaplingParams;
 
+/// TODO: Add Doc Comment Here!
 pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u64> {
     tokio::runtime::Runtime::new()
         .unwrap()
         .block_on(async move {
-            crate::grpc_connector::GrpcConnector::get_info(lightwalletd_uri)
+            crate::grpc_connector::get_info(lightwalletd_uri)
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))
         })

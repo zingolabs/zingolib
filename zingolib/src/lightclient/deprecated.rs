@@ -1,4 +1,10 @@
+use std::cmp;
+
+use crate::wallet::transaction_record::TransactionRecord;
+
 use super::*;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
 use zcash_note_encryption::Domain;
 
 impl LightClient {
@@ -11,7 +17,7 @@ impl LightClient {
         'a: 'b,
         'c: 'b,
     {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, zcash_primitives::sapling::note_encryption::SaplingDomain<zingoconfig::ChainType>>(
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, sapling_crypto::note_encryption::SaplingDomain>(
             transaction_metadata,
             unified_spend_auth,
         )
@@ -40,7 +46,7 @@ impl LightClient {
                     let block_height: u32 = transaction_metadata.status.get_height().into();
                     object! {
                         "block_height" => block_height,
-                        "unconfirmed"  => !transaction_metadata.status.is_confirmed(),
+                        "pending"      => !transaction_metadata.status.is_confirmed(),
                         "datetime"     => transaction_metadata.datetime,
                         "position"     => i,
                         "txid"         => format!("{}", transaction_metadata.txid),
@@ -53,7 +59,7 @@ impl LightClient {
                 })
     }
 
-    /// This fn is _only_ called inside a block conditioned on "is_outgoing_transaction"
+    #[allow(deprecated)]
     fn append_change_notes(
         wallet_transaction: &TransactionRecord,
         received_utxo_value: u64,
@@ -67,13 +73,13 @@ impl LightClient {
             .sapling_notes
             .iter()
             .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
+            .map(|nd| nd.sapling_crypto_note.value().inner())
             .sum::<u64>()
             + wallet_transaction
                 .orchard_notes
                 .iter()
                 .filter(|nd| nd.is_change)
-                .map(|nd| nd.note.value().inner())
+                .map(|nd| nd.orchard_crypto_note.value().inner())
                 .sum::<u64>()
             + received_utxo_value;
 
@@ -85,7 +91,7 @@ impl LightClient {
                 object! {
                     // Is this address ever different than the address in the containing struct
                     // this is the full UA.
-                    "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
+                    "address" => om.recipient_ua.clone().unwrap_or(om.recipient_address.clone()),
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 }
@@ -95,7 +101,7 @@ impl LightClient {
         let block_height: u32 = wallet_transaction.status.get_height().into();
         object! {
             "block_height" => block_height,
-            "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
+            "pending"  => !wallet_transaction.status.is_confirmed(),
             "datetime"     => wallet_transaction.datetime,
             "txid"         => format!("{}", wallet_transaction.txid),
             "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
@@ -103,6 +109,9 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
+
+    /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         let mut consumer_ui_notes = self
@@ -110,12 +119,12 @@ impl LightClient {
             .transaction_context.transaction_metadata_set
             .read()
             .await
-            .current
+            .transaction_records_by_id
             .iter()
             .flat_map(|(txid, wallet_transaction)| {
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
-                let total_transparent_received = wallet_transaction.transparent_notes.iter().map(|u| u.value).sum::<u64>();
+                let total_transparent_received = wallet_transaction.transparent_outputs.iter().map(|u| u.value).sum::<u64>();
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
@@ -130,8 +139,8 @@ impl LightClient {
 
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
-                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.get_transparent_value_spent() as i64;
-                let address = wallet_transaction.transparent_notes.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
+                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let address = wallet_transaction.transparent_outputs.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
                 if net_transparent_value > 0 {
                     if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
                         // If this transaction is outgoing:
@@ -147,7 +156,7 @@ impl LightClient {
                         let block_height: u32 = wallet_transaction.status.get_height().into();
                         consumer_notes_by_tx.push(object! {
                             "block_height" => block_height,
-                            "unconfirmed"  => !wallet_transaction.status.is_confirmed(),
+                            "pending"  => !wallet_transaction.status.is_confirmed(),
                             "datetime"     => wallet_transaction.datetime,
                             "txid"         => format!("{}", txid),
                             "amount"       => net_transparent_value,

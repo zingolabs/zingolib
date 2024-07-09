@@ -1,29 +1,48 @@
+//! TODO: Add Mod Description Here!
+
 use std::error::Error;
 use std::fmt;
 
 use zcash_primitives::transaction::TxId;
 
+/// Holds zingolib error types
 #[derive(Debug)]
 pub enum ZingoLibError {
+    /// TODO: Add Doc Comment Here!
     UnknownError,
+    /// TODO: Add Doc Comment Here!
     Error(String),
+    /// TODO: Add Doc Comment Here!
     NoWalletLocation,
+    /// TODO: Add Doc Comment Here!
     MetadataUnderflow(String),
+    /// TODO: Add Doc Comment Here!
     InternalWriteBufferError(std::io::Error),
+    /// TODO: Add Doc Comment Here!
     WriteFileError(std::io::Error),
+    /// TODO: Add Doc Comment Here!
     EmptySaveBuffer,
+    /// TODO: Add Doc Comment Here!
     CantReadWallet(std::io::Error),
+    /// TODO: Add Doc Comment Here!
     NoSuchTxId(TxId),
+    /// TODO: Add Doc Comment Here!
     NoSuchSaplingOutputInTx(TxId, u32),
+    /// TODO: Add Doc Comment Here!
     NoSuchOrchardOutputInTx(TxId, u32),
+    /// TODO: Add Doc Comment Here!
     NoSuchNullifierInTx(TxId),
+    /// TODO: Add Doc Comment Here!
     MissingOutputIndex(TxId),
+    /// TODO: Add Doc Comment Here!
     CouldNotDecodeMemo(std::io::Error),
 }
 
+/// TODO: Add Doc Comment Here!
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
 
 impl ZingoLibError {
+    /// TODO: Add Doc Comment Here!
     pub fn handle<T>(self) -> ZingoLibResult<T> {
         log::error!("{}", self);
         Err(self)
@@ -113,3 +132,11 @@ impl From<ZingoLibError> for String {
 }
 
 impl Error for ZingoLibError {}
+
+/// Errors associated with builder patterns in production code
+#[derive(thiserror::Error, Debug)]
+pub enum BuildError {
+    /// build failed. missing field.
+    #[error("build failed. missing field {0}")]
+    MissingField(String),
+}

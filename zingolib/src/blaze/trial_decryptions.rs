@@ -4,19 +4,22 @@
 //! This process is called: `trial_decryption`.
 
 use crate::error::ZingoLibResult;
+
+use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    transactions::TransactionMetadataSet,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
     utils::txid_from_slice,
     MemoDownloadOption,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
-use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -29,17 +32,16 @@ use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
-    sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::ZingoConfig;
 
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,
-    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -47,7 +49,7 @@ impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
         wc: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
             config,
@@ -87,8 +89,12 @@ impl TrialDecryptions {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let sapling_ivk = SaplingIvk::try_from(&*wc).ok();
-            let orchard_ivk = orchard::keys::IncomingViewingKey::try_from(&*wc).ok();
+            let sapling_ivk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&*wc)
+                .ok()
+                .map(|key| key.derive_ivk());
+            let orchard_ivk = orchard::keys::FullViewingKey::try_from(&*wc)
+                .ok()
+                .map(|key| key.derive_ivk());
 
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
@@ -126,9 +132,9 @@ impl TrialDecryptions {
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<WalletCapability>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        sapling_ivk: Option<SaplingIvk>,
-        orchard_ivk: Option<OrchardIvk>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        sapling_ivk: Option<Ivk<SaplingDomain, External>>,
+        orchard_ivk: Option<Ivk<OrchardDomain, External>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -155,9 +161,7 @@ impl TrialDecryptions {
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 let mut sapling_notes_to_mark_position_in_tx =
-                    zip_outputs_with_retention_txids_indexes::<SaplingDomain<ChainType>>(
-                        compact_transaction,
-                    );
+                    zip_outputs_with_retention_txids_indexes::<SaplingDomain>(compact_transaction);
                 let mut orchard_notes_to_mark_position_in_tx =
                     zip_outputs_with_retention_txids_indexes::<OrchardDomain>(compact_transaction);
 
@@ -174,16 +178,12 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
                 if let Some(ref ivk) = sapling_ivk {
-                    Self::trial_decrypt_domain_specific_outputs::<
-                        SaplingDomain<zingoconfig::ChainType>,
-                    >(
+                    Self::trial_decrypt_domain_specific_outputs::<SaplingDomain>(
                         &mut transaction_metadata,
                         compact_transaction,
                         transaction_num,
                         &compact_block,
-                        zcash_primitives::sapling::note_encryption::PreparedIncomingViewingKey::new(
-                            ivk,
-                        ),
+                        ivk.ivk.clone(),
                         height,
                         &config,
                         &wc,
@@ -203,7 +203,7 @@ impl TrialDecryptions {
                         compact_transaction,
                         transaction_num,
                         &compact_block,
-                        orchard::keys::PreparedIncomingViewingKey::new(ivk),
+                        ivk.ivk.clone(),
                         height,
                         &config,
                         &wc,
@@ -242,7 +242,7 @@ impl TrialDecryptions {
             r.map_err(|e| e.to_string())??;
         }
         let mut txmds_writelock = transaction_metadata_set.write().await;
-        update_witnesses::<SaplingDomain<ChainType>>(
+        update_witnesses::<SaplingDomain>(
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
@@ -267,7 +267,7 @@ impl TrialDecryptions {
         config: &zingoconfig::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -344,17 +344,21 @@ impl TrialDecryptions {
                         );
 
                         let status = ConfirmationStatus::Confirmed(height);
-                        transaction_metadata_set.write().await.add_new_note::<D>(
-                            transaction_id,
-                            status,
-                            timestamp,
-                            note,
-                            to,
-                            have_spending_key,
-                            Some(spend_nullifier),
-                            i as u32,
-                            witness.witnessed_position(),
-                        );
+                        transaction_metadata_set
+                            .write()
+                            .await
+                            .transaction_records_by_id
+                            .add_new_note::<D>(
+                                transaction_id,
+                                status,
+                                timestamp,
+                                note,
+                                to,
+                                have_spending_key,
+                                Some(spend_nullifier),
+                                i as u32,
+                                witness.witnessed_position(),
+                            );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
 
@@ -422,7 +426,7 @@ fn update_witnesses<D>(
         )>,
         BlockHeight,
     )>,
-    txmds_writelock: &mut TransactionMetadataSet,
+    txmds_writelock: &mut TxMapAndMaybeTrees,
     wc: &Arc<WalletCapability>,
 ) -> ZingoLibResult<()>
 where

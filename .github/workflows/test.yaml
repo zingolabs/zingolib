@@ -14,6 +14,7 @@ jobs:
   build-test-artifacts:
     name: Build test artifacts
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -45,6 +46,7 @@ jobs:
   run-tests:
     name: Run tests
     runs-on: ubuntu-22.04
+    if: github.event.pull_request.draft == false
     needs: build-test-artifacts
     env:
       RUSTFLAGS: -D warnings
@@ -59,10 +61,10 @@ jobs:
         uses: actions/checkout@v3
 
       - name: create binaries dir
-        run: mkdir -p ./zingo-testutils/test_binaries/bins
+        run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./zingo-testutils/test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
 
       - name: Symlink zcash parameters
         run: ln -s /root/.zcash-params /github/home

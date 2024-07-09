@@ -46,7 +46,7 @@ macro_rules! define_grpc_passthrough {
                 }
 
                 println!("Proxy passing through {rpc_name} call");
-                ::zingolib::grpc_connector::GrpcConnector::new($self.lightwalletd_uri.clone())
+                ::zingo_netutils::GrpcConnector::new($self.lightwalletd_uri.clone())
                     .get_client()
                     .await
                     .expect("Proxy server failed to create client")
@@ -57,14 +57,19 @@ macro_rules! define_grpc_passthrough {
     };
 }
 
+/// TODO: Add Doc Comment Here!
 pub struct ProxyServer {
+    /// TODO: Add Doc Comment Here!
     pub lightwalletd_uri: http::Uri,
+    /// TODO: Add Doc Comment Here!
     pub online: Arc<AtomicBool>,
+    /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
     pub conditional_operations: HashMap<&'static str, Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>>,
 }
 
 impl ProxyServer {
+    /// TODO: Add Doc Comment Here!
     pub fn serve(
         self,
         port: impl Into<u16> + Send + Sync + 'static,
@@ -81,6 +86,7 @@ impl ProxyServer {
         })
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn serve_and_pick_proxy_uri(
         self,
     ) -> (
@@ -96,6 +102,8 @@ impl ProxyServer {
             fun(self.online.clone())
         }
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn new(lightwalletd_uri: http::Uri) -> Self {
         Self {
             lightwalletd_uri,

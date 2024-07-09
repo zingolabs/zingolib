@@ -1,6 +1,7 @@
+use crate::error::ZingoLibResult;
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::PoolNullifier, transactions::TransactionMetadataSet, utils::txid_from_slice,
+    data::PoolNullifier, tx_map_and_maybe_trees::TxMapAndMaybeTrees, utils::txid_from_slice,
 };
 use std::sync::Arc;
 
@@ -27,11 +28,11 @@ use super::syncdata::BlazeSyncData;
 /// If No, then:
 ///    - Update the witness for this note
 pub struct UpdateNotes {
-    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
 }
 
 impl UpdateNotes {
-    pub fn new(wallet_txns: Arc<RwLock<TransactionMetadataSet>>) -> Self {
+    pub fn new(wallet_txns: Arc<RwLock<TxMapAndMaybeTrees>>) -> Self {
         Self {
             transaction_metadata_set: wallet_txns,
         }
@@ -88,7 +89,8 @@ impl UpdateNotes {
 
         let wallet_transactions = self.transaction_metadata_set.clone();
         let h1 = tokio::spawn(async move {
-            let mut workers = FuturesUnordered::new();
+            let mut workers: FuturesUnordered<JoinHandle<ZingoLibResult<()>>> =
+                FuturesUnordered::new();
 
             // Receive Txns that are sent to the wallet. We need to update the notes for this.
             while let Some((
@@ -113,6 +115,8 @@ impl UpdateNotes {
                         .await
                     {
                         //info!("Note was spent, just add it as spent for TxId {}", txid);
+                        // we got the height the nullifier was spent at. now, we go back to the index because we need to read from that CompactTx.
+                        // This can only happen after BlazeSyncData has been downloaded into the LightClient from the server and stored asyncronously.
                         let (compact_transaction, ts) = bsync_data
                             .read()
                             .await
@@ -132,14 +136,14 @@ impl UpdateNotes {
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         let status = ConfirmationStatus::Confirmed(spent_at_height);
-                        let _ = wallet_transactions_write_unlocked.found_spent_nullifier(
+                        wallet_transactions_write_unlocked.found_spent_nullifier(
                             transaction_id_spent_in,
                             status,
                             ts,
                             maybe_spend_nullifier,
                             transaction_id_spent_from,
                             output_index,
-                        );
+                        )?;
 
                         drop(wallet_transactions_write_unlocked);
 
@@ -156,21 +160,23 @@ impl UpdateNotes {
                             .send((transaction_id_spent_from, at_height))
                             .unwrap();
                     }
+                    Ok(())
                 }));
             }
 
             // Wait for all the workers
             while let Some(r) = workers.next().await {
-                r.unwrap();
+                r.unwrap()?;
             }
 
             //info!("Finished Note Update processing");
+            Ok(())
         });
 
         let h = tokio::spawn(async move {
             let (r0, r1) = join!(h0, h1);
             r0.map_err(|e| format!("{}", e))??;
-            r1.map_err(|e| format!("{}", e))
+            r1.map_err(|e| format!("{}", e))?
         });
 
         (h, blocks_done_transmitter, transmitter)

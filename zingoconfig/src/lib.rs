@@ -1,4 +1,8 @@
+//! ZingConfig
+//! TODO: Add Crate Discription Here!
+
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 use std::{
     io::{self, Error, ErrorKind},
     path::{Path, PathBuf},
@@ -18,25 +22,40 @@ use log4rs::{
     filter::threshold::ThresholdFilter,
     Config,
 };
-use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK},
-    constants,
+use zcash_primitives::consensus::{
+    BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters, MAIN_NETWORK,
+    TEST_NETWORK,
 };
 
+/// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
-pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
+/// TODO: Add Doc Comment Here!
+pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
+/// TODO: Add Doc Comment Here!
 pub const MAX_REORG: usize = 100;
+/// TODO: Add Doc Comment Here!
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
+/// TODO: Add Doc Comment Here!
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
+/// TODO: Add Doc Comment Here!
 pub const REORG_BUFFER_OFFSET: u32 = 0;
+/// TODO: Add Doc Comment Here!
 pub const BATCH_SIZE: u64 = 100;
 
+/// TODO: Add Doc Comment Here!
 #[cfg(any(target_os = "ios", target_os = "android"))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
 
+/// TODO: Add Doc Comment Here!
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
 
+/// TODO: Add Doc Comment Here!
+pub fn margin_fee() -> u64 {
+    zcash_primitives::transaction::fees::zip317::MARGINAL_FEE.into_u64()
+}
+
+/// TODO: Add Doc Comment Here!
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
     data_dir: Option<PathBuf>,
@@ -65,10 +84,13 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
+        accept_server_txids: false,
     };
 
     Ok(config)
 }
+
+/// TODO: Add Doc Comment Here!
 pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
         Some(s) => {
@@ -89,11 +111,16 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     .unwrap()
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug)]
 pub struct ZingoConfigBuilder {
+    /// TODO: Add Doc Comment Here!
     pub lightwalletd_uri: Option<http::Uri>,
+    /// TODO: Add Doc Comment Here!
     pub chain: ChainType,
+    /// TODO: Add Doc Comment Here!
     pub reorg_buffer_offset: Option<u32>,
+    /// TODO: Add Doc Comment Here!
     pub monitor_mempool: Option<bool>,
     /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows. For mac it is in: ~/Library/Application Support/Zcash
     pub wallet_dir: Option<PathBuf>,
@@ -101,13 +128,20 @@ pub struct ZingoConfigBuilder {
     pub wallet_name: Option<PathBuf>,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: Option<PathBuf>,
+    /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
+    pub accept_server_txids: bool,
 }
+
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
+    /// TODO: Add Doc Comment Here!
     pub lightwalletd_uri: Arc<RwLock<http::Uri>>,
+    /// TODO: Add Doc Comment Here!
     pub chain: ChainType,
+    /// TODO: Add Doc Comment Here!
     pub reorg_buffer_offset: u32,
+    /// TODO: Add Doc Comment Here!
     pub monitor_mempool: bool,
     /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
     pub wallet_dir: Option<PathBuf>,
@@ -115,22 +149,55 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
+    /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
+    pub accept_server_txids: bool,
 }
+
 impl ZingoConfigBuilder {
-    pub fn set_wallet_dir(mut self, dir: PathBuf) -> Self {
-        self.wallet_dir = Some(dir);
-        self
-    }
-    pub fn set_lightwalletd(mut self, lightwalletd_uri: http::Uri) -> Self {
+    /// Set the URI of the proxy server we download blockchain information from.
+    /// # Examples
+    /// ```
+    /// use zingoconfig::ZingoConfigBuilder;
+    /// use http::Uri;
+    /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
+    /// ```
+    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &mut Self {
         self.lightwalletd_uri = Some(lightwalletd_uri);
         self
     }
+
+    /// Set the chain the consuming client will interact with.
+    /// See <https://github.com/bitcoin/bips/blob/master/bip-0087.mediawiki#coin-type>
+    /// for chain types.
+    /// Note "chain type" is not a formal standard.
+    /// # Examples
+    /// ```
+    /// use zingoconfig::ZingoConfigBuilder;
+    /// use zingoconfig::ChainType::Testnet;
+    /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
+    /// ```
+    pub fn set_chain(&mut self, chain: ChainType) -> &mut Self {
+        self.chain = chain;
+        self
+    }
+
+    /// Set the wallet directory where client transaction data will be stored in a wallet.
+    /// # Examples
+    /// ```
+    /// use zingoconfig::ZingoConfigBuilder;
+    /// use tempdir::TempDir;
+    /// let dir = TempDir::new("zingo_doc_test").unwrap().into_path();
+    /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
+    /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
+    /// ```
+    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &mut Self {
+        self.wallet_dir = Some(dir);
+        self
+    }
+
+    /// TODO: Add Doc Comment Here!
     pub fn create(&self) -> ZingoConfig {
-        let lightwalletd_uri = if let Some(uri) = self.lightwalletd_uri.clone() {
-            uri
-        } else {
-            http::Uri::default()
-        };
+        let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(lightwalletd_uri)),
             chain: self.chain,
@@ -139,9 +206,11 @@ impl ZingoConfigBuilder {
             wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            accept_server_txids: self.accept_server_txids,
         }
     }
 }
+
 impl Default for ZingoConfigBuilder {
     fn default() -> Self {
         ZingoConfigBuilder {
@@ -152,13 +221,14 @@ impl Default for ZingoConfigBuilder {
             wallet_name: None,
             logfile_name: None,
             chain: ChainType::Mainnet,
+            accept_server_txids: false,
         }
     }
 }
 
 impl ZingoConfig {
     #[deprecated]
-    // Create an unconnected (to any server) config to test for local wallet etc...
+    /// Create an unconnected (to any server) config to test for local wallet etc...
     pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
         if let Some(dir) = dir {
             ZingoConfig::build(chain).set_wallet_dir(dir).create()
@@ -167,13 +237,14 @@ impl ZingoConfig {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn build(chain: ChainType) -> ZingoConfigBuilder {
         ZingoConfigBuilder {
             chain,
             ..ZingoConfigBuilder::default()
         }
     }
-    //Convenience wrapper
+    /// Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
         self.chain
             .activation_height(NetworkUpgrade::Sapling)
@@ -181,6 +252,7 @@ impl ZingoConfig {
             .into()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn orchard_activation_height(&self) -> u64 {
         self.chain
             .activation_height(NetworkUpgrade::Nu5)
@@ -188,6 +260,7 @@ impl ZingoConfig {
             .into()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn set_data_dir(&mut self, dir_str: String) {
         self.wallet_dir = Some(PathBuf::from(dir_str));
     }
@@ -224,6 +297,7 @@ impl ZingoConfig {
             .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_zingo_wallet_dir(&self) -> Box<Path> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
@@ -258,7 +332,6 @@ impl ZingoConfig {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
                     ChainType::Regtest(_) => zcash_data_location.push("regtest"),
                     ChainType::Mainnet => {}
-                    ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
                 };
             }
 
@@ -275,6 +348,7 @@ impl ZingoConfig {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
@@ -310,28 +384,38 @@ impl ZingoConfig {
         }
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_lightwalletd_uri(&self) -> http::Uri {
         self.lightwalletd_uri
             .read()
             .expect("Couldn't read configured server URI!")
             .clone()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_wallet_pathbuf(&self) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(&self.wallet_name);
         wallet_location
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_wallet_path(&self) -> Box<Path> {
         self.get_wallet_pathbuf().into_boxed_path()
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn wallet_path_exists(&self) -> bool {
         self.get_wallet_path().exists()
     }
+
+    /// TODO: Add Doc Comment Here!
     #[deprecated(note = "this method was renamed 'wallet_path_exists' for clarity")]
     pub fn wallet_exists(&self) -> bool {
         self.wallet_path_exists()
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn backup_existing_wallet(&self) -> Result<String, String> {
         if !self.wallet_path_exists() {
             return Err(format!(
@@ -356,6 +440,7 @@ impl ZingoConfig {
         Ok(backup_file_str)
     }
 
+    /// TODO: Add Doc Comment Here!
     pub fn get_log_path(&self) -> Box<Path> {
         let mut log_path = self.get_zingo_wallet_dir().into_path_buf();
         log_path.push(&self.logfile_name);
@@ -364,67 +449,84 @@ impl ZingoConfig {
         log_path.into_boxed_path()
     }
 
+    /// Coin Types are specified in public registries to disambiguate coin variants
+    /// so that HD wallets can manage multiple currencies.
+    ///  <https://github.com/satoshilabs/slips/blob/master/slip-0044.md>
+    ///  ZEC is registered as 133 (0x80000085) for MainNet and 1 (0x80000001) for TestNet (all coins)
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn get_coin_type(&self) -> u32 {
         self.chain.coin_type()
     }
 
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_address(&self) -> &str {
         self.chain.hrp_sapling_payment_address()
     }
 
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_private_key(&self) -> &str {
         self.chain.hrp_sapling_extended_spending_key()
     }
 
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn hrp_sapling_viewing_key(&self) -> &str {
         self.chain.hrp_sapling_extended_full_viewing_key()
     }
 
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn base58_pubkey_address(&self) -> [u8; 2] {
         self.chain.b58_pubkey_address_prefix()
     }
 
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
     pub fn base58_script_address(&self) -> [u8; 2] {
         self.chain.b58_script_address_prefix()
     }
 
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
-            ChainType::Testnet | ChainType::Regtest(_) | ChainType::FakeMainnet => [0xEF],
+            ChainType::Testnet | ChainType::Regtest(_) => [0xEF],
             ChainType::Mainnet => [0x80],
         }
     }
 }
+
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChainType {
+    /// Public testnet
     Testnet,
+    /// Local testnet
     Regtest(RegtestNetwork),
+    /// Mainnet
     Mainnet,
-    FakeMainnet,
 }
 
 impl ChainType {
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn hrp_orchard_spending_key(&self) -> &str {
         match self {
             ChainType::Testnet => "secret-orchard-sk-test",
             ChainType::Regtest(_) => "secret-orchard-sk-regtest",
             ChainType::Mainnet => "secret-orchard-sk-main",
-            ChainType::FakeMainnet => "secret-orchard-sk-main",
         }
     }
+
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
     pub fn hrp_unified_full_viewing_key(&self) -> &str {
         match self {
             ChainType::Testnet => "uviewtest",
             ChainType::Regtest(_) => "uviewregtest",
             ChainType::Mainnet => "uview",
-            ChainType::FakeMainnet => "uview",
-        }
-    }
-    pub fn to_zcash_address_network(&self) -> zcash_address::Network {
-        match self {
-            Mainnet | FakeMainnet => zcash_address::Network::Main,
-            Testnet => zcash_address::Network::Test,
-            Regtest(_) => RegtestNetwork::address_network().unwrap(),
         }
     }
 }
@@ -436,81 +538,39 @@ impl std::fmt::Display for ChainType {
             Testnet => "test",
             Regtest(_) => "regtest",
             Mainnet => "main",
-            FakeMainnet => "fakemainnet",
         };
         write!(f, "{name}")
     }
 }
 
-use ChainType::*;
 impl Parameters for ChainType {
+    fn network_type(&self) -> NetworkType {
+        use ChainType::*;
+        match self {
+            Mainnet => NetworkType::Main,
+            Testnet => NetworkType::Test,
+            Regtest(_) => NetworkType::Regtest,
+        }
+    }
+
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        use ChainType::*;
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
             Regtest(regtest_network) => regtest_network.activation_height(nu),
-            FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
-    }
-
-    fn coin_type(&self) -> u32 {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::COIN_TYPE,
-            Testnet => constants::testnet::COIN_TYPE,
-            Regtest(_) => RegtestNetwork::coin_type(),
-        }
-    }
-
-    fn hrp_sapling_extended_spending_key(&self) -> &str {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest(_) => RegtestNetwork::hrp_sapling_extended_spending_key(),
-        }
-    }
-
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest(_) => RegtestNetwork::hrp_sapling_extended_full_viewing_key(),
-        }
-    }
-
-    fn hrp_sapling_payment_address(&self) -> &str {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest(_) => RegtestNetwork::hrp_sapling_payment_address(),
-        }
-    }
-
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest(_) => RegtestNetwork::b58_pubkey_address_prefix(),
-        }
-    }
-
-    fn b58_script_address_prefix(&self) -> [u8; 2] {
-        match self {
-            Mainnet | FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest(_) => RegtestNetwork::b58_script_address_prefix(),
-        }
-    }
-
-    fn address_network(&self) -> Option<zcash_address::Network> {
-        Some(self.to_zcash_address_network())
     }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegtestNetwork {
     activation_heights: ActivationHeights,
 }
+
 impl RegtestNetwork {
+    /// TODO: Add Doc Comment Here!
     pub fn new(
         overwinter_activation_height: u64,
         sapling_activation_height: u64,
@@ -530,18 +590,22 @@ impl RegtestNetwork {
             ),
         }
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn all_upgrades_active() -> Self {
         Self {
             activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
         }
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn set_orchard(orchard_activation_height: u64) -> Self {
         Self {
             activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
         }
     }
 
-    // Network parameters
+    /// Network parameters
     pub fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match nu {
             NetworkUpgrade::Overwinter => Some(
@@ -570,36 +634,9 @@ impl RegtestNetwork {
             ),
         }
     }
-
-    fn coin_type() -> u32 {
-        constants::regtest::COIN_TYPE
-    }
-
-    fn address_network() -> Option<zcash_address::Network> {
-        Some(zcash_address::Network::Regtest)
-    }
-
-    fn hrp_sapling_extended_spending_key() -> &'static str {
-        constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY
-    }
-
-    fn hrp_sapling_extended_full_viewing_key() -> &'static str {
-        constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
-    }
-
-    fn hrp_sapling_payment_address() -> &'static str {
-        constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS
-    }
-
-    fn b58_pubkey_address_prefix() -> [u8; 2] {
-        constants::regtest::B58_PUBKEY_ADDRESS_PREFIX
-    }
-
-    fn b58_script_address_prefix() -> [u8; 2] {
-        constants::regtest::B58_SCRIPT_ADDRESS_PREFIX
-    }
 }
 
+/// TODO: Add Doc Comment Here!
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ActivationHeights {
     overwinter: BlockHeight,
@@ -609,7 +646,9 @@ pub struct ActivationHeights {
     canopy: BlockHeight,
     orchard: BlockHeight,
 }
+
 impl ActivationHeights {
+    /// TODO: Add Doc Comment Here!
     pub fn new(
         overwinter: u64,
         sapling: u64,
@@ -627,6 +666,8 @@ impl ActivationHeights {
             orchard: BlockHeight::from_u32(orchard as u32),
         }
     }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_activation_height(&self, network_upgrade: NetworkUpgrade) -> BlockHeight {
         match network_upgrade {
             NetworkUpgrade::Overwinter => self.overwinter,

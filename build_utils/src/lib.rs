@@ -7,7 +7,7 @@ pub fn git_description() {
         .output()
         .expect("Failed to execute git command");
     let output = Command::new("git")
-        .args(["describe", "--dirty"])
+        .args(["describe", "--dirty", "--always", "--long"])
         .output()
         .expect("Failed to execute git command");
 
@@ -25,7 +25,11 @@ pub fn git_description() {
     let mut f = File::create(dest_path).unwrap();
     writeln!(
         f,
-        "pub fn git_description() -> &'static str {{\"{}\"}}",
+        "/// The result of running 'git describe' at compile time:\n\
+        /// The most recent tag name, the number\n\
+        /// of commits above it, and the hash of\n\
+        /// the most recent commit\n\
+        pub fn git_description() -> &'static str {{\"{}\"}}",
         git_description
     )
     .unwrap();

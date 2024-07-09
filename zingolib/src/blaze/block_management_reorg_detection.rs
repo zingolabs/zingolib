@@ -1,21 +1,17 @@
 use crate::wallet::traits::FromCommitment;
-use crate::{
-    grpc_connector::GrpcConnector,
-    wallet::{
-        data::{BlockData, PoolNullifier},
-        notes::ShieldedNoteInterface,
-        traits::DomainWalletExt,
-        transactions::TransactionMetadataSet,
-    },
+use crate::wallet::{
+    data::{BlockData, PoolNullifier},
+    notes::ShieldedNoteInterface,
+    traits::DomainWalletExt,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
-use incrementalmerkletree::{
-    frontier, frontier::CommitmentTree, witness::IncrementalWitness, Hashable,
-};
+use incrementalmerkletree::frontier::CommitmentTree;
+use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_client_backend::proto::service::TreeState;
 use zcash_note_encryption::Domain;
-use zingoconfig::ChainType;
 
 use futures::future::join_all;
 use http::Uri;
@@ -31,7 +27,6 @@ use tokio::{
 use zcash_primitives::{
     consensus::BlockHeight,
     merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer},
-    sapling::note_encryption::SaplingDomain,
 };
 
 use super::sync_status::BatchSyncStatus;
@@ -41,7 +36,7 @@ type Node<D> = <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::No
 const ORCHARD_START: &str = "000000";
 /// The data relating to the blocks in the current batch
 pub struct BlockManagementData {
-    // List of all downloaded blocks in the current batch and
+    // List of all downloaded Compact Blocks in the current batch and
     // their hashes/commitment trees. Stored with the tallest
     // block first, and the shortest last.
     blocks_in_current_batch: Arc<RwLock<Vec<BlockData>>>,
@@ -272,7 +267,7 @@ impl BlockManagementData {
                 &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
             )
             .or_else(|error| match error.kind() {
-                std::io::ErrorKind::UnexpectedEof => Ok(CommitmentTree::empty()),
+                std::io::ErrorKind::UnexpectedEof => Ok(frontier::CommitmentTree::empty()),
                 _ => Err(error),
             })
             .expect("Invalid orchard tree!");
@@ -322,7 +317,7 @@ impl BlockManagementData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) {
         let mut existing_blocks_writelock = existing_blocks.write().await;
         if existing_blocks_writelock.len() != 0 {
@@ -339,7 +334,7 @@ impl BlockManagementData {
             transaction_metadata_set
                 .write()
                 .await
-                .remove_txns_at_height(reorg_height);
+                .invalidate_all_transactions_after_or_at_height(reorg_height);
         }
     }
 
@@ -348,7 +343,7 @@ impl BlockManagementData {
         &self,
         start_block: u64,
         end_block: u64,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<Option<u64>, String>>,
@@ -452,13 +447,19 @@ impl BlockManagementData {
         self.wait_for_block(after_height).await;
 
         {
-            // Read Lock
+            // Read Lock for the Block Cache
             let blocks = self.blocks_in_current_batch.read().await;
+            // take the height of the first/highest block in the batch and subtract target height to get index into the block list
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
                 PoolNullifier::Sapling(nf) => {
                     let nf = nf.to_vec();
 
+                    // starting with a block and searching until the top of the batch
+                    //     if this block contains a transaction
+                    //         that contains a spent
+                    //             with the given nullifier
+                    //                 return its height
                     for i in (0..pos + 1).rev() {
                         let cb = &blocks.get(i as usize).unwrap().cb();
                         for compact_transaction in &cb.vtx {
@@ -523,9 +524,9 @@ impl BlockManagementData {
         let (cb, mut tree) = {
             // In the edge case of a transition to a new network epoch, there is no previous tree.
             let tree = if prev_height < activation_height {
-                CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
+                frontier::CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
             } else {
-                let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
+                let tree_state = crate::grpc_connector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
                 self.unverified_treestates.write().await.push(tree_state);
                 read_commitment_tree(&tree[..]).map_err(|e| format!("{}", e))?
@@ -594,7 +595,7 @@ struct BlockManagementThreadData {
 impl BlockManagementThreadData {
     async fn handle_reorgs_populate_data_inner(
         mut self,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> Result<Option<u64>, String> {
         // Temporary holding place for blocks while we process them.
@@ -677,7 +678,7 @@ pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
     // Type alias, sapling equivalent to the type manually written out for orchard
-    pub sapling_tree: zcash_primitives::sapling::CommitmentTree,
+    pub sapling_tree: sapling_crypto::CommitmentTree,
     pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard, 32>,
 }
 
@@ -726,14 +727,11 @@ pub fn tree_to_string<Node: Hashable + HashSer>(tree: &CommitmentTree<Node, 32>)
 }
 
 pub fn update_trees_with_compact_transaction(
-    sapling_tree: &mut CommitmentTree<zcash_primitives::sapling::Node, 32>,
+    sapling_tree: &mut CommitmentTree<sapling_crypto::Node, 32>,
     orchard_tree: &mut CommitmentTree<MerkleHashOrchard, 32>,
     compact_transaction: &CompactTx,
 ) {
-    update_tree_with_compact_transaction::<SaplingDomain<ChainType>>(
-        sapling_tree,
-        compact_transaction,
-    );
+    update_tree_with_compact_transaction::<SaplingDomain>(sapling_tree, compact_transaction);
     update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
 }
 
@@ -752,11 +750,10 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
-    use zingoconfig::ChainType;
 
     use super::*;
 
@@ -844,7 +841,9 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(
+                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                )),
                 reorg_transmitter,
             )
             .await;
@@ -893,7 +892,9 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(
+                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                )),
                 reorg_transmitter,
             )
             .await;
@@ -989,7 +990,9 @@ mod test {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
+                Arc::new(RwLock::new(
+                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                )),
                 reorg_transmitter,
             )
             .await;
@@ -1091,7 +1094,7 @@ mod test {
         let cb = decode_block();
 
         for compact_transaction in &cb.vtx {
-            super::update_tree_with_compact_transaction::<SaplingDomain<ChainType>>(
+            super::update_tree_with_compact_transaction::<SaplingDomain>(
                 &mut start_tree,
                 compact_transaction,
             )

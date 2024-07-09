@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- pub fn get_wallet_pathbuf
+- `get_wallet_pathbuf` fn
+- `wallet_path_exists` fn
 
 ### Changed
 
-- wallet_exists renamed -> wallet_path_exists
-
 ### Deprecated
+
+- `wallet_exists` fn
 
 ### Removed
