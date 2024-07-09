@@ -18,7 +18,8 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::data::summaries::{
-    OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary, TransparentCoinSummary,
+    OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary,
+    TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;

@@ -389,7 +389,8 @@ impl OutgoingTxData {
     }
 }
 
-struct OutgoingTxDataSummaries(Vec<OutgoingTxData>);
+/// Wraps a vec of outgoing transaction datas for the implementation of std::fmt::Display
+pub struct OutgoingTxDataSummaries(Vec<OutgoingTxData>);
 
 impl std::fmt::Display for OutgoingTxDataSummaries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -446,7 +447,9 @@ pub mod finsight {
     }
 }
 
-/// TODO: Add Mod Description Here!
+/// A mod designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+/// A "snapshot" of the state of the items in the wallet at the time the summary was constructed.
+/// Not to be used for internal logic in the system.
 pub mod summaries {
     use chrono::DateTime;
     use json::JsonValue;
@@ -483,47 +486,47 @@ pub mod summaries {
     }
 
     impl ValueTransfer {
-        /// TODO: doc comment
+        /// Gets txid
         pub fn txid(&self) -> TxId {
             self.txid
         }
-        /// TODO: doc comment
+        /// Gets datetime
         pub fn datetime(&self) -> u64 {
             self.datetime
         }
-        /// TODO: doc comment
+        /// Gets confirmation status
         pub fn status(&self) -> ConfirmationStatus {
             self.status
         }
-        /// TODO: doc comment
+        /// Gets blockheight
         pub fn blockheight(&self) -> BlockHeight {
             self.blockheight
         }
-        /// TODO: doc comment
+        /// Gets transaction fee
         pub fn transaction_fee(&self) -> Option<u64> {
             self.transaction_fee
         }
-        /// TODO: doc comment
+        /// Gets zec price in USD
         pub fn zec_price(&self) -> Option<f64> {
             self.zec_price
         }
-        /// TODO: doc comment
+        /// Gets value transfer kind
         pub fn kind(&self) -> ValueTransferKind {
             self.kind
         }
-        /// TODO: doc comment
+        /// Gets value
         pub fn value(&self) -> u64 {
             self.value
         }
-        /// TODO: doc comment
+        /// Gets recipient address
         pub fn recipient_address(&self) -> Option<&str> {
             self.recipient_address.as_deref()
         }
-        /// TODO: doc comment
+        /// Gets pool received
         pub fn pool_received(&self) -> Option<&str> {
             self.pool_received.as_deref()
         }
-        /// TODO: doc comment
+        /// Gets memos
         pub fn memos(&self) -> Vec<&str> {
             self.memos.iter().map(|s| s.as_str()).collect()
         }
@@ -631,7 +634,7 @@ pub mod summaries {
     pub struct ValueTransfers(pub Vec<ValueTransfer>);
 
     impl ValueTransfers {
-        /// TODO: doc comment
+        /// Creates a new ValueTransfer
         pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
             ValueTransfers(value_transfers)
         }
@@ -660,7 +663,7 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Builds ValueTransfer from builder
     pub struct ValueTransferBuilder {
         txid: Option<TxId>,
         datetime: Option<u64>,
@@ -676,7 +679,7 @@ pub mod summaries {
     }
 
     impl ValueTransferBuilder {
-        /// TODO: doc comment
+        /// Creates a new ValueTransfer builder
         pub fn new() -> ValueTransferBuilder {
             ValueTransferBuilder {
                 txid: None,
@@ -705,7 +708,7 @@ pub mod summaries {
         build_method!(pool_received, Option<String>);
         build_method!(memos, Vec<String>);
 
-        /// TODO: doc comment
+        /// Builds a ValueTransfer from builder
         pub fn build(&self) -> Result<ValueTransfer, BuildError> {
             Ok(ValueTransfer {
                 txid: self
@@ -785,7 +788,96 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Basic transaction summary interface
+    pub trait TransactionSummaryInterface {
+        /// Gets txid
+        fn txid(&self) -> TxId;
+        /// Gets datetime
+        fn datetime(&self) -> u64;
+        /// Gets confirmation status
+        fn status(&self) -> ConfirmationStatus;
+        /// Gets blockheight
+        fn blockheight(&self) -> BlockHeight;
+        /// Gets transaction kind
+        fn kind(&self) -> TransactionKind;
+        /// Gets value
+        fn value(&self) -> u64;
+        /// Gets fee
+        fn fee(&self) -> Option<u64>;
+        /// Gets zec price in USD
+        fn zec_price(&self) -> Option<f64>;
+        /// Gets slice of orchard note summaries
+        fn orchard_notes(&self) -> &[OrchardNoteSummary];
+        /// Gets slice of sapling note summaries
+        fn sapling_notes(&self) -> &[SaplingNoteSummary];
+        /// Gets slice of transparent coin summaries
+        fn transparent_coins(&self) -> &[TransparentCoinSummary];
+        /// Gets slice of outgoing transaction data
+        fn outgoing_tx_data(&self) -> &[OutgoingTxData];
+        /// Depending on the relationship of this capability to the
+        /// receiver capability, assign polarity to value transferred.
+        /// Returns None if fields expecting Some(_) are None
+        fn balance_delta(&self) -> Option<i64> {
+            match self.kind() {
+                TransactionKind::Sent(SendType::Send) => {
+                    self.fee().map(|fee| -((self.value() + fee) as i64))
+                }
+                TransactionKind::Sent(SendType::Shield)
+                | TransactionKind::Sent(SendType::SendToSelf) => {
+                    self.fee().map(|fee| -(fee as i64))
+                }
+                TransactionKind::Received => Some(self.value() as i64),
+            }
+        }
+        /// Prepares the fields in the summary for display
+        fn prepare_for_display(
+            &self,
+        ) -> (
+            String,
+            String,
+            String,
+            OrchardNoteSummaries,
+            SaplingNoteSummaries,
+            TransparentCoinSummaries,
+            OutgoingTxDataSummaries,
+        ) {
+            let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime() as i64, 0) {
+                format!("{}", dt)
+            } else {
+                "not available".to_string()
+            };
+            let fee = if let Some(f) = self.fee() {
+                f.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let zec_price = if let Some(price) = self.zec_price() {
+                price.to_string()
+            } else {
+                "not available".to_string()
+            };
+            let orchard_notes = OrchardNoteSummaries(self.orchard_notes().to_vec());
+            let sapling_notes = SaplingNoteSummaries(self.sapling_notes().to_vec());
+            let transparent_coins = TransparentCoinSummaries(self.transparent_coins().to_vec());
+            let outgoing_tx_data_summaries =
+                OutgoingTxDataSummaries(self.outgoing_tx_data().to_vec());
+
+            (
+                datetime,
+                fee,
+                zec_price,
+                orchard_notes,
+                sapling_notes,
+                transparent_coins,
+                outgoing_tx_data_summaries,
+            )
+        }
+    }
+
+    /// Transaction summary.
+    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+    /// A "snapshot" of the state of a transaction in the wallet at the time the summary was constructed.
+    /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
     pub struct TransactionSummary {
         txid: TxId,
@@ -802,94 +894,56 @@ pub mod summaries {
         outgoing_tx_data: Vec<OutgoingTxData>,
     }
 
-    impl TransactionSummary {
-        /// TODO: doc comment
-        pub fn txid(&self) -> TxId {
+    impl TransactionSummaryInterface for TransactionSummary {
+        fn txid(&self) -> TxId {
             self.txid
         }
-        /// TODO: doc comment
-        pub fn datetime(&self) -> u64 {
+        fn datetime(&self) -> u64 {
             self.datetime
         }
-        /// TODO: doc comment
-        pub fn status(&self) -> ConfirmationStatus {
+        fn status(&self) -> ConfirmationStatus {
             self.status
         }
-        /// TODO: doc comment
-        pub fn blockheight(&self) -> BlockHeight {
+        fn blockheight(&self) -> BlockHeight {
             self.blockheight
         }
-        /// TODO: doc comment
-        pub fn kind(&self) -> TransactionKind {
+        fn kind(&self) -> TransactionKind {
             self.kind
         }
-        /// TODO: doc comment
-        pub fn value(&self) -> u64 {
+        fn value(&self) -> u64 {
             self.value
         }
-        /// TODO: doc comment
-        pub fn fee(&self) -> Option<u64> {
+        fn fee(&self) -> Option<u64> {
             self.fee
         }
-        /// TODO: doc comment
-        pub fn zec_price(&self) -> Option<f64> {
+        fn zec_price(&self) -> Option<f64> {
             self.zec_price
         }
-        /// TODO: doc comment
-        pub fn orchard_notes(&self) -> &[OrchardNoteSummary] {
+        fn orchard_notes(&self) -> &[OrchardNoteSummary] {
             &self.orchard_notes
         }
-        /// TODO: doc comment
-        pub fn sapling_notes(&self) -> &[SaplingNoteSummary] {
+        fn sapling_notes(&self) -> &[SaplingNoteSummary] {
             &self.sapling_notes
         }
-        /// TODO: doc comment
-        pub fn transparent_coins(&self) -> &[TransparentCoinSummary] {
+        fn transparent_coins(&self) -> &[TransparentCoinSummary] {
             &self.transparent_coins
         }
-        /// TODO: doc comment
-        pub fn outgoing_tx_data(&self) -> &[OutgoingTxData] {
+        fn outgoing_tx_data(&self) -> &[OutgoingTxData] {
             &self.outgoing_tx_data
-        }
-
-        /// Depending on the relationship of this capability to the
-        /// receiver capability, assign polarity to value transferred.
-        /// Returns None if fields expecting Some(_) are None
-        pub fn balance_delta(&self) -> Option<i64> {
-            match self.kind {
-                TransactionKind::Sent(SendType::Send) => {
-                    self.fee().map(|fee| -((self.value() + fee) as i64))
-                }
-                TransactionKind::Sent(SendType::Shield)
-                | TransactionKind::Sent(SendType::SendToSelf) => {
-                    self.fee().map(|fee| -(fee as i64))
-                }
-                TransactionKind::Received => Some(self.value() as i64),
-            }
         }
     }
 
     impl std::fmt::Display for TransactionSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
-                format!("{}", dt)
-            } else {
-                "not available".to_string()
-            };
-            let fee = if let Some(f) = self.fee {
-                f.to_string()
-            } else {
-                "not available".to_string()
-            };
-            let zec_price = if let Some(price) = self.zec_price {
-                price.to_string()
-            } else {
-                "not available".to_string()
-            };
-            let orchard_notes = OrchardNoteSummaries(self.orchard_notes.clone());
-            let sapling_notes = SaplingNoteSummaries(self.sapling_notes.clone());
-            let transparent_coins = TransparentCoinSummaries(self.transparent_coins.clone());
-            let outgoing_tx_data_summaries = OutgoingTxDataSummaries(self.outgoing_tx_data.clone());
+            let (
+                datetime,
+                fee,
+                zec_price,
+                orchard_notes,
+                sapling_notes,
+                transparent_coins,
+                outgoing_tx_data_summaries,
+            ) = self.prepare_for_display();
             write!(
                 f,
                 "{{
@@ -941,12 +995,12 @@ pub mod summaries {
         }
     }
 
-    /// Summary of transactions
+    /// Wraps a vec of transaction summaries for the implementation of std::fmt::Display
     #[derive(PartialEq, Debug)]
     pub struct TransactionSummaries(pub Vec<TransactionSummary>);
 
     impl TransactionSummaries {
-        /// TODO: doc comment
+        /// Creates a new TransactionSummaries struct
         pub fn new(transaction_summaries: Vec<TransactionSummary>) -> Self {
             TransactionSummaries(transaction_summaries)
         }
@@ -986,7 +1040,7 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Builds TransactionSummary from builder
     pub struct TransactionSummaryBuilder {
         txid: Option<TxId>,
         datetime: Option<u64>,
@@ -1003,7 +1057,7 @@ pub mod summaries {
     }
 
     impl TransactionSummaryBuilder {
-        /// TODO: doc comment
+        /// Creates a new TransactionSummary builder
         pub fn new() -> TransactionSummaryBuilder {
             TransactionSummaryBuilder {
                 txid: None,
@@ -1034,7 +1088,7 @@ pub mod summaries {
         build_method!(transparent_coins, Vec<TransparentCoinSummary>);
         build_method!(outgoing_tx_data, Vec<OutgoingTxData>);
 
-        /// TODO: doc comment
+        /// Builds a TransactionSummary from builder
         pub fn build(&self) -> Result<TransactionSummary, BuildError> {
             Ok(TransactionSummary {
                 txid: self
@@ -1087,7 +1141,10 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Detailed transaction summary.
+    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+    /// A "snapshot" of the state of a transaction in the wallet at the time the summary was constructed.
+    /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
     pub struct DetailedTransactionSummary {
         txid: TxId,
@@ -1107,101 +1164,66 @@ pub mod summaries {
     }
 
     impl DetailedTransactionSummary {
-        /// TODO: doc comment
-        pub fn txid(&self) -> TxId {
-            self.txid
-        }
-        /// TODO: doc comment
-        pub fn datetime(&self) -> u64 {
-            self.datetime
-        }
-        /// TODO: doc comment
-        pub fn status(&self) -> ConfirmationStatus {
-            self.status
-        }
-        /// TODO: doc comment
-        pub fn blockheight(&self) -> BlockHeight {
-            self.blockheight
-        }
-        /// TODO: doc comment
-        pub fn kind(&self) -> TransactionKind {
-            self.kind
-        }
-        /// TODO: doc comment
-        pub fn value(&self) -> u64 {
-            self.value
-        }
-        /// TODO: doc comment
-        pub fn fee(&self) -> Option<u64> {
-            self.fee
-        }
-        /// TODO: doc comment
-        pub fn zec_price(&self) -> Option<f64> {
-            self.zec_price
-        }
-        /// TODO: doc comment
-        pub fn orchard_notes(&self) -> &[OrchardNoteSummary] {
-            &self.orchard_notes
-        }
-        /// TODO: doc comment
-        pub fn sapling_notes(&self) -> &[SaplingNoteSummary] {
-            &self.sapling_notes
-        }
-        /// TODO: doc comment
-        pub fn transparent_coins(&self) -> &[TransparentCoinSummary] {
-            &self.transparent_coins
-        }
-        /// TODO: doc comment
-        pub fn outgoing_tx_data(&self) -> &[OutgoingTxData] {
-            &self.outgoing_tx_data
-        }
-        /// TODO: doc comment
+        /// Gets orchard nullifiers
         pub fn orchard_nullifiers(&self) -> Vec<&str> {
             self.orchard_nullifiers.iter().map(|n| n.as_str()).collect()
         }
-        /// TODO: doc comment
+        /// Gets sapling nullifiers
         pub fn sapling_nullifiers(&self) -> Vec<&str> {
             self.sapling_nullifiers.iter().map(|n| n.as_str()).collect()
         }
+    }
 
-        /// Depending on the relationship of this capability to the
-        /// receiver capability, assign polarity to value transferred.
-        /// Returns None if fields expecting Some(_) are None
-        pub fn balance_delta(&self) -> Option<i64> {
-            match self.kind {
-                TransactionKind::Sent(SendType::Send) => {
-                    self.fee().map(|fee| -((self.value() + fee) as i64))
-                }
-                TransactionKind::Sent(SendType::Shield)
-                | TransactionKind::Sent(SendType::SendToSelf) => {
-                    self.fee().map(|fee| -(fee as i64))
-                }
-                TransactionKind::Received => Some(self.value() as i64),
-            }
+    impl TransactionSummaryInterface for DetailedTransactionSummary {
+        fn txid(&self) -> TxId {
+            self.txid
+        }
+        fn datetime(&self) -> u64 {
+            self.datetime
+        }
+        fn status(&self) -> ConfirmationStatus {
+            self.status
+        }
+        fn blockheight(&self) -> BlockHeight {
+            self.blockheight
+        }
+        fn kind(&self) -> TransactionKind {
+            self.kind
+        }
+        fn value(&self) -> u64 {
+            self.value
+        }
+        fn fee(&self) -> Option<u64> {
+            self.fee
+        }
+        fn zec_price(&self) -> Option<f64> {
+            self.zec_price
+        }
+        fn orchard_notes(&self) -> &[OrchardNoteSummary] {
+            &self.orchard_notes
+        }
+        fn sapling_notes(&self) -> &[SaplingNoteSummary] {
+            &self.sapling_notes
+        }
+        fn transparent_coins(&self) -> &[TransparentCoinSummary] {
+            &self.transparent_coins
+        }
+        fn outgoing_tx_data(&self) -> &[OutgoingTxData] {
+            &self.outgoing_tx_data
         }
     }
 
     impl std::fmt::Display for DetailedTransactionSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
-                format!("{}", dt)
-            } else {
-                "not available".to_string()
-            };
-            let fee = if let Some(f) = self.fee {
-                f.to_string()
-            } else {
-                "not available".to_string()
-            };
-            let zec_price = if let Some(price) = self.zec_price {
-                price.to_string()
-            } else {
-                "not available".to_string()
-            };
-            let orchard_notes = OrchardNoteSummaries(self.orchard_notes.clone());
-            let sapling_notes = SaplingNoteSummaries(self.sapling_notes.clone());
-            let transparent_coins = TransparentCoinSummaries(self.transparent_coins.clone());
-            let outgoing_tx_data_summaries = OutgoingTxDataSummaries(self.outgoing_tx_data.clone());
+            let (
+                datetime,
+                fee,
+                zec_price,
+                orchard_notes,
+                sapling_notes,
+                transparent_coins,
+                outgoing_tx_data_summaries,
+            ) = self.prepare_for_display();
             let orchard_nullifier_summaries =
                 OrchardNullifierSummaries(self.orchard_nullifiers.clone());
             let sapling_nullifier_summaries =
@@ -1263,12 +1285,12 @@ pub mod summaries {
         }
     }
 
-    /// Summary of transactions
+    /// Wraps a vec of detailed  transaction summaries for the implementation of std::fmt::Display
     #[derive(PartialEq, Debug)]
     pub struct DetailedTransactionSummaries(pub Vec<DetailedTransactionSummary>);
 
     impl DetailedTransactionSummaries {
-        /// TODO: doc comment
+        /// Creates a new Detailedtransactionsummaries struct
         pub fn new(transaction_summaries: Vec<DetailedTransactionSummary>) -> Self {
             DetailedTransactionSummaries(transaction_summaries)
         }
@@ -1308,7 +1330,7 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Builder for DetailedTransactionSummary
     pub struct DetailedTransactionSummaryBuilder {
         txid: Option<TxId>,
         datetime: Option<u64>,
@@ -1327,7 +1349,7 @@ pub mod summaries {
     }
 
     impl DetailedTransactionSummaryBuilder {
-        /// TODO: doc comment
+        /// Creates a new DetailedTransactionSummary builder
         pub fn new() -> DetailedTransactionSummaryBuilder {
             DetailedTransactionSummaryBuilder {
                 txid: None,
@@ -1362,7 +1384,7 @@ pub mod summaries {
         build_method!(orchard_nullifiers, Vec<String>);
         build_method!(sapling_nullifiers, Vec<String>);
 
-        /// TODO: doc comment
+        /// Builds DetailedTransactionSummary from builder
         pub fn build(&self) -> Result<DetailedTransactionSummary, BuildError> {
             Ok(DetailedTransactionSummary {
                 txid: self
@@ -1423,7 +1445,10 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Orchard note summary.
+    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+    /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
+    /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
     pub struct OrchardNoteSummary {
         value: u64,
@@ -1433,7 +1458,7 @@ pub mod summaries {
     }
 
     impl OrchardNoteSummary {
-        /// TODO: doc comment
+        /// Creates an OrchardNoteSummary from parts
         pub fn from_parts(
             value: u64,
             spend_status: SpendStatus,
@@ -1447,19 +1472,19 @@ pub mod summaries {
                 memo,
             }
         }
-        /// TODO: doc comment
+        /// Gets value
         pub fn value(&self) -> u64 {
             self.value
         }
-        /// TODO: doc comment
+        /// Gets spend status
         pub fn spend_status(&self) -> SpendStatus {
             self.spend_status
         }
-        /// TODO: doc comment
+        /// Gets output index
         pub fn output_index(&self) -> Option<u32> {
             self.output_index
         }
-        /// TODO: doc comment
+        /// Gets memo
         pub fn memo(&self) -> Option<&str> {
             self.memo.as_deref()
         }
@@ -1501,7 +1526,8 @@ pub mod summaries {
         }
     }
 
-    struct OrchardNoteSummaries(Vec<OrchardNoteSummary>);
+    /// Wraps a vec of orchard note summaries for the implementation of std::fmt::Display
+    pub struct OrchardNoteSummaries(Vec<OrchardNoteSummary>);
 
     impl std::fmt::Display for OrchardNoteSummaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1512,7 +1538,10 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Sapling note summary.
+    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+    /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
+    /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
     pub struct SaplingNoteSummary {
         value: u64,
@@ -1522,7 +1551,7 @@ pub mod summaries {
     }
 
     impl SaplingNoteSummary {
-        /// TODO: doc comment
+        /// Creates a SaplingNoteSummary from parts
         pub fn from_parts(
             value: u64,
             spend_status: SpendStatus,
@@ -1536,19 +1565,19 @@ pub mod summaries {
                 memo,
             }
         }
-        /// TODO: doc comment
+        /// Gets value
         pub fn value(&self) -> u64 {
             self.value
         }
-        /// TODO: doc comment
+        /// Gets spend status
         pub fn spend_status(&self) -> SpendStatus {
             self.spend_status
         }
-        /// TODO: doc comment
+        /// Gets output index
         pub fn output_index(&self) -> Option<u32> {
             self.output_index
         }
-        /// TODO: doc comment
+        /// Gets memo
         pub fn memo(&self) -> Option<&str> {
             self.memo.as_deref()
         }
@@ -1590,7 +1619,8 @@ pub mod summaries {
         }
     }
 
-    struct SaplingNoteSummaries(Vec<SaplingNoteSummary>);
+    /// Wraps a vec of sapling note summaries for the implementation of std::fmt::Display
+    pub struct SaplingNoteSummaries(Vec<SaplingNoteSummary>);
 
     impl std::fmt::Display for SaplingNoteSummaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1601,7 +1631,10 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Transparent coin summary.
+    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+    /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
+    /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
     pub struct TransparentCoinSummary {
         value: u64,
@@ -1610,7 +1643,7 @@ pub mod summaries {
     }
 
     impl TransparentCoinSummary {
-        /// TODO: doc comment
+        /// Creates a SaplingNoteSummary from parts
         pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u64) -> Self {
             TransparentCoinSummary {
                 value,
@@ -1618,15 +1651,15 @@ pub mod summaries {
                 output_index,
             }
         }
-        /// TODO: doc comment
+        /// Gets value
         pub fn value(&self) -> u64 {
             self.value
         }
-        /// TODO: doc comment
+        /// Gets spend status
         pub fn spend_status(&self) -> SpendStatus {
             self.spend_status
         }
-        /// TODO: doc comment
+        /// Gets output index
         pub fn output_index(&self) -> u64 {
             self.output_index
         }
@@ -1655,7 +1688,8 @@ pub mod summaries {
         }
     }
 
-    struct TransparentCoinSummaries(Vec<TransparentCoinSummary>);
+    /// Wraps a vec of transparent coin summaries for the implementation of std::fmt::Display
+    pub struct TransparentCoinSummaries(Vec<TransparentCoinSummary>);
 
     impl std::fmt::Display for TransparentCoinSummaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1666,7 +1700,8 @@ pub mod summaries {
         }
     }
 
-    struct OrchardNullifierSummaries(Vec<String>);
+    /// Wraps a vec of orchard nullifier summaries for the implementation of std::fmt::Display
+    pub struct OrchardNullifierSummaries(Vec<String>);
 
     impl std::fmt::Display for OrchardNullifierSummaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1677,6 +1712,7 @@ pub mod summaries {
         }
     }
 
+    /// Wraps a vec of sapling nullifier summaries for the implementation of std::fmt::Display
     struct SaplingNullifierSummaries(Vec<String>);
 
     impl std::fmt::Display for SaplingNullifierSummaries {
@@ -1688,23 +1724,25 @@ pub mod summaries {
         }
     }
 
-    /// TODO: doc comment
+    /// Spend status of an output
     #[derive(Clone, Copy, PartialEq, Debug)]
     pub enum SpendStatus {
-        /// TODO: doc comment
+        /// Output is not spent.
         Unspent,
-        /// TODO: doc comment
-        Spent(TxId),
-        /// TODO: doc comment
+        /// Output is pending spent.
+        /// The transaction consuming this output is pending.
         PendingSpent(TxId),
+        /// Output is spent.
+        /// The transaction consuming this output is confirmed.
+        Spent(TxId),
     }
 
     impl std::fmt::Display for SpendStatus {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
                 SpendStatus::Unspent => write!(f, "unspent"),
-                SpendStatus::Spent(txid) => write!(f, "spent in {}", txid),
                 SpendStatus::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
+                SpendStatus::Spent(txid) => write!(f, "spent in {}", txid),
             }
         }
     }

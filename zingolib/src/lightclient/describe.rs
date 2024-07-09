@@ -22,7 +22,8 @@ use crate::{
             summaries::{
                 basic_transaction_summary_parts, DetailedTransactionSummaries,
                 DetailedTransactionSummaryBuilder, TransactionSummaries, TransactionSummaryBuilder,
-                ValueTransfer, ValueTransferBuilder, ValueTransferKind, ValueTransfers,
+                TransactionSummaryInterface as _, ValueTransfer, ValueTransferBuilder,
+                ValueTransferKind, ValueTransfers,
             },
             OutgoingTxData,
         },
