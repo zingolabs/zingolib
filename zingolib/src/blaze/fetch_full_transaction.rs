@@ -21,6 +21,7 @@ use zcash_primitives::{
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+// despite being called fetch_full_transaction, this function sends a txid somewhere else to be fetched as a Transaction. then processes it.
 pub async fn start(
     transaction_context: TransactionContext,
     fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
