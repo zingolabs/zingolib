@@ -31,6 +31,8 @@ impl TransactionContext {
             transaction_metadata_set,
         }
     }
+
+    pub fn unindexed_records(&self) -> Vec<TxId>;
 }
 
 /// These functions are responsible for receiving a full Transaction and storing it, with a few major caveats.
