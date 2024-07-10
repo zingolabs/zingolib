@@ -439,6 +439,10 @@ impl LightClient {
             .await;
 
         // RIGHT HERE lets check for missing output indicies.
+        transaction_context
+            .unindexed_records()
+            .await
+            .map_err(txid_sender.send);
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
