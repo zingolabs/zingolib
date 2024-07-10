@@ -653,6 +653,7 @@ impl TransactionRecordsById {
     }
 
     /// get a list of spendable NoteIds with associated note values
+    #[allow(clippy::type_complexity)]
     pub(crate) fn get_spendable_note_ids_and_values(
         &self,
         sources: &[zcash_client_backend::ShieldedProtocol],
