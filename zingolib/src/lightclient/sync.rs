@@ -430,7 +430,7 @@ impl LightClient {
             self.wallet.transactions(),
         );
 
-        // collect any outdated transaction record that are incomplete and missing output indexes
+        // CONDITIONAL_RESCAN part 1: collect any outdated transaction record that are incomplete and missing output indexes
         let list_of_incomplete_txids_and_heights = transaction_context.unindexed_records().await;
 
         // fv believes that sending either a transaction or a txid along the txid_sender or full_transaction_sender will result in a scan.
@@ -442,7 +442,7 @@ impl LightClient {
             )
             .await;
 
-        // RIGHT HERE lets check for missing output indexes.
+        // CONDITIONAL_RESCAN part 2: send those TxIds to the newly created output scanner
         let _result_of_targetted_rescan =
             list_of_incomplete_txids_and_heights.map_err(|list_of_incomplete_txs_and_heights| {
                 list_of_incomplete_txs_and_heights
