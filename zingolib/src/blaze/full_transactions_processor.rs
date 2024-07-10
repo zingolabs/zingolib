@@ -52,8 +52,7 @@ pub async fn start(
 
     let bsync_data_i = bsync_data.clone();
 
-    let (transaction_id_transmitter, mut transaction_id_receiver) =
-        unbounded_channel::<(TxId, BlockHeight)>();
+    let (txid_sender, mut transaction_id_receiver) = unbounded_channel::<(TxId, BlockHeight)>();
     let h1: JoinHandle<Result<(), String>> = tokio::spawn(async move {
         let last_progress = Arc::new(AtomicU64::new(0));
         let mut workers = FuturesUnordered::new();
@@ -66,7 +65,7 @@ pub async fn start(
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
-            let full_transaction_fetcher = fulltx_fetcher.clone();
+            let fulltx_fetcher_sub = fulltx_fetcher.clone();
             let bsync_data = bsync_data_i.clone();
             let last_progress = last_progress.clone();
 
@@ -75,7 +74,7 @@ pub async fn start(
                 let transaction = {
                     // Fetch the TxId from LightwalletD and process all the parts of it.
                     let (transmitter, receiver) = oneshot::channel();
-                    full_transaction_fetcher
+                    fulltx_fetcher_sub
                         .send((transaction_id, transmitter))
                         .unwrap();
                     receiver.await.unwrap()?
@@ -121,13 +120,13 @@ pub async fn start(
     });
 
     let transaction_context = transaction_context.clone(); // TODO: Delete and study error.
-    let (transaction_transmitter, mut transaction_receiver) =
+    let (full_transaction_sender, mut full_transaction_receiver) =
         unbounded_channel::<(Transaction, BlockHeight)>();
 
     let h2: JoinHandle<Result<(), String>> = tokio::spawn(async move {
         let bsync_data = bsync_data.clone();
 
-        while let Some((transaction, height)) = transaction_receiver.recv().await {
+        while let Some((transaction, height)) = full_transaction_receiver.recv().await {
             let block_time = bsync_data
                 .read()
                 .await
@@ -151,5 +150,5 @@ pub async fn start(
             .try_for_each(|r| r.map_err(|e| format!("{}", e))?)
     });
 
-    (h, transaction_id_transmitter, transaction_transmitter)
+    (h, txid_sender, full_transaction_sender)
 }
