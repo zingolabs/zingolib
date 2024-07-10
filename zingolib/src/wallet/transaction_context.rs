@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use zcash_client_backend::ShieldedProtocol;
+use zcash_primitives::transaction::TxId;
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
@@ -32,7 +34,20 @@ impl TransactionContext {
         }
     }
 
-    pub fn unindexed_records(&self) -> Vec<TxId>;
+    /// returns any outdated records that need to be rescanned for completeness..
+    /// checks that each record contains output indexes for its notes
+    pub async fn unindexed_records(&self) -> Result<(), Vec<TxId>> {
+        self.transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .get_spendable_note_ids_and_values(
+                &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                0.into(),
+                &[],
+            )
+            .map(|_| ())
+    }
 }
 
 /// These functions are responsible for receiving a full Transaction and storing it, with a few major caveats.
