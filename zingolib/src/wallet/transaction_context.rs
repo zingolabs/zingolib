@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use zcash_client_backend::ShieldedProtocol;
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
@@ -36,7 +36,7 @@ impl TransactionContext {
 
     /// returns any outdated records that need to be rescanned for completeness..
     /// checks that each record contains output indexes for its notes
-    pub async fn unindexed_records(&self) -> Result<(), Vec<TxId>> {
+    pub async fn unindexed_records(&self) -> Result<(), Vec<(TxId, BlockHeight)>> {
         self.transaction_metadata_set
             .read()
             .await

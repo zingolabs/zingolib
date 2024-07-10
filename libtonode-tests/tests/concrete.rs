@@ -2908,9 +2908,10 @@ mod slow {
             let txid2 = utils::conversion::txid_from_hex_encoded_str("7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e").unwrap();
             let expected_txids = vec![txid1, txid2];
             // in case the txids are in reverse order
-            if output_error != expected_txids {
+            let missing_index_txids: Vec<zcash_primitives::transaction::TxId> = output_error.into_iter().map(|(txid, _)| txid).collect();
+            if missing_index_txids != expected_txids {
                 let expected_txids = vec![txid2, txid1];
-                assert!(output_error == expected_txids, "{:?}\n\n{:?}", output_error, expected_txids);
+                assert!(missing_index_txids == expected_txids, "{:?}\n\n{:?}", missing_index_txids, expected_txids);
             }
         };
     }

@@ -429,6 +429,10 @@ impl LightClient {
             self.wallet.wallet_capability(),
             self.wallet.transactions(),
         );
+
+        // collect any outdated transaction record that are incomplete and missing output indexes
+        let list_of_incomplete_txids_and_heights = transaction_context.unindexed_records().await;
+
         // fv believes that sending either a transaction or a txid along the txid_sender or full_transaction_sender will result in a scan.
         let (fetch_full_transactions_handle, txid_sender, full_transaction_sender) =
             crate::blaze::full_transactions_processor::start(
@@ -438,11 +442,13 @@ impl LightClient {
             )
             .await;
 
-        // RIGHT HERE lets check for missing output indicies.
-        transaction_context
-            .unindexed_records()
-            .await
-            .map_err(txid_sender.send);
+        // RIGHT HERE lets check for missing output indexes.
+        let _result_of_targetted_rescan =
+            list_of_incomplete_txids_and_heights.map_err(|list_of_incomplete_txs_and_heights| {
+                list_of_incomplete_txs_and_heights
+                    .into_iter()
+                    .map(|incmplt| txid_sender.send(incmplt))
+            });
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());

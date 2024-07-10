@@ -665,7 +665,7 @@ impl TransactionRecordsById {
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[NoteId],
-    ) -> Result<Vec<(NoteId, u64)>, Vec<TxId>> {
+    ) -> Result<Vec<(NoteId, u64)>, Vec<(TxId, BlockHeight)>> {
         let mut missing_output_index = vec![];
         let ok = self
             .values()
@@ -679,7 +679,10 @@ impl TransactionRecordsById {
                     {
                         notes_from_tx
                     } else {
-                        missing_output_index.push(transaction_record.txid);
+                        missing_output_index.push((
+                            transaction_record.txid,
+                            transaction_record.status.get_height(),
+                        ));
                         vec![]
                     }
                 } else {
