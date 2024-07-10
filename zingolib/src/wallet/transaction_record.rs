@@ -858,7 +858,9 @@ mod tests {
         let requested_outputs: Vec<Output> =
             Output::get_record_outputs(&default_nn_transaction_record)
                 .iter()
-                .filter(|o| o.spend_status_query(queried_spend_state)).filter(|&o| o.pool_query(queried_pools)).cloned()
+                .filter(|o| o.spend_status_query(queried_spend_state))
+                .filter(|&o| o.pool_query(queried_pools))
+                .cloned()
                 .collect();
         assert_eq!(requested_outputs.len(), expected);
     }
