@@ -527,7 +527,7 @@ impl TransactionRecordsById {
     }
     /// witness tree requirement:
     ///
-    pub(crate) fn add_pending_note<D>(
+    pub(crate) fn add_pending_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -535,11 +535,7 @@ impl TransactionRecordsById {
         note: D::Note,
         to: D::Recipient,
         output_index: usize,
-    ) where
-        D: DomainWalletExt,
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
+    ) {
         let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
@@ -582,10 +578,7 @@ impl TransactionRecordsById {
         >,
         output_index: u32,
         position: incrementalmerkletree::Position,
-    ) where
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
+    ) {
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 

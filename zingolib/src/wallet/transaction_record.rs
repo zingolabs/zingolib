@@ -262,7 +262,7 @@ impl TransactionRecord {
     }
 
     /// Gets a received note, by index and domain
-    pub fn get_received_note<D>(
+    pub fn get_received_note<D: DomainWalletExt>(
         &self,
         index: u32,
     ) -> Option<
@@ -270,12 +270,7 @@ impl TransactionRecord {
             NoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
-    >
-    where
-        D: DomainWalletExt + Sized,
-        D::Note: PartialEq + Clone,
-        D::Recipient: super::traits::Recipient,
-    {
+    > {
         let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
             .find(|note| *note.output_index() == Some(index));

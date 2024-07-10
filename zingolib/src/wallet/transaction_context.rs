@@ -400,21 +400,14 @@ pub mod decrypt_transaction {
         /// In Orchard the components are "Actions", each of which
         /// _IS_ 1 Spend and 1 Output.
         #[allow(clippy::too_many_arguments)]
-        async fn decrypt_transaction_to_record_domain<D>(
+        async fn decrypt_transaction_to_record_domain<D: DomainWalletExt>(
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
-        ) where
-            D: zingo_traits::DomainWalletExt,
-            D::Note: Clone + PartialEq,
-            D::OutgoingViewingKey: std::fmt::Debug,
-            D::Recipient: zingo_traits::Recipient,
-            D::Memo: zingo_traits::ToBytes<512>,
-            D::IncomingViewingKey: Clone,
-        {
+        ) {
             type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
