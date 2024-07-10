@@ -433,7 +433,7 @@ impl LightClient {
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
             fetch_taddr_transactions_transmitter,
-        ) = crate::blaze::fetch_full_transaction::start(
+        ) = crate::blaze::full_transactions_processor::start(
             transaction_context,
             full_transaction_fetcher_transmitter.clone(),
             bsync_data.clone(),
