@@ -3,7 +3,6 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
@@ -42,18 +41,20 @@ impl TransactionContext {
             .await
             .transaction_records_by_id
             .iter_mut()
-            .for_each(|(txid, transaction_record)| {
+            .for_each(|(_txid, transaction_record)| {
                 transaction_record
                     .sapling_notes
                     .iter_mut()
-                    .for_each(|note| {
-                        note.output_index = note.output_index.or(Some(0));
+                    .enumerate() // this invented index may not be the block-true output index. however, the function is entirely local so there will not be any effect
+                    .for_each(|(index, note)| {
+                        note.output_index = note.output_index.or(Some(index as u32));
                     });
                 transaction_record
                     .orchard_notes
                     .iter_mut()
-                    .for_each(|note| {
-                        note.output_index = note.output_index.or(Some(0));
+                    .enumerate() // see above comment
+                    .for_each(|(index, note)| {
+                        note.output_index = note.output_index.or(Some(index as u32));
                     });
             });
     }
