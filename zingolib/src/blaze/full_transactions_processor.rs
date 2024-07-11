@@ -52,12 +52,12 @@ pub async fn start(
 
     let bsync_data_i = bsync_data.clone();
 
-    let (txid_sender, mut transaction_id_receiver) = unbounded_channel::<(TxId, BlockHeight)>();
+    let (txid_sender, mut txid_receiver) = unbounded_channel::<(TxId, BlockHeight)>();
     let h1: JoinHandle<Result<(), String>> = tokio::spawn(async move {
         let last_progress = Arc::new(AtomicU64::new(0));
         let mut workers = FuturesUnordered::new();
 
-        while let Some((transaction_id, height)) = transaction_id_receiver.recv().await {
+        while let Some((transaction_id, height)) = txid_receiver.recv().await {
             let per_txid_iter_context = local_transaction_context.clone();
             let block_time = bsync_data_i
                 .read()

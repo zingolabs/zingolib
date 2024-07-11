@@ -32,9 +32,7 @@ impl TransactionContext {
         }
     }
 
-    /// returns any outdated records that need to be rescanned for completeness..
-    /// checks that each record contains output indexes for its notes
-    /// Result::Ok means no patches were made
+    /// adds output indexes to all unindexed notes
     pub async fn patch_record_indexes(&self) {
         self.transaction_metadata_set
             .write()
