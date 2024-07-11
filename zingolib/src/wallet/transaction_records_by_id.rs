@@ -420,7 +420,7 @@ impl TransactionRecordsById {
             }
         });
     }
-    pub(crate) fn create_modify_get_transaction_metadata(
+    pub(crate) fn create_modify_get_transaction_record(
         &mut self,
         txid: &TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
@@ -441,11 +441,11 @@ impl TransactionRecordsById {
         &mut self,
         txid: TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
-        timestamp: u64,
+        timestamp: u32,
         total_transparent_value_spent: u64,
     ) {
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+            self.create_modify_get_transaction_record(&txid, status, timestamp as u64);
 
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
     }
@@ -502,7 +502,7 @@ impl TransactionRecordsById {
     ) {
         // Read or create the current TxId
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+            self.create_modify_get_transaction_record(&txid, status, timestamp);
 
         // Add this UTXO if it doesn't already exist
         if transaction_metadata
@@ -527,49 +527,12 @@ impl TransactionRecordsById {
     }
     /// witness tree requirement:
     ///
-    pub(crate) fn add_pending_note<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        height: BlockHeight,
-        timestamp: u64,
-        note: D::Note,
-        to: D::Recipient,
-        output_index: usize,
-    ) {
-        let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
-        let transaction_record =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
-
-        match D::WalletNote::get_record_outputs(transaction_record)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            None => {
-                let nd = D::WalletNote::from_parts(
-                    to.diversifier(),
-                    note,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    false,
-                    Some(output_index as u32),
-                );
-
-                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(nd);
-            }
-            Some(_) => {}
-        }
-    }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
-        timestamp: u64,
+        timestamp: u32,
         note: <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Note,
         to: D::Recipient,
         have_spending_key: bool,
@@ -577,38 +540,37 @@ impl TransactionRecordsById {
             <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Nullifier,
         >,
         output_index: u32,
-        position: incrementalmerkletree::Position,
+        position: Option<incrementalmerkletree::Position>,
     ) {
-        let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+        let transaction_record =
+            self.create_modify_get_transaction_record(&txid, status, timestamp as u64);
 
-        let nd = D::WalletNote::from_parts(
+        let zingo_note = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
             note.clone(),
-            Some(position),
+            position,
             nullifier,
             None,
             None,
             None,
-            // if this is change, we'll mark it later in check_notes_mark_change
-            false,
+            false, // deprecated
             have_spending_key,
             Some(output_index),
         );
-        match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
+        match D::WalletNote::transaction_metadata_notes_mut(transaction_record)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
             None => {
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(zingo_note);
 
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
-                    .retain(|n| n.nullifier().is_some());
+                // D::WalletNote::get_record_to_outputs_mut(transaction_record)
+                //     .retain(|n| n.nullifier().is_some());
             }
             #[allow(unused_mut)]
             Some(mut n) => {
                 // An overwrite should be safe here: TODO: test that confirms this
-                *n = nd;
+                *n = zingo_note;
             }
         }
     }

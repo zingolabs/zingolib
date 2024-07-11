@@ -279,7 +279,7 @@ pub mod decrypt_transaction {
                     .add_taddr_spent(
                         transaction.txid(),
                         status,
-                        block_time as u64,
+                        block_time,
                         total_transparent_value_spent,
                     );
             }
@@ -459,21 +459,23 @@ pub mod decrypt_transaction {
                     Some(plaintext) => plaintext,
                     _ => continue,
                 };
+                self.transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id
+                    .add_new_note::<D>(
+                        transaction.txid(),
+                        status,
+                        block_time,
+                        note.clone(),
+                        to,
+                        false,
+                        None,
+                        output_index as u32,
+                        None,
+                    );
+
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-                if let Some(height) = status.get_pending_height() {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .add_pending_note::<D>(
-                            transaction.txid(),
-                            height,
-                            block_time as u64,
-                            note.clone(),
-                            to,
-                            output_index,
-                        );
-                }
                 let memo = memo_bytes
                     .clone()
                     .try_into()
