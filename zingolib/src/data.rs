@@ -1,6 +1,5 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
 
-use zcash_primitives::transaction::TxId;
 pub mod proposal;
 pub mod witness_trees;
 
@@ -64,6 +63,9 @@ pub mod receivers {
 }
 
 pub mod pool_enums {
+    //! a mod for enums that split pools.
+    // this mod may use enum_dispatch later
+
     /// wraps a nullifier from one shielded pool or the other.
     pub enum PoolNullifier {
         /// sapling nullifier
@@ -74,12 +76,16 @@ pub mod pool_enums {
 }
 
 pub mod note_id {
+    //! The structs inside this mod are incomplete representations intended for lookup or identification of notes.
+
     use std::fmt;
 
     use zcash_primitives::transaction::TxId;
 
     use crate::wallet::data::PoolNullifier;
 
+    /// an incomplete representation of a note
+    /// used in trait [crate::wallet::transaction_records_by_id::trait_inputsource]
     pub struct NoteId {
         txid: TxId,
         pool_nullifier: PoolNullifier,
