@@ -60,3 +60,11 @@ pub mod receivers {
         TransactionRequest::new(payments)
     }
 }
+
+/// wraps a nullifier from one shielded pool or the other.
+pub enum PoolNullifier {
+    /// sapling nullifier
+    Sapling(sapling_crypto::Nullifier),
+    /// orchard nullifier
+    Orchard(orchard::note::Nullifier),
+}
