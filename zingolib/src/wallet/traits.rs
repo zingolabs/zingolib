@@ -289,11 +289,7 @@ fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
 }
 
 /// TODO: Add Doc Comment Here!
-pub trait CompactOutput<D: DomainWalletExt>: Sized + Clone
-where
-    D::Recipient: Recipient,
-    <D as Domain>::Note: PartialEq + Clone,
-{
+pub trait CompactOutput<D: DomainWalletExt>: Sized + Clone {
     /// TODO: Add Doc Comment Here!
     type CompactAction: ShieldedOutput<D, COMPACT_NOTE_SIZE>;
 
@@ -361,11 +357,7 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
 /// domain. In the Orchard Domain bundles comprise Actions each of which contains
 /// both a Spend and an Output (though either or both may be dummies). Sapling transmissions,
 /// as implemented, contain a 1:1 ratio of Spends and Outputs.
-pub trait Bundle<D: DomainWalletExt>
-where
-    D::Recipient: Recipient,
-    D::Note: PartialEq + Clone,
-{
+pub trait Bundle<D: DomainWalletExt> {
     /// An expenditure of an output, such that its value is distributed among *this* transaction's outputs.
     type Spend: Spend;
     /// A value store that is completely emptied by transfer of its contents to another output.
@@ -456,11 +448,15 @@ type MemoryStoreShardTree<T> =
     ShardTree<MemoryShardStore<T, BlockHeight>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>;
 
 /// TODO: Add Doc Comment Here!
-pub trait DomainWalletExt: Domain + BatchDomain
-where
-    Self: Sized,
-    Self::Note: PartialEq + Clone,
-    Self::Recipient: Recipient,
+pub trait DomainWalletExt:
+    Domain<
+        Note: PartialEq + Clone,
+        Recipient: Recipient,
+        ExtractedCommitmentBytes: Into<[u8; 32]>,
+        Memo: ToBytes<512>,
+        IncomingViewingKey: Clone,
+    > + BatchDomain
+    + Sized
 {
     /// TODO: Add Doc Comment Here!
     const NU: NetworkUpgrade;
