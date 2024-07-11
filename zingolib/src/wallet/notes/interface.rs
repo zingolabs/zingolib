@@ -28,6 +28,8 @@ pub trait OutputConstructor {
         spend_status_query: OutputSpendStatusQuery,
     ) -> Vec<&mut Self>;
 }
+pub struct SpendTxId(TxId);
+pub struct CreationTxId(TxId);
 /// Expresses the behavior that *all* value transfers MUST support (inclusive of transparent).
 #[enum_dispatch::enum_dispatch]
 pub trait OutputInterface: Sized {
@@ -42,19 +44,19 @@ pub trait OutputInterface: Sized {
     fn value(&self) -> u64;
 
     /// If the funds are spent, the TxId and Blockheight of record
-    fn spent(&self) -> &Option<(TxId, u32)>;
+    fn spent(&self) -> &Option<(SpendTxId, u32)>;
 
     /// Mutable access to the spent field.. hmm  NOTE:  Should we keep this pattern?
     /// what is spent becomes a Vec<OnceCell(TxiD, u32)>, where the last element of that
     /// Vec is the last known block chain record of the spend.  So then reorgs, just extend
     /// the Vec which tracks all BlockChain records of the value-transfer
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn spent_mut(&mut self) -> &mut Option<(SpendTxId, u32)>;
 
     /// The TxId and broadcast height of a transfer that's not known to be on-record on the chain
-    fn pending_spent(&self) -> &Option<(TxId, u32)>;
+    fn pending_spent(&self) -> &Option<(SpendTxId, u32)>;
 
     /// TODO: Add Doc Comment Here!
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn pending_spent_mut(&mut self) -> &mut Option<(SpendTxId, u32)>;
 
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
@@ -116,8 +118,8 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
         note: Self::Note,
         position_of_commitment_to_witness: Option<Position>,
         nullifier: Option<Self::Nullifier>,
-        spent: Option<(TxId, u32)>,
-        pending_spent: Option<(TxId, u32)>,
+        spent: Option<(SpendTxId, u32)>,
+        pending_spent: Option<(SpendTxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,

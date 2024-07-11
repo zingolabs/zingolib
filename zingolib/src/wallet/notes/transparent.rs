@@ -7,7 +7,9 @@ use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 
 use crate::wallet::notes::{
-    interface::OutputConstructor, query::OutputSpendStatusQuery, OutputInterface,
+    interface::{OutputConstructor, SpendTxId},
+    query::OutputSpendStatusQuery,
+    OutputInterface,
 };
 use crate::wallet::transaction_record::TransactionRecord;
 
@@ -41,19 +43,19 @@ impl OutputInterface for TransparentOutput {
         self.value
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
+    fn spent(&self) -> &Option<(SpendTxId, u32)> {
         &self.spent
     }
 
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn spent_mut(&mut self) -> &mut Option<(SpendTxId, u32)> {
         &mut self.spent
     }
 
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
+    fn pending_spent(&self) -> &Option<(SpendTxId, u32)> {
         &self.pending_spent
     }
 
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn pending_spent_mut(&mut self) -> &mut Option<(SpendTxId, u32)> {
         &mut self.pending_spent
     }
 }
