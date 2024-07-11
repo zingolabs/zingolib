@@ -88,6 +88,7 @@ pub mod note_id {
     /// used in trait [crate::wallet::transaction_records_by_id::trait_inputsource]
     /// as <TransactionRecordsById as InputSource>::NoteId
 
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     pub struct TxIdAndNullifier {
         txid: TxId,
         pool_nullifier: PoolNullifier,

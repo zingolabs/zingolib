@@ -6,7 +6,7 @@ use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 use secrecy::SecretVec;
 use shardtree::store::ShardStore;
 use zcash_client_backend::{
-    data_api::{Account, WalletRead},
+    data_api::{Account, InputSource, WalletRead},
     keys::UnifiedFullViewingKey,
     wallet::TransparentAddressMetadata,
     PoolType,
@@ -255,7 +255,7 @@ impl WalletRead for TxMapAndMaybeTrees {
     }
     fn get_memo(
         &self,
-        _note_id: Self::NoteId,
+        _note_id: <Self as InputSource>::NoteId,
     ) -> Result<Option<zcash_primitives::memo::Memo>, Self::Error> {
         unimplemented!()
     }

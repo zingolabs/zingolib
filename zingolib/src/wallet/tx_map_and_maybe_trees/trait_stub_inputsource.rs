@@ -2,6 +2,8 @@
 
 use zcash_client_backend::data_api::{InputSource, SpendableNotes};
 
+use crate::data::note_id::TxIdAndNullifier;
+
 use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 
 /// A trait representing the capability to query a data store for unspent transaction outputs belonging to a wallet.
@@ -10,7 +12,7 @@ use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 impl InputSource for TxMapAndMaybeTrees {
     type Error = TxMapAndMaybeTreesTraitError;
     type AccountId = zcash_primitives::zip32::AccountId;
-    type NoteRef = NoteId;
+    type NoteRef = TxIdAndNullifier;
 
     fn get_spendable_note(
         &self,
