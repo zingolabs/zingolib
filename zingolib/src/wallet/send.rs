@@ -51,7 +51,7 @@ use crate::data::witness_trees::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD
 use super::data::SpendableOrchardNote;
 
 use super::notes::ShieldedNoteInterface;
-use super::{notes, traits, LightWallet};
+use super::{notes, LightWallet};
 
 use super::traits::{DomainWalletExt, Recipient, SpendableNote};
 use super::utils::get_price;
@@ -92,11 +92,7 @@ impl SendProgress {
 fn add_notes_to_total<D: DomainWalletExt>(
     candidates: Vec<D::SpendableNoteAT>,
     target_amount: Amount,
-) -> (Vec<D::SpendableNoteAT>, Amount)
-where
-    D::Note: PartialEq + Clone,
-    D::Recipient: traits::Recipient,
-{
+) -> (Vec<D::SpendableNoteAT>, Amount) {
     let mut notes = Vec::new();
     let mut running_total = Amount::zero();
     for note in candidates {

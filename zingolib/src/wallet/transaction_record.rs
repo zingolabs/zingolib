@@ -56,14 +56,14 @@ pub struct TransactionRecord {
     /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
     pub transparent_outputs: Vec<TransparentOutput>,
 
+    /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
+    pub total_transparent_value_spent: u64,
+
     /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
     pub total_sapling_value_spent: u64,
 
     /// Total value of all the orchard nullifiers that were spent by this wallet in this Tx
     pub total_orchard_value_spent: u64,
-
-    /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
-    pub total_transparent_value_spent: u64,
 
     /// All outgoing sends
     pub outgoing_tx_data: Vec<OutgoingTxData>,
@@ -203,6 +203,7 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
+    #[allow(deprecated)]
     #[deprecated(note = "uses unstable deprecated is_change")]
     pub fn is_outgoing_transaction(&self) -> bool {
         (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
@@ -239,6 +240,7 @@ impl TransactionRecord {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "replaced by total_value_input_to_transaction")]
     pub fn total_value_spent(&self) -> u64 {
         self.value_spent_by_pool().iter().sum()
     }
@@ -260,7 +262,7 @@ impl TransactionRecord {
     }
 
     /// Gets a received note, by index and domain
-    pub fn get_received_note<D>(
+    pub fn get_received_note<D: DomainWalletExt>(
         &self,
         index: u32,
     ) -> Option<
@@ -268,12 +270,7 @@ impl TransactionRecord {
             NoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
-    >
-    where
-        D: DomainWalletExt + Sized,
-        D::Note: PartialEq + Clone,
-        D::Recipient: super::traits::Recipient,
-    {
+    > {
         let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
             .find(|note| *note.output_index() == Some(index));
@@ -393,8 +390,8 @@ impl TransactionRecord {
 
         let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
 
-        let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
+        let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_orchard_value_spent = if version >= 22 {
             reader.read_u64::<LittleEndian>()?
         } else {
@@ -442,8 +439,8 @@ impl TransactionRecord {
             transparent_outputs: utxos,
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
-            total_sapling_value_spent,
             total_transparent_value_spent,
+            total_sapling_value_spent,
             total_orchard_value_spent,
             outgoing_tx_data: outgoing_metadata,
             price: zec_price,
@@ -511,6 +508,7 @@ impl std::fmt::Display for TransactionKind {
             TransactionKind::Received => write!(f, "received"),
             TransactionKind::Sent(SendType::Send) => write!(f, "sent"),
             TransactionKind::Sent(SendType::Shield) => write!(f, "shield"),
+            TransactionKind::Sent(SendType::SendToSelf) => write!(f, "send-to-self"),
         }
     }
 }
@@ -518,10 +516,12 @@ impl std::fmt::Display for TransactionKind {
 /// TODO: doc comment
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum SendType {
-    /// TODO: doc comment
+    /// Transaction is sending funds to recipient other than the creator
     Send,
-    /// TODO: doc comment
+    /// Transaction is only sending funds from transparent pool to the creator's shielded pool
     Shield,
+    /// Transaction is only sending funds to the creator's address(es) and is not a shield
+    SendToSelf,
 }
 
 #[cfg(test)]
@@ -795,7 +795,6 @@ mod tests {
             0
         );
         assert_eq!(new.total_value_received(), 0);
-        assert_eq!(new.total_value_spent(), 0);
         assert_eq!(new.value_outgoing(), 0);
         let t: [u64; 3] = [0, 0, 0];
         assert_eq!(new.value_spent_by_pool(), t);

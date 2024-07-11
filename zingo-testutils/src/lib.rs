@@ -1379,7 +1379,7 @@ pub mod scenarios {
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
                 value.checked_div(10).unwrap(),
-                None,
+                Some("note-to-self test memo"),
             )],
         )
         .await

@@ -370,15 +370,20 @@ impl TransactionRecordsById {
             && orchard_spends.is_empty()
             && query_record.total_transparent_value_spent > 0
             && query_record.outgoing_tx_data.is_empty()
+            && (!query_record.orchard_notes().is_empty() | !query_record.sapling_notes().is_empty())
         {
             // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
             TransactionKind::Sent(SendType::Shield)
+        } else if query_record.outgoing_tx_data.is_empty() {
+            TransactionKind::Sent(SendType::SendToSelf)
         } else {
             TransactionKind::Sent(SendType::Send)
         }
     }
 
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
+    #[deprecated(note = "uses unstable deprecated functions")]
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.get(txid)
             .map(TransactionRecord::total_value_spent)
@@ -389,6 +394,7 @@ impl TransactionRecordsById {
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
     #[deprecated(note = "uses unstable deprecated functions")]
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
@@ -521,7 +527,7 @@ impl TransactionRecordsById {
     }
     /// witness tree requirement:
     ///
-    pub(crate) fn add_pending_note<D>(
+    pub(crate) fn add_pending_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -529,11 +535,7 @@ impl TransactionRecordsById {
         note: D::Note,
         to: D::Recipient,
         output_index: usize,
-    ) where
-        D: DomainWalletExt,
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
+    ) {
         let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
@@ -576,10 +578,7 @@ impl TransactionRecordsById {
         >,
         output_index: u32,
         position: incrementalmerkletree::Position,
-    ) where
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
+    ) {
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
