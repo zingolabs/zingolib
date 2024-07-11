@@ -459,22 +459,34 @@ pub mod decrypt_transaction {
                     Some(plaintext) => plaintext,
                     _ => continue,
                 };
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .add_new_note::<D>(
-                        transaction.txid(),
-                        status,
-                        block_time,
-                        note.clone(),
-                        to,
-                        false,
-                        None,
-                        output_index as u32,
-                        None,
-                    );
+                {
+                    let mut tx_map = self.transaction_metadata_set.write().await;
 
+                    // check if there is already a confirmed transaction with the same txid
+                    let existing_tx_confirmed = if let Some(existing_tx) =
+                        tx_map.transaction_records_by_id.get(&transaction.txid())
+                    {
+                        matches!(existing_tx.status, ConfirmationStatus::Confirmed(_))
+                    } else {
+                        false
+                    };
+
+                    // prevent confirmed transaction from being overwritten by pending transaction
+                    if !(existing_tx_confirmed && matches!(status, ConfirmationStatus::Pending(_)))
+                    {
+                        tx_map.transaction_records_by_id.add_new_note::<D>(
+                            transaction.txid(),
+                            status,
+                            block_time,
+                            note.clone(),
+                            to,
+                            false,
+                            None,
+                            output_index as u32,
+                            None,
+                        );
+                    }
+                }
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
                 let memo = memo_bytes
                     .clone()

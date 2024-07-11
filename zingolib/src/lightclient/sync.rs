@@ -196,7 +196,6 @@ impl LightClient {
                             let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
                                 rtransaction.height as u32,
                             ));
-
                             TransactionContext::new(
                                 &config,
                                 key.clone(),
