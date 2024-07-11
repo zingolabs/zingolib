@@ -85,15 +85,17 @@ pub mod note_id {
         pool_nullifier: PoolNullifier,
     }
 
-    // impl fmt::Display for NoteId {
-    //     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    //         write!(
-    //             f,
-    //             "txid {} protocol {:?} output_index {}",
-    //             self.txid(),
-    //             self.protocol(),
-    //             self.output_index()
-    //         )
-    //     }
-    // }
+    impl fmt::Display for NoteId {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(
+                f,
+                "{} from txid {}",
+                match self.pool_nullifier {
+                    PoolNullifier::Sapling(_) => "Sapling",
+                    PoolNullifier::Orchard(_) => "Orchard",
+                },
+                self.txid,
+            )
+        }
+    }
 }
