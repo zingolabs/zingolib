@@ -291,26 +291,6 @@ impl LightWallet {
     }
 }
 
-/// checks whether the spending Tx for a note is confirmed
-/// returns an error if the referenced TxId is not found in the record book.
-pub fn get_spend_status<OI>(
-    output: OI,
-    records: TransactionRecordsById,
-) -> Result<Option<ConfirmationStatus>, TxId>
-where
-    OI: OutputInterface,
-{
-    output
-        .spending_txid()
-        .map(|spending_txid| {
-            records
-                .get(&spending_txid)
-                .map(|transaction_record| Some(transaction_record.status))
-                .ok_or(spending_txid)
-        })
-        .unwrap_or(Ok(None))
-}
-
 #[cfg(test)]
 mod tests {
     use orchard::note_encryption::OrchardDomain;
