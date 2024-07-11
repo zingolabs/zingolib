@@ -22,6 +22,7 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 
 use zcash_primitives::transaction::TxId;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 pub mod trait_inputsource;
 
@@ -545,6 +546,12 @@ impl TransactionRecordsById {
         let transaction_record =
             self.create_modify_get_transaction_record(&txid, status, timestamp as u64);
 
+        // if tx is confirmed, clear all pending notes
+        if matches!(status, ConfirmationStatus::Confirmed(_)) {
+            D::WalletNote::get_record_to_outputs_mut(transaction_record)
+                .retain(|n| n.nullifier().is_some());
+        }
+
         let zingo_note = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
             note.clone(),
@@ -563,9 +570,6 @@ impl TransactionRecordsById {
         {
             None => {
                 D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(zingo_note);
-
-                // D::WalletNote::get_record_to_outputs_mut(transaction_record)
-                //     .retain(|n| n.nullifier().is_some());
             }
             #[allow(unused_mut)]
             Some(mut n) => {
