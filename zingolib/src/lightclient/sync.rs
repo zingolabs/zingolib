@@ -430,8 +430,9 @@ impl LightClient {
             self.wallet.transactions(),
         );
 
-        // CONDITIONAL_RESCAN part 1: collect any outdated transaction record that are incomplete and missing output indexes
-        let list_of_incomplete_txids_and_heights = transaction_context.unindexed_records().await;
+        // OUTPUT_INDEX_PATCH: collect any outdated transaction record that are incomplete and missing output indexes. and simply make them up. it wont go on chain so it doesnt matter
+        let _list_of_incomplete_txids_and_heights =
+            transaction_context.patch_record_indexes().await;
 
         // fv believes that sending either a transaction or a txid along the txid_sender or full_transaction_sender will result in a scan.
         let (fetch_full_transactions_handle, txid_sender, full_transaction_sender) =
@@ -441,14 +442,6 @@ impl LightClient {
                 bsync_data.clone(),
             )
             .await;
-
-        // CONDITIONAL_RESCAN part 2: send those TxIds to the newly created output scanner
-        let _result_of_targetted_rescan =
-            list_of_incomplete_txids_and_heights.map_err(|list_of_incomplete_txs_and_heights| {
-                list_of_incomplete_txs_and_heights
-                    .into_iter()
-                    .map(|incmplt| txid_sender.send(incmplt))
-            });
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());

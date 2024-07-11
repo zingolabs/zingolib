@@ -3,7 +3,6 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zingoconfig::ZingoConfig;
 
@@ -36,17 +35,27 @@ impl TransactionContext {
 
     /// returns any outdated records that need to be rescanned for completeness..
     /// checks that each record contains output indexes for its notes
-    pub async fn unindexed_records(&self) -> Result<(), Vec<(TxId, BlockHeight)>> {
+    /// Result::Ok means no patches were made
+    pub async fn patch_record_indexes(&self) {
         self.transaction_metadata_set
-            .read()
+            .write()
             .await
             .transaction_records_by_id
-            .get_spendable_note_ids_and_values(
-                &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
-                0.into(),
-                &[],
-            )
-            .map(|_| ())
+            .iter_mut()
+            .for_each(|(txid, transaction_record)| {
+                transaction_record
+                    .sapling_notes
+                    .iter_mut()
+                    .for_each(|note| {
+                        note.output_index = note.output_index.or(Some(0));
+                    });
+                transaction_record
+                    .orchard_notes
+                    .iter_mut()
+                    .for_each(|note| {
+                        note.output_index = note.output_index.or(Some(0));
+                    });
+            });
     }
 }
 
