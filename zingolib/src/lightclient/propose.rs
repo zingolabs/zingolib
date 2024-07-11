@@ -12,6 +12,7 @@ use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNega
 
 use thiserror::Error;
 
+use crate::data::note_id::TxIdAndNullifier;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
@@ -58,7 +59,7 @@ pub enum ProposeSendError {
             TxMapAndMaybeTreesTraitError,
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
-                zcash_client_backend::wallet::NoteId,
+                TxIdAndNullifier,
             >,
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,

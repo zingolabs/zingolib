@@ -32,7 +32,6 @@ pub mod send_with_proposal {
     use nonempty::NonEmpty;
 
     use secp256k1::SecretKey;
-    use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_client_backend::{proposal::Proposal, wallet::TransparentAddressMetadata};
     use zcash_keys::keys::UnifiedSpendingKey;
@@ -41,6 +40,7 @@ pub mod send_with_proposal {
     use thiserror::Error;
     use zcash_proofs::prover::LocalTxProver;
 
+    use crate::data::note_id::TxIdAndNullifier;
     use crate::lightclient::LightClient;
     use crate::{
         lightclient::propose::{ProposeSendError, ProposeShieldError},
@@ -202,7 +202,7 @@ pub mod send_with_proposal {
             if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
                 match proposal {
                     crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
-                        self.complete_and_broadcast::<NoteId>(transfer_proposal)
+                        self.complete_and_broadcast::<TxIdAndNullifier>(transfer_proposal)
                             .await
                     }
                     crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
@@ -223,7 +223,9 @@ pub mod send_with_proposal {
             request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self.create_send_proposal(request).await?;
-            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
+            Ok(self
+                .complete_and_broadcast::<TxIdAndNullifier>(&proposal)
+                .await?)
         }
 
         /// Unstable function to expose the zip317 interface for development

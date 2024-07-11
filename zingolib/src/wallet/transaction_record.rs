@@ -9,10 +9,7 @@ use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use zcash_client_backend::{
-    wallet::NoteId,
-    ShieldedProtocol::{Orchard, Sapling},
-};
+use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::{
@@ -770,7 +767,6 @@ mod tests {
     use test_case::test_matrix;
 
     use sapling_crypto::note_encryption::SaplingDomain;
-    use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 
     use crate::wallet::notes::{

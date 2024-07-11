@@ -1,9 +1,6 @@
 //! this mod brings input source functionality from transaction_records_by_id
 
-use zcash_client_backend::{
-    data_api::{InputSource, SpendableNotes},
-    wallet::NoteId,
-};
+use zcash_client_backend::data_api::{InputSource, SpendableNotes};
 
 use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
 

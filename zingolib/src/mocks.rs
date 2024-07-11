@@ -359,7 +359,6 @@ pub mod proposal {
         components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
-    use zcash_client_backend::wallet::NoteId;
     use zingoconfig::{ChainType, RegtestNetwork};
 
     use crate::utils::conversion::address_from_str;

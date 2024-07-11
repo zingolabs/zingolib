@@ -16,6 +16,7 @@ use zcash_primitives::{
     },
 };
 
+use crate::data::note_id::TxIdAndNullifier;
 use crate::wallet::{
     notes::{query::OutputSpendStatusQuery, OutputInterface},
     transaction_records_by_id::TransactionRecordsById,
@@ -25,7 +26,6 @@ use crate::wallet::{
 use std::fmt::Debug;
 use thiserror::Error;
 
-use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::transaction::components::amount::BalanceError;
 
 /// Error type used by InputSource trait
@@ -33,7 +33,7 @@ use zcash_primitives::transaction::components::amount::BalanceError;
 pub enum InputSourceError {
     /// No witness position found for note. Note cannot be spent.
     #[error("No witness position found for note. Note cannot be spent: {0:?}")]
-    WitnessPositionNotFound(NoteId),
+    WitnessPositionNotFound(TxIdAndNullifier),
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(BalanceError),
@@ -76,8 +76,8 @@ enum RemainingNeeded {
 
 #[allow(dead_code)]
 fn sweep_dust_into_grace(
-    selected: &mut Vec<(NoteId, NonNegativeAmount)>,
-    dust_notes: Vec<(NoteId, NonNegativeAmount)>,
+    selected: &mut Vec<(TxIdAndNullifier, NonNegativeAmount)>,
+    dust_notes: Vec<(TxIdAndNullifier, NonNegativeAmount)>,
 ) {
     let sapling_dust: Vec<_> = dust_notes
         .iter()
@@ -128,7 +128,7 @@ impl InputSource for TransactionRecordsById {
     /// For example, this might be a database identifier type or a UUID.
     /// IMPL: We identify notes by
     /// txid, domain, and index
-    type NoteRef = NoteId;
+    type NoteRef = TxIdAndNullifier;
 
     /// Fetches a spendable note by indexing into a transaction's shielded outputs for the
     /// specified shielded protocol.
@@ -151,7 +151,7 @@ impl InputSource for TransactionRecordsById {
         Self::Error,
     > {
         let note_record_reference: <Self as InputSource>::NoteRef =
-            NoteId::new(*txid, protocol, index as u16);
+            TxIdAndNullifier::new(*txid, protocol, index as u16);
         match protocol {
             ShieldedProtocol::Sapling => Ok(self
                 .get_received_spendable_note_from_identifier::<SaplingDomain>(note_record_reference)
@@ -277,8 +277,9 @@ impl InputSource for TransactionRecordsById {
         }
         */
 
-        let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
-        let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
+        let mut selected_sapling =
+            Vec::<ReceivedNote<TxIdAndNullifier, sapling_crypto::Note>>::new();
+        let mut selected_orchard = Vec::<ReceivedNote<TxIdAndNullifier, orchard::Note>>::new();
 
         // transform each NoteId to a ReceivedNote
         selected.iter().try_for_each(|(id, _value)| {

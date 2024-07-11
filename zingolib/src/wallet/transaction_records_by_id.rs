@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 
-use zcash_client_backend::wallet::NoteId;
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 
@@ -1053,11 +1052,7 @@ mod tests {
             let (txid, record) = trbid.0.iter().next().unwrap();
 
             let received_note = trbid.get_received_spendable_note_from_identifier::<SaplingDomain>(
-                zcash_client_backend::wallet::NoteId::new(
-                    *txid,
-                    ShieldedProtocol::Sapling,
-                    i as u16,
-                ),
+                TxIdAndNullifier::new(*txid, ShieldedProtocol::Sapling, i as u16),
             );
 
             assert_eq!(

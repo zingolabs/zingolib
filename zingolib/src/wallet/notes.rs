@@ -119,7 +119,7 @@ impl std::fmt::Display for OutputId {
 #[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::transaction::TxId;
 
     use crate::{mocks::default_txid, utils::build_method};

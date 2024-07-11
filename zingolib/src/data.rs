@@ -86,12 +86,14 @@ pub mod note_id {
 
     /// an incomplete representation of a note
     /// used in trait [crate::wallet::transaction_records_by_id::trait_inputsource]
-    pub struct NoteId {
+    /// as <TransactionRecordsById as InputSource>::NoteId
+
+    pub struct TxIdAndNullifier {
         txid: TxId,
         pool_nullifier: PoolNullifier,
     }
 
-    impl fmt::Display for NoteId {
+    impl fmt::Display for TxIdAndNullifier {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(
                 f,

@@ -8,6 +8,8 @@ use zcash_primitives::transaction::{
     components::amount::{BalanceError, NonNegativeAmount},
 };
 
+use crate::data::note_id::TxIdAndNullifier;
+
 /// A proposed send to addresses.
 /// Identifies the notes to spend by txid, pool, and output_index.
 /// This type alias, specifies the ZIP317 "Proportional Transfer Fee Mechanism"structure
@@ -15,8 +17,7 @@ use zcash_primitives::transaction::{
 /// as the fee structure for a transaction series.  This innovation was created in response
 /// "Binance Constraint" that t-addresses that only receive from t-addresses be supported.
 /// <https://zips.z.cash/zip-0320>
-pub type ProportionalFeeProposal =
-    Proposal<transaction::fees::zip317::FeeRule, zcash_client_backend::wallet::NoteId>;
+pub type ProportionalFeeProposal = Proposal<transaction::fees::zip317::FeeRule, TxIdAndNullifier>;
 /// A proposed shielding.
 /// The zcash_client_backend Proposal type exposes a "NoteRef" generic
 /// parameter to track Shielded inputs to the proposal these are
