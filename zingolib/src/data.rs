@@ -1,4 +1,6 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
+
+use zcash_primitives::transaction::TxId;
 pub mod proposal;
 pub mod witness_trees;
 
@@ -61,10 +63,37 @@ pub mod receivers {
     }
 }
 
-/// wraps a nullifier from one shielded pool or the other.
-pub enum PoolNullifier {
-    /// sapling nullifier
-    Sapling(sapling_crypto::Nullifier),
-    /// orchard nullifier
-    Orchard(orchard::note::Nullifier),
+pub mod pool_enums {
+    /// wraps a nullifier from one shielded pool or the other.
+    pub enum PoolNullifier {
+        /// sapling nullifier
+        Sapling(sapling_crypto::Nullifier),
+        /// orchard nullifier
+        Orchard(orchard::note::Nullifier),
+    }
+}
+
+pub mod note_id {
+    use std::fmt;
+
+    use zcash_primitives::transaction::TxId;
+
+    use crate::wallet::data::PoolNullifier;
+
+    pub struct NoteId {
+        txid: TxId,
+        pool_nullifier: PoolNullifier,
+    }
+
+    // impl fmt::Display for NoteId {
+    //     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    //         write!(
+    //             f,
+    //             "txid {} protocol {:?} output_index {}",
+    //             self.txid(),
+    //             self.protocol(),
+    //             self.output_index()
+    //         )
+    //     }
+    // }
 }
