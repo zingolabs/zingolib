@@ -62,12 +62,12 @@ pub mod receivers {
     }
 }
 
-pub mod pool_enums {
+pub(super) mod pool_enums {
     //! a mod for enums that split pools.
     // this mod may use enum_dispatch later
 
     /// wraps a nullifier from one shielded pool or the other.
-    pub enum PoolNullifier {
+    pub(super) enum PoolNullifier {
         /// sapling nullifier
         Sapling(sapling_crypto::Nullifier),
         /// orchard nullifier
@@ -75,21 +75,21 @@ pub mod pool_enums {
     }
 }
 
-pub mod note_id {
+pub(crate) mod note_id {
     //! The structs inside this mod are incomplete representations intended for lookup or identification of notes.
 
     use std::fmt;
 
     use zcash_primitives::transaction::TxId;
 
-    use crate::wallet::data::PoolNullifier;
+    use super::pool_enums::PoolNullifier;
 
     /// an incomplete representation of a note
     /// used in trait [crate::wallet::transaction_records_by_id::trait_inputsource]
     /// as <TransactionRecordsById as InputSource>::NoteId
 
     #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-    pub struct TxIdAndNullifier {
+    pub(super) struct TxIdAndNullifier {
         txid: TxId,
         pool_nullifier: PoolNullifier,
     }
