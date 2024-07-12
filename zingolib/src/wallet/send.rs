@@ -68,9 +68,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_error: Option<String>,
-    /// TODO: Add Doc Comment Here!
-    pub last_transaction_id: Option<String>,
+    pub last_result: Option<Result<String, String>>,
 }
 
 pub(crate) type NoteSelectionPolicy = Vec<PoolType>;
@@ -83,8 +81,7 @@ impl SendProgress {
             is_send_in_progress: false,
             progress: 0,
             total: 0,
-            last_error: None,
-            last_transaction_id: None,
+            last_result: None,
         }
     }
 }
