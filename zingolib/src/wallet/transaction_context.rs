@@ -643,13 +643,5 @@ pub mod decrypt_transaction {
 
             Ok(tree)
         }
-
-        // async fn get_incremental_witness<D: DomainWalletExt>(
-        //     &self,
-        //     commit
-        //     transaction: &Transaction,
-        // ) -> Result<IncrementalWitness<<D::WalletNote as ShieldedNoteInterface>::Node, 32>, String>
-        // {
-        // }
     }
 }

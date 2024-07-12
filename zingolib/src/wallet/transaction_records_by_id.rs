@@ -552,7 +552,7 @@ impl TransactionRecordsById {
                 .retain(|n| n.nullifier().is_some());
         }
 
-        let zingo_note = D::WalletNote::from_parts(
+        let wallet_note = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
             note.clone(),
             position,
@@ -569,12 +569,12 @@ impl TransactionRecordsById {
             .find(|n| n.note() == &note)
         {
             None => {
-                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(zingo_note);
+                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(wallet_note);
             }
             #[allow(unused_mut)]
             Some(mut n) => {
                 // An overwrite should be safe here: TODO: test that confirms this
-                *n = zingo_note;
+                *n = wallet_note;
             }
         }
     }
