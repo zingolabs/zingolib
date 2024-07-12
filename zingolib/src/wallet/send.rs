@@ -82,7 +82,7 @@ impl LightWallet {
     }
 
     // Reset the send progress status to blank
-    async fn reset_send_progress(&self) {
+    pub(crate) async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
         let next_id = g.id + 1;
 

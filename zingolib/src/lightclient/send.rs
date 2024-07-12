@@ -109,6 +109,9 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            // Reset the progress to start. Any errors will get recorded here
+            self.wallet.reset_send_progress().await;
+
             if self
                 .wallet
                 .transaction_context
