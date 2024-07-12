@@ -1,59 +1,33 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
-use crate::wallet::notes::OutputInterface;
 use crate::wallet::now;
-use crate::{data::receivers::Receivers, wallet::data::SpendableSaplingNote};
 
 use futures::Future;
 
-use log::{error, info};
+use log::{error};
 
-use orchard::note_encryption::OrchardDomain;
 
-use rand::rngs::OsRng;
 
-use sapling_crypto::note_encryption::SaplingDomain;
-use sapling_crypto::prover::{OutputProver, SpendProver};
 
-use orchard::tree::MerkleHashOrchard;
-use shardtree::error::{QueryError, ShardTreeError};
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
-use zcash_note_encryption::Domain;
 
 use std::cmp;
-use std::convert::Infallible;
-use std::ops::Add;
-use std::sync::mpsc::channel;
 
-use zcash_client_backend::{address, zip321::TransactionRequest, PoolType, ShieldedProtocol};
+use zcash_client_backend::{zip321::TransactionRequest};
 use zcash_keys::address::Address;
-use zcash_primitives::transaction::builder::{BuildResult, Progress};
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
-use zcash_primitives::transaction::{self, Transaction};
+use zcash_primitives::transaction::{Transaction};
 use zcash_primitives::{
     consensus::BlockHeight,
-    legacy::Script,
     memo::Memo,
-    transaction::{
-        builder::Builder,
-        components::{Amount, OutPoint, TxOut},
-        fees::zip317::MINIMUM_FEE,
-    },
 };
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use crate::data::witness_trees::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 
-use super::data::SpendableOrchardNote;
 
-use super::notes::ShieldedNoteInterface;
-use super::{notes, LightWallet};
+use super::{LightWallet};
 
-use super::traits::{DomainWalletExt, Recipient, SpendableNote};
+use super::traits::{SpendableNote};
 use super::utils::get_price;
 
 /// TODO: Add Doc Comment Here!
