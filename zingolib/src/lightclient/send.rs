@@ -176,8 +176,8 @@ pub mod send_with_proposal {
                     Some(self.wallet.wallet_capability().first_sapling_address()),
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
-            let txid = self
-                .wallet
+
+            self.wallet
                 .send_to_addresses_inner(
                     build_result.transaction(),
                     submission_height,
@@ -189,9 +189,8 @@ pub mod send_with_proposal {
                     },
                 )
                 .await
-                .map_err(CompleteAndBroadcastError::Broadcast)?;
-
-            Ok(NonEmpty::singleton(txid))
+                .map_err(CompleteAndBroadcastError::Broadcast)
+                .map(NonEmpty::singleton)
         }
 
         /// Unstable function to expose the zip317 interface for development
