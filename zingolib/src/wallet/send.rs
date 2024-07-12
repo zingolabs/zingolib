@@ -3,31 +3,22 @@ use crate::wallet::now;
 
 use futures::Future;
 
-use log::{error};
-
-
-
-
+use log::error;
 
 use std::cmp;
 
-use zcash_client_backend::{zip321::TransactionRequest};
+use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::Address;
-use zcash_primitives::transaction::{Transaction};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::Memo,
-};
+use zcash_primitives::transaction::Transaction;
+use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 
 use zingo_memo::create_wallet_internal_memo_version_0;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use super::LightWallet;
 
-
-use super::{LightWallet};
-
-use super::traits::{SpendableNote};
+use super::traits::SpendableNote;
 use super::utils::get_price;
 
 /// TODO: Add Doc Comment Here!
