@@ -53,12 +53,13 @@ pub mod decrypt_transaction {
             },
             notes::ShieldedNoteInterface,
             traits::{
-                self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
-                ShieldedOutputExt as _, Spend as _, ToBytes as _,
+                self as zingo_traits, Bundle as _, DomainWalletExt, FromCommitment as _,
+                Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
             },
             transaction_record::TransactionKind,
         },
     };
+    use incrementalmerkletree::{frontier::CommitmentTree, witness::IncrementalWitness};
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
     use std::{collections::HashSet, convert::TryInto};
@@ -66,7 +67,9 @@ pub mod decrypt_transaction {
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::try_output_recovery_with_ovk;
     use zcash_primitives::{
+        consensus::Parameters as _,
         memo::{Memo, MemoBytes},
+        merkle_tree::read_commitment_tree,
         transaction::{Transaction, TxId},
     };
     use zingo_memo::{parse_zingo_memo, ParsedMemo};
@@ -424,6 +427,15 @@ pub mod decrypt_transaction {
                     }
                 }
             }
+
+            // for confirmed transactions, get commitment tree for adding witness positions to notes
+            // otherwise create an empty commitment tree that will not be used
+            let mut commitment_tree = if status.is_confirmed() {
+                self.get_commitment_tree::<D>(status).await.unwrap()
+            } else {
+                CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
+            };
+
             // The preceding updates the wallet_transactions with presumptive new "spent" nullifiers.  I continue to find the notion
             // of a "spent" nullifier to be problematic.
             // Issues:
@@ -466,24 +478,57 @@ pub mod decrypt_transaction {
                     let existing_tx_confirmed = if let Some(existing_tx) =
                         tx_map.transaction_records_by_id.get(&transaction.txid())
                     {
-                        matches!(existing_tx.status, ConfirmationStatus::Confirmed(_))
+                        existing_tx.status.is_confirmed()
                     } else {
                         false
                     };
 
                     // prevent confirmed transaction from being overwritten by pending transaction
-                    if !(existing_tx_confirmed && matches!(status, ConfirmationStatus::Pending(_)))
-                    {
+                    if !(existing_tx_confirmed && status.is_pending()) {
+                        let mut have_spending_key = false;
+                        let mut witness_position = None;
+                        let mut nullifier = None;
+
+                        // for confirmed transactions, get the witness position and nullifier for the note
+                        if status.is_confirmed() {
+                            have_spending_key = true; // see comments on this in SaplingNote
+
+                            let commitment_bytes =
+                                D::ExtractedCommitmentBytes::from(&D::cmstar(&note));
+                            if let Some(node) = Into::<
+                                Option<<D::WalletNote as ShieldedNoteInterface>::Node>,
+                            >::into(
+                                <D::WalletNote as ShieldedNoteInterface>::Node::from_commitment(
+                                    &commitment_bytes.into(),
+                                ),
+                            ) {
+                                commitment_tree.append(node).unwrap();
+                                witness_position = Some(
+                                    IncrementalWitness::from_tree(commitment_tree.clone())
+                                        .witnessed_position(),
+                                );
+                            }
+
+                            if let Some(position) = witness_position {
+                                nullifier =
+                                    Some(D::get_nullifier_from_note_fvk_and_witness_position(
+                                        &note,
+                                        &fvk,
+                                        position.into(),
+                                    ))
+                            };
+                        }
+
                         tx_map.transaction_records_by_id.add_new_note::<D>(
                             transaction.txid(),
                             status,
                             block_time,
                             note.clone(),
                             to,
-                            false,
-                            None,
+                            have_spending_key,
+                            nullifier,
                             output_index as u32,
-                            None,
+                            witness_position,
                         );
                     }
                 }
@@ -576,5 +621,35 @@ pub mod decrypt_transaction {
                 );
             }
         }
+
+        async fn get_commitment_tree<D: DomainWalletExt>(
+            &self,
+            status: ConfirmationStatus,
+        ) -> Result<CommitmentTree<<D::WalletNote as ShieldedNoteInterface>::Node, 32>, String>
+        {
+            let uri = self.config.lightwalletd_uri.read().unwrap().clone();
+            let previous_blockheight = status.get_height() - 1;
+            let activation_height = self.config.chain.activation_height(D::NU).unwrap();
+
+            // In the edge case of a transition to a new network epoch, there is no previous tree.
+            let tree = if previous_blockheight < activation_height {
+                CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
+            } else {
+                let tree_state =
+                    crate::grpc_connector::get_trees(uri, previous_blockheight.into()).await?;
+                let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
+                read_commitment_tree(&tree[..]).map_err(|e| format!("{}", e))?
+            };
+
+            Ok(tree)
+        }
+
+        // async fn get_incremental_witness<D: DomainWalletExt>(
+        //     &self,
+        //     commit
+        //     transaction: &Transaction,
+        // ) -> Result<IncrementalWitness<<D::WalletNote as ShieldedNoteInterface>::Node, 32>, String>
+        // {
+        // }
     }
 }

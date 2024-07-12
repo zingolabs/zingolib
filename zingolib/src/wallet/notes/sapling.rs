@@ -42,6 +42,8 @@ pub struct SaplingNote {
     pub is_change: bool,
 
     /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date) Todo should this data point really be here?
+    // FIXME: this seems to be derived from wrong factors such as whether a note is in a pending tx or whether the wallet has the FVK.
+    // it also is only used for getting notes to update which is atleast a conceptual bug. needs investigation and cleaning up.
     pub have_spending_key: bool,
 }
 

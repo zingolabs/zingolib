@@ -41,6 +41,7 @@ pub struct OrchardNote {
     pub is_change: bool,
 
     /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
+    // FIXME: see comment in SapingNote for this field
     pub have_spending_key: bool,
 }
 

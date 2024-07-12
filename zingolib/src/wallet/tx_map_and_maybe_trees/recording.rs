@@ -103,6 +103,8 @@ impl super::TxMapAndMaybeTrees {
             .transaction_records_by_id
             .create_modify_get_transaction_record(&spending_txid, status, timestamp as u64);
 
+        // TODO: we should write ALL nullifiers down. not just the ones we think are relevent to the wallet at a given point.
+        // this doesnt cause bugs as we check nullifiers directly in the compact blocks and sync in order.
         if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
         )
