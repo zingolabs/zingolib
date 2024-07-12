@@ -220,19 +220,14 @@ impl LightWallet {
             .await?;
 
         // Call the internal function
-        match self
+        let send_result = self
             .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
-            .await
-        {
-            Ok(transaction_id) => {
-                self.set_send_success(transaction_id.to_string()).await;
-                Ok(transaction_id)
-            }
-            Err(e) => {
-                self.set_send_error(e.to_string()).await;
-                Err(e)
-            }
-        }
+            .await;
+
+        self.set_send_result(send_result.clone().map(|txid| txid.to_string()))
+            .await;
+
+        send_result
     }
 
     async fn create_publication_ready_transaction<P: SpendProver + OutputProver>(

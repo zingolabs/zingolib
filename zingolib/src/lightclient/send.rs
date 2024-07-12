@@ -195,6 +195,16 @@ pub mod send_with_proposal {
                     .map_err(CompleteAndBroadcastError::Broadcast)
                     .map(NonEmpty::singleton)
             };
+
+            self.wallet
+                .set_send_result(
+                    result
+                        .as_ref()
+                        .map(|txids| txids.first().to_string())
+                        .map_err(|e| e.to_string()),
+                )
+                .await;
+
             result
         }
 
