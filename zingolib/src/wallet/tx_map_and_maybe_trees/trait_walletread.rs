@@ -255,7 +255,7 @@ impl WalletRead for TxMapAndMaybeTrees {
     }
     fn get_memo(
         &self,
-        _note_id: <Self as InputSource>::NoteId,
+        _note_id: <Self as InputSource>::NoteRef,
     ) -> Result<Option<zcash_primitives::memo::Memo>, Self::Error> {
         unimplemented!()
     }

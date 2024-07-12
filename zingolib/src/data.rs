@@ -67,6 +67,7 @@ pub(super) mod pool_enums {
     // this mod may use enum_dispatch later
 
     /// wraps a nullifier from one shielded pool or the other.
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     pub(super) enum PoolNullifier {
         /// sapling nullifier
         Sapling(sapling_crypto::Nullifier),
@@ -89,7 +90,7 @@ pub(crate) mod note_id {
     /// as <TransactionRecordsById as InputSource>::NoteId
 
     #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-    pub(super) struct TxIdAndNullifier {
+    pub(in super::super) struct TxIdAndNullifier {
         txid: TxId,
         pool_nullifier: PoolNullifier,
     }
