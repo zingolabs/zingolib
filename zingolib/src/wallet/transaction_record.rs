@@ -262,7 +262,7 @@ impl TransactionRecord {
     }
 
     /// Gets a received note, by index and domain
-    pub fn get_received_note<D>(
+    pub fn get_received_note<D: DomainWalletExt>(
         &self,
         index: u32,
     ) -> Option<
@@ -270,12 +270,7 @@ impl TransactionRecord {
             NoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
-    >
-    where
-        D: DomainWalletExt + Sized,
-        D::Note: PartialEq + Clone,
-        D::Recipient: super::traits::Recipient,
-    {
+    > {
         let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
             .find(|note| *note.output_index() == Some(index));
@@ -513,6 +508,7 @@ impl std::fmt::Display for TransactionKind {
             TransactionKind::Received => write!(f, "received"),
             TransactionKind::Sent(SendType::Send) => write!(f, "sent"),
             TransactionKind::Sent(SendType::Shield) => write!(f, "shield"),
+            TransactionKind::Sent(SendType::SendToSelf) => write!(f, "send-to-self"),
         }
     }
 }
@@ -520,10 +516,12 @@ impl std::fmt::Display for TransactionKind {
 /// TODO: doc comment
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum SendType {
-    /// TODO: doc comment
+    /// Transaction is sending funds to recipient other than the creator
     Send,
-    /// TODO: doc comment
+    /// Transaction is only sending funds from transparent pool to the creator's shielded pool
     Shield,
+    /// Transaction is only sending funds to the creator's address(es) and is not a shield
+    SendToSelf,
 }
 
 #[cfg(test)]

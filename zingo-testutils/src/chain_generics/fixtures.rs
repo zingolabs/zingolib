@@ -31,7 +31,7 @@ where
     println!("client is ready to send");
 
     let recipient = environment.create_client().await;
-    let _recorded_fee = with_assertions::propose_send_bump_sync_recipient(
+    with_assertions::propose_send_bump_sync_recipient(
         &mut environment,
         &sender,
         vec![
@@ -62,17 +62,30 @@ where
     );
     assert_eq!(
         sender.value_transfers().await.0[2].kind(),
-        ValueTransferKind::NoteToSelf
+        ValueTransferKind::MemoToSelf
     );
     assert_eq!(recipient.value_transfers().await.0.len(), 1);
     assert_eq!(
         recipient.value_transfers().await.0[0].kind(),
         ValueTransferKind::Received
     );
-    let _shield_fee = with_assertions::propose_shield_bump_sync(&mut environment, &sender).await;
+
+    with_assertions::propose_send_bump_sync_recipient(
+        &mut environment,
+        &sender,
+        vec![(&sender, PoolType::Shielded(Orchard), send_value_self, None)],
+    )
+    .await;
     assert_eq!(sender.value_transfers().await.0.len(), 4);
     assert_eq!(
         sender.value_transfers().await.0[3].kind(),
+        ValueTransferKind::SendToSelf
+    );
+
+    with_assertions::propose_shield_bump_sync(&mut environment, &sender).await;
+    assert_eq!(sender.value_transfers().await.0.len(), 5);
+    assert_eq!(
+        sender.value_transfers().await.0[4].kind(),
         ValueTransferKind::Shield
     );
 }

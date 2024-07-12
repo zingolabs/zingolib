@@ -127,10 +127,58 @@ mod fast {
     use zcash_address::unified::Encoding;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+    use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
     use zingolib::wallet::WalletBase;
 
     use super::*;
+
+    #[tokio::test]
+    async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
+        let (regtest_manager, _cph, faucet, recipient, _txid) =
+            scenarios::orchard_funded_recipient(100_000).await;
+
+        let recipient = std::sync::Arc::new(recipient);
+
+        from_inputs::quick_send(
+            &faucet,
+            vec![(
+                &get_base_address_macro!(&recipient, "sapling"),
+                20_000,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+
+        LightClient::start_mempool_monitor(recipient.clone());
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        let transactions = &recipient.transaction_summaries().await.0;
+        assert_eq!(
+            transactions
+                .iter()
+                .find(|tx| tx.value() == 20_000)
+                .unwrap()
+                .status(),
+            ConfirmationStatus::Pending(BlockHeight::from_u32(5)) // FIXME: mempool blockheight is at chain hieght instead of chain height + 1
+        );
+
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        let transactions = &recipient.transaction_summaries().await.0;
+        assert_eq!(
+            transactions
+                .iter()
+                .find(|tx| tx.value() == 20_000)
+                .unwrap()
+                .status(),
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
+        );
+    }
+
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -2409,6 +2457,8 @@ mod slow {
         // More explicit than ignoring the unused variable, we only care about this in order to drop it
         */
     }
+
+    // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
     #[tokio::test]
     async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
@@ -2695,6 +2745,7 @@ mod slow {
                 .unwrap()
         )
     }
+    // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
     #[tokio::test]
     async fn mempool_and_balance() {
         let value = 100_000;
