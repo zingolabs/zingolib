@@ -525,8 +525,29 @@ impl TransactionRecordsById {
             );
         }
     }
-    /// witness tree requirement:
-    ///
+    pub(crate) fn update_output_index<D: DomainWalletExt>(
+        &mut self,
+        txid: TxId,
+        status: zingo_status::confirmation_status::ConfirmationStatus,
+        timestamp: u64,
+        note: D::Note,
+        output_index: usize,
+    ) {
+        let transaction_record =
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+
+        match D::WalletNote::transaction_metadata_notes_mut(transaction_record)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            Some(n) => {
+                if n.output_index().is_none() {
+                    *n.output_index_mut() = Some(output_index as u32)
+                }
+            }
+            None => {}
+        }
+    }
     pub(crate) fn add_pending_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,

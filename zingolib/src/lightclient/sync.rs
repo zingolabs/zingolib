@@ -430,25 +430,28 @@ impl LightClient {
             self.wallet.transactions(),
         );
 
-        // CONDITIONAL_RESCAN part 1: collect any outdated transaction record that are incomplete and missing output indexes
-        let list_of_incomplete_txids_and_heights = transaction_context.unindexed_records().await;
-
         // fv believes that sending either a transaction or a txid along the txid_sender or full_transaction_sender will result in a scan.
         let (fetch_full_transactions_handle, txid_sender, full_transaction_sender) =
             crate::blaze::full_transactions_processor::start(
-                transaction_context,
+                transaction_context.clone(),
                 full_transaction_fetcher_transmitter.clone(),
                 bsync_data.clone(),
             )
             .await;
 
-        // CONDITIONAL_RESCAN part 2: send those TxIds to the newly created output scanner
-        let _result_of_targetted_rescan =
-            list_of_incomplete_txids_and_heights.map_err(|list_of_incomplete_txs_and_heights| {
-                list_of_incomplete_txs_and_heights
+        // targetted_rescan to update missing output indices
+        if let Some(latest_block) = self.wallet.blocks.read().await.first() {
+            // collect any outdated transaction record that are incomplete and missing output indexes
+            let result = transaction_context
+                .unindexed_records(BlockHeight::from_u32(latest_block.height as u32))
+                .await;
+            // send those TxIds to the newly created output scanner
+            if let Err(incomplete_txids_and_heights) = result {
+                incomplete_txids_and_heights
                     .into_iter()
-                    .map(|incmplt| txid_sender.send(incmplt))
-            });
+                    .for_each(|t| txid_sender.send(t).unwrap());
+            }
+        }
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
