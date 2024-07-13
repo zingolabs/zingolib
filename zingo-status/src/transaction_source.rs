@@ -9,6 +9,7 @@ use zcash_primitives::consensus::BlockHeight;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TransactionSource {
     /// If the transaction has not been broadcast (in band) then it is known only to the client
+    /// (barring side-channel communication).
     ClientOnly(BlockHeight),
     /// The transaction is pending confirmation to the zcash blockchain. It may be waiting in the mempool.
     /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
