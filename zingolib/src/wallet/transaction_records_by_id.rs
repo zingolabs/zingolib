@@ -763,7 +763,24 @@ mod tests {
         use super::*;
         #[test_matrix([true, false], [true, false])]
         fn no_txid_in_trbid(txid_in_trbid: bool, confirmed: bool) {
-            let mut transaction_records_by_id = TransactionRecordsById::default();
+            let mut trbid = TransactionRecordsById::default();
+            if txid_in_trbid {
+                let transaction_record = TransactionRecordBuilder::default().build();
+                let txid = transaction_record.txid;
+                trbid.insert_transaction_record(transaction_record);
+                if confirmed {
+                    dbg!(txid);
+                    assert_eq!(1, 2);
+                } else if !confirmed {
+                    dbg!("not confirmed, but in trbid");
+                }
+            } else if !txid_in_trbid {
+                if confirmed {
+                    dbg!("Not in trbid, but confirmed!");
+                } else if !confirmed {
+                    dbg!("Not in trbid, AND not confirmed!");
+                }
+            }
         }
     }
     #[test]
