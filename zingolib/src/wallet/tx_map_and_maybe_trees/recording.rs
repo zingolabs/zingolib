@@ -5,7 +5,7 @@ use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_status::transaction_source::TransactionSource;
 
 use crate::{
     error::{ZingoLibError, ZingoLibResult},
@@ -45,7 +45,7 @@ impl super::TxMapAndMaybeTrees {
     pub fn found_spent_nullifier(
         &mut self,
         spending_txid: TxId,
-        status: ConfirmationStatus,
+        status: TransactionSource,
         timestamp: u32,
         spent_nullifier: PoolNullifier,
         source_txid: TxId,
@@ -79,7 +79,7 @@ impl super::TxMapAndMaybeTrees {
     fn found_spent_nullifier_internal<D: DomainWalletExt>(
         &mut self,
         spending_txid: TxId,
-        status: ConfirmationStatus,
+        status: TransactionSource,
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         source_txid: TxId,
@@ -122,7 +122,7 @@ impl super::TxMapAndMaybeTrees {
         &mut self,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         spending_txid: TxId,
-        status: ConfirmationStatus,
+        status: TransactionSource,
         source_txid: TxId,
         output_index: Option<u32>,
     ) -> ZingoLibResult<u64>

@@ -127,7 +127,7 @@ mod fast {
     use zcash_address::unified::Encoding;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::transaction_source::TransactionSource;
     use zingo_testutils::lightclient::from_inputs;
     use zingolib::wallet::WalletBase;
 
@@ -161,7 +161,7 @@ mod fast {
                 .find(|tx| tx.value() == 20_000)
                 .unwrap()
                 .status(),
-            ConfirmationStatus::Pending(BlockHeight::from_u32(5)) // FIXME: mempool blockheight is at chain hieght instead of chain height + 1
+            TransactionSource::FromMempool(BlockHeight::from_u32(5)) // FIXME: mempool blockheight is at chain hieght instead of chain height + 1
         );
 
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
@@ -175,7 +175,7 @@ mod fast {
                 .find(|tx| tx.value() == 20_000)
                 .unwrap()
                 .status(),
-            ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
+            TransactionSource::OnChain(BlockHeight::from_u32(6))
         );
     }
 
@@ -741,7 +741,7 @@ mod slow {
     use zcash_primitives::{
         consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
     };
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::transaction_source::TransactionSource;
     use zingo_testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
@@ -1318,7 +1318,7 @@ mod slow {
 
         let summary_orchard_receipt = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(5))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
+            .status(TransactionSource::OnChain(BlockHeight::from_u32(5)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(recipient_initial_funds)
@@ -1356,7 +1356,7 @@ mod slow {
             .unwrap();
         let summary_external_sapling = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(6))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
+            .status(TransactionSource::OnChain(BlockHeight::from_u32(6)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(first_send_to_sapling)
@@ -1386,7 +1386,7 @@ mod slow {
         let first_send_to_transparent = 20_000;
         let summary_external_transparent = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(7))
-            .status(ConfirmationStatus::Pending(BlockHeight::from_u32(7)))
+            .status(TransactionSource::FromMempool(BlockHeight::from_u32(7)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(first_send_to_transparent)
@@ -1459,7 +1459,7 @@ mod slow {
         let recipient_second_funding = 1_000_000;
         let summary_orchard_receipt_2 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(8))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)))
+            .status(TransactionSource::OnChain(BlockHeight::from_u32(8)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(recipient_second_funding)
@@ -1497,7 +1497,7 @@ mod slow {
         let second_send_to_transparent = 20_000;
         let summary_exteranl_transparent_2 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(9))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
+            .status(TransactionSource::OnChain(BlockHeight::from_u32(9)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(second_send_to_transparent)
@@ -1537,7 +1537,7 @@ mod slow {
         let second_send_to_sapling = 20_000;
         let summary_external_sapling_2 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(9))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
+            .status(TransactionSource::OnChain(BlockHeight::from_u32(9)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(second_send_to_sapling)
@@ -1578,7 +1578,7 @@ mod slow {
         let external_transparent_3 = 20_000;
         let summary_external_transparent_3 = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(10))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)))
+            .status(TransactionSource::OnChain(BlockHeight::from_u32(10)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(external_transparent_3)

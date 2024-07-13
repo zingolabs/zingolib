@@ -90,7 +90,7 @@ pub mod decrypt_transaction {
         transaction::{Transaction, TxId},
     };
     use zingo_memo::{parse_zingo_memo, ParsedMemo};
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::transaction_source::TransactionSource;
 
     use super::TransactionContext;
 
@@ -98,7 +98,7 @@ pub mod decrypt_transaction {
         pub(crate) async fn scan_full_tx(
             &self,
             transaction: &Transaction,
-            status: ConfirmationStatus,
+            status: TransactionSource,
             block_time: u32,
             price: Option<f64>,
         ) {
@@ -178,7 +178,7 @@ pub mod decrypt_transaction {
         async fn decrypt_transaction_to_record(
             &self,
             transaction: &Transaction,
-            status: ConfirmationStatus,
+            status: TransactionSource,
             block_time: u32,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
@@ -214,7 +214,7 @@ pub mod decrypt_transaction {
         async fn decrypt_transaction_to_record_transparent(
             &self,
             transaction: &Transaction,
-            status: ConfirmationStatus,
+            status: TransactionSource,
             block_time: u32,
             taddrs_set: &HashSet<String>,
         ) {
@@ -363,7 +363,7 @@ pub mod decrypt_transaction {
         async fn decrypt_transaction_to_record_sapling(
             &self,
             transaction: &Transaction,
-            status: ConfirmationStatus,
+            status: TransactionSource,
             block_time: u32,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
@@ -382,7 +382,7 @@ pub mod decrypt_transaction {
         async fn decrypt_transaction_to_record_orchard(
             &self,
             transaction: &Transaction,
-            status: ConfirmationStatus,
+            status: TransactionSource,
             block_time: u32,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
@@ -406,7 +406,7 @@ pub mod decrypt_transaction {
         async fn decrypt_transaction_to_record_domain<D: DomainWalletExt>(
             &self,
             transaction: &Transaction,
-            status: ConfirmationStatus,
+            status: TransactionSource,
             block_time: u32,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,

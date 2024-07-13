@@ -1,27 +1,30 @@
-//! A note can either be:
-//!  Pending === not on-record on-chain
-//!  Confirmed === on-record on-chain at BlockHeight
+//! A transaction can be:
+//!  ClientOnly === not broadcast in-band to the mempool or blockchain
+//!  FromMempool === not on-record on-chain, but in band, in the mempool (gossip)
+//!  OnChain === on-record on-chain at BlockHeight
 
 use zcash_primitives::consensus::BlockHeight;
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ConfirmationStatus {
+pub enum TransactionSource {
+    /// If the transaction has not been broadcast (in band) then it is known only to the client
+    ClientOnly(BlockHeight),
     /// The transaction is pending confirmation to the zcash blockchain. It may be waiting in the mempool.
     /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
-    Pending(BlockHeight),
+    FromMempool(BlockHeight),
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
-    Confirmed(BlockHeight),
+    OnChain(BlockHeight),
 }
 
-impl ConfirmationStatus {
+impl TransactionSource {
     /// Converts from a blockheight and `pending`. pending is deprecated and is only needed in loading from save.
     pub fn from_blockheight_and_pending_bool(blockheight: BlockHeight, pending: bool) -> Self {
         if pending {
-            Self::Pending(blockheight)
+            Self::FromMempool(blockheight)
         } else {
-            Self::Confirmed(blockheight)
+            Self::OnChain(blockheight)
         }
     }
 
@@ -41,7 +44,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_confirmed(), true);
     /// ```
     pub fn is_pending(&self) -> bool {
-        matches!(self, Self::Pending(_))
+        matches!(self, Self::FromMempool(_))
     }
 
     /// A wrapper matching the Confirmed case.
@@ -60,7 +63,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_pending(), false);
     /// ```
     pub fn is_confirmed(&self) -> bool {
-        matches!(self, Self::Confirmed(_))
+        matches!(self, Self::OnChain(_))
     }
 
     /// To return true, the status must be confirmed and no earlier than specified height.
@@ -81,7 +84,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Confirmed(self_height) => self_height >= comparison_height,
+            Self::OnChain(self_height) => self_height >= comparison_height,
             _ => false,
         }
     }
@@ -104,7 +107,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Confirmed(self_height) => {
+            Self::OnChain(self_height) => {
                 self.is_confirmed_before(comparison_height) || self_height == comparison_height
             }
             _ => false,
@@ -129,7 +132,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Confirmed(self_height) => self_height < comparison_height,
+            Self::OnChain(self_height) => self_height < comparison_height,
             _ => false,
         }
     }
@@ -152,7 +155,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_pending_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Pending(self_height) => self_height >= comparison_height,
+            Self::FromMempool(self_height) => self_height >= comparison_height,
             _ => false,
         }
     }
@@ -175,8 +178,9 @@ impl ConfirmationStatus {
     /// ```
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Pending(self_height) => self_height < comparison_height,
-            Self::Confirmed(_) => false,
+            Self::FromMempool(self_height) => self_height < comparison_height,
+            Self::OnChain(_) => false,
+            Self::ClientOnly(_) => false,
         }
     }
 
@@ -195,7 +199,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn get_confirmed_height(&self) -> Option<BlockHeight> {
         match self {
-            Self::Confirmed(self_height) => Some(*self_height),
+            Self::OnChain(self_height) => Some(*self_height),
             _ => None,
         }
     }
@@ -215,7 +219,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn get_pending_height(&self) -> Option<BlockHeight> {
         match self {
-            Self::Pending(self_height) => Some(*self_height),
+            Self::FromMempool(self_height) => Some(*self_height),
             _ => None,
         }
     }
@@ -231,27 +235,31 @@ impl ConfirmationStatus {
     /// ```
     pub fn get_height(&self) -> BlockHeight {
         match self {
-            Self::Pending(self_height) => *self_height,
-            Self::Confirmed(self_height) => *self_height,
+            Self::FromMempool(self_height) => *self_height,
+            Self::OnChain(self_height) => *self_height,
+            Self::ClientOnly(self_height) => *self_height,
         }
     }
 }
 
-impl std::fmt::Display for ConfirmationStatus {
+impl std::fmt::Display for TransactionSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Pending(_) => {
-                write!(f, "pending")
+            Self::FromMempool(_) => {
+                write!(f, "mempool")
             }
-            Self::Confirmed(_) => {
-                write!(f, "confirmed")
+            Self::OnChain(_) => {
+                write!(f, "onchain")
+            }
+            Self::ClientOnly(_) => {
+                write!(f, "clientonly")
             }
         }
     }
 }
 
-impl From<ConfirmationStatus> for String {
-    fn from(value: ConfirmationStatus) -> Self {
+impl From<TransactionSource> for String {
+    fn from(value: TransactionSource) -> Self {
         format!("{value}")
     }
 }

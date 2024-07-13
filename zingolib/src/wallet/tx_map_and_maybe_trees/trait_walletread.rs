@@ -334,7 +334,7 @@ mod tests {
 
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
-    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::transaction_source::TransactionSource::OnChain;
 
     use crate::{
         mocks::default_txid,
@@ -404,7 +404,7 @@ mod tests {
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
                         .transparent_outputs(TransparentOutputBuilder::default())
-                        .status(Confirmed(1000000.into()))
+                        .status(OnChain(1000000.into()))
                         .build(),
                 );
             let spend = Some((default_txid(), 112358));
@@ -413,7 +413,7 @@ mod tests {
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
                         .sapling_notes(SaplingNoteBuilder::default().spent(spend).clone())
-                        .status(Confirmed(2000000.into()))
+                        .status(OnChain(2000000.into()))
                         .randomize_txid()
                         .build(),
                 );
@@ -422,7 +422,7 @@ mod tests {
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
                         .orchard_notes(OrchardNoteBuilder::default().pending_spent(spend).clone())
-                        .status(Confirmed(3000000.into()))
+                        .status(OnChain(3000000.into()))
                         .randomize_txid()
                         .build(),
                 );
@@ -433,7 +433,7 @@ mod tests {
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
                         .sapling_notes(SaplingNoteBuilder::default())
-                        .status(Confirmed(sapling_height.into()))
+                        .status(OnChain(sapling_height.into()))
                         .randomize_txid()
                         .build(),
                 );
@@ -442,7 +442,7 @@ mod tests {
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
                         .orchard_notes(OrchardNoteBuilder::default())
-                        .status(Confirmed(orchard_height.into()))
+                        .status(OnChain(orchard_height.into()))
                         .randomize_txid()
                         .build(),
                 );
@@ -454,7 +454,7 @@ mod tests {
         fn get_tx_height(tx_height: u32) {
             let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
 
-            let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into()))
+            let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(OnChain(tx_height.into()))
             .build();
 
             let txid = transaction_record.txid;

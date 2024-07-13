@@ -44,7 +44,7 @@ use zcash_primitives::{
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 
 use zingo_memo::create_wallet_internal_memo_version_0;
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_status::transaction_source::TransactionSource;
 
 use crate::data::witness_trees::{WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 
@@ -839,7 +839,7 @@ impl LightWallet {
         {
             let price = self.price.read().await.clone();
 
-            let status = ConfirmationStatus::Pending(submission_height);
+            let status = TransactionSource::FromMempool(submission_height);
             self.transaction_context
                 .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
                 .await;

@@ -423,7 +423,7 @@ impl TransactionRecordsById {
     pub(crate) fn create_modify_get_transaction_metadata(
         &mut self,
         txid: &TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: zingo_status::transaction_source::TransactionSource,
         datetime: u64,
     ) -> &'_ mut TransactionRecord {
         // check if there is already a confirmed transaction with the same txid
@@ -453,7 +453,7 @@ impl TransactionRecordsById {
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: zingo_status::transaction_source::TransactionSource,
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
@@ -469,7 +469,7 @@ impl TransactionRecordsById {
         spent_txid: TxId,
         output_num: u32,
         source_txid: TxId,
-        spending_tx_status: zingo_status::confirmation_status::ConfirmationStatus,
+        spending_tx_status: zingo_status::transaction_source::TransactionSource,
     ) -> u64 {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.get_mut(&spent_txid) {
@@ -508,7 +508,7 @@ impl TransactionRecordsById {
         &mut self,
         txid: TxId,
         taddr: String,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: zingo_status::transaction_source::TransactionSource,
         timestamp: u64,
         vout: &zcash_primitives::transaction::components::TxOut,
         output_num: u32,
@@ -541,7 +541,7 @@ impl TransactionRecordsById {
     pub(crate) fn update_output_index<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: zingo_status::transaction_source::TransactionSource,
         timestamp: u64,
         note: D::Note,
         output_index: usize,
@@ -567,7 +567,7 @@ impl TransactionRecordsById {
         to: D::Recipient,
         output_index: usize,
     ) {
-        let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
+        let status = zingo_status::transaction_source::TransactionSource::FromMempool(height);
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
@@ -599,7 +599,7 @@ impl TransactionRecordsById {
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: zingo_status::transaction_source::TransactionSource,
         timestamp: u64,
         note: <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Note,
         to: D::Recipient,
@@ -755,20 +755,20 @@ mod tests {
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::transaction_source::TransactionSource::OnChain;
 
     #[test]
     fn invalidate_all_transactions_after_or_at_height() {
         let transaction_record_later = TransactionRecordBuilder::default()
             .randomize_txid()
-            .status(Confirmed(15.into()))
+            .status(OnChain(15.into()))
             .transparent_outputs(TransparentOutputBuilder::default())
             .build();
         let spending_txid = transaction_record_later.txid;
 
         let transaction_record_early = TransactionRecordBuilder::default()
             .randomize_txid()
-            .status(Confirmed(5.into()))
+            .status(OnChain(5.into()))
             .transparent_outputs(
                 TransparentOutputBuilder::default()
                     .spent(Some((spending_txid, 15)))
@@ -859,7 +859,7 @@ mod tests {
         let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
 
         let sent_transaction_record = TransactionRecordBuilder::default()
-            .status(Confirmed(15.into()))
+            .status(OnChain(15.into()))
             .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
             .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
@@ -880,7 +880,7 @@ mod tests {
 
         let first_received_transaction_record = TransactionRecordBuilder::default()
             .randomize_txid()
-            .status(Confirmed(5.into()))
+            .status(OnChain(5.into()))
             .sapling_notes(spent_sapling_note_builder(
                 175_000,
                 (sent_txid, 15),
@@ -907,7 +907,7 @@ mod tests {
             .build();
         let second_received_transaction_record = TransactionRecordBuilder::default()
             .randomize_txid()
-            .status(Confirmed(7.into()))
+            .status(OnChain(7.into()))
             .orchard_notes(spent_orchard_note_builder(
                 200_000,
                 (sent_txid, 15),
@@ -955,7 +955,7 @@ mod tests {
             },
         };
 
-        use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+        use zingo_status::transaction_source::TransactionSource::OnChain;
 
         #[test]
         fn spend_not_found() {
@@ -963,7 +963,7 @@ mod tests {
             let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
 
             let sent_transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
+                .status(OnChain(15.into()))
                 .spent_sapling_nullifiers(
                     sapling_nullifier_builder.assign_unique_nullifier().clone(),
                 )
@@ -980,7 +980,7 @@ mod tests {
 
             let received_transaction_record = TransactionRecordBuilder::default()
                 .randomize_txid()
-                .status(Confirmed(5.into()))
+                .status(OnChain(5.into()))
                 .sapling_notes(
                     SaplingNoteBuilder::default()
                         .note(
@@ -1005,7 +1005,7 @@ mod tests {
         #[test]
         fn received_transaction() {
             let transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
+                .status(OnChain(15.into()))
                 .transparent_outputs(TransparentOutputBuilder::default())
                 .sapling_notes(SaplingNoteBuilder::default())
                 .orchard_notes(OrchardNoteBuilder::default())
@@ -1022,7 +1022,7 @@ mod tests {
         #[test]
         fn outgoing_tx_data_but_no_spends_found() {
             let transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
+                .status(OnChain(15.into()))
                 .transparent_outputs(TransparentOutputBuilder::default())
                 .sapling_notes(SaplingNoteBuilder::default())
                 .orchard_notes(OrchardNoteBuilder::default())
@@ -1040,7 +1040,7 @@ mod tests {
         #[test]
         fn transparent_spends_not_fully_synced() {
             let transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
+                .status(OnChain(15.into()))
                 .orchard_notes(
                     OrchardNoteBuilder::default()
                         .note(

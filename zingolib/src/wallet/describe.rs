@@ -292,7 +292,7 @@ mod tests {
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
 
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::transaction_source::TransactionSource;
     use zingoconfig::ZingoConfigBuilder;
 
     use crate::{
@@ -316,7 +316,7 @@ mod tests {
         )
         .unwrap();
         let confirmed_tx_record = TransactionRecordBuilder::default()
-            .status(ConfirmationStatus::Confirmed(80.into()))
+            .status(TransactionSource::OnChain(80.into()))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
@@ -351,7 +351,7 @@ mod tests {
             )
             .build();
         let pending_tx_record = TransactionRecordBuilder::default()
-            .status(ConfirmationStatus::Pending(95.into()))
+            .status(TransactionSource::FromMempool(95.into()))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
             .orchard_notes(OrchardNoteBuilder::default())

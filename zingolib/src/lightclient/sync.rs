@@ -18,7 +18,7 @@ use tokio::{
     time::sleep,
 };
 
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_status::transaction_source::TransactionSource;
 
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_primitives::{
@@ -193,7 +193,7 @@ impl LightClient {
                         ) {
                             let price = price.read().await.clone();
                             //debug!("Mempool attempting to scan {}", tx.txid());
-                            let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
+                            let status = TransactionSource::FromMempool(BlockHeight::from_u32(
                                 rtransaction.height as u32,
                             ));
 
