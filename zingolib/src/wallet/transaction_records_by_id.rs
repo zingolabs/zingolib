@@ -755,23 +755,24 @@ mod tests {
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::confirmation_status::ConfirmationStatus::{Confirmed, Pending};
 
     mod create_modify_get_transaction_metadata {
-        use test_case::test_matrix;
-
         use super::*;
+        use test_case::test_matrix;
         #[test_matrix([true, false], [true, false])]
         fn no_txid_in_trbid(txid_in_trbid: bool, confirmed: bool) {
+            // We'll need a trbid regardless.
+            let mut trbid = TransactionRecordsById::default();
+            let mut tx_builder = TransactionRecordBuilder::default();
             if txid_in_trbid {
-                let mut trbid = TransactionRecordsById::default();
-                let transaction_record = TransactionRecordBuilder::default().build();
-                let txid = transaction_record.txid;
-                trbid.insert_transaction_record(transaction_record);
                 if confirmed {
-                    dbg!(txid);
+                    let transaction_record = tx_builder.status(Confirmed(1.into())).build();
+                    trbid.insert_transaction_record(transaction_record);
                     assert_eq!(1, 2);
                 } else if !confirmed {
+                    let transaction_record = tx_builder.status(Pending(1.into())).build();
+                    trbid.insert_transaction_record(transaction_record);
                     dbg!("not confirmed, but in trbid");
                 }
             } else if !txid_in_trbid {
