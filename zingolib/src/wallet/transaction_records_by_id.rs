@@ -426,14 +426,27 @@ impl TransactionRecordsById {
         status: zingo_status::confirmation_status::ConfirmationStatus,
         datetime: u64,
     ) -> &'_ mut TransactionRecord {
-        self.entry(*txid)
-            // if we already have the transaction metadata, it may be newly confirmed. update confirmation_status
-            .and_modify(|transaction_metadata| {
-                transaction_metadata.status = status;
-                transaction_metadata.datetime = datetime;
-            })
-            // if this transaction is new to our data, insert it
-            .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
+        // check if there is already a confirmed transaction with the same txid
+        let existing_tx_confirmed = if let Some(existing_tx) = self.get(txid) {
+            existing_tx.status.is_confirmed()
+        } else {
+            false
+        };
+
+        // prevent confirmed transaction from being overwritten by pending transaction
+        if existing_tx_confirmed && status.is_pending() {
+            self.get_mut(txid)
+                .expect("previous check proves this tx exists")
+        } else {
+            self.entry(*txid)
+                // if we already have the transaction metadata, it may be newly confirmed. update confirmation_status
+                .and_modify(|transaction_metadata| {
+                    transaction_metadata.status = status;
+                    transaction_metadata.datetime = datetime;
+                })
+                // if this transaction is new to our data, insert it
+                .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
+        }
     }
 
     /// TODO: Add Doc Comment Here!
