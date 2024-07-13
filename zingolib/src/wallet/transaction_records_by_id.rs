@@ -757,6 +757,15 @@ mod tests {
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
+    mod create_modify_get_transaction_metadata {
+        use test_case::test_matrix;
+
+        use super::*;
+        #[test_matrix([true, false], [true, false])]
+        fn no_txid_in_trbid(txid_in_trbid: bool, confirmed: bool) {
+            let mut transaction_records_by_id = TransactionRecordsById::default();
+        }
+    }
     #[test]
     fn invalidate_all_transactions_after_or_at_height() {
         let transaction_record_later = TransactionRecordBuilder::default()
