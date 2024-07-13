@@ -549,16 +549,13 @@ impl TransactionRecordsById {
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        match D::WalletNote::transaction_metadata_notes_mut(transaction_record)
+        if let Some(n) = D::WalletNote::transaction_metadata_notes_mut(transaction_record)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
-            Some(n) => {
-                if n.output_index().is_none() {
-                    *n.output_index_mut() = Some(output_index as u32)
-                }
+            if n.output_index().is_none() {
+                *n.output_index_mut() = Some(output_index as u32)
             }
-            None => {}
         }
     }
     pub(crate) fn add_pending_note<D: DomainWalletExt>(
