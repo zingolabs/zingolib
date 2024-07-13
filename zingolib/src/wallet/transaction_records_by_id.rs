@@ -538,8 +538,26 @@ impl TransactionRecordsById {
             );
         }
     }
-    /// witness tree requirement:
-    ///
+    pub(crate) fn update_output_index<D: DomainWalletExt>(
+        &mut self,
+        txid: TxId,
+        status: zingo_status::confirmation_status::ConfirmationStatus,
+        timestamp: u64,
+        note: D::Note,
+        output_index: usize,
+    ) {
+        let transaction_record =
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+
+        if let Some(n) = D::WalletNote::transaction_metadata_notes_mut(transaction_record)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            if n.output_index().is_none() {
+                *n.output_index_mut() = Some(output_index as u32)
+            }
+        }
+    }
     pub(crate) fn add_pending_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
@@ -666,12 +684,13 @@ impl TransactionRecordsById {
     }
 
     /// get a list of spendable NoteIds with associated note values
+    #[allow(clippy::type_complexity)]
     pub(crate) fn get_spendable_note_ids_and_values(
         &self,
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[NoteId],
-    ) -> Result<Vec<(NoteId, u64)>, Vec<TxId>> {
+    ) -> Result<Vec<(NoteId, u64)>, Vec<(TxId, BlockHeight)>> {
         let mut missing_output_index = vec![];
         let ok = self
             .values()
@@ -685,7 +704,10 @@ impl TransactionRecordsById {
                     {
                         notes_from_tx
                     } else {
-                        missing_output_index.push(transaction_record.txid);
+                        missing_output_index.push((
+                            transaction_record.txid,
+                            transaction_record.status.get_height(),
+                        ));
                         vec![]
                     }
                 } else {

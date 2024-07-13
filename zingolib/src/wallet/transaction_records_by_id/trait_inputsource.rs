@@ -39,7 +39,7 @@ pub enum InputSourceError {
     InvalidValue(BalanceError),
     /// Wallet data is out of date
     #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
-    MissingOutputIndexes(Vec<TxId>),
+    MissingOutputIndexes(Vec<(TxId, zcash_primitives::consensus::BlockHeight)>),
 }
 
 // Calculate remaining difference between target and selected.
