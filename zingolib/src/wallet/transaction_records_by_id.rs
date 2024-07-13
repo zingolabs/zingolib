@@ -763,8 +763,8 @@ mod tests {
         use super::*;
         #[test_matrix([true, false], [true, false])]
         fn no_txid_in_trbid(txid_in_trbid: bool, confirmed: bool) {
-            let mut trbid = TransactionRecordsById::default();
             if txid_in_trbid {
+                let mut trbid = TransactionRecordsById::default();
                 let transaction_record = TransactionRecordBuilder::default().build();
                 let txid = transaction_record.txid;
                 trbid.insert_transaction_record(transaction_record);
