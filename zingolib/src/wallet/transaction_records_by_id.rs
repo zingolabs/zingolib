@@ -769,6 +769,17 @@ mod tests {
             // We'll need a trbid regardless.
             let mut trbid = TransactionRecordsById::default();
             let mut tx_builder = TransactionRecordBuilder::default();
+            match source {
+                ClientOnly(_) => {
+                    todo!()
+                }
+                FromMempool(what_is_this_height) => {
+                    todo!()
+                }
+                OnChain(confirmation_block_height) => {
+                    todo!()
+                }
+            }
         }
     }
     #[test]
