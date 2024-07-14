@@ -19,7 +19,7 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_status::transaction_source::TransactionSource;
 
 // despite being called fetch_full_transaction, this function sends a txid somewhere else to be fetched as a Transaction. then processes it.
 pub async fn start(
@@ -93,7 +93,7 @@ pub async fn start(
                     last_progress.store(progress, Ordering::SeqCst);
                 }
 
-                let status = ConfirmationStatus::Confirmed(height);
+                let status = TransactionSource::OnChain(height);
                 per_txid_iter_context
                     .scan_full_tx(&transaction, status, block_time, None)
                     .await;
@@ -133,7 +133,7 @@ pub async fn start(
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
-            let status = ConfirmationStatus::Confirmed(height);
+            let status = TransactionSource::OnChain(height);
             transaction_context
                 .scan_full_tx(&transaction, status, block_time, None)
                 .await;

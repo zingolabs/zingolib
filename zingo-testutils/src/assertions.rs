@@ -5,7 +5,7 @@ use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
 
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_status::transaction_source::TransactionSource;
 use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 
 /// currently checks:
@@ -18,7 +18,7 @@ pub async fn assert_record_fee_and_status<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
-    expected_status: ConfirmationStatus,
+    expected_status: TransactionSource,
 ) -> u64 {
     let records = &client
         .wallet

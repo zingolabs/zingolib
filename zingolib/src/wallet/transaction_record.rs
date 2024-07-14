@@ -32,7 +32,7 @@ use crate::{
 #[derive(Debug)]
 pub struct TransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
-    pub status: zingo_status::confirmation_status::ConfirmationStatus,
+    pub status: zingo_status::transaction_source::TransactionSource,
 
     /// Timestamp of Tx. Added in v4
     pub datetime: u64,
@@ -76,7 +76,7 @@ pub struct TransactionRecord {
 impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     pub fn new(
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: zingo_status::transaction_source::TransactionSource,
         datetime: u64,
         transaction_id: &TxId,
     ) -> Self {
@@ -429,7 +429,10 @@ impl TransactionRecord {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_pending_bool(block, pending);
+        let status =
+            zingo_status::transaction_source::TransactionSource::from_blockheight_and_pending_bool(
+                block, pending,
+            );
         Ok(Self {
             status,
             datetime,
@@ -528,7 +531,7 @@ pub enum SendType {
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::transaction_source::TransactionSource;
 
     use crate::{
         mocks::{
@@ -549,7 +552,7 @@ pub mod mocks {
 
     /// to create a mock TransactionRecord
     pub(crate) struct TransactionRecordBuilder {
-        status: Option<ConfirmationStatus>,
+        status: Option<TransactionSource>,
         datetime: Option<u64>,
         txid: Option<TxId>,
         spent_sapling_nullifiers: Vec<SaplingNullifierBuilder>,
@@ -578,7 +581,7 @@ pub mod mocks {
             }
         }
         // Methods to set each field
-        build_method!(status, ConfirmationStatus);
+        build_method!(status, TransactionSource);
         build_method!(datetime, u64);
         build_method!(txid, TxId);
         build_method_push!(spent_sapling_nullifiers, SaplingNullifierBuilder);
@@ -631,7 +634,7 @@ pub mod mocks {
         fn default() -> Self {
             Self {
                 status: Some(
-                    zingo_status::confirmation_status::ConfirmationStatus::Confirmed(
+                    zingo_status::transaction_source::TransactionSource::OnChain(
                         zcash_primitives::consensus::BlockHeight::from_u32(5),
                     ),
                 ),
@@ -734,7 +737,7 @@ pub mod mocks {
             .assign_unique_nullifier()
             .clone();
         let sent_transaction_record = TransactionRecordBuilder::default()
-            .status(ConfirmationStatus::Confirmed(15.into()))
+            .status(TransactionSource::OnChain(15.into()))
             .spent_sapling_nullifiers(sap_null_one.clone())
             .spent_sapling_nullifiers(sap_null_two.clone())
             .spent_orchard_nullifiers(orch_null_one.clone())

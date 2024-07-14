@@ -34,7 +34,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     transaction::{Transaction, TxId},
 };
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_status::transaction_source::TransactionSource;
 use zingoconfig::ZingoConfig;
 
 use super::syncdata::BlazeSyncData;
@@ -343,7 +343,7 @@ impl TrialDecryptions {
                             u64::from(witness.witnessed_position()),
                         );
 
-                        let status = ConfirmationStatus::Confirmed(height);
+                        let status = TransactionSource::OnChain(height);
                         transaction_metadata_set
                             .write()
                             .await

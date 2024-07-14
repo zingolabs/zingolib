@@ -8,7 +8,7 @@ use crate::{
     chain_generics::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_status::transaction_source::TransactionSource;
 
 /// sends to any combo of recipient clients checks that each recipient also recieved the expected balances
 /// test-only generic
@@ -50,7 +50,7 @@ where
         sender,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(send_height.into()),
+        TransactionSource::FromMempool(send_height.into()),
     )
     .await;
 
@@ -63,7 +63,7 @@ where
             sender,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(send_height.into()),
+            TransactionSource::FromMempool(send_height.into()),
         )
         .await;
 
@@ -75,7 +75,7 @@ where
                     recipient,
                     &proposal,
                     &txids,
-                    ConfirmationStatus::Pending(send_height.into()),
+                    TransactionSource::FromMempool(send_height.into()),
                 )
                 .await;
             }
@@ -89,7 +89,7 @@ where
         sender,
         &proposal,
         &txids,
-        ConfirmationStatus::Confirmed((send_height).into()),
+        TransactionSource::OnChain((send_height).into()),
     )
     .await;
     for (recipient, _, _, _) in sends {
@@ -126,7 +126,7 @@ where
         client,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(send_height.into()),
+        TransactionSource::FromMempool(send_height.into()),
     )
     .await;
 
@@ -137,7 +137,7 @@ where
             client,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(send_height.into()),
+            TransactionSource::FromMempool(send_height.into()),
         )
         .await;
     }
@@ -149,7 +149,7 @@ where
         client,
         &proposal,
         &txids,
-        ConfirmationStatus::Confirmed(send_height.into()),
+        TransactionSource::OnChain(send_height.into()),
     )
     .await;
 

@@ -451,7 +451,7 @@ pub mod summaries {
     use chrono::DateTime;
     use json::JsonValue;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::transaction_source::TransactionSource;
 
     use crate::{
         error::BuildError,
@@ -469,7 +469,7 @@ pub mod summaries {
     pub struct ValueTransfer {
         txid: TxId,
         datetime: u64,
-        status: ConfirmationStatus,
+        status: TransactionSource,
         blockheight: BlockHeight,
         transaction_fee: Option<u64>,
         zec_price: Option<f64>,
@@ -490,7 +490,7 @@ pub mod summaries {
             self.datetime
         }
         /// TODO: doc comment
-        pub fn status(&self) -> ConfirmationStatus {
+        pub fn status(&self) -> TransactionSource {
             self.status
         }
         /// TODO: doc comment
@@ -662,7 +662,7 @@ pub mod summaries {
     pub struct ValueTransferBuilder {
         txid: Option<TxId>,
         datetime: Option<u64>,
-        status: Option<ConfirmationStatus>,
+        status: Option<TransactionSource>,
         blockheight: Option<BlockHeight>,
         transaction_fee: Option<Option<u64>>,
         zec_price: Option<Option<f64>>,
@@ -693,7 +693,7 @@ pub mod summaries {
 
         build_method!(txid, TxId);
         build_method!(datetime, u64);
-        build_method!(status, ConfirmationStatus);
+        build_method!(status, TransactionSource);
         build_method!(blockheight, BlockHeight);
         build_method!(transaction_fee, Option<u64>);
         build_method!(zec_price, Option<f64>);
@@ -788,7 +788,7 @@ pub mod summaries {
     pub struct TransactionSummary {
         txid: TxId,
         datetime: u64,
-        status: ConfirmationStatus,
+        status: TransactionSource,
         blockheight: BlockHeight,
         kind: TransactionKind,
         value: u64,
@@ -810,7 +810,7 @@ pub mod summaries {
             self.datetime
         }
         /// TODO: doc comment
-        pub fn status(&self) -> ConfirmationStatus {
+        pub fn status(&self) -> TransactionSource {
             self.status
         }
         /// TODO: doc comment
@@ -988,7 +988,7 @@ pub mod summaries {
     pub struct TransactionSummaryBuilder {
         txid: Option<TxId>,
         datetime: Option<u64>,
-        status: Option<ConfirmationStatus>,
+        status: Option<TransactionSource>,
         blockheight: Option<BlockHeight>,
         kind: Option<TransactionKind>,
         value: Option<u64>,
@@ -1021,7 +1021,7 @@ pub mod summaries {
 
         build_method!(txid, TxId);
         build_method!(datetime, u64);
-        build_method!(status, ConfirmationStatus);
+        build_method!(status, TransactionSource);
         build_method!(blockheight, BlockHeight);
         build_method!(kind, TransactionKind);
         build_method!(value, u64);
