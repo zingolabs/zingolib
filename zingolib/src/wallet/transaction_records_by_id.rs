@@ -757,7 +757,15 @@ mod tests {
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::transaction_source::TransactionSource::{ClientOnly, FromMempool, OnChain};
 
-    mod create_modify_get_transaction_metadata {
+    mod trbid_update {
+        /// The transaction_records_by_id database is a state machine that has enumerable states.
+        /// A txid can either be present with the database, or absent.
+        /// A transaction may have be:
+        ///   ClientOnly:    created locally, and not broadcast (in band)
+        ///   FromMempool:   previously been broadcast by self or other, and then read from the mempool
+        ///                  by a client that is monitoring the mempool
+        ///   OnChain:       confirmed in a block
+        /// I am not at this time making assertions about the exclusiveness of the in-pool, and on-chain states
         use super::*;
         use test_case::test_matrix;
         use zingo_status::transaction_source::TransactionSource;
