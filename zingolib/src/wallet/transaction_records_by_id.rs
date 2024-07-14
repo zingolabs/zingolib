@@ -763,13 +763,13 @@ mod tests {
         use zingo_status::transaction_source::TransactionSource;
         #[test_matrix(
             [ClientOnly(2.into()), FromMempool(2.into()), OnChain(2.into())],
-            [ClientOnly(1.into()), FromMempool(1.into()), OnChain(1.into())],
-            [true, false])
-        ]
+            [true, false],
+            [ClientOnly(1.into()), FromMempool(1.into()), OnChain(1.into())]
+        )]
         fn valid_trbid_update(
             input_tx_source: TransactionSource,
-            trbid_tx_source: TransactionSource,
             fresh_trbid: bool,
+            trbid_tx_source: TransactionSource,
         ) {
             // We'll need a trbid regardless.
             let mut trbid = TransactionRecordsById::default();
