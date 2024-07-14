@@ -773,7 +773,8 @@ mod tests {
         ) {
             // We'll need a trbid regardless.
             let mut trbid = TransactionRecordsById::default();
-            let mut tx_builder = TransactionRecordBuilder::default();
+            let mut input_tx_builder = TransactionRecordBuilder::default();
+            let mut in_trbid_tx_builder = TransactionRecordBuilder::default();
             match input_tx_source {
                 ClientOnly(_) => {
                     if fresh_trbid {
