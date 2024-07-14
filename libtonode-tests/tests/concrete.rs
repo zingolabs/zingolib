@@ -1131,7 +1131,8 @@ mod slow {
                 expected_pre_sync_transactions,
                 recipient.do_list_transactions().await.pretty(2)
             );
-            recipient.do_sync(false).await.unwrap();
+            dbg!("About to call recipient.do_sync");
+            recipient.do_sync(true).await.unwrap();
             let expected_post_sync_transactions = r#"[
   {
     "block_height": 3,

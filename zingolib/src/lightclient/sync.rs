@@ -46,6 +46,7 @@ use crate::{
 impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
+        dbg!("Inside do_sync");
         // Remember the previous sync id first
         let prev_sync_id = self
             .bsync_data
@@ -58,7 +59,11 @@ impl LightClient {
             .sync_id;
 
         // Start the sync
-        let r_fut = self.start_sync();
+        let r_fut = if print_updates {
+            self.start_sync(true)
+        } else {
+            self.start_sync(false)
+        };
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
@@ -84,12 +89,16 @@ impl LightClient {
             });
 
             let r = r_fut.await;
+            panic!();
             transmitter.send(1).unwrap();
             r
         } else {
             r_fut.await
         };
 
+        if print_updates {
+            panic!();
+        }
         // Mark the sync data as finished, which should clear everything
         self.bsync_data.read().await.finish().await;
         sync_result
@@ -238,16 +247,19 @@ impl LightClient {
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
-    async fn start_sync(&self) -> Result<SyncResult, String> {
+    async fn start_sync(&self, test_instrumentation: bool) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         // TODO:  We run on resource constrained systems, where a single thread of
         // execution often consumes most of the memory available, on other systems
         // we might parallelize sync.
+        if test_instrumentation {
+            panic!("Inside start sync!");
+        }
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = self.wallet.last_synced_height().await;
+        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
 
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
@@ -255,7 +267,6 @@ impl LightClient {
         self.wallet
             .ensure_witness_tree_not_above_wallet_blocks()
             .await;
-
         // This is a fresh wallet. We need to get the initial trees
         if self.wallet.has_any_empty_commitment_trees().await
             && last_synced_height >= self.config.sapling_activation_height()
@@ -298,7 +309,7 @@ impl LightClient {
         }
 
         // Re-read the last scanned height
-        let last_scanned_height = self.wallet.last_synced_height().await;
+        let last_scanned_height = dbg!(self.wallet.last_synced_height().await);
 
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
