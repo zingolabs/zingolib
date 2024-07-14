@@ -81,6 +81,7 @@ pub(crate) mod note_id {
 
     use std::fmt;
 
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::transaction::TxId;
 
     use super::pool_enums::PoolNullifier;
@@ -93,6 +94,15 @@ pub(crate) mod note_id {
     pub(in super::super) struct TxIdAndNullifier {
         txid: TxId,
         pool_nullifier: PoolNullifier,
+    }
+
+    impl TxIdAndNullifier {
+        pub(crate) fn protocol(&self) -> ShieldedProtocol {
+            match self.pool_nullifier {
+                PoolNullifier::Sapling(_) => ShieldedProtocol::Sapling,
+                PoolNullifier::Orchard(_) => ShieldedProtocol::Orchard,
+            }
+        }
     }
 
     impl fmt::Display for TxIdAndNullifier {
