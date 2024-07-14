@@ -155,6 +155,9 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
     fn output_index(&self) -> &Option<u32>;
 
     /// TODO: Add Doc Comment Here!
+    fn output_index_mut(&mut self) -> &mut Option<u32>;
+
+    /// TODO: Add Doc Comment Here!
     fn pending_receipt(&self) -> bool {
         self.nullifier().is_none()
     }

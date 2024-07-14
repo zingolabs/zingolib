@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use zcash_client_backend::ShieldedProtocol;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
@@ -30,6 +32,24 @@ impl TransactionContext {
             key,
             transaction_metadata_set,
         }
+    }
+
+    /// returns any outdated records that need to be rescanned for completeness..
+    /// checks that each record contains output indexes for its notes
+    pub async fn unindexed_records(
+        &self,
+        wallet_height: BlockHeight,
+    ) -> Result<(), Vec<(TxId, BlockHeight)>> {
+        self.transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .get_spendable_note_ids_and_values(
+                &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                wallet_height,
+                &[],
+            )
+            .map(|_| ())
     }
 }
 
@@ -478,6 +498,8 @@ mod decrypt_transaction {
                     _ => continue,
                 };
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
+                // if status is pending add the whole pending note
+                // otherwise, just update the output index
                 if let Some(height) = status.get_pending_height() {
                     self.transaction_metadata_set
                         .write()
@@ -491,6 +513,18 @@ mod decrypt_transaction {
                             to,
                             output_index,
                         );
+                } else {
+                    self.transaction_metadata_set
+                        .write()
+                        .await
+                        .transaction_records_by_id
+                        .update_output_index::<Q>(
+                            transaction.txid(),
+                            status,
+                            block_time as u64,
+                            note.clone(),
+                            output_index,
+                        )
                 }
                 let memo = memo_bytes
                     .clone()
@@ -521,21 +555,14 @@ mod decrypt_transaction {
         /// In Orchard the components are "Actions", each of which
         /// _IS_ 1 Spend and 1 Output.
         #[allow(clippy::too_many_arguments)]
-        async fn decrypt_transaction_to_record_domain<D>(
+        async fn decrypt_transaction_to_record_domain<D: DomainWalletExt>(
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: u32,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
-        ) where
-            D: zingo_traits::DomainWalletExt,
-            D::Note: Clone + PartialEq,
-            D::OutgoingViewingKey: std::fmt::Debug,
-            D::Recipient: zingo_traits::Recipient,
-            D::Memo: zingo_traits::ToBytes<512>,
-            D::IncomingViewingKey: Clone,
-        {
+        ) {
             type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
             let domain_tagged_outputs =
                 <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)

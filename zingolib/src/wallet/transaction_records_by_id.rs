@@ -370,15 +370,20 @@ impl TransactionRecordsById {
             && orchard_spends.is_empty()
             && query_record.total_transparent_value_spent > 0
             && query_record.outgoing_tx_data.is_empty()
+            && (!query_record.orchard_notes().is_empty() | !query_record.sapling_notes().is_empty())
         {
             // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
             TransactionKind::Sent(SendType::Shield)
+        } else if query_record.outgoing_tx_data.is_empty() {
+            TransactionKind::Sent(SendType::SendToSelf)
         } else {
             TransactionKind::Sent(SendType::Send)
         }
     }
 
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
+    #[deprecated(note = "uses unstable deprecated functions")]
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.get(txid)
             .map(TransactionRecord::total_value_spent)
@@ -389,6 +394,7 @@ impl TransactionRecordsById {
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     /// TODO: Add Doc Comment Here!
+    #[allow(deprecated)]
     #[deprecated(note = "uses unstable deprecated functions")]
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         //TODO: Incorrect with a 0-value fee somehow
@@ -420,14 +426,27 @@ impl TransactionRecordsById {
         status: zingo_status::confirmation_status::ConfirmationStatus,
         datetime: u64,
     ) -> &'_ mut TransactionRecord {
-        self.entry(*txid)
-            // if we already have the transaction metadata, it may be newly confirmed. update confirmation_status
-            .and_modify(|transaction_metadata| {
-                transaction_metadata.status = status;
-                transaction_metadata.datetime = datetime;
-            })
-            // if this transaction is new to our data, insert it
-            .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
+        // check if there is already a confirmed transaction with the same txid
+        let existing_tx_confirmed = if let Some(existing_tx) = self.get(txid) {
+            existing_tx.status.is_confirmed()
+        } else {
+            false
+        };
+
+        // prevent confirmed transaction from being overwritten by pending transaction
+        if existing_tx_confirmed && status.is_pending() {
+            self.get_mut(txid)
+                .expect("previous check proves this tx exists")
+        } else {
+            self.entry(*txid)
+                // if we already have the transaction metadata, it may be newly confirmed. update confirmation_status
+                .and_modify(|transaction_metadata| {
+                    transaction_metadata.status = status;
+                    transaction_metadata.datetime = datetime;
+                })
+                // if this transaction is new to our data, insert it
+                .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
+        }
     }
 
     /// TODO: Add Doc Comment Here!
@@ -519,9 +538,27 @@ impl TransactionRecordsById {
             );
         }
     }
-    /// witness tree requirement:
-    ///
-    pub(crate) fn add_pending_note<D>(
+    pub(crate) fn update_output_index<D: DomainWalletExt>(
+        &mut self,
+        txid: TxId,
+        status: zingo_status::confirmation_status::ConfirmationStatus,
+        timestamp: u64,
+        note: D::Note,
+        output_index: usize,
+    ) {
+        let transaction_record =
+            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+
+        if let Some(n) = D::WalletNote::transaction_metadata_notes_mut(transaction_record)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            if n.output_index().is_none() {
+                *n.output_index_mut() = Some(output_index as u32)
+            }
+        }
+    }
+    pub(crate) fn add_pending_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -529,11 +566,7 @@ impl TransactionRecordsById {
         note: D::Note,
         to: D::Recipient,
         output_index: usize,
-    ) where
-        D: DomainWalletExt,
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
+    ) {
         let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
@@ -576,10 +609,7 @@ impl TransactionRecordsById {
         >,
         output_index: u32,
         position: incrementalmerkletree::Position,
-    ) where
-        D::Note: PartialEq + Clone,
-        D::Recipient: Recipient,
-    {
+    ) {
         let transaction_metadata =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
@@ -654,12 +684,13 @@ impl TransactionRecordsById {
     }
 
     /// get a list of spendable NoteIds with associated note values
+    #[allow(clippy::type_complexity)]
     pub(crate) fn get_spendable_note_ids_and_values(
         &self,
         sources: &[zcash_client_backend::ShieldedProtocol],
         anchor_height: zcash_primitives::consensus::BlockHeight,
         exclude: &[NoteId],
-    ) -> Result<Vec<(NoteId, u64)>, Vec<TxId>> {
+    ) -> Result<Vec<(NoteId, u64)>, Vec<(TxId, BlockHeight)>> {
         let mut missing_output_index = vec![];
         let ok = self
             .values()
@@ -673,7 +704,10 @@ impl TransactionRecordsById {
                     {
                         notes_from_tx
                     } else {
-                        missing_output_index.push(transaction_record.txid);
+                        missing_output_index.push((
+                            transaction_record.txid,
+                            transaction_record.status.get_height(),
+                        ));
                         vec![]
                     }
                 } else {

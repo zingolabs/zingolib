@@ -59,7 +59,7 @@ impl LightClient {
                 })
     }
 
-    /// This fn is _only_ called inside a block conditioned on "is_outgoing_transaction"
+    #[allow(deprecated)]
     fn append_change_notes(
         wallet_transaction: &TransactionRecord,
         received_utxo_value: u64,
