@@ -383,9 +383,7 @@ impl InputSource for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
     use proptest::{prop_assert_eq, proptest};
-    use zcash_client_backend::{
-        data_api::InputSource as _, ShieldedProtocol,
-    };
+    use zcash_client_backend::{data_api::InputSource as _, ShieldedProtocol};
     use zcash_primitives::{
         consensus::BlockHeight, legacy::TransparentAddress,
         transaction::components::amount::NonNegativeAmount,
@@ -394,12 +392,11 @@ mod tests {
 
     use crate::wallet::{
         notes::{
-            orchard::mocks::OrchardNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder, OutputInterface,
+            orchard::mocks::OrchardNoteBuilder, transparent::mocks::TransparentOutputBuilder,
+            OutputInterface,
         },
         transaction_record::mocks::{
-            nine_note_transaction_record_default,
-            TransactionRecordBuilder,
+            nine_note_transaction_record_default, TransactionRecordBuilder,
         },
         transaction_records_by_id::TransactionRecordsById,
     };
