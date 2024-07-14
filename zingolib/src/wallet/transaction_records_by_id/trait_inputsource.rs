@@ -106,6 +106,12 @@ fn sweep_dust_into_grace(
         selected.push(*orchard_dust.last().expect("Guaranteed by !is_empty"));
     }
 }
+
+type FrankenNote<D: zcash_note_encryption::Domain> = zcash_client_backend::wallet::ReceivedNote<
+    TxIdAndNullifier,
+    <D as zcash_note_encryption::Domain>::Note,
+>;
+
 /// A trait representing the capability to query a data store for unspent transaction outputs
 /// belonging to a wallet.
 impl InputSource for TransactionRecordsById {
