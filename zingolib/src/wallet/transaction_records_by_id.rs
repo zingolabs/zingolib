@@ -755,8 +755,35 @@ mod tests {
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::transaction_source::TransactionSource::OnChain;
+    use zingo_status::transaction_source::TransactionSource::{FromMempool, OnChain};
 
+    mod create_modify_get_transaction_metadata {
+        use super::*;
+        use test_case::test_matrix;
+        #[test_matrix([true, false], [true, false])]
+        fn no_txid_in_trbid(txid_in_trbid: bool, confirmed: bool) {
+            // We'll need a trbid regardless.
+            let mut trbid = TransactionRecordsById::default();
+            let mut tx_builder = TransactionRecordBuilder::default();
+            if txid_in_trbid {
+                if confirmed {
+                    let transaction_record = tx_builder.status(OnChain(1.into())).build();
+                    trbid.insert_transaction_record(transaction_record);
+                    assert_eq!(1, 2);
+                } else if !confirmed {
+                    let transaction_record = tx_builder.status(FromMempool(1.into())).build();
+                    trbid.insert_transaction_record(transaction_record);
+                    dbg!("not confirmed, but in trbid");
+                }
+            } else if !txid_in_trbid {
+                if confirmed {
+                    dbg!("Not in trbid, but confirmed!");
+                } else if !confirmed {
+                    dbg!("Not in trbid, AND not confirmed!");
+                }
+            }
+        }
+    }
     #[test]
     fn invalidate_all_transactions_after_or_at_height() {
         let transaction_record_later = TransactionRecordBuilder::default()
