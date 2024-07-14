@@ -772,20 +772,41 @@ mod tests {
             match source {
                 ClientOnly(_) => {
                     if fresh_trbid {
-                        todo!()
+                        todo!("assert expected state, insert, assert state changes")
                     } else {
+                        todo!("throw appropriate error")
                     }
                 }
                 FromMempool(what_is_this_height) => {
                     if fresh_trbid {
-                        todo!()
+                        todo!(
+                            "assert expected state,
+                             insert,
+                             assert state changes"
+                        )
                     } else {
+                        todo!(
+                            "assert expected state,
+                             check for relationship between in trbid, and processing,
+                             handle,
+                             assert expected state"
+                        )
                     }
                 }
                 OnChain(confirmation_block_height) => {
                     if fresh_trbid {
-                        todo!()
+                        todo!(
+                            "assert expected state,
+                             insert,
+                             assert state changes"
+                        )
                     } else {
+                        todo!(
+                            "assert expected state,
+                             check for relationship between in trbid, and processing,
+                             handle,
+                             assert expected state"
+                        )
                     }
                 }
             }
