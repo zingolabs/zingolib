@@ -762,14 +762,19 @@ mod tests {
         use test_case::test_matrix;
         use zingo_status::transaction_source::TransactionSource;
         #[test_matrix(
+            [ClientOnly(2.into()), FromMempool(2.into()), OnChain(2.into())],
             [ClientOnly(1.into()), FromMempool(1.into()), OnChain(1.into())],
             [true, false])
         ]
-        fn no_txid_in_trbid(source: TransactionSource, fresh_trbid: bool) {
+        fn valid_trbid_update(
+            input_tx_source: TransactionSource,
+            trbid_tx_source: TransactionSource,
+            fresh_trbid: bool,
+        ) {
             // We'll need a trbid regardless.
             let mut trbid = TransactionRecordsById::default();
             let mut tx_builder = TransactionRecordBuilder::default();
-            match source {
+            match input_tx_source {
                 ClientOnly(_) => {
                     if fresh_trbid {
                         todo!("assert expected state, insert, assert state changes")
