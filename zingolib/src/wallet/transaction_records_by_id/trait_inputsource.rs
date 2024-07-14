@@ -39,7 +39,7 @@ pub enum InputSourceError {
     InvalidValue(BalanceError),
     /// Wallet data is out of date
     #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
-    MissingOutputIndexes(Vec<TxId>),
+    MissingOutputIndexes(Vec<(TxId, zcash_primitives::consensus::BlockHeight)>),
 }
 
 // Calculate remaining difference between target and selected.
@@ -136,17 +136,12 @@ impl InputSource for TransactionRecordsById {
     /// txid, domain, and index
     type NoteRef = TxIdAndNullifier;
 
-    /// Fetches a spendable note by indexing into a transaction's shielded outputs for the
-    /// specified shielded protocol.
-    ///
-    /// Returns `Ok(None)` if the note is not known to belong to the wallet or if the note
-    /// is not spendable.
-    /// IMPL: implemented and tested
+    /// not implemented
     fn get_spendable_note(
         &self,
-        txid: &zcash_primitives::transaction::TxId,
-        protocol: zcash_client_backend::ShieldedProtocol,
-        index: u32,
+        _txid: &zcash_primitives::transaction::TxId,
+        _protocol: zcash_client_backend::ShieldedProtocol,
+        _index: u32,
     ) -> Result<
         Option<
             zcash_client_backend::wallet::ReceivedNote<
@@ -156,24 +151,7 @@ impl InputSource for TransactionRecordsById {
         >,
         Self::Error,
     > {
-        let note_record_reference: <Self as InputSource>::NoteRef =
-            TxIdAndNullifier::new(*txid, protocol, index as u16);
-        match protocol {
-            ShieldedProtocol::Sapling => Ok(self
-                .get_received_spendable_note_from_identifier::<SaplingDomain>(note_record_reference)
-                .map(|note| {
-                    note.map_note(|note_inner| {
-                        zcash_client_backend::wallet::Note::Sapling(note_inner)
-                    })
-                })),
-            ShieldedProtocol::Orchard => Ok(self
-                .get_received_spendable_note_from_identifier::<OrchardDomain>(note_record_reference)
-                .map(|note| {
-                    note.map_note(|note_inner| {
-                        zcash_client_backend::wallet::Note::Orchard(note_inner)
-                    })
-                })),
-        }
+        unimplemented!()
     }
 
     #[allow(rustdoc::private_intra_doc_links)]
@@ -413,9 +391,7 @@ impl InputSource for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
     use proptest::{prop_assert_eq, proptest};
-    use zcash_client_backend::{
-        data_api::InputSource as _, wallet::ReceivedNote, ShieldedProtocol,
-    };
+    use zcash_client_backend::{data_api::InputSource as _, ShieldedProtocol};
     use zcash_primitives::{
         consensus::BlockHeight, legacy::TransparentAddress,
         transaction::components::amount::NonNegativeAmount,
@@ -423,53 +399,12 @@ mod tests {
     use zip32::AccountId;
 
     use crate::wallet::{
-        notes::{
-            orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
-            transparent::mocks::TransparentOutputBuilder, OutputInterface,
-        },
+        notes::{orchard::mocks::OrchardNoteBuilder, transparent::mocks::TransparentOutputBuilder},
         transaction_record::mocks::{
-            nine_note_transaction_record, nine_note_transaction_record_default,
-            TransactionRecordBuilder,
+            nine_note_transaction_record_default, TransactionRecordBuilder,
         },
         transaction_records_by_id::TransactionRecordsById,
     };
-
-    #[test]
-    fn get_spendable_note() {
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-        ));
-
-        let (txid, record) = transaction_records_by_id.0.iter().next().unwrap();
-
-        for i in 0..3 {
-            let single_note = transaction_records_by_id
-                .get_spendable_note(txid, ShieldedProtocol::Sapling, i as u32)
-                .unwrap();
-            assert_eq!(
-                if record.sapling_notes[i]
-                    .spend_status_query(OutputSpendStatusQuery::only_unspent())
-                {
-                    Some(zcash_client_backend::wallet::Note::Sapling(
-                        record.sapling_notes[i].sapling_crypto_note.clone(),
-                    ))
-                } else {
-                    None
-                }
-                .as_ref(),
-                single_note.as_ref().map(ReceivedNote::note)
-            )
-        }
-    }
 
     proptest! {
         // TODO: rewrite select_spendable test suite to test a range of cases and target edge cases correctly

@@ -86,35 +86,6 @@ impl Output {
         list.iter().fold(0, |total, output| total + output.value())
     }
 }
-/// This triple of values uniquely over-identifies a value transfer on a zcash blockchain.
-/// "Over" because pool is not necessary for a unique ID.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct OutputId {
-    /// A unique ID of the transaction.  For v5 protocol and later, to enforce
-    /// non-malleability it is derived exclusively from effecting data
-    /// (data that is necessary for transaction validity.
-    pub txid: TxId,
-    /// Shielded (two kinds) or Transparent
-    pub pool: PoolType,
-    /// The unique position of this value transfer in the transaction.
-    pub index: u32,
-}
-impl OutputId {
-    /// The primary constructor, note index means FLARRGGGLLLE!
-    pub fn from_parts(txid: TxId, pool: PoolType, index: u32) -> Self {
-        OutputId { txid, pool, index }
-    }
-}
-
-impl std::fmt::Display for OutputId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "txid {}, {:?}, index {}",
-            self.txid, self.pool, self.index,
-        )
-    }
-}
 
 #[cfg(test)]
 pub mod mocks {
