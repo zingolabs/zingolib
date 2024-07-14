@@ -198,7 +198,10 @@ impl InputSource for TransactionRecordsById {
             // update target value for further note selection
             let selected_notes_total_value = selected
                 .iter()
-                .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
+                .try_fold(
+                    NonNegativeAmount::ZERO,
+                    |acc, (_id, value): &(TxIdAndNullifier, NonNegativeAmount)| acc + *value,
+                )
                 .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
             let updated_target_value =
                 match calculate_remaining_needed(target_value, selected_notes_total_value) {
@@ -270,15 +273,15 @@ impl InputSource for TransactionRecordsById {
             let transaction_record = self
                 .get(id.txid())
                 .expect("should exist as note_id is created from the record itself");
-            let output_index = id.output_index() as u32;
+            let nullifier = id.pool_nullifier() as u32;
             match id.protocol() {
                 zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
-                    .get_received_note::<SaplingDomain>(output_index)
+                    .get_received_note::<SaplingDomain>(nullifier)
                     .map(|received_note| {
                         selected_sapling.push(received_note);
                     }),
                 zcash_client_backend::ShieldedProtocol::Orchard => transaction_record
-                    .get_received_note::<OrchardDomain>(output_index)
+                    .get_received_note::<OrchardDomain>(nullifier)
                     .map(|received_note| {
                         selected_orchard.push(received_note);
                     }),

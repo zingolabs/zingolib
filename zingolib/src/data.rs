@@ -81,6 +81,7 @@ pub(crate) mod note_id {
 
     use std::fmt;
 
+    use getset::Getters;
     use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::transaction::TxId;
 
@@ -90,8 +91,9 @@ pub(crate) mod note_id {
     /// used in trait [crate::wallet::transaction_records_by_id::trait_inputsource]
     /// as <TransactionRecordsById as InputSource>::NoteId
 
-    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, Getters, Ord, PartialEq, PartialOrd)]
     pub(in super::super) struct TxIdAndNullifier {
+        #[getset(get = "pub")]
         txid: TxId,
         pool_nullifier: PoolNullifier,
     }

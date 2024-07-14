@@ -2,7 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::{data::note_id::TxIdAndNullifier, wallet::notes::interface::OutputConstructor};
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
@@ -258,28 +258,28 @@ impl TransactionRecord {
         ]
     }
 
-    /// Gets a received note, by index and domain
+    /// Gets a received note, by nullifier and domain
     pub fn get_received_note<D: DomainWalletExt>(
         &self,
-        index: u32,
+        nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
     ) -> Option<
         zcash_client_backend::wallet::ReceivedNote<
-            NoteId,
+            TxIdAndNullifier,
             <D as zcash_note_encryption::Domain>::Note,
         >,
     > {
         let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
-            .find(|note| *note.output_index() == Some(index));
+            .find(|note| *note.output_index() == Some(nullifier));
         note.and_then(|note| {
             let txid = self.txid;
             let note_record_reference =
-                NoteId::new(txid, note.to_zcb_note().protocol(), index as u16);
+                NoteId::new(txid, note.to_zcb_note().protocol(), nullifier as u16);
             note.witnessed_position().map(|pos| {
                 zcash_client_backend::wallet::ReceivedNote::from_parts(
                     note_record_reference,
                     txid,
-                    index as u16,
+                    nullifier as u16,
                     note.note().clone(),
                     zip32::Scope::External,
                     pos,
