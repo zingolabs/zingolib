@@ -130,6 +130,7 @@ impl InputSource for TransactionRecordsById {
     /// txid, domain, and index
     type NoteRef = NoteId;
 
+    /// not implemented
     fn get_spendable_note(
         &self,
         _txid: &zcash_primitives::transaction::TxId,
