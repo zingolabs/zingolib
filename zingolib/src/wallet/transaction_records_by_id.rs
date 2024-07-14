@@ -765,19 +765,28 @@ mod tests {
             [ClientOnly(1.into()), FromMempool(1.into()), OnChain(1.into())],
             [true, false])
         ]
-        fn no_txid_in_trbid(source: TransactionSource, txid_in_trbid: bool) {
+        fn no_txid_in_trbid(source: TransactionSource, fresh_trbid: bool) {
             // We'll need a trbid regardless.
             let mut trbid = TransactionRecordsById::default();
             let mut tx_builder = TransactionRecordBuilder::default();
             match source {
                 ClientOnly(_) => {
-                    todo!()
+                    if fresh_trbid {
+                        todo!()
+                    } else {
+                    }
                 }
                 FromMempool(what_is_this_height) => {
-                    todo!()
+                    if fresh_trbid {
+                        todo!()
+                    } else {
+                    }
                 }
                 OnChain(confirmation_block_height) => {
-                    todo!()
+                    if fresh_trbid {
+                        todo!()
+                    } else {
+                    }
                 }
             }
         }
