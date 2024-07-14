@@ -25,6 +25,7 @@ pub struct OrchardNote {
     /// The note's index in its containing transaction
     pub(crate) output_index: Option<u32>,
 
+    /// any nullifier (a special number necessary to spend the note). every spending wallet MUST have a nullifier for each note)
     pub(crate) nullifier: Option<orchard::note::Nullifier>,
 
     /// If this note was confirmed spent
@@ -167,6 +168,12 @@ impl ShieldedNoteInterface for OrchardNote {
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
         self.nullifier
+    }
+
+    fn pool_nullifier(&self) -> Result<PoolNullifier, ()> {
+        self.nullifier
+            .map(|orchard_nullifier| PoolNullifier::Orchard(orchard_nullifier))
+            .ok_or(())
     }
 
     fn pool() -> PoolType {

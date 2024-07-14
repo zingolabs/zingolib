@@ -3,7 +3,7 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::{data::PoolNullifier, notes::interface::OutputConstructor};
 
 use super::{
     super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
@@ -25,7 +25,7 @@ pub struct SaplingNote {
     // The note's index in its containing transaction
     pub(crate) output_index: Option<u32>,
 
-    /// TODO: Add Doc Comment Here!
+    /// any nullifier (a special number necessary to spend the note). every spending wallet MUST have a nullifier for each note)
     pub nullifier: Option<sapling_crypto::Nullifier>,
 
     /// TODO: Add Doc Comment Here!
@@ -189,6 +189,12 @@ impl ShieldedNoteInterface for SaplingNote {
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
         self.nullifier
+    }
+
+    fn pool_nullifier(&self) -> Result<PoolNullifier, ()> {
+        self.nullifier
+            .map(|sapling_nullifier| PoolNullifier::Sapling(sapling_nullifier))
+            .ok_or(())
     }
 
     fn pool() -> PoolType {

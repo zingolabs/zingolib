@@ -145,11 +145,14 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
     /// TODO: Add Doc Comment Here!
     fn note(&self) -> &Self::Note;
 
-    /// TODO: Add Doc Comment Here!
+    /// any nullifier (a special number necessary to spend the note). every spending wallet MUST have a nullifier for each note)
     fn nullifier(&self) -> Option<Self::Nullifier>;
 
-    /// TODO: Add Doc Comment Here!
+    /// any nullifier (a special number necessary to spend the note). every spending wallet MUST have a nullifier for each note)
     fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier>;
+
+    /// PoolNullifier enumerates nullifiers for cross-protocol compatibility
+    fn pool_nullifier(&self) -> Result<crate::wallet::data::PoolNullifier, ()>;
 
     /// TODO: Add Doc Comment Here!
     fn output_index(&self) -> &Option<u32>;

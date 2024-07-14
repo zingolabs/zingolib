@@ -270,7 +270,8 @@ impl TransactionRecord {
     > {
         let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
-            .find(|note| *note.output_index() == Some(nullifier));
+            .find(|note| note.nullifier() == Some(nullifier));
+
         note.and_then(|note| {
             let txid = self.txid;
             let note_record_reference =
