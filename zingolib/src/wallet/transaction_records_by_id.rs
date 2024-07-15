@@ -313,7 +313,10 @@ impl TransactionRecordsById {
     ) -> Vec<&TransparentOutput> {
         self.get_all_transparent_outputs()
             .into_iter()
-            .filter(|o| (*o.spent()).map_or(false, |(txid, _)| txid == query_record.txid))
+            .filter(|o| {
+                (*o.spent()).map_or(false, |(txid, _)| txid == query_record.txid)
+                    || (*o.pending_spent()).map_or(false, |(txid, _)| txid == query_record.txid)
+            })
             .collect()
     }
     /// Calculate the fee for a transaction in the wallet
