@@ -18,7 +18,6 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::LightWallet;
 
-use super::traits::SpendableNote;
 use super::utils::get_price;
 
 /// TODO: Add Doc Comment Here!
@@ -33,9 +32,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_error: Option<String>,
-    /// TODO: Add Doc Comment Here!
-    pub last_transaction_id: Option<String>,
+    pub last_result: Option<Result<String, String>>,
 }
 
 impl SendProgress {
@@ -46,8 +43,7 @@ impl SendProgress {
             is_send_in_progress: false,
             progress: 0,
             total: 0,
-            last_error: None,
-            last_transaction_id: None,
+            last_result: None,
         }
     }
 }
@@ -122,7 +118,12 @@ impl LightWallet {
 
             let status = ConfirmationStatus::Pending(submission_height);
             self.transaction_context
-                .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
+                .scan_full_tx(
+                    transaction,
+                    status,
+                    Some(now() as u32),
+                    get_price(now(), &price),
+                )
                 .await;
         }
 

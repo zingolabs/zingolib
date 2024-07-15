@@ -109,9 +109,6 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            // Reset the progress to start. Any errors will get recorded here
-            self.wallet.reset_send_progress().await;
-
             if self
                 .wallet
                 .transaction_context
@@ -123,6 +120,10 @@ pub mod send_with_proposal {
             {
                 return Err(CompleteAndBroadcastError::NoSpendCapability);
             }
+
+            // Reset the progress to start. Any errors will get recorded here
+            self.wallet.reset_send_progress().await;
+
             let submission_height = self
                 .get_submission_height()
                 .await
@@ -180,7 +181,8 @@ pub mod send_with_proposal {
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
 
-            self.wallet
+            let result = self
+                .wallet
                 .send_to_addresses_inner(
                     build_result.transaction(),
                     submission_height,
@@ -193,7 +195,18 @@ pub mod send_with_proposal {
                 )
                 .await
                 .map_err(CompleteAndBroadcastError::Broadcast)
-                .map(NonEmpty::singleton)
+                .map(NonEmpty::singleton);
+
+            self.wallet
+                .set_send_result(
+                    result
+                        .as_ref()
+                        .map(|txids| txids.first().to_string())
+                        .map_err(|e| e.to_string()),
+                )
+                .await;
+
+            result
         }
 
         /// Unstable function to expose the zip317 interface for development

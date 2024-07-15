@@ -129,9 +129,40 @@ mod fast {
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
-    use zingolib::wallet::WalletBase;
+    use zingolib::{
+        utils::conversion::txid_from_hex_encoded_str,
+        wallet::{notes::ShieldedNoteInterface, WalletBase},
+    };
 
     use super::*;
+
+    #[tokio::test]
+    async fn targetted_rescan() {
+        let (regtest_manager, _cph, _faucet, recipient, txid) =
+            scenarios::orchard_funded_recipient(100_000).await;
+
+        *recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await
+            .transaction_records_by_id
+            .get_mut(&txid_from_hex_encoded_str(&txid).unwrap())
+            .unwrap()
+            .orchard_notes[0]
+            .output_index_mut() = None;
+
+        let tx_summaries = recipient.transaction_summaries().await.0;
+        assert!(tx_summaries[0].orchard_notes()[0].output_index().is_none());
+
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        let tx_summaries = recipient.transaction_summaries().await.0;
+        assert!(tx_summaries[0].orchard_notes()[0].output_index().is_some());
+    }
 
     #[tokio::test]
     async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
@@ -2959,9 +2990,10 @@ mod slow {
             let txid2 = utils::conversion::txid_from_hex_encoded_str("7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e").unwrap();
             let expected_txids = vec![txid1, txid2];
             // in case the txids are in reverse order
-            if output_error != expected_txids {
+            let missing_index_txids: Vec<zcash_primitives::transaction::TxId> = output_error.into_iter().map(|(txid, _)| txid).collect();
+            if missing_index_txids != expected_txids {
                 let expected_txids = vec![txid2, txid1];
-                assert!(output_error == expected_txids, "{:?}\n\n{:?}", output_error, expected_txids);
+                assert!(missing_index_txids == expected_txids, "{:?}\n\n{:?}", missing_index_txids, expected_txids);
             }
         };
     }

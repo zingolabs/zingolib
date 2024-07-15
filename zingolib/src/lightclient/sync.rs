@@ -205,7 +205,7 @@ impl LightClient {
                             .scan_full_tx(
                                 &transaction,
                                 status,
-                                now() as u32,
+                                Some(now() as u32),
                                 get_price(now(), &price),
                             )
                             .await;
@@ -429,22 +429,21 @@ impl LightClient {
             self.wallet.wallet_capability(),
             self.wallet.transactions(),
         );
-        let (
-            fetch_full_transactions_handle,
-            fetch_full_transaction_transmitter,
-            fetch_taddr_transactions_transmitter,
-        ) = crate::blaze::fetch_full_transaction::start(
-            transaction_context,
-            full_transaction_fetcher_transmitter.clone(),
-            bsync_data.clone(),
-        )
-        .await;
+
+        // Fetches full transactions only in the batch currently being processed
+        let (fetch_full_transactions_handle, txid_sender, full_transaction_sender) =
+            crate::blaze::full_transactions_processor::start(
+                transaction_context.clone(),
+                full_transaction_fetcher_transmitter.clone(),
+                bsync_data.clone(),
+            )
+            .await;
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
         let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
             update_notes_processor
-                .start(bsync_data.clone(), fetch_full_transaction_transmitter)
+                .start(bsync_data.clone(), txid_sender)
                 .await;
 
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
@@ -462,7 +461,7 @@ impl LightClient {
                     .read()
                     .await
                     .transaction_size_filter,
-                full_transaction_fetcher_transmitter,
+                full_transaction_fetcher_transmitter.clone(),
             )
             .await;
 
@@ -501,7 +500,7 @@ impl LightClient {
             start_block,
             earliest_block,
             taddr_fetcher_transmitter,
-            fetch_taddr_transactions_transmitter,
+            full_transaction_sender,
             self.config.chain,
         )
         .await;
@@ -509,7 +508,15 @@ impl LightClient {
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
 
-        // 3. Verify all the downloaded data
+        // 3. Targetted rescan to update transactions with missing information
+        let targetted_rescan_handle = crate::blaze::targetted_rescan::start(
+            self.wallet.blocks.clone(),
+            transaction_context,
+            full_transaction_fetcher_transmitter,
+        )
+        .await;
+
+        // 4. Verify all the downloaded data
         let block_data = bsync_data.clone();
 
         // Wait for everything to finish
@@ -531,6 +538,7 @@ impl LightClient {
             taddr_transactions_handle,
             fetch_compact_blocks_handle,
             fetch_full_transactions_handle,
+            targetted_rescan_handle,
             r1,
         ])
         .await
