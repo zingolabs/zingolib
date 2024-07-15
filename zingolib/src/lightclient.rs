@@ -89,13 +89,16 @@ pub struct LightWalletSendProgress {
 impl LightWalletSendProgress {
     /// TODO: Add Doc Comment Here!
     pub fn to_json(&self) -> JsonValue {
+        let last_result = self.progress.last_result.clone();
+        let txid: Option<String> = last_result.clone().and_then(|result| result.ok());
+        let error: Option<String> = last_result.and_then(|result| result.err());
         object! {
             "id" => self.progress.id,
             "sending" => self.progress.is_send_in_progress,
             "progress" => self.progress.progress,
             "total" => self.progress.total,
-            "txid" => self.progress.last_transaction_id.clone(),
-            "error" => self.progress.last_error.clone(),
+            "txid" => txid,
+            "error" => error,
             "sync_interrupt" => self.interrupt_sync
         }
     }

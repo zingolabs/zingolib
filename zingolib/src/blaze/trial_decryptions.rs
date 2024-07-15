@@ -310,7 +310,7 @@ impl TrialDecryptions {
                     let bsync_data = bsync_data.clone();
                     let transaction_metadata_set = transaction_metadata_set.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
-                    let timestamp = compact_block.time as u64;
+                    let timestamp = compact_block.time;
                     let config = config.clone();
 
                     workers.push(tokio::spawn(async move {
@@ -351,7 +351,7 @@ impl TrialDecryptions {
                             .add_new_note::<D>(
                                 transaction_id,
                                 status,
-                                timestamp,
+                                Some(timestamp),
                                 note,
                                 to,
                                 have_spending_key,
