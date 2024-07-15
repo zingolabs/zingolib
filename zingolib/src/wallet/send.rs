@@ -68,9 +68,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_error: Option<String>,
-    /// TODO: Add Doc Comment Here!
-    pub last_transaction_id: Option<String>,
+    pub last_result: Option<Result<String, String>>,
 }
 
 pub(crate) type NoteSelectionPolicy = Vec<PoolType>;
@@ -83,8 +81,7 @@ impl SendProgress {
             is_send_in_progress: false,
             progress: 0,
             total: 0,
-            last_error: None,
-            last_transaction_id: None,
+            last_result: None,
         }
     }
 }
@@ -223,19 +220,14 @@ impl LightWallet {
             .await?;
 
         // Call the internal function
-        match self
+        let send_result = self
             .send_to_addresses_inner(build_result.transaction(), submission_height, broadcast_fn)
-            .await
-        {
-            Ok(transaction_id) => {
-                self.set_send_success(transaction_id.to_string()).await;
-                Ok(transaction_id)
-            }
-            Err(e) => {
-                self.set_send_error(e.to_string()).await;
-                Err(e)
-            }
-        }
+            .await;
+
+        self.set_send_result(send_result.clone().map(|txid| txid.to_string()))
+            .await;
+
+        send_result
     }
 
     async fn create_publication_ready_transaction<P: SpendProver + OutputProver>(
@@ -841,7 +833,12 @@ impl LightWallet {
 
             let status = ConfirmationStatus::Pending(submission_height);
             self.transaction_context
-                .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
+                .scan_full_tx(
+                    transaction,
+                    status,
+                    Some(now() as u32),
+                    get_price(now(), &price),
+                )
                 .await;
         }
 

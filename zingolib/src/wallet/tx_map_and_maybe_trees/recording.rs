@@ -46,7 +46,7 @@ impl super::TxMapAndMaybeTrees {
         &mut self,
         spending_txid: TxId,
         status: ConfirmationStatus,
-        timestamp: u32,
+        timestamp: Option<u32>,
         spent_nullifier: PoolNullifier,
         source_txid: TxId,
         output_index: Option<u32>,
@@ -80,7 +80,7 @@ impl super::TxMapAndMaybeTrees {
         &mut self,
         spending_txid: TxId,
         status: ConfirmationStatus,
-        timestamp: u32,
+        timestamp: Option<u32>,
         spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         source_txid: TxId,
         output_index: Option<u32>,
@@ -101,7 +101,7 @@ impl super::TxMapAndMaybeTrees {
         // Record this Tx as having spent some funds
         let transaction_metadata = self
             .transaction_records_by_id
-            .create_modify_get_transaction_metadata(&spending_txid, status, timestamp as u64);
+            .create_modify_get_transaction_metadata(&spending_txid, status, timestamp);
 
         if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
