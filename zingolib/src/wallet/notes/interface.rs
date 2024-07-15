@@ -57,15 +57,6 @@ pub trait OutputInterface: Sized {
         self.spend().map(|(txid, _status)| txid)
     }
 
-    /// Returns Unspent if the note has never been spent. Otherwise, points to the txid.
-    fn spend_status(&self) -> SpendSummary {
-        match self.spend() {
-            None => SpendSummary::Unspent,
-            Some((txid, ConfirmationStatus::Pending(_))) => SpendSummary::PendingSpent(*txid),
-            Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
-        }
-    }
-
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
         self.spend()

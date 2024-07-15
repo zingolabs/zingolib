@@ -20,7 +20,7 @@ use crate::{
         data::{
             finsight,
             summaries::{
-                OrchardNoteSummary, SaplingNoteSummary, TransactionSummaries,
+                OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummaries,
                 TransactionSummaryBuilder, TransparentCoinSummary, ValueTransfer,
                 ValueTransferBuilder, ValueTransferKind, ValueTransfers,
             },
@@ -589,7 +589,7 @@ impl LightClient {
                     .orchard_notes
                     .iter()
                     .map(|output| {
-                        let spend_status = output.spend_status();
+                        let spend_summary = SpendSummary::from_spend(output.spend());
 
                         let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
                             Some(memo_text.to_string())
@@ -599,7 +599,7 @@ impl LightClient {
 
                         OrchardNoteSummary::from_parts(
                             output.value(),
-                            spend_status,
+                            spend_summary,
                             output.output_index,
                             memo,
                         )
@@ -609,7 +609,7 @@ impl LightClient {
                     .sapling_notes
                     .iter()
                     .map(|output| {
-                        let spend_status = output.spend_status();
+                        let spend_summary = SpendSummary::from_spend(output.spend());
 
                         let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
                             Some(memo_text.to_string())
@@ -619,7 +619,7 @@ impl LightClient {
 
                         SaplingNoteSummary::from_parts(
                             output.value(),
-                            spend_status,
+                            spend_summary,
                             output.output_index,
                             memo,
                         )
@@ -629,11 +629,11 @@ impl LightClient {
                     .transparent_outputs
                     .iter()
                     .map(|output| {
-                        let spend_status = output.spend_status();
+                        let spend_summary = SpendSummary::from_spend(output.spend());
 
                         TransparentCoinSummary::from_parts(
                             output.value(),
-                            spend_status,
+                            spend_summary,
                             output.output_index,
                         )
                     })

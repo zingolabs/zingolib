@@ -1339,6 +1339,17 @@ pub mod summaries {
         PendingSpent(TxId),
     }
 
+    impl SpendSummary {
+        /// converts the interface spend to a SpendSummary
+        pub fn from_spend(spend: &Option<(TxId, ConfirmationStatus)>) -> Self {
+            match spend {
+                None => SpendSummary::Unspent,
+                Some((txid, ConfirmationStatus::Pending(_))) => SpendSummary::PendingSpent(*txid),
+                Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
+            }
+        }
+    }
+
     impl std::fmt::Display for SpendSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
