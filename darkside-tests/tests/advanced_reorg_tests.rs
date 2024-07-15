@@ -607,7 +607,7 @@ async fn reorg_changes_outgoing_tx_height() {
             .find_map(|v| match v.kind() {
                 ValueTransferKind::Sent => {
                     if let Some(addr) = v.recipient_address() {
-                        if addr.to_string() == recipient_string && v.value() == 100_000 {
+                        if addr == recipient_string && v.value() == 100_000 {
                             Some(v.blockheight())
                         } else {
                             None
@@ -839,7 +839,7 @@ async fn reorg_expires_outgoing_tx_height() {
             .find_map(|v| match v.kind() {
                 ValueTransferKind::Sent => {
                     if let Some(addr) = v.recipient_address() {
-                        if addr.to_string() == recipient_string && v.value() == 100_000 {
+                        if addr == recipient_string && v.value() == 100_000 {
                             Some(v.blockheight())
                         } else {
                             None
@@ -1026,7 +1026,7 @@ async fn reorg_changes_outgoing_tx_index() {
             .find_map(|v| match v.kind() {
                 ValueTransferKind::Sent => {
                     if let Some(addr) = v.recipient_address() {
-                        if addr.to_string() == recipient_string && v.value() == 100_000 {
+                        if addr == recipient_string && v.value() == 100_000 {
                             Some(v.blockheight())
                         } else {
                             None

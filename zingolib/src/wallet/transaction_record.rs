@@ -262,7 +262,7 @@ impl TransactionRecord {
     }
 
     /// Gets a received note, by index and domain
-    pub fn get_received_note<D>(
+    pub fn get_received_note<D: DomainWalletExt>(
         &self,
         index: u32,
     ) -> Option<
@@ -270,12 +270,7 @@ impl TransactionRecord {
             NoteId,
             <D as zcash_note_encryption::Domain>::Note,
         >,
-    >
-    where
-        D: DomainWalletExt + Sized,
-        D::Note: PartialEq + Clone,
-        D::Recipient: super::traits::Recipient,
-    {
+    > {
         let note = D::WalletNote::get_record_outputs(self)
             .into_iter()
             .find(|note| *note.output_index() == Some(index));
@@ -747,7 +742,6 @@ pub mod mocks {
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
             .orchard_notes(OrchardNoteBuilder::default())
-            .total_transparent_value_spent(30_000)
             .outgoing_tx_data(OutgoingTxDataBuilder::default())
             .build();
         assert_eq!(
@@ -859,8 +853,8 @@ mod tests {
             Output::get_record_outputs(&default_nn_transaction_record)
                 .iter()
                 .filter(|o| o.spend_status_query(queried_spend_state))
+                .filter(|&o| o.pool_query(queried_pools))
                 .cloned()
-                .filter(|o| o.pool_query(queried_pools))
                 .collect();
         assert_eq!(requested_outputs.len(), expected);
     }

@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use zcash_client_backend::ShieldedProtocol;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
@@ -30,6 +32,24 @@ impl TransactionContext {
             key,
             transaction_metadata_set,
         }
+    }
+
+    /// returns any outdated records that need to be rescanned for completeness..
+    /// checks that each record contains output indexes for its notes
+    pub async fn unindexed_records(
+        &self,
+        wallet_height: BlockHeight,
+    ) -> Result<(), Vec<(TxId, BlockHeight)>> {
+        self.transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .get_spendable_note_ids_and_values(
+                &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+                wallet_height,
+                &[],
+            )
+            .map(|_| ())
     }
 }
 
@@ -79,7 +99,7 @@ pub mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>, // block_time should only be None when re-scanning a tx that already exists in the wallet
             price: Option<f64>,
         ) {
             // Set up data structures to record scan results
@@ -159,7 +179,7 @@ pub mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
             taddrs_set: &HashSet<String>,
@@ -195,7 +215,7 @@ pub mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             taddrs_set: &HashSet<String>,
         ) {
             // Scan all transparent outputs to see if we received any money
@@ -213,7 +233,7 @@ pub mod decrypt_transaction {
                                     transaction.txid(),
                                     output_taddr.clone(),
                                     status,
-                                    block_time as u64,
+                                    block_time,
                                     vout,
                                     n as u32,
                                 );
@@ -279,7 +299,7 @@ pub mod decrypt_transaction {
                     .add_taddr_spent(
                         transaction.txid(),
                         status,
-                        block_time as u64,
+                        block_time,
                         total_transparent_value_spent,
                     );
             }
@@ -344,7 +364,7 @@ pub mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) {
@@ -363,7 +383,7 @@ pub mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) {
@@ -383,21 +403,14 @@ pub mod decrypt_transaction {
         /// In Orchard the components are "Actions", each of which
         /// _IS_ 1 Spend and 1 Output.
         #[allow(clippy::too_many_arguments)]
-        async fn decrypt_transaction_to_record_domain<D>(
+        async fn decrypt_transaction_to_record_domain<D: DomainWalletExt>(
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
-        ) where
-            D: zingo_traits::DomainWalletExt,
-            D::Note: Clone + PartialEq,
-            D::OutgoingViewingKey: std::fmt::Debug,
-            D::Recipient: zingo_traits::Recipient,
-            D::Memo: zingo_traits::ToBytes<512>,
-            D::IncomingViewingKey: Clone,
-        {
+        ) {
             type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
@@ -467,6 +480,8 @@ pub mod decrypt_transaction {
                     _ => continue,
                 };
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
+                // if status is pending add the whole pending note
+                // otherwise, just update the output index
                 if let Some(height) = status.get_pending_height() {
                     self.transaction_metadata_set
                         .write()
@@ -475,11 +490,23 @@ pub mod decrypt_transaction {
                         .add_pending_note::<D>(
                             transaction.txid(),
                             height,
-                            block_time as u64,
+                            block_time,
                             note.clone(),
                             to,
                             output_index,
                         );
+                } else {
+                    self.transaction_metadata_set
+                        .write()
+                        .await
+                        .transaction_records_by_id
+                        .update_output_index::<D>(
+                            transaction.txid(),
+                            status,
+                            block_time,
+                            note.clone(),
+                            output_index,
+                        )
                 }
                 let memo = memo_bytes
                     .clone()
