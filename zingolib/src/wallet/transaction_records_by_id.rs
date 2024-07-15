@@ -380,6 +380,7 @@ impl TransactionRecordsById {
     /// the Zcash protocol
     ///  TODO:   Test and handle 0-value, 0-fee transaction
     pub(crate) fn transaction_kind(&self, query_record: &TransactionRecord) -> TransactionKind {
+        let transparent_spends = self.get_transparent_coins_spent_in_tx(query_record);
         let sapling_spends = self
             .get_sapling_notes_spent_in_tx(query_record, false)
             .expect("cannot fail. fail_on_miss is set false");
@@ -387,15 +388,15 @@ impl TransactionRecordsById {
             .get_orchard_notes_spent_in_tx(query_record, false)
             .expect("cannot fail. fail_on_miss is set false");
 
-        if sapling_spends.is_empty()
+        if transparent_spends.is_empty()
+            && sapling_spends.is_empty()
             && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent == 0
             && query_record.outgoing_tx_data.is_empty()
         {
             TransactionKind::Received
-        } else if sapling_spends.is_empty()
+        } else if !transparent_spends.is_empty()
+            && sapling_spends.is_empty()
             && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent > 0
             && query_record.outgoing_tx_data.is_empty()
             && (!query_record.orchard_notes().is_empty() | !query_record.sapling_notes().is_empty())
         {
