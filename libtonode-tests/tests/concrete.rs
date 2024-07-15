@@ -154,17 +154,14 @@ mod fast {
             .output_index_mut() = None;
 
         let tx_summaries = recipient.transaction_summaries().await.0;
-        assert_eq!(tx_summaries[0].orchard_notes()[0].output_index(), None);
+        assert!(tx_summaries[0].orchard_notes()[0].output_index().is_none());
 
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
         let tx_summaries = recipient.transaction_summaries().await.0;
-        assert!(matches!(
-            tx_summaries[0].orchard_notes()[0].output_index(),
-            Some(_)
-        ));
+        assert!(tx_summaries[0].orchard_notes()[0].output_index().is_some());
     }
 
     #[tokio::test]
