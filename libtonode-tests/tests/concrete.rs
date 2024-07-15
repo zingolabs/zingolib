@@ -785,7 +785,7 @@ mod slow {
         },
         wallet::{
             data::{
-                summaries::{OrchardNoteSummary, SpendStatus, TransactionSummaryBuilder},
+                summaries::{OrchardNoteSummary, SpendSummary, TransactionSummaryBuilder},
                 OutgoingTxData,
             },
             notes::OutputInterface,
@@ -1359,7 +1359,7 @@ mod slow {
             .fee(None)
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 recipient_initial_funds,
-                SpendStatus::Spent(
+                SpendSummary::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1397,7 +1397,7 @@ mod slow {
             .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 99_960_000,
-                SpendStatus::PendingSpent(
+                SpendSummary::PendingSpent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1427,7 +1427,7 @@ mod slow {
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 99_925_000,
-                SpendStatus::Unspent,
+                SpendSummary::Unspent,
                 Some(0),
                 None,
             )])
@@ -1500,7 +1500,7 @@ mod slow {
             .fee(None)
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 recipient_second_funding,
-                SpendStatus::Spent(
+                SpendSummary::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1538,7 +1538,7 @@ mod slow {
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 965_000,
-                SpendStatus::Spent(
+                SpendSummary::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1578,7 +1578,7 @@ mod slow {
             .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 99_885_000,
-                SpendStatus::Unspent,
+                SpendSummary::Unspent,
                 Some(0),
                 None,
             )])
@@ -1619,7 +1619,7 @@ mod slow {
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 930_000,
-                SpendStatus::Unspent,
+                SpendSummary::Unspent,
                 Some(0),
                 None,
             )])

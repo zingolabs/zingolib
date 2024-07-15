@@ -6,7 +6,7 @@ use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::{
-    data::summaries::SpendStatus,
+    data::summaries::SpendSummary,
     keys::unified::WalletCapability,
     notes::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
     traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
@@ -58,11 +58,11 @@ pub trait OutputInterface: Sized {
     }
 
     /// Returns Unspent if the note has never been spent. Otherwise, points to the txid.
-    fn spend_status(&self) -> SpendStatus {
+    fn spend_status(&self) -> SpendSummary {
         match self.spend() {
-            None => SpendStatus::Unspent,
-            Some((txid, ConfirmationStatus::Pending(_))) => SpendStatus::PendingSpent(*txid),
-            Some((txid, ConfirmationStatus::Confirmed(_))) => SpendStatus::Spent(*txid),
+            None => SpendSummary::Unspent,
+            Some((txid, ConfirmationStatus::Pending(_))) => SpendSummary::PendingSpent(*txid),
+            Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
         }
     }
 

@@ -1089,7 +1089,7 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Debug)]
     pub struct OrchardNoteSummary {
         value: u64,
-        spend_status: SpendStatus,
+        spend_status: SpendSummary,
         output_index: Option<u32>,
         memo: Option<String>,
     }
@@ -1098,7 +1098,7 @@ pub mod summaries {
         /// TODO: doc comment
         pub fn from_parts(
             value: u64,
-            spend_status: SpendStatus,
+            spend_status: SpendSummary,
             output_index: Option<u32>,
             memo: Option<String>,
         ) -> Self {
@@ -1114,7 +1114,7 @@ pub mod summaries {
             self.value
         }
         /// TODO: doc comment
-        pub fn spend_status(&self) -> SpendStatus {
+        pub fn spend_status(&self) -> SpendSummary {
             self.spend_status
         }
         /// TODO: doc comment
@@ -1178,7 +1178,7 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Debug)]
     pub struct SaplingNoteSummary {
         value: u64,
-        spend_status: SpendStatus,
+        spend_status: SpendSummary,
         output_index: Option<u32>,
         memo: Option<String>,
     }
@@ -1187,7 +1187,7 @@ pub mod summaries {
         /// TODO: doc comment
         pub fn from_parts(
             value: u64,
-            spend_status: SpendStatus,
+            spend_status: SpendSummary,
             output_index: Option<u32>,
             memo: Option<String>,
         ) -> Self {
@@ -1203,7 +1203,7 @@ pub mod summaries {
             self.value
         }
         /// TODO: doc comment
-        pub fn spend_status(&self) -> SpendStatus {
+        pub fn spend_status(&self) -> SpendSummary {
             self.spend_status
         }
         /// TODO: doc comment
@@ -1267,13 +1267,13 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Debug)]
     pub struct TransparentCoinSummary {
         value: u64,
-        spend_status: SpendStatus,
+        spend_status: SpendSummary,
         output_index: u64,
     }
 
     impl TransparentCoinSummary {
         /// TODO: doc comment
-        pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u64) -> Self {
+        pub fn from_parts(value: u64, spend_status: SpendSummary, output_index: u64) -> Self {
             TransparentCoinSummary {
                 value,
                 spend_status,
@@ -1285,7 +1285,7 @@ pub mod summaries {
             self.value
         }
         /// TODO: doc comment
-        pub fn spend_status(&self) -> SpendStatus {
+        pub fn spend_status(&self) -> SpendSummary {
             self.spend_status
         }
         /// TODO: doc comment
@@ -1330,7 +1330,7 @@ pub mod summaries {
 
     /// TODO: doc comment
     #[derive(Clone, Copy, PartialEq, Debug)]
-    pub enum SpendStatus {
+    pub enum SpendSummary {
         /// TODO: doc comment
         Unspent,
         /// TODO: doc comment
@@ -1339,12 +1339,12 @@ pub mod summaries {
         PendingSpent(TxId),
     }
 
-    impl std::fmt::Display for SpendStatus {
+    impl std::fmt::Display for SpendSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                SpendStatus::Unspent => write!(f, "unspent"),
-                SpendStatus::Spent(txid) => write!(f, "spent in {}", txid),
-                SpendStatus::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
+                SpendSummary::Unspent => write!(f, "unspent"),
+                SpendSummary::Spent(txid) => write!(f, "spent in {}", txid),
+                SpendSummary::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
             }
         }
     }
