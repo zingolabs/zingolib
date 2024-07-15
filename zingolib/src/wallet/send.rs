@@ -841,7 +841,12 @@ impl LightWallet {
 
             let status = ConfirmationStatus::Pending(submission_height);
             self.transaction_context
-                .scan_full_tx(transaction, status, now() as u32, get_price(now(), &price))
+                .scan_full_tx(
+                    transaction,
+                    status,
+                    Some(now() as u32),
+                    get_price(now(), &price),
+                )
                 .await;
         }
 
