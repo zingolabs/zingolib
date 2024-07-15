@@ -367,7 +367,7 @@ mod tests {
     use zip32::AccountId;
 
     use crate::wallet::{
-        notes::{orchard::mocks::OrchardNoteBuilder, transparent::mocks::TransparentOutputBuilder},
+        notes::orchard::mocks::OrchardNoteBuilder,
         transaction_record::mocks::{
             nine_note_transaction_record_default, TransactionRecordBuilder,
         },
