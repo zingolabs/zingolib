@@ -67,7 +67,7 @@ pub trait OutputInterface: Sized {
     }
 
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
-    fn is_spent_pending(&self) -> bool {
+    fn is_pending_spent(&self) -> bool {
         self.spend()
             .is_some_and(|(_txid, status)| status.is_pending())
     }
@@ -80,8 +80,8 @@ pub trait OutputInterface: Sized {
 
     /// Returns true if the note has one of the spend statuses enumerated by the query
     fn spend_status_query(&self, query: OutputSpendStatusQuery) -> bool {
-        (*query.unspent() && !self.is_spent_confirmed() && !self.is_spent_pending())
-            || (*query.pending_spent() && self.is_spent_pending())
+        (*query.unspent() && !self.is_spent_confirmed() && !self.is_pending_spent())
+            || (*query.pending_spent() && self.is_pending_spent())
             || (*query.spent() && self.is_spent_confirmed())
     }
 
