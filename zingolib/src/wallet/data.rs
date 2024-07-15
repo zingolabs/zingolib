@@ -451,7 +451,7 @@ pub mod summaries {
     use chrono::DateTime;
     use json::JsonValue;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::{confirmation_status::ConfirmationStatus, spend_status::SpendStatus};
 
     use crate::{
         error::BuildError,

@@ -4,6 +4,7 @@ use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::{HashMap, HashSet};
 use tokio::runtime::Runtime;
+use zingo_status::spend_status::SpendStatus;
 
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
 use zcash_primitives::{
@@ -20,7 +21,7 @@ use crate::{
         data::{
             finsight,
             summaries::{
-                OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummaries,
+                OrchardNoteSummary, SaplingNoteSummary, TransactionSummaries,
                 TransactionSummaryBuilder, TransparentCoinSummary, ValueTransfer,
                 ValueTransferBuilder, ValueTransferKind, ValueTransfers,
             },
