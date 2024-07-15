@@ -3,8 +3,8 @@
 //!  Confirmed === on-record on-chain at BlockHeight
 
 use zcash_primitives::consensus::BlockHeight;
-/// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 
+/// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
     /// The transaction is pending confirmation to the zcash blockchain. It may be waiting in the mempool.

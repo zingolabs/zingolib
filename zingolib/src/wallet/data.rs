@@ -1327,27 +1327,6 @@ pub mod summaries {
             Ok(())
         }
     }
-
-    /// TODO: doc comment
-    #[derive(Clone, Copy, PartialEq, Debug)]
-    pub enum SpendStatus {
-        /// TODO: doc comment
-        Unspent,
-        /// TODO: doc comment
-        Spent(TxId),
-        /// TODO: doc comment
-        PendingSpent(TxId),
-    }
-
-    impl std::fmt::Display for SpendStatus {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                SpendStatus::Unspent => write!(f, "unspent"),
-                SpendStatus::Spent(txid) => write!(f, "spent in {}", txid),
-                SpendStatus::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
-            }
-        }
-    }
 }
 
 /// Convenience wrapper for primitive
