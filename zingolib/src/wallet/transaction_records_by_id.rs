@@ -271,13 +271,11 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
+        let transparent_spends = self.get_transparent_coins_spent_in_tx(query_record);
         let sapling_spends = self.get_sapling_notes_spent_in_tx(query_record, true)?;
         let orchard_spends = self.get_orchard_notes_spent_in_tx(query_record, true)?;
 
-        if sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent == 0
-        {
+        if sapling_spends.is_empty() && orchard_spends.is_empty() && transparent_spends.is_empty() {
             if query_record.outgoing_tx_data.is_empty() {
                 return Err(FeeError::ReceivedTransaction);
             } else {
@@ -287,6 +285,10 @@ impl TransactionRecordsById {
             }
         }
 
+        let transparent_spend_value = transparent_spends
+            .iter()
+            .map(|&coin| coin.value())
+            .sum::<u64>();
         let sapling_spend_value = sapling_spends.iter().map(|&note| note.value()).sum::<u64>();
         let orchard_spend_value = orchard_spends.iter().map(|&note| note.value()).sum::<u64>();
 
@@ -305,7 +307,7 @@ impl TransactionRecordsById {
     /// assume that a 0-input transaction is unexpected behavior.
     /// A transaction created by another capability, using only shielded inputs,
     /// will also be ZeroInputTransaction.
-    fn get_transparent_inputs_to_transaction(
+    fn get_transparent_coins_spent_in_tx(
         &self,
         query_record: &TransactionRecord,
     ) -> Vec<&TransparentOutput> {
