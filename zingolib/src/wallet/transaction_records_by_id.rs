@@ -1,7 +1,7 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::notes::{interface::OutputConstructor, Output, TransparentOutput};
 use crate::wallet::{
     error::FeeError,
     notes::{
@@ -293,6 +293,31 @@ impl TransactionRecordsById {
         Ok(query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value)
     }
 
+    fn get_all_transparent_outputs(&self) -> Vec<&TransparentOutput> {
+        self.values()
+            .flat_map(|record| record.transparent_outputs())
+            .collect()
+    }
+    /// Because this method needs access to all outputs to query their
+    /// "spent" txid it is a method of the TransactionRecordsById
+    /// It's theoretically possible to create a 0-input transaction, but I
+    /// don't know if it's allowed in protocol.  For the moment I conservatively
+    /// assume that a 0-input transaction is unexpected behavior.
+    /// A transaction created by another capability, using only shielded inputs,
+    /// will also be ZeroInputTransaction.
+    fn get_transparent_inputs_to_transaction(
+        &self,
+        query_record: &TransactionRecord,
+    ) -> Vec<&TransparentOutput> {
+        self.get_all_transparent_outputs()
+            .into_iter()
+            .filter(|o| {
+                o.spent()
+                    .clone()
+                    .map_or(false, |(txid, _)| txid == query_record.txid)
+            })
+            .collect()
+    }
     /// Calculate the fee for a transaction in the wallet
     ///
     /// # Error
