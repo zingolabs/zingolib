@@ -424,7 +424,7 @@ impl TransactionRecordsById {
         &mut self,
         txid: &TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
-        datetime: u64,
+        datetime: Option<u32>,
     ) -> &'_ mut TransactionRecord {
         // check if there is already a confirmed transaction with the same txid
         let existing_tx_confirmed = if let Some(existing_tx) = self.get(txid) {
@@ -432,6 +432,14 @@ impl TransactionRecordsById {
         } else {
             false
         };
+
+        // if datetime is None, take the datetime value from existing transaction in the wallet
+        let datetime = datetime.unwrap_or_else(|| {
+            self.get(txid).expect(
+            "datetime should only be None when re-scanning a tx that already exists in the wallet",
+                )
+                .datetime as u32
+        });
 
         // prevent confirmed transaction from being overwritten by pending transaction
         if existing_tx_confirmed && status.is_pending() {
@@ -442,10 +450,10 @@ impl TransactionRecordsById {
                 // if we already have the transaction metadata, it may be newly confirmed. update confirmation_status
                 .and_modify(|transaction_metadata| {
                     transaction_metadata.status = status;
-                    transaction_metadata.datetime = datetime;
+                    transaction_metadata.datetime = datetime as u64;
                 })
                 // if this transaction is new to our data, insert it
-                .or_insert_with(|| TransactionRecord::new(status, datetime, txid))
+                .or_insert_with(|| TransactionRecord::new(status, datetime as u64, txid))
         }
     }
 
@@ -454,7 +462,7 @@ impl TransactionRecordsById {
         &mut self,
         txid: TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
-        timestamp: u64,
+        timestamp: Option<u32>,
         total_transparent_value_spent: u64,
     ) {
         let transaction_metadata =
@@ -509,7 +517,7 @@ impl TransactionRecordsById {
         txid: TxId,
         taddr: String,
         status: zingo_status::confirmation_status::ConfirmationStatus,
-        timestamp: u64,
+        timestamp: Option<u32>,
         vout: &zcash_primitives::transaction::components::TxOut,
         output_num: u32,
     ) {
@@ -542,7 +550,7 @@ impl TransactionRecordsById {
         &mut self,
         txid: TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
-        timestamp: u64,
+        timestamp: Option<u32>,
         note: D::Note,
         output_index: usize,
     ) {
@@ -562,7 +570,7 @@ impl TransactionRecordsById {
         &mut self,
         txid: TxId,
         height: BlockHeight,
-        timestamp: u64,
+        timestamp: Option<u32>,
         note: D::Note,
         to: D::Recipient,
         output_index: usize,
@@ -600,7 +608,7 @@ impl TransactionRecordsById {
         &mut self,
         txid: TxId,
         status: zingo_status::confirmation_status::ConfirmationStatus,
-        timestamp: u64,
+        timestamp: Option<u32>,
         note: <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Note,
         to: D::Recipient,
         have_spending_key: bool,
