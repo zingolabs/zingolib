@@ -910,7 +910,6 @@ mod tests {
             .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
-            .total_transparent_value_spent(30_000)
             .transparent_outputs(TransparentOutputBuilder::default()) // value 100_000
             .sapling_notes(SaplingNoteBuilder::default()) // value 200_000
             .orchard_notes(OrchardNoteBuilder::default()) // value 800_000
@@ -997,7 +996,9 @@ mod tests {
                     transparent::mocks::TransparentOutputBuilder,
                 },
                 transaction_record::mocks::TransactionRecordBuilder,
-                transaction_records_by_id::TransactionRecordsById,
+                transaction_records_by_id::{
+                    tests::spent_transparent_output_builder, TransactionRecordsById,
+                },
             },
         };
 
@@ -1096,12 +1097,18 @@ mod tests {
                         )
                         .to_owned(),
                 )
-                .total_transparent_value_spent(20_000)
                 .build();
             let sent_txid = transaction_record.txid;
+            let transparent_funding_tx = TransactionRecordBuilder::default()
+                .randomize_txid()
+                .status(Confirmed(7.into()))
+                .transparent_outputs(spent_transparent_output_builder(20_000, (sent_txid, 15)))
+                .set_output_indexes()
+                .build();
 
             let mut transaction_records_by_id = TransactionRecordsById::default();
             transaction_records_by_id.insert_transaction_record(transaction_record);
+            transaction_records_by_id.insert_transaction_record(transparent_funding_tx);
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
