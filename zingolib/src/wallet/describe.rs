@@ -29,7 +29,6 @@ use crate::wallet::traits::Recipient;
 use crate::wallet::LightWallet;
 use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
-
 impl LightWallet {
     // Core shielded_balance function, other public methods dispatch specific sets of filters to this
     // method for processing.
