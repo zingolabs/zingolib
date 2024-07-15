@@ -4,7 +4,7 @@ use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::{HashMap, HashSet};
 use tokio::runtime::Runtime;
-use zingo_status::spend_status::SpendStatus;
+use zingo_status::{confirmation_status::ConfirmationStatus, spend_status::SpendStatus};
 
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
 use zcash_primitives::{
@@ -590,10 +590,16 @@ impl LightClient {
                     .orchard_notes
                     .iter()
                     .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
+                        let spend_status = if let Some((txid, height)) = output.spent() {
+                            SpendStatus::SpendExists((
+                                *txid,
+                                ConfirmationStatus::Confirmed(BlockHeight::from_u32(*height)),
+                            ))
+                        } else if let Some((txid, height)) = output.pending_spent() {
+                            SpendStatus::SpendExists((
+                                *txid,
+                                ConfirmationStatus::Pending(BlockHeight::from_u32(*height)),
+                            ))
                         } else {
                             SpendStatus::Unspent
                         };
@@ -616,10 +622,16 @@ impl LightClient {
                     .sapling_notes
                     .iter()
                     .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
+                        let spend_status = if let Some((txid, height)) = output.spent() {
+                            SpendStatus::SpendExists((
+                                *txid,
+                                ConfirmationStatus::Confirmed(BlockHeight::from_u32(*height)),
+                            ))
+                        } else if let Some((txid, height)) = output.pending_spent() {
+                            SpendStatus::SpendExists((
+                                *txid,
+                                ConfirmationStatus::Pending(BlockHeight::from_u32(*height)),
+                            ))
                         } else {
                             SpendStatus::Unspent
                         };
@@ -642,10 +654,16 @@ impl LightClient {
                     .transparent_outputs
                     .iter()
                     .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
+                        let spend_status = if let Some((txid, height)) = output.spent() {
+                            SpendStatus::SpendExists((
+                                *txid,
+                                ConfirmationStatus::Confirmed(BlockHeight::from_u32(*height)),
+                            ))
+                        } else if let Some((txid, height)) = output.pending_spent() {
+                            SpendStatus::SpendExists((
+                                *txid,
+                                ConfirmationStatus::Pending(BlockHeight::from_u32(*height)),
+                            ))
                         } else {
                             SpendStatus::Unspent
                         };
