@@ -13,7 +13,7 @@ use crate::wallet::{
 
 /// Trait methods of Outputs that aren't static (i.e. don't take self)
 pub trait OutputConstructor {
-    /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    /// Returns the Outputs in the TransactionRecord in this pool.
     fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self>;
     /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
     fn get_record_query_matching_outputs(
@@ -153,6 +153,9 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
 
     /// TODO: Add Doc Comment Here!
     fn output_index(&self) -> &Option<u32>;
+
+    /// TODO: Add Doc Comment Here!
+    fn output_index_mut(&mut self) -> &mut Option<u32>;
 
     /// TODO: Add Doc Comment Here!
     fn pending_receipt(&self) -> bool {
