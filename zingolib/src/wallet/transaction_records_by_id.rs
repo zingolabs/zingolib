@@ -1,7 +1,7 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::notes::{interface::OutputConstructor, Output, TransparentOutput};
+use crate::wallet::notes::{interface::OutputConstructor, TransparentOutput};
 use crate::wallet::{
     error::FeeError,
     notes::{
@@ -292,7 +292,7 @@ impl TransactionRecordsById {
         let sapling_spend_value = sapling_spends.iter().map(|&note| note.value()).sum::<u64>();
         let orchard_spend_value = orchard_spends.iter().map(|&note| note.value()).sum::<u64>();
 
-        Ok(query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value)
+        Ok(transparent_spend_value + sapling_spend_value + orchard_spend_value)
     }
 
     fn get_all_transparent_outputs(&self) -> Vec<&TransparentOutput> {
