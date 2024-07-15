@@ -761,7 +761,6 @@ mod tests {
         let spending_txid = transaction_record_later.txid;
 
         let spend_in_known_tx = Some((spending_txid, Confirmed(15.into())));
-        // let spend_in_unknown_tx = Some((spending_txid, Confirmed(15.into())));
 
         let transaction_record_early = TransactionRecordBuilder::default()
             .randomize_txid()
@@ -781,11 +780,6 @@ mod tests {
                     .spend(spend_in_known_tx)
                     .clone(),
             )
-            // .sapling_notes(
-            //     SaplingNoteBuilder::default()
-            //         .spend(spend_in_unknown_tx)
-            //         .clone(),
-            // )
             .orchard_notes(OrchardNoteBuilder::default())
             .set_output_indexes()
             .build();
