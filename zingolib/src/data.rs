@@ -99,6 +99,13 @@ pub(crate) mod note_id {
     }
 
     impl TxIdAndNullifier {
+        pub fn from_parts(txid: TxId, pool_nullifier: PoolNullifier) -> Self {
+            TxIdAndNullifier {
+                txid,
+                pool_nullifier,
+            }
+        }
+
         pub(crate) fn protocol(&self) -> ShieldedProtocol {
             match self.pool_nullifier {
                 PoolNullifier::Sapling(_) => ShieldedProtocol::Sapling,

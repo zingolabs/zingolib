@@ -274,6 +274,7 @@ impl InputSource for TransactionRecordsById {
                 .get(id.txid())
                 .expect("should exist as note_id is created from the record itself");
             let nullifier = id.pool_nullifier() as u32;
+
             match id.protocol() {
                 zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
                     .get_received_note::<SaplingDomain>(nullifier)

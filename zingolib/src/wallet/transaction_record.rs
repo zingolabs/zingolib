@@ -9,7 +9,10 @@ use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
+use zcash_client_backend::{
+    data_api::InputSource,
+    ShieldedProtocol::{Orchard, Sapling},
+};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::{
@@ -259,6 +262,7 @@ impl TransactionRecord {
     }
 
     /// Gets a received note, by nullifier and domain
+    /// if the note doesnt exist in the wallet, or is missing its nullifier, returns None
     pub fn get_received_note<D: DomainWalletExt>(
         &self,
         nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
@@ -274,27 +278,33 @@ impl TransactionRecord {
 
         note.and_then(|note| {
             let txid = self.txid;
-            let note_record_reference =
-                NoteId::new(txid, note.to_zcb_note().protocol(), nullifier as u16);
-            note.witnessed_position().map(|pos| {
-                zcash_client_backend::wallet::ReceivedNote::from_parts(
-                    note_record_reference,
-                    txid,
-                    nullifier as u16,
-                    note.note().clone(),
-                    zip32::Scope::External,
-                    pos,
-                )
-            })
+            note.pool_nullifier()
+                .map(|pool_nullifier| {
+                    let note_record_reference = TxIdAndNullifier::from_parts(txid, pool_nullifier);
+                    let output_index = note.output_index().ok_or_else({});
+
+                    note.witnessed_position().map(|pos| {
+                        zcash_client_backend::wallet::ReceivedNote::from_parts(
+                            note_record_reference,
+                            txid,
+                            nullifier as u16,
+                            note.note().clone(),
+                            zip32::Scope::External,
+                            pos,
+                        )
+                    })
+                })
+                .ok()
+                .flatten()
         })
     }
 
     /// get a list of unspent NoteIds with associated note values
-    pub(crate) fn get_spendable_note_ids_and_values(
+    pub(crate) fn get_spendable_note_identifiers_and_values(
         &self,
         sources: &[zcash_client_backend::ShieldedProtocol],
-        exclude: &[NoteId],
-    ) -> Result<Vec<(NoteId, u64)>, ()> {
+        exclude: &[TxIdAndNullifier],
+    ) -> Result<Vec<(TxIdAndNullifier, u64)>, ()> {
         let mut all = vec![];
         let mut missing_output_index = false;
         if sources.contains(&Sapling) {
@@ -918,7 +928,7 @@ mod tests {
         let transaction_record = nine_note_transaction_record_default();
 
         let unspent_ids_and_values = transaction_record
-            .get_spendable_note_ids_and_values(&[Sapling, Orchard], &[])
+            .get_spendable_note_identifiers_and_values(&[Sapling, Orchard], &[])
             .unwrap();
 
         assert_eq!(
