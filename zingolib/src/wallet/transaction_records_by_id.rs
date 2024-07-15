@@ -858,6 +858,7 @@ mod tests {
         // ^ but it was not spent in the deleted txid
     }
 
+    // TODO: move this into an associated fn of TransparentOutputBuilder
     fn spent_transparent_output_builder(
         amount: u64,
         sent: (TxId, u32),
