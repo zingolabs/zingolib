@@ -772,7 +772,7 @@ mod slow {
     use zcash_primitives::{
         consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
     };
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_status::{confirmation_status::ConfirmationStatus, spend_status::SpendStatus};
     use zingo_testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
@@ -784,7 +784,7 @@ mod slow {
         },
         wallet::{
             data::{
-                summaries::{OrchardNoteSummary, SpendStatus, TransactionSummaryBuilder},
+                summaries::{OrchardNoteSummary, TransactionSummaryBuilder},
                 OutgoingTxData,
             },
             notes::OutputInterface,
@@ -1358,9 +1358,10 @@ mod slow {
             .fee(None)
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 recipient_initial_funds,
-                SpendStatus::Spent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
+                SpendStatus::SpendExists((
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(), // tODo : it is absurd to imagine that the spending transaction is the creation transaction. it seems to function in this test for now
+                    ConfirmationStatus::Confirmed(BlockHeight::from_u32(7)),
+                )),
                 Some(0),
                 None,
             )])
@@ -1396,9 +1397,10 @@ mod slow {
             .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 99_960_000,
-                SpendStatus::PendingSpent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
+                SpendStatus::SpendExists((
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(), // tODo : it is absurd to imagine that the spending transaction is the creation transaction. it seems to function in this test for now
+                    ConfirmationStatus::Pending(BlockHeight::from_u32(7)),
+                )),
                 Some(0),
                 None,
             )])
@@ -1499,9 +1501,10 @@ mod slow {
             .fee(None)
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 recipient_second_funding,
-                SpendStatus::Spent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
+                SpendStatus::SpendExists((
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(), // tODo : it is absurd to imagine that the spending transaction is the creation transaction. it seems to function in this test for now
+                    ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)),
+                )),
                 Some(0),
                 Some("Second wave incoming".to_string()),
             )])
@@ -1537,9 +1540,10 @@ mod slow {
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 965_000,
-                SpendStatus::Spent(
-                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
-                ),
+                SpendStatus::SpendExists((
+                    utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(), // tODo : it is absurd to imagine that the spending transaction is the creation transaction. it seems to function in this test for now
+                    ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)),
+                )),
                 Some(0),
                 None,
             )])

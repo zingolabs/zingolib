@@ -17,8 +17,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
+use zingo_status::spend_status::SpendStatus;
 use zingolib::wallet::data::summaries::{
-    OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary, TransparentCoinSummary,
+    OrchardNoteSummary, SaplingNoteSummary, TransactionSummary, TransparentCoinSummary,
 };
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
@@ -243,8 +244,7 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
     matches!(
         (first, second),
         (SpendStatus::Unspent, SpendStatus::Unspent)
-            | (SpendStatus::Spent(_), SpendStatus::Spent(_))
-            | (SpendStatus::PendingSpent(_), SpendStatus::PendingSpent(_))
+            | (SpendStatus::SpendExists(_), SpendStatus::SpendExists(_))
     )
 }
 
