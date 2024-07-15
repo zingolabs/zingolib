@@ -7,8 +7,8 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "dev" }
-zingoconfig = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "dev" }
+zingolib = { git="https://github.com/zingolabs/zingolib", default-features=true, tag = "mob-release-1.4.2" }
+zingoconfig = { git="https://github.com/zingolabs/zingolib", default-features=true, tag = "mob-release-1.4.2" }
 uniffi = "0.27"
 tokio =  { version = "1.24", features = [ "full" ] }
 
