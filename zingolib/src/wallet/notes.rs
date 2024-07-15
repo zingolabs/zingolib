@@ -13,7 +13,6 @@ pub mod query;
 use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
 
-use crate::wallet::data::summaries::SpendSummary;
 use crate::wallet::notes::query::OutputPoolQuery;
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;

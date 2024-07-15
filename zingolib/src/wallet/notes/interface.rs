@@ -6,7 +6,6 @@ use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::{
-    data::summaries::SpendSummary,
     keys::unified::WalletCapability,
     notes::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
     traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
