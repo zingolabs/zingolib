@@ -455,6 +455,7 @@ pub mod summaries {
     use json::JsonValue;
     use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingoconfig::ChainType;
 
     use crate::{
         error::BuildError,
@@ -469,7 +470,8 @@ pub mod summaries {
 
     use super::{OutgoingTxData, TransactionRecord};
 
-    /// A value transfer is a group of all notes sent to a specific address in a transaction.
+    /// A value transfer is a note group abstraction.
+    /// A group of all notes sent to a specific address in a transaction.
     #[derive(PartialEq)]
     pub struct ValueTransfer {
         txid: TxId,
@@ -629,7 +631,7 @@ pub mod summaries {
         }
     }
 
-    /// Summary of transactions
+    /// A wrapper struct for implementing display and json on a vec of value trasnfers
     #[derive(PartialEq, Debug)]
     pub struct ValueTransfers(pub Vec<ValueTransfer>);
 
@@ -1750,6 +1752,7 @@ pub mod summaries {
     pub(crate) fn basic_transaction_summary_parts(
         transaction_record: &TransactionRecord,
         transaction_records: &TransactionRecordsById,
+        chain: &ChainType,
     ) -> (
         TransactionKind,
         u64,
@@ -1758,7 +1761,7 @@ pub mod summaries {
         Vec<SaplingNoteSummary>,
         Vec<TransparentCoinSummary>,
     ) {
-        let kind = transaction_records.transaction_kind(transaction_record);
+        let kind = transaction_records.transaction_kind(transaction_record, chain);
         let value = match kind {
             TransactionKind::Received
             | TransactionKind::Sent(SendType::Shield)

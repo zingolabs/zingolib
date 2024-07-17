@@ -138,6 +138,33 @@ mod fast {
     use super::*;
 
     #[tokio::test]
+    async fn create_send_to_self_with_zfz_active() {
+        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
+            scenarios::orchard_funded_recipient(5_000_000).await;
+
+        recipient
+            .propose_send_all(
+                address_from_str(
+                    &get_base_address_macro!(&recipient, "unified"),
+                    &recipient.config().chain,
+                )
+                .unwrap(),
+                true,
+                None,
+            )
+            .await
+            .unwrap();
+
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        println!("{}", &recipient.transaction_summaries().await);
+        println!("{}", &recipient.value_transfers().await);
+    }
+
+    #[tokio::test]
     async fn targetted_rescan() {
         let (regtest_manager, _cph, _faucet, recipient, txid) =
             scenarios::orchard_funded_recipient(100_000).await;

@@ -11,6 +11,8 @@ use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 
 use thiserror::Error;
+use zingoconfig::ZENNIES_FOR_ZINGO_AMOUNT;
+use zingoconfig::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
@@ -98,15 +100,16 @@ pub enum ProposeShieldError {
 fn append_zingo_zenny_receiver(receivers: &mut Vec<Receiver>) {
     let dev_donation_receiver = Receiver::new(
         crate::utils::conversion::address_from_str(
-            zingoconfig::DEVELOPER_DONATION_ADDRESS,
+            ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
             &ChainType::Mainnet,
         )
         .expect("Hard coded str"),
-        NonNegativeAmount::from_u64(1_000_000).expect("Hard coded u64."),
-        Some(MemoBytes::from_bytes(b"A Zenny for Zingo!").expect("Hard Coded memo bytes.")),
+        NonNegativeAmount::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
+        None,
     );
     receivers.push(dev_donation_receiver);
 }
+
 impl LightClient {
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
