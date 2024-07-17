@@ -132,7 +132,7 @@ mod decrypt_transaction {
                     // therefore, its safe to use it here to establish whether the transaction was created by this capacility or not.
                     if let TransactionKind::Sent(_) = tx_map
                         .transaction_records_by_id
-                        .transaction_kind(transaction_record)
+                        .transaction_kind(transaction_record, &self.config.chain)
                     {
                         if let Some(t_bundle) = transaction.transparent_bundle() {
                             for vout in &t_bundle.vout {
