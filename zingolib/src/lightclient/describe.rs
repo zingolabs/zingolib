@@ -21,8 +21,8 @@ use crate::{
             finsight,
             summaries::{
                 OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummaries,
-                TransactionSummaryBuilder, TransparentCoinSummary, ValueTransfer,
-                ValueTransferBuilder, ValueTransferKind, ValueTransfers,
+                TransactionSummary, TransactionSummaryBuilder, TransparentCoinSummary,
+                ValueTransfer, ValueTransferBuilder, ValueTransferKind, ValueTransfers,
             },
             OutgoingTxData,
         },
@@ -267,6 +267,72 @@ impl LightClient {
     /// Provides a list of value transfers related to this capability
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
     pub async fn value_transfers(&self) -> ValueTransfers {
+        fn create_send_value_transfers(
+            value_transfers: &mut Vec<ValueTransfer>,
+            transaction_summary: &TransactionSummary,
+        ) {
+            let mut addresses =
+                HashSet::with_capacity(transaction_summary.outgoing_tx_data().len());
+            transaction_summary
+                .outgoing_tx_data()
+                .iter()
+                .for_each(|outgoing_tx_data| {
+                    let address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone() {
+                        ua
+                    } else {
+                        outgoing_tx_data.recipient_address.clone()
+                    };
+                    // hash set is used to create unique list of addresses as duplicates are not inserted twice
+                    addresses.insert(address);
+                });
+            addresses.iter().for_each(|address| {
+                let outgoing_data_to_address: Vec<OutgoingTxData> = transaction_summary
+                    .outgoing_tx_data()
+                    .iter()
+                    .filter(|outgoing_tx_data| {
+                        let query_address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone()
+                        {
+                            ua
+                        } else {
+                            outgoing_tx_data.recipient_address.clone()
+                        };
+                        query_address == address.clone()
+                    })
+                    .cloned()
+                    .collect();
+                let value: u64 = outgoing_data_to_address
+                    .iter()
+                    .map(|outgoing_tx_data| outgoing_tx_data.value)
+                    .sum();
+                let memos: Vec<String> = outgoing_data_to_address
+                    .iter()
+                    .filter_map(|outgoing_tx_data| {
+                        if let Memo::Text(memo_text) = outgoing_tx_data.memo.clone() {
+                            Some(memo_text.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                value_transfers.push(
+                    ValueTransferBuilder::new()
+                        .txid(transaction_summary.txid())
+                        .datetime(transaction_summary.datetime())
+                        .status(transaction_summary.status())
+                        .blockheight(transaction_summary.blockheight())
+                        .transaction_fee(transaction_summary.fee())
+                        .zec_price(transaction_summary.zec_price())
+                        .kind(ValueTransferKind::Sent)
+                        .value(value)
+                        .recipient_address(Some(address.clone()))
+                        .pool_received(None)
+                        .memos(memos)
+                        .build()
+                        .expect("all fields should be populated"),
+                );
+            });
+        }
+
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let transaction_summaries = self.transaction_summaries().await;
 
@@ -275,62 +341,7 @@ impl LightClient {
                 TransactionKind::Sent(SendType::Send) => {
                     // create 1 sent value transfer for each non-self recipient address
                     // if recipient_ua is available it overrides recipient_address
-                    let mut addresses = HashSet::with_capacity(tx.outgoing_tx_data().len());
-                    tx.outgoing_tx_data().iter().for_each(|outgoing_tx_data| {
-                        let address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone() {
-                            ua
-                        } else {
-                            outgoing_tx_data.recipient_address.clone()
-                        };
-                        // hash set is used to create unique list of addresses as duplicates are not inserted twice
-                        addresses.insert(address);
-                    });
-                    addresses.iter().for_each(|address| {
-                        let outgoing_data_to_address: Vec<OutgoingTxData> = tx
-                            .outgoing_tx_data()
-                            .iter()
-                            .filter(|outgoing_tx_data| {
-                                let query_address =
-                                    if let Some(ua) = outgoing_tx_data.recipient_ua.clone() {
-                                        ua
-                                    } else {
-                                        outgoing_tx_data.recipient_address.clone()
-                                    };
-                                query_address == address.clone()
-                            })
-                            .cloned()
-                            .collect();
-                        let value: u64 = outgoing_data_to_address
-                            .iter()
-                            .map(|outgoing_tx_data| outgoing_tx_data.value)
-                            .sum();
-                        let memos: Vec<String> = outgoing_data_to_address
-                            .iter()
-                            .filter_map(|outgoing_tx_data| {
-                                if let Memo::Text(memo_text) = outgoing_tx_data.memo.clone() {
-                                    Some(memo_text.to_string())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        value_transfers.push(
-                            ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::Sent)
-                                .value(value)
-                                .recipient_address(Some(address.clone()))
-                                .pool_received(None)
-                                .memos(memos)
-                                .build()
-                                .expect("all fields should be populated"),
-                        );
-                    });
+                    create_send_value_transfers(&mut value_transfers, tx);
 
                     // create 1 memo-to-self if a sending transaction receives any number of memos
                     if tx.orchard_notes().iter().any(|note| note.memo().is_some())
@@ -472,6 +483,9 @@ impl LightClient {
                                 .expect("all fields should be populated"),
                         );
                     }
+
+                    // in the case Zennies For Zingo! is active
+                    create_send_value_transfers(&mut value_transfers, tx);
                 }
                 TransactionKind::Received => {
                     // create 1 received value tansfer for each pool recieved to
@@ -577,7 +591,7 @@ impl LightClient {
         let mut transaction_summaries = transaction_records
             .values()
             .map(|tx| {
-                let kind = transaction_records.transaction_kind(tx);
+                let kind = transaction_records.transaction_kind(tx, &self.config().chain);
                 let value = match kind {
                     TransactionKind::Received
                     | TransactionKind::Sent(SendType::Shield)

@@ -464,7 +464,8 @@ pub mod summaries {
 
     use super::OutgoingTxData;
 
-    /// A value transfer is a group of all notes sent to a specific address in a transaction.
+    /// A value transfer is a note group abstraction.
+    /// A group of all notes sent to a specific address in a transaction.
     #[derive(PartialEq)]
     pub struct ValueTransfer {
         txid: TxId,
@@ -624,7 +625,7 @@ pub mod summaries {
         }
     }
 
-    /// Summary of transactions
+    /// A wrapper struct for implementing display and json on a vec of value trasnfers
     #[derive(PartialEq, Debug)]
     pub struct ValueTransfers(pub Vec<ValueTransfer>);
 

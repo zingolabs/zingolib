@@ -30,6 +30,15 @@ use zcash_primitives::consensus::{
 /// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
 /// TODO: Add Doc Comment Here!
+pub const ZENNIES_FOR_ZINGO_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
+/// TODO: Add Doc Comment Here!
+pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest1kkav5nr567vc9tkmnl3yywr7u886t2e6hjeypj764hrd35jsvh3nd8n7rl40frjykll3dcgtcwd5awxte08n2uxx6jltq43r2a5fx8q2js6zc097n6ed9esgdlea452vrr77wekvh9jfjz450szzqhcsq35sl0exmh2kueq7xqv0rd3w88a9ddpt930fmylwmhdr0nceq86973ea9wf";
+/// TODO: Add Doc Comment Here!
+pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
+/// TODO: Add Doc Comment Here!
+pub const ZENNIES_FOR_ZINGO_MEMO_BYTES: &[u8] =
+    b"A Zenny for Zingo!\nThanks for supporting ZingoLabs!";
+/// TODO: Add Doc Comment Here!
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
 /// TODO: Add Doc Comment Here!
 pub const MAX_REORG: usize = 100;
