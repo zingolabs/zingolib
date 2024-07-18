@@ -419,7 +419,7 @@ impl TransactionRecordsById {
         } else if query_record.outgoing_tx_data.is_empty()
             || (query_record.outgoing_tx_data.len() == 1
                 && query_record.outgoing_tx_data.iter().any(|otd| {
-                    otd.recipient_address == zfz_address.to_string()
+                    otd.recipient_address == *zfz_address
                         || otd.recipient_ua == Some(zfz_address.to_string())
                 }))
         {
