@@ -130,9 +130,10 @@ mod fast {
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
+    use zingoconfig::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
     use zingolib::{
         utils::conversion::txid_from_hex_encoded_str,
-        wallet::{notes::ShieldedNoteInterface, WalletBase},
+        wallet::{data::summaries::ValueTransferKind, notes::ShieldedNoteInterface, WalletBase},
     };
 
     use super::*;
@@ -160,8 +161,15 @@ mod fast {
             .await
             .unwrap();
 
-        println!("{}", &recipient.transaction_summaries().await);
-        println!("{}", &recipient.value_transfers().await);
+        let value_transfers = &recipient.value_transfers().await;
+
+        assert!(value_transfers
+            .iter()
+            .any(|vt| vt.kind() == ValueTransferKind::SendToSelf));
+        assert!(value_transfers
+            .iter()
+            .any(|vt| vt.kind() == ValueTransferKind::Sent
+                && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
     }
 
     #[tokio::test]
