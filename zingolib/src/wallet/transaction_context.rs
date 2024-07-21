@@ -198,7 +198,7 @@ mod decrypt_transaction {
             self.decrypt_transaction_to_record(
                 transaction,
                 status,
-                block_time,
+                Some(block_time),
                 &mut vec![],
                 &mut txid_indexed_zingo_memos,
                 &taddrs_set,
@@ -258,7 +258,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             taddrs_set: &HashSet<String>,
         ) {
             // Scan all transparent outputs to see if we received any money
@@ -283,7 +283,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             taddrs_set: &HashSet<String>,
         ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
@@ -313,7 +313,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
         ) {
             // Scan all the inputs to see if we spent any transparent funds in this tx
             let mut total_transparent_value_spent = 0;
@@ -477,7 +477,7 @@ mod decrypt_transaction {
             )],
             status: ConfirmationStatus,
             transaction: &Transaction,
-            block_time: u32,
+            block_time: Option<u32>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) where
             Q: zingo_traits::DomainWalletExt,
@@ -508,7 +508,7 @@ mod decrypt_transaction {
                         .add_pending_note::<Q>(
                             transaction.txid(),
                             height,
-                            block_time as u64,
+                            block_time,
                             note.clone(),
                             to,
                             output_index,
@@ -521,7 +521,7 @@ mod decrypt_transaction {
                         .update_output_index::<Q>(
                             transaction.txid(),
                             status,
-                            block_time as u64,
+                            block_time,
                             note.clone(),
                             output_index,
                         )
