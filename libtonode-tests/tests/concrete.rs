@@ -22,6 +22,7 @@ use zingo_testutils::{
 };
 use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
+use zingolib::wallet::data::summaries::TransactionSummaryInterface;
 
 use zingo_testvectors::{
     block_rewards,
