@@ -23,7 +23,10 @@ use zingo_testutils::{
 use zingoconfig::RegtestNetwork;
 use zingolib::{
     lightclient::PoolBalances,
-    wallet::transaction_record::{SendType, TransactionKind},
+    wallet::{
+        data::summaries::TransactionSummaryInterface as _,
+        transaction_record::{SendType, TransactionKind},
+    },
 };
 
 #[ignore]

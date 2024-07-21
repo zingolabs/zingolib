@@ -1255,6 +1255,32 @@ impl Command for TransactionsCommand {
     }
 }
 
+struct DetailedTransactionsCommand {}
+impl Command for DetailedTransactionsCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Provides a detailed list of transaction summaries related to this wallet in order of blockheight.
+
+            Usage:
+            detailed_transactions
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Provides a detailed list of transaction summaries related to this wallet in order of blockheight."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if !args.is_empty() {
+            return "Error: invalid arguments\nTry 'help detailed_transactions' for correct usage and examples"
+                .to_string();
+        }
+        RT.block_on(
+            async move { format!("{}", lightclient.detailed_transaction_summaries().await) },
+        )
+    }
+}
+
 struct MemoBytesToAddressCommand {}
 impl Command for MemoBytesToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1697,6 +1723,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("setoption", Box::new(SetOptionCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
+        (
+            "detailed_transactions",
+            Box::new(DetailedTransactionsCommand {}),
+        ),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
         (
