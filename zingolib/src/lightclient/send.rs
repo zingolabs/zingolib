@@ -120,6 +120,10 @@ pub mod send_with_proposal {
             {
                 return Err(CompleteAndBroadcastError::NoSpendCapability);
             }
+
+            // Reset the progress to start. Any errors will get recorded here
+            self.wallet.reset_send_progress().await;
+
             let submission_height = self
                 .get_submission_height()
                 .await
@@ -176,7 +180,8 @@ pub mod send_with_proposal {
                     Some(self.wallet.wallet_capability().first_sapling_address()),
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
-            let txid = self
+
+            let result = self
                 .wallet
                 .send_to_addresses_inner(
                     build_result.transaction(),
@@ -189,9 +194,19 @@ pub mod send_with_proposal {
                     },
                 )
                 .await
-                .map_err(CompleteAndBroadcastError::Broadcast)?;
+                .map_err(CompleteAndBroadcastError::Broadcast)
+                .map(NonEmpty::singleton);
 
-            Ok(NonEmpty::singleton(txid))
+            self.wallet
+                .set_send_result(
+                    result
+                        .as_ref()
+                        .map(|txids| txids.first().to_string())
+                        .map_err(|e| e.to_string()),
+                )
+                .await;
+
+            result
         }
 
         /// Unstable function to expose the zip317 interface for development

@@ -503,7 +503,7 @@ impl BlockManagementData {
     /// This function handles Orchard and Sapling domains.
     /// This function takes data from the light server and uses it to construct a witness locally.  should?
     /// currently of the opinion that this function should be factored into separate concerns.
-    pub(crate) async fn get_note_witness<D>(
+    pub(crate) async fn get_note_witness<D: DomainWalletExt>(
         &self,
         uri: Uri,
         height: BlockHeight,
@@ -511,11 +511,6 @@ impl BlockManagementData {
         output_num: usize,
         activation_height: u64,
     ) -> Result<IncrementalWitness<<D::WalletNote as ShieldedNoteInterface>::Node, 32>, String>
-    where
-        D: DomainWalletExt,
-        D::Note: PartialEq + Clone,
-        D::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        D::Recipient: crate::wallet::traits::Recipient,
     {
         // Get the previous block's height, because that block's commitment trees are the states at the start
         // of the requested block.

@@ -748,7 +748,7 @@ impl LightClient {
         anchor_height: BlockHeight,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut pending_sapling_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         // Collect Sapling notes
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
@@ -777,12 +777,12 @@ impl LightClient {
                 )
             })
             .for_each( |note| {
-                self.unspent_pending_spent(note, &mut unspent_sapling_notes, &mut pending_sapling_notes, &mut spent_sapling_notes)
+                self.unspent_pending_spent(note, &mut unspent_sapling_notes, &mut pending_spent_sapling_notes, &mut spent_sapling_notes)
             });
         (
             unspent_sapling_notes,
             spent_sapling_notes,
-            pending_sapling_notes,
+            pending_spent_sapling_notes,
         )
     }
 
@@ -792,7 +792,7 @@ impl LightClient {
         anchor_height: BlockHeight,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
-        let mut pending_orchard_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
@@ -820,12 +820,12 @@ impl LightClient {
                 )
             })
             .for_each( |note| {
-                self.unspent_pending_spent(note, &mut unspent_orchard_notes, &mut pending_orchard_notes, &mut spent_orchard_notes)
+                self.unspent_pending_spent(note, &mut unspent_orchard_notes, &mut pending_spent_orchard_notes, &mut spent_orchard_notes)
             });
         (
             unspent_orchard_notes,
             spent_orchard_notes,
-            pending_orchard_notes,
+            pending_spent_orchard_notes,
         )
     }
 
@@ -834,7 +834,7 @@ impl LightClient {
         all_notes: bool,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
-        let mut pending_transparent_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_transparent_note: Vec<JsonValue> = vec![];
         let mut spent_transparent_notes: Vec<JsonValue> = vec![];
 
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
@@ -865,13 +865,13 @@ impl LightClient {
                 )
             })
             .for_each( |note| {
-                self.unspent_pending_spent(note, &mut unspent_transparent_notes, &mut pending_transparent_notes, &mut spent_transparent_notes)
+                self.unspent_pending_spent(note, &mut unspent_transparent_notes, &mut pending_spent_transparent_note, &mut spent_transparent_notes)
             });
 
         (
             unspent_transparent_notes,
             spent_transparent_notes,
-            pending_transparent_notes,
+            pending_spent_transparent_note,
         )
     }
 
@@ -900,33 +900,33 @@ impl LightClient {
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 
-        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
+        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_spent_sapling_notes) =
             self.list_sapling_notes(all_notes, anchor_height).await;
-        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_orchard_notes) =
+        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_spent_orchard_notes) =
             self.list_orchard_notes(all_notes, anchor_height).await;
         let (
             mut unspent_transparent_notes,
             mut spent_transparent_notes,
-            mut pending_transparent_notes,
+            mut pending_spent_transparent_notes,
         ) = self.list_transparent_notes(all_notes).await;
 
         unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         unspent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
 
         let mut res = object! {
             "unspent_sapling_notes" => unspent_sapling_notes,
-            "pending_sapling_notes" => pending_sapling_notes,
+            "pending_sapling_notes" => pending_spent_sapling_notes,
             "unspent_orchard_notes" => unspent_orchard_notes,
-            "pending_orchard_notes" => pending_orchard_notes,
+            "pending_orchard_notes" => pending_spent_orchard_notes,
             "utxos"         => unspent_transparent_notes,
-            "pending_utxos" => pending_transparent_notes,
+            "pending_utxos" => pending_spent_transparent_notes,
         };
 
         if all_notes {
