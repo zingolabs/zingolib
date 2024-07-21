@@ -100,7 +100,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>, // block_time should only be None when re-scanning a tx that already exists in the wallet
             price: Option<f64>,
         ) {
             // Set up data structures to record scan results
@@ -222,7 +222,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
             taddrs_set: &HashSet<String>,
@@ -269,7 +269,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             taddrs_set: &HashSet<String>,
         ) {
             // Scan all transparent outputs to see if we received any money
@@ -300,7 +300,7 @@ mod decrypt_transaction {
                                     transaction.txid(),
                                     output_taddr.clone(),
                                     status,
-                                    block_time as u64,
+                                    block_time,
                                     vout,
                                     n as u32,
                                 );
@@ -370,7 +370,7 @@ mod decrypt_transaction {
                     .add_taddr_spent(
                         transaction.txid(),
                         status,
-                        block_time as u64,
+                        block_time,
                         total_transparent_value_spent,
                     );
             }
@@ -435,7 +435,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) {
@@ -454,7 +454,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) {
@@ -559,7 +559,7 @@ mod decrypt_transaction {
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
-            block_time: u32,
+            block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) {

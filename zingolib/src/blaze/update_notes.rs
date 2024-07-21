@@ -139,7 +139,7 @@ impl UpdateNotes {
                         wallet_transactions_write_unlocked.found_spent_nullifier(
                             transaction_id_spent_in,
                             status,
-                            ts,
+                            Some(ts),
                             maybe_spend_nullifier,
                             transaction_id_spent_from,
                             output_index,

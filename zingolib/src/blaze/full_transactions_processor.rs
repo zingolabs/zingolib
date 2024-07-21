@@ -95,7 +95,7 @@ pub async fn start(
 
                 let status = ConfirmationStatus::Confirmed(height);
                 per_txid_iter_context
-                    .scan_full_tx(&transaction, status, block_time, None)
+                    .scan_full_tx(&transaction, status, Some(block_time), None)
                     .await;
 
                 Ok::<_, String>(())
@@ -135,7 +135,7 @@ pub async fn start(
                 .await;
             let status = ConfirmationStatus::Confirmed(height);
             transaction_context
-                .scan_full_tx(&transaction, status, block_time, None)
+                .scan_full_tx(&transaction, status, Some(block_time), None)
                 .await;
         }
 
