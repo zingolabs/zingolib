@@ -68,3 +68,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fix_spent_at_height`
   - `TransactionRecord::net_spent`
   - `TransactionRecord::get_transparent_value_spent()`
+- `LightWallet`:
+  - `send_to_addresses`
