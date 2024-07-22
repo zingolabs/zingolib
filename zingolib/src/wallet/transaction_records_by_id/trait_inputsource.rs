@@ -361,11 +361,11 @@ impl InputSource for TransactionRecordsById {
         _min_confirmations: u32,
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.values()
-            .filter_map(|transaction_record| {
-                transaction_record
+            .filter_map(|source_transaction_record| {
+                source_transaction_record
                     .status
                     .get_confirmed_height()
-                    .map(|height| (transaction_record, height))
+                    .map(|height| (source_transaction_record, height))
                     .filter(|(_, height)| height <= &max_height)
             })
             .flat_map(|(transaction_record, confirmed_height)| {
