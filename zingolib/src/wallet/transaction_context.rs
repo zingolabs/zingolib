@@ -254,17 +254,6 @@ mod decrypt_transaction {
             .await;
         }
 
-        async fn _decrypt_incoming_transaction_to_record_transparent(
-            &self,
-            transaction: &Transaction,
-            status: ConfirmationStatus,
-            block_time: Option<u32>,
-            taddrs_set: &HashSet<String>,
-        ) {
-            // Scan all transparent outputs to see if we received any money
-            self.account_for_transparent_receipts(transaction, status, block_time, taddrs_set)
-                .await;
-        }
         async fn decrypt_transaction_to_record_transparent(
             &self,
             transaction: &Transaction,
