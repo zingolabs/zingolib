@@ -303,9 +303,23 @@ impl ConfirmationStatus {
                     None
                 }
             }
-            Self::Confirmed(self_height) => Some(*self_height),
+            Self::Confirmed(self_height) => {
+                if *self_height < target_height {
+                    // passes sanity check that it has been confirmed in the past
+                    Some(target_height)
+                } else {
+                    // reorg timeline problem
+                    None
+                }
+            }
         }
     }
+}
+
+pub enum SpendableTransactionError {
+    StalePending,       // implies previous transaction was not accepted
+    FuturePending,      // unexpected! implies finality issue
+    FutureConfirmation, // unexpected! implies finality issue
 }
 
 impl std::fmt::Display for ConfirmationStatus {
