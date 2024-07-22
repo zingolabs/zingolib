@@ -4,6 +4,7 @@ pub mod witness_trees;
 
 /// transforming data related to the destination of a send.
 pub mod receivers {
+    use zcash_address::ParseError;
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::Payment;
     use zcash_client_backend::zip321::TransactionRequest;
@@ -18,19 +19,15 @@ pub mod receivers {
     /// The superficial representation of the the consumer's intended receiver
     #[derive(Clone, Debug, PartialEq)]
     pub struct Receiver {
-        pub(crate) recipient_address: ZcashAddress,
+        pub(crate) recipient: String,
         pub(crate) amount: NonNegativeAmount,
         pub(crate) memo: Option<MemoBytes>,
     }
     impl Receiver {
         /// Create a new Receiver
-        pub fn new(
-            recipient_address: ZcashAddress,
-            amount: NonNegativeAmount,
-            memo: Option<MemoBytes>,
-        ) -> Self {
+        pub fn new(recipient: String, amount: NonNegativeAmount, memo: Option<MemoBytes>) -> Self {
             Self {
-                recipient_address,
+                recipient,
                 amount,
                 memo,
             }
@@ -38,7 +35,7 @@ pub mod receivers {
     }
 
     pub enum ReceiverParseError {
-        AddressParse,
+        AddressParse(ParseError),
         MemoDisallowed,
         Request(Zip321Error),
     }
@@ -51,7 +48,8 @@ pub mod receivers {
             .into_iter()
             .map(|receiver| {
                 Payment::new(
-                    receiver.recipient_address,
+                    ZcashAddress::try_from_encoded(receiver.recipient.as_str())
+                        .map_err(ReceiverParseError::AddressParse)?,
                     receiver.amount,
                     receiver.memo,
                     None,
