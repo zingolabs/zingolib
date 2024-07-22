@@ -293,33 +293,45 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(12.into());
     /// assert!(status.is_pending_poised_at(12));
     /// ```
-    pub fn is_spendable(&self, target_height: BlockHeight) -> Option<BlockHeight> {
+    pub fn is_spendable(
+        &self,
+        target_height: BlockHeight,
+    ) -> Result<BlockHeight, UnspendableTxBecause> {
         match self {
             Self::Pending(self_height) => {
                 if self_height.add(1) == target_height {
                     // the transaction was broadcast during this block, it will be confirmed in the next block. its transparent outputs can be spent now.
-                    Some(target_height)
+                    Ok(target_height)
                 } else {
-                    None
+                    if *self_height < target_height {
+                        Err(UnspendableTxBecause::StalePending)
+                    } else {
+                        Err(UnspendableTxBecause::FuturePending)
+                    }
                 }
             }
             Self::Confirmed(self_height) => {
                 if *self_height < target_height {
                     // passes sanity check that it has been confirmed in the past
-                    Some(target_height)
+                    Ok(target_height)
                 } else {
                     // reorg timeline problem
-                    None
+                    Err(UnspendableTxBecause::FutureConfirmation)
                 }
             }
         }
     }
 }
 
-pub enum SpendableTransactionError {
-    StalePending,       // implies previous transaction was not accepted
-    FuturePending,      // unexpected! implies finality issue
-    FutureConfirmation, // unexpected! implies finality issue
+/// reasons notes created in a transaction may not be spendable
+/// does not cover all reasons for not being spendable! there may be issues on other layers such as note data or wallet data.
+pub enum UnspendableTxBecause {
+    /// implies a previous transaction sent by this client has not been accepted by a validator
+    StalePending,
+    /// unexpected! implies finality issue
+    FuturePending,
+    /// unexpected! implies finality issue
+    FutureConfirmation,
 }
 
 impl std::fmt::Display for ConfirmationStatus {
