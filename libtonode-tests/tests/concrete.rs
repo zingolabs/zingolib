@@ -130,12 +130,47 @@ mod fast {
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
+    use zingoconfig::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
     use zingolib::{
         utils::conversion::txid_from_hex_encoded_str,
-        wallet::{notes::ShieldedNoteInterface, WalletBase},
+        wallet::{data::summaries::ValueTransferKind, notes::ShieldedNoteInterface, WalletBase},
     };
 
     use super::*;
+
+    #[tokio::test]
+    async fn create_send_to_self_with_zfz_active() {
+        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
+            scenarios::orchard_funded_recipient(5_000_000).await;
+
+        recipient
+            .propose_send_all(
+                address_from_str(
+                    &get_base_address_macro!(&recipient, "unified"),
+                    &recipient.config().chain,
+                )
+                .unwrap(),
+                true,
+                None,
+            )
+            .await
+            .unwrap();
+
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        let value_transfers = &recipient.value_transfers().await;
+
+        assert!(value_transfers
+            .iter()
+            .any(|vt| vt.kind() == ValueTransferKind::SendToSelf));
+        assert!(value_transfers
+            .iter()
+            .any(|vt| vt.kind() == ValueTransferKind::Sent
+                && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+    }
 
     #[tokio::test]
     async fn targetted_rescan() {
