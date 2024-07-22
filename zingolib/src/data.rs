@@ -58,11 +58,9 @@ pub mod receivers {
                     None,
                     vec![],
                 )
-                .ok_or(())
-                // .ok_or(ReceiverParseError::MemoDisallowed)
+                .ok_or(ReceiverParseError::MemoDisallowed)
             })
-            .collect::<Result<Vec<Payment>, ()>>()
-            .map_err(|_| ReceiverParseError::MemoDisallowed)?;
+            .collect::<Result<Vec<Payment>, ReceiverParseError>>()?;
 
         TransactionRequest::new(payments).map_err(ReceiverParseError::Request)
     }
