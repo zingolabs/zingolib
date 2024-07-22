@@ -373,11 +373,6 @@ impl InputSource for TransactionRecordsById {
                     .transparent_outputs
                     .iter()
                     .filter(|output| {
-                        exclude
-                            .iter()
-                            .all(|excluded| excluded != &output.to_outpoint())
-                    })
-                    .filter(|output| {
                         output.spend_status_query(OutputSpendStatusQuery::only_unspent())
                     })
                     .filter_map(move |output| {
