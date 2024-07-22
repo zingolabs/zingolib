@@ -354,6 +354,7 @@ impl InputSource for TransactionRecordsById {
     /// Implemented and tested. address is unused, we select all outputs available to the wallet.
     /// address skipped because Zingo uses 1 account.
     /// only selects confirmed outputs... this must change for zip320
+    /// for a transaction to be spendable, it has to be either confirmed or poised to be confirmed.
     fn get_spendable_transparent_outputs(
         &self,
         _address: &zcash_primitives::legacy::TransparentAddress,
@@ -400,6 +401,7 @@ impl InputSource for TransactionRecordsById {
 }
 
 #[cfg(test)]
+
 mod tests {
     use proptest::{prop_assert_eq, proptest};
     use zcash_client_backend::{

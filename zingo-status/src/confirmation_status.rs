@@ -243,6 +243,21 @@ impl ConfirmationStatus {
             Self::Confirmed(self_height) => *self_height,
         }
     }
+
+    /// if the transaction was just broadcast, it is expected to be confirmed. its transparent outputs can be spent now.
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Pending(10.into());
+    /// assert!(status.is_pending_poised_at(10));
+    /// ```
+    pub fn is_pending_poised_at(&self, current_height: BlockHeight) -> bool {
+        match self {
+            Self::Pending(self_height) => *self_height == current_height,
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Display for ConfirmationStatus {
