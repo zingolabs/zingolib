@@ -355,47 +355,53 @@ impl InputSource for TransactionRecordsById {
     /// address skipped because Zingo uses 1 account.
     /// only selects confirmed outputs... this must change for zip320
     /// for a transaction to be spendable, it has to be either confirmed or poised to be confirmed.
+    /// doesnt use _min_confirmations, which has shown to be a non-feature so far.
     fn get_spendable_transparent_outputs(
         &self,
         _address: &zcash_primitives::legacy::TransparentAddress,
-        max_height: zcash_primitives::consensus::BlockHeight,
+        target_height: zcash_primitives::consensus::BlockHeight,
         _min_confirmations: u32,
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.values()
             .filter_map(|source_transaction_record| {
                 source_transaction_record
                     .status
-                    .get_confirmed_height()
-                    .map(|height| (source_transaction_record, height))
-                    .filter(|(_, height)| height <= &max_height)
-            })
-            .flat_map(|(transaction_record, confirmed_height)| {
-                transaction_record
-                    .transparent_outputs
-                    .iter()
-                    .filter(|output| {
-                        output.spend_status_query(OutputSpendStatusQuery::only_unspent())
+                    .is_spendable(target_height)
+                    .map_err(|_e| false)
+                    .map(|expected_confirmation_height| {
+                        (source_transaction_record, expected_confirmation_height)
                     })
-                    .filter_map(move |output| {
-                        let value = match NonNegativeAmount::from_u64(output.value)
-                            .map_err(InputSourceError::InvalidValue)
-                        {
-                            Ok(v) => v,
-                            Err(e) => return Some(Err(e)),
-                        };
+                    .ok()
+            })
+            .flat_map(
+                |(source_transaction_record, expected_confirmation_height)| {
+                    source_transaction_record
+                        .transparent_outputs
+                        .iter()
+                        .filter(|output| {
+                            output.spend_status_query(OutputSpendStatusQuery::only_unspent())
+                        })
+                        .filter_map(move |output| {
+                            let value = match NonNegativeAmount::from_u64(output.value)
+                                .map_err(InputSourceError::InvalidValue)
+                            {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            };
 
-                        let script_pubkey = Script(output.script.clone());
-                        Ok(WalletTransparentOutput::from_parts(
-                            output.to_outpoint(),
-                            TxOut {
-                                value,
-                                script_pubkey,
-                            },
-                            confirmed_height,
-                        ))
-                        .transpose()
-                    })
-            })
+                            let script_pubkey = Script(output.script.clone());
+                            Ok(WalletTransparentOutput::from_parts(
+                                output.to_outpoint(),
+                                TxOut {
+                                    value,
+                                    script_pubkey,
+                                },
+                                expected_confirmation_height,
+                            ))
+                            .transpose()
+                        })
+                },
+            )
             .collect()
     }
 }
