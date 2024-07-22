@@ -308,33 +308,16 @@ impl InputSource for TransactionRecordsById {
         target_height: zcash_primitives::consensus::BlockHeight,
         _min_confirmations: u32,
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        let mut unexpected_future_height = false;
-        let transaction_records_expected_height_pairs =
-            self.values().filter_map(|source_transaction_record| {
+        self.values()
+            .filter_map(|source_transaction_record| {
                 source_transaction_record
                     .status
                     .is_spendable(target_height)
-                    .map_err(|e| {
-                        match e {
-                            UnspendableTxBecause::StalePending => (),
-                            UnspendableTxBecause::FuturePending
-                            | UnspendableTxBecause::FutureConfirmation => {
-                                unexpected_future_height = true;
-                            }
-                        };
-                        e
-                    })
                     .ok()
                     .map(|expected_confirmation_height| {
                         (source_transaction_record, expected_confirmation_height)
                     })
-            });
-
-        if unexpected_future_height {
-            return Err(InputSourceError::FutureTransaction);
-        }
-
-        transaction_records_expected_height_pairs
+            })
             .flat_map(
                 |(source_transaction_record, expected_confirmation_height)| {
                     source_transaction_record
