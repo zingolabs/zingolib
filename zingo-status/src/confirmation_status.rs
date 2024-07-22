@@ -10,7 +10,7 @@ use zcash_primitives::consensus::BlockHeight;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
     /// The transaction is pending confirmation to the zcash blockchain. It may be waiting in the mempool.
-    /// The BlockHeight is the height of the chain as the transaction was broadcast.
+    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
     Pending(BlockHeight),
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.

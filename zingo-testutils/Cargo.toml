@@ -14,6 +14,7 @@ zingoconfig = { path = "../zingoconfig" }
 zingolib = { path = "../zingolib" }
 zingo-netutils = { path = "../zingo-netutils", features = ["test-features"] }
 zingo-testvectors = { path = "../zingo-testvectors" }
+zingo-status = { path = "../zingo-status" }
 
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }

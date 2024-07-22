@@ -40,7 +40,7 @@ pub enum InputSourceError {
     InvalidValue(BalanceError),
     /// Output index data is missing! Wallet data is out of date
     #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
-    MissingOutputIndexes(Vec<TxId>),
+    MissingOutputIndexes(Vec<(TxId, zcash_primitives::consensus::BlockHeight)>),
     /// Trying to send lower than the height of the chain. Please return to the blockchain time by rescanning.
     #[error("Trying to send lower than the height of the chain. Please return to the blockchain time by rescanning.")]
     FutureTransaction,
@@ -134,17 +134,12 @@ impl InputSource for TransactionRecordsById {
     /// txid, domain, and index
     type NoteRef = NoteId;
 
-    /// Fetches a spendable note by indexing into a transaction's shielded outputs for the
-    /// specified shielded protocol.
-    ///
-    /// Returns `Ok(None)` if the note is not known to belong to the wallet or if the note
-    /// is not spendable.
-    /// IMPL: implemented and tested
+    /// not implemented
     fn get_spendable_note(
         &self,
-        txid: &zcash_primitives::transaction::TxId,
-        protocol: zcash_client_backend::ShieldedProtocol,
-        index: u32,
+        _txid: &zcash_primitives::transaction::TxId,
+        _protocol: zcash_client_backend::ShieldedProtocol,
+        _index: u32,
     ) -> Result<
         Option<
             zcash_client_backend::wallet::ReceivedNote<
@@ -154,24 +149,7 @@ impl InputSource for TransactionRecordsById {
         >,
         Self::Error,
     > {
-        let note_record_reference: <Self as InputSource>::NoteRef =
-            NoteId::new(*txid, protocol, index as u16);
-        match protocol {
-            ShieldedProtocol::Sapling => Ok(self
-                .get_received_spendable_note_from_identifier::<SaplingDomain>(note_record_reference)
-                .map(|note| {
-                    note.map_note(|note_inner| {
-                        zcash_client_backend::wallet::Note::Sapling(note_inner)
-                    })
-                })),
-            ShieldedProtocol::Orchard => Ok(self
-                .get_received_spendable_note_from_identifier::<OrchardDomain>(note_record_reference)
-                .map(|note| {
-                    note.map_note(|note_inner| {
-                        zcash_client_backend::wallet::Note::Orchard(note_inner)
-                    })
-                })),
-        }
+        unimplemented!()
     }
 
     #[allow(rustdoc::private_intra_doc_links)]
@@ -308,48 +286,12 @@ impl InputSource for TransactionRecordsById {
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }
 
-    /// Fetches a spendable transparent output.
-    ///
-    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
-    /// spendable.
-    /// IMPL: Implemented and tested
+    /// not implemented
     fn get_unspent_transparent_output(
         &self,
-        outpoint: &zcash_primitives::transaction::components::OutPoint,
+        _outpoint: &zcash_primitives::transaction::components::OutPoint,
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        let Some((height, output)) = self.values().find_map(|transaction_record| {
-            transaction_record
-                .transparent_outputs
-                .iter()
-                .find_map(|output| {
-                    if &output.to_outpoint() == outpoint {
-                        transaction_record
-                            .status
-                            .get_confirmed_height()
-                            .map(|height| (height, output))
-                    } else {
-                        None
-                    }
-                })
-                .filter(|(_height, output)| {
-                    output.spend_status_query(OutputSpendStatusQuery::only_unspent())
-                })
-        }) else {
-            return Ok(None);
-        };
-        let value =
-            NonNegativeAmount::from_u64(output.value).map_err(InputSourceError::InvalidValue)?;
-
-        let script_pubkey = Script(output.script.clone());
-
-        Ok(WalletTransparentOutput::from_parts(
-            outpoint.clone(),
-            TxOut {
-                value,
-                script_pubkey,
-            },
-            height,
-        ))
+        unimplemented!()
     }
     /// trait docs
     /// Returns a list of unspent transparent UTXOs that appear in the chain at heights up to and
@@ -430,9 +372,7 @@ impl InputSource for TransactionRecordsById {
 
 mod tests {
     use proptest::{prop_assert_eq, proptest};
-    use zcash_client_backend::{
-        data_api::InputSource as _, wallet::ReceivedNote, ShieldedProtocol,
-    };
+    use zcash_client_backend::{data_api::InputSource as _, ShieldedProtocol};
     use zcash_primitives::{
         consensus::BlockHeight, legacy::TransparentAddress,
         transaction::components::amount::NonNegativeAmount,
@@ -440,53 +380,12 @@ mod tests {
     use zip32::AccountId;
 
     use crate::wallet::{
-        notes::{
-            orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
-            transparent::mocks::TransparentOutputBuilder, OutputInterface,
-        },
+        notes::orchard::mocks::OrchardNoteBuilder,
         transaction_record::mocks::{
-            nine_note_transaction_record, nine_note_transaction_record_default,
-            TransactionRecordBuilder,
+            nine_note_transaction_record_default, TransactionRecordBuilder,
         },
         transaction_records_by_id::TransactionRecordsById,
     };
-
-    #[test]
-    fn get_spendable_note() {
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record(
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-        ));
-
-        let (txid, record) = transaction_records_by_id.0.iter().next().unwrap();
-
-        for i in 0..3 {
-            let single_note = transaction_records_by_id
-                .get_spendable_note(txid, ShieldedProtocol::Sapling, i as u32)
-                .unwrap();
-            assert_eq!(
-                if record.sapling_notes[i]
-                    .spend_status_query(OutputSpendStatusQuery::only_unspent())
-                {
-                    Some(zcash_client_backend::wallet::Note::Sapling(
-                        record.sapling_notes[i].sapling_crypto_note.clone(),
-                    ))
-                } else {
-                    None
-                }
-                .as_ref(),
-                single_note.as_ref().map(ReceivedNote::note)
-            )
-        }
-    }
 
     proptest! {
         // TODO: rewrite select_spendable test suite to test a range of cases and target edge cases correctly
@@ -562,43 +461,6 @@ mod tests {
 
             prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_len);
         }
-    }
-
-    #[test]
-    fn get_unspent_transparent_output() {
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-
-        let transaction_record = nine_note_transaction_record_default();
-
-        transaction_records_by_id.insert_transaction_record(transaction_record);
-
-        let transparent_output = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .transparent_outputs
-            .first()
-            .unwrap();
-        let record_height = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .status
-            .get_confirmed_height();
-
-        let wto = transaction_records_by_id
-            .get_unspent_transparent_output(
-                &TransparentOutputBuilder::default().build().to_outpoint(),
-            )
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(wto.outpoint(), &transparent_output.to_outpoint());
-        assert_eq!(wto.txout().value.into_u64(), transparent_output.value);
-        assert_eq!(wto.txout().script_pubkey.0, transparent_output.script);
-        assert_eq!(Some(wto.height()), record_height)
     }
 
     #[test]

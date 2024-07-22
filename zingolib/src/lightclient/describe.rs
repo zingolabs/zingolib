@@ -20,9 +20,10 @@ use crate::{
         data::{
             finsight,
             summaries::{
-                OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummaries,
-                TransactionSummaryBuilder, TransparentCoinSummary, ValueTransfer,
-                ValueTransferBuilder, ValueTransferKind, ValueTransfers,
+                basic_transaction_summary_parts, DetailedTransactionSummaries,
+                DetailedTransactionSummaryBuilder, TransactionSummaries, TransactionSummaryBuilder,
+                TransactionSummaryInterface as _, ValueTransfer, ValueTransferBuilder,
+                ValueTransferKind, ValueTransfers,
             },
             OutgoingTxData,
         },
@@ -577,85 +578,8 @@ impl LightClient {
         let mut transaction_summaries = transaction_records
             .values()
             .map(|tx| {
-                let kind = transaction_records.transaction_kind(tx);
-                let value = match kind {
-                    TransactionKind::Received
-                    | TransactionKind::Sent(SendType::Shield)
-                    | TransactionKind::Sent(SendType::SendToSelf) => tx.total_value_received(),
-                    TransactionKind::Sent(SendType::Send) => tx.value_outgoing(),
-                };
-                let fee = transaction_records.calculate_transaction_fee(tx).ok();
-                let orchard_notes = tx
-                    .orchard_notes
-                    .iter()
-                    .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
-                        } else {
-                            SpendStatus::Unspent
-                        };
-
-                        let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
-                        OrchardNoteSummary::from_parts(
-                            output.value(),
-                            spend_status,
-                            output.output_index,
-                            memo,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let sapling_notes = tx
-                    .sapling_notes
-                    .iter()
-                    .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
-                        } else {
-                            SpendStatus::Unspent
-                        };
-
-                        let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
-                        SaplingNoteSummary::from_parts(
-                            output.value(),
-                            spend_status,
-                            output.output_index,
-                            memo,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let transparent_coins = tx
-                    .transparent_outputs
-                    .iter()
-                    .map(|output| {
-                        let spend_status = if let Some((txid, _)) = output.spent() {
-                            SpendStatus::Spent(*txid)
-                        } else if let Some((txid, _)) = output.pending_spent() {
-                            SpendStatus::PendingSpent(*txid)
-                        } else {
-                            SpendStatus::Unspent
-                        };
-
-                        TransparentCoinSummary::from_parts(
-                            output.value(),
-                            spend_status,
-                            output.output_index,
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                    basic_transaction_summary_parts(tx, transaction_records);
 
                 TransactionSummaryBuilder::new()
                     .txid(tx.txid)
@@ -682,6 +606,61 @@ impl LightClient {
     /// TODO: doc comment
     pub async fn transaction_summaries_json_string(&self) -> String {
         json::JsonValue::from(self.transaction_summaries().await).pretty(2)
+    }
+
+    /// Provides a detailed list of transaction summaries related to this wallet in order of blockheight
+    pub async fn detailed_transaction_summaries(&self) -> DetailedTransactionSummaries {
+        let transaction_map = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let transaction_records = &transaction_map.transaction_records_by_id;
+
+        let mut transaction_summaries = transaction_records
+            .values()
+            .map(|tx| {
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                    basic_transaction_summary_parts(tx, transaction_records);
+                let orchard_nullifiers: Vec<String> = tx
+                    .spent_orchard_nullifiers
+                    .iter()
+                    .map(|nullifier| hex::encode(nullifier.to_bytes()))
+                    .collect();
+                let sapling_nullifiers: Vec<String> = tx
+                    .spent_sapling_nullifiers
+                    .iter()
+                    .map(hex::encode)
+                    .collect();
+
+                DetailedTransactionSummaryBuilder::new()
+                    .txid(tx.txid)
+                    .datetime(tx.datetime)
+                    .blockheight(tx.status.get_height())
+                    .kind(kind)
+                    .value(value)
+                    .fee(fee)
+                    .status(tx.status)
+                    .zec_price(tx.price)
+                    .orchard_notes(orchard_notes)
+                    .sapling_notes(sapling_notes)
+                    .transparent_coins(transparent_coins)
+                    .outgoing_tx_data(tx.outgoing_tx_data.clone())
+                    .orchard_nullifiers(orchard_nullifiers)
+                    .sapling_nullifiers(sapling_nullifiers)
+                    .build()
+                    .expect("all fields should be populated")
+            })
+            .collect::<Vec<_>>();
+        transaction_summaries.sort_by_key(|tx| tx.blockheight());
+
+        DetailedTransactionSummaries::new(transaction_summaries)
+    }
+
+    /// TODO: doc comment
+    pub async fn detailed_transaction_summaries_json_string(&self) -> String {
+        json::JsonValue::from(self.detailed_transaction_summaries().await).pretty(2)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -769,7 +748,7 @@ impl LightClient {
         anchor_height: BlockHeight,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut pending_sapling_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         // Collect Sapling notes
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
@@ -798,12 +777,12 @@ impl LightClient {
                 )
             })
             .for_each( |note| {
-                self.unspent_pending_spent(note, &mut unspent_sapling_notes, &mut pending_sapling_notes, &mut spent_sapling_notes)
+                self.unspent_pending_spent(note, &mut unspent_sapling_notes, &mut pending_spent_sapling_notes, &mut spent_sapling_notes)
             });
         (
             unspent_sapling_notes,
             spent_sapling_notes,
-            pending_sapling_notes,
+            pending_spent_sapling_notes,
         )
     }
 
@@ -813,7 +792,7 @@ impl LightClient {
         anchor_height: BlockHeight,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
-        let mut pending_orchard_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
@@ -841,12 +820,12 @@ impl LightClient {
                 )
             })
             .for_each( |note| {
-                self.unspent_pending_spent(note, &mut unspent_orchard_notes, &mut pending_orchard_notes, &mut spent_orchard_notes)
+                self.unspent_pending_spent(note, &mut unspent_orchard_notes, &mut pending_spent_orchard_notes, &mut spent_orchard_notes)
             });
         (
             unspent_orchard_notes,
             spent_orchard_notes,
-            pending_orchard_notes,
+            pending_spent_orchard_notes,
         )
     }
 
@@ -855,7 +834,7 @@ impl LightClient {
         all_notes: bool,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
-        let mut pending_transparent_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_transparent_note: Vec<JsonValue> = vec![];
         let mut spent_transparent_notes: Vec<JsonValue> = vec![];
 
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
@@ -886,13 +865,13 @@ impl LightClient {
                 )
             })
             .for_each( |note| {
-                self.unspent_pending_spent(note, &mut unspent_transparent_notes, &mut pending_transparent_notes, &mut spent_transparent_notes)
+                self.unspent_pending_spent(note, &mut unspent_transparent_notes, &mut pending_spent_transparent_note, &mut spent_transparent_notes)
             });
 
         (
             unspent_transparent_notes,
             spent_transparent_notes,
-            pending_transparent_notes,
+            pending_spent_transparent_note,
         )
     }
 
@@ -921,33 +900,33 @@ impl LightClient {
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 
-        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
+        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_spent_sapling_notes) =
             self.list_sapling_notes(all_notes, anchor_height).await;
-        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_orchard_notes) =
+        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_spent_orchard_notes) =
             self.list_orchard_notes(all_notes, anchor_height).await;
         let (
             mut unspent_transparent_notes,
             mut spent_transparent_notes,
-            mut pending_transparent_notes,
+            mut pending_spent_transparent_notes,
         ) = self.list_transparent_notes(all_notes).await;
 
         unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         unspent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
 
         let mut res = object! {
             "unspent_sapling_notes" => unspent_sapling_notes,
-            "pending_sapling_notes" => pending_sapling_notes,
+            "pending_sapling_notes" => pending_spent_sapling_notes,
             "unspent_orchard_notes" => unspent_orchard_notes,
-            "pending_orchard_notes" => pending_orchard_notes,
+            "pending_orchard_notes" => pending_spent_orchard_notes,
             "utxos"         => unspent_transparent_notes,
-            "pending_utxos" => pending_transparent_notes,
+            "pending_utxos" => pending_spent_transparent_notes,
         };
 
         if all_notes {

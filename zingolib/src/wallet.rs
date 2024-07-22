@@ -395,20 +395,12 @@ impl LightWallet {
         info!("Set current ZEC Price to USD {}", price);
     }
 
-    // Set the previous send's status as an error
-    async fn set_send_error(&self, e: String) {
+    // Set the previous send's status as an error or success
+    pub(super) async fn set_send_result(&self, result: Result<String, String>) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;
-        p.last_error = Some(e);
-    }
-
-    // Set the previous send's status as success
-    async fn set_send_success(&self, transaction_id: String) {
-        let mut p = self.send_progress.write().await;
-
-        p.is_send_in_progress = false;
-        p.last_transaction_id = Some(transaction_id);
+        p.last_result = Some(result);
     }
 }
 
