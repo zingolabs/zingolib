@@ -9,7 +9,6 @@ pub mod receivers {
     use zcash_client_backend::zip321::Payment;
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_client_backend::zip321::Zip321Error;
-    use zcash_keys::address;
     use zcash_primitives::memo::MemoBytes;
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
