@@ -457,23 +457,23 @@ mod decrypt_transaction {
             .await;
         }
 
-        async fn account_for_shielded_receipts<Q>(
+        async fn account_for_shielded_receipts<D>(
             &self,
-            ivk: Ivk<Q, External>,
+            ivk: Ivk<D, External>,
             domain_tagged_outputs: &[(
-                Q,
-                <<Q as DomainWalletExt>::Bundle as wallet::traits::Bundle<Q>>::Output,
+                D,
+                <<D as DomainWalletExt>::Bundle as wallet::traits::Bundle<D>>::Output,
             )],
             status: ConfirmationStatus,
             transaction: &Transaction,
             block_time: Option<u32>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         ) where
-            Q: zingo_traits::DomainWalletExt,
-            <Q as Domain>::Recipient: wallet::traits::Recipient,
-            <Q as Domain>::Note: PartialEq,
-            <Q as Domain>::Note: Clone,
-            Q::Memo: zingo_traits::ToBytes<512>,
+            D: zingo_traits::DomainWalletExt,
+            <D as Domain>::Recipient: wallet::traits::Recipient,
+            <D as Domain>::Note: PartialEq,
+            <D as Domain>::Note: Clone,
+            D::Memo: zingo_traits::ToBytes<512>,
         {
             let decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
                 &[ivk.ivk],
@@ -494,7 +494,7 @@ mod decrypt_transaction {
                         .write()
                         .await
                         .transaction_records_by_id
-                        .add_pending_note::<Q>(
+                        .add_pending_note::<D>(
                             transaction.txid(),
                             height,
                             block_time,
@@ -507,7 +507,7 @@ mod decrypt_transaction {
                         .write()
                         .await
                         .transaction_records_by_id
-                        .update_output_index::<Q>(
+                        .update_output_index::<D>(
                             transaction.txid(),
                             status,
                             block_time,
@@ -535,7 +535,7 @@ mod decrypt_transaction {
                     .write()
                     .await
                     .transaction_records_by_id
-                    .add_memo_to_note_metadata::<Q::WalletNote>(&transaction.txid(), note, memo);
+                    .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
             }
         }
         /// Transactions contain per-protocol "bundles" of components.
