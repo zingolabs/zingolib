@@ -36,9 +36,6 @@ pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d
 /// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 /// TODO: Add Doc Comment Here!
-pub const ZENNIES_FOR_ZINGO_MEMO_BYTES: &[u8] =
-    b"A Zenny for Zingo!\nThanks for supporting ZingoLabs!";
-/// TODO: Add Doc Comment Here!
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
 /// TODO: Add Doc Comment Here!
 pub const MAX_REORG: usize = 100;
