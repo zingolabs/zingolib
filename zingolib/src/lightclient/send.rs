@@ -28,7 +28,6 @@ impl LightClient {
 pub mod send_with_proposal {
     use std::{convert::Infallible, ops::DerefMut as _};
 
-    use hdwallet::traits::Deserialize as _;
     use nonempty::NonEmpty;
 
     use secp256k1::SecretKey;
