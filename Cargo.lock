@@ -4313,6 +4313,7 @@ dependencies = [
  "append-only-vec",
  "base58",
  "base64 0.13.1",
+ "bip0039",
  "bls12_381",
  "build_utils",
  "byteorder",

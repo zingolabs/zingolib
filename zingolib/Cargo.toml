@@ -31,6 +31,7 @@ zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 zip32.workspace = true
+bip0039.workspace = true
 
 append-only-vec = { workspace = true }
 

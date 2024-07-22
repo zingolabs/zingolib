@@ -11,6 +11,7 @@ use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
 
+use bip0039::Mnemonic;
 use std::{
     cmp,
     io::{self, Error, ErrorKind, Read, Write},
@@ -18,7 +19,6 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
 
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;

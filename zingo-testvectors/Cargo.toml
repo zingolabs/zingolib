@@ -9,4 +9,4 @@ edition = "2021"
 zingoconfig = { path = "../zingoconfig" }
 
 zcash_primitives = { workspace = true }
-bip0039 = "0.12.0"
+bip0039 = { workspace = true }
