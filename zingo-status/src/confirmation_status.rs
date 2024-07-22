@@ -258,6 +258,13 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+
+    /// the note is spendable if its creating transactions is either
+    ///   - confirmed in the past
+    ///   - poised, i.e. it has just been broadcast and is expected to be confirmed in target block
+    /// in those cases, return the real or expected confirmation height.
+    /// otherwise, returns None
+    pub fn is_spendable(&self, target_height: BlockHeight) -> Option<BlockHeight> {}
 }
 
 impl std::fmt::Display for ConfirmationStatus {
