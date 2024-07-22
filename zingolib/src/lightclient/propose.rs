@@ -13,7 +13,6 @@ use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNega
 use thiserror::Error;
 use zingoconfig::ZENNIES_FOR_ZINGO_AMOUNT;
 use zingoconfig::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
-use zingoconfig::ZENNIES_FOR_ZINGO_MEMO_BYTES;
 
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
@@ -106,7 +105,7 @@ fn append_zingo_zenny_receiver(receivers: &mut Vec<Receiver>) {
         )
         .expect("Hard coded str"),
         NonNegativeAmount::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
-        Some(MemoBytes::from_bytes(ZENNIES_FOR_ZINGO_MEMO_BYTES).expect("Hard Coded memo bytes.")),
+        None,
     );
     receivers.push(dev_donation_receiver);
 }
