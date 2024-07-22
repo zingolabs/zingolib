@@ -282,48 +282,12 @@ impl InputSource for TransactionRecordsById {
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
     }
 
-    /// Fetches a spendable transparent output.
-    ///
-    /// Returns `Ok(None)` if the UTXO is not known to belong to the wallet or is not
-    /// spendable.
-    /// IMPL: Implemented and tested
+    /// not implemented
     fn get_unspent_transparent_output(
         &self,
-        outpoint: &zcash_primitives::transaction::components::OutPoint,
+        _outpoint: &zcash_primitives::transaction::components::OutPoint,
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        let Some((height, output)) = self.values().find_map(|transaction_record| {
-            transaction_record
-                .transparent_outputs
-                .iter()
-                .find_map(|output| {
-                    if &output.to_outpoint() == outpoint {
-                        transaction_record
-                            .status
-                            .get_confirmed_height()
-                            .map(|height| (height, output))
-                    } else {
-                        None
-                    }
-                })
-                .filter(|(_height, output)| {
-                    output.spend_status_query(OutputSpendStatusQuery::only_unspent())
-                })
-        }) else {
-            return Ok(None);
-        };
-        let value =
-            NonNegativeAmount::from_u64(output.value).map_err(InputSourceError::InvalidValue)?;
-
-        let script_pubkey = Script(output.script.clone());
-
-        Ok(WalletTransparentOutput::from_parts(
-            outpoint.clone(),
-            TxOut {
-                value,
-                script_pubkey,
-            },
-            height,
-        ))
+        unimplemented!()
     }
     /// Returns a list of unspent transparent UTXOs that appear in the chain at heights up to and
     /// including `max_height`.
@@ -392,7 +356,7 @@ mod tests {
     use zip32::AccountId;
 
     use crate::wallet::{
-        notes::{orchard::mocks::OrchardNoteBuilder, transparent::mocks::TransparentOutputBuilder},
+        notes::orchard::mocks::OrchardNoteBuilder,
         transaction_record::mocks::{
             nine_note_transaction_record_default, TransactionRecordBuilder,
         },
@@ -473,43 +437,6 @@ mod tests {
 
             prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_len);
         }
-    }
-
-    #[test]
-    fn get_unspent_transparent_output() {
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-
-        let transaction_record = nine_note_transaction_record_default();
-
-        transaction_records_by_id.insert_transaction_record(transaction_record);
-
-        let transparent_output = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .transparent_outputs
-            .first()
-            .unwrap();
-        let record_height = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .status
-            .get_confirmed_height();
-
-        let wto = transaction_records_by_id
-            .get_unspent_transparent_output(
-                &TransparentOutputBuilder::default().build().to_outpoint(),
-            )
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(wto.outpoint(), &transparent_output.to_outpoint());
-        assert_eq!(wto.txout().value.into_u64(), transparent_output.value);
-        assert_eq!(wto.txout().script_pubkey.0, transparent_output.script);
-        assert_eq!(Some(wto.height()), record_height)
     }
 
     #[test]
