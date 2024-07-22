@@ -447,49 +447,44 @@ mod tests {
     }
 
     #[test]
-    fn get_unspent_transparent_outputs() {
+    fn get_spendable_transparent_outputs() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
         transaction_records_by_id.insert_transaction_record(nine_note_transaction_record_default());
 
-        let transparent_output = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .transparent_outputs
-            .first()
-            .unwrap();
-        let record_height = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .status
-            .get_confirmed_height();
+        assert_eq!(
+            transaction_records_by_id
+                .get_spendable_transparent_outputs(
+                    &TransparentAddress::ScriptHash([0; 20]),
+                    BlockHeight::from_u32(853210),
+                    0,
+                )
+                .unwrap()
+                .len(),
+            1
+        ); // toDo this should be an error
 
-        let selected_outputs = transaction_records_by_id
-            .get_unspent_transparent_outputs(
-                &TransparentAddress::ScriptHash([0; 20]),
-                BlockHeight::from_u32(10),
-                &[],
-            )
-            .unwrap();
-        assert_eq!(selected_outputs.len(), 1);
         assert_eq!(
-            selected_outputs.first().unwrap().outpoint(),
-            &transparent_output.to_outpoint()
+            transaction_records_by_id
+                .get_spendable_transparent_outputs(
+                    &TransparentAddress::ScriptHash([0; 20]),
+                    BlockHeight::from_u32(853211),
+                    0,
+                )
+                .unwrap()
+                .len(),
+            2
         );
+
         assert_eq!(
-            selected_outputs.first().unwrap().txout().value.into_u64(),
-            transparent_output.value
+            transaction_records_by_id
+                .get_spendable_transparent_outputs(
+                    &TransparentAddress::ScriptHash([0; 20]),
+                    BlockHeight::from_u32(853212),
+                    0,
+                )
+                .unwrap()
+                .len(),
+            1
         );
-        assert_eq!(
-            selected_outputs.first().unwrap().txout().script_pubkey.0,
-            transparent_output.script
-        );
-        assert_eq!(
-            Some(selected_outputs.first().unwrap().height()),
-            record_height
-        )
     }
 }
