@@ -7,9 +7,9 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
+use bip0039::Mnemonic;
 use std::{cmp, sync::Arc};
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
 
 use zcash_note_encryption::Domain;
 

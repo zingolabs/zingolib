@@ -8,11 +8,11 @@ use std::{
 use std::{marker::PhantomData, sync::Arc};
 
 use append_only_vec::AppendOnlyVec;
+use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
-use zcash_primitives::zip339::Mnemonic;
 
 use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};

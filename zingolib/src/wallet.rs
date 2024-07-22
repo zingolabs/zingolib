@@ -9,9 +9,9 @@ use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
+use bip0039::Mnemonic;
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
 
-use bip0039::Mnemonic;
 use std::{
     cmp,
     io::{self, Error, ErrorKind, Read, Write},

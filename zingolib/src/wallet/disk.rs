@@ -8,11 +8,10 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
 
+use bip0039::Mnemonic;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
-
 use zcash_primitives::consensus::BlockHeight;
 
 use zingoconfig::ZingoConfig;
