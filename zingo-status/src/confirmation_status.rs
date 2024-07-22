@@ -253,45 +253,46 @@ impl ConfirmationStatus {
     /// otherwise, returns None
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zingo_status::confirmation_status::UnspendableTxBecause;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Pending(10.into());
-    /// assert!(status.is_pending_poised_at(12));
+    /// assert_eq!(status.is_spendable_at(12), Err(UnspendableTxBecause::StalePending));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert!(status.is_pending_poised_at(12));
+    /// assert_eq!(status.is_spendable_at(12), Ok(BlockHeight::const_from_u64(10)));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Pending(11.into());
-    /// assert!(status.is_pending_poised_at(12));
+    /// assert_eq!(status.is_spendable_at(12), Ok(BlockHeight::const_from_u64(12)));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(11.into());
-    /// assert!(status.is_pending_poised_at(12));
+    /// assert_eq!(status.is_spendable_at(12), Ok(BlockHeight::const_from_u64(11)));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Pending(12.into());
-    /// assert!(status.is_pending_poised_at(12));
+    /// assert_eq!(status.is_spendable_at(12), Err(UnspendableTxBecause::FuturePending);
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(12.into());
-    /// assert!(status.is_pending_poised_at(12));
+    /// assert_eq!(status.is_spendable_at(12), Err(UnspendableTxBecause::FutureConfirmation);
     /// ```
     pub fn is_spendable(
         &self,
