@@ -212,10 +212,10 @@ impl LightClient {
                                     key.clone(),
                                     transaction_metadata_set.clone(),
                                 )
-                                .receive_transaction_from_mempool(
+                                .scan_full_tx(
                                     &transaction,
                                     status,
-                                    now() as u32,
+                                    Some(now() as u32),
                                     get_price(now(), &price),
                                 )
                                 .await;

@@ -174,49 +174,6 @@ mod decrypt_transaction {
                     .set_price(&transaction.txid(), price);
             }
         }
-
-        /// INVARIANT: All transaction from the mempool are received.
-        /// If the transaction was created locally and broadcast then:
-        ///  * it is in the database "trbid", unless that structure was wiped
-        ///  * if memory was lost after broadcast, we'll just wait for a transaction
-        ///     that we broadcast to show up on chain, after all until it's validated..
-        ///     it's just gossip, this is an edge case we are safe ignoring
-        pub(crate) async fn receive_transaction_from_mempool(
-            &self,
-            transaction: &Transaction,
-            status: ConfirmationStatus,
-            block_time: u32,
-            price: Option<f64>,
-        ) {
-            // Set up data structures to record scan results
-            let mut txid_indexed_zingo_memos = Vec::new();
-
-            // Collect our t-addresses for easy checking
-            let taddrs_set = self.key.get_all_taddrs(&self.config);
-
-            // Execute scanning operations
-            self.decrypt_transaction_to_record(
-                transaction,
-                status,
-                Some(block_time),
-                &mut vec![],
-                &mut txid_indexed_zingo_memos,
-                &taddrs_set,
-            )
-            .await;
-
-            self.update_outgoing_txdatas_with_uas(txid_indexed_zingo_memos)
-                .await;
-
-            // Update price if available
-            if price.is_some() {
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .set_price(&transaction.txid(), price);
-            }
-        }
         #[allow(clippy::too_many_arguments)]
         async fn decrypt_transaction_to_record(
             &self,
