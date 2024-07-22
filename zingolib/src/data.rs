@@ -33,9 +33,17 @@ pub mod receivers {
         }
     }
 
+    /// anything that can go wrong parsing a TransactionRequest from a receiver
+    #[derive(thiserror::Error, Debug)]
     pub enum ReceiverParseError {
+        /// see Debug
+        #[error("Could not parse address: {0}")]
         AddressParse(ParseError),
+        /// see Debug
+        #[error("Cant send memo to transparent receiver")]
         MemoDisallowed,
+        /// see Debug
+        #[error("Could not build TransactionRequest: {0}")]
         Request(Zip321Error),
     }
 
