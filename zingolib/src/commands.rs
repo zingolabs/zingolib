@@ -845,15 +845,16 @@ impl Command for SendCommand {
                 )
             }
         };
-        let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
-            Ok(request) => request,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    e
-                )
-            }
-        };
+        let request =
+            match crate::data::destinations::transaction_request_from_destinations(receivers) {
+                Ok(request) => request,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help send' for correct usage and examples.",
+                        e
+                    )
+                }
+            };
         RT.block_on(async move {
             match lightclient.propose_send(request).await {
                 Ok(proposal) => {
@@ -970,15 +971,16 @@ impl Command for QuickSendCommand {
                 )
             }
         };
-        let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
-            Ok(request) => request,
-            Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
-                    e
-                )
-            }
-        };
+        let request =
+            match crate::data::destinations::transaction_request_from_destinations(receivers) {
+                Ok(request) => request,
+                Err(e) => {
+                    return format!(
+                        "Error: {}\nTry 'help quicksend' for correct usage and examples.",
+                        e
+                    )
+                }
+            };
         RT.block_on(async move {
             match lightclient.quick_send(request).await {
                 Ok(txids) => {

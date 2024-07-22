@@ -52,7 +52,7 @@ pub mod from_inputs {
     pub fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
         chain: &zingoconfig::ChainType,
-    ) -> zingolib::data::receivers::Receivers {
+    ) -> zingolib::data::destinations::Destinations {
         raw_receivers
             .into_iter()
             .map(|(address, amount, memo)| {
@@ -66,7 +66,7 @@ pub mod from_inputs {
                         .expect("should be able to interpret memo")
                 });
 
-                zingolib::data::receivers::Receiver::new(recipient_address, amount, memo)
+                zingolib::data::destinations::Destination::new(recipient_address, amount, memo)
             })
             .collect()
     }
@@ -80,7 +80,7 @@ pub mod from_inputs {
         zcash_client_backend::zip321::Zip321Error,
     > {
         let receivers = receivers_from_send_inputs(raw_receivers, &requester.config().chain);
-        zingolib::data::receivers::transaction_request_from_receivers(receivers)
+        zingolib::data::destinations::transaction_request_from_destinations(receivers)
     }
 
     /// Panics if the address, amount or memo conversion fails.

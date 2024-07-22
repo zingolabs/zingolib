@@ -192,7 +192,7 @@ mod tests {
     };
     use zingoconfig::ChainType;
 
-    use crate::data::receivers::{transaction_request_from_receivers, Receivers};
+    use crate::data::destinations::{transaction_request_from_destinations, Destinations};
 
     #[test]
     fn test_build_request() {
@@ -206,20 +206,20 @@ mod tests {
             Memo::from_str("the lake wavers along the beach").expect("string can memofy"),
         ));
 
-        let rec: Receivers = vec![
-            crate::data::receivers::Receiver {
+        let rec: Destinations = vec![
+            crate::data::destinations::Destination {
                 recipient: recipient_address_1,
                 amount: amount_1,
                 memo: memo_1,
             },
-            crate::data::receivers::Receiver {
+            crate::data::destinations::Destination {
                 recipient: recipient_address_2,
                 amount: amount_2,
                 memo: memo_2,
             },
         ];
         let request: TransactionRequest =
-            transaction_request_from_receivers(rec).expect("rec can requestify");
+            transaction_request_from_destinations(rec).expect("rec can requestify");
 
         assert_eq!(
             request.total().expect("total"),

@@ -1,7 +1,7 @@
 // Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
-use crate::data::receivers::Receivers;
+use crate::data::destinations::Destinations;
 use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
 use crate::wallet;
 use json::JsonValue;
@@ -14,7 +14,10 @@ use zingoconfig::ChainType;
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
-pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receivers, CommandError> {
+pub(super) fn parse_send_args(
+    args: &[&str],
+    chain: &ChainType,
+) -> Result<Destinations, CommandError> {
     // Check for a single argument that can be parsed as JSON
     let send_args = if args.len() == 1 {
         let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;
@@ -34,13 +37,13 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
                 let memo = memo_from_json(j)?;
                 check_memo_compatibility(&recipient_address, &memo)?;
 
-                Ok(crate::data::receivers::Receiver {
+                Ok(crate::data::destinations::Destination {
                     recipient_address,
                     amount,
                     memo,
                 })
             })
-            .collect::<Result<Receivers, CommandError>>()
+            .collect::<Result<Destinations, CommandError>>()
     } else if args.len() == 2 || args.len() == 3 {
         let recipient_address =
             address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
@@ -59,7 +62,7 @@ pub(super) fn parse_send_args(args: &[&str], chain: &ChainType) -> Result<Receiv
         };
         check_memo_compatibility(&recipient_address, &memo)?;
 
-        Ok(vec![crate::data::receivers::Receiver {
+        Ok(vec![crate::data::destinations::Destination {
             recipient_address,
             amount,
             memo,
@@ -223,7 +226,7 @@ mod tests {
 
     use crate::{
         commands::error::CommandError,
-        data::receivers::Receiver,
+        data::destinations::Destination,
         utils::conversion::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string},
     };
@@ -242,7 +245,7 @@ mod tests {
         let send_args = &[address_str, value_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![crate::data::receivers::Receiver {
+            vec![crate::data::destinations::Destination {
                 recipient_address: recipient_address.clone(),
                 amount,
                 memo: None
@@ -253,7 +256,7 @@ mod tests {
         let send_args = &[address_str, value_str, memo_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![Receiver {
+            vec![Destination {
                 recipient_address: recipient_address.clone(),
                 amount,
                 memo: Some(memo.clone())
@@ -267,7 +270,7 @@ mod tests {
         assert_eq!(
             super::parse_send_args(&[json], &chain).unwrap(),
             vec![
-                Receiver {
+                Destination {
                     recipient_address: address_from_str(
                         "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
                         &chain
@@ -276,7 +279,7 @@ mod tests {
                     amount: zatoshis_from_u64(50_000).unwrap(),
                     memo: None
                 },
-                Receiver {
+                Destination {
                     recipient_address: recipient_address.clone(),
                     amount,
                     memo: Some(memo.clone())
@@ -288,7 +291,7 @@ mod tests {
         let send_args = &[address_str, "1 ", memo_str];
         assert_eq!(
             super::parse_send_args(send_args, &chain).unwrap(),
-            vec![Receiver {
+            vec![Destination {
                 recipient_address,
                 amount: zatoshis_from_u64(1).unwrap(),
                 memo: Some(memo.clone())

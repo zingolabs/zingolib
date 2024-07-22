@@ -3,7 +3,7 @@ pub mod proposal;
 pub mod witness_trees;
 
 /// transforming data related to the destination of a send.
-pub mod receivers {
+pub mod destinations {
     use zcash_address::ParseError;
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::Payment;
@@ -13,16 +13,16 @@ pub mod receivers {
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
     /// A list of Receivers
-    pub type Receivers = Vec<Receiver>;
+    pub type Destinations = Vec<Destination>;
 
     /// The superficial representation of the the consumer's intended receiver
     #[derive(Clone, Debug, PartialEq)]
-    pub struct Receiver {
+    pub struct Destination {
         pub(crate) recipient: String,
         pub(crate) amount: NonNegativeAmount,
         pub(crate) memo: Option<MemoBytes>,
     }
-    impl Receiver {
+    impl Destination {
         /// Create a new Receiver
         pub fn new(recipient: String, amount: NonNegativeAmount, memo: Option<MemoBytes>) -> Self {
             Self {
@@ -35,7 +35,7 @@ pub mod receivers {
 
     /// anything that can go wrong parsing a TransactionRequest from a receiver
     #[derive(thiserror::Error, Debug)]
-    pub enum ReceiverParseError {
+    pub enum DestinationParseError {
         /// see Debug
         #[error("Could not parse address: {0}")]
         AddressParse(ParseError),
@@ -48,25 +48,25 @@ pub mod receivers {
     }
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
-    pub fn transaction_request_from_receivers(
-        receivers: Receivers,
-    ) -> Result<TransactionRequest, ReceiverParseError> {
+    pub fn transaction_request_from_destinations(
+        receivers: Destinations,
+    ) -> Result<TransactionRequest, DestinationParseError> {
         let payments = receivers
             .into_iter()
             .map(|receiver| {
                 Payment::new(
                     ZcashAddress::try_from_encoded(receiver.recipient.as_str())
-                        .map_err(ReceiverParseError::AddressParse)?,
+                        .map_err(DestinationParseError::AddressParse)?,
                     receiver.amount,
                     receiver.memo,
                     None,
                     None,
                     vec![],
                 )
-                .ok_or(ReceiverParseError::MemoDisallowed)
+                .ok_or(DestinationParseError::MemoDisallowed)
             })
-            .collect::<Result<Vec<Payment>, ReceiverParseError>>()?;
+            .collect::<Result<Vec<Payment>, DestinationParseError>>()?;
 
-        TransactionRequest::new(payments).map_err(ReceiverParseError::Request)
+        TransactionRequest::new(payments).map_err(DestinationParseError::Request)
     }
 }

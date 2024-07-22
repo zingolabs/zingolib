@@ -12,11 +12,11 @@ use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNega
 
 use thiserror::Error;
 
+use crate::data::destinations::transaction_request_from_destinations;
+use crate::data::destinations::Destination;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
-use crate::data::receivers::transaction_request_from_receivers;
-use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
 use crate::wallet::send::change_memo_from_transaction_request;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
@@ -95,8 +95,8 @@ pub enum ProposeShieldError {
     ),
 }
 
-fn append_zingo_zenny_receiver(receivers: &mut Vec<Receiver>) {
-    let dev_donation_receiver = Receiver::new(
+fn append_zingo_zenny_receiver(receivers: &mut Vec<Destination>) {
+    let dev_donation_receiver = Destination::new(
         crate::utils::conversion::address_from_str(
             zingoconfig::DEVELOPER_DONATION_ADDRESS,
             &ChainType::Mainnet,
@@ -213,11 +213,11 @@ impl LightClient {
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
-        let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
+        let mut receivers = vec![Destination::new(address, spendable_balance, memo)];
         if zennies_for_zingo {
             append_zingo_zenny_receiver(&mut receivers);
         }
-        let request = transaction_request_from_receivers(receivers)
+        let request = transaction_request_from_destinations(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let proposal = self.create_send_proposal(request).await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
@@ -244,7 +244,7 @@ impl LightClient {
             .wallet
             .confirmed_shielded_balance_excluding_dust()
             .await?;
-        let mut receivers = vec![Receiver::new(
+        let mut receivers = vec![Destination::new(
             address.clone(),
             confirmed_shielded_balance,
             None,
@@ -252,7 +252,7 @@ impl LightClient {
         if zennies_for_zingo {
             append_zingo_zenny_receiver(&mut receivers);
         }
-        let request = transaction_request_from_receivers(receivers)?;
+        let request = transaction_request_from_destinations(receivers)?;
         let failing_proposal = self.create_send_proposal(request).await;
 
         let shortfall = match failing_proposal {
