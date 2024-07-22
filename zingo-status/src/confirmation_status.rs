@@ -220,6 +220,7 @@ impl ConfirmationStatus {
         }
     }
 
+    /// Returns either confirmation height or broadcast height. For the sake of differentiating between on-chain or not, use match instead of this function.
     /// # Examples
     ///
     /// ```
