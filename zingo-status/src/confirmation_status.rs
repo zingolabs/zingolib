@@ -229,6 +229,13 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(15.into());
     /// assert_eq!(status.get_height(), 15.into());
     /// ```
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Pending(10.into());
+    /// assert_eq!(status.get_height(), 10.into());
+    /// ```
     pub fn get_height(&self) -> BlockHeight {
         match self {
             Self::Pending(self_height) => *self_height,
