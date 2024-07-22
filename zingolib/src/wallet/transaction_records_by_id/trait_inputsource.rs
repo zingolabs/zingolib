@@ -347,17 +347,18 @@ impl InputSource for TransactionRecordsById {
             height,
         ))
     }
+    /// trait docs
     /// Returns a list of unspent transparent UTXOs that appear in the chain at heights up to and
     /// including `max_height`.
-    /// IMPL: Implemented and tested. address is unused, we select all outputs available to the wallet.
-    /// IMPL: _address skipped because Zingo uses 1 account.
-    fn get_unspent_transparent_outputs(
+    /// IMPL
+    /// Implemented and tested. address is unused, we select all outputs available to the wallet.
+    /// address skipped because Zingo uses 1 account.
+    /// only selects confirmed outputs... this must change for zip320
+    fn get_spendable_transparent_outputs(
         &self,
-        // I don't understand what this argument is for. Is the Trait's intent to only shield
-        // utxos from one address at a time? Is this needed?
         _address: &zcash_primitives::legacy::TransparentAddress,
         max_height: zcash_primitives::consensus::BlockHeight,
-        exclude: &[zcash_primitives::transaction::components::OutPoint],
+        _min_confirmations: u32,
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.values()
             .filter_map(|transaction_record| {
