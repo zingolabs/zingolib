@@ -118,9 +118,7 @@ impl LightClient {
         *latest_proposal_lock = Some(proposal);
     }
 
-    /// Unstable function to expose the zip317 interface for development
-    // TOdo: add correct functionality and doc comments / tests
-    // TODO: Add migrate_sapling_to_orchard argument
+    /// Creates a proposal from a transaction request.
     pub(crate) async fn create_send_proposal(
         &self,
         request: TransactionRequest,
@@ -150,6 +148,7 @@ impl LightClient {
         )
         .map_err(ProposeSendError::Proposal)
     }
+
     /// The shield operation consumes a proposal that transfers value
     /// into the Orchard pool.
     ///
@@ -191,7 +190,7 @@ impl LightClient {
         Ok(proposed_shield)
     }
 
-    /// Unstable function to expose the zip317 interface for development
+    /// Creates and stores a proposal from a transaction request.
     pub async fn propose_send(
         &self,
         request: TransactionRequest,
@@ -202,8 +201,7 @@ impl LightClient {
         Ok(proposal)
     }
 
-    /// Unstable function to expose the zip317 interface for development
-    // TOdo: add correct functionality and doc comments / tests
+    /// Creates and stores a proposal for sending all shielded funds to a given address.
     pub async fn propose_send_all(
         &self,
         address: zcash_keys::address::Address,
@@ -300,7 +298,7 @@ impl LightClient {
             .collect::<Vec<_>>()
     }
 
-    /// Unstable function to expose the zip317 interface for development
+    /// Creates and stores a proposal for shielding all transparent funds..
     pub async fn propose_shield(
         &self,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {

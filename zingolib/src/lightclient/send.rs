@@ -103,8 +103,7 @@ pub mod send_with_proposal {
     }
 
     impl LightClient {
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Calculates, signs and broadcasts transactions from a proposal.
         async fn complete_and_broadcast<NoteRef>(
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
@@ -208,8 +207,7 @@ pub mod send_with_proposal {
             result
         }
 
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Calculates, signs and broadcasts transactions from a stored proposal.
         pub async fn complete_and_broadcast_stored_proposal(
             &self,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposal> {
@@ -230,8 +228,7 @@ pub mod send_with_proposal {
             }
         }
 
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
         pub async fn quick_send(
             &self,
             request: TransactionRequest,
@@ -240,8 +237,7 @@ pub mod send_with_proposal {
             Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
         }
 
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Shields all transparent funds without confirmation.
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.create_shield_proposal().await?;
             Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
