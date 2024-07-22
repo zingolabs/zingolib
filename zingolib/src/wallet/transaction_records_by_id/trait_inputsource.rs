@@ -15,6 +15,7 @@ use zcash_primitives::{
         TxId,
     },
 };
+use zingo_status::confirmation_status::UnspendableTxBecause;
 
 use crate::wallet::{
     notes::{query::OutputSpendStatusQuery, OutputInterface},
@@ -37,9 +38,12 @@ pub enum InputSourceError {
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(BalanceError),
-    /// Wallet data is out of date
+    /// Output index data is missing! Wallet data is out of date
     #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
     MissingOutputIndexes(Vec<TxId>),
+    /// Trying to send lower than the height of the chain. Please return to the blockchain time by rescanning.
+    #[error("Trying to send lower than the height of the chain. Please return to the blockchain time by rescanning.")]
+    FutureTransaction,
 }
 
 // Calculate remaining difference between target and selected.
@@ -367,7 +371,16 @@ impl InputSource for TransactionRecordsById {
                 source_transaction_record
                     .status
                     .is_spendable(target_height)
-                    .map_err(|_e| false)
+                    .map_err(|e| {
+                        match e {
+                            UnspendableTxBecause::StalePending => (),
+                            UnspendableTxBecause::FuturePending
+                            | UnspendableTxBecause::FutureConfirmation => {
+                                return Err(InputSourceError::FutureTransaction);
+                            }
+                        };
+                        Err(e)
+                    })
                     .map(|expected_confirmation_height| {
                         (source_transaction_record, expected_confirmation_height)
                     })
