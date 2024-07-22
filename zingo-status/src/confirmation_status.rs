@@ -2,6 +2,8 @@
 //!  Pending === not on-record on-chain
 //!  Confirmed === on-record on-chain at BlockHeight
 
+use std::ops::Add;
+
 use zcash_primitives::consensus::BlockHeight;
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 
@@ -244,27 +246,66 @@ impl ConfirmationStatus {
         }
     }
 
-    /// if the transaction was just broadcast, it is expected to be confirmed. its transparent outputs can be spent now.
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Pending(10.into());
-    /// assert!(status.is_pending_poised_at(10));
-    /// ```
-    pub fn is_pending_poised_at(&self, current_height: BlockHeight) -> bool {
-        match self {
-            Self::Pending(self_height) => *self_height == current_height,
-            _ => false,
-        }
-    }
-
     /// the note is spendable if its creating transactions is either
     ///   - confirmed in the past
     ///   - poised, i.e. it has just been broadcast and is expected to be confirmed in target block
     /// in those cases, return the real or expected confirmation height.
     /// otherwise, returns None
-    pub fn is_spendable(&self, target_height: BlockHeight) -> Option<BlockHeight> {}
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Pending(10.into());
+    /// assert!(status.is_pending_poised_at(12));
+    /// ```
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(10.into());
+    /// assert!(status.is_pending_poised_at(12));
+    /// ```
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Pending(11.into());
+    /// assert!(status.is_pending_poised_at(12));
+    /// ```
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(11.into());
+    /// assert!(status.is_pending_poised_at(12));
+    /// ```
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Pending(12.into());
+    /// assert!(status.is_pending_poised_at(12));
+    /// ```
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// let status = ConfirmationStatus::Confirmed(12.into());
+    /// assert!(status.is_pending_poised_at(12));
+    /// ```
+    pub fn is_spendable(&self, target_height: BlockHeight) -> Option<BlockHeight> {
+        match self {
+            Self::Pending(self_height) => {
+                if self_height.add(1) == target_height {
+                    // the transaction was broadcast during this block, it will be confirmed in the next block. its transparent outputs can be spent now.
+                    Some(target_height)
+                } else {
+                    None
+                }
+            }
+            Self::Confirmed(self_height) => Some(*self_height),
+        }
+    }
 }
 
 impl std::fmt::Display for ConfirmationStatus {
