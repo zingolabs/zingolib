@@ -818,8 +818,9 @@ impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
                 UnifiedSpendingKey::from_checked_parts(
                     AccountPrivKey::from_extended_privkey(
                         bip32::ExtendedPrivateKey::<SecretKey>::new(tkey.private_key.as_ref())
-                            .unwrap(),
-                        // TODO dont unwrap
+                            .map_err(|e| {
+                                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+                            })?,
                     ),
                     skey.clone(),
                     okey.clone(),
