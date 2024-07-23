@@ -14,10 +14,7 @@ use zingoconfig::ChainType;
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
-pub(super) fn parse_send_args(
-    args: &[&str],
-    chain: &ChainType,
-) -> Result<Destinations, CommandError> {
+pub(super) fn parse_send_args(args: &[&str]) -> Result<Destinations, CommandError> {
     // Check for a single argument that can be parsed as JSON
     let send_args = if args.len() == 1 {
         let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;
@@ -74,14 +71,14 @@ pub(super) fn parse_send_all_args(
     args: &[&str],
     chain: &ChainType,
 ) -> Result<(Address, bool, Option<MemoBytes>), CommandError> {
-    let address: Address;
+    let recipient: String;
     let memo: Option<MemoBytes>;
     let zennies_for_zingo: bool;
     if args.len() == 1 {
         if let Ok(addr) = address_from_str(args[0], chain) {
-            address = addr;
+            recipient = addr;
             memo = None;
-            check_memo_compatibility(&address, &memo)?;
+            check_memo_compatibility(&recipient, &memo)?;
             zennies_for_zingo = false;
         } else {
             let json_arg =
@@ -92,23 +89,23 @@ pub(super) fn parse_send_all_args(
             if json_arg.is_empty() {
                 return Err(CommandError::EmptyJsonArray);
             }
-            address = address_from_json(&json_arg, chain)?;
+            recipient = address_from_json(&json_arg)?;
             memo = memo_from_json(&json_arg)?;
-            check_memo_compatibility(&address, &memo)?;
+            check_memo_compatibility(&recipient, &memo)?;
             zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
         }
     } else if args.len() == 2 {
         zennies_for_zingo = false;
-        address = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
+        recipient = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
         memo = Some(
             wallet::utils::interpret_memo_string(args[1].to_string())
                 .map_err(CommandError::InvalidMemo)?,
         );
-        check_memo_compatibility(&address, &memo)?;
+        check_memo_compatibility(&recipient, &memo)?;
     } else {
         return Err(CommandError::InvalidArguments);
     }
-    Ok((address, zennies_for_zingo, memo))
+    Ok((recipient, zennies_for_zingo, memo))
 }
 
 // Parse the arguments for `spendable_balance`.
@@ -124,11 +121,11 @@ pub(super) fn parse_spendable_balance_args(
     if args.len() > 2 {
         return Err(CommandError::InvalidArguments);
     }
-    let address: Address;
+    let recipient: String;
     let zennies_for_zingo: bool;
 
     if let Ok(addr) = address_from_str(args[0], chain) {
-        address = addr;
+        recipient = addr;
         zennies_for_zingo = false;
     } else {
         let json_arg = json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
@@ -141,25 +138,11 @@ pub(super) fn parse_spendable_balance_args(
         if json_arg.is_empty() {
             return Err(CommandError::EmptyJsonArray);
         }
-        address = address_from_json(&json_arg, chain)?;
+        recipient = address_from_json(&json_arg)?;
         zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
     }
 
-    Ok((address, zennies_for_zingo))
-}
-
-// Checks send inputs do not contain memo's to transparent addresses.
-fn check_memo_compatibility(
-    address: &Address,
-    memo: &Option<MemoBytes>,
-) -> Result<(), CommandError> {
-    if let Address::Transparent(_) = address {
-        if memo.is_some() {
-            return Err(CommandError::IncompatibleMemo);
-        }
-    }
-
-    Ok(())
+    Ok((recipient, zennies_for_zingo))
 }
 
 fn address_from_json(json_array: &JsonValue) -> Result<String, CommandError> {
