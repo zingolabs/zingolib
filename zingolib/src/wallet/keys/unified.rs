@@ -9,16 +9,16 @@ use std::{marker::PhantomData, sync::Arc};
 
 use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
+use zcash_primitives::consensus::{NetworkConstants, Parameters};
 
 use secp256k1::SecretKey;
-use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
+use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
-use zcash_encoding::{CompactSize, Vector};
+use zcash_encoding::{Vector};
 use zcash_primitives::legacy::keys::AccountPrivKey;
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
@@ -815,7 +815,7 @@ pub(crate) fn recreate_usk(
     let orchard = &value.orchard;
     match (transparent, sapling, orchard) {
         (Capability::Spend(_tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
-            UnifiedSpendingKey::from_checked_parts(transparent_full_key, skey.clone(), okey.clone())
+            UnifiedSpendingKey::from_checked_parts(transparent_full_key, skey.clone(), *okey)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
         }
         _otherwise => Err(io::Error::new(

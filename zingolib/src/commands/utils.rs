@@ -3,13 +3,11 @@
 use crate::commands::error::CommandError;
 use crate::data::destinations::Destination;
 use crate::data::destinations::Destinations;
-use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
+use crate::utils::conversion::{zatoshis_from_u64};
 use crate::wallet;
 use json::JsonValue;
-use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zingoconfig::ChainType;
 
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
@@ -184,12 +182,12 @@ fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandEr
 
 #[cfg(test)]
 mod tests {
-    use zingoconfig::{ChainType, RegtestNetwork};
+    
 
     use crate::{
         commands::error::CommandError,
         data::destinations::{transaction_request_from_destinations, Destination},
-        utils::conversion::{address_from_str, zatoshis_from_u64},
+        utils::conversion::{zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string},
     };
 
@@ -248,7 +246,7 @@ mod tests {
     }
 
     mod fail_parse_send_args {
-        use zingoconfig::{ChainType, RegtestNetwork};
+        
 
         use crate::commands::{error::CommandError, utils::parse_send_args};
 

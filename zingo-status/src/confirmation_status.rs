@@ -303,12 +303,10 @@ impl ConfirmationStatus {
                 if self_height.add(1) == target_height {
                     // the transaction was broadcast during this block, it will be confirmed in the next block. its transparent outputs can be spent now.
                     Ok(target_height)
+                } else if *self_height < target_height {
+                    Err(UnspendableTxBecause::StalePending)
                 } else {
-                    if *self_height < target_height {
-                        Err(UnspendableTxBecause::StalePending)
-                    } else {
-                        Err(UnspendableTxBecause::FuturePending)
-                    }
+                    Err(UnspendableTxBecause::FuturePending)
                 }
             }
             Self::Confirmed(self_height) => {

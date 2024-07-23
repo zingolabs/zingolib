@@ -4,12 +4,11 @@ use crate::wallet::now;
 use futures::Future;
 
 use log::error;
-use zcash_address::{AddressKind, ZcashAddress};
+use zcash_address::{AddressKind};
 
 use std::cmp;
 
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_keys::address::Address;
 use zcash_primitives::transaction::Transaction;
 use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
@@ -187,12 +186,12 @@ pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest)
 mod tests {
     use std::str::FromStr;
 
-    use zcash_client_backend::{address::Address, zip321::TransactionRequest};
+    use zcash_client_backend::{zip321::TransactionRequest};
     use zcash_primitives::{
         memo::{Memo, MemoBytes},
         transaction::components::amount::NonNegativeAmount,
     };
-    use zingoconfig::ChainType;
+    
 
     use crate::data::destinations::{transaction_request_from_destinations, Destinations};
 

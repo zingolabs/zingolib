@@ -30,11 +30,11 @@ pub mod send_with_proposal {
 
     use nonempty::NonEmpty;
 
-    use secp256k1::SecretKey;
+    
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_client_backend::{proposal::Proposal, wallet::TransparentAddressMetadata};
-    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_client_backend::{proposal::Proposal};
+    
     use zcash_primitives::legacy::keys::AccountPrivKey;
     use zcash_primitives::transaction::TxId;
 

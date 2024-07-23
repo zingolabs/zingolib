@@ -782,7 +782,7 @@ mod tests {
         Output, OutputInterface,
     };
     use crate::wallet::transaction_record::mocks::{
-        nine_note_transaction_record_builder, nine_note_transaction_record_default,
+        nine_note_transaction_record_default,
         TransactionRecordBuilder,
     };
 

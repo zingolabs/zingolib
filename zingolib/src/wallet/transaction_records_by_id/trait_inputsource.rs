@@ -15,7 +15,6 @@ use zcash_primitives::{
         TxId,
     },
 };
-use zingo_status::confirmation_status::UnspendableTxBecause;
 
 use crate::wallet::{
     notes::{query::OutputSpendStatusQuery, OutputInterface},
@@ -366,7 +365,7 @@ mod tests {
     use crate::wallet::{
         notes::{orchard::mocks::OrchardNoteBuilder, transparent::mocks::TransparentOutputBuilder},
         transaction_record::mocks::{
-            nine_note_transaction_record_default, TransactionRecordBuilder,
+            TransactionRecordBuilder,
         },
         transaction_records_by_id::TransactionRecordsById,
     };

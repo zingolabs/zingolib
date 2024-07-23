@@ -20,7 +20,6 @@ use zingo_testutils::{
     increase_height_and_wait_for_client, paths::get_cargo_manifest_dir, scenarios, validate_otds,
 };
 use zingolib::lightclient::propose::ProposeSendError;
-use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::data::summaries::TransactionSummaryInterface;
 
 use zingo_testvectors::{

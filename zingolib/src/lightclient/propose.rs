@@ -6,7 +6,6 @@ use std::ops::DerefMut;
 
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_client_backend::zip321::Zip321Error;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 
