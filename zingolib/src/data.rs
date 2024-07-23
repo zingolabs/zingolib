@@ -38,13 +38,13 @@ pub mod destinations {
     pub enum DestinationParseError {
         /// see Debug
         #[error("Could not parse address: {0}")]
-        AddressParse(ParseError),
+        AddressParse(#[from] ParseError),
         /// see Debug
         #[error("Cant send memo to transparent receiver")]
         MemoDisallowed,
         /// see Debug
         #[error("Could not build TransactionRequest: {0}")]
-        Request(Zip321Error),
+        Request(#[from] Zip321Error),
     }
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.

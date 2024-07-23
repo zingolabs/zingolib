@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::data::destinations::transaction_request_from_destinations;
 use crate::data::destinations::Destination;
+use crate::data::destinations::DestinationParseError;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
@@ -65,7 +66,7 @@ pub enum ProposeSendError {
     ),
     /// failed to construct a transaction request
     #[error("{0}")]
-    TransactionRequestFailed(#[from] Zip321Error),
+    TransactionRequestFailed(#[from] DestinationParseError),
     /// send all is transferring no value
     #[error("send all is transferring no value. only enough funds to pay the fees!")]
     ZeroValueSendAll,
@@ -237,7 +238,7 @@ impl LightClient {
     // TODO: move spendable balance and create proposal to wallet layer
     pub async fn get_spendable_shielded_balance(
         &self,
-        address: zcash_keys::address::Address,
+        recipient: String,
         zennies_for_zingo: bool,
     ) -> Result<NonNegativeAmount, ProposeSendError> {
         let confirmed_shielded_balance = self
@@ -245,7 +246,7 @@ impl LightClient {
             .confirmed_shielded_balance_excluding_dust()
             .await?;
         let mut receivers = vec![Destination::new(
-            address.clone(),
+            recipient,
             confirmed_shielded_balance,
             None,
         )];
