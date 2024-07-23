@@ -12,8 +12,8 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_address::AddressKind;
 use zcash_address::ZcashAddress;
+use zcash_address::{AddressKind, Network};
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
@@ -204,14 +204,16 @@ impl Command for ParseAddressCommand {
                         let success = true;
 
                         let mut receivers_available = vec![];
-                        let address_kind_ok = match recipient.kind() {
+                        let address_kind_result = match recipient.kind() {
                             AddressKind::Sprout(_data) => Ok("sprout"),
                             AddressKind::Sapling(_data) => Ok("sapling"),
-                            AddressKind::Unified(data) => {
-                                let uar =
-                                    zcash_keys::address::UnifiedAddress::try_from(data.clone());
+                            AddressKind::Unified(raw_unified_address) => {
+                                let unified_address_result =
+                                    zcash_keys::address::UnifiedAddress::try_from(
+                                        raw_unified_address.clone(),
+                                    );
 
-                                uar.map(|ua| {
+                                unified_address_result.map(|ua| {
                                     if ua.orchard().is_some() {
                                         receivers_available.push("orchard")
                                     }
@@ -229,9 +231,11 @@ impl Command for ParseAddressCommand {
                             AddressKind::Tex(_data) => Ok("Tex"),
                         };
 
-                        // let chain_name = match recipient.chain_namo() {
+                        let chain_name = match recipient.net() {
+                            NetworkType::Main => "mainnet",
+                        };
 
-                        address_kind_ok
+                        address_kind_result
                             .map(|address_kind| {
                                 object! {
                                     "status" => if success {"success"} else {"failure"},
