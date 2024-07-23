@@ -11,7 +11,6 @@ use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNega
 
 use thiserror::Error;
 use zingoconfig::ZENNIES_FOR_ZINGO_AMOUNT;
-use zingoconfig::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 
 use crate::data::destinations::transaction_request_from_destinations;
 use crate::data::destinations::Destination;

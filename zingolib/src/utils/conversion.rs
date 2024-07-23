@@ -2,10 +2,8 @@
 
 use thiserror::Error;
 
-use zcash_client_backend::address::Address;
 use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
 
-use zingoconfig::ChainType;
 
 use super::error::ConversionError;
 
