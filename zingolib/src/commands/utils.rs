@@ -406,42 +406,25 @@ mod tests {
 
     #[test]
     fn check_memo_compatibility() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-        let sapling_address = address_from_str("zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", &chain).unwrap();
-        let transparent_address =
-            address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd", &chain).unwrap();
-        let memo = interpret_memo_string("test memo".to_string()).unwrap();
-
-        // shielded address with memo
-        super::check_memo_compatibility(&sapling_address, &Some(memo.clone())).unwrap();
-
-        // transparent address without memo
-        super::check_memo_compatibility(&transparent_address, &None).unwrap();
-
-        // transparent address with memo
-        assert!(matches!(
-            super::check_memo_compatibility(&transparent_address, &Some(memo.clone())),
-            Err(CommandError::IncompatibleMemo)
-        ));
+        // why not check the assertion i made about Payments checking memo compat
+        todo!()
     }
 
     #[test]
     fn address_from_json() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-
         // with address
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
-        super::address_from_json(json_args, &chain).unwrap();
+        super::address_from_json(json_args).unwrap();
 
         // without address
         let json_str = "[{\"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
-            super::address_from_json(json_args, &chain),
+            super::address_from_json(json_args),
             Err(CommandError::MissingKey(_))
         ));
 
@@ -451,7 +434,7 @@ mod tests {
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
-            super::address_from_json(json_args, &chain),
+            super::address_from_json(json_args),
             Err(CommandError::UnexpectedType(_))
         ));
     }
