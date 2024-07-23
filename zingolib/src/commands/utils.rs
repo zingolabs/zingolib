@@ -268,7 +268,7 @@ mod tests {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let json = "[]";
                 assert!(matches!(
-                    parse_send_args(&[json], &chain),
+                    parse_send_args(&[json]),
                     Err(CommandError::EmptyJsonArray)
                 ));
             }
@@ -277,7 +277,7 @@ mod tests {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = [r#"testaddress{{"#];
                 assert!(matches!(
-                    parse_send_args(&args, &chain),
+                    parse_send_args(&args),
                     Err(CommandError::ArgsNotJson(_))
                 ));
             }
@@ -286,13 +286,12 @@ mod tests {
                 let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["1"];
                 assert!(matches!(
-                    parse_send_args(&args, &chain),
+                    parse_send_args(&args),
                     Err(CommandError::SingleArgNotJsonArray(_))
                 ));
             }
             #[test]
             fn invalid_memo() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let arg_contents =
                     "[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": 123, \"memo\": \"testmemo\"}]";
                 let long_513_byte_memo = &"a".repeat(513);
@@ -301,7 +300,7 @@ mod tests {
                 let args = [long_memo_args.as_str()];
 
                 assert!(matches!(
-                    parse_send_args(&args, &chain),
+                    parse_send_args(&args),
                     Err(CommandError::InvalidMemo(_))
                 ));
             }
@@ -311,30 +310,27 @@ mod tests {
 
             #[test]
             fn two_args_wrong_amount() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "foo"];
                 assert!(matches!(
-                    parse_send_args(&args, &chain),
+                    parse_send_args(&args),
                     Err(CommandError::ParseIntFromString(_))
                 ));
             }
             #[test]
             fn wrong_number_of_args() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", "3", "4"];
                 assert!(matches!(
-                    parse_send_args(&args, &chain),
+                    parse_send_args(&args),
                     Err(CommandError::InvalidArguments)
                 ));
             }
             #[test]
             fn invalid_memo() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let long_513_byte_memo = &"a".repeat(513);
                 let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", long_513_byte_memo];
 
                 assert!(matches!(
-                    parse_send_args(&args, &chain),
+                    parse_send_args(&args),
                     Err(CommandError::InvalidMemo(_))
                 ));
             }
