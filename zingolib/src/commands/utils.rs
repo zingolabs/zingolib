@@ -69,7 +69,6 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Destinations, CommandErro
 // - 1 + 1 optional arguments for a single address send. &["<address>", "<optional memo>"]
 pub(super) fn parse_send_all_args(
     args: &[&str],
-    chain: &ChainType,
 ) -> Result<(String, bool, Option<MemoBytes>), CommandError> {
     let recipient: String;
     let memo: Option<MemoBytes>;
@@ -351,7 +350,7 @@ mod tests {
                  \"memo\":\"test memo\", \
                  \"zennies_for_zingo\":false}"];
         assert_eq!(
-            super::parse_send_all_args(single_receiver, &chain).unwrap(),
+            super::parse_send_all_args(single_receiver).unwrap(),
             (address.clone(), false, Some(memo.clone()))
         );
         // NonBool Zenny Flag
@@ -360,25 +359,25 @@ mod tests {
                  \"memo\":\"test memo\", \
                  \"zennies_for_zingo\":\"false\"}"];
         assert!(matches!(
-            super::parse_send_all_args(nb_zenny, &chain),
+            super::parse_send_all_args(nb_zenny),
             Err(CommandError::ZenniesFlagNonBool(_))
         ));
         // with memo
         let send_args = &[address_str, memo_str];
         assert_eq!(
-            super::parse_send_all_args(send_args, &chain).unwrap(),
+            super::parse_send_all_args(send_args).unwrap(),
             (address.clone(), false, Some(memo.clone()))
         );
         let send_args = &[address_str, memo_str];
         assert_eq!(
-            super::parse_send_all_args(send_args, &chain).unwrap(),
+            super::parse_send_all_args(send_args).unwrap(),
             (address.clone(), false, Some(memo.clone()))
         );
 
         // invalid address
         let send_args = &["invalid_address"];
         assert!(matches!(
-            super::parse_send_all_args(send_args, &chain),
+            super::parse_send_all_args(send_args),
             Err(CommandError::ArgNotJsonOrValidAddress)
         ));
     }
