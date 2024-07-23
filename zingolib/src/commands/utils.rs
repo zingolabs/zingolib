@@ -188,7 +188,7 @@ mod tests {
 
     use crate::{
         commands::error::CommandError,
-        data::destinations::Destination,
+        data::destinations::{transaction_request_from_destinations, Destination},
         utils::conversion::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string},
     };
@@ -374,8 +374,17 @@ mod tests {
 
     #[test]
     fn check_memo_compatibility() {
-        // why not check the assertion i made about Payments checking memo compat
-        todo!()
+        let memo_str = "test memo to a transparent receiver";
+        let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
+
+        assert!(matches!(
+            transaction_request_from_destinations(vec![Destination::new(
+                "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                zatoshis_from_u64(50_000).unwrap(),
+                Some(memo),
+            )]),
+            Err(crate::data::destinations::DestinationParseError::MemoDisallowed)
+        ));
     }
 
     #[test]

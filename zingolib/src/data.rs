@@ -49,9 +49,9 @@ pub mod destinations {
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
     pub fn transaction_request_from_destinations(
-        receivers: Destinations,
+        destinations: Destinations,
     ) -> Result<TransactionRequest, DestinationParseError> {
-        let payments = receivers
+        let payments = destinations
             .into_iter()
             .map(|receiver| {
                 Payment::new(
