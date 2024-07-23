@@ -36,7 +36,10 @@ pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
 
-    use zingolib::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
+    use zingolib::{
+        data::destinations::DestinationParseError,
+        lightclient::{send::send_with_proposal::QuickSendError, LightClient},
+    };
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send(
@@ -49,16 +52,13 @@ pub mod from_inputs {
     }
 
     /// Panics if the address, amount or memo conversion fails.
-    pub fn receivers_from_send_inputs(
+    pub fn destinations_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
         chain: &zingoconfig::ChainType,
     ) -> zingolib::data::destinations::Destinations {
         raw_receivers
             .into_iter()
-            .map(|(address, amount, memo)| {
-                let recipient_address =
-                    zingolib::utils::conversion::address_from_str(address, chain)
-                        .expect("should be a valid address");
+            .map(|(recipient, amount, memo)| {
                 let amount = zingolib::utils::conversion::zatoshis_from_u64(amount)
                     .expect("should be inside the range of valid zatoshis");
                 let memo = memo.map(|memo| {
@@ -66,7 +66,7 @@ pub mod from_inputs {
                         .expect("should be able to interpret memo")
                 });
 
-                zingolib::data::destinations::Destination::new(recipient_address, amount, memo)
+                zingolib::data::destinations::Destination::new(recipient.to_string(), amount, memo)
             })
             .collect()
     }
@@ -75,11 +75,8 @@ pub mod from_inputs {
     pub fn transaction_request_from_send_inputs(
         requester: &zingolib::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<
-        zcash_client_backend::zip321::TransactionRequest,
-        zcash_client_backend::zip321::Zip321Error,
-    > {
-        let receivers = receivers_from_send_inputs(raw_receivers, &requester.config().chain);
+    ) -> Result<zcash_client_backend::zip321::TransactionRequest, DestinationParseError> {
+        let receivers = destinations_from_send_inputs(raw_receivers, &requester.config().chain);
         zingolib::data::destinations::transaction_request_from_destinations(receivers)
     }
 
