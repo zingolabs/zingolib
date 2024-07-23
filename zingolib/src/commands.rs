@@ -232,14 +232,16 @@ impl Command for ParseAddressCommand {
                         };
 
                         let chain_name = match recipient.net() {
-                            NetworkType::Main => "mainnet",
+                            zcash_protocol::consensus::NetworkType::Main => "main",
+                            zcash_protocol::consensus::NetworkType::Test => "test",
+                            zcash_protocol::consensus::NetworkType::Regtest => "regtest",
                         };
 
                         address_kind_result
                             .map(|address_kind| {
                                 object! {
                                     "status" => if success {"success"} else {"failure"},
-                                    "chain_name" => "todo",
+                                    "chain_name" => chain_name,
                                     "address_kind" => address_kind,
                                     "receivers_available" => receivers_available,
                                 }

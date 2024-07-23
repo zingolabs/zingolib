@@ -4518,6 +4518,7 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
+ "zcash_protocol",
  "zingo-memo",
  "zingo-netutils",
  "zingo-status",

@@ -30,6 +30,7 @@ zcash_keys = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
+zcash_protocol = { workspace = true }
 zip32.workspace = true
 bip32.workspace = true
 bip0039.workspace = true
