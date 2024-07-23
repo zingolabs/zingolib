@@ -10,7 +10,6 @@ use std::{fs::File, path::Path, time::Duration};
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::zip339::Mnemonic;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     transaction::fees::zip317::MINIMUM_FEE,
@@ -3371,6 +3370,7 @@ mod slow {
                     }
                     zcash_client_backend::data_api::error::Error::NoSpendingKey(_) => panic!(),
                     zcash_client_backend::data_api::error::Error::NoteMismatch(_) => panic!(),
+                    zcash_client_backend::data_api::error::Error::Address(_) => panic!(),
                     zcash_client_backend::data_api::error::Error::AddressNotRecognized(_) => {
                         panic!()
                     }
