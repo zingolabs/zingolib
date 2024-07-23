@@ -132,9 +132,17 @@ pub mod send_with_proposal {
                 read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
             let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-            let unified_spend_key =
-                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
-                    .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
+            let seed_bytes = match self.wallet.mnemonic() {
+                Some(tuple) => tuple.0.clone().into_entropy(),
+                None => return Err(CompleteAndBroadcastError::NoSpendCapability),
+            };
+
+            let unified_spend_key = UnifiedSpendingKey::from_seed(
+                &self.wallet.transaction_context.config.chain,
+                seed_bytes.as_slice(),
+                zip32::AccountId::ZERO,
+            )
+            .map_err(|_e| CompleteAndBroadcastError::NoSpendCapability)?;
 
             // We don't support zip320 yet. Only one step.
             if proposal.steps().len() != 1 {
@@ -142,23 +150,6 @@ pub mod send_with_proposal {
             }
 
             let step = proposal.steps().first();
-
-            // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
-            // transparent key it contains is not the account spending key, but the
-            // externally-scoped derivative key. The goal is to fix this, but in the
-            // interim we use this special-case logic.
-            fn usk_to_tkey(
-                unified_spend_key: &UnifiedSpendingKey,
-                t_metadata: &TransparentAddressMetadata,
-            ) -> SecretKey {
-                todo!()
-                // hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
-                //     .expect("This a hack to do a type conversion, and will not fail")
-                //     .derive_private_key(t_metadata.address_index().into())
-                //     // This is unwrapped in librustzcash, so I'm not too worried about it
-                //     .expect("private key derivation failed")
-                //     .private_key
-            }
 
             let build_result =
                 zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
