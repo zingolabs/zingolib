@@ -19,6 +19,7 @@ use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::{CompactSize, Vector};
+use zcash_primitives::legacy::keys::AccountPrivKey;
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 use zingoconfig::ZingoConfig;
@@ -814,8 +815,12 @@ impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
         let orchard = &value.orchard;
         match (transparent, sapling, orchard) {
             (Capability::Spend(tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
-                UnifiedSpendingKey::from_checked_parts(*tkey, *skey, *okey)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+                UnifiedSpendingKey::from_checked_parts(
+                    AccountPrivKey::from_extended_privkey(*tkey),
+                    *skey,
+                    *okey,
+                )
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
             }
             _otherwise => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
