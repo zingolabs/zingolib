@@ -12,7 +12,8 @@ members = [
     "zingoconfig",
     "zingo-testvectors",
     "zingo-netutils",
-    "zingo-memo",
+    "zingo-memo", 
+    "zingo-sync",
 ]
 resolver = "2"
 
