@@ -365,8 +365,10 @@ mod tests {
         // invalid address
         let send_args = &["invalid_address"];
         assert!(matches!(
-            super::parse_send_all_args(send_args),
-            Err(CommandError::ArgNotJsonOrValidAddress)
+            zcash_address::ZcashAddress::try_from_encoded(
+                super::parse_send_all_args(send_args).unwrap().0.as_str()
+            ),
+            Err(zcash_address::ParseError::NotZcash)
         ));
     }
 
