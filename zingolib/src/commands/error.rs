@@ -3,7 +3,6 @@ use std::fmt;
 #[derive(Debug)]
 pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
-    ArgNotJsonOrValidAddress,
     SingleArgNotJsonArray(String),
     JsonArrayNotObj(String),
     EmptyJsonArray,
@@ -11,7 +10,6 @@ pub(crate) enum CommandError {
     UnexpectedType(String),
     MissingKey(String),
     InvalidArguments,
-    IncompatibleMemo,
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
     ConversionFailed(crate::utils::error::ConversionError),
@@ -25,10 +23,6 @@ impl fmt::Display for CommandError {
 
         match self {
             ArgsNotJson(e) => write!(f, "failed to parse argument. {}", e),
-            ArgNotJsonOrValidAddress => write!(
-                f,
-                "argument cannot be converted to a valid address or parsed as json."
-            ),
             SingleArgNotJsonArray(e) => {
                 write!(f, "argument cannot be parsed to a json array. {}", e)
             }
@@ -43,9 +37,6 @@ impl fmt::Display for CommandError {
             UnexpectedType(e) => write!(f, "arguments cannot be parsed to expected type. {}", e),
             MissingKey(key) => write!(f, "json array is missing \"{}\" key.", key),
             InvalidArguments => write!(f, "arguments given are invalid."),
-            IncompatibleMemo => {
-                write!(f, "memo's cannot be sent to transparent addresses.")
-            }
             InvalidMemo(e) => write!(f, "failed to interpret memo. {}", e),
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {}", e),
             ConversionFailed(e) => write!(f, "conversion failed. {}", e),
