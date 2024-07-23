@@ -199,34 +199,32 @@ mod tests {
 
     #[test]
     fn parse_send_args() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
-        let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let recipient_address = address_from_str(address_str, &chain).unwrap();
+        let recipient_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let value_str = "100000";
         let amount = zatoshis_from_u64(100_000).unwrap();
         let memo_str = "test memo";
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
         // No memo
-        let send_args = &[address_str, value_str];
+        let send_args = &[recipient_str, value_str];
         assert_eq!(
-            super::parse_send_args(send_args, &chain).unwrap(),
-            vec![crate::data::destinations::Destination {
-                recipient_address: recipient_address.clone(),
+            super::parse_send_args(send_args).unwrap(),
+            vec![crate::data::destinations::Destination::new(
+                recipient_str.to_string(),
                 amount,
-                memo: None
-            }]
+                None
+            )]
         );
 
         // Memo
-        let send_args = &[address_str, value_str, memo_str];
+        let send_args = &[recipient_str, value_str, memo_str];
         assert_eq!(
-            super::parse_send_args(send_args, &chain).unwrap(),
-            vec![Destination {
-                recipient_address: recipient_address.clone(),
+            super::parse_send_args(send_args).unwrap(),
+            vec![crate::data::destinations::Destination::new(
+                recipient_str.to_string(),
                 amount,
-                memo: Some(memo.clone())
-            }]
+                Some(memo.clone())
+            )]
         );
 
         // Json
@@ -234,34 +232,26 @@ mod tests {
                     {\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         assert_eq!(
-            super::parse_send_args(&[json], &chain).unwrap(),
+            super::parse_send_args(&[json]).unwrap(),
             vec![
-                Destination {
-                    recipient_address: address_from_str(
-                        "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        &chain
-                    )
-                    .unwrap(),
-                    amount: zatoshis_from_u64(50_000).unwrap(),
-                    memo: None
-                },
-                Destination {
-                    recipient_address: recipient_address.clone(),
-                    amount,
-                    memo: Some(memo.clone())
-                }
+                Destination::new(
+                    "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
+                    zatoshis_from_u64(50_000).unwrap(),
+                    None
+                ),
+                Destination::new(recipient_str.to_string(), amount, Some(memo.clone()))
             ]
         );
 
         // Trim whitespace
-        let send_args = &[address_str, "1 ", memo_str];
+        let send_args = &[recipient_str, "1 ", memo_str];
         assert_eq!(
-            super::parse_send_args(send_args, &chain).unwrap(),
-            vec![Destination {
-                recipient_address,
-                amount: zatoshis_from_u64(1).unwrap(),
-                memo: Some(memo.clone())
-            }]
+            super::parse_send_args(send_args).unwrap(),
+            vec![Destination::new(
+                recipient_str.to_string(),
+                zatoshis_from_u64(1).unwrap(),
+                Some(memo.clone())
+            )]
         );
     }
 
