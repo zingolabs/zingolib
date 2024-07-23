@@ -1623,6 +1623,7 @@ dependencies = [
 name = "libtonode-tests"
 version = "0.2.0"
 dependencies = [
+ "bip0039",
  "hex",
  "http 0.2.12",
  "itertools 0.10.5",

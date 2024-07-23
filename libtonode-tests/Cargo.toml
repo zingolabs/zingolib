@@ -20,6 +20,7 @@ sapling-crypto = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
+bip0039 = { workspace = true }
 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }

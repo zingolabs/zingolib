@@ -124,6 +124,7 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
+    use bip0039::{English, Mnemonic};
     use zcash_address::unified::Encoding;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
@@ -479,7 +480,7 @@ mod fast {
     async fn diversification_deterministic_and_coherent() {
         let (_regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+        let seed_phrase = Mnemonic::<English>::from_entropy([1; 32])
             .unwrap()
             .to_string();
         let recipient1 = client_builder
@@ -593,7 +594,7 @@ mod fast {
             .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
             .unwrap();
         let expected_mnemonic = (
-            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+            Mnemonic::<bip0039::English>::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
             0,
         );
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
@@ -767,6 +768,7 @@ mod fast {
     }
 }
 mod slow {
+    use bip0039::{English, Mnemonic};
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::{
@@ -3010,7 +3012,7 @@ mod slow {
             scenarios::custom_clients_default().await;
         let faucet = client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
-        let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+        let seed_phrase_of_recipient1 = Mnemonic::<English>::from_entropy([1; 32])
             .unwrap()
             .to_string();
         let recipient1 = client_builder
