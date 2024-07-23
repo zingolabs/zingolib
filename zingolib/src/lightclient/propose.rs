@@ -215,7 +215,10 @@ impl LightClient {
         }
         let mut receivers = vec![Destination::new(recipient, spendable_balance, memo)];
         if zennies_for_zingo {
-            append_zingo_zenny_receiver(&mut receivers);
+            append_zingo_zenny_receiver(
+                &mut receivers,
+                self.wallet.transaction_context.config.chain,
+            );
         }
         let request = transaction_request_from_destinations(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
@@ -250,7 +253,10 @@ impl LightClient {
             None,
         )];
         if zennies_for_zingo {
-            append_zingo_zenny_receiver(&mut receivers);
+            append_zingo_zenny_receiver(
+                &mut receivers,
+                self.wallet.transaction_context.config.chain,
+            );
         }
         let request = transaction_request_from_destinations(receivers)?;
         let failing_proposal = self.create_send_proposal(request).await;

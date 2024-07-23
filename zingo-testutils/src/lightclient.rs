@@ -46,7 +46,7 @@ pub mod from_inputs {
         quick_sender: &zingolib::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
-        let request = transaction_request_from_send_inputs(quick_sender, raw_receivers)
+        let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender.quick_send(request).await
     }
@@ -54,7 +54,6 @@ pub mod from_inputs {
     /// Panics if the address, amount or memo conversion fails.
     pub fn destinations_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-        chain: &zingoconfig::ChainType,
     ) -> zingolib::data::destinations::Destinations {
         raw_receivers
             .into_iter()
@@ -73,10 +72,9 @@ pub mod from_inputs {
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
     pub fn transaction_request_from_send_inputs(
-        requester: &zingolib::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<zcash_client_backend::zip321::TransactionRequest, DestinationParseError> {
-        let receivers = destinations_from_send_inputs(raw_receivers, &requester.config().chain);
+        let receivers = destinations_from_send_inputs(raw_receivers);
         zingolib::data::destinations::transaction_request_from_destinations(receivers)
     }
 
@@ -88,7 +86,7 @@ pub mod from_inputs {
         zingolib::data::proposal::ProportionalFeeProposal,
         zingolib::lightclient::propose::ProposeSendError,
     > {
-        let request = transaction_request_from_send_inputs(proposer, raw_receivers)
+        let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request).await
     }
