@@ -816,7 +816,11 @@ impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
         match (transparent, sapling, orchard) {
             (Capability::Spend(tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
                 UnifiedSpendingKey::from_checked_parts(
-                    AccountPrivKey::from_extended_privkey(*tkey),
+                    AccountPrivKey::from_extended_privkey(
+                        bip32::extended_key::private_key::ExtendedPrivateKey::<SecretKey>::new(
+                            tkey.private_key,
+                        ),
+                    ),
                     *skey,
                     *okey,
                 )
