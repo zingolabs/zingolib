@@ -4,6 +4,7 @@ use crate::wallet::now;
 use futures::Future;
 
 use log::error;
+use zcash_address::ZcashAddress;
 
 use std::cmp;
 
@@ -161,12 +162,15 @@ pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest)
     let recipient_uas = request
         .payments()
         .iter()
-        .filter_map(|(_, payment)| match payment.recipient_address {
-            Address::Transparent(_) => None,
-            Address::Sapling(_) => None,
-            Address::Unified(ref ua) => Some(ua.clone()),
+        .filter_map(|(_, payment)| match payment.recipient_address().kind() {
+            AddressKind::Unified(_) => todo!(),
+            _ => None,
         })
         .collect::<Vec<_>>();
+    // ZcashAddress
+    // Address::Transparent(_) => None,
+    // Address::Sapling(_) => None,
+    // Address::Unified(ref ua) => Some(ua.clone()),
     let uas_bytes = match create_wallet_internal_memo_version_0(recipient_uas.as_slice()) {
         Ok(bytes) => bytes,
         Err(e) => {
