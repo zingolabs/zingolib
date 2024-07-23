@@ -163,7 +163,7 @@ pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest)
         .payments()
         .iter()
         .filter_map(|(_, payment)| match payment.recipient_address().kind() {
-            AddressKind::Unified(_) => todo!(),
+            // AddressKind::Unified(_) => todo!(),
             _ => None,
         })
         .collect::<Vec<_>>();
