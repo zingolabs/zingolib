@@ -143,23 +143,6 @@ pub mod send_with_proposal {
 
             let step = proposal.steps().first();
 
-            // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
-            // transparent key it contains is not the account spending key, but the
-            // externally-scoped derivative key. The goal is to fix this, but in the
-            // interim we use this special-case logic.
-            fn usk_to_tkey(
-                unified_spend_key: &UnifiedSpendingKey,
-                t_metadata: &TransparentAddressMetadata,
-            ) -> SecretKey {
-                todo!()
-                // hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
-                //     .expect("This a hack to do a type conversion, and will not fail")
-                //     .derive_private_key(t_metadata.address_index().into())
-                //     // This is unwrapped in librustzcash, so I'm not too worried about it
-                //     .expect("private key derivation failed")
-                //     .private_key
-            }
-
             let build_result =
                 zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
                     self.wallet
