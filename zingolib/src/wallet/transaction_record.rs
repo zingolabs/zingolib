@@ -548,7 +548,7 @@ pub mod mocks {
     use super::TransactionRecord;
 
     /// to create a mock TransactionRecord
-    pub(crate) struct TransactionRecordBuilder {
+    pub struct TransactionRecordBuilder {
         status: Option<ConfirmationStatus>,
         datetime: Option<u64>,
         txid: Option<TxId>,

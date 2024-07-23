@@ -85,7 +85,7 @@ pub mod nullifier {
     }
 
     #[derive(Clone)]
-    pub(crate) struct SaplingNullifierBuilder {
+    pub struct SaplingNullifierBuilder {
         unique_nullifier: [u8; 32],
         nullifier: Option<[u8; 32]>,
     }
@@ -118,7 +118,7 @@ pub mod nullifier {
     }
 
     #[derive(Clone)]
-    pub(crate) struct OrchardNullifierBuilder {
+    pub struct OrchardNullifierBuilder {
         unique_nullifier: [u8; 32],
         nullifier: Option<[u8; 32]>,
     }

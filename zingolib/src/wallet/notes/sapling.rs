@@ -247,7 +247,7 @@ pub mod mocks {
 
     /// to create a mock SaplingNote
     #[derive(Clone)]
-    pub(crate) struct SaplingNoteBuilder {
+    pub struct SaplingNoteBuilder {
         diversifier: Option<sapling_crypto::Diversifier>,
         note: Option<SaplingCryptoNoteBuilder>,
         witnessed_position: Option<Option<Position>>,

@@ -1986,7 +1986,7 @@ pub(crate) mod mocks {
 
     use super::OutgoingTxData;
 
-    pub(crate) struct OutgoingTxDataBuilder {
+    pub struct OutgoingTxDataBuilder {
         recipient_address: Option<String>,
         value: Option<u64>,
         memo: Option<Memo>,

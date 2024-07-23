@@ -231,7 +231,7 @@ pub mod mocks {
 
     /// to create a mock TransparentOutput
     #[derive(Clone)]
-    pub(crate) struct TransparentOutputBuilder {
+    pub struct TransparentOutputBuilder {
         address: Option<String>,
         txid: Option<TxId>,
         pub output_index: Option<u64>,

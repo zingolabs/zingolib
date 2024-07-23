@@ -224,7 +224,7 @@ pub mod mocks {
 
     /// to create a mock SaplingNote
     #[derive(Clone)]
-    pub(crate) struct OrchardNoteBuilder {
+    pub struct OrchardNoteBuilder {
         diversifier: Option<Diversifier>,
         note: Option<OrchardCryptoNoteBuilder>,
         witnessed_position: Option<Option<Position>>,
