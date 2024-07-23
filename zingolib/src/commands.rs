@@ -623,16 +623,15 @@ impl Command for SpendableBalanceCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo) =
-            match parse_spendable_balance_args(args, &lightclient.config.chain) {
-                Ok(address_and_zennies) => address_and_zennies,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
-                        e
-                    );
-                }
-            };
+        let (address, zennies_for_zingo) = match parse_spendable_balance_args(args) {
+            Ok(address_and_zennies) => address_and_zennies,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    e
+                );
+            }
+        };
         RT.block_on(async move {
             match lightclient
                 .get_spendable_shielded_balance(address, zennies_for_zingo)
@@ -836,7 +835,7 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
@@ -962,7 +961,7 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
