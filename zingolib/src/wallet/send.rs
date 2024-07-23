@@ -157,7 +157,7 @@ impl LightWallet {
     }
 }
 
-// TODO: move to a more suitable place
+// todo: move to a more suitable place
 pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest) -> MemoBytes {
     let recipient_uas = request
         .payments()
