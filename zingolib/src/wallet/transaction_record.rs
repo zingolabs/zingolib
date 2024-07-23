@@ -650,74 +650,79 @@ pub mod mocks {
 
     /// creates a TransactionRecord holding each type of note with custom values.
     #[allow(clippy::too_many_arguments)]
-    pub fn nine_note_transaction_record(
+    pub fn nine_note_transaction_record_builder(
         transparent_unspent: u64,
         transparent_spent: u64,
-        transparent_semi_spent: u64,
+        transparent_pending_spent: u64,
         sapling_unspent: u64,
         sapling_spent: u64,
-        sapling_semi_spent: u64,
+        sapling_pending_spent: u64,
         orchard_unspent: u64,
         orchard_spent: u64,
-        orchard_semi_spent: u64,
-    ) -> TransactionRecord {
-        let spend = Some((random_txid(), 112358));
-        let semi_spend = Some((random_txid(), 853211));
+        orchard_pending_spent: u64,
+        spend_height: u32,
+        pending_spend_height: u32,
+    ) -> TransactionRecordBuilder {
+        let spend = Some((random_txid(), spend_height));
+        let pending_spend = Some((random_txid(), pending_spend_height));
 
-        TransactionRecordBuilder::default()
-            .transparent_outputs(
-                TransparentOutputBuilder::default()
-                    .value(transparent_unspent)
-                    .clone(),
-            )
-            .transparent_outputs(
-                TransparentOutputBuilder::default()
-                    .spent(spend)
-                    .value(transparent_spent)
-                    .clone(),
-            )
-            .transparent_outputs(
-                TransparentOutputBuilder::default()
-                    .pending_spent(semi_spend)
-                    .value(transparent_semi_spent)
-                    .clone(),
-            )
-            .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent).clone())
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .spent(spend)
-                    .value(sapling_spent)
-                    .clone(),
-            )
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .pending_spent(semi_spend)
-                    .value(sapling_semi_spent)
-                    .clone(),
-            )
-            .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent).clone())
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .spent(spend)
-                    .value(orchard_spent)
-                    .clone(),
-            )
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .pending_spent(semi_spend)
-                    .value(orchard_semi_spent)
-                    .clone(),
-            )
-            .randomize_txid()
-            .set_output_indexes()
-            .build()
+        let mut trb = TransactionRecordBuilder::default();
+
+        trb.transparent_outputs(
+            TransparentOutputBuilder::default()
+                .value(transparent_unspent)
+                .clone(),
+        )
+        .transparent_outputs(
+            TransparentOutputBuilder::default()
+                .spent(spend)
+                .value(transparent_spent)
+                .clone(),
+        )
+        .transparent_outputs(
+            TransparentOutputBuilder::default()
+                .pending_spent(pending_spend)
+                .value(transparent_pending_spent)
+                .clone(),
+        )
+        .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent).clone())
+        .sapling_notes(
+            SaplingNoteBuilder::default()
+                .spent(spend)
+                .value(sapling_spent)
+                .clone(),
+        )
+        .sapling_notes(
+            SaplingNoteBuilder::default()
+                .pending_spent(pending_spend)
+                .value(sapling_pending_spent)
+                .clone(),
+        )
+        .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent).clone())
+        .orchard_notes(
+            OrchardNoteBuilder::default()
+                .spent(spend)
+                .value(orchard_spent)
+                .clone(),
+        )
+        .orchard_notes(
+            OrchardNoteBuilder::default()
+                .pending_spent(pending_spend)
+                .value(orchard_pending_spent)
+                .clone(),
+        )
+        .randomize_txid()
+        .set_output_indexes();
+
+        trb
     }
 
     /// default values are multiples of 10_000
     pub fn nine_note_transaction_record_default() -> TransactionRecord {
-        nine_note_transaction_record(
-            10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 70_000, 80_000, 90_000,
+        nine_note_transaction_record_builder(
+            10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 70_000, 80_000, 90_000, 112358, 853211,
         )
+        .build()
     }
     #[test]
     fn check_nullifier_indices() {
@@ -777,7 +782,7 @@ mod tests {
         Output, OutputInterface,
     };
     use crate::wallet::transaction_record::mocks::{
-        nine_note_transaction_record, nine_note_transaction_record_default,
+        nine_note_transaction_record_builder, nine_note_transaction_record_default,
         TransactionRecordBuilder,
     };
 
@@ -888,22 +893,19 @@ mod tests {
         //different pools have different mock values.
         let mut valid_pool_value = 0;
         if transparent {
-            valid_pool_value += 100_000;
+            valid_pool_value += 10_000;
         }
         if sapling {
-            valid_pool_value += 200_000;
+            valid_pool_value += 20_000;
         }
         if orchard {
-            valid_pool_value += 800_000;
+            valid_pool_value += 80_000;
         }
 
         let expected = valid_spend_state * valid_pool_value;
 
         assert_eq!(
-            nine_note_transaction_record(
-                100_000, 100_000, 100_000, 200_000, 200_000, 200_000, 800_000, 800_000, 800_000
-            )
-            .query_sum_value(OutputQuery::stipulations(
+            nine_note_transaction_record_default().query_sum_value(OutputQuery::stipulations(
                 unspent,
                 pending_spent,
                 spent,
@@ -934,17 +936,7 @@ mod tests {
 
     #[test]
     fn get_received_note() {
-        let transaction_record = nine_note_transaction_record(
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-        );
+        let transaction_record = nine_note_transaction_record_default();
 
         for (i, value) in transaction_record
             .sapling_notes

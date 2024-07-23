@@ -781,7 +781,9 @@ mod tests {
                 sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
                 Output, OutputInterface,
             },
-            transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
+            transaction_record::mocks::{
+                nine_note_transaction_record_default, TransactionRecordBuilder,
+            },
         },
     };
 
@@ -1125,17 +1127,7 @@ mod tests {
     #[test]
     fn get_received_spendable_note_from_identifier() {
         let mut trbid = TransactionRecordsById::new();
-        trbid.insert_transaction_record(nine_note_transaction_record(
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-            100_000_000,
-            200_000_000,
-            400_000_000,
-        ));
+        trbid.insert_transaction_record(nine_note_transaction_record_default());
 
         for i in 0..3 {
             let (txid, record) = trbid.0.iter().next().unwrap();

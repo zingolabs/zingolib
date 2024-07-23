@@ -455,7 +455,7 @@ mod tests {
             transaction_records_by_id
                 .get_spendable_transparent_outputs(
                     &TransparentAddress::ScriptHash([0; 20]),
-                    BlockHeight::from_u32(853210),
+                    BlockHeight::from_u32(853211),
                     0,
                 )
                 .unwrap()
@@ -467,7 +467,7 @@ mod tests {
             transaction_records_by_id
                 .get_spendable_transparent_outputs(
                     &TransparentAddress::ScriptHash([0; 20]),
-                    BlockHeight::from_u32(853211),
+                    BlockHeight::from_u32(853212),
                     0,
                 )
                 .unwrap()
@@ -479,7 +479,7 @@ mod tests {
             transaction_records_by_id
                 .get_spendable_transparent_outputs(
                     &TransparentAddress::ScriptHash([0; 20]),
-                    BlockHeight::from_u32(853212),
+                    BlockHeight::from_u32(853213),
                     0,
                 )
                 .unwrap()
