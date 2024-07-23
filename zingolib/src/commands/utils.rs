@@ -32,21 +32,17 @@ pub(super) fn parse_send_args(
         json_args
             .members()
             .map(|j| {
-                let recipient_address = address_from_json(j, chain)?;
+                let recipient = address_from_json(j)?;
                 let amount = zatoshis_from_json(j)?;
                 let memo = memo_from_json(j)?;
-                check_memo_compatibility(&recipient_address, &memo)?;
 
-                Ok(crate::data::destinations::Destination {
-                    recipient_address,
-                    amount,
-                    memo,
-                })
+                Ok(crate::data::destinations::Destination::new(
+                    recipient, amount, memo,
+                ))
             })
             .collect::<Result<Destinations, CommandError>>()
     } else if args.len() == 2 || args.len() == 3 {
-        let recipient_address =
-            address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
+        let recipient = args[0].to_string();
         let amount_u64 = args[1]
             .trim()
             .parse::<u64>()
@@ -60,13 +56,10 @@ pub(super) fn parse_send_args(
         } else {
             None
         };
-        check_memo_compatibility(&recipient_address, &memo)?;
 
-        Ok(vec![crate::data::destinations::Destination {
-            recipient_address,
-            amount,
-            memo,
-        }])
+        Ok(vec![crate::data::destinations::Destination::new(
+            recipient, amount, memo,
+        )])
     } else {
         return Err(CommandError::InvalidArguments);
     }?;
@@ -169,7 +162,7 @@ fn check_memo_compatibility(
     Ok(())
 }
 
-fn address_from_json(json_array: &JsonValue, chain: &ChainType) -> Result<Address, CommandError> {
+fn address_from_json(json_array: &JsonValue) -> Result<String, CommandError> {
     if !json_array.has_key("address") {
         return Err(CommandError::MissingKey("address".to_string()));
     }
@@ -178,7 +171,7 @@ fn address_from_json(json_array: &JsonValue, chain: &ChainType) -> Result<Addres
         .ok_or(CommandError::UnexpectedType(
             "address is not a string!".to_string(),
         ))?;
-    address_from_str(address_str, chain).map_err(CommandError::ConversionFailed)
+    Ok(address_str.to_string())
 }
 
 fn zennies_flag_from_json(json_arg: &JsonValue) -> Result<bool, CommandError> {
