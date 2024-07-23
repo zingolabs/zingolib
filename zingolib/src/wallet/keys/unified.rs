@@ -817,9 +817,8 @@ impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
             (Capability::Spend(tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
                 UnifiedSpendingKey::from_checked_parts(
                     AccountPrivKey::from_extended_privkey(
-                        bip32::extended_key::private_key::ExtendedPrivateKey::<SecretKey>::new(
-                            tkey.private_key,
-                        ),
+                        bip32::ExtendedPrivateKey::<SecretKey>::new(tkey.private_key).unwrap(),
+                        // TODO dont unwrap
                     ),
                     *skey,
                     *okey,
