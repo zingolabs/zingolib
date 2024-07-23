@@ -264,7 +264,6 @@ mod tests {
 
             #[test]
             fn empty_json_array() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let json = "[]";
                 assert!(matches!(
                     parse_send_args(&[json]),
@@ -273,7 +272,6 @@ mod tests {
             }
             #[test]
             fn failed_json_parsing() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = [r#"testaddress{{"#];
                 assert!(matches!(
                     parse_send_args(&args),
@@ -282,7 +280,6 @@ mod tests {
             }
             #[test]
             fn single_arg_not_an_array_unexpected_type() {
-                let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
                 let args = ["1"];
                 assert!(matches!(
                     parse_send_args(&args),
@@ -338,7 +335,6 @@ mod tests {
 
     #[test]
     fn parse_send_all_args() {
-        let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
         let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let memo_str = "test memo";
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
