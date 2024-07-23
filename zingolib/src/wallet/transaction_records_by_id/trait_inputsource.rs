@@ -310,8 +310,7 @@ impl InputSource for TransactionRecordsById {
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.values()
             .filter_map(|source_transaction_record| {
-                source_transaction_record
-                    .status
+                dbg!(source_transaction_record.status)
                     .is_spendable(target_height)
                     .ok()
                     .map(|expected_confirmation_height| {
@@ -360,10 +359,12 @@ mod tests {
         consensus::BlockHeight, legacy::TransparentAddress,
         transaction::components::amount::NonNegativeAmount,
     };
+    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
     use zip32::AccountId;
 
     use crate::wallet::{
-        notes::orchard::mocks::OrchardNoteBuilder,
+        notes::{orchard::mocks::OrchardNoteBuilder, transparent::mocks::TransparentOutputBuilder},
         transaction_record::mocks::{
             nine_note_transaction_record_default, TransactionRecordBuilder,
         },
@@ -449,25 +450,36 @@ mod tests {
     #[test]
     fn get_spendable_transparent_outputs() {
         let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record_default());
+        transaction_records_by_id.insert_transaction_record(
+            TransactionRecordBuilder::default()
+                .transparent_outputs(TransparentOutputBuilder::default())
+                .status(Confirmed(5.into()))
+                .build(),
+        );
+        transaction_records_by_id.insert_transaction_record(
+            TransactionRecordBuilder::default()
+                .transparent_outputs(TransparentOutputBuilder::default())
+                .status(Pending(9.into()))
+                .build(),
+        );
 
         assert_eq!(
             transaction_records_by_id
                 .get_spendable_transparent_outputs(
                     &TransparentAddress::ScriptHash([0; 20]),
-                    BlockHeight::from_u32(853211),
+                    BlockHeight::from_u32(9),
                     0,
                 )
                 .unwrap()
                 .len(),
             1
-        ); // toDo this should be an error
+        ); // toDo this should be an timeline error: FutureBroadcast
 
         assert_eq!(
             transaction_records_by_id
                 .get_spendable_transparent_outputs(
                     &TransparentAddress::ScriptHash([0; 20]),
-                    BlockHeight::from_u32(853212),
+                    BlockHeight::from_u32(10),
                     0,
                 )
                 .unwrap()
@@ -479,7 +491,7 @@ mod tests {
             transaction_records_by_id
                 .get_spendable_transparent_outputs(
                     &TransparentAddress::ScriptHash([0; 20]),
-                    BlockHeight::from_u32(853213),
+                    BlockHeight::from_u32(11),
                     0,
                 )
                 .unwrap()
