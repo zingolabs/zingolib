@@ -27,8 +27,12 @@ use zcash_primitives::consensus::{
     TEST_NETWORK,
 };
 
-/// TODO: Add Doc Comment Here!
+/// The actual mainnet donation address.
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
+/// this is a dummy placeholder address to test that zennies for zingo works in regtest mode
+pub const REGTEST_DONATION_ADDRESS: &str = 
+"uregtest1zkuzfv5m3yhv2j4fmvq5rjurkxenxyq8r7h4daun2zkznrjaa8ra8asgdm8wwgwjvlwwrxx7347r8w0ee6dqyw4rufw4wg9djwcr6frzkezmdw6dud3wsm99eany5r8wgsctlxquu009nzd6hsme2tcsk0v3sgjvxa70er7h27z5epr67p5q767s2z5gt88paru56mxpm6pwz0cu35m";
+
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
 /// TODO: Add Doc Comment Here!

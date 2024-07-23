@@ -96,9 +96,12 @@ pub enum ProposeShieldError {
     ),
 }
 
-fn append_zingo_zenny_receiver(receivers: &mut Vec<Destination>) {
+fn append_zingo_zenny_receiver(receivers: &mut Vec<Destination>, chain: ChainType) {
     let dev_donation_receiver = Destination::new(
-        zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string(),
+        match chain {
+            ChainType::Mainnet => zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string(),
+            _ => zingoconfig::REGTEST_DONATION_ADDRESS.to_string(),
+        },
         NonNegativeAmount::from_u64(1_000_000).expect("Hard coded u64."),
         Some(MemoBytes::from_bytes(b"A Zenny for Zingo!").expect("Hard Coded memo bytes.")),
     );
