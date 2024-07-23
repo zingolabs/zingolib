@@ -257,42 +257,44 @@ impl ConfirmationStatus {
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Pending(10.into());
-    /// assert_eq!(status.is_spendable_at(12), Err(UnspendableTxBecause::StalePending));
+    /// assert_eq!(status.is_spendable(12.into()), Err(UnspendableTxBecause::StalePending));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_spendable_at(12), Ok(BlockHeight::const_from_u64(10)));
+    /// assert_eq!(status.is_spendable(12.into()), Ok(BlockHeight::from(10)));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Pending(11.into());
-    /// assert_eq!(status.is_spendable_at(12), Ok(BlockHeight::const_from_u64(12)));
+    /// assert_eq!(status.is_spendable(12.into()), Ok(BlockHeight::from(12)));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(11.into());
-    /// assert_eq!(status.is_spendable_at(12), Ok(BlockHeight::const_from_u64(11)));
+    /// assert_eq!(status.is_spendable(12.into()), Ok(BlockHeight::from(11)));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zingo_status::confirmation_status::UnspendableTxBecause;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Pending(12.into());
-    /// assert_eq!(status.is_spendable_at(12), Err(UnspendableTxBecause::FuturePending);
+    /// assert_eq!(status.is_spendable(12.into()), Err(UnspendableTxBecause::FuturePending));
     /// ```
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zingo_status::confirmation_status::UnspendableTxBecause;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(12.into());
-    /// assert_eq!(status.is_spendable_at(12), Err(UnspendableTxBecause::FutureConfirmation);
+    /// assert_eq!(status.is_spendable(12.into()), Err(UnspendableTxBecause::FutureConfirmation));
     /// ```
     pub fn is_spendable(
         &self,
@@ -312,7 +314,7 @@ impl ConfirmationStatus {
             Self::Confirmed(self_height) => {
                 if *self_height < target_height {
                     // passes sanity check that it has been confirmed in the past
-                    Ok(target_height)
+                    Ok(*self_height)
                 } else {
                     // reorg timeline problem
                     Err(UnspendableTxBecause::FutureConfirmation)
@@ -324,6 +326,7 @@ impl ConfirmationStatus {
 
 /// reasons notes created in a transaction may not be spendable
 /// does not cover all reasons for not being spendable! there may be issues on other layers such as note data or wallet data.
+#[derive(Debug, Eq, PartialEq)]
 pub enum UnspendableTxBecause {
     /// implies a previous transaction sent by this client has not been accepted by a validator
     StalePending,
