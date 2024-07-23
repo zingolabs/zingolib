@@ -364,9 +364,7 @@ mod tests {
 
     use crate::wallet::{
         notes::{orchard::mocks::OrchardNoteBuilder, transparent::mocks::TransparentOutputBuilder},
-        transaction_record::mocks::{
-            TransactionRecordBuilder,
-        },
+        transaction_record::mocks::TransactionRecordBuilder,
         transaction_records_by_id::TransactionRecordsById,
     };
 

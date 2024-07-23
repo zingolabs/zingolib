@@ -18,7 +18,7 @@ use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
-use zcash_encoding::{Vector};
+use zcash_encoding::Vector;
 use zcash_primitives::legacy::keys::AccountPrivKey;
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};

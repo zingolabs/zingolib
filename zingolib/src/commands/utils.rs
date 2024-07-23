@@ -3,7 +3,7 @@
 use crate::commands::error::CommandError;
 use crate::data::destinations::Destination;
 use crate::data::destinations::Destinations;
-use crate::utils::conversion::{zatoshis_from_u64};
+use crate::utils::conversion::zatoshis_from_u64;
 use crate::wallet;
 use json::JsonValue;
 use zcash_primitives::memo::MemoBytes;
@@ -182,12 +182,11 @@ fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandEr
 
 #[cfg(test)]
 mod tests {
-    
 
     use crate::{
         commands::error::CommandError,
         data::destinations::{transaction_request_from_destinations, Destination},
-        utils::conversion::{zatoshis_from_u64},
+        utils::conversion::zatoshis_from_u64,
         wallet::{self, utils::interpret_memo_string},
     };
 
@@ -246,7 +245,6 @@ mod tests {
     }
 
     mod fail_parse_send_args {
-        
 
         use crate::commands::{error::CommandError, utils::parse_send_args};
 

@@ -4,7 +4,7 @@ use crate::wallet::now;
 use futures::Future;
 
 use log::error;
-use zcash_address::{AddressKind};
+use zcash_address::AddressKind;
 
 use std::cmp;
 
@@ -186,12 +186,11 @@ pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest)
 mod tests {
     use std::str::FromStr;
 
-    use zcash_client_backend::{zip321::TransactionRequest};
+    use zcash_client_backend::zip321::TransactionRequest;
     use zcash_primitives::{
         memo::{Memo, MemoBytes},
         transaction::components::amount::NonNegativeAmount,
     };
-    
 
     use crate::data::destinations::{transaction_request_from_destinations, Destinations};
 
