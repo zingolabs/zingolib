@@ -900,19 +900,18 @@ impl Command for SendAllCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo, memo) =
-            match utils::parse_send_all_args(args, &lightclient.config().chain) {
-                Ok(parse_results) => parse_results,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help sendall' for correct usage and examples.",
-                        e
-                    )
-                }
-            };
+        let (recipient, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
+            Ok(parse_results) => parse_results,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help sendall' for correct usage and examples.",
+                    e
+                )
+            }
+        };
         RT.block_on(async move {
             match lightclient
-                .propose_send_all(address, zennies_for_zingo, memo)
+                .propose_send_all(recipient, zennies_for_zingo, memo)
                 .await
             {
                 Ok(proposal) => {
