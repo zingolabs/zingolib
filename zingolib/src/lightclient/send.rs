@@ -131,6 +131,7 @@ pub mod send_with_proposal {
             let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
                 read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
             let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
             let unified_spend_key =
                 UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
                     .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
@@ -176,7 +177,6 @@ pub mod send_with_proposal {
                     proposal.min_target_height(),
                     &[],
                     step,
-                    Some(usk_to_tkey),
                     Some(self.wallet.wallet_capability().first_sapling_address()),
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
