@@ -12,7 +12,8 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_client_backend::address::Address;
+use zcash_address::AddressKind;
+use zcash_address::ZcashAddress;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
@@ -196,56 +197,48 @@ impl Command for ParseAddressCommand {
 
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
         match args.len() {
-            1 => json::stringify_pretty(
-                [
-                    zingoconfig::ChainType::Mainnet,
-                    zingoconfig::ChainType::Testnet,
-                    zingoconfig::ChainType::Regtest(
-                        zingoconfig::RegtestNetwork::all_upgrades_active(),
-                    ),
-                ]
-                .iter()
-                .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
-                .map(|(recipient_address, chain_name)| {
-                    let chain_name_string = match chain_name {
-                        zingoconfig::ChainType::Mainnet => "main",
-                        zingoconfig::ChainType::Testnet => "test",
-                        zingoconfig::ChainType::Regtest(_) => "regtest",
-                    };
+            1 => {
+                if let Ok(recipient) = ZcashAddress::try_from_encoded(args[0]) {
+                    json::stringify_pretty(
+                        {
+                            let mut success = true;
 
-                    match recipient_address {
-                        Address::Sapling(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "sapling",
-                        },
-                        Address::Transparent(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "transparent",
-                        },
-                        Address::Unified(ua) => {
-                            let mut receivers_available = vec![];
-                            if ua.orchard().is_some() {
-                                receivers_available.push("orchard")
-                            }
-                            if ua.sapling().is_some() {
-                                receivers_available.push("sapling")
-                            }
-                            if ua.transparent().is_some() {
-                                receivers_available.push("transparent")
-                            }
+                            let mut receivers_available = vec![0];
+                            let address_kind = match recipient.kind() {
+                                AddressKind::Sprout(_data) => "sprout",
+                                AddressKind::Sapling(_data) => "sapling",
+                                AddressKind::Unified(_data) => {
+                                    "unified"
+                                    //     if ua.orchard().is_some() {
+                                    //         receivers_available.push("orchard")
+                                    //     }
+                                    //     if ua.sapling().is_some() {
+                                    //         receivers_available.push("sapling")
+                                    //     }
+                                    //     if ua.transparent().is_some() {
+                                    //         receivers_available.push("transparent")
+                                    //     }
+                                }
+                                AddressKind::P2pkh(_data) => "P2pkh",
+                                AddressKind::P2sh(_data) => "P2sh",
+                                AddressKind::Tex(_data) => "Tex",
+                            };
+
+                            // let chain_name = match recipient.chain_namo() {
+
                             object! {
-                                "status" => "success",
-                                "chain_name" => chain_name_string,
-                                "address_kind" => "unified",
+                                "status" => if success {"success"} else {"failure"},
+                                "chain_name" => "todo",
+                                "address_kind" => address_kind,
                                 "receivers_available" => receivers_available,
                             }
-                        }
-                    }
-                }),
-                4,
-            ),
+                        },
+                        4,
+                    )
+                } else {
+                    "could not parse address".to_string()
+                }
+            }
             _ => self.help().to_string(),
         }
     }

@@ -4,7 +4,7 @@ use crate::wallet::now;
 use futures::Future;
 
 use log::error;
-use zcash_address::ZcashAddress;
+use zcash_address::{AddressKind, ZcashAddress};
 
 use std::cmp;
 
