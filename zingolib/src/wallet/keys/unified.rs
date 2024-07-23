@@ -806,32 +806,22 @@ impl TryFrom<&WalletCapability> for sapling_crypto::keys::OutgoingViewingKey {
     }
 }
 
-impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
-    type Error = io::Error;
-
-    fn try_from(value: &WalletCapability) -> Result<Self, Self::Error> {
-        let transparent = &value.transparent;
-        let sapling = &value.sapling;
-        let orchard = &value.orchard;
-        match (transparent, sapling, orchard) {
-            (Capability::Spend(tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
-                UnifiedSpendingKey::from_checked_parts(
-                    AccountPrivKey::from_extended_privkey(
-                        bip32::ExtendedPrivateKey::<SecretKey>::new(tkey.private_key.as_ref())
-                            .map_err(|e| {
-                                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
-                            })?,
-                    ),
-                    skey.clone(),
-                    okey.clone(),
-                )
+pub(crate) fn recreate_usk(
+    value: &WalletCapability,
+    transparent_full_key: AccountPrivKey,
+) -> Result<UnifiedSpendingKey, io::Error> {
+    let transparent = &value.transparent;
+    let sapling = &value.sapling;
+    let orchard = &value.orchard;
+    match (transparent, sapling, orchard) {
+        (Capability::Spend(_tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
+            UnifiedSpendingKey::from_checked_parts(transparent_full_key, skey.clone(), okey.clone())
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
-            }
-            _otherwise => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "don't have spend keys",
-            )),
         }
+        _otherwise => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "don't have spend keys",
+        )),
     }
 }
 

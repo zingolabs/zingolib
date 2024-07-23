@@ -35,12 +35,14 @@ pub mod send_with_proposal {
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_client_backend::{proposal::Proposal, wallet::TransparentAddressMetadata};
     use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_primitives::legacy::keys::AccountPrivKey;
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
     use zcash_proofs::prover::LocalTxProver;
 
     use crate::lightclient::LightClient;
+    use crate::wallet::keys::unified::recreate_usk;
     use crate::{
         lightclient::propose::{ProposeSendError, ProposeShieldError},
         wallet::utils::read_sapling_params,
@@ -132,9 +134,16 @@ pub mod send_with_proposal {
                 read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
             let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-            let unified_spend_key =
-                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
-                    .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
+            let unified_spend_key = recreate_usk(
+                self.wallet.wallet_capability().as_ref(),
+                AccountPrivKey::from_seed(
+                    &self.wallet.transaction_context.config.chain,
+                    self.wallet.mnemonic().unwrap().0.to_seed("").as_slice(),
+                    zip32::AccountId::ZERO,
+                )
+                .unwrap(),
+            )
+            .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
 
             // We don't support zip320 yet. Only one step.
             if proposal.steps().len() != 1 {
