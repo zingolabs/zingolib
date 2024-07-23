@@ -10,6 +10,8 @@ use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 
 use thiserror::Error;
+use zingoconfig::ZENNIES_FOR_ZINGO_AMOUNT;
+use zingoconfig::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 
 use crate::data::destinations::transaction_request_from_destinations;
 use crate::data::destinations::Destination;
@@ -101,11 +103,12 @@ fn append_zingo_zenny_receiver(receivers: &mut Vec<Destination>, chain: ChainTyp
             ChainType::Mainnet => zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string(),
             _ => zingoconfig::REGTEST_DONATION_ADDRESS.to_string(),
         },
-        NonNegativeAmount::from_u64(1_000_000).expect("Hard coded u64."),
-        Some(MemoBytes::from_bytes(b"A Zenny for Zingo!").expect("Hard Coded memo bytes.")),
+        NonNegativeAmount::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
+        None,
     );
     receivers.push(dev_donation_receiver);
 }
+
 impl LightClient {
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
@@ -114,9 +117,7 @@ impl LightClient {
         *latest_proposal_lock = Some(proposal);
     }
 
-    /// Unstable function to expose the zip317 interface for development
-    // TOdo: add correct functionality and doc comments / tests
-    // TODO: Add migrate_sapling_to_orchard argument
+    /// Creates a proposal from a transaction request.
     pub(crate) async fn create_send_proposal(
         &self,
         request: TransactionRequest,
@@ -146,6 +147,7 @@ impl LightClient {
         )
         .map_err(ProposeSendError::Proposal)
     }
+
     /// The shield operation consumes a proposal that transfers value
     /// into the Orchard pool.
     ///
@@ -187,7 +189,7 @@ impl LightClient {
         Ok(proposed_shield)
     }
 
-    /// Unstable function to expose the zip317 interface for development
+    /// Creates and stores a proposal from a transaction request.
     pub async fn propose_send(
         &self,
         request: TransactionRequest,
@@ -198,8 +200,7 @@ impl LightClient {
         Ok(proposal)
     }
 
-    /// Unstable function to expose the zip317 interface for development
-    // TOdo: add correct functionality and doc comments / tests
+    /// Creates and stores a proposal for sending all shielded funds to a given address.
     pub async fn propose_send_all(
         &self,
         recipient: String,
@@ -302,7 +303,7 @@ impl LightClient {
             .collect::<Vec<_>>()
     }
 
-    /// Unstable function to expose the zip317 interface for development
+    /// Creates and stores a proposal for shielding all transparent funds..
     pub async fn propose_shield(
         &self,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
