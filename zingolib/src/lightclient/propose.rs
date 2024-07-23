@@ -200,17 +200,17 @@ impl LightClient {
     // TOdo: add correct functionality and doc comments / tests
     pub async fn propose_send_all(
         &self,
-        address: zcash_keys::address::Address,
+        recipient: String,
         zennies_for_zingo: bool,
         memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let spendable_balance = self
-            .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
+            .get_spendable_shielded_balance(recipient.clone(), zennies_for_zingo)
             .await?;
         if spendable_balance == NonNegativeAmount::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
-        let mut receivers = vec![Destination::new(address, spendable_balance, memo)];
+        let mut receivers = vec![Destination::new(recipient, spendable_balance, memo)];
         if zennies_for_zingo {
             append_zingo_zenny_receiver(&mut receivers);
         }
