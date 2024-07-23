@@ -198,45 +198,54 @@ impl Command for ParseAddressCommand {
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
         match args.len() {
             1 => {
-                if let Ok(recipient) = ZcashAddress::try_from_encoded(args[0]) {
-                    json::stringify_pretty(
-                        {
-                            let mut success = true;
+                match ZcashAddress::try_from_encoded(args[0])
+                    .map_err(|e| e.to_string())
+                    .and_then(|recipient| {
+                        let success = true;
 
-                            let mut receivers_available = vec![0];
-                            let address_kind = match recipient.kind() {
-                                AddressKind::Sprout(_data) => "sprout",
-                                AddressKind::Sapling(_data) => "sapling",
-                                AddressKind::Unified(_data) => {
+                        let mut receivers_available = vec![];
+                        let address_kind_ok = match recipient.kind() {
+                            AddressKind::Sprout(_data) => Ok("sprout"),
+                            AddressKind::Sapling(_data) => Ok("sapling"),
+                            AddressKind::Unified(data) => {
+                                let uar =
+                                    zcash_keys::address::UnifiedAddress::try_from(data.clone());
+
+                                uar.map(|ua| {
+                                    if ua.orchard().is_some() {
+                                        receivers_available.push("orchard")
+                                    }
+                                    if ua.sapling().is_some() {
+                                        receivers_available.push("sapling")
+                                    }
+                                    if ua.transparent().is_some() {
+                                        receivers_available.push("transparent")
+                                    }
                                     "unified"
-                                    //     if ua.orchard().is_some() {
-                                    //         receivers_available.push("orchard")
-                                    //     }
-                                    //     if ua.sapling().is_some() {
-                                    //         receivers_available.push("sapling")
-                                    //     }
-                                    //     if ua.transparent().is_some() {
-                                    //         receivers_available.push("transparent")
-                                    //     }
-                                }
-                                AddressKind::P2pkh(_data) => "P2pkh",
-                                AddressKind::P2sh(_data) => "P2sh",
-                                AddressKind::Tex(_data) => "Tex",
-                            };
-
-                            // let chain_name = match recipient.chain_namo() {
-
-                            object! {
-                                "status" => if success {"success"} else {"failure"},
-                                "chain_name" => "todo",
-                                "address_kind" => address_kind,
-                                "receivers_available" => receivers_available,
+                                })
                             }
-                        },
-                        4,
-                    )
-                } else {
-                    "could not parse address".to_string()
+                            AddressKind::P2pkh(_data) => Ok("P2pkh"),
+                            AddressKind::P2sh(_data) => Ok("P2sh"),
+                            AddressKind::Tex(_data) => Ok("Tex"),
+                        };
+
+                        // let chain_name = match recipient.chain_namo() {
+
+                        address_kind_ok
+                            .map(|address_kind| {
+                                object! {
+                                    "status" => if success {"success"} else {"failure"},
+                                    "chain_name" => "todo",
+                                    "address_kind" => address_kind,
+                                    "receivers_available" => receivers_available,
+                                }
+                            })
+                            .map_err(|e| e.to_string())
+                    })
+                    .map(|json| json::stringify_pretty(json, 4))
+                {
+                    Ok(jstring) => jstring,
+                    Err(erstring) => erstring,
                 }
             }
             _ => self.help().to_string(),
