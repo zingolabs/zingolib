@@ -117,22 +117,19 @@ pub(super) fn parse_spendable_balance_args(args: &[&str]) -> Result<(String, boo
     let recipient: String;
     let zennies_for_zingo: bool;
 
-    if let Ok(addr) = address_from_str(args[0], chain) {
-        recipient = addr;
-        zennies_for_zingo = false;
-    } else {
-        let json_arg = json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
-
+    if let Ok(json_arg) = json::parse(args[0]) {
         if json_arg.is_array() {
-            return Err(CommandError::JsonArrayNotObj(
-                "Pass an object, not an array.".to_string(),
-            ));
+            return Err(CommandError::JsonArrayNotObj(json_arg.to_string()));
         }
         if json_arg.is_empty() {
             return Err(CommandError::EmptyJsonArray);
         }
         recipient = recipient_from_json(&json_arg)?;
         zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
+    } else {
+        // args is a single address string {recipient}
+        recipient = args[0].to_string();
+        zennies_for_zingo = false;
     }
 
     Ok((recipient, zennies_for_zingo))
