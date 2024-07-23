@@ -4545,15 +4545,7 @@ mod send_all {
         recipient.do_sync(false).await.unwrap();
 
         recipient
-            .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "sapling"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
-                false,
-                None,
-            )
+            .propose_send_all(get_base_address_macro!(faucet, "sapling"), false, None)
             .await
             .unwrap();
         recipient
