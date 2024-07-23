@@ -29,7 +29,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Destinations, CommandErro
         json_args
             .members()
             .map(|j| {
-                let recipient = address_from_json(j)?;
+                let recipient = recipient_from_json(j)?;
                 let amount = zatoshis_from_json(j)?;
                 let memo = memo_from_json(j)?;
 
@@ -70,31 +70,30 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Destinations, CommandErro
 pub(super) fn parse_send_all_args(
     args: &[&str],
     chain: &ChainType,
-) -> Result<(Address, bool, Option<MemoBytes>), CommandError> {
+) -> Result<(String, bool, Option<MemoBytes>), CommandError> {
     let recipient: String;
     let memo: Option<MemoBytes>;
     let zennies_for_zingo: bool;
     if args.len() == 1 {
-        if let Ok(addr) = address_from_str(args[0], chain) {
-            recipient = addr;
-            memo = None;
-            zennies_for_zingo = false;
-        } else {
-            let json_arg =
-                json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+        if let Ok(json_arg) = json::parse(args[0]) {
             if json_arg.is_array() {
                 return Err(CommandError::JsonArrayNotObj(json_arg.to_string()));
             }
             if json_arg.is_empty() {
                 return Err(CommandError::EmptyJsonArray);
             }
-            recipient = address_from_json(&json_arg)?;
+            recipient = recipient_from_json(&json_arg)?;
             memo = memo_from_json(&json_arg)?;
             zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
+        } else {
+            // args is a single address string {recipient}
+            recipient = args[0].to_string();
+            memo = None;
+            zennies_for_zingo = false;
         }
     } else if args.len() == 2 {
         zennies_for_zingo = false;
-        recipient = address_from_str(args[0], chain).map_err(CommandError::ConversionFailed)?;
+        recipient = args[0].to_string();
         memo = Some(
             wallet::utils::interpret_memo_string(args[1].to_string())
                 .map_err(CommandError::InvalidMemo)?,
@@ -111,10 +110,7 @@ pub(super) fn parse_send_all_args(
 // - 1 argument for a single address. &["<address>"]
 // NOTE: zennies_for_zingo can only be set in a JSON
 // string.
-pub(super) fn parse_spendable_balance_args(
-    args: &[&str],
-    chain: &ChainType,
-) -> Result<(Address, bool), CommandError> {
+pub(super) fn parse_spendable_balance_args(args: &[&str]) -> Result<(String, bool), CommandError> {
     if args.len() > 2 {
         return Err(CommandError::InvalidArguments);
     }
@@ -135,14 +131,14 @@ pub(super) fn parse_spendable_balance_args(
         if json_arg.is_empty() {
             return Err(CommandError::EmptyJsonArray);
         }
-        recipient = address_from_json(&json_arg)?;
+        recipient = recipient_from_json(&json_arg)?;
         zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
     }
 
     Ok((recipient, zennies_for_zingo))
 }
 
-fn address_from_json(json_array: &JsonValue) -> Result<String, CommandError> {
+fn recipient_from_json(json_array: &JsonValue) -> Result<String, CommandError> {
     if !json_array.has_key("address") {
         return Err(CommandError::MissingKey("address".to_string()));
     }
@@ -417,14 +413,14 @@ mod tests {
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
-        super::address_from_json(json_args).unwrap();
+        super::recipient_from_json(json_args).unwrap();
 
         // without address
         let json_str = "[{\"amount\":100000, \"memo\":\"test memo\"}]";
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
-            super::address_from_json(json_args),
+            super::recipient_from_json(json_args),
             Err(CommandError::MissingKey(_))
         ));
 
@@ -434,7 +430,7 @@ mod tests {
         let json_args = json::parse(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
-            super::address_from_json(json_args),
+            super::recipient_from_json(json_args),
             Err(CommandError::UnexpectedType(_))
         ));
     }
