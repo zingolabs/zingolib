@@ -78,7 +78,6 @@ pub(super) fn parse_send_all_args(
         if let Ok(addr) = address_from_str(args[0], chain) {
             recipient = addr;
             memo = None;
-            check_memo_compatibility(&recipient, &memo)?;
             zennies_for_zingo = false;
         } else {
             let json_arg =
@@ -91,7 +90,6 @@ pub(super) fn parse_send_all_args(
             }
             recipient = address_from_json(&json_arg)?;
             memo = memo_from_json(&json_arg)?;
-            check_memo_compatibility(&recipient, &memo)?;
             zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
         }
     } else if args.len() == 2 {
@@ -101,7 +99,6 @@ pub(super) fn parse_send_all_args(
             wallet::utils::interpret_memo_string(args[1].to_string())
                 .map_err(CommandError::InvalidMemo)?,
         );
-        check_memo_compatibility(&recipient, &memo)?;
     } else {
         return Err(CommandError::InvalidArguments);
     }
