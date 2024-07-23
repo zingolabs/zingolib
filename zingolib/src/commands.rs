@@ -198,7 +198,7 @@ impl Command for ParseAddressCommand {
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
         match args.len() {
             1 => {
-                match ZcashAddress::try_from_encoded(args[0])
+                let actual_result = ZcashAddress::try_from_encoded(args[0])
                     .map_err(|e| e.to_string())
                     .and_then(|recipient| {
                         let success = true;
@@ -248,8 +248,9 @@ impl Command for ParseAddressCommand {
                             })
                             .map_err(|e| e.to_string())
                     })
-                    .map(|json| json::stringify_pretty(json, 4))
-                {
+                    .map(|json| json::stringify_pretty(json, 4));
+
+                match actual_result {
                     Ok(jstring) => jstring,
                     Err(erstring) => erstring,
                 }
