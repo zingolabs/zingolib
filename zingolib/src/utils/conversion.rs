@@ -4,7 +4,6 @@ use thiserror::Error;
 
 use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
 
-
 use super::error::ConversionError;
 
 #[allow(missing_docs)] // error types document themselves
