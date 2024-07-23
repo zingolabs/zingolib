@@ -1,6 +1,7 @@
 // Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
+use crate::data::destinations::Destination;
 use crate::data::destinations::Destinations;
 use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
 use crate::wallet;
@@ -33,9 +34,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Destinations, CommandErro
                 let amount = zatoshis_from_json(j)?;
                 let memo = memo_from_json(j)?;
 
-                Ok(crate::data::destinations::Destination::new(
-                    recipient, amount, memo,
-                ))
+                Ok(Destination::new(recipient, amount, memo))
             })
             .collect::<Result<Destinations, CommandError>>()
     } else if args.len() == 2 || args.len() == 3 {
@@ -54,9 +53,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Destinations, CommandErro
             None
         };
 
-        Ok(vec![crate::data::destinations::Destination::new(
-            recipient, amount, memo,
-        )])
+        Ok(vec![Destination::new(recipient, amount, memo)])
     } else {
         return Err(CommandError::InvalidArguments);
     }?;
@@ -208,18 +205,14 @@ mod tests {
         let send_args = &[recipient_str, value_str];
         assert_eq!(
             super::parse_send_args(send_args).unwrap(),
-            vec![crate::data::destinations::Destination::new(
-                recipient_str.to_string(),
-                amount,
-                None
-            )]
+            vec![Destination::new(recipient_str.to_string(), amount, None)]
         );
 
         // Memo
         let send_args = &[recipient_str, value_str, memo_str];
         assert_eq!(
             super::parse_send_args(send_args).unwrap(),
-            vec![crate::data::destinations::Destination::new(
+            vec![Destination::new(
                 recipient_str.to_string(),
                 amount,
                 Some(memo.clone())
