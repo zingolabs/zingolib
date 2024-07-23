@@ -340,7 +340,6 @@ mod tests {
     fn parse_send_all_args() {
         let chain = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
         let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let address = address_from_str(address_str, &chain).unwrap();
         let memo_str = "test memo";
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
@@ -351,7 +350,7 @@ mod tests {
                  \"zennies_for_zingo\":false}"];
         assert_eq!(
             super::parse_send_all_args(single_receiver).unwrap(),
-            (address.clone(), false, Some(memo.clone()))
+            (address_str.to_string(), false, Some(memo.clone()))
         );
         // NonBool Zenny Flag
         let nb_zenny =
@@ -366,12 +365,12 @@ mod tests {
         let send_args = &[address_str, memo_str];
         assert_eq!(
             super::parse_send_all_args(send_args).unwrap(),
-            (address.clone(), false, Some(memo.clone()))
+            (address_str.to_string(), false, Some(memo.clone()))
         );
         let send_args = &[address_str, memo_str];
         assert_eq!(
             super::parse_send_all_args(send_args).unwrap(),
-            (address.clone(), false, Some(memo.clone()))
+            (address_str.to_string(), false, Some(memo.clone()))
         );
 
         // invalid address
