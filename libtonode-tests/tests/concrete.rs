@@ -4602,15 +4602,7 @@ mod send_all {
             scenarios::orchard_funded_recipient(10_000).await;
 
         let proposal_error = recipient
-            .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "unified"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
-                false,
-                None,
-            )
+            .propose_send_all(get_base_address_macro!(faucet, "unified"), false, None)
             .await;
 
         assert!(matches!(
