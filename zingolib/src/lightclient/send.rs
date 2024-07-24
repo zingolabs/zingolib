@@ -35,7 +35,7 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_client_backend::{proposal::Proposal, wallet::TransparentAddressMetadata};
-    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_keys::keys::{DerivationError, UnifiedSpendingKey};
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
@@ -59,7 +59,7 @@ pub mod send_with_proposal {
         #[error("Could not load sapling_params: {0:?}")]
         SaplingParams(String),
         #[error("Could not find UnifiedSpendKey: {0:?}")]
-        UnifiedSpendKey(std::io::Error),
+        UnifiedSpendKey(DerivationError),
         #[error("Can't Calculate {0:?}")]
         Calculation(
             zcash_client_backend::data_api::error::Error<
@@ -131,9 +131,13 @@ pub mod send_with_proposal {
             let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
                 read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
             let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-            let unified_spend_key =
-                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
-                    .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
+
+            let unified_spend_key = UnifiedSpendingKey::from_seed(
+                &self.wallet.transaction_context.config.chain,
+                self.wallet.mnemonic().unwrap().0.to_seed("").as_slice(),
+                zip32::AccountId::ZERO,
+            )
+            .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
 
             // We don't support zip320 yet. Only one step.
             if proposal.steps().len() != 1 {
