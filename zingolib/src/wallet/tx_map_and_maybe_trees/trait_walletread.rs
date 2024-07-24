@@ -414,7 +414,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .sapling_notes(SaplingNoteBuilder::default().spend(spend).clone())
+                        .sapling_notes(SaplingNoteBuilder::default().spending_tx_status(spend).clone())
                         .status(Confirmed(2000000.into()))
                         .randomize_txid()
                         .build(),
@@ -423,7 +423,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().spend(pending_spend).clone())
+                        .orchard_notes(OrchardNoteBuilder::default().spending_tx_status(pending_spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
                         .build(),

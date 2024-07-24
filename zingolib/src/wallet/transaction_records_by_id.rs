@@ -817,17 +817,17 @@ mod tests {
             .status(Confirmed(5.into()))
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .spend(spend_in_known_tx)
+                    .spending_tx_status(spend_in_known_tx)
                     .clone(),
             )
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .spend(spend_in_known_tx)
+                    .spending_tx_status(spend_in_known_tx)
                     .clone(),
             )
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spend(spend_in_known_tx)
+                    .spending_tx_status(spend_in_known_tx)
                     .clone(),
             )
             .orchard_notes(OrchardNoteBuilder::default())
@@ -880,7 +880,7 @@ mod tests {
                     .value(sapling_crypto::value::NoteValue::from_raw(amount))
                     .to_owned(),
             )
-            .spend(Some(sent))
+            .spending_tx_status(Some(sent))
             .nullifier(Some(*sapling_nullifier))
             .to_owned()
     }
@@ -895,7 +895,7 @@ mod tests {
                     .value(orchard::value::NoteValue::from_raw(amount))
                     .to_owned(),
             )
-            .spend(Some(sent))
+            .spending_tx_status(Some(sent))
             .nullifier(Some(*orchard_nullifier))
             .to_owned()
     }
@@ -945,7 +945,7 @@ mod tests {
             .transparent_outputs(spent_transparent_output_builder(30_000, (sent_txid, 15))) // 100_000
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .spend(Some((random_txid(), Confirmed(12.into()))))
+                    .spending_tx_status(Some((random_txid(), Confirmed(12.into()))))
                     .to_owned(),
             )
             .orchard_notes(OrchardNoteBuilder::default()) // 800_000
@@ -963,7 +963,7 @@ mod tests {
             .sapling_notes(SaplingNoteBuilder::default().clone())
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spend(Some((random_txid(), Confirmed(13.into()))))
+                    .spending_tx_status(Some((random_txid(), Confirmed(13.into()))))
                     .to_owned(),
             )
             .set_output_indexes()
@@ -1036,7 +1036,7 @@ mod tests {
                                 .value(sapling_crypto::value::NoteValue::from_raw(175_000))
                                 .to_owned(),
                         )
-                        .spend(Some((sent_txid, Confirmed(15.into()))))
+                        .spending_tx_status(Some((sent_txid, Confirmed(15.into()))))
                         .nullifier(Some(sapling_nullifier))
                         .to_owned(),
                 )

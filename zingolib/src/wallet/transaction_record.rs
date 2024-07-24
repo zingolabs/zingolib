@@ -675,39 +675,39 @@ pub mod mocks {
             )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .spend(spend)
+                    .spending_tx_status(spend)
                     .value(transparent_spent)
                     .clone(),
             )
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .spend(pending_spend)
+                    .spending_tx_status(pending_spend)
                     .value(transparent_semi_spent)
                     .clone(),
             )
             .sapling_notes(SaplingNoteBuilder::default().value(sapling_unspent).clone())
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .spend(spend)
+                    .spending_tx_status(spend)
                     .value(sapling_spent)
                     .clone(),
             )
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .spend(pending_spend)
+                    .spending_tx_status(pending_spend)
                     .value(sapling_semi_spent)
                     .clone(),
             )
             .orchard_notes(OrchardNoteBuilder::default().value(orchard_unspent).clone())
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spend(spend)
+                    .spending_tx_status(spend)
                     .value(orchard_spent)
                     .clone(),
             )
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spend(pending_spend)
+                    .spending_tx_status(pending_spend)
                     .value(orchard_semi_spent)
                     .clone(),
             )

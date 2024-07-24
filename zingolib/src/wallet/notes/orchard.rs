@@ -218,7 +218,7 @@ pub mod mocks {
         witnessed_position: Option<Option<Position>>,
         pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<Nullifier>>,
-        spend: Option<Option<(TxId, ConfirmationStatus)>>,
+        spending_tx_status: Option<Option<(TxId, ConfirmationStatus)>>,
         memo: Option<Option<Memo>>,
         is_change: Option<bool>,
         have_spending_key: Option<bool>,
@@ -234,7 +234,7 @@ pub mod mocks {
                 witnessed_position: None,
                 output_index: None,
                 nullifier: None,
-                spend: None,
+                spending_tx_status: None,
                 memo: None,
                 is_change: None,
                 have_spending_key: None,
@@ -247,7 +247,7 @@ pub mod mocks {
         build_method!(witnessed_position, Option<Position>);
         build_method!(output_index, Option<u32>);
         build_method!(nullifier, Option<Nullifier>);
-        build_method!(spend, Option<(TxId, ConfirmationStatus)>);
+        build_method!(spending_tx_status, Option<(TxId, ConfirmationStatus)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
         pub fn set_change(&mut self, is_change: bool) -> &mut Self {
@@ -270,7 +270,7 @@ pub mod mocks {
                 self.note.clone().unwrap().build(),
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
-                self.spend.unwrap(),
+                self.spending_tx_status.unwrap(),
                 self.memo.clone().unwrap(),
                 self.is_change.unwrap(),
                 self.have_spending_key.unwrap(),
@@ -288,7 +288,7 @@ pub mod mocks {
                 .witnessed_position(Some(Position::from(0)))
                 .output_index(Some(0))
                 .nullifier(Some(Nullifier::from_bytes(&[0u8; 32]).unwrap()))
-                .spend(None)
+                .spending_tx_status(None)
                 .memo(None)
                 .set_change(false)
                 .have_spending_key(true);

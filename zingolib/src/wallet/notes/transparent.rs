@@ -229,7 +229,7 @@ pub mod mocks {
         pub output_index: Option<u64>,
         script: Option<Vec<u8>>,
         value: Option<u64>,
-        spend: Option<Option<(TxId, ConfirmationStatus)>>,
+        spending_tx_status: Option<Option<(TxId, ConfirmationStatus)>>,
     }
     #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl TransparentOutputBuilder {
@@ -241,7 +241,7 @@ pub mod mocks {
                 output_index: None,
                 script: None,
                 value: None,
-                spend: None,
+                spending_tx_status: None,
             }
         }
         // Methods to set each field
@@ -250,7 +250,7 @@ pub mod mocks {
         build_method!(output_index, u64);
         build_method!(script, Vec<u8>);
         build_method!(value, u64);
-        build_method!(spend, Option<(TxId, ConfirmationStatus)>);
+        build_method!(spending_tx_status, Option<(TxId, ConfirmationStatus)>);
 
         /// builds a mock TransparentNote after all pieces are supplied
         pub fn build(&self) -> TransparentOutput {
@@ -260,7 +260,7 @@ pub mod mocks {
                 self.output_index.unwrap(),
                 self.script.clone().unwrap(),
                 self.value.unwrap(),
-                self.spend.unwrap(),
+                self.spending_tx_status.unwrap(),
             )
         }
     }
@@ -274,7 +274,7 @@ pub mod mocks {
                 .output_index(0)
                 .script(TransparentAddress::ScriptHash([0; 20]).script().0)
                 .value(100_000)
-                .spend(None);
+                .spending_tx_status(None);
             builder
         }
     }

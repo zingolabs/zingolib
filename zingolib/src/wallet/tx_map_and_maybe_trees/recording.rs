@@ -141,7 +141,7 @@ impl super::TxMapAndMaybeTrees {
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
             {
-                *spent_note.spend_mut() = Some((spending_txid, status));
+                *spent_note.spending_tx_status_mut() = Some((spending_txid, status));
 
                 Ok(spent_note.value())
             } else {
@@ -189,7 +189,8 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
         {
             match maybe_note {
                 Ok(note_datum) => {
-                    *note_datum.spend_mut() = Some((txid, ConfirmationStatus::Confirmed(height)));
+                    // *note_datum.spending_tx_status_mut() = Some((txid, ConfirmationStatus::Confirmed(height)));
+                    // TODO WTF why is this line here?
                     if let Some(position) = *note_datum.witnessed_position() {
                         if let Some(ref mut tree) =
                             D::transaction_metadata_set_to_shardtree_mut(self)

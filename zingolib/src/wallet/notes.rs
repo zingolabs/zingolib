@@ -166,20 +166,20 @@ pub mod tests {
 
         let transparent_unspent_note = TransparentOutputBuilder::default().build();
         let transparent_pending_spent_note = TransparentOutputBuilder::default()
-            .spend(pending_spend)
+            .spending_tx_status(pending_spend)
             .clone()
             .build();
         let transparent_spent_note = TransparentOutputBuilder::default()
-            .spend(confirmed_spend)
+            .spending_tx_status(confirmed_spend)
             .clone()
             .build();
         let sapling_unspent_note = SaplingNoteBuilder::default().build();
         let sapling_pending_spent_note = SaplingNoteBuilder::default()
-            .spend(pending_spend)
+            .spending_tx_status(pending_spend)
             .clone()
             .build();
         let sapling_spent_note = SaplingNoteBuilder::default()
-            .spend(confirmed_spend)
+            .spending_tx_status(confirmed_spend)
             .clone()
             .build();
 

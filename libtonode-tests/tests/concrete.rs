@@ -134,9 +134,8 @@ mod fast {
     use zingolib::wallet::notes::OutputInterface as _;
     use zingolib::wallet::WalletBase;
     use zingolib::{
-        utils::conversion::txid_from_hex_encoded_str,
+        utils::conversion::txid_from_hex_encoded_str, wallet::data::summaries::ValueTransferKind,
         wallet::notes::ShieldedNoteInterface,
-        wallet::{data::summaries::ValueTransferKind, notes::ShieldedNoteInterface, WalletBase},
     };
 
     use super::*;
