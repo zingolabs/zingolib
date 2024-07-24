@@ -861,7 +861,7 @@ mod tests {
     // TODO: move this into an associated fn of TransparentOutputBuilder
     fn spent_transparent_output_builder(
         amount: u64,
-        sent: (TxId, u32),
+        sent: (TxId, ConfirmationStatus),
     ) -> TransparentOutputBuilder {
         TransparentOutputBuilder::default()
             .value(amount)
@@ -942,7 +942,7 @@ mod tests {
                 spent_in_sent_txid,
                 &first_orchard_nullifier,
             ))
-            .transparent_outputs(spent_transparent_output_builder(30_000, (sent_txid, 15))) // 100_000
+            .transparent_outputs(spent_transparent_output_builder(30_000, spent_in_sent_txid)) // 100_000
             .sapling_notes(
                 SaplingNoteBuilder::default()
                     .spending_tx_status(Some((random_txid(), Confirmed(12.into()))))
@@ -1100,10 +1100,11 @@ mod tests {
                 )
                 .build();
             let sent_txid = transaction_record.txid;
+            let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
             let transparent_funding_tx = TransactionRecordBuilder::default()
                 .randomize_txid()
                 .status(Confirmed(7.into()))
-                .transparent_outputs(spent_transparent_output_builder(20_000, (sent_txid, 15)))
+                .transparent_outputs(spent_transparent_output_builder(20_000, spent_in_sent_txid))
                 .set_output_indexes()
                 .build();
 
