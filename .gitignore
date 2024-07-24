@@ -25,4 +25,5 @@ zingo-testutils/test_binaries/bins/zcashd
 test_binaries/bins/lightwalletd
 test_binaries/bins/zcash-cli
 test_binaries/bins/zcashd
+darkside-tests/proptest-regressions
 
