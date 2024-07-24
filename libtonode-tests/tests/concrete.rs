@@ -406,7 +406,7 @@ mod fast {
     }
 
     #[tokio::test]
-    async fn unspent_notes_are_not_saved() {
+    async fn pending_notes_are_not_saved() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
@@ -418,7 +418,7 @@ mod fast {
             .unwrap();
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
-        from_inputs::quick_send(
+        let pending_txid = *from_inputs::quick_send(
             &faucet,
             vec![(
                 get_base_address_macro!(recipient, "unified").as_str(),
@@ -427,7 +427,17 @@ mod fast {
             )],
         )
         .await
-        .unwrap();
+        .unwrap()
+        .first();
+
+        assert!(faucet
+            .transaction_summaries()
+            .await
+            .iter()
+            .find(|transaction_summary| transaction_summary.txid() == pending_txid)
+            .unwrap()
+            .status()
+            .is_pending());
 
         assert_eq!(
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
