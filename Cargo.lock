@@ -4280,7 +4280,6 @@ dependencies = [
  "futures",
  "getset",
  "group",
- "hdwallet",
  "hex",
  "http 0.2.12",
  "incrementalmerkletree",

@@ -68,7 +68,6 @@ getset = { workspace = true }
 test-case = { workspace = true }
 proptest = { workspace = true }
 thiserror = { workspace = true }
-hdwallet = { workspace = true }
 chrono = { workspace = true }
 enum_dispatch = { workspace = true }
 
