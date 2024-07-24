@@ -745,7 +745,6 @@ pub mod mocks {
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
             .orchard_notes(OrchardNoteBuilder::default())
-            .total_transparent_value_spent(30_000)
             .outgoing_tx_data(OutgoingTxDataBuilder::default())
             .build();
         assert_eq!(

@@ -18,8 +18,8 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::data::summaries::{
-    OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
-    TransparentCoinSummary,
+    OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary,
+    TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
@@ -194,7 +194,7 @@ fn check_orchard_note_summary_equality(
     };
     for i in 0..first.len() {
         if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary())
             && first[i].memo() == second[i].memo())
         {
             return false;
@@ -213,7 +213,7 @@ fn check_sapling_note_summary_equality(
     };
     for i in 0..first.len() {
         if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary())
             && first[i].memo() == second[i].memo())
         {
             return false;
@@ -232,7 +232,7 @@ fn check_transparent_coin_summary_equality(
     };
     for i in 0..first.len() {
         if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status()))
+            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary()))
         {
             return false;
         }

@@ -47,11 +47,9 @@ impl InputSource for TxMapAndMaybeTrees {
 
     fn get_unspent_transparent_output(
         &self,
-        outpoint: &zcash_primitives::transaction::components::OutPoint,
+        _outpoint: &zcash_primitives::transaction::components::OutPoint,
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        self.transaction_records_by_id
-            .get_unspent_transparent_output(outpoint)
-            .map_err(TxMapAndMaybeTreesTraitError::InputSource)
+        unimplemented!()
     }
 
     fn get_unspent_transparent_outputs(

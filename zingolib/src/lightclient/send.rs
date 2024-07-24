@@ -103,98 +103,98 @@ pub mod send_with_proposal {
     }
 
     impl LightClient {
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Calculates, signs and broadcasts transactions from a proposal.
         async fn complete_and_broadcast<NoteRef>(
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            let result = {
-                if self
-                    .wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .read()
-                    .await
-                    .witness_trees()
-                    .is_none()
-                {
-                    return Err(CompleteAndBroadcastError::NoSpendCapability);
-                }
-                let submission_height = self
-                    .get_submission_height()
-                    .await
-                    .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
+            if self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .witness_trees()
+                .is_none()
+            {
+                return Err(CompleteAndBroadcastError::NoSpendCapability);
+            }
 
-                let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
-                    read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
-                let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-                let unified_spend_key =
-                    UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
-                        .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
+            // Reset the progress to start. Any errors will get recorded here
+            self.wallet.reset_send_progress().await;
 
-                // We don't support zip320 yet. Only one step.
-                if proposal.steps().len() != 1 {
-                    return Err(CompleteAndBroadcastError::ExchangeAddressesNotSupported);
-                }
+            let submission_height = self
+                .get_submission_height()
+                .await
+                .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
 
-                let step = proposal.steps().first();
+            let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+                read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
+            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let unified_spend_key =
+                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
+                    .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
 
-                // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
-                // transparent key it contains is not the account spending key, but the
-                // externally-scoped derivative key. The goal is to fix this, but in the
-                // interim we use this special-case logic.
-                fn usk_to_tkey(
-                    unified_spend_key: &UnifiedSpendingKey,
-                    t_metadata: &TransparentAddressMetadata,
-                ) -> SecretKey {
-                    hdwallet::ExtendedPrivKey::deserialize(
-                        &unified_spend_key.transparent().to_bytes(),
-                    )
+            // We don't support zip320 yet. Only one step.
+            if proposal.steps().len() != 1 {
+                return Err(CompleteAndBroadcastError::ExchangeAddressesNotSupported);
+            }
+
+            let step = proposal.steps().first();
+
+            // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
+            // transparent key it contains is not the account spending key, but the
+            // externally-scoped derivative key. The goal is to fix this, but in the
+            // interim we use this special-case logic.
+            fn usk_to_tkey(
+                unified_spend_key: &UnifiedSpendingKey,
+                t_metadata: &TransparentAddressMetadata,
+            ) -> SecretKey {
+                hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
                     .expect("This a hack to do a type conversion, and will not fail")
                     .derive_private_key(t_metadata.address_index().into())
                     // This is unwrapped in librustzcash, so I'm not too worried about it
                     .expect("private key derivation failed")
                     .private_key
-                }
+            }
 
-                let build_result =
-                    zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                        self.wallet
-                            .transaction_context
-                            .transaction_metadata_set
-                            .write()
-                            .await
-                            .deref_mut(),
-                        &self.wallet.transaction_context.config.chain,
-                        &sapling_prover,
-                        &sapling_prover,
-                        &unified_spend_key,
-                        zcash_client_backend::wallet::OvkPolicy::Sender,
-                        proposal.fee_rule(),
-                        proposal.min_target_height(),
-                        &[],
-                        step,
-                        Some(usk_to_tkey),
-                        Some(self.wallet.wallet_capability().first_sapling_address()),
-                    )
-                    .map_err(CompleteAndBroadcastError::Calculation)?;
+            let build_result =
+                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .write()
+                        .await
+                        .deref_mut(),
+                    &self.wallet.transaction_context.config.chain,
+                    &sapling_prover,
+                    &sapling_prover,
+                    &unified_spend_key,
+                    zcash_client_backend::wallet::OvkPolicy::Sender,
+                    proposal.fee_rule(),
+                    proposal.min_target_height(),
+                    &[],
+                    step,
+                    Some(usk_to_tkey),
+                    Some(self.wallet.wallet_capability().first_sapling_address()),
+                )
+                .map_err(CompleteAndBroadcastError::Calculation)?;
 
-                self.wallet
-                    .send_to_addresses_inner(
-                        build_result.transaction(),
-                        submission_height,
-                        |transaction_bytes| {
-                            crate::grpc_connector::send_transaction(
-                                self.get_server_uri(),
-                                transaction_bytes,
-                            )
-                        },
-                    )
-                    .await
-                    .map_err(CompleteAndBroadcastError::Broadcast)
-                    .map(NonEmpty::singleton)
-            };
+            let result = self
+                .wallet
+                .send_to_addresses_inner(
+                    build_result.transaction(),
+                    submission_height,
+                    |transaction_bytes| {
+                        crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            transaction_bytes,
+                        )
+                    },
+                )
+                .await
+                .map_err(CompleteAndBroadcastError::Broadcast)
+                .map(NonEmpty::singleton);
 
             self.wallet
                 .set_send_result(
@@ -208,8 +208,7 @@ pub mod send_with_proposal {
             result
         }
 
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Calculates, signs and broadcasts transactions from a stored proposal.
         pub async fn complete_and_broadcast_stored_proposal(
             &self,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposal> {
@@ -230,8 +229,7 @@ pub mod send_with_proposal {
             }
         }
 
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
         pub async fn quick_send(
             &self,
             request: TransactionRequest,
@@ -240,8 +238,7 @@ pub mod send_with_proposal {
             Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
         }
 
-        /// Unstable function to expose the zip317 interface for development
-        // TODO: add correct functionality and doc comments / tests
+        /// Shields all transparent funds without confirmation.
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.create_shield_proposal().await?;
             Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)

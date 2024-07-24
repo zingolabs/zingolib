@@ -1,7 +1,7 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::notes::{interface::OutputConstructor, TransparentOutput};
 use crate::wallet::{
     error::FeeError,
     notes::{
@@ -22,6 +22,9 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 
 use zcash_primitives::transaction::TxId;
+use zingoconfig::{
+    ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+};
 
 pub mod trait_inputsource;
 
@@ -162,11 +165,11 @@ impl TransactionRecordsById {
                 .for_each(|utxo| {
                     // Mark utxo as unspent if the txid being removed spent it.
                     if utxo
-                        .spend()
+                        .spending_tx_status()
                         .filter(|(txid, _status)| invalidated_txids.contains(txid))
                         .is_some()
                     {
-                        *utxo.spend_mut() = None;
+                        *utxo.spending_tx_status_mut() = None;
                     }
                 })
         });
@@ -190,11 +193,11 @@ impl TransactionRecordsById {
             .for_each(|note| {
                 // Mark note as unspent if the txid being removed spent it.
                 if note
-                    .spend()
+                    .spending_tx_status()
                     .filter(|(txid, _status)| invalidated_txids.contains(txid))
                     .is_some()
                 {
-                    *note.spend_mut() = None;
+                    *note.spending_tx_status_mut() = None;
                 }
             });
         });
@@ -267,13 +270,11 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
     ) -> Result<u64, FeeError> {
+        let transparent_spends = self.get_transparent_coins_spent_in_tx(query_record);
         let sapling_spends = self.get_sapling_notes_spent_in_tx(query_record, true)?;
         let orchard_spends = self.get_orchard_notes_spent_in_tx(query_record, true)?;
 
-        if sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent == 0
-        {
+        if sapling_spends.is_empty() && orchard_spends.is_empty() && transparent_spends.is_empty() {
             if query_record.outgoing_tx_data.is_empty() {
                 return Err(FeeError::ReceivedTransaction);
             } else {
@@ -283,12 +284,39 @@ impl TransactionRecordsById {
             }
         }
 
+        let transparent_spend_value = transparent_spends
+            .iter()
+            .map(|&coin| coin.value())
+            .sum::<u64>();
         let sapling_spend_value = sapling_spends.iter().map(|&note| note.value()).sum::<u64>();
         let orchard_spend_value = orchard_spends.iter().map(|&note| note.value()).sum::<u64>();
 
-        Ok(query_record.total_transparent_value_spent + sapling_spend_value + orchard_spend_value)
+        Ok(transparent_spend_value + sapling_spend_value + orchard_spend_value)
     }
 
+    fn get_all_transparent_outputs(&self) -> Vec<&TransparentOutput> {
+        self.values()
+            .flat_map(|record| record.transparent_outputs())
+            .collect()
+    }
+    /// Because this method needs access to all outputs to query their
+    /// "spent" txid it is a method of the TransactionRecordsById
+    /// It's theoretically possible to create a 0-input transaction, but I
+    /// don't know if it's allowed in protocol.  For the moment I conservatively
+    /// assume that a 0-input transaction is unexpected behavior.
+    /// A transaction created by another capability, using only shielded inputs,
+    /// will also be ZeroInputTransaction.
+    fn get_transparent_coins_spent_in_tx(
+        &self,
+        query_record: &TransactionRecord,
+    ) -> Vec<&TransparentOutput> {
+        self.get_all_transparent_outputs()
+            .into_iter()
+            .filter(|o| {
+                (*o.spending_tx_status()).map_or(false, |(txid, _)| txid == query_record.txid)
+            })
+            .collect()
+    }
     /// Calculate the fee for a transaction in the wallet
     ///
     /// # Error
@@ -348,7 +376,18 @@ impl TransactionRecordsById {
     /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
     /// the Zcash protocol
     ///  TODO:   Test and handle 0-value, 0-fee transaction
-    pub(crate) fn transaction_kind(&self, query_record: &TransactionRecord) -> TransactionKind {
+    pub(crate) fn transaction_kind(
+        &self,
+        query_record: &TransactionRecord,
+        chain: &ChainType,
+    ) -> TransactionKind {
+        let zfz_address = match chain {
+            ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
+            ChainType::Testnet => unimplemented!(),
+            ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        };
+
+        let transparent_spends = self.get_transparent_coins_spent_in_tx(query_record);
         let sapling_spends = self
             .get_sapling_notes_spent_in_tx(query_record, false)
             .expect("cannot fail. fail_on_miss is set false");
@@ -356,21 +395,32 @@ impl TransactionRecordsById {
             .get_orchard_notes_spent_in_tx(query_record, false)
             .expect("cannot fail. fail_on_miss is set false");
 
-        if sapling_spends.is_empty()
+        if transparent_spends.is_empty()
+            && sapling_spends.is_empty()
             && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent == 0
             && query_record.outgoing_tx_data.is_empty()
         {
+            // no spends and no outgoing tx data
             TransactionKind::Received
-        } else if sapling_spends.is_empty()
+        } else if !transparent_spends.is_empty()
+            && sapling_spends.is_empty()
             && orchard_spends.is_empty()
-            && query_record.total_transparent_value_spent > 0
             && query_record.outgoing_tx_data.is_empty()
             && (!query_record.orchard_notes().is_empty() | !query_record.sapling_notes().is_empty())
         {
+            // only transparent spends, no outgoing tx data and notes received
             // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
             TransactionKind::Sent(SendType::Shield)
-        } else if query_record.outgoing_tx_data.is_empty() {
+        } else if query_record.outgoing_tx_data.is_empty()
+            || (query_record.outgoing_tx_data.len() == 1
+                && query_record.outgoing_tx_data.iter().any(|otd| {
+                    otd.recipient_address == *zfz_address
+                        || otd.recipient_ua == Some(zfz_address.to_string())
+                }))
+        {
+            // not Received, this capability created this transaction
+            // not Shield, notes were spent
+            // no outgoing tx data, with the exception of ONLY a Zennies For Zingo! donation
             TransactionKind::Sent(SendType::SendToSelf)
         } else {
             TransactionKind::Sent(SendType::Send)
@@ -483,7 +533,7 @@ impl TransactionRecordsById {
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
                 // Mark this utxo as spent
-                *spent_utxo.spend_mut() = Some((source_txid, spending_tx_status));
+                *spent_utxo.spending_tx_status_mut() = Some((source_txid, spending_tx_status));
 
                 spent_utxo.value
             } else {
@@ -808,6 +858,17 @@ mod tests {
         assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 0);
     }
 
+    // TODO: move this into an associated fn of TransparentOutputBuilder
+    fn spent_transparent_output_builder(
+        amount: u64,
+        sent: (TxId, u32),
+    ) -> TransparentOutputBuilder {
+        TransparentOutputBuilder::default()
+            .value(amount)
+            .spending_tx_status(Some(sent))
+            .to_owned()
+    }
+
     fn spent_sapling_note_builder(
         amount: u64,
         sent: (TxId, ConfirmationStatus),
@@ -849,11 +910,10 @@ mod tests {
             .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
             .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default())
-            .orchard_notes(OrchardNoteBuilder::default())
-            .total_transparent_value_spent(30_000)
-            .outgoing_tx_data(OutgoingTxDataBuilder::default())
+            .transparent_outputs(TransparentOutputBuilder::default()) // value 100_000
+            .sapling_notes(SaplingNoteBuilder::default()) // value 200_000
+            .orchard_notes(OrchardNoteBuilder::default()) // value 800_000
+            .outgoing_tx_data(OutgoingTxDataBuilder::default()) // value 50_000
             .build();
         let sent_txid = sent_transaction_record.txid;
         let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
@@ -861,7 +921,7 @@ mod tests {
         let first_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[0];
         let second_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[1];
         // t-note + s-note + o-note + outgoing_tx_data
-        let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000;
+        let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000; // 1_150_000
 
         let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
         let first_received_transaction_record = TransactionRecordBuilder::default()
@@ -882,13 +942,13 @@ mod tests {
                 spent_in_sent_txid,
                 &first_orchard_nullifier,
             ))
-            .transparent_outputs(TransparentOutputBuilder::default())
+            .transparent_outputs(spent_transparent_output_builder(30_000, (sent_txid, 15))) // 100_000
             .sapling_notes(
                 SaplingNoteBuilder::default()
                     .spend(Some((random_txid(), Confirmed(12.into()))))
                     .to_owned(),
             )
-            .orchard_notes(OrchardNoteBuilder::default())
+            .orchard_notes(OrchardNoteBuilder::default()) // 800_000
             .set_output_indexes()
             .build();
         let second_received_transaction_record = TransactionRecordBuilder::default()
@@ -937,7 +997,9 @@ mod tests {
                     transparent::mocks::TransparentOutputBuilder,
                 },
                 transaction_record::mocks::TransactionRecordBuilder,
-                transaction_records_by_id::TransactionRecordsById,
+                transaction_records_by_id::{
+                    tests::spent_transparent_output_builder, TransactionRecordsById,
+                },
             },
         };
 
@@ -1036,12 +1098,18 @@ mod tests {
                         )
                         .to_owned(),
                 )
-                .total_transparent_value_spent(20_000)
                 .build();
             let sent_txid = transaction_record.txid;
+            let transparent_funding_tx = TransactionRecordBuilder::default()
+                .randomize_txid()
+                .status(Confirmed(7.into()))
+                .transparent_outputs(spent_transparent_output_builder(20_000, (sent_txid, 15)))
+                .set_output_indexes()
+                .build();
 
             let mut transaction_records_by_id = TransactionRecordsById::default();
             transaction_records_by_id.insert_transaction_record(transaction_record);
+            transaction_records_by_id.insert_transaction_record(transparent_funding_tx);
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());

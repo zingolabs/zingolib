@@ -39,11 +39,11 @@ impl OutputInterface for TransparentOutput {
         self.value
     }
 
-    fn spend(&self) -> &Option<(TxId, ConfirmationStatus)> {
+    fn spending_tx_status(&self) -> &Option<(TxId, ConfirmationStatus)> {
         &self.spend
     }
 
-    fn spend_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)> {
+    fn spending_tx_status_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)> {
         &mut self.spend
     }
 }
@@ -120,7 +120,7 @@ impl TransparentOutput {
         writer.write_i32::<byteorder::LittleEndian>(0)?;
 
         let confirmed_spend = self
-            .spend()
+            .spending_tx_status()
             .as_ref()
             .and_then(|(txid, status)| status.get_confirmed_height().map(|height| (txid, height)));
 

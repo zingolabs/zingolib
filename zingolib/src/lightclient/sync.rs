@@ -191,24 +191,35 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
-                            let price = price.read().await.clone();
-                            //debug!("Mempool attempting to scan {}", tx.txid());
-                            let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
-                                rtransaction.height as u32,
-                            ));
+                            // If the txid is already in the db, then it's already recorded
+                            // there's nothing new to do until it's read from chain.
+                            // ASSUMPTION: A transaction from the mempool_receiver is not on-chain
+                            if transaction_metadata_set
+                                .read()
+                                .await
+                                .transaction_records_by_id
+                                .get(&transaction.txid())
+                                .is_none()
+                            {
+                                let price = price.read().await.clone();
+                                //debug!("Mempool attempting to scan {}", tx.txid());
+                                let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
+                                    rtransaction.height as u32,
+                                ));
 
-                            TransactionContext::new(
-                                &config,
-                                key.clone(),
-                                transaction_metadata_set.clone(),
-                            )
-                            .scan_full_tx(
-                                &transaction,
-                                status,
-                                Some(now() as u32),
-                                get_price(now(), &price),
-                            )
-                            .await;
+                                TransactionContext::new(
+                                    &config,
+                                    key.clone(),
+                                    transaction_metadata_set.clone(),
+                                )
+                                .scan_full_tx(
+                                    &transaction,
+                                    status,
+                                    Some(now() as u32),
+                                    get_price(now(), &price),
+                                )
+                                .await;
+                            }
                         }
                     }
                 });

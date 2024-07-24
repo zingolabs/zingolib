@@ -14,7 +14,7 @@ use crate::wallet::{
 
 /// Trait methods of Outputs that aren't static (i.e. don't take self)
 pub trait OutputConstructor {
-    /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
+    /// Returns the Outputs in the TransactionRecord in this pool.
     fn get_record_outputs(transaction_record: &TransactionRecord) -> Vec<&Self>;
     /// Returns the Outputs in the TransactionRecord that fit the OutputSpendStatusQuery in this pool.
     fn get_record_query_matching_outputs(
@@ -43,28 +43,28 @@ pub trait OutputInterface: Sized {
     fn value(&self) -> u64;
 
     /// If the funds are spent, the TxId and Blockheight of record
-    fn spend(&self) -> &Option<(TxId, ConfirmationStatus)>;
+    fn spending_tx_status(&self) -> &Option<(TxId, ConfirmationStatus)>;
 
     /// Mutable access to the spent field.. hmm  NOTE:  Should we keep this pattern?
     /// what is spent becomes a Vec<OnceCell(TxiD, u32)>, where the last element of that
     /// Vec is the last known block chain record of the spend.  So then reorgs, just extend
     /// the Vec which tracks all BlockChain records of the value-transfer
-    fn spend_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)>;
+    fn spending_tx_status_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)>;
 
     /// returns the id of the spending transaction, whether pending or no
     fn spending_txid(&self) -> Option<TxId> {
-        self.spend().map(|(txid, _status)| txid)
+        self.spending_tx_status().map(|(txid, _status)| txid)
     }
 
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
-        self.spend()
+        self.spending_tx_status()
             .is_some_and(|(_txid, status)| status.is_pending())
     }
 
     /// returns true if the note is spent and the spent is validated confirmed on chain
     fn is_spent_confirmed(&self) -> bool {
-        self.spend()
+        self.spending_tx_status()
             .is_some_and(|(_txid, status)| status.is_confirmed())
     }
 

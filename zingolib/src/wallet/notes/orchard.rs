@@ -50,11 +50,11 @@ impl OutputInterface for OrchardNote {
         self.orchard_crypto_note.value().inner()
     }
 
-    fn spend(&self) -> &Option<(TxId, ConfirmationStatus)> {
+    fn spending_tx_status(&self) -> &Option<(TxId, ConfirmationStatus)> {
         &self.spend
     }
 
-    fn spend_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)> {
+    fn spending_tx_status_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)> {
         &mut self.spend
     }
 }

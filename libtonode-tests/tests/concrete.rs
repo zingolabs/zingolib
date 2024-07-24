@@ -22,6 +22,7 @@ use zingo_testutils::{
 };
 use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
+use zingolib::wallet::data::summaries::TransactionSummaryInterface;
 
 use zingo_testvectors::{
     block_rewards,
@@ -129,13 +130,50 @@ mod fast {
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
+    use zingoconfig::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
     use zingolib::wallet::notes::OutputInterface as _;
     use zingolib::wallet::WalletBase;
     use zingolib::{
-        utils::conversion::txid_from_hex_encoded_str, wallet::notes::ShieldedNoteInterface,
+        utils::conversion::txid_from_hex_encoded_str,
+        wallet::notes::ShieldedNoteInterface,
+        wallet::{data::summaries::ValueTransferKind, notes::ShieldedNoteInterface, WalletBase},
     };
 
     use super::*;
+
+    #[tokio::test]
+    async fn create_send_to_self_with_zfz_active() {
+        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
+            scenarios::orchard_funded_recipient(5_000_000).await;
+
+        recipient
+            .propose_send_all(
+                address_from_str(
+                    &get_base_address_macro!(&recipient, "unified"),
+                    &recipient.config().chain,
+                )
+                .unwrap(),
+                true,
+                None,
+            )
+            .await
+            .unwrap();
+
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        let value_transfers = &recipient.value_transfers().await;
+
+        assert!(value_transfers
+            .iter()
+            .any(|vt| vt.kind() == ValueTransferKind::SendToSelf));
+        assert!(value_transfers
+            .iter()
+            .any(|vt| vt.kind() == ValueTransferKind::Sent
+                && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+    }
 
     #[tokio::test]
     async fn targetted_rescan() {
@@ -238,8 +276,8 @@ mod fast {
         );
         assert_eq!(preshield_utxos[0].value, postshield_utxos[0].value);
         assert_eq!(preshield_utxos[0].script, postshield_utxos[0].script);
-        assert!(preshield_utxos[0].spend().is_none());
-        assert!(postshield_utxos[0].spend().is_some());
+        assert!(preshield_utxos[0].spending_tx_status().is_none());
+        assert!(postshield_utxos[0].spending_tx_status().is_some());
     }
 
     // TODO: zip317 - check reorg buffer offset is still accounted for in  zip317 sends, fix or delete this test

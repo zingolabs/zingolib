@@ -20,8 +20,9 @@ use crate::{
         data::{
             finsight,
             summaries::{
-                OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummaries,
-                TransactionSummaryBuilder, TransparentCoinSummary, ValueTransfer,
+                basic_transaction_summary_parts, DetailedTransactionSummaries,
+                DetailedTransactionSummaryBuilder, TransactionSummaries, TransactionSummary,
+                TransactionSummaryBuilder, TransactionSummaryInterface as _, ValueTransfer,
                 ValueTransferBuilder, ValueTransferKind, ValueTransfers,
             },
             OutgoingTxData,
@@ -145,7 +146,7 @@ impl LightClient {
 
                 tx.orchard_notes
                     .iter()
-                    .filter(|n| n.spend().is_none())
+                    .filter(|n| n.spending_tx_status().is_none())
                     .for_each(|n| {
                         let value = n.orchard_crypto_note.value().inner();
                         if !incoming && n.is_change {
@@ -163,7 +164,7 @@ impl LightClient {
 
                 tx.sapling_notes
                     .iter()
-                    .filter(|n| n.spend().is_none())
+                    .filter(|n| n.spending_tx_status().is_none())
                     .for_each(|n| {
                         let value = n.sapling_crypto_note.value().inner();
                         if !incoming && n.is_change {
@@ -181,7 +182,7 @@ impl LightClient {
 
                 tx.transparent_outputs
                     .iter()
-                    .filter(|n| n.spend().is_none())
+                    .filter(|n| n.spending_tx_status().is_none())
                     .for_each(|n| {
                         // UTXOs are never 'change', as change would have been shielded.
                         if incoming {
@@ -267,6 +268,72 @@ impl LightClient {
     /// Provides a list of value transfers related to this capability
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
     pub async fn value_transfers(&self) -> ValueTransfers {
+        fn create_send_value_transfers(
+            value_transfers: &mut Vec<ValueTransfer>,
+            transaction_summary: &TransactionSummary,
+        ) {
+            let mut addresses =
+                HashSet::with_capacity(transaction_summary.outgoing_tx_data().len());
+            transaction_summary
+                .outgoing_tx_data()
+                .iter()
+                .for_each(|outgoing_tx_data| {
+                    let address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone() {
+                        ua
+                    } else {
+                        outgoing_tx_data.recipient_address.clone()
+                    };
+                    // hash set is used to create unique list of addresses as duplicates are not inserted twice
+                    addresses.insert(address);
+                });
+            addresses.iter().for_each(|address| {
+                let outgoing_data_to_address: Vec<OutgoingTxData> = transaction_summary
+                    .outgoing_tx_data()
+                    .iter()
+                    .filter(|outgoing_tx_data| {
+                        let query_address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone()
+                        {
+                            ua
+                        } else {
+                            outgoing_tx_data.recipient_address.clone()
+                        };
+                        query_address == address.clone()
+                    })
+                    .cloned()
+                    .collect();
+                let value: u64 = outgoing_data_to_address
+                    .iter()
+                    .map(|outgoing_tx_data| outgoing_tx_data.value)
+                    .sum();
+                let memos: Vec<String> = outgoing_data_to_address
+                    .iter()
+                    .filter_map(|outgoing_tx_data| {
+                        if let Memo::Text(memo_text) = outgoing_tx_data.memo.clone() {
+                            Some(memo_text.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                value_transfers.push(
+                    ValueTransferBuilder::new()
+                        .txid(transaction_summary.txid())
+                        .datetime(transaction_summary.datetime())
+                        .status(transaction_summary.status())
+                        .blockheight(transaction_summary.blockheight())
+                        .transaction_fee(transaction_summary.fee())
+                        .zec_price(transaction_summary.zec_price())
+                        .kind(ValueTransferKind::Sent)
+                        .value(value)
+                        .recipient_address(Some(address.clone()))
+                        .pool_received(None)
+                        .memos(memos)
+                        .build()
+                        .expect("all fields should be populated"),
+                );
+            });
+        }
+
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let transaction_summaries = self.transaction_summaries().await;
 
@@ -275,62 +342,7 @@ impl LightClient {
                 TransactionKind::Sent(SendType::Send) => {
                     // create 1 sent value transfer for each non-self recipient address
                     // if recipient_ua is available it overrides recipient_address
-                    let mut addresses = HashSet::with_capacity(tx.outgoing_tx_data().len());
-                    tx.outgoing_tx_data().iter().for_each(|outgoing_tx_data| {
-                        let address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone() {
-                            ua
-                        } else {
-                            outgoing_tx_data.recipient_address.clone()
-                        };
-                        // hash set is used to create unique list of addresses as duplicates are not inserted twice
-                        addresses.insert(address);
-                    });
-                    addresses.iter().for_each(|address| {
-                        let outgoing_data_to_address: Vec<OutgoingTxData> = tx
-                            .outgoing_tx_data()
-                            .iter()
-                            .filter(|outgoing_tx_data| {
-                                let query_address =
-                                    if let Some(ua) = outgoing_tx_data.recipient_ua.clone() {
-                                        ua
-                                    } else {
-                                        outgoing_tx_data.recipient_address.clone()
-                                    };
-                                query_address == address.clone()
-                            })
-                            .cloned()
-                            .collect();
-                        let value: u64 = outgoing_data_to_address
-                            .iter()
-                            .map(|outgoing_tx_data| outgoing_tx_data.value)
-                            .sum();
-                        let memos: Vec<String> = outgoing_data_to_address
-                            .iter()
-                            .filter_map(|outgoing_tx_data| {
-                                if let Memo::Text(memo_text) = outgoing_tx_data.memo.clone() {
-                                    Some(memo_text.to_string())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        value_transfers.push(
-                            ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::Sent)
-                                .value(value)
-                                .recipient_address(Some(address.clone()))
-                                .pool_received(None)
-                                .memos(memos)
-                                .build()
-                                .expect("all fields should be populated"),
-                        );
-                    });
+                    create_send_value_transfers(&mut value_transfers, tx);
 
                     // create 1 memo-to-self if a sending transaction receives any number of memos
                     if tx.orchard_notes().iter().any(|note| note.memo().is_some())
@@ -472,6 +484,9 @@ impl LightClient {
                                 .expect("all fields should be populated"),
                         );
                     }
+
+                    // in the case Zennies For Zingo! is active
+                    create_send_value_transfers(&mut value_transfers, tx);
                 }
                 TransactionKind::Received => {
                     // create 1 received value tansfer for each pool recieved to
@@ -577,67 +592,8 @@ impl LightClient {
         let mut transaction_summaries = transaction_records
             .values()
             .map(|tx| {
-                let kind = transaction_records.transaction_kind(tx);
-                let value = match kind {
-                    TransactionKind::Received
-                    | TransactionKind::Sent(SendType::Shield)
-                    | TransactionKind::Sent(SendType::SendToSelf) => tx.total_value_received(),
-                    TransactionKind::Sent(SendType::Send) => tx.value_outgoing(),
-                };
-                let fee = transaction_records.calculate_transaction_fee(tx).ok();
-                let orchard_notes = tx
-                    .orchard_notes
-                    .iter()
-                    .map(|output| {
-                        let spend_summary = SpendSummary::from_spend(output.spend());
-
-                        let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
-                        OrchardNoteSummary::from_parts(
-                            output.value(),
-                            spend_summary,
-                            output.output_index,
-                            memo,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let sapling_notes = tx
-                    .sapling_notes
-                    .iter()
-                    .map(|output| {
-                        let spend_summary = SpendSummary::from_spend(output.spend());
-
-                        let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
-                        SaplingNoteSummary::from_parts(
-                            output.value(),
-                            spend_summary,
-                            output.output_index,
-                            memo,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let transparent_coins = tx
-                    .transparent_outputs
-                    .iter()
-                    .map(|output| {
-                        let spend_summary = SpendSummary::from_spend(output.spend());
-
-                        TransparentCoinSummary::from_parts(
-                            output.value(),
-                            spend_summary,
-                            output.output_index,
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                    basic_transaction_summary_parts(tx, transaction_records, &self.config().chain);
 
                 TransactionSummaryBuilder::new()
                     .txid(tx.txid)
@@ -664,6 +620,61 @@ impl LightClient {
     /// TODO: doc comment
     pub async fn transaction_summaries_json_string(&self) -> String {
         json::JsonValue::from(self.transaction_summaries().await).pretty(2)
+    }
+
+    /// Provides a detailed list of transaction summaries related to this wallet in order of blockheight
+    pub async fn detailed_transaction_summaries(&self) -> DetailedTransactionSummaries {
+        let transaction_map = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let transaction_records = &transaction_map.transaction_records_by_id;
+
+        let mut transaction_summaries = transaction_records
+            .values()
+            .map(|tx| {
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                    basic_transaction_summary_parts(tx, transaction_records, &self.config().chain);
+                let orchard_nullifiers: Vec<String> = tx
+                    .spent_orchard_nullifiers
+                    .iter()
+                    .map(|nullifier| hex::encode(nullifier.to_bytes()))
+                    .collect();
+                let sapling_nullifiers: Vec<String> = tx
+                    .spent_sapling_nullifiers
+                    .iter()
+                    .map(hex::encode)
+                    .collect();
+
+                DetailedTransactionSummaryBuilder::new()
+                    .txid(tx.txid)
+                    .datetime(tx.datetime)
+                    .blockheight(tx.status.get_height())
+                    .kind(kind)
+                    .value(value)
+                    .fee(fee)
+                    .status(tx.status)
+                    .zec_price(tx.price)
+                    .orchard_notes(orchard_notes)
+                    .sapling_notes(sapling_notes)
+                    .transparent_coins(transparent_coins)
+                    .outgoing_tx_data(tx.outgoing_tx_data.clone())
+                    .orchard_nullifiers(orchard_nullifiers)
+                    .sapling_nullifiers(sapling_nullifiers)
+                    .build()
+                    .expect("all fields should be populated")
+            })
+            .collect::<Vec<_>>();
+        transaction_summaries.sort_by_key(|tx| tx.blockheight());
+
+        DetailedTransactionSummaries::new(transaction_summaries)
+    }
+
+    /// TODO: doc comment
+    pub async fn detailed_transaction_summaries_json_string(&self) -> String {
+        json::JsonValue::from(self.detailed_transaction_summaries().await).pretty(2)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -757,11 +768,11 @@ impl LightClient {
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
                 transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
-                    if !all_notes && note_metadata.spend().is_some() {
+                    if !all_notes && note_metadata.spending_tx_status().is_some() {
                         None
                     } else {
                         let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
-                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spend().is_none();
+                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         // this object should be created by the DomainOuput trait if this doesnt get deprecated
@@ -773,9 +784,9 @@ impl LightClient {
                             "pending"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
                             "spendable"          => spendable,
-                            "spent"    => note_metadata.spend().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
-                            "pending_spent"    => note_metadata.spend().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
-                            "spent_at_height"    => note_metadata.spend().map(|(_, status)| u32::from(status.get_height())),
+                            "spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
+                            "spent_at_height"    => note_metadata.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
                 )
@@ -805,7 +816,7 @@ impl LightClient {
                         None
                     } else {
                         let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
-                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spend().is_none();
+                        let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         Some(object!{
@@ -816,9 +827,9 @@ impl LightClient {
                             "pending"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
                             "spendable"          => spendable,
-                            "spent"    => note_metadata.spend().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
-                            "pending_spent"    => note_metadata.spend().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
-                            "spent_at_height"    => note_metadata.spend().map(|(_, status)| u32::from(status.get_height())),
+                            "spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
+                            "spent_at_height"    => note_metadata.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
                 )
@@ -854,7 +865,7 @@ impl LightClient {
                             _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
                         };
 
-                        let spendable = transaction_record.status.is_confirmed() && utxo.spend().is_none();
+                        let spendable = transaction_record.status.is_confirmed() && utxo.spending_tx_status().is_none();
                         Some(object!{
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_record.datetime,
@@ -863,9 +874,9 @@ impl LightClient {
                             "scriptkey"          => hex::encode(utxo.script.clone()),
                             "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spendable"          => spendable,
-                            "spent"    => utxo.spend().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
-                            "pending_spent"    => utxo.spend().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
-                            "spent_at_height"    => utxo.spend().map(|(_, status)| u32::from(status.get_height())),
+                            "spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
+                            "spent_at_height"    => utxo.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
                 )

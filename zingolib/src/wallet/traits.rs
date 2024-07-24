@@ -765,7 +765,9 @@ where
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
     ) -> bool {
-        note_and_metadata.spend().is_none() && spend_key.is_some() && note_and_metadata.value() != 0
+        note_and_metadata.spending_tx_status().is_none()
+            && spend_key.is_some()
+            && note_and_metadata.value() != 0
     }
 
     /// The checks needed are shared between domains, and thus are performed in the
@@ -1211,7 +1213,7 @@ where
         )?;
 
         let confirmed_spend = self
-            .spend()
+            .spending_tx_status()
             .as_ref()
             .and_then(|(txid, status)| status.get_confirmed_height().map(|height| (txid, height)));
 
