@@ -28,13 +28,11 @@ impl LightClient {
 pub mod send_with_proposal {
     use std::{convert::Infallible, ops::DerefMut as _};
 
-    
     use nonempty::NonEmpty;
 
-    
+    use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_client_backend::{proposal::Proposal};
     use zcash_keys::keys::{DerivationError, UnifiedSpendingKey};
     use zcash_primitives::transaction::TxId;
 
