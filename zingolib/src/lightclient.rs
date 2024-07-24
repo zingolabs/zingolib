@@ -1,5 +1,6 @@
 //! TODO: Add Mod Description Here!
 
+use base64::Engine;
 use json::{array, object, JsonValue};
 use log::{debug, error};
 use serde::Serialize;
@@ -418,7 +419,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
-        let data = match base64::decode(enc_base64) {
+        let data = match base64::prelude::BASE64_STANDARD.decode(enc_base64) {
             Ok(v) => v,
             Err(e) => {
                 return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
@@ -452,7 +453,7 @@ impl LightClient {
 
         match Message::new(to, memo).encrypt() {
             Ok(v) => {
-                object! {"encrypted_base64" => base64::encode(v) }
+                object! {"encrypted_base64" => base64::prelude::BASE64_STANDARD.encode(v) }
             }
             Err(e) => {
                 object! {"error" => format!("Couldn't encrypt. Error was {}", e)}
