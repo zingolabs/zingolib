@@ -78,7 +78,7 @@ pub mod send_with_proposal {
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
-    pub enum CompleteAndBroadcastStoredProposal {
+    pub enum CompleteAndBroadcastStoredProposalError {
         #[error("No proposal. Call do_propose first.")]
         NoStoredProposal,
         #[error("send {0:?}")]
@@ -211,7 +211,7 @@ pub mod send_with_proposal {
         /// Calculates, signs and broadcasts transactions from a stored proposal.
         pub async fn complete_and_broadcast_stored_proposal(
             &self,
-        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposal> {
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
             if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
                 match proposal {
                     crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
@@ -223,9 +223,9 @@ pub mod send_with_proposal {
                             .await
                     }
                 }
-                .map_err(CompleteAndBroadcastStoredProposal::CompleteAndBroadcast)
+                .map_err(CompleteAndBroadcastStoredProposalError::CompleteAndBroadcast)
             } else {
-                Err(CompleteAndBroadcastStoredProposal::NoStoredProposal)
+                Err(CompleteAndBroadcastStoredProposalError::NoStoredProposal)
             }
         }
 
