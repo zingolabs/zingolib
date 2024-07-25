@@ -62,6 +62,7 @@ pub mod send_with_proposal {
         UnifiedSpendKey(std::io::Error),
         #[error("Can't Calculate {0:?}")]
         Calculation(
+            #[from]
             zcash_client_backend::data_api::error::Error<
                 crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
                 std::convert::Infallible,
@@ -177,8 +178,7 @@ pub mod send_with_proposal {
                     step,
                     Some(usk_to_tkey),
                     Some(self.wallet.wallet_capability().first_sapling_address()),
-                )
-                .map_err(CompleteAndBroadcastError::Calculation)?;
+                )?;
 
             let result = self
                 .wallet
