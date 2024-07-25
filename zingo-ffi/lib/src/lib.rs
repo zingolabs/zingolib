@@ -247,6 +247,10 @@ pub fn get_developer_donation_address() -> String {
     zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string()
 }
 
+pub fn get_zennies_for_zingo_donation_address() -> String {
+    zingoconfig::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
+}
+
 pub fn get_transaction_summaries() -> String {
     let resp: String;
     {
