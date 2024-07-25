@@ -161,7 +161,6 @@ pub mod send_with_proposal {
                     proposal.min_target_height(),
                     &[],
                     step,
-                    None,
                     Some(self.wallet.wallet_capability().first_sapling_address()),
                 )
                 .map_err(CompleteAndBroadcastError::Calculation)?;
