@@ -478,6 +478,12 @@ mod fast {
             faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
             0
         );
+        assert!(faucet_copy
+            .transaction_summaries()
+            .await
+            .iter()
+            .find(|transaction_summary| transaction_summary.txid() == pending_txid)
+            .is_none());
         let mut faucet_transactions = faucet.do_list_transactions().await;
         faucet_transactions.pop();
         faucet_transactions.pop();
