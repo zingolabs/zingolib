@@ -287,7 +287,7 @@ where
     let spent_orchard_outputs: Vec<_> = secondary_outputs
         .iter()
         .filter(|o| matches!(o.pool_type(), Shielded(Orchard)))
-        .filter(|o| o.is_spent())
+        .filter(|o| o.is_spent_confirmed())
         .collect();
     assert_eq!(spent_orchard_outputs.len(), 1);
 }
@@ -487,7 +487,7 @@ where
     let spent_sapling_outputs: Vec<_> = all_outputs
         .iter()
         .filter(|o| matches!(o.pool_type(), Shielded(Sapling)))
-        .filter(|o| o.is_spent())
+        .filter(|o| o.is_spent_confirmed())
         .collect();
     assert_eq!(
         spent_sapling_outputs.len(),

@@ -50,6 +50,7 @@ use zcash_primitives::{
         Transaction, TxId,
     },
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingoconfig::ChainType;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
@@ -764,8 +765,7 @@ where
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
     ) -> bool {
-        note_and_metadata.spent().is_none()
-            && note_and_metadata.pending_spent().is_none()
+        note_and_metadata.spending_tx_status().is_none()
             && spend_key.is_some()
             && note_and_metadata.value() != 0
     }
@@ -1130,6 +1130,9 @@ where
             Ok((TxId::from_bytes(transaction_id_bytes), height))
         })?;
 
+        let spend =
+            spent.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
+
         if external_version < 3 {
             let _pending_spent = {
                 Optional::read(&mut reader, |r| {
@@ -1177,8 +1180,7 @@ where
             note,
             Some(witnessed_position),
             Some(nullifier),
-            spent,
-            None,
+            spend,
             memo,
             is_change,
             have_spending_key,
@@ -1210,12 +1212,17 @@ where
                 .to_bytes(),
         )?;
 
+        let confirmed_spend = self
+            .spending_tx_status()
+            .as_ref()
+            .and_then(|(txid, status)| status.get_confirmed_height().map(|height| (txid, height)));
+
         Optional::write(
             &mut writer,
-            self.spent().as_ref(),
+            confirmed_spend,
             |w, (transaction_id, height)| {
                 w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(*height)
+                w.write_u32::<LittleEndian>(height.into())
             },
         )?;
 

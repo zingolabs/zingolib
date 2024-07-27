@@ -2,6 +2,7 @@
 use incrementalmerkletree::Position;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::notes::interface::OutputConstructor;
 
@@ -27,12 +28,8 @@ pub struct OrchardNote {
 
     pub(crate) nullifier: Option<orchard::note::Nullifier>,
 
-    /// If this note was confirmed spent
-    pub spent: Option<(TxId, u32)>, // Todo: as related to pending spent, this is potential data incoherence
-
-    /// If this note was spent in a send, but has not yet been confirmed.
-    /// Contains the transaction id and height at which it was broadcast
-    pub pending_spent: Option<(TxId, u32)>,
+    /// whether, where, and when it was spent
+    spend: Option<(TxId, ConfirmationStatus)>,
 
     /// TODO: Add Doc Comment Here!
     pub memo: Option<Memo>,
@@ -53,20 +50,12 @@ impl OutputInterface for OrchardNote {
         self.orchard_crypto_note.value().inner()
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent
+    fn spending_tx_status(&self) -> &Option<(TxId, ConfirmationStatus)> {
+        &self.spend
     }
 
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent
-    }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.pending_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.pending_spent
+    fn spending_tx_status_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)> {
+        &mut self.spend
     }
 }
 impl OutputConstructor for OrchardNote {
@@ -117,8 +106,7 @@ impl ShieldedNoteInterface for OrchardNote {
         orchard_crypto_note: Self::Note,
         witnessed_position: Option<Position>,
         nullifier: Option<Self::Nullifier>,
-        spent: Option<(TxId, u32)>,
-        pending_spent: Option<(TxId, u32)>,
+        spend: Option<(TxId, ConfirmationStatus)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
@@ -129,8 +117,7 @@ impl ShieldedNoteInterface for OrchardNote {
             orchard_crypto_note,
             witnessed_position,
             nullifier,
-            spent,
-            pending_spent,
+            spend,
             memo,
             is_change,
             have_spending_key,
@@ -214,6 +201,7 @@ pub mod mocks {
     use incrementalmerkletree::Position;
     use orchard::{keys::Diversifier, note::Nullifier, value::NoteValue};
     use zcash_primitives::{memo::Memo, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
         mocks::orchard_note::OrchardCryptoNoteBuilder, utils::build_method,
@@ -230,8 +218,7 @@ pub mod mocks {
         witnessed_position: Option<Option<Position>>,
         pub output_index: Option<Option<u32>>,
         nullifier: Option<Option<Nullifier>>,
-        spent: Option<Option<(TxId, u32)>>,
-        pending_spent: Option<Option<(TxId, u32)>>,
+        spending_tx_status: Option<Option<(TxId, ConfirmationStatus)>>,
         memo: Option<Option<Memo>>,
         is_change: Option<bool>,
         have_spending_key: Option<bool>,
@@ -247,8 +234,7 @@ pub mod mocks {
                 witnessed_position: None,
                 output_index: None,
                 nullifier: None,
-                spent: None,
-                pending_spent: None,
+                spending_tx_status: None,
                 memo: None,
                 is_change: None,
                 have_spending_key: None,
@@ -261,8 +247,7 @@ pub mod mocks {
         build_method!(witnessed_position, Option<Position>);
         build_method!(output_index, Option<u32>);
         build_method!(nullifier, Option<Nullifier>);
-        build_method!(spent, Option<(TxId, u32)>);
-        build_method!(pending_spent, Option<(TxId, u32)>);
+        build_method!(spending_tx_status, Option<(TxId, ConfirmationStatus)>);
         build_method!(memo, Option<Memo>);
         #[doc = "Set the is_change field of the builder."]
         pub fn set_change(&mut self, is_change: bool) -> &mut Self {
@@ -285,8 +270,7 @@ pub mod mocks {
                 self.note.clone().unwrap().build(),
                 self.witnessed_position.unwrap(),
                 self.nullifier.unwrap(),
-                self.spent.unwrap(),
-                self.pending_spent.unwrap(),
+                self.spending_tx_status.unwrap(),
                 self.memo.clone().unwrap(),
                 self.is_change.unwrap(),
                 self.have_spending_key.unwrap(),
@@ -304,8 +288,7 @@ pub mod mocks {
                 .witnessed_position(Some(Position::from(0)))
                 .output_index(Some(0))
                 .nullifier(Some(Nullifier::from_bytes(&[0u8; 32]).unwrap()))
-                .spent(None)
-                .pending_spent(None)
+                .spending_tx_status(None)
                 .memo(None)
                 .set_change(false)
                 .have_spending_key(true);
