@@ -62,7 +62,7 @@ pub trait OutputInterface: Sized {
             .is_some_and(|(_txid, status)| status.is_pending())
     }
 
-    /// returns true if the note is spent and the spent is validated confirmed on chain
+    /// returns true if the note is spent and the spend is validated confirmed on chain
     fn is_spent_confirmed(&self) -> bool {
         self.spending_tx_status()
             .is_some_and(|(_txid, status)| status.is_confirmed())
