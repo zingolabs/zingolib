@@ -130,49 +130,26 @@ impl super::TxMapAndMaybeTrees {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        Ok(if let Some(height) = status.get_confirmed_height() {
+        if let Some(height) = status.get_confirmed_height() {
             // ie remove_witness_mark_sapling or _orchard
             self.remove_witness_mark::<D>(height, spending_txid, source_txid, output_index)?;
-            if let Some(transaction_spent_from) =
-                self.transaction_records_by_id.get_mut(&source_txid)
-            {
-                if let Some(confirmed_spent_note) =
-                    D::WalletNote::get_record_to_outputs_mut(transaction_spent_from)
-                        .iter_mut()
-                        .find(|note| note.nullifier() == Some(spent_nullifier))
-                {
-                    *confirmed_spent_note.spent_mut() = Some((spending_txid, height.into()));
-                    *confirmed_spent_note.pending_spent_mut() = None;
+        }
 
-                    confirmed_spent_note.value()
-                } else {
-                    ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
-                }
-            } else {
-                ZingoLibError::NoSuchTxId(spending_txid).handle()?
-            }
-        } else if let Some(height) = status.get_pending_height() {
-            // Mark the pending_spent. Confirmed spends are already handled in update_notes
-            if let Some(transaction_spent_from) =
-                self.transaction_records_by_id.get_mut(&source_txid)
+        if let Some(transaction_spent_from) = self.transaction_records_by_id.get_mut(&source_txid) {
+            if let Some(spent_note) =
+                D::WalletNote::get_record_to_outputs_mut(transaction_spent_from)
+                    .iter_mut()
+                    .find(|note| note.nullifier() == Some(spent_nullifier))
             {
-                if let Some(pending_spent_note) =
-                    D::WalletNote::get_record_to_outputs_mut(transaction_spent_from)
-                        .iter_mut()
-                        .find(|note| note.nullifier() == Some(spent_nullifier))
-                {
-                    *pending_spent_note.pending_spent_mut() =
-                        Some((spending_txid, u32::from(height)));
-                    pending_spent_note.value()
-                } else {
-                    ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
-                }
+                *spent_note.spending_tx_status_mut() = Some((spending_txid, status));
+
+                Ok(spent_note.value())
             } else {
-                ZingoLibError::NoSuchTxId(spending_txid).handle()?
+                ZingoLibError::NoSuchNullifierInTx(spending_txid).handle()?
             }
         } else {
-            ZingoLibError::UnknownError.handle()?
-        }) // todO add special error variant
+            ZingoLibError::NoSuchTxId(spending_txid).handle()?
+        }
     }
 }
 
@@ -212,7 +189,8 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
         {
             match maybe_note {
                 Ok(note_datum) => {
-                    *note_datum.spent_mut() = Some((txid, height.into()));
+                    // *note_datum.spending_tx_status_mut() = Some((txid, ConfirmationStatus::Confirmed(height)));
+                    // TODO WTF why is this line here?
                     if let Some(position) = *note_datum.witnessed_position() {
                         if let Some(ref mut tree) =
                             D::transaction_metadata_set_to_shardtree_mut(self)

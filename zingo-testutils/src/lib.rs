@@ -18,7 +18,7 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::data::summaries::{
-    OrchardNoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary,
+    OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
     TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use zingolib::wallet::keys::unified::WalletCapability;
@@ -194,7 +194,7 @@ fn check_orchard_note_summary_equality(
     };
     for i in 0..first.len() {
         if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary())
             && first[i].memo() == second[i].memo())
         {
             return false;
@@ -213,7 +213,7 @@ fn check_sapling_note_summary_equality(
     };
     for i in 0..first.len() {
         if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
+            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary())
             && first[i].memo() == second[i].memo())
         {
             return false;
@@ -232,7 +232,7 @@ fn check_transparent_coin_summary_equality(
     };
     for i in 0..first.len() {
         if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status()))
+            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary()))
         {
             return false;
         }
@@ -240,12 +240,12 @@ fn check_transparent_coin_summary_equality(
     true
 }
 
-fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool {
+fn check_spend_status_equality(first: SpendSummary, second: SpendSummary) -> bool {
     matches!(
         (first, second),
-        (SpendStatus::Unspent, SpendStatus::Unspent)
-            | (SpendStatus::Spent(_), SpendStatus::Spent(_))
-            | (SpendStatus::PendingSpent(_), SpendStatus::PendingSpent(_))
+        (SpendSummary::Unspent, SpendSummary::Unspent)
+            | (SpendSummary::Spent(_), SpendSummary::Spent(_))
+            | (SpendSummary::PendingSpent(_), SpendSummary::PendingSpent(_))
     )
 }
 
