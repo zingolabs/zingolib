@@ -481,7 +481,8 @@ mod fast {
         assert!(!faucet_copy
             .transaction_summaries()
             .await
-            .iter().any(|transaction_summary| transaction_summary.txid() == pending_txid));
+            .iter()
+            .any(|transaction_summary| transaction_summary.txid() == pending_txid));
         let mut faucet_transactions = faucet.do_list_transactions().await;
         faucet_transactions.pop();
         faucet_transactions.pop();
