@@ -3945,13 +3945,7 @@ mod slow {
         expected_balance: u64,
         num_addresses: usize,
     ) {
-        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet)
-            .set_lightwalletd_uri(
-                ("https://zcash.mysideoftheweb.com:19067")
-                    .parse::<http::Uri>()
-                    .unwrap(),
-            )
-            .create();
+        let config = zingoconfig::ZingoConfig::create_testnet();
         let wallet = LightWallet::read_internal(data, &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
