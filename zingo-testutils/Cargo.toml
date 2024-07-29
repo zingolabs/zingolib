@@ -10,7 +10,7 @@ default = ["grpc-proxy"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zingoconfig = { path = "../zingoconfig" }
+zingoconfig = { path = "../zingoconfig", features = ["test-elevation"]}
 zingolib = { path = "../zingolib" }
 zingo-netutils = { path = "../zingo-netutils", features = ["test-features"] }
 zingo-testvectors = { path = "../zingo-testvectors" }
