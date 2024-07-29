@@ -3945,21 +3945,19 @@ mod slow {
         expected_balance: u64,
         num_addresses: usize,
     ) {
-        let config = zingoconfig::ZingoConfig::create_testnet();
-        let wallet = LightWallet::read_internal(data, &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
-            .unwrap();
-
+        let wallet = LightWallet::unsafe_from_buffer_testnet(data).await;
         let expected_mnemonic = (
             Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
             0,
         );
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
-        let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
+        let expected_wc = WalletCapability::new_from_phrase(
+            &wallet.transaction_context.config,
+            &expected_mnemonic.0,
+            expected_mnemonic.1,
+        )
+        .unwrap();
         let wc = wallet.wallet_capability();
 
         // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
@@ -4002,6 +4000,7 @@ mod slow {
             assert!(addr.transparent().is_some());
         }
 
+        let config = wallet.transaction_context.config.clone();
         let client = LightClient::create_from_wallet_async(wallet, config)
             .await
             .unwrap();
