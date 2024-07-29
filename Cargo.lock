@@ -4215,7 +4215,13 @@ dependencies = [
 name = "zingo-sync"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "tokio",
+ "tonic",
  "tracing",
+ "zcash_client_backend",
+ "zcash_primitives",
+ "zingo-netutils",
 ]
 
 [[package]]
