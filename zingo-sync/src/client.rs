@@ -34,6 +34,7 @@ pub async fn get_chain_height(
 /// Gets the height of the blockchain from the server.
 ///
 /// Requires [`crate::client::fetcher::fetcher`] to be running concurrently, connected via the `fetch_request` channel.
+#[allow(dead_code)]
 pub async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,

@@ -33,12 +33,10 @@ pub async fn fetcher(
             return Ok(());
         }
 
-        let fetch_request_index = select_fetch_request(&mut fetch_request_queue);
+        let fetch_request = select_fetch_request(&mut fetch_request_queue);
 
-        if let Some(index) = fetch_request_index {
-            fetch_from_server(&mut client, &mut fetch_request_queue, index)
-                .await
-                .unwrap();
+        if let Some(request) = fetch_request {
+            fetch_from_server(&mut client, request).await.unwrap();
         }
     }
 }
@@ -78,8 +76,9 @@ async fn receive_fetch_requests(
     false
 }
 
-// TODO: placeholder for algorythm that selects the index of the next fetch request to be processed
-fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<usize> {
+// TODO: placeholder for algorythm that selects the next fetch request to be processed
+// return `None` if a fetch request could not be selected
+fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<FetchRequest> {
     // TODO: add other fetch requests with priorities
     let fetch_request_index = fetch_request_queue
         .iter()
@@ -87,17 +86,14 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<u
         .find(|(_, request)| matches!(request, FetchRequest::ChainTip(_)))
         .map(|(index, _)| index);
 
-    fetch_request_index
+    fetch_request_index.map(|index| fetch_request_queue.remove(index))
 }
 
 //
 async fn fetch_from_server(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-    fetch_request_queue: &mut Vec<FetchRequest>,
-    fetch_request_index: usize,
+    fetch_request: FetchRequest,
 ) -> Result<(), ()> {
-    let fetch_request = fetch_request_queue.remove(fetch_request_index);
-
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
             let block_id = get_latest_block(client).await;
