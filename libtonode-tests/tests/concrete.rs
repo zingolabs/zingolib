@@ -318,7 +318,7 @@ mod fast {
         );
         let wallet_path = Path::new(&wallet_nym);
         let wallet_dir = wallet_path.parent().unwrap();
-        let (wallet, config) =
+        let (wallet, _config) =
             zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
         let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
         let transactions = client.do_list_transactions().await[0].clone();
@@ -3993,7 +3993,6 @@ mod slow {
             assert!(addr.transparent().is_some());
         }
 
-        let config = wallet.transaction_context.config.clone();
         let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(expected_balance));
