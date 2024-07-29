@@ -266,12 +266,10 @@ pub mod instantiation {
         // toDo rework ZingoConfig.
 
         /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
-        pub async fn create_from_wallet_async(
-            wallet: LightWallet,
-            config: ZingoConfig,
-        ) -> io::Result<Self> {
+        pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
+            let config = wallet.transaction_context.config.clone();
             Ok(LightClient {
                 wallet,
                 config: config.clone(),
@@ -319,10 +317,11 @@ pub mod instantiation {
                 ));
                 }
             }
-            let lightclient = LightClient::create_from_wallet_async(
-                LightWallet::new(config.clone(), wallet_base, birthday)?,
+            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
                 config.clone(),
-            )
+                wallet_base,
+                birthday,
+            )?)
             .await?;
 
             lightclient.set_wallet_initial_state(birthday).await;
@@ -342,10 +341,11 @@ pub mod instantiation {
             wallet_base: WalletBase,
             height: u64,
         ) -> io::Result<Self> {
-            let lightclient = LightClient::create_from_wallet_async(
-                LightWallet::new(config.clone(), wallet_base, height)?,
+            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
                 config.clone(),
-            )
+                wallet_base,
+                height,
+            )?)
             .await?;
             Ok(lightclient)
         }

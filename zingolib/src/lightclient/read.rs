@@ -20,7 +20,7 @@ impl LightClient {
     ) -> io::Result<Self> {
         let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
-        let lc = LightClient::create_from_wallet_async(wallet, config.clone()).await?;
+        let lc = LightClient::create_from_wallet_async(wallet).await?;
 
         debug!(
             "Read wallet with birthday {}",
