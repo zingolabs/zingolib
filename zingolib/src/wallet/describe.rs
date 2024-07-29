@@ -73,7 +73,7 @@ impl LightWallet {
                     }
                     selected_notes
                         .map(|notedata| {
-                            if notedata.spent().is_none() && notedata.pending_spent().is_none() {
+                            if notedata.spending_tx_status().is_none() {
                                 <D::WalletNote as OutputInterface>::value(notedata)
                             } else {
                                 0
@@ -242,7 +242,7 @@ impl LightWallet {
             ))
     }
 
-    /// Get all (unspent) utxos. pending spent utxos are included
+    /// Get all (unspent) utxos.
     pub async fn get_utxos(&self) -> Vec<TransparentOutput> {
         self.transaction_context
             .transaction_metadata_set
@@ -254,7 +254,7 @@ impl LightWallet {
                 transaction
                     .transparent_outputs
                     .iter()
-                    .filter(|utxo| !utxo.is_spent())
+                    .filter(|utxo| !utxo.is_spent_confirmed())
             })
             .cloned()
             .collect::<Vec<TransparentOutput>>()

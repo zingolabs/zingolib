@@ -3,6 +3,7 @@
 use incrementalmerkletree::{Hashable, Position};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::{
     keys::unified::WalletCapability,
@@ -42,35 +43,36 @@ pub trait OutputInterface: Sized {
     fn value(&self) -> u64;
 
     /// If the funds are spent, the TxId and Blockheight of record
-    fn spent(&self) -> &Option<(TxId, u32)>;
+    fn spending_tx_status(&self) -> &Option<(TxId, ConfirmationStatus)>;
 
     /// Mutable access to the spent field.. hmm  NOTE:  Should we keep this pattern?
     /// what is spent becomes a Vec<OnceCell(TxiD, u32)>, where the last element of that
     /// Vec is the last known block chain record of the spend.  So then reorgs, just extend
     /// the Vec which tracks all BlockChain records of the value-transfer
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn spending_tx_status_mut(&mut self) -> &mut Option<(TxId, ConfirmationStatus)>;
 
-    /// The TxId and broadcast height of a transfer that's not known to be on-record on the chain
-    fn pending_spent(&self) -> &Option<(TxId, u32)>;
-
-    /// TODO: Add Doc Comment Here!
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    /// returns the id of the spending transaction, whether pending or no
+    fn spending_txid(&self) -> Option<TxId> {
+        self.spending_tx_status().map(|(txid, _status)| txid)
+    }
 
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
-        self.pending_spent().is_some()
+        self.spending_tx_status()
+            .is_some_and(|(_txid, status)| status.is_pending())
     }
 
-    /// returns true if the note is confirmed spent
-    fn is_spent(&self) -> bool {
-        self.spent().is_some()
+    /// returns true if the note is spent and the spend is validated confirmed on chain
+    fn is_spent_confirmed(&self) -> bool {
+        self.spending_tx_status()
+            .is_some_and(|(_txid, status)| status.is_confirmed())
     }
 
     /// Returns true if the note has one of the spend statuses enumerated by the query
     fn spend_status_query(&self, query: OutputSpendStatusQuery) -> bool {
-        (*query.unspent() && !self.is_spent() && !self.is_pending_spent())
+        (*query.unspent() && !self.is_spent_confirmed() && !self.is_pending_spent())
             || (*query.pending_spent() && self.is_pending_spent())
-            || (*query.spent() && self.is_spent())
+            || (*query.spent() && self.is_spent_confirmed())
     }
 
     /// Returns true if the note is unspent (spendable).
@@ -116,8 +118,7 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
         note: Self::Note,
         position_of_commitment_to_witness: Option<Position>,
         nullifier: Option<Self::Nullifier>,
-        spent: Option<(TxId, u32)>,
-        pending_spent: Option<(TxId, u32)>,
+        spend: Option<(TxId, ConfirmationStatus)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,

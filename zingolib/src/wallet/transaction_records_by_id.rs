@@ -163,14 +163,13 @@ impl TransactionRecordsById {
                 .transparent_outputs
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.is_spent() && invalidated_txids.contains(&utxo.spent().unwrap().0) {
-                        *utxo.spent_mut() = None;
-                    }
-
-                    if utxo.pending_spent.is_some()
-                        && invalidated_txids.contains(&utxo.pending_spent.unwrap().0)
+                    // Mark utxo as unspent if the txid being removed spent it.
+                    if utxo
+                        .spending_tx_status()
+                        .filter(|(txid, _status)| invalidated_txids.contains(txid))
+                        .is_some()
                     {
-                        utxo.pending_spent = None;
+                        *utxo.spending_tx_status_mut() = None;
                     }
                 })
         });
@@ -191,17 +190,14 @@ impl TransactionRecordsById {
                 OutputSpendStatusQuery::spentish(),
             )
             .iter_mut()
-            .for_each(|nd| {
+            .for_each(|note| {
                 // Mark note as unspent if the txid being removed spent it.
-                if nd.spent().is_some() && invalidated_txids.contains(&nd.spent().unwrap().0) {
-                    *nd.spent_mut() = None;
-                }
-
-                // Remove pending spends too
-                if nd.pending_spent().is_some()
-                    && invalidated_txids.contains(&nd.pending_spent().unwrap().0)
+                if note
+                    .spending_tx_status()
+                    .filter(|(txid, _status)| invalidated_txids.contains(txid))
+                    .is_some()
                 {
-                    *nd.pending_spent_mut() = None;
+                    *note.spending_tx_status_mut() = None;
                 }
             });
         });
@@ -317,8 +313,7 @@ impl TransactionRecordsById {
         self.get_all_transparent_outputs()
             .into_iter()
             .filter(|o| {
-                (*o.spent()).map_or(false, |(txid, _)| txid == query_record.txid)
-                    || (*o.pending_spent()).map_or(false, |(txid, _)| txid == query_record.txid)
+                (*o.spending_tx_status()).map_or(false, |(txid, _)| txid == query_record.txid)
             })
             .collect()
     }
@@ -537,15 +532,8 @@ impl TransactionRecordsById {
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
-                if spending_tx_status.is_confirmed() {
-                    // Mark this utxo as spent
-                    *spent_utxo.spent_mut() =
-                        Some((source_txid, spending_tx_status.get_height().into()));
-                    spent_utxo.pending_spent = None;
-                } else {
-                    spent_utxo.pending_spent =
-                        Some((source_txid, u32::from(spending_tx_status.get_height())));
-                }
+                // Mark this utxo as spent
+                *spent_utxo.spending_tx_status_mut() = Some((source_txid, spending_tx_status));
 
                 spent_utxo.value
             } else {
@@ -591,7 +579,6 @@ impl TransactionRecordsById {
                     output_num as u64,
                     vout.script_pubkey.0.clone(),
                     u64::from(vout.value),
-                    None,
                     None,
                 ),
             );
@@ -642,7 +629,6 @@ impl TransactionRecordsById {
                     None,
                     None,
                     None,
-                    None,
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
                     false,
@@ -677,7 +663,6 @@ impl TransactionRecordsById {
             note.clone(),
             Some(position),
             nullifier,
-            None,
             None,
             None,
             // if this is change, we'll mark it later in check_notes_mark_change
@@ -814,7 +799,7 @@ mod tests {
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    use zingo_status::confirmation_status::ConfirmationStatus::{self, Confirmed};
 
     #[test]
     fn invalidate_all_transactions_after_or_at_height() {
@@ -825,27 +810,24 @@ mod tests {
             .build();
         let spending_txid = transaction_record_later.txid;
 
+        let spend_in_known_tx = Some((spending_txid, Confirmed(15.into())));
+
         let transaction_record_early = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(5.into()))
             .transparent_outputs(
                 TransparentOutputBuilder::default()
-                    .spent(Some((spending_txid, 15)))
+                    .spending_tx_status(spend_in_known_tx)
                     .clone(),
             )
             .sapling_notes(
                 SaplingNoteBuilder::default()
-                    .spent(Some((spending_txid, 15)))
+                    .spending_tx_status(spend_in_known_tx)
                     .clone(),
             )
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spent(Some((spending_txid, 15)))
-                    .clone(),
-            )
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .spent(Some((random_txid(), 15)))
+                    .spending_tx_status(spend_in_known_tx)
                     .clone(),
             )
             .orchard_notes(OrchardNoteBuilder::default())
@@ -873,29 +855,23 @@ mod tests {
             transaction_record_cvnwis,
             query_for_spentish_notes,
         );
-        assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 1);
-        // ^ so there is one spent note still in this transaction
-        assert_ne!(
-            spentish_sapling_notes_in_tx_cvnwis.first().unwrap().spent(),
-            &Some((spending_txid, 15u32))
-        );
-        // ^ but it was not spent in the deleted txid
+        assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 0);
     }
 
     // TODO: move this into an associated fn of TransparentOutputBuilder
     fn spent_transparent_output_builder(
         amount: u64,
-        sent: (TxId, u32),
+        sent: (TxId, ConfirmationStatus),
     ) -> TransparentOutputBuilder {
         TransparentOutputBuilder::default()
             .value(amount)
-            .spent(Some(sent))
+            .spending_tx_status(Some(sent))
             .to_owned()
     }
 
     fn spent_sapling_note_builder(
         amount: u64,
-        sent: (TxId, u32),
+        sent: (TxId, ConfirmationStatus),
         sapling_nullifier: &sapling_crypto::Nullifier,
     ) -> SaplingNoteBuilder {
         SaplingNoteBuilder::default()
@@ -904,13 +880,13 @@ mod tests {
                     .value(sapling_crypto::value::NoteValue::from_raw(amount))
                     .to_owned(),
             )
-            .spent(Some(sent))
+            .spending_tx_status(Some(sent))
             .nullifier(Some(*sapling_nullifier))
             .to_owned()
     }
     fn spent_orchard_note_builder(
         amount: u64,
-        sent: (TxId, u32),
+        sent: (TxId, ConfirmationStatus),
         orchard_nullifier: &orchard::note::Nullifier,
     ) -> OrchardNoteBuilder {
         OrchardNoteBuilder::default()
@@ -919,7 +895,7 @@ mod tests {
                     .value(orchard::value::NoteValue::from_raw(amount))
                     .to_owned(),
             )
-            .spent(Some(sent))
+            .spending_tx_status(Some(sent))
             .nullifier(Some(*orchard_nullifier))
             .to_owned()
     }
@@ -947,28 +923,29 @@ mod tests {
         // t-note + s-note + o-note + outgoing_tx_data
         let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000; // 1_150_000
 
+        let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
         let first_received_transaction_record = TransactionRecordBuilder::default()
             .randomize_txid()
             .status(Confirmed(5.into()))
             .sapling_notes(spent_sapling_note_builder(
                 175_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &first_sapling_nullifier,
             ))
             .sapling_notes(spent_sapling_note_builder(
                 325_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &second_sapling_nullifier,
             ))
             .orchard_notes(spent_orchard_note_builder(
                 500_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &first_orchard_nullifier,
             ))
-            .transparent_outputs(spent_transparent_output_builder(30_000, (sent_txid, 15))) // 100_000
+            .transparent_outputs(spent_transparent_output_builder(30_000, spent_in_sent_txid)) // 100_000
             .sapling_notes(
-                SaplingNoteBuilder::default() // 200_000
-                    .spent(Some((random_txid(), 12)))
+                SaplingNoteBuilder::default()
+                    .spending_tx_status(Some((random_txid(), Confirmed(12.into()))))
                     .to_owned(),
             )
             .orchard_notes(OrchardNoteBuilder::default()) // 800_000
@@ -979,14 +956,14 @@ mod tests {
             .status(Confirmed(7.into()))
             .orchard_notes(spent_orchard_note_builder(
                 200_000,
-                (sent_txid, 15),
+                spent_in_sent_txid,
                 &second_orchard_nullifier,
             ))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default().clone())
             .orchard_notes(
                 OrchardNoteBuilder::default()
-                    .spent(Some((random_txid(), 13)))
+                    .spending_tx_status(Some((random_txid(), Confirmed(13.into()))))
                     .to_owned(),
             )
             .set_output_indexes()
@@ -1059,7 +1036,7 @@ mod tests {
                                 .value(sapling_crypto::value::NoteValue::from_raw(175_000))
                                 .to_owned(),
                         )
-                        .spent(Some((sent_txid, 15)))
+                        .spending_tx_status(Some((sent_txid, Confirmed(15.into()))))
                         .nullifier(Some(sapling_nullifier))
                         .to_owned(),
                 )
@@ -1123,10 +1100,11 @@ mod tests {
                 )
                 .build();
             let sent_txid = transaction_record.txid;
+            let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
             let transparent_funding_tx = TransactionRecordBuilder::default()
                 .randomize_txid()
                 .status(Confirmed(7.into()))
-                .transparent_outputs(spent_transparent_output_builder(20_000, (sent_txid, 15)))
+                .transparent_outputs(spent_transparent_output_builder(20_000, spent_in_sent_txid))
                 .set_output_indexes()
                 .build();
 

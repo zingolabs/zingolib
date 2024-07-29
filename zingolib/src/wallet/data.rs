@@ -1454,7 +1454,7 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Debug)]
     pub struct OrchardNoteSummary {
         value: u64,
-        spend_status: SpendStatus,
+        spend_summary: SpendSummary,
         output_index: Option<u32>,
         memo: Option<String>,
     }
@@ -1463,13 +1463,13 @@ pub mod summaries {
         /// Creates an OrchardNoteSummary from parts
         pub fn from_parts(
             value: u64,
-            spend_status: SpendStatus,
+            spend_status: SpendSummary,
             output_index: Option<u32>,
             memo: Option<String>,
         ) -> Self {
             OrchardNoteSummary {
                 value,
-                spend_status,
+                spend_summary: spend_status,
                 output_index,
                 memo,
             }
@@ -1478,10 +1478,12 @@ pub mod summaries {
         pub fn value(&self) -> u64 {
             self.value
         }
+
         /// Gets spend status
-        pub fn spend_status(&self) -> SpendStatus {
-            self.spend_status
+        pub fn spend_summary(&self) -> SpendSummary {
+            self.spend_summary
         }
+
         /// Gets output index
         pub fn output_index(&self) -> Option<u32> {
             self.output_index
@@ -1512,7 +1514,7 @@ pub mod summaries {
             output index: {}
             memo: {}
         }}",
-                self.value, self.spend_status, output_index, memo,
+                self.value, self.spend_summary, output_index, memo,
             )
         }
     }
@@ -1521,7 +1523,7 @@ pub mod summaries {
         fn from(note: OrchardNoteSummary) -> Self {
             json::object! {
                 "value" => note.value,
-                "spend_status" => note.spend_status.to_string(),
+                "spend_status" => note.spend_summary.to_string(),
                 "output_index" => note.output_index,
                 "memo" => note.memo,
             }
@@ -1547,7 +1549,7 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Debug)]
     pub struct SaplingNoteSummary {
         value: u64,
-        spend_status: SpendStatus,
+        spend_summary: SpendSummary,
         output_index: Option<u32>,
         memo: Option<String>,
     }
@@ -1556,13 +1558,13 @@ pub mod summaries {
         /// Creates a SaplingNoteSummary from parts
         pub fn from_parts(
             value: u64,
-            spend_status: SpendStatus,
+            spend_status: SpendSummary,
             output_index: Option<u32>,
             memo: Option<String>,
         ) -> Self {
             SaplingNoteSummary {
                 value,
-                spend_status,
+                spend_summary: spend_status,
                 output_index,
                 memo,
             }
@@ -1571,10 +1573,12 @@ pub mod summaries {
         pub fn value(&self) -> u64 {
             self.value
         }
+
         /// Gets spend status
-        pub fn spend_status(&self) -> SpendStatus {
-            self.spend_status
+        pub fn spend_summary(&self) -> SpendSummary {
+            self.spend_summary
         }
+
         /// Gets output index
         pub fn output_index(&self) -> Option<u32> {
             self.output_index
@@ -1605,7 +1609,7 @@ pub mod summaries {
             output index: {}
             memo: {}
         }}",
-                self.value, self.spend_status, output_index, memo,
+                self.value, self.spend_summary, output_index, memo,
             )
         }
     }
@@ -1614,7 +1618,7 @@ pub mod summaries {
         fn from(note: SaplingNoteSummary) -> Self {
             json::object! {
                 "value" => note.value,
-                "spend_status" => note.spend_status.to_string(),
+                "spend_status" => note.spend_summary.to_string(),
                 "output_index" => note.output_index,
                 "memo" => note.memo,
             }
@@ -1640,16 +1644,16 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Debug)]
     pub struct TransparentCoinSummary {
         value: u64,
-        spend_status: SpendStatus,
+        spend_summary: SpendSummary,
         output_index: u64,
     }
 
     impl TransparentCoinSummary {
         /// Creates a SaplingNoteSummary from parts
-        pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u64) -> Self {
+        pub fn from_parts(value: u64, spend_status: SpendSummary, output_index: u64) -> Self {
             TransparentCoinSummary {
                 value,
-                spend_status,
+                spend_summary: spend_status,
                 output_index,
             }
         }
@@ -1657,10 +1661,12 @@ pub mod summaries {
         pub fn value(&self) -> u64 {
             self.value
         }
+
         /// Gets spend status
-        pub fn spend_status(&self) -> SpendStatus {
-            self.spend_status
+        pub fn spend_summary(&self) -> SpendSummary {
+            self.spend_summary
         }
+
         /// Gets output index
         pub fn output_index(&self) -> u64 {
             self.output_index
@@ -1676,7 +1682,7 @@ pub mod summaries {
             spend status: {}
             output index: {}
         }}",
-                self.value, self.spend_status, self.output_index,
+                self.value, self.spend_summary, self.output_index,
             )
         }
     }
@@ -1684,7 +1690,7 @@ pub mod summaries {
         fn from(note: TransparentCoinSummary) -> Self {
             json::object! {
                 "value" => note.value,
-                "spend_status" => note.spend_status.to_string(),
+                "spend_status" => note.spend_summary.to_string(),
                 "output_index" => note.output_index,
             }
         }
@@ -1728,7 +1734,7 @@ pub mod summaries {
 
     /// Spend status of an output
     #[derive(Clone, Copy, PartialEq, Debug)]
-    pub enum SpendStatus {
+    pub enum SpendSummary {
         /// Output is not spent.
         Unspent,
         /// Output is pending spent.
@@ -1739,12 +1745,23 @@ pub mod summaries {
         Spent(TxId),
     }
 
-    impl std::fmt::Display for SpendStatus {
+    impl SpendSummary {
+        /// converts the interface spend to a SpendSummary
+        pub fn from_spend(spend: &Option<(TxId, ConfirmationStatus)>) -> Self {
+            match spend {
+                None => SpendSummary::Unspent,
+                Some((txid, ConfirmationStatus::Pending(_))) => SpendSummary::PendingSpent(*txid),
+                Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
+            }
+        }
+    }
+
+    impl std::fmt::Display for SpendSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                SpendStatus::Unspent => write!(f, "unspent"),
-                SpendStatus::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
-                SpendStatus::Spent(txid) => write!(f, "spent in {}", txid),
+                SpendSummary::Unspent => write!(f, "unspent"),
+                SpendSummary::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
+                SpendSummary::Spent(txid) => write!(f, "spent in {}", txid),
             }
         }
     }
@@ -1777,13 +1794,7 @@ pub mod summaries {
             .orchard_notes
             .iter()
             .map(|output| {
-                let spend_status = if let Some((txid, _)) = output.spent() {
-                    SpendStatus::Spent(*txid)
-                } else if let Some((txid, _)) = output.pending_spent() {
-                    SpendStatus::PendingSpent(*txid)
-                } else {
-                    SpendStatus::Unspent
-                };
+                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
 
                 let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
                     Some(memo_text.to_string())
@@ -1793,7 +1804,7 @@ pub mod summaries {
 
                 OrchardNoteSummary::from_parts(
                     output.value(),
-                    spend_status,
+                    spend_summary,
                     output.output_index,
                     memo,
                 )
@@ -1803,13 +1814,7 @@ pub mod summaries {
             .sapling_notes
             .iter()
             .map(|output| {
-                let spend_status = if let Some((txid, _)) = output.spent() {
-                    SpendStatus::Spent(*txid)
-                } else if let Some((txid, _)) = output.pending_spent() {
-                    SpendStatus::PendingSpent(*txid)
-                } else {
-                    SpendStatus::Unspent
-                };
+                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
 
                 let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
                     Some(memo_text.to_string())
@@ -1819,7 +1824,7 @@ pub mod summaries {
 
                 SaplingNoteSummary::from_parts(
                     output.value(),
-                    spend_status,
+                    spend_summary,
                     output.output_index,
                     memo,
                 )
@@ -1829,17 +1834,11 @@ pub mod summaries {
             .transparent_outputs
             .iter()
             .map(|output| {
-                let spend_status = if let Some((txid, _)) = output.spent() {
-                    SpendStatus::Spent(*txid)
-                } else if let Some((txid, _)) = output.pending_spent() {
-                    SpendStatus::PendingSpent(*txid)
-                } else {
-                    SpendStatus::Unspent
-                };
+                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
 
                 TransparentCoinSummary::from_parts(
                     output.value(),
-                    spend_status,
+                    spend_summary,
                     output.output_index,
                 )
             })

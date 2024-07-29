@@ -131,9 +131,11 @@ mod fast {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
     use zingoconfig::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
+    use zingolib::wallet::notes::OutputInterface as _;
+    use zingolib::wallet::WalletBase;
     use zingolib::{
-        utils::conversion::txid_from_hex_encoded_str,
-        wallet::{data::summaries::ValueTransferKind, notes::ShieldedNoteInterface, WalletBase},
+        utils::conversion::txid_from_hex_encoded_str, wallet::data::summaries::ValueTransferKind,
+        wallet::notes::ShieldedNoteInterface,
     };
 
     use super::*;
@@ -273,8 +275,8 @@ mod fast {
         );
         assert_eq!(preshield_utxos[0].value, postshield_utxos[0].value);
         assert_eq!(preshield_utxos[0].script, postshield_utxos[0].script);
-        assert!(preshield_utxos[0].pending_spent.is_none());
-        assert!(postshield_utxos[0].pending_spent.is_some());
+        assert!(preshield_utxos[0].spending_tx_status().is_none());
+        assert!(postshield_utxos[0].spending_tx_status().is_some());
     }
 
     // TODO: zip317 - check reorg buffer offset is still accounted for in  zip317 sends, fix or delete this test
@@ -404,7 +406,7 @@ mod fast {
     }
 
     #[tokio::test]
-    async fn unspent_notes_are_not_saved() {
+    async fn pending_notes_are_not_saved() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
@@ -416,7 +418,7 @@ mod fast {
             .unwrap();
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
-        from_inputs::quick_send(
+        let pending_txid = *from_inputs::quick_send(
             &faucet,
             vec![(
                 get_base_address_macro!(recipient, "unified").as_str(),
@@ -425,7 +427,17 @@ mod fast {
             )],
         )
         .await
-        .unwrap();
+        .unwrap()
+        .first();
+
+        assert!(faucet
+            .transaction_summaries()
+            .await
+            .iter()
+            .find(|transaction_summary| transaction_summary.txid() == pending_txid)
+            .unwrap()
+            .status()
+            .is_pending());
 
         assert_eq!(
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
@@ -466,6 +478,11 @@ mod fast {
             faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
             0
         );
+        assert!(!faucet_copy
+            .transaction_summaries()
+            .await
+            .iter()
+            .any(|transaction_summary| transaction_summary.txid() == pending_txid));
         let mut faucet_transactions = faucet.do_list_transactions().await;
         faucet_transactions.pop();
         faucet_transactions.pop();
@@ -820,7 +837,7 @@ mod slow {
         },
         wallet::{
             data::{
-                summaries::{OrchardNoteSummary, SpendStatus, TransactionSummaryBuilder},
+                summaries::{OrchardNoteSummary, SpendSummary, TransactionSummaryBuilder},
                 OutgoingTxData,
             },
             notes::OutputInterface,
@@ -1394,7 +1411,7 @@ mod slow {
             .fee(None)
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 recipient_initial_funds,
-                SpendStatus::Spent(
+                SpendSummary::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1432,7 +1449,7 @@ mod slow {
             .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 99_960_000,
-                SpendStatus::PendingSpent(
+                SpendSummary::PendingSpent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1462,7 +1479,7 @@ mod slow {
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 99_925_000,
-                SpendStatus::Unspent,
+                SpendSummary::Unspent,
                 Some(0),
                 None,
             )])
@@ -1535,7 +1552,7 @@ mod slow {
             .fee(None)
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 recipient_second_funding,
-                SpendStatus::Spent(
+                SpendSummary::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1573,7 +1590,7 @@ mod slow {
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 965_000,
-                SpendStatus::Spent(
+                SpendSummary::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 Some(0),
@@ -1613,7 +1630,7 @@ mod slow {
             .fee(Some(20_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 99_885_000,
-                SpendStatus::Unspent,
+                SpendSummary::Unspent,
                 Some(0),
                 None,
             )])
@@ -1654,7 +1671,7 @@ mod slow {
             .fee(Some(15_000))
             .orchard_notes(vec![OrchardNoteSummary::from_parts(
                 930_000,
-                SpendStatus::Unspent,
+                SpendSummary::Unspent,
                 Some(0),
                 None,
             )])
@@ -2101,7 +2118,6 @@ mod slow {
             sent_transaction_id
         );
         assert!(notes["pending_sapling_notes"][0]["spent"].is_null());
-        assert!(notes["pending_sapling_notes"][0]["spent_at_height"].is_null());
 
         // Check transaction list
         let list = recipient.do_list_transactions().await;
