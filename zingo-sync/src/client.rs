@@ -12,6 +12,7 @@ pub mod fetcher;
 /// Fetch requests are created and sent to the [`crate::client::fetcher::fetcher`] task when a connection to the server is required.
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
+#[derive(Debug)]
 pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<BlockId>),

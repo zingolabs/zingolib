@@ -7,6 +7,7 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 
 pub mod client;
 pub mod interface;
+pub(crate) mod scanner;
 pub mod sync;
 
 /// Encapsulates the current state of sync

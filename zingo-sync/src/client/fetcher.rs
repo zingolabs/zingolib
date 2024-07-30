@@ -52,7 +52,7 @@ async fn receive_fetch_requests(
     // if there are no fetch requests to process, sleep until the next fetch request is received
     // or channel is closed
     if fetch_request_queue.is_empty() {
-        while let Some(fetch_request) = receiver.recv().await {
+        if let Some(fetch_request) = receiver.recv().await {
             fetch_request_queue.push(fetch_request);
         }
     }
@@ -79,14 +79,12 @@ async fn receive_fetch_requests(
 // TODO: placeholder for algorythm that selects the next fetch request to be processed
 // return `None` if a fetch request could not be selected
 fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<FetchRequest> {
-    // TODO: add other fetch requests with priorities
-    let fetch_request_index = fetch_request_queue
-        .iter()
-        .enumerate()
-        .find(|(_, request)| matches!(request, FetchRequest::ChainTip(_)))
-        .map(|(index, _)| index);
-
-    fetch_request_index.map(|index| fetch_request_queue.remove(index))
+    // TODO: improve priority logic
+    if fetch_request_queue.first().is_some() {
+        Some(fetch_request_queue.remove(0))
+    } else {
+        None
+    }
 }
 
 //
