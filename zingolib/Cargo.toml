@@ -10,12 +10,14 @@ edition = "2021"
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 darkside_tests = []
+sync = [ "dep:zingo-sync" ]
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
+zingo-sync = { path = "../zingo-sync", optional = true }
 
 prost = { workspace = true }
 tonic = { workspace = true }
