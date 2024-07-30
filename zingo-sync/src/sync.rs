@@ -7,7 +7,6 @@ use crate::client::{fetcher::fetcher, get_chain_height};
 use crate::interface::SyncWallet;
 use crate::scanner::scanner;
 
-use tracing::info;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
@@ -29,7 +28,7 @@ where
     P: Parameters,
     W: SyncWallet,
 {
-    info!("Syncing wallet...");
+    tracing::info!("Syncing wallet...");
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = unbounded_channel();
@@ -42,7 +41,7 @@ where
     let scan_range = prepare_next_scan_range(wallet);
 
     if let Some(range) = scan_range {
-        let scanner_handle = tokio::spawn(scanner(fetch_request_sender, range.clone()));
+        let scanner_handle = tokio::spawn(scanner(fetch_request_sender, wallet, range.clone()));
         scanner_handle.await.unwrap().unwrap();
     }
 
@@ -107,10 +106,9 @@ where
     let scan_ranges = wallet.set_sync_state().unwrap().set_scan_ranges();
 
     // placeholder for algorythm that determines highest priority range to scan
-    let (index, selected_scan_range) = scan_ranges
-        .iter_mut()
-        .enumerate()
-        .find(|(_, range)| range.priority() != ScanPriority::Scanned)?;
+    let (index, selected_scan_range) = scan_ranges.iter_mut().enumerate().find(|(_, range)| {
+        range.priority() != ScanPriority::Scanned && range.priority() != ScanPriority::Ignored
+    })?;
 
     // if scan range is larger than BATCH_SIZE, split off and return a batch from the lower end and update scan ranges
     if let Some((lower_range, higher_range)) = selected_scan_range
