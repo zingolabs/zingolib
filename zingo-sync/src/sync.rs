@@ -7,6 +7,7 @@ use crate::client::{fetcher::fetcher, get_chain_height};
 use crate::interface::SyncWallet;
 use crate::scanner::scanner;
 
+use zcash_client_backend::scanning::ScanningKeys;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
@@ -38,12 +39,19 @@ where
         .await
         .unwrap();
 
+    let account_ufvks = wallet.get_unified_full_viewing_keys().unwrap();
+    let scanning_keys = ScanningKeys::from_account_ufvks(account_ufvks);
     let scan_range = prepare_next_scan_range(wallet);
 
     if let Some(range) = scan_range {
-        scanner(fetch_request_sender, parameters, wallet, range.clone())
-            .await
-            .unwrap();
+        scanner(
+            fetch_request_sender,
+            parameters,
+            &scanning_keys,
+            range.clone(),
+        )
+        .await
+        .unwrap();
         // let scanner_handle = tokio::spawn(scanner(fetch_request_sender, wallet, range.clone()));
         // scanner_handle.await.unwrap().unwrap();
     }
