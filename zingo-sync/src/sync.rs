@@ -16,7 +16,7 @@ use futures::future::try_join_all;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
-const BATCH_SIZE: u32 = 100;
+const BATCH_SIZE: u32 = 1_000;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
@@ -25,7 +25,7 @@ pub async fn sync<P, W>(
     wallet: &mut W,
 ) -> Result<(), ()>
 where
-    P: Parameters,
+    P: Parameters + Send + 'static,
     W: SyncWallet,
 {
     tracing::info!("Syncing wallet...");
@@ -41,8 +41,11 @@ where
     let scan_range = prepare_next_scan_range(wallet);
 
     if let Some(range) = scan_range {
-        let scanner_handle = tokio::spawn(scanner(fetch_request_sender, wallet, range.clone()));
-        scanner_handle.await.unwrap().unwrap();
+        scanner(fetch_request_sender, parameters, wallet, range.clone())
+            .await
+            .unwrap();
+        // let scanner_handle = tokio::spawn(scanner(fetch_request_sender, wallet, range.clone()));
+        // scanner_handle.await.unwrap().unwrap();
     }
 
     try_join_all(vec![fetcher_handle]).await.unwrap();

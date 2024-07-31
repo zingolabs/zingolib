@@ -89,8 +89,14 @@ tempfile = "3.3.0"
 test-case = "3.3.1"
 tokio = "1.28.2"
 tonic-build = "0.10"
+tracing = "0.1.40"
 tracing-subscriber = "0.3.15"
+memuse = "0.2.1"
 enum_dispatch = "0.3.13"
+
+# Parallel processing
+crossbeam-channel = "0.5"
+rayon = "1.5"
 
 [profile.release]
 debug = false
