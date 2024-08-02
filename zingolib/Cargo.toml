@@ -10,6 +10,7 @@ edition = "2021"
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 darkside_tests = []
+test-elevation = []
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }

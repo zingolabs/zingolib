@@ -250,6 +250,19 @@ impl ZingoConfig {
             ..ZingoConfigBuilder::default()
         }
     }
+
+    #[cfg(feature = "test-elevation")]
+    /// create a ZingoConfig that helps a LightClient connect to a server.
+    pub fn create_testnet() -> ZingoConfig {
+        ZingoConfig::build(ChainType::Testnet)
+            .set_lightwalletd_uri(
+                ("https://zcash.mysideoftheweb.com:19067")
+                    .parse::<http::Uri>()
+                    .unwrap(),
+            )
+            .create()
+    }
+
     /// Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
         self.chain
