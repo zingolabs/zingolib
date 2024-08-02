@@ -16,7 +16,8 @@ use tonic::Status;
 use tower::util::BoxCloneService;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
-type UnderlyingService = BoxCloneService<
+/// TODO: add doc-comment
+pub type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
     http::Response<hyper::Body>,
     hyper::Error,
