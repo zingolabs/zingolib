@@ -318,11 +318,9 @@ mod fast {
         );
         let wallet_path = Path::new(&wallet_nym);
         let wallet_dir = wallet_path.parent().unwrap();
-        let (wallet, config) =
+        let (wallet, _config) =
             zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-        let client = LightClient::create_from_wallet_async(wallet, config)
-            .await
-            .unwrap();
+        let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
         let transactions = client.do_list_transactions().await[0].clone();
         //env_logger::init();
         let expected_consumer_ui_note = r#"{
@@ -462,10 +460,9 @@ mod fast {
                 .unwrap();
 
         // Create client based on config and wallet of faucet
-        let faucet_copy =
-            LightClient::create_from_wallet_async(faucet_wallet, zingo_config.clone())
-                .await
-                .unwrap();
+        let faucet_copy = LightClient::create_from_wallet_async(faucet_wallet)
+            .await
+            .unwrap();
         assert_eq!(
             &faucet_copy.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
@@ -637,7 +634,7 @@ mod fast {
             .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
             .unwrap();
 
-        let mid_client = LightClient::create_from_wallet_async(mid_wallet, config.clone())
+        let mid_client = LightClient::create_from_wallet_async(mid_wallet)
             .await
             .unwrap();
         let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
@@ -700,9 +697,7 @@ mod fast {
         let vv_string = vv.encode(&config.chain.network_type());
         assert_eq!(ufvk_string, vv_string);
 
-        let client = LightClient::create_from_wallet_async(wallet, config)
-            .await
-            .unwrap();
+        let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(10342837));
     }
@@ -2943,9 +2938,7 @@ mod slow {
         println!("setting uri");
         *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
         println!("creating lightclient");
-        let recipient = LightClient::create_from_wallet_async(wallet, conf)
-            .await
-            .unwrap();
+        let recipient = LightClient::create_from_wallet_async(wallet).await.unwrap();
         println!(
             "pre-sync transactions: {}",
             recipient.do_list_transactions().await.pretty(2)
@@ -3945,27 +3938,19 @@ mod slow {
         expected_balance: u64,
         num_addresses: usize,
     ) {
-        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet)
-            .set_lightwalletd_uri(
-                ("https://zcash.mysideoftheweb.com:19067")
-                    .parse::<http::Uri>()
-                    .unwrap(),
-            )
-            .create();
-        let wallet = LightWallet::read_internal(data, &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
-            .unwrap();
-
+        let wallet = LightWallet::unsafe_from_buffer_testnet(data).await;
         let expected_mnemonic = (
             Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
             0,
         );
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
-        let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
+        let expected_wc = WalletCapability::new_from_phrase(
+            &wallet.transaction_context.config,
+            &expected_mnemonic.0,
+            expected_mnemonic.1,
+        )
+        .unwrap();
         let wc = wallet.wallet_capability();
 
         // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
@@ -4008,9 +3993,7 @@ mod slow {
             assert!(addr.transparent().is_some());
         }
 
-        let client = LightClient::create_from_wallet_async(wallet, config)
-            .await
-            .unwrap();
+        let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
         let balance = client.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(expected_balance));
         if expected_balance > 0 {
