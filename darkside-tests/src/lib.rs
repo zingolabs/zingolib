@@ -4,5 +4,5 @@ pub mod darkside_types {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
 
-#[cfg(test)] //TODO:  Evaluate necessity.
+#[cfg(test)]
 pub mod chain_generics;
