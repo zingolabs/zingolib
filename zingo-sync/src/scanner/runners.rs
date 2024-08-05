@@ -3,10 +3,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::mem;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
+use std::sync::atomic::AtomicUsize;
 
 use crossbeam_channel as channel;
 
@@ -19,9 +16,7 @@ use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::scanning::ScanError;
 use zcash_client_backend::scanning::ScanningKeys;
 use zcash_client_backend::ShieldedProtocol;
-use zcash_note_encryption::{
-    batch, BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
-};
+use zcash_note_encryption::{batch, BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::consensus;
 use zcash_primitives::transaction::components::sapling::zip212_enforcement;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
@@ -194,33 +189,6 @@ pub(crate) trait Decryptor<D: BatchDomain, Output> {
     ) -> Vec<Option<DecryptedOutput<IvkTag, D, Self::Memo>>>;
 }
 
-/// A decryptor of outputs as encoded in transactions.
-pub(crate) struct FullDecryptor;
-
-impl<D: BatchDomain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>> Decryptor<D, Output>
-    for FullDecryptor
-{
-    type Memo = D::Memo;
-
-    fn batch_decrypt<IvkTag: Clone>(
-        tags: &[IvkTag],
-        ivks: &[D::IncomingViewingKey],
-        outputs: &[(D, Output)],
-    ) -> Vec<Option<DecryptedOutput<IvkTag, D, Self::Memo>>> {
-        batch::try_note_decryption(ivks, outputs)
-            .into_iter()
-            .map(|res| {
-                res.map(|((note, recipient, memo), ivk_idx)| DecryptedOutput {
-                    ivk_tag: tags[ivk_idx].clone(),
-                    recipient,
-                    note,
-                    memo,
-                })
-            })
-            .collect()
-    }
-}
-
 /// A decryptor of outputs as encoded in compact blocks.
 pub(crate) struct CompactDecryptor;
 
@@ -332,88 +300,6 @@ impl<Item: Task> Tasks<Item> for () {
         // Return the item itself as the task; we aren't tracking anything about it, so
         // there is no need to wrap it in a newtype.
         item
-    }
-}
-
-/// A task tracker that measures heap usage.
-///
-/// This struct implements `DynamicUsage` without any item bounds, but that works because
-/// it only implements `Tasks` for items that implement `DynamicUsage`.
-pub(crate) struct WithUsage {
-    // The current heap usage for all running tasks.
-    running_usage: Arc<AtomicUsize>,
-}
-
-impl DynamicUsage for WithUsage {
-    fn dynamic_usage(&self) -> usize {
-        self.running_usage.load(Ordering::Relaxed)
-    }
-
-    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
-        // Tasks are relatively short-lived, so we accept the inaccuracy of treating the
-        // tasks's approximate usage as its bounds.
-        let usage = self.dynamic_usage();
-        (usage, Some(usage))
-    }
-}
-
-impl<Item: Task + DynamicUsage> Tasks<Item> for WithUsage {
-    type Task = WithUsageTask<Item>;
-
-    fn new() -> Self {
-        Self {
-            running_usage: Arc::new(AtomicUsize::new(0)),
-        }
-    }
-
-    fn add_task(&self, item: Item) -> Self::Task {
-        // Create the task that will move onto the heap with the batch item.
-        let mut task = WithUsageTask {
-            item,
-            own_usage: 0,
-            running_usage: self.running_usage.clone(),
-        };
-
-        // `rayon::spawn_fifo` creates a `HeapJob` holding a closure. The size of a
-        // closure is (to good approximation) the size of the captured environment, which
-        // in this case is two moved variables:
-        // - An `Arc<Registry>`, which is a pointer to data that is amortized over the
-        //   entire `rayon` thread pool, so we only count the pointer size here.
-        // - The spawned closure, which in our case moves `task` into it.
-        task.own_usage =
-            mem::size_of::<Arc<()>>() + mem::size_of_val(&task) + task.item.dynamic_usage();
-
-        // Approximate now as when the heap cost of this running batch begins. In practice
-        // this is fine, because `Self::add_task` is called from `Self::run_task` which
-        // immediately moves the task to the heap.
-        self.running_usage
-            .fetch_add(task.own_usage, Ordering::SeqCst);
-
-        task
-    }
-}
-
-/// A task that will clean up its own heap usage from the overall running usage once it is
-/// complete.
-pub(crate) struct WithUsageTask<Item> {
-    /// The item being run.
-    item: Item,
-    /// Size of this task on the heap. We assume that the size of the task does not change
-    /// once it has been created, to avoid needing to maintain bidirectional channels
-    /// between [`WithUsage`] and its tasks.
-    own_usage: usize,
-    /// Pointer to the parent [`WithUsage`]'s heap usage tracker for running tasks.
-    running_usage: Arc<AtomicUsize>,
-}
-
-impl<Item: Task> Task for WithUsageTask<Item> {
-    fn run(self) {
-        // Run the item.
-        self.item.run();
-
-        // Signal that the heap memory for this task has been freed.
-        self.running_usage
-            .fetch_sub(self.own_usage, Ordering::SeqCst);
     }
 }
 
