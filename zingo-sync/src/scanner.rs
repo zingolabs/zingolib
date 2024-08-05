@@ -38,7 +38,6 @@ where
     .unwrap();
 
     // TODO: check continuity
-    // let prev_block: Option<>
 
     let (incoming_output_ids, outgoing_output_ids) =
         trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
@@ -54,9 +53,10 @@ where
             relevent_txids.insert(output_id.txid().clone());
         });
 
-    for compact_block in compact_blocks {
-        // let zip212_enforcement = zip212_enforcement(parameters, compact_block.height());
-    }
+    // TODO: build shard tree, calculate nullifiers and positions for incoming outputs, map nullifiers and write compact blocks
+    // for compact_block in compact_blocks {
+    // let zip212_enforcement = zip212_enforcement(parameters, compact_block.height());
+    // }
 
     // FIXME: panics when less than 0 for regtest or less than sapling epoch for mainnet
     // let _frontiers = get_frontiers(fetch_request_sender, scan_range.block_range().start - 1)

@@ -28,7 +28,7 @@ pub enum FetchRequest {
     TreeState(oneshot::Sender<TreeState>, BlockHeight),
 }
 
-/// Gets the height of the bl<ChainStateckchain from the server.
+/// Gets the height of the blockchain from the server.
 ///
 /// Requires [`crate::client::fetcher::fetcher`] to be running concurrently, connected via the `fetch_request` channel.
 pub async fn get_chain_height(
