@@ -4221,6 +4221,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "futures",
+ "getset",
  "memuse",
  "orchard",
  "rayon",

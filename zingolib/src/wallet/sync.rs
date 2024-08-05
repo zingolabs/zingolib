@@ -32,8 +32,4 @@ impl SyncWallet for LightWallet {
 
         Ok(ufvk_map)
     }
-
-    fn set_sync_state(&mut self) -> Result<&mut zingo_sync::SyncState, Self::Error> {
-        Ok(&mut self.sync_state)
-    }
 }

@@ -5,6 +5,7 @@ use std::ops::Range;
 use crate::client::FetchRequest;
 use crate::client::{fetcher::fetcher, get_chain_height};
 use crate::interface::SyncWallet;
+use crate::primitives::SyncState;
 use crate::scanner::scanner;
 
 use zcash_client_backend::scanning::ScanningKeys;
@@ -31,18 +32,22 @@ where
 {
     tracing::info!("Syncing wallet...");
 
+    // TODO: add trait methods to read/write wallet data to/from sync engine
+    // this is where sync state would be read from wallet data
+    let sync_state = SyncState::new(); // placeholder
+
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = unbounded_channel();
     let fetcher_handle = tokio::spawn(fetcher(fetch_request_receiver, client));
 
-    update_scan_ranges(fetch_request_sender.clone(), parameters, wallet)
+    update_scan_ranges(fetch_request_sender.clone(), parameters, &sync_state)
         .await
         .unwrap();
 
     let account_ufvks = wallet.get_unified_full_viewing_keys().unwrap();
     let scanning_keys = ScanningKeys::from_account_ufvks(account_ufvks);
-    let scan_range = prepare_next_scan_range(wallet);
 
+    let scan_range = prepare_next_scan_range(&sync_state);
     if let Some(range) = scan_range {
         scanner(
             fetch_request_sender,
@@ -52,8 +57,6 @@ where
         )
         .await
         .unwrap();
-        // let scanner_handle = tokio::spawn(scanner(fetch_request_sender, wallet, range.clone()));
-        // scanner_handle.await.unwrap().unwrap();
     }
 
     try_join_all(vec![fetcher_handle]).await.unwrap();
@@ -62,16 +65,15 @@ where
 }
 
 // update scan_ranges to include blocks between the last known chain height (wallet height) and the chain height from the server
-async fn update_scan_ranges<P, W>(
+async fn update_scan_ranges<P>(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     parameters: &P,
-    wallet_data: &mut W,
+    sync_state: &SyncState,
 ) -> Result<(), ()>
 where
     P: Parameters,
-    W: SyncWallet,
 {
-    let scan_ranges = wallet_data.set_sync_state().unwrap().set_scan_ranges();
+    let mut scan_ranges = sync_state.scan_ranges().write().unwrap();
 
     let chain_height = get_chain_height(fetch_request_sender).await.unwrap();
     let wallet_height = if scan_ranges.is_empty() {
@@ -110,11 +112,8 @@ where
 }
 
 // returns `None` if there are no more ranges to scan
-fn prepare_next_scan_range<W>(wallet: &mut W) -> Option<ScanRange>
-where
-    W: SyncWallet,
-{
-    let scan_ranges = wallet.set_sync_state().unwrap().set_scan_ranges();
+fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
+    let mut scan_ranges = sync_state.scan_ranges().write().unwrap();
 
     // placeholder for algorythm that determines highest priority range to scan
     let (index, selected_scan_range) = scan_ranges.iter_mut().enumerate().find(|(_, range)| {

@@ -237,7 +237,7 @@ impl LightWallet {
             price: Arc::new(RwLock::new(price)),
             transaction_context,
             #[cfg(feature = "sync")]
-            sync_state: zingo_sync::SyncState::new(),
+            sync_state: zingo_sync::primitives::SyncState::new(),
         };
 
         Ok(lw)
