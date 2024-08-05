@@ -206,6 +206,7 @@ pub struct LightWallet {
     pub transaction_context: TransactionContext,
 
     #[cfg(feature = "sync")]
+    #[allow(dead_code)]
     sync_state: zingo_sync::primitives::SyncState,
 }
 
