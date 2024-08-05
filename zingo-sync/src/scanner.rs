@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use orchard::keys::Scope;
 use tokio::sync::mpsc::UnboundedSender;
@@ -6,14 +6,10 @@ use zcash_client_backend::{
     data_api::scanning::ScanRange, proto::compact_formats::CompactBlock, scanning::ScanningKeys,
     PoolType, ShieldedProtocol,
 };
-use zcash_primitives::{
-    consensus::Parameters,
-    transaction::{components::sapling::zip212_enforcement, TxId},
-    zip32::AccountId,
-};
+use zcash_primitives::{consensus::Parameters, transaction::TxId, zip32::AccountId};
 
 use crate::{
-    client::{get_compact_block_range, get_frontiers, FetchRequest},
+    client::{get_compact_block_range, FetchRequest},
     primitives::OutputId,
 };
 
@@ -50,7 +46,7 @@ where
         .iter()
         .chain(outgoing_output_ids.iter())
         .for_each(|output_id| {
-            relevent_txids.insert(output_id.txid().clone());
+            relevent_txids.insert(*output_id.txid());
         });
 
     // TODO: build shard tree, calculate nullifiers and positions for incoming outputs, map nullifiers and write compact blocks
@@ -83,7 +79,7 @@ fn trial_decrypt<P>(
 where
     P: Parameters + Send + 'static,
 {
-    let mut runners = BatchRunners::<_, (), ()>::for_keys(100, &scanning_keys);
+    let mut runners = BatchRunners::<_, (), ()>::for_keys(100, scanning_keys);
     for block in compact_blocks {
         runners.add_block(parameters, block.clone()).unwrap();
     }

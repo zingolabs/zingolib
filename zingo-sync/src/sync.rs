@@ -73,9 +73,10 @@ async fn update_scan_ranges<P>(
 where
     P: Parameters,
 {
+    let chain_height = get_chain_height(fetch_request_sender).await.unwrap();
+
     let mut scan_ranges = sync_state.scan_ranges().write().unwrap();
 
-    let chain_height = get_chain_height(fetch_request_sender).await.unwrap();
     let wallet_height = if scan_ranges.is_empty() {
         parameters
             .activation_height(NetworkUpgrade::Sapling)

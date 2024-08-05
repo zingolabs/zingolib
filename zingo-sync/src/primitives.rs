@@ -53,6 +53,7 @@ impl OutputId {
 }
 
 /// Wallet compact block data
+#[allow(dead_code)]
 pub struct WalletCompactBlock {
     block_height: u64,
     block_hash: Vec<u8>,
