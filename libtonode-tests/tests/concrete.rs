@@ -14,7 +14,7 @@ use zcash_primitives::{consensus::BlockHeight, transaction::fees::zip317::MINIMU
 use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
     self, build_fvk_client, check_client_balances, get_base_address_macro, get_otd,
-    increase_height_and_wait_for_client, paths::get_cargo_manifest_dir, scenarios, validate_otds,
+    increase_height_and_wait_for_client, scenarios, validate_otds,
 };
 use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
@@ -113,14 +113,14 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
-    use zcash_address::unified::Encoding;
+
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_testutils::lightclient::from_inputs;
     use zingoconfig::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
     use zingolib::wallet::notes::OutputInterface as _;
-    use zingolib::wallet::WalletBase;
+
     use zingolib::{
         utils::conversion::txid_from_hex_encoded_str, wallet::data::summaries::ValueTransferKind,
         wallet::notes::ShieldedNoteInterface,
@@ -692,9 +692,7 @@ mod slow {
     };
     use zingo_testvectors::TEST_TXID;
     use zingolib::{
-        lightclient::{
-            propose::ProposeSendError::Proposal, send::send_with_proposal::QuickSendError,
-        },
+        lightclient::send::send_with_proposal::QuickSendError,
         wallet::{
             data::{
                 summaries::{OrchardNoteSummary, SpendSummary, TransactionSummaryBuilder},
