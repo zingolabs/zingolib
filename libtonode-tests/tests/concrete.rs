@@ -6,7 +6,7 @@ use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::note_encryption::SaplingDomain;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
-use std::{fs::File, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
@@ -21,7 +21,7 @@ use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::data::summaries::TransactionSummaryInterface;
 
 use zingo_testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
+use zingoconfig::{ChainType, RegtestNetwork, MAX_REORG};
 use zingolib::{
     lightclient::{LightClient, PoolBalances},
     utils,
@@ -163,7 +163,7 @@ mod fast {
     }
 
     #[tokio::test]
-    async fn targetted_rescan() {
+    async fn targeted_rescan() {
         let (regtest_manager, _cph, _faucet, recipient, txid) =
             scenarios::orchard_funded_recipient(100_000).await;
 
@@ -350,91 +350,6 @@ mod fast {
             trees.as_ref().unwrap()["orchard"]["commitments"]["finalState"]
         );
         //dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
-    }
-
-    #[tokio::test]
-    async fn pending_notes_are_not_saved() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
-            PoolType::Shielded(ShieldedProtocol::Sapling),
-            regtest_network,
-        )
-        .await;
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-
-        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
-        let pending_txid = *from_inputs::quick_send(
-            &faucet,
-            vec![(
-                get_base_address_macro!(recipient, "unified").as_str(),
-                5_000,
-                Some("this note never makes it to the wallet! or chain"),
-            )],
-        )
-        .await
-        .unwrap()
-        .first();
-
-        assert!(faucet
-            .transaction_summaries()
-            .await
-            .iter()
-            .find(|transaction_summary| transaction_summary.txid() == pending_txid)
-            .unwrap()
-            .status()
-            .is_pending());
-
-        assert_eq!(
-            faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
-            1
-        );
-        // Create a new client using the faucet's wallet
-
-        // Create zingo config
-        let mut wallet_location = regtest_manager.zingo_datadir;
-        wallet_location.pop();
-        wallet_location.push("zingo_client_1");
-        let zingo_config = ZingoConfig::build(zingoconfig::ChainType::Regtest(regtest_network))
-            .set_wallet_dir(wallet_location.clone())
-            .create();
-        wallet_location.push("zingo-wallet.dat");
-        let read_buffer = File::open(wallet_location.clone()).unwrap();
-
-        // Create wallet from faucet zingo-wallet.dat
-        let faucet_wallet =
-            zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
-                .await
-                .unwrap();
-
-        // Create client based on config and wallet of faucet
-        let faucet_copy = LightClient::create_from_wallet_async(faucet_wallet)
-            .await
-            .unwrap();
-        assert_eq!(
-            &faucet_copy.do_seed_phrase().await.unwrap(),
-            &faucet.do_seed_phrase().await.unwrap()
-        ); // Sanity check identity
-        assert_eq!(
-            faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
-            1
-        );
-        assert_eq!(
-            faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
-            0
-        );
-        assert!(!faucet_copy
-            .transaction_summaries()
-            .await
-            .iter()
-            .any(|transaction_summary| transaction_summary.txid() == pending_txid));
-        let mut faucet_transactions = faucet.do_list_transactions().await;
-        faucet_transactions.pop();
-        faucet_transactions.pop();
-        let mut faucet_copy_transactions = faucet_copy.do_list_transactions().await;
-        faucet_copy_transactions.pop();
-        assert_eq!(faucet_transactions, faucet_copy_transactions);
     }
 
     #[tokio::test]
@@ -748,7 +663,7 @@ mod slow {
     }
     #[tokio::test]
     async fn zero_value_change() {
-        // 2. Send an incoming transaction to fill the wallet
+        // 1. Send an incoming transaction to fill the wallet
         let value = 100_000;
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(value).await;
@@ -964,40 +879,7 @@ mod slow {
             .unwrap()
             .contains(&position));
     }
-    #[tokio::test]
-    async fn verify_old_wallet_uses_server_height_in_send() {
-        // An earlier version of zingolib used the _wallet's_ 'height' when
-        // constructing transactions.  This worked well enough when the
-        // client completed sync prior to sending, but when we introduced
-        // interrupting send, it made it immediately obvious that this was
-        // the wrong height to use!  The correct height is the
-        // "mempool height" which is the server_height + 1
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
-        // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
-            .await
-            .unwrap();
 
-        // Without sync push server forward 2 blocks
-        zingo_testutils::increase_server_height(&regtest_manager, 2).await;
-        let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
-
-        // Verify that wallet is still back at 6.
-        assert_eq!(client_wallet_height.as_fixed_point_u64(0).unwrap(), 8);
-
-        // Interrupt generating send
-        from_inputs::quick_send(
-            &faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "unified"),
-                10_000,
-                Some("Interrupting sync!!"),
-            )],
-        )
-        .await
-        .unwrap();
-    }
     #[tokio::test]
     async fn test_scanning_in_watch_only_mode() {
         // # Scenario:

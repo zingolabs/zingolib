@@ -1,11 +1,14 @@
 #![forbid(unsafe_code)]
 mod load_wallet {
 
+    use std::fs::File;
+
     use zcash_address::unified::Encoding as _;
     use zcash_client_backend::PoolType;
     use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::consensus::Parameters as _;
     use zcash_primitives::zip339::Mnemonic;
+    use zingo_testutils::check_client_balances;
     use zingo_testutils::get_base_address_macro;
     use zingo_testutils::lightclient::from_inputs;
     use zingo_testutils::paths::get_cargo_manifest_dir;
@@ -13,6 +16,7 @@ mod load_wallet {
     use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
     use zingoconfig::ChainType;
     use zingoconfig::RegtestNetwork;
+    use zingoconfig::ZingoConfig;
     use zingolib::lightclient::propose::ProposeSendError::Proposal;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::lightclient::LightClient;
@@ -412,5 +416,125 @@ mod load_wallet {
                 assert!(missing_index_txids == expected_txids, "{:?}\n\n{:?}", missing_index_txids, expected_txids);
             }
         };
+    }
+
+    #[tokio::test]
+    async fn pending_notes_are_not_saved() {
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            regtest_network,
+        )
+        .await;
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+
+        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
+        let pending_txid = *from_inputs::quick_send(
+            &faucet,
+            vec![(
+                get_base_address_macro!(recipient, "unified").as_str(),
+                5_000,
+                Some("this note never makes it to the wallet! or chain"),
+            )],
+        )
+        .await
+        .unwrap()
+        .first();
+
+        assert!(faucet
+            .transaction_summaries()
+            .await
+            .iter()
+            .find(|transaction_summary| transaction_summary.txid() == pending_txid)
+            .unwrap()
+            .status()
+            .is_pending());
+
+        assert_eq!(
+            faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
+            1
+        );
+        // Create a new client using the faucet's wallet
+
+        // Create zingo config
+        let mut wallet_location = regtest_manager.zingo_datadir;
+        wallet_location.pop();
+        wallet_location.push("zingo_client_1");
+        let zingo_config = ZingoConfig::build(zingoconfig::ChainType::Regtest(regtest_network))
+            .set_wallet_dir(wallet_location.clone())
+            .create();
+        wallet_location.push("zingo-wallet.dat");
+        let read_buffer = File::open(wallet_location.clone()).unwrap();
+
+        // Create wallet from faucet zingo-wallet.dat
+        let faucet_wallet =
+            zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+                .await
+                .unwrap();
+
+        // Create client based on config and wallet of faucet
+        let faucet_copy = LightClient::create_from_wallet_async(faucet_wallet)
+            .await
+            .unwrap();
+        assert_eq!(
+            &faucet_copy.do_seed_phrase().await.unwrap(),
+            &faucet.do_seed_phrase().await.unwrap()
+        ); // Sanity check identity
+        assert_eq!(
+            faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
+            1
+        );
+        assert_eq!(
+            faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
+            0
+        );
+        assert!(!faucet_copy
+            .transaction_summaries()
+            .await
+            .iter()
+            .any(|transaction_summary| transaction_summary.txid() == pending_txid));
+        let mut faucet_transactions = faucet.do_list_transactions().await;
+        faucet_transactions.pop();
+        faucet_transactions.pop();
+        let mut faucet_copy_transactions = faucet_copy.do_list_transactions().await;
+        faucet_copy_transactions.pop();
+        assert_eq!(faucet_transactions, faucet_copy_transactions);
+    }
+
+    #[tokio::test]
+    async fn verify_old_wallet_uses_server_height_in_send() {
+        // An earlier version of zingolib used the _wallet's_ 'height' when
+        // constructing transactions.  This worked well enough when the
+        // client completed sync prior to sending, but when we introduced
+        // interrupting send, it made it immediately obvious that this was
+        // the wrong height to use!  The correct height is the
+        // "mempool height" which is the server_height + 1
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        // Ensure that the client has confirmed spendable funds
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
+            .await
+            .unwrap();
+
+        // Without sync push server forward 2 blocks
+        zingo_testutils::increase_server_height(&regtest_manager, 2).await;
+        let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
+
+        // Verify that wallet is still back at 6.
+        assert_eq!(client_wallet_height.as_fixed_point_u64(0).unwrap(), 8);
+
+        // Interrupt generating send
+        from_inputs::quick_send(
+            &faucet,
+            vec![(
+                &get_base_address_macro!(recipient, "unified"),
+                10_000,
+                Some("Interrupting sync!!"),
+            )],
+        )
+        .await
+        .unwrap();
     }
 }
