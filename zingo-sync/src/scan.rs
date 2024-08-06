@@ -8,7 +8,7 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, Parameters},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     transaction::TxId,
     zip32::AccountId,
 };
@@ -29,10 +29,14 @@ struct InitialScanData<'a> {
 }
 
 impl InitialScanData<'_> {
-    async fn new(
+    async fn new<P>(
         fetch_request_sender: UnboundedSender<FetchRequest>,
+        parameters: &P,
         first_block: &CompactBlock,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, ()>
+    where
+        P: Parameters + Send + 'static,
+    {
         // TODO: get last block of adjacent lower scan range a.k.a. previous_block
         let previous_block: Option<&WalletCompactBlock> = None;
 
@@ -47,6 +51,7 @@ impl InitialScanData<'_> {
                 )
             } else {
                 if let Some(chain_metadata) = first_block.chain_metadata.clone() {
+                    // calculate initial tree size by subtracting number of outputs in block from the blocks final tree size
                     let sapling_output_count: u32 = first_block
                         .vtx
                         .iter()
@@ -73,14 +78,25 @@ impl InitialScanData<'_> {
                             .unwrap(),
                     )
                 } else {
-                    let frontiers =
-                        client::get_frontiers(fetch_request_sender, first_block.height() - 1)
-                            .await
-                            .unwrap();
-                    (
-                        frontiers.final_sapling_tree().tree_size() as u32,
-                        frontiers.final_orchard_tree().tree_size() as u32,
-                    )
+                    let sapling_activation_height = parameters
+                        .activation_height(NetworkUpgrade::Sapling)
+                        .expect("should have some sapling activation height");
+
+                    if first_block.height() < sapling_activation_height {
+                        panic!("pre-sapling not supported!")
+                    } else if first_block.height() == sapling_activation_height {
+                        // if scanning first sapling block, initial tree is empty.
+                        (0, 0)
+                    } else {
+                        let frontiers =
+                            client::get_frontiers(fetch_request_sender, first_block.height() - 1)
+                                .await
+                                .unwrap();
+                        (
+                            frontiers.final_sapling_tree().tree_size() as u32,
+                            frontiers.final_orchard_tree().tree_size() as u32,
+                        )
+                    }
                 }
             };
 
@@ -110,6 +126,7 @@ where
 
     let initial_scan_data = InitialScanData::new(
         fetch_request_sender,
+        parameters,
         compact_blocks
             .first()
             .expect("compacts blocks should not be empty"),
@@ -142,11 +159,6 @@ where
             //
         }
     }
-
-    // FIXME: panics when less than 0 for regtest or less than sapling epoch for mainnet
-    // let _frontiers = get_frontiers(fetch_request_sender, scan_range.block_range().start - 1)
-    //     .await
-    //     .unwrap();
 
     // let mut sapling_nullifiers_and_positions: HashMap<
     //     OutputId,
