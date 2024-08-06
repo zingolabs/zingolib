@@ -1,9 +1,9 @@
 //! lightclient functions with added assertions. used for tests.
 
+use crate::lightclient::LightClient;
 use zcash_client_backend::PoolType;
-use zingolib::lightclient::LightClient;
 
-use crate::{
+use crate::testutils::{
     assertions::{assert_recipient_total_lte_to_proposal_total, assert_record_fee_and_status},
     chain_generics::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},

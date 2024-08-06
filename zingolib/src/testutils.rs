@@ -5,6 +5,12 @@
 
 pub mod interrupts;
 
+use crate::wallet::data::summaries::{
+    OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
+    TransactionSummaryInterface as _, TransparentCoinSummary,
+};
+use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
 use std::cmp;
@@ -17,21 +23,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
-use zingolib::wallet::data::summaries::{
-    OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
-    TransactionSummaryInterface as _, TransparentCoinSummary,
-};
-use zingolib::wallet::keys::unified::WalletCapability;
-use zingolib::wallet::WalletBase;
 
+use crate::lightclient::LightClient;
 use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
 use zingoconfig::{ChainType, ZingoConfig};
-use zingolib::lightclient::LightClient;
 
-use crate::scenarios::setup::TestEnvironmentGenerator;
+use scenarios::setup::TestEnvironmentGenerator;
 
 pub mod assertions;
 pub mod chain_generics;
@@ -62,7 +62,7 @@ pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -
         .to_bytes(),
     );
     let mut t_fvk_bytes = [0u8; 65];
-    let t_ext_pk: zingolib::wallet::keys::extended_transparent::ExtendedPubKey =
+    let t_ext_pk: crate::wallet::keys::extended_transparent::ExtendedPubKey =
         (wallet_capability).try_into().unwrap();
     t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
     t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
@@ -261,7 +261,7 @@ pub async fn send_value_between_clients_and_sync(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
     );
-    let txid = crate::lightclient::from_inputs::quick_send(
+    let txid = lightclient::from_inputs::quick_send(
         sender,
         vec![(
             &crate::get_base_address_macro!(recipient, address_type),
@@ -363,7 +363,7 @@ where
 pub async fn load_wallet(
     dir: PathBuf,
     chaintype: ChainType,
-) -> (zingolib::wallet::LightWallet, ZingoConfig) {
+) -> (crate::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
@@ -374,7 +374,7 @@ pub async fn load_wallet(
     let mut recording_reader = RecordingReader { from, read_lengths };
 
     (
-        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
+        crate::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
             .await
             .unwrap(),
         zingo_config,
@@ -670,16 +670,18 @@ pub mod scenarios {
     //! All scenarios have a default (i.e. faucet_default) which take minimal parameters and
     //! build the scenario with the most common settings. This simplifies test writing in
     //! most cases by removing the need for configuration.
-    use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
-    use crate::{get_base_address_macro, increase_height_and_wait_for_client};
+    use crate::get_base_address_macro;
+    use crate::lightclient::LightClient;
+    use crate::testutils::increase_height_and_wait_for_client;
+    use setup::ClientBuilder;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-    use zingolib::lightclient::LightClient;
 
     /// TODO: Add Doc Comment Here!
     pub mod setup {
         use super::BASE_HEIGHT;
+        use tempfile::TempDir;
         use zcash_client_backend::{PoolType, ShieldedProtocol};
         use zingo_testvectors::{
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
@@ -688,9 +690,10 @@ pub mod scenarios {
 
         use super::super::paths::get_regtest_dir;
         use super::{ChildProcessHandler, RegtestManager};
+        use crate::testutils::poll_server_height;
+        use crate::{lightclient::LightClient, wallet::WalletBase};
         use std::path::PathBuf;
         use tokio::time::sleep;
-        use zingolib::{lightclient::LightClient, wallet::WalletBase};
 
         /// TODO: Add Doc Comment Here!
         pub struct ScenarioBuilder {
@@ -768,11 +771,7 @@ pub mod scenarios {
                 self.regtest_manager
                     .generate_n_blocks(BASE_HEIGHT - 1)
                     .unwrap();
-                while crate::poll_server_height(&self.regtest_manager)
-                    .as_u32()
-                    .unwrap()
-                    < BASE_HEIGHT
-                {
+                while poll_server_height(&self.regtest_manager).as_u32().unwrap() < BASE_HEIGHT {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
@@ -925,9 +924,7 @@ pub mod scenarios {
                 let lightwalletd_rpcservice_port =
                     TestEnvironmentGenerator::pick_unused_port_to_string(set_lightwalletd_port);
                 let regtest_manager = RegtestManager::new(
-                    tempdir::TempDir::new("zingo_libtonode_test")
-                        .unwrap()
-                        .into_path(),
+                    TempDir::new_in("zingo_libtonode_test").unwrap().into_path(),
                 );
                 let server_uri = zingoconfig::construct_lightwalletd_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_rpcservice_port}"
@@ -1146,7 +1143,7 @@ pub mod scenarios {
             .unwrap();
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
-                crate::lightclient::from_inputs::quick_send(
+                super::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
                 )
@@ -1160,7 +1157,7 @@ pub mod scenarios {
         };
         let sapling_txid = if let Some(funds) = sapling_funds {
             Some(
-                crate::lightclient::from_inputs::quick_send(
+                super::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
                 )
@@ -1174,7 +1171,7 @@ pub mod scenarios {
         };
         let transparent_txid = if let Some(funds) = transparent_funds {
             Some(
-                crate::lightclient::from_inputs::quick_send(
+                super::lightclient::from_inputs::quick_send(
                     &faucet,
                     vec![(
                         &get_base_address_macro!(recipient, "transparent"),
@@ -1311,7 +1308,7 @@ pub mod scenarios {
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1351,7 +1348,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
         )
@@ -1361,7 +1358,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1375,7 +1372,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1419,7 +1416,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to orchard
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1433,7 +1430,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to sapling
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1447,7 +1444,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // received from a faucet to transparent
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
@@ -1461,7 +1458,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to a faucet
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
@@ -1475,7 +1472,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self orchard
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
@@ -1489,7 +1486,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self sapling
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "sapling"),
@@ -1503,7 +1500,7 @@ pub mod scenarios {
             .await
             .unwrap();
         // send to self transparent
-        crate::lightclient::from_inputs::quick_send(
+        super::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),

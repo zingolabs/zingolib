@@ -10,7 +10,7 @@ edition = "2021"
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 darkside_tests = []
-test-elevation = ["portpicker"]
+test-elevation = ["portpicker", "zingo-testvectors", "tempfile"]
 
 [dependencies]
 zingoconfig = { path = "../zingoconfig" }
@@ -73,11 +73,11 @@ hdwallet = { workspace = true }
 chrono = { workspace = true }
 enum_dispatch = { workspace = true }
 portpicker = { workspace = true, optional = true }
+zingo-testvectors = { path = "../zingo-testvectors", optional = true }
+tempfile = { workspace = true, optional = true}
 
 [dev-dependencies]
-tempfile = { workspace = true }
 concat-idents = { workspace = true }
-zingo-testvectors = { path = "../zingo-testvectors" }
 
 [build-dependencies]
 build_utils = { workspace = true }
