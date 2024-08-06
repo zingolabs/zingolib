@@ -13,7 +13,7 @@ use zcash_primitives::consensus::BlockHeight;
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-pub mod fetcher;
+pub mod fetch;
 
 /// Fetch requests are created and sent to the [`crate::client::fetcher::fetcher`] task when a connection to the server is required.
 ///

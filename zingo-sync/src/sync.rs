@@ -3,10 +3,10 @@
 use std::ops::Range;
 
 use crate::client::FetchRequest;
-use crate::client::{fetcher::fetcher, get_chain_height};
+use crate::client::{fetch::fetch, get_chain_height};
 use crate::interface::SyncWallet;
 use crate::primitives::SyncState;
-use crate::scanner::scanner;
+use crate::scan::scan;
 
 use zcash_client_backend::scanning::ScanningKeys;
 use zcash_client_backend::{
@@ -38,7 +38,7 @@ where
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = unbounded_channel();
-    let fetcher_handle = tokio::spawn(fetcher(fetch_request_receiver, client));
+    let fetcher_handle = tokio::spawn(fetch(fetch_request_receiver, client));
 
     update_scan_ranges(fetch_request_sender.clone(), parameters, &sync_state)
         .await
@@ -49,7 +49,7 @@ where
 
     let scan_range = prepare_next_scan_range(&sync_state);
     if let Some(range) = scan_range {
-        scanner(
+        scan(
             fetch_request_sender,
             parameters,
             &scanning_keys,
@@ -58,6 +58,7 @@ where
         .await
         .unwrap();
     }
+    // TODO: set scanned range to `scanned`
 
     try_join_all(vec![fetcher_handle]).await.unwrap();
 
@@ -127,8 +128,12 @@ fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
     {
         scan_ranges.splice(index..=index, vec![lower_range.clone(), higher_range]);
 
+        // TODO: set selected scan range to `ignored` so the same range is not selected twice when multiple tasks call this fn
+
         Some(lower_range)
     } else {
+        // TODO: set selected scan range to `ignored` so the same range is not selected twice when multiple tasks call this fn
+
         Some(selected_scan_range.clone())
     }
 }

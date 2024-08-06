@@ -2,10 +2,10 @@
 
 use std::sync::{Arc, RwLock};
 
-use getset::{Getters, MutGetters};
+use getset::{CopyGetters, Getters, MutGetters};
 
 use zcash_client_backend::{data_api::scanning::ScanRange, PoolType};
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
 /// Encapsulates the current state of sync
 #[derive(Getters, MutGetters)]
@@ -54,12 +54,21 @@ impl OutputId {
 
 /// Wallet compact block data
 #[allow(dead_code)]
+#[derive(CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct WalletCompactBlock {
-    block_height: u64,
-    block_hash: Vec<u8>,
-    prev_hash: Vec<u8>,
-    time: Vec<u8>,
+    block_height: BlockHeight,
+    block_hash: BlockHash,
+    prev_hash: BlockHash,
+    time: u32,
+    #[getset(skip)]
     txids: Vec<TxId>,
     sapling_commitment_tree_size: u32,
     orchard_commitment_tree_size: u32,
+}
+
+impl WalletCompactBlock {
+    pub fn txids(&self) -> &[TxId] {
+        &self.txids
+    }
 }

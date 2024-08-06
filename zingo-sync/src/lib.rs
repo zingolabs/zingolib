@@ -7,5 +7,5 @@ pub mod client;
 pub mod interface;
 #[allow(missing_docs)]
 pub mod primitives;
-pub(crate) mod scanner;
+pub(crate) mod scan;
 pub mod sync;
