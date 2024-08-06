@@ -24,12 +24,12 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
 
+use crate::config::{ChainType, ZingoConfig};
 use crate::lightclient::LightClient;
 use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
-use zingoconfig::{ChainType, ZingoConfig};
 
 use scenarios::setup::TestEnvironmentGenerator;
 
@@ -367,7 +367,7 @@ pub async fn load_wallet(
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
-        zingoconfig::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
+        crate::config::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
@@ -674,19 +674,19 @@ pub mod scenarios {
     use crate::get_base_address_macro;
     use crate::lightclient::LightClient;
     use crate::testutils::increase_height_and_wait_for_client;
+    use crate::testvectors::{seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
     use setup::ClientBuilder;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zingo_testvectors::{self, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 
     /// TODO: Add Doc Comment Here!
     pub mod setup {
         use super::BASE_HEIGHT;
-        use tempfile::TempDir;
-        use zcash_client_backend::{PoolType, ShieldedProtocol};
-        use zingo_testvectors::{
+        use crate::testvectors::{
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
         };
+        use tempfile::TempDir;
+        use zcash_client_backend::{PoolType, ShieldedProtocol};
 
         use super::super::paths::get_regtest_dir;
         use super::{ChildProcessHandler, RegtestManager};
@@ -737,7 +737,7 @@ pub mod scenarios {
             fn configure_scenario(
                 &mut self,
                 mine_to_pool: Option<PoolType>,
-                regtest_network: &zingoconfig::RegtestNetwork,
+                regtest_network: &crate::config::RegtestNetwork,
             ) {
                 let mine_to_address = match mine_to_pool {
                     Some(PoolType::Shielded(ShieldedProtocol::Orchard)) => {
@@ -778,7 +778,7 @@ pub mod scenarios {
 
             /// TODO: Add Doc Comment Here!
             pub async fn new_load_1153_saplingcb_regtest_chain(
-                regtest_network: &zingoconfig::RegtestNetwork,
+                regtest_network: &crate::config::RegtestNetwork,
             ) -> Self {
                 let mut sb = ScenarioBuilder::build_scenario(None, None);
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
@@ -807,7 +807,7 @@ pub mod scenarios {
                 mine_to_pool: Option<PoolType>,
                 zingo_wallet_dir: Option<PathBuf>,
                 set_lightwalletd_port: Option<portpicker::Port>,
-                regtest_network: &zingoconfig::RegtestNetwork,
+                regtest_network: &crate::config::RegtestNetwork,
             ) -> Self {
                 let mut sb = if let Some(conf) = zingo_wallet_dir {
                     ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port)
@@ -843,8 +843,8 @@ pub mod scenarios {
 
             pub fn make_unique_data_dir_and_load_config(
                 &mut self,
-                regtest_network: zingoconfig::RegtestNetwork,
-            ) -> zingoconfig::ZingoConfig {
+                regtest_network: crate::config::RegtestNetwork,
+            ) -> crate::config::ZingoConfig {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
@@ -860,13 +860,13 @@ pub mod scenarios {
             pub fn create_clientconfig(
                 &self,
                 conf_path: PathBuf,
-                regtest_network: zingoconfig::RegtestNetwork,
-            ) -> zingoconfig::ZingoConfig {
+                regtest_network: crate::config::RegtestNetwork,
+            ) -> crate::config::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
-                zingoconfig::load_clientconfig(
+                crate::config::load_clientconfig(
                     self.server_id.clone(),
                     Some(conf_path),
-                    zingoconfig::ChainType::Regtest(regtest_network),
+                    crate::config::ChainType::Regtest(regtest_network),
                     true,
                 )
                 .unwrap()
@@ -876,7 +876,7 @@ pub mod scenarios {
             pub async fn build_faucet(
                 &mut self,
                 overwrite: bool,
-                regtest_network: zingoconfig::RegtestNetwork,
+                regtest_network: crate::config::RegtestNetwork,
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
                 self.build_client(
@@ -894,7 +894,7 @@ pub mod scenarios {
                 mnemonic_phrase: String,
                 birthday: u64,
                 overwrite: bool,
-                regtest_network: zingoconfig::RegtestNetwork,
+                regtest_network: crate::config::RegtestNetwork,
             ) -> LightClient {
                 let zingo_config = self.make_unique_data_dir_and_load_config(regtest_network);
                 LightClient::create_from_wallet_base_async(
@@ -926,7 +926,7 @@ pub mod scenarios {
                 let regtest_manager = RegtestManager::new(
                     TempDir::new_in("zingo_libtonode_test").unwrap().into_path(),
                 );
-                let server_uri = zingoconfig::construct_lightwalletd_uri(Some(format!(
+                let server_uri = crate::config::construct_lightwalletd_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_rpcservice_port}"
                 )));
                 Self {
@@ -941,15 +941,15 @@ pub mod scenarios {
             pub(crate) fn create_zcash_conf(
                 &self,
                 mine_to_address: Option<&str>,
-                regtest_network: &zingoconfig::RegtestNetwork,
+                regtest_network: &crate::config::RegtestNetwork,
             ) -> PathBuf {
                 let config = match mine_to_address {
-                    Some(address) => zingo_testvectors::config_template_fillers::zcashd::funded(
+                    Some(address) => crate::testvectors::config_template_fillers::zcashd::funded(
                         address,
                         &self.zcashd_rpcservice_port,
                         regtest_network,
                     ),
-                    None => zingo_testvectors::config_template_fillers::zcashd::basic(
+                    None => crate::testvectors::config_template_fillers::zcashd::basic(
                         &self.zcashd_rpcservice_port,
                         regtest_network,
                         "",
@@ -962,7 +962,7 @@ pub mod scenarios {
             pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
                 self.write_contents_and_return_path(
                     "lightwalletd",
-                    zingo_testvectors::config_template_fillers::lightwalletd::basic(
+                    crate::testvectors::config_template_fillers::lightwalletd::basic(
                         &self.lightwalletd_rpcservice_port,
                     ),
                 )
@@ -1007,7 +1007,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn unfunded_client(
-        regtest_network: zingoconfig::RegtestNetwork,
+        regtest_network: crate::config::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder =
             setup::ScenarioBuilder::build_configure_launch(None, None, None, &regtest_network)
@@ -1024,7 +1024,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         unfunded_client(regtest_network).await
     }
 
@@ -1040,7 +1040,7 @@ pub mod scenarios {
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet(
         mine_to_pool: PoolType,
-        regtest_network: zingoconfig::RegtestNetwork,
+        regtest_network: crate::config::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(mine_to_pool),
@@ -1060,7 +1060,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
@@ -1071,7 +1071,7 @@ pub mod scenarios {
     /// TODO: Add Doc Comment Here!
     pub async fn faucet_recipient(
         mine_to_pool: PoolType,
-        regtest_network: zingoconfig::RegtestNetwork,
+        regtest_network: crate::config::RegtestNetwork,
     ) -> (
         RegtestManager,
         ChildProcessHandler,
@@ -1112,7 +1112,7 @@ pub mod scenarios {
         LightClient,
         LightClient,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
@@ -1126,7 +1126,7 @@ pub mod scenarios {
         sapling_funds: Option<u64>,
         transparent_funds: Option<u64>,
         mine_to_pool: PoolType,
-        regtest_network: zingoconfig::RegtestNetwork,
+        regtest_network: crate::config::RegtestNetwork,
     ) -> (
         RegtestManager,
         ChildProcessHandler,
@@ -1212,7 +1212,7 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let (
             regtest_manager,
             cph,
@@ -1241,7 +1241,7 @@ pub mod scenarios {
     /// TODO: Add Doc Comment Here!
     pub async fn custom_clients(
         mine_to_pool: PoolType,
-        regtest_network: zingoconfig::RegtestNetwork,
+        regtest_network: crate::config::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         let sb = setup::ScenarioBuilder::build_configure_launch(
             Some(mine_to_pool),
@@ -1262,9 +1262,9 @@ pub mod scenarios {
         RegtestManager,
         ChildProcessHandler,
         ClientBuilder,
-        zingoconfig::RegtestNetwork,
+        crate::config::RegtestNetwork,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let (regtest_manager, cph, client_builder) = custom_clients(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
@@ -1275,7 +1275,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             None,
             None,
@@ -1291,7 +1291,7 @@ pub mod scenarios {
 
     /// TODO: Add Doc Comment Here!
     pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             None,
@@ -1328,7 +1328,7 @@ pub mod scenarios {
     pub async fn funded_orchard_with_3_txs_mobileclient(
         value: u64,
     ) -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             None,
@@ -1396,7 +1396,7 @@ pub mod scenarios {
     pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         value: u64,
     ) -> (RegtestManager, ChildProcessHandler) {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             None,
@@ -1535,7 +1535,7 @@ pub mod scenarios {
 
         /// TODO: Add Doc Comment Here!
         pub async fn unsynced_basic() -> ChildProcessHandler {
-            let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+            let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                 .await
                 .child_process_handler
@@ -1549,7 +1549,7 @@ pub mod scenarios {
             LightClient,
             LightClient,
         ) {
-            let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+            let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
             let mut sb =
                 setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                     .await;
@@ -1574,7 +1574,7 @@ pub mod scenarios {
             LightClient,
             LightClient,
         ) {
-            let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+            let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
             let mut sb =
                 setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                     .await;
