@@ -65,7 +65,7 @@ pub mod config_template_fillers {
         /// TODO: Add Doc Comment Here!
         pub fn basic(
             rpcport: &str,
-            regtest_network: &zingoconfig::RegtestNetwork,
+            regtest_network: &crate::config::RegtestNetwork,
             extra: &str,
         ) -> String {
             let overwinter_activation_height = regtest_network
@@ -125,7 +125,7 @@ listen=0
         pub fn funded(
             mineraddress: &str,
             rpcport: &str,
-            regtest_network: &zingoconfig::RegtestNetwork,
+            regtest_network: &crate::config::RegtestNetwork,
         ) -> String {
             basic(rpcport, regtest_network,
                 &format!("\
@@ -138,7 +138,7 @@ minetolocalwallet=0 # This is set to false so that we can mine to a wallet, othe
 
         #[test]
         fn funded_zcashd_conf() {
-            let regtest_network = zingoconfig::RegtestNetwork::new(1, 2, 3, 4, 5, 6);
+            let regtest_network = crate::config::RegtestNetwork::new(1, 2, 3, 4, 5, 6);
             assert_eq!(
                         funded(
                             super::super::REG_Z_ADDR_FROM_ABANDONART,
