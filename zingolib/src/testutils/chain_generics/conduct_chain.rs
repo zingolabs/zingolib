@@ -3,8 +3,9 @@
 //! lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
-use testutils::lightclient::from_inputs;
-use zingolib::lightclient::LightClient;
+use crate::get_base_address_macro;
+use crate::lightclient::LightClient;
+use crate::testutils::lightclient::from_inputs;
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]

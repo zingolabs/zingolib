@@ -5,8 +5,8 @@ use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
 
+use crate::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingolib::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 
 /// currently checks:
 /// 1. len of txids == num steps

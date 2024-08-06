@@ -206,7 +206,7 @@ pub fn launch_lightwalletd(
 fn write_zcash_conf(location: &PathBuf) {
     // This is the only data we need to supply *to* the zcashd, the other files are created by zcashd and lightwalletd
     use std::io::Write;
-    let conf_bytes: &'static [u8] = include_bytes!("../regtest/conf/zcash.conf");
+    let conf_bytes: &'static [u8] = include_bytes!("./regtest/conf/zcash.conf");
     File::create(location)
         .unwrap()
         .write_all(conf_bytes)
