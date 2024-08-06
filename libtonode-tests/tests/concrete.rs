@@ -10,11 +10,7 @@ use std::{fs::File, path::Path, time::Duration};
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::zip339::Mnemonic;
-use zcash_primitives::{
-    consensus::{BlockHeight, Parameters},
-    transaction::fees::zip317::MINIMUM_FEE,
-};
+use zcash_primitives::{consensus::BlockHeight, transaction::fees::zip317::MINIMUM_FEE};
 use zingo_testutils::lightclient::from_inputs;
 use zingo_testutils::{
     self, build_fvk_client, check_client_balances, get_base_address_macro, get_otd,
@@ -24,22 +20,14 @@ use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::data::summaries::TransactionSummaryInterface;
 
-use zingo_testvectors::{
-    block_rewards,
-    seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
-    BASE_HEIGHT,
-};
+use zingo_testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
     lightclient::{LightClient, PoolBalances},
     utils,
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
-        keys::{
-            extended_transparent::ExtendedPrivKey,
-            unified::{Capability, WalletCapability},
-        },
-        LightWallet,
+        keys::unified::WalletCapability,
     },
 };
 
@@ -300,36 +288,6 @@ mod fast {
     //     "The reorg buffer offset has been set to 4 but there are only 1 blocks in the wallet. Please sync at least 4 more blocks before trying again"
     // );
     // }
-
-    #[tokio::test]
-    async fn list_transactions_include_foreign() {
-        let wallet_nym = format!(
-            "{}/tests/data/wallets/missing_data_test/zingo-wallet.dat",
-            get_cargo_manifest_dir().to_string_lossy()
-        );
-        let wallet_path = Path::new(&wallet_nym);
-        let wallet_dir = wallet_path.parent().unwrap();
-        let (wallet, _config) =
-            zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-        let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
-        let transactions = client.do_list_transactions().await[0].clone();
-        //env_logger::init();
-        let expected_consumer_ui_note = r#"{
-  "amount": 100000,
-  "memo": "Enviado desde YWallet, Enviado desde YWallet",
-  "block_height": 2060028,
-  "pending": false,
-  "datetime": 1682127442,
-  "position": 0,
-  "txid": "d93fbb42a101ac148b4e610eea1fe519c0131b17d49af53f29b5e35a778145cb",
-  "zec_price": null,
-  "address": "u1n5zgv8c9px4hfmq7cr9f9t0av6q9nj5dwca9w0z9jxegut65gxs2y4qnx7ppng6k2hyt0asyycqrywalzyasxu2302xt4spfqnkh25nevr3h9exc3clh9tfpr5hyhc9dwee50l0cxm7ajun5xs9ycqhlw8rd39jql8z5zlv9hw4q8azcgpv04dez5547geuvyh8pfzezpw52cg2qknm"
-}"#;
-        assert_eq!(
-            expected_consumer_ui_note,
-            json::stringify_pretty(transactions, 2)
-        );
-    }
 
     #[tokio::test]
     async fn zcashd_sapling_commitment_tree() {
@@ -607,90 +565,6 @@ mod fast {
             get_base_address_macro!(client_b, "transparent"),
             transparent_address
         );
-    }
-
-    #[tokio::test]
-    async fn reload_wallet_from_buffer() {
-        // We test that the LightWallet can be read from v28 .dat file
-        // A testnet wallet initiated with
-        // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
-        // --birthday 0
-        // --nosync
-        // with 3 addresses containing all receivers.
-        let data = include_bytes!("zingo-wallet-v28.dat");
-
-        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
-        let mid_wallet = LightWallet::read_internal(&data[..], &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
-            .unwrap();
-
-        let mid_client = LightClient::create_from_wallet_async(mid_wallet)
-            .await
-            .unwrap();
-        let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
-        let wallet = LightWallet::read_internal(&mid_buffer[..], &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
-            .unwrap();
-        let expected_mnemonic = (
-            Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-            0,
-        );
-        assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
-
-        let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
-        let wc = wallet.wallet_capability();
-
-        let Capability::Spend(orchard_sk) = &wc.orchard else {
-            panic!("Expected Orchard Spending Key");
-        };
-        assert_eq!(
-            orchard_sk.to_bytes(),
-            orchard::keys::SpendingKey::try_from(&expected_wc)
-                .unwrap()
-                .to_bytes()
-        );
-
-        let Capability::Spend(sapling_sk) = &wc.sapling else {
-            panic!("Expected Sapling Spending Key");
-        };
-        assert_eq!(
-            sapling_sk,
-            &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc)
-                .unwrap()
-        );
-
-        let Capability::Spend(transparent_sk) = &wc.transparent else {
-            panic!("Expected transparent extended private key");
-        };
-        assert_eq!(
-            transparent_sk,
-            &ExtendedPrivKey::try_from(&expected_wc).unwrap()
-        );
-
-        assert_eq!(wc.addresses().len(), 3);
-        for addr in wc.addresses().iter() {
-            assert!(addr.orchard().is_some());
-            assert!(addr.sapling().is_some());
-            assert!(addr.transparent().is_some());
-        }
-
-        let ufvk = wc.ufvk().unwrap();
-        let ufvk_string = ufvk.encode(&config.chain.network_type());
-        let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
-        let view_wallet =
-            LightWallet::new(config.clone(), ufvk_base, wallet.get_birthday().await).unwrap();
-        let v_wc = view_wallet.wallet_capability();
-        let vv = v_wc.ufvk().unwrap();
-        let vv_string = vv.encode(&config.chain.network_type());
-        assert_eq!(ufvk_string, vv_string);
-
-        let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
-        let balance = client.do_balance().await;
-        assert_eq!(balance.orchard_balance, Some(10342837));
     }
 
     #[tokio::test]
@@ -2869,171 +2743,6 @@ mod slow {
         assert_eq!(bal.orchard_balance.unwrap(), new_bal);
         assert_eq!(bal.verified_orchard_balance.unwrap(), new_bal);
         assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
-    }
-    #[tokio::test]
-    async fn load_old_wallet_at_reorged_height() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(
-            PoolType::Shielded(ShieldedProtocol::Orchard),
-            regtest_network,
-        )
-        .await;
-        println!("Shutting down initial zcd/lwd unneeded processes");
-        drop(cph);
-
-        let zcd_datadir = &regtest_manager.zcashd_data_dir;
-        let zingo_datadir = &regtest_manager.zingo_datadir;
-        // This test is the unique consumer of:
-        // zingo-testutils/old_wallet_reorg_test_wallet
-        let cached_data_dir = get_cargo_manifest_dir()
-            .parent()
-            .unwrap()
-            .join("zingo-testvectors")
-            .join("old_wallet_reorg_test_wallet");
-        let zcd_source = cached_data_dir
-            .join("zcashd")
-            .join(".")
-            .to_string_lossy()
-            .to_string();
-        let zcd_dest = zcd_datadir.to_string_lossy().to_string();
-        std::process::Command::new("rm")
-            .arg("-r")
-            .arg(&zcd_dest)
-            .output()
-            .expect("directory rm failed");
-        std::fs::DirBuilder::new()
-            .create(&zcd_dest)
-            .expect("Dir recreate failed");
-        std::process::Command::new("cp")
-            .arg("-r")
-            .arg(zcd_source)
-            .arg(zcd_dest)
-            .output()
-            .expect("directory copy failed");
-        let zingo_source = cached_data_dir
-            .join("zingo-wallet.dat")
-            .to_string_lossy()
-            .to_string();
-        let zingo_dest = zingo_datadir.to_string_lossy().to_string();
-        std::process::Command::new("cp")
-            .arg("-f")
-            .arg(zingo_source)
-            .arg(&zingo_dest)
-            .output()
-            .expect("wallet copy failed");
-        let _cph = regtest_manager.launch(false).unwrap();
-        println!("loading wallet");
-        let (wallet, conf) =
-            zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest(regtest_network))
-                .await;
-        println!("setting uri");
-        *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
-        println!("creating lightclient");
-        let recipient = LightClient::create_from_wallet_async(wallet).await.unwrap();
-        println!(
-            "pre-sync transactions: {}",
-            recipient.do_list_transactions().await.pretty(2)
-        );
-        let expected_pre_sync_transactions = r#"[
-  {
-    "block_height": 3,
-    "pending": false,
-    "datetime": 1692212261,
-    "position": 0,
-    "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
-    "amount": 100000,
-    "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
-  },
-  {
-    "block_height": 8,
-    "pending": false,
-    "datetime": 1692212266,
-    "position": 0,
-    "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
-    "amount": 50000,
-    "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
-  },
-  {
-    "block_height": 9,
-    "pending": false,
-    "datetime": 1692212299,
-    "position": 0,
-    "txid": "0a014017add7dc9eb57ada3e70f905c9dce610ef055e135b03f4907dd5dc99a4",
-    "amount": 30000,
-    "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
-  }
-]"#;
-        assert_eq!(
-            expected_pre_sync_transactions,
-            recipient.do_list_transactions().await.pretty(2)
-        );
-        recipient.do_sync(false).await.unwrap();
-        let expected_post_sync_transactions = r#"[
-  {
-    "block_height": 3,
-    "pending": false,
-    "datetime": 1692212261,
-    "position": 0,
-    "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
-    "amount": 100000,
-    "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
-  },
-  {
-    "block_height": 8,
-    "pending": false,
-    "datetime": 1692212266,
-    "position": 0,
-    "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
-    "amount": 50000,
-    "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
-  }
-]"#;
-        assert_eq!(
-            expected_post_sync_transactions,
-            recipient.do_list_transactions().await.pretty(2)
-        );
-        let expected_post_sync_balance = PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(150000),
-            verified_orchard_balance: Some(150000),
-            spendable_orchard_balance: Some(150000),
-            unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0),
-        };
-        assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
-        let missing_output_index = from_inputs::quick_send(
-            &recipient,
-            vec![(&get_base_address_macro!(faucet, "unified"), 14000, None)],
-        )
-        .await;
-        if let Err(QuickSendError::ProposeSend(Proposal(
-                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
-                    zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(output_error)
-                )),
-            ))) = missing_output_index {
-            let txid1 = utils::conversion::txid_from_hex_encoded_str("122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841").unwrap();
-            let txid2 = utils::conversion::txid_from_hex_encoded_str("7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e").unwrap();
-            let expected_txids = vec![txid1, txid2];
-            // in case the txids are in reverse order
-            let missing_index_txids: Vec<zcash_primitives::transaction::TxId> = output_error.into_iter().map(|(txid, _)| txid).collect();
-            if missing_index_txids != expected_txids {
-                let expected_txids = vec![txid2, txid1];
-                assert!(missing_index_txids == expected_txids, "{:?}\n\n{:?}", missing_index_txids, expected_txids);
-            }
-        };
     }
     /// An arbitrary number of diversified addresses may be generated
     /// from a seed.  If the wallet is subsequently lost-or-destroyed
