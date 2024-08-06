@@ -18,7 +18,7 @@ use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
 };
-use zingoconfig::ChainType;
+use crate::config::ChainType;
 
 pub struct Message {
     pub to: PaymentAddress,

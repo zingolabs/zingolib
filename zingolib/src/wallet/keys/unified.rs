@@ -21,7 +21,7 @@ use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 

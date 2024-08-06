@@ -15,7 +15,7 @@ use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
 
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;

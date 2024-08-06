@@ -248,7 +248,7 @@ pub mod send_with_proposal {
     #[cfg(test)]
     mod tests {
         use zingo_testvectors::seeds::ABANDON_ART_SEED;
-        use zingoconfig::ZingoConfigBuilder;
+        use crate::config::ZingoConfigBuilder;
 
         use crate::{
             lightclient::{send::send_with_proposal::CompleteAndBroadcastError, LightClient},

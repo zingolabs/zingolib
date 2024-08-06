@@ -190,7 +190,7 @@ mod tests {
         memo::{Memo, MemoBytes},
         transaction::components::amount::NonNegativeAmount,
     };
-    use zingoconfig::ChainType;
+    use crate::config::ChainType;
 
     use crate::data::receivers::{transaction_request_from_receivers, Receivers};
 

@@ -8,7 +8,7 @@ use json::JsonValue;
 use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zingoconfig::ChainType;
+use crate::config::ChainType;
 
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
@@ -219,7 +219,7 @@ fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandEr
 
 #[cfg(test)]
 mod tests {
-    use zingoconfig::{ChainType, RegtestNetwork};
+    use crate::config::{ChainType, RegtestNetwork};
 
     use crate::{
         commands::error::CommandError,
@@ -297,7 +297,7 @@ mod tests {
     }
 
     mod fail_parse_send_args {
-        use zingoconfig::{ChainType, RegtestNetwork};
+        use crate::config::{ChainType, RegtestNetwork};
 
         use crate::commands::{error::CommandError, utils::parse_send_args};
 

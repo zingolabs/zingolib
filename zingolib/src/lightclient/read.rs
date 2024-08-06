@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::runtime::Runtime;
 
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use super::LightClient;
 use crate::wallet::LightWallet;

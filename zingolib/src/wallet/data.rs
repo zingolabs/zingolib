@@ -455,7 +455,7 @@ pub mod summaries {
     use json::JsonValue;
     use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingoconfig::ChainType;
+    use crate::config::ChainType;
 
     use crate::{
         error::BuildError,

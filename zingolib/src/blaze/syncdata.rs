@@ -7,7 +7,7 @@ use zcash_client_backend::proto::service::TreeState;
 use super::{block_management_reorg_detection::BlockManagementData, sync_status::BatchSyncStatus};
 use crate::wallet::data::BlockData;
 use crate::wallet::WalletOptions;
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 pub struct BlazeSyncData {
     pub(crate) block_data: BlockManagementData,

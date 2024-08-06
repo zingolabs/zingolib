@@ -12,7 +12,7 @@ use zcash_client_backend::address;
 use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
 };
-use zingoconfig::{ChainType, ZingoConfig};
+use crate::config::{ChainType, ZingoConfig};
 
 pub mod extended_transparent;
 pub mod unified;

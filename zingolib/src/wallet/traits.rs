@@ -51,7 +51,7 @@ use zcash_primitives::{
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ChainType;
+use crate::config::ChainType;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
 pub trait ToBytes<const N: usize> {

@@ -12,7 +12,7 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use crate::{
     blaze::syncdata::BlazeSyncData,
@@ -254,7 +254,7 @@ pub mod instantiation {
         sync::{Mutex, RwLock},
     };
 
-    use zingoconfig::ZingoConfig;
+    use crate::config::ZingoConfig;
 
     use super::{LightClient, ZingoSaveBuffer};
     use crate::{
@@ -635,7 +635,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 mod tests {
     use tokio::runtime::Runtime;
     use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig};
+    use crate::config::{ChainType, RegtestNetwork, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 

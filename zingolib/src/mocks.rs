@@ -360,7 +360,7 @@ pub mod proposal {
     };
 
     use zcash_client_backend::wallet::NoteId;
-    use zingoconfig::{ChainType, RegtestNetwork};
+    use crate::config::{ChainType, RegtestNetwork};
 
     use crate::utils::conversion::address_from_str;
     use crate::utils::{build_method, build_method_push};
