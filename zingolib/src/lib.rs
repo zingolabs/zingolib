@@ -18,6 +18,8 @@ pub mod wallet;
 
 #[cfg(test)]
 pub mod mocks;
+#[cfg(feature = "test-elevation")]
+pub mod testutils;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

@@ -4,9 +4,8 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-zingolib = { path = "../zingolib/", features = ["deprecations"] }
+zingolib = { path = "../zingolib/", features = ["deprecations", "test-elevation"] }
 zingoconfig = { path = "../zingoconfig/" }
-zingo-testutils = { path = "../zingo-testutils" }
 
 clap = { workspace = true }
 http = { workspace = true }
