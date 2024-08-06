@@ -1,5 +1,6 @@
 //! TODO: Add Mod Discription Here!
 use std::io;
+use zcash_primitives::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
 use byteorder::{ReadBytesExt, WriteBytesExt};
