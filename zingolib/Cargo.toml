@@ -74,6 +74,7 @@ chrono = { workspace = true }
 enum_dispatch = { workspace = true }
 portpicker = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true}
+dirs.workspace = true
 
 [dev-dependencies]
 concat-idents = { workspace = true }

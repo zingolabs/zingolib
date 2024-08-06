@@ -51,7 +51,7 @@ pub mod from_inputs {
     /// Panics if the address, amount or memo conversion fails.
     pub fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-        chain: &zingoconfig::ChainType,
+        chain: &crate::config::ChainType,
     ) -> crate::data::receivers::Receivers {
         raw_receivers
             .into_iter()
