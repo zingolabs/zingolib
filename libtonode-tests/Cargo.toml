@@ -10,8 +10,6 @@ chain_generic_tests = []
 [dependencies]
 zingolib = { path = "../zingolib", features = ["deprecations", "test-elevation"] }
 zingo-status = { path = "../zingo-status" }
-zingo-testvectors = { path = "../zingo-testvectors" }
-zingoconfig = { path = "../zingoconfig" }
 
 zcash_primitives = { workspace = true }
 orchard = { workspace = true }
