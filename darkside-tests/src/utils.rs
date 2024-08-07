@@ -499,7 +499,7 @@ pub mod scenarios {
     };
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::{BlockHeight, BranchId};
-    use zingo_testutils::scenarios::setup::ClientBuilder;
+    use zingolib::testutils::scenarios::setup::ClientBuilder;
     use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingoconfig::RegtestNetwork;
     use zingolib::lightclient::LightClient;
@@ -679,7 +679,7 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            zingo_testutils::lightclient::from_inputs::quick_send(
+            zingolib::testutils::lightclient::from_inputs::quick_send(
                 lightclient,
                 vec![(receiver_address, value, None)],
             )

@@ -12,7 +12,7 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingo_testutils::{
+use zingolib::testutils::{
     lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
 };
 use zingoconfig::RegtestNetwork;

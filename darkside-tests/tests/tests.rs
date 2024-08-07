@@ -2,7 +2,7 @@ use darkside_tests::utils::{
     prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector, DarksideHandler,
 };
 use tokio::time::sleep;
-use zingo_testutils::{
+use zingolib::testutils::{
     get_base_address_macro, lightclient::from_inputs, scenarios::setup::ClientBuilder,
 };
 use zingo_testvectors::seeds::DARKSIDE_SEED;
@@ -197,7 +197,7 @@ async fn sent_transaction_reorged_into_mempool() {
         serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
     );
     dbg!("Sender post-reorg: {}", light_client.list_outputs().await);
-    let loaded_client = zingo_testutils::lightclient::new_client_from_save_buffer(&light_client)
+    let loaded_client = zingolib::testutils::lightclient::new_client_from_save_buffer(&light_client)
         .await
         .unwrap();
     loaded_client.do_sync(false).await.unwrap();

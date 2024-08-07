@@ -17,7 +17,7 @@ use darkside_tests::{
 };
 use tokio::time::sleep;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
-use zingo_testutils::{
+use zingolib::testutils::{
     get_base_address_macro, scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient,
 };
 use zingoconfig::RegtestNetwork;

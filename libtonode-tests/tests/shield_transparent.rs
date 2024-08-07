@@ -1,4 +1,4 @@
-use zingo_testutils::{
+use zingolib::testutils::{
     get_base_address_macro, lightclient::from_inputs, scenarios::faucet_recipient_default,
 };
 
@@ -33,7 +33,7 @@ async fn shield_transparent() {
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
     );
-    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
 
@@ -54,7 +54,7 @@ async fn shield_transparent() {
         .complete_and_broadcast_stored_proposal()
         .await
         .unwrap();
-    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
 
