@@ -11,17 +11,15 @@ use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::{consensus::BlockHeight, transaction::fees::zip317::MINIMUM_FEE};
-use zingo_testutils::lightclient::from_inputs;
-use zingo_testutils::{
-    self, build_fvk_client, check_client_balances, get_base_address_macro, get_otd,
-    increase_height_and_wait_for_client, scenarios, validate_otds,
-};
 use zingolib::lightclient::propose::ProposeSendError;
+use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils::{build_fvk_client, increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::data::summaries::TransactionSummaryInterface;
+use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
 
-use zingo_testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-use zingoconfig::{ChainType, RegtestNetwork, MAX_REORG};
+use zingolib::config::{ChainType, RegtestNetwork, MAX_REORG};
+use zingolib::testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 use zingolib::{
     lightclient::{LightClient, PoolBalances},
     utils,
@@ -117,8 +115,8 @@ mod fast {
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingo_testutils::lightclient::from_inputs;
-    use zingoconfig::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
+    use zingolib::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
+    use zingolib::testutils::lightclient::from_inputs;
     use zingolib::wallet::notes::OutputInterface as _;
 
     use zingolib::{
@@ -367,7 +365,7 @@ mod fast {
         from_inputs::quick_send(&faucet, address_5000_nonememo_tuples)
             .await
             .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         let balance_b = recipient.do_balance().await;
@@ -588,9 +586,7 @@ mod fast {
                 .first()
                 .unwrap()
                 .value(),
-            NonNegativeAmount::const_from_u64(
-                (zingo_testvectors::block_rewards::CANOPY * 4) - expected_fee
-            )
+            NonNegativeAmount::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
         )
     }
 }
@@ -601,11 +597,11 @@ mod slow {
         consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
     };
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingo_testutils::{
+    use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
     };
-    use zingo_testvectors::TEST_TXID;
+    use zingolib::testvectors::TEST_TXID;
     use zingolib::{
         lightclient::send::send_with_proposal::QuickSendError,
         wallet::{
@@ -638,7 +634,7 @@ mod slow {
         .await
         .unwrap();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
         let _sent_transaction_id = from_inputs::quick_send(
@@ -647,7 +643,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
 
@@ -682,7 +678,7 @@ mod slow {
         .first()
         .to_string();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
 
@@ -765,7 +761,7 @@ mod slow {
             .contains(&position));
 
         // 4. Mine the sent transaction
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -808,7 +804,7 @@ mod slow {
         );
 
         // 5. Mine 50 blocks, witness should still be there
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 50)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 50)
             .await
             .unwrap();
         let position = recipient
@@ -838,7 +834,7 @@ mod slow {
             .contains(&position));
 
         // 5. Mine 100 blocks, witness should now disappear
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 50)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 50)
             .await
             .unwrap();
         let position = recipient
@@ -902,7 +898,7 @@ mod slow {
         let original_recipient = client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
-        let zingo_config = zingoconfig::load_clientconfig(
+        let zingo_config = zingolib::config::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir),
             ChainType::Regtest(regtest_network),
@@ -921,14 +917,14 @@ mod slow {
             (recipient_unified.as_str(), 3_000u64, None),
         ];
         // 1. fill wallet with a coinbase transaction by syncing faucet with 1-block increase
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
         // 2. send a transaction containing all types of outputs
         from_inputs::quick_send(&faucet, addr_amount_memos)
             .await
             .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(
+        zingolib::testutils::increase_height_and_wait_for_client(
             &regtest_manager,
             &original_recipient,
             1,
@@ -950,7 +946,7 @@ mod slow {
         // Extract viewing keys
         let wallet_capability = original_recipient.wallet.wallet_capability().clone();
         let [o_fvk, s_fvk, t_fvk] =
-            zingo_testutils::build_fvks_from_wallet_capability(&wallet_capability);
+            zingolib::testutils::build_fvks_from_wallet_capability(&wallet_capability);
         let fvks_sets = [
             vec![&o_fvk],
             vec![&s_fvk],
@@ -991,7 +987,11 @@ mod slow {
             assert!(matches!(
                 from_inputs::quick_send(
                     &watch_client,
-                    vec![(zingo_testvectors::EXT_TADDR, 1000, None)]
+                    vec![(
+                        zingolib::testvectors::zingolib::config::XT_TADDR,
+                        1000,
+                        None
+                    )]
                 )
                 .await,
                 Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
@@ -1015,7 +1015,7 @@ mod slow {
             .await
             .unwrap();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         recipient.do_sync(true).await.unwrap();
@@ -1030,7 +1030,11 @@ mod slow {
         let sent_value = 20_000;
         let sent_transaction_error = from_inputs::quick_send(
             &recipient,
-            vec![(zingo_testvectors::EXT_TADDR, sent_value, None)],
+            vec![(
+                zingolib::testvectors::zingolib::config::XT_TADDR,
+                sent_value,
+                None,
+            )],
         )
         .await
         .unwrap_err();
@@ -1060,11 +1064,11 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
         recipient.quick_shield().await.unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
         println!(
@@ -1101,7 +1105,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
         let list = faucet.do_list_transactions().await;
@@ -1175,7 +1179,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
         let summary_external_sapling = TransactionSummaryBuilder::new()
@@ -1276,7 +1280,7 @@ mod slow {
             Some(0)
         );
 
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 1)
             .await
             .unwrap();
 
@@ -1313,7 +1317,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -1394,7 +1398,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -1435,7 +1439,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -1493,7 +1497,7 @@ mod slow {
         .unwrap();
         let orch_change =
             block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         faucet.do_sync(true).await.unwrap();
@@ -1522,7 +1526,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
         recipient.do_sync(true).await.unwrap();
@@ -1562,7 +1566,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
         let balance = faucet.do_balance().await;
@@ -1635,7 +1639,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         let recipient_taddr = get_base_address_macro!(recipient, "transparent");
@@ -1649,7 +1653,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         from_inputs::quick_send(
@@ -1681,7 +1685,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         println!(
@@ -1716,13 +1720,13 @@ mod slow {
             scenarios::faucet_recipient_default().await;
 
         // Give the faucet a block reward
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
         let value = 100_000;
 
         // Send some sapling value to the recipient
-        let txid = zingo_testutils::send_value_between_clients_and_sync(
+        let txid = zingolib::testutils::send_value_between_clients_and_sync(
             &regtest_manager,
             &faucet,
             &recipient,
@@ -1743,7 +1747,7 @@ mod slow {
                 .first()
                 .to_string();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         // 5. Check the transaction list to make sure we got all transactions
@@ -1781,7 +1785,7 @@ mod slow {
         .unwrap()
         .first()
         .to_string();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -1892,7 +1896,7 @@ mod slow {
         );
 
         // 6. Mine the sent transaction
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -1948,7 +1952,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         check_client_balances!(recipient, o: for_orchard s: for_sapling t: 0 );
@@ -1963,7 +1967,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         let remaining_orchard = for_orchard - (6 * fee);
@@ -1996,7 +2000,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
             .await
             .unwrap();
         from_inputs::quick_send(
@@ -2005,7 +2009,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 10)
             .await
             .unwrap();
         faucet.do_sync(false).await.unwrap();
@@ -2051,9 +2055,13 @@ mod slow {
                     .unwrap()
                     .first(),
                 );
-                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-                    .await
-                    .unwrap();
+                zingolib::testutils::increase_height_and_wait_for_client(
+                    &regtest_manager,
+                    &faucet,
+                    1,
+                )
+                .await
+                .unwrap();
             }
 
             let nom_txid = &txids[0];
@@ -2088,7 +2096,7 @@ mod slow {
             .first();
             // TODO:  This chain height bump should be unnecessary. I think removing
             // this increase_height call reveals a bug!
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
             let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
@@ -2110,7 +2118,7 @@ mod slow {
             )
             .await
             .unwrap();
-            zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+            zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
                 .await
                 .unwrap();
             let pre_rescan_transactions = recipient.do_list_transactions().await;
@@ -2142,7 +2150,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
             .await
             .unwrap();
         let pre_rescan_transactions = recipient.do_list_transactions().await;
@@ -2170,7 +2178,7 @@ mod slow {
         //   * sends back to the original sender's UA
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
             .await
             .unwrap();
 
@@ -2194,7 +2202,7 @@ mod slow {
         .await
         .unwrap();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
         // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
@@ -2252,7 +2260,7 @@ mod slow {
         /*
         assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
         let client_2_post_transaction_notes = recipient.do_list_notes(false).await;
@@ -2307,7 +2315,7 @@ mod slow {
         );
         // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
         for _ in 0..5 {
-            zingo_testutils::send_value_between_clients_and_sync(
+            zingolib::testutils::send_value_between_clients_and_sync(
                 &regtest_manager,
                 &faucet,
                 &faucet,
@@ -2320,7 +2328,7 @@ mod slow {
 
         let sent_to_self = 10;
         // Send recipient->recipient, to make tree equality check at the end simpler
-        zingo_testutils::send_value_between_clients_and_sync(
+        zingolib::testutils::send_value_between_clients_and_sync(
             &regtest_manager,
             &recipient,
             &recipient,
@@ -2478,7 +2486,7 @@ mod slow {
         assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
 
         // 6. Mine 10 blocks, the pending transaction should still be there.
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
             .await
             .unwrap();
         assert_eq!(recipient.wallet.last_synced_height().await, 21);
@@ -2503,7 +2511,7 @@ mod slow {
         assert_eq!(transactions.len(), 3);
 
         // 7. Mine 100 blocks, so the mempool expires
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 100)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 100)
             .await
             .unwrap();
         assert_eq!(recipient.wallet.last_synced_height().await, 121);
@@ -2555,7 +2563,7 @@ mod slow {
         server_orchard_shardtree
             .insert_frontier_nodes(
                 server_orchard_front.unwrap(),
-                zingo_testutils::incrementalmerkletree::Retention::Marked,
+                zingolib::testutils::incrementalmerkletree::Retention::Marked,
             )
             .unwrap();
         assert_eq!(
@@ -2582,7 +2590,7 @@ mod slow {
         assert_eq!(bal.verified_orchard_balance.unwrap(), value);
 
         // 3. Mine 10 blocks
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
             .await
             .unwrap();
         let bal = recipient.do_balance().await;
@@ -2614,7 +2622,7 @@ mod slow {
         assert_eq!(bal.unverified_orchard_balance.unwrap(), new_bal);
 
         // 5. Mine the pending block, making the funds verified and spendable.
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
             .await
             .unwrap();
 
@@ -2673,7 +2681,7 @@ mod slow {
             )
             .await
             .unwrap();
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
             recipient1.do_sync(true).await.unwrap();
@@ -2739,7 +2747,7 @@ mod slow {
             .await
             .unwrap();
             let sender_balance = faucet.do_balance().await;
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
                 .await
                 .unwrap();
 
@@ -2767,12 +2775,12 @@ mod slow {
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
         let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {
             (o: $o:tt s: $s:tt t: $t:tt) => {
-                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
+                zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
                 check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
             };
         }
@@ -2813,12 +2821,16 @@ mod slow {
         let pmc_sapling = get_base_address_macro!(client, "sapling");
         let pmc_unified = get_base_address_macro!(client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 1)
-            .await
-            .unwrap();
+        zingolib::testutils::increase_height_and_wait_for_client(
+            &regtest_manager,
+            &sapling_faucet,
+            1,
+        )
+        .await
+        .unwrap();
         macro_rules! bump_and_check {
             (o: $o:tt s: $s:tt t: $t:tt) => {
-                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &client, 1).await.unwrap();
+                zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &client, 1).await.unwrap();
                 check_client_balances!(client, o:$o s:$s t:$t);
             };
         }
@@ -3121,7 +3133,7 @@ mod slow {
     async fn factor_do_shield_to_call_do_send() {
         let (regtest_manager, __cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
             .await
             .unwrap();
         from_inputs::quick_send(
@@ -3153,7 +3165,7 @@ mod slow {
         .await
         .unwrap();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
 
@@ -3182,7 +3194,7 @@ mod slow {
         .await
         .unwrap();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
             .await
             .unwrap();
         let recipient_balance = recipient.do_balance().await;
@@ -3218,9 +3230,10 @@ mod slow {
             65_000
         );
 
-        let loaded_client = zingo_testutils::lightclient::new_client_from_save_buffer(&recipient)
-            .await
-            .unwrap();
+        let loaded_client =
+            zingolib::testutils::lightclient::new_client_from_save_buffer(&recipient)
+                .await
+                .unwrap();
         let loaded_balance = loaded_client.do_balance().await;
         assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
         check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
@@ -3231,7 +3244,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         let base_uaddress = get_base_address_macro!(recipient, "unified");
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
             .await
             .unwrap();
         println!(
@@ -3262,7 +3275,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(100_000).await;
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -3283,7 +3296,7 @@ mod slow {
         .to_string();
 
         // Validate transaction
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
@@ -3315,7 +3328,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(500_000).await;
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
             .await
             .unwrap();
 
@@ -3335,7 +3348,7 @@ mod slow {
         .first()
         .to_string();
 
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
             .await
             .unwrap();
 
@@ -3464,7 +3477,7 @@ mod slow {
             .unwrap();
             let chainwait: u32 = 6;
             let amount: u64 = u64::from(chainwait * i);
-            zingo_testutils::increase_server_height(&regtest_manager, chainwait).await;
+            zingolib::testutils::increase_server_height(&regtest_manager, chainwait).await;
             let _ = recipient.do_sync(false).await;
             from_inputs::quick_send(
                 &recipient,
@@ -3473,7 +3486,7 @@ mod slow {
             .await
             .unwrap();
         }
-        zingo_testutils::increase_server_height(&regtest_manager, 1).await;
+        zingolib::testutils::increase_server_height(&regtest_manager, 1).await;
 
         let _synciiyur = recipient.do_sync(false).await;
         // let summ_sim = recipient.list_value_transfers().await;
@@ -3483,7 +3496,7 @@ mod slow {
         dbg!("finished basic sync. restarting for interrupted data");
         let timeout = 28;
         let race_condition =
-            zingo_testutils::interrupts::sync_with_timeout_millis(&recipient, timeout).await;
+            zingolib::testutils::interrupts::sync_with_timeout_millis(&recipient, timeout).await;
         match race_condition {
             Ok(_) => {
                 println!("synced in less than {} millis ", timeout);
@@ -3518,7 +3531,7 @@ mod slow {
 mod basic_transactions {
     use std::cmp;
 
-    use zingo_testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
+    use zingolib::testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
@@ -3528,7 +3541,7 @@ mod basic_transactions {
         let recipient_addr_ua = get_base_address_macro!(recipient, "unified");
         let faucet_addr_ua = get_base_address_macro!(faucet, "unified");
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 2)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 2)
             .await
             .unwrap();
 
@@ -3541,7 +3554,7 @@ mod basic_transactions {
                 .unwrap();
         }
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3552,7 +3565,7 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3604,7 +3617,7 @@ mod basic_transactions {
         .first()
         .to_string();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3613,23 +3626,23 @@ mod basic_transactions {
 
         println!(
             "Transaction Inputs:\n{:?}",
-            zingo_testutils::tx_inputs(&faucet, txid1.as_str()).await
+            zingolib::testutils::tx_inputs(&faucet, txid1.as_str()).await
         );
         println!(
             "Transaction Outputs:\n{:?}",
-            zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await
+            zingolib::testutils::tx_outputs(&recipient, txid1.as_str()).await
         );
         println!(
             "Transaction Change:\n{:?}",
-            zingo_testutils::tx_outputs(&faucet, txid1.as_str()).await
+            zingolib::testutils::tx_outputs(&faucet, txid1.as_str()).await
         );
 
         let tx_actions_txid1 =
-            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
+            zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
         let calculated_fee_txid1 =
-            zingo_testutils::total_tx_value(&faucet, txid1.as_str()).await - 40_000;
+            zingolib::testutils::total_tx_value(&faucet, txid1.as_str()).await - 40_000;
         println!("Fee Paid: {}", calculated_fee_txid1);
 
         let expected_fee_txid1 = 5000
@@ -3645,23 +3658,23 @@ mod basic_transactions {
 
         println!(
             "Transaction Inputs:\n{:?}",
-            zingo_testutils::tx_inputs(&faucet, txid2.as_str()).await
+            zingolib::testutils::tx_inputs(&faucet, txid2.as_str()).await
         );
         println!(
             "Transaction Outputs:\n{:?}",
-            zingo_testutils::tx_outputs(&recipient, txid2.as_str()).await
+            zingolib::testutils::tx_outputs(&recipient, txid2.as_str()).await
         );
         println!(
             "Transaction Change:\n{:?}",
-            zingo_testutils::tx_outputs(&faucet, txid2.as_str()).await
+            zingolib::testutils::tx_outputs(&faucet, txid2.as_str()).await
         );
 
         let tx_actions_txid2 =
-            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid2.as_str()).await;
+            zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid2.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid2);
 
         let calculated_fee_txid2 =
-            zingo_testutils::total_tx_value(&faucet, txid2.as_str()).await - 40_000;
+            zingolib::testutils::total_tx_value(&faucet, txid2.as_str()).await - 40_000;
         println!("Fee Paid: {}", calculated_fee_txid2);
 
         let expected_fee_txid2 = 5000
@@ -3677,23 +3690,23 @@ mod basic_transactions {
 
         println!(
             "Transaction Inputs:\n{:?}",
-            zingo_testutils::tx_inputs(&faucet, txid3.as_str()).await
+            zingolib::testutils::tx_inputs(&faucet, txid3.as_str()).await
         );
         println!(
             "Transaction Outputs:\n{:?}",
-            zingo_testutils::tx_outputs(&recipient, txid3.as_str()).await
+            zingolib::testutils::tx_outputs(&recipient, txid3.as_str()).await
         );
         println!(
             "Transaction Change:\n{:?}",
-            zingo_testutils::tx_outputs(&faucet, txid3.as_str()).await
+            zingolib::testutils::tx_outputs(&faucet, txid3.as_str()).await
         );
 
         let tx_actions_txid3 =
-            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid3.as_str()).await;
+            zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid3.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid3);
 
         let calculated_fee_txid3 =
-            zingo_testutils::total_tx_value(&faucet, txid3.as_str()).await - 40_000;
+            zingolib::testutils::total_tx_value(&faucet, txid3.as_str()).await - 40_000;
         println!("Fee Paid: {}", calculated_fee_txid3);
 
         let expected_fee_txid3 = 5000
@@ -3707,7 +3720,7 @@ mod basic_transactions {
 
         assert_eq!(calculated_fee_txid3, expected_fee_txid3 as u64);
 
-        let txid4 = zingo_testutils::lightclient::from_inputs::quick_send(
+        let txid4 = zingolib::testutils::lightclient::from_inputs::quick_send(
             &recipient,
             vec![(
                 get_base_address_macro!(faucet, "transparent").as_str(),
@@ -3720,7 +3733,7 @@ mod basic_transactions {
         .first()
         .to_string();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3729,23 +3742,23 @@ mod basic_transactions {
 
         println!(
             "Transaction Inputs:\n{:?}",
-            zingo_testutils::tx_inputs(&recipient, txid4.as_str()).await
+            zingolib::testutils::tx_inputs(&recipient, txid4.as_str()).await
         );
         println!(
             "Transaction Outputs:\n{:?}",
-            zingo_testutils::tx_outputs(&faucet, txid4.as_str()).await
+            zingolib::testutils::tx_outputs(&faucet, txid4.as_str()).await
         );
         println!(
             "Transaction Change:\n{:?}",
-            zingo_testutils::tx_outputs(&recipient, txid4.as_str()).await
+            zingolib::testutils::tx_outputs(&recipient, txid4.as_str()).await
         );
 
         let tx_actions_txid4 =
-            zingo_testutils::tx_actions(&recipient, Some(&faucet), txid4.as_str()).await;
+            zingolib::testutils::tx_actions(&recipient, Some(&faucet), txid4.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid4);
 
         let calculated_fee_txid4 =
-            zingo_testutils::total_tx_value(&recipient, txid4.as_str()).await - 55_000;
+            zingolib::testutils::total_tx_value(&recipient, txid4.as_str()).await - 55_000;
         println!("Fee Paid: {}", calculated_fee_txid4);
 
         let expected_fee_txid4 = 5000
@@ -3765,7 +3778,7 @@ mod basic_transactions {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        let txid1 = zingo_testutils::lightclient::from_inputs::quick_send(
+        let txid1 = zingolib::testutils::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 get_base_address_macro!(recipient, "unified").as_str(),
@@ -3778,7 +3791,7 @@ mod basic_transactions {
         .first()
         .to_string();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3787,22 +3800,23 @@ mod basic_transactions {
 
         println!(
             "Transaction Inputs:\n{:?}",
-            zingo_testutils::tx_inputs(&faucet, txid1.as_str()).await
+            zingolib::testutils::tx_inputs(&faucet, txid1.as_str()).await
         );
         println!(
             "Transaction Outputs:\n{:?}",
-            zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await
+            zingolib::testutils::tx_outputs(&recipient, txid1.as_str()).await
         );
         println!(
             "Transaction Change:\n{:?}",
-            zingo_testutils::tx_outputs(&faucet, txid1.as_str()).await
+            zingolib::testutils::tx_outputs(&faucet, txid1.as_str()).await
         );
 
         let tx_actions_txid1 =
-            zingo_testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
+            zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
-        let calculated_fee_txid1 = zingo_testutils::total_tx_value(&faucet, txid1.as_str()).await;
+        let calculated_fee_txid1 =
+            zingolib::testutils::total_tx_value(&faucet, txid1.as_str()).await;
         println!("Fee Paid: {}", calculated_fee_txid1);
 
         let expected_fee_txid1 = 5000
@@ -3822,7 +3836,7 @@ mod basic_transactions {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
 
-        zingo_testutils::lightclient::from_inputs::quick_send(
+        zingolib::testutils::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 get_base_address_macro!(recipient, "transparent").as_str(),
@@ -3833,7 +3847,7 @@ mod basic_transactions {
         .await
         .unwrap();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3842,7 +3856,7 @@ mod basic_transactions {
 
         let txid1 = recipient.quick_shield().await.unwrap().first().to_string();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3851,18 +3865,19 @@ mod basic_transactions {
 
         println!(
             "Transaction Inputs:\n{:?}",
-            zingo_testutils::tx_inputs(&recipient, txid1.as_str()).await
+            zingolib::testutils::tx_inputs(&recipient, txid1.as_str()).await
         );
         println!(
             "Transaction Outputs:\n{:?}",
-            zingo_testutils::tx_outputs(&recipient, txid1.as_str()).await
+            zingolib::testutils::tx_outputs(&recipient, txid1.as_str()).await
         );
 
-        let tx_actions_txid1 = zingo_testutils::tx_actions(&recipient, None, txid1.as_str()).await;
+        let tx_actions_txid1 =
+            zingolib::testutils::tx_actions(&recipient, None, txid1.as_str()).await;
         println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
         let calculated_fee_txid1 =
-            zingo_testutils::total_tx_value(&recipient, txid1.as_str()).await;
+            zingolib::testutils::total_tx_value(&recipient, txid1.as_str()).await;
         println!("Fee Paid: {}", calculated_fee_txid1);
 
         let expected_fee_txid1 = 5000
@@ -3876,7 +3891,7 @@ mod basic_transactions {
 
         assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
 
-        zingo_testutils::lightclient::from_inputs::quick_send(
+        zingolib::testutils::lightclient::from_inputs::quick_send(
             &faucet,
             vec![(
                 get_base_address_macro!(recipient, "transparent").as_str(),
@@ -3887,7 +3902,7 @@ mod basic_transactions {
         .await
         .unwrap();
 
-        zingo_testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
+        zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
             .unwrap();
 
@@ -3898,7 +3913,7 @@ mod basic_transactions {
 #[ignore = "flake"]
 #[tokio::test]
 async fn proxy_server_worky() {
-    zingo_testutils::check_proxy_server_works().await
+    zingolib::testutils::check_proxy_server_works().await
 }
 
 // FIXME: does not assert dust was included in the proposal
