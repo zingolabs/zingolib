@@ -31,7 +31,7 @@ proptest! {
         });
      }
 }
-pub(crate) mod impl_conduct_chain_for_darkside_environment {
+pub(crate) mod conduct_chain {
     //! known issues include
     //!   - transparent sends do not work
     //!   - txids are regenerated randomly. zingo can optionally accept_server_txid

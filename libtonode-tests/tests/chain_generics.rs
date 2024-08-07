@@ -6,7 +6,7 @@ mod chain_generics {
 
     use zingo_testutils::chain_generics::fixtures;
 
-    use environment::LibtonodeEnvironment;
+    use conduct_chain::LibtonodeEnvironment;
     #[tokio::test]
     async fn generate_a_range_of_value_transfers() {
         fixtures::create_various_value_transfers::<LibtonodeEnvironment>().await;
@@ -192,7 +192,7 @@ mod chain_generics {
     async fn simpool_change_50_000_orchard_to_orchard() {
         fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Shielded(Orchard), 50_000).await;
     }
-    mod environment {
+    mod conduct_chain {
         use zcash_client_backend::PoolType;
 
         use zcash_client_backend::ShieldedProtocol::Sapling;
