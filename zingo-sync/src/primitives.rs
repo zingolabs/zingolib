@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use getset::{CopyGetters, Getters, MutGetters};
 
-use zcash_client_backend::{data_api::scanning::ScanRange, PoolType};
+use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
 /// Encapsulates the current state of sync
@@ -29,26 +29,20 @@ impl Default for SyncState {
     }
 }
 
-/// Unified general ID for any output
-#[derive(CopyGetters)]
+/// Output ID for a given pool type
+#[derive(PartialEq, Eq, Hash, Clone, Copy, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct OutputId {
     /// ID of associated transaction
     txid: TxId,
     /// Index of output within the transactions bundle of the given pool type.
     output_index: usize,
-    /// Pool type the output belongs to
-    pool: PoolType,
 }
 
 impl OutputId {
     /// Creates new OutputId from parts
-    pub fn from_parts(txid: TxId, output_index: usize, pool: PoolType) -> Self {
-        OutputId {
-            txid,
-            output_index,
-            pool,
-        }
+    pub fn from_parts(txid: TxId, output_index: usize) -> Self {
+        OutputId { txid, output_index }
     }
 }
 
