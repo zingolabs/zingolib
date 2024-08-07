@@ -397,7 +397,7 @@ pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
 ) -> Result<(DarksideHandler, DarksideConnector), String> {
     let handler = DarksideHandler::new(set_port);
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         handler.grpc_port
     )));
@@ -501,7 +501,7 @@ pub mod scenarios {
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zingolib::testutils::scenarios::setup::ClientBuilder;
     use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-    use zingoconfig::RegtestNetwork;
+    use zingolib::config::RegtestNetwork;
     use zingolib::lightclient::LightClient;
 
     use super::{

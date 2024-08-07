@@ -17,10 +17,9 @@ use darkside_tests::{
 };
 use tokio::time::sleep;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
-use zingolib::testutils::{
-    get_base_address_macro, scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient,
-};
-use zingoconfig::RegtestNetwork;
+use zingolib::config::RegtestNetwork;
+use zingolib::get_base_address_macro;
+use zingolib::testutils::{scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient};
 use zingolib::{
     lightclient::PoolBalances,
     wallet::{
@@ -34,7 +33,7 @@ use zingolib::{
 async fn interrupt_initial_tree_fetch() {
     let darkside_handler = DarksideHandler::new(None);
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         darkside_handler.grpc_port
     )));

@@ -2,18 +2,17 @@ use darkside_tests::utils::{
     prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector, DarksideHandler,
 };
 use tokio::time::sleep;
-use zingolib::testutils::{
-    get_base_address_macro, lightclient::from_inputs, scenarios::setup::ClientBuilder,
-};
-use zingolib::testvectors::seeds::DARKSIDE_SEED;
-use zingoconfig::RegtestNetwork;
+use zingolib::config::RegtestNetwork;
+use zingolib::get_base_address_macro;
 use zingolib::lightclient::PoolBalances;
+use zingolib::testutils::{lightclient::from_inputs, scenarios::setup::ClientBuilder};
+use zingolib::testvectors::seeds::DARKSIDE_SEED;
 
 #[tokio::test]
 async fn simple_sync() {
     let darkside_handler = DarksideHandler::new(None);
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         darkside_handler.grpc_port
     )));
@@ -52,7 +51,7 @@ async fn simple_sync() {
 async fn reorg_away_receipt() {
     let darkside_handler = DarksideHandler::new(None);
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         darkside_handler.grpc_port
     )));
@@ -104,7 +103,7 @@ async fn reorg_away_receipt() {
 async fn sent_transaction_reorged_into_mempool() {
     let darkside_handler = DarksideHandler::new(None);
 
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         darkside_handler.grpc_port
     )));
@@ -197,9 +196,10 @@ async fn sent_transaction_reorged_into_mempool() {
         serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
     );
     dbg!("Sender post-reorg: {}", light_client.list_outputs().await);
-    let loaded_client = zingolib::testutils::lightclient::new_client_from_save_buffer(&light_client)
-        .await
-        .unwrap();
+    let loaded_client =
+        zingolib::testutils::lightclient::new_client_from_save_buffer(&light_client)
+            .await
+            .unwrap();
     loaded_client.do_sync(false).await.unwrap();
     dbg!("Sender post-load: {}", loaded_client.list_outputs().await);
     assert_eq!(

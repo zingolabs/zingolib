@@ -199,7 +199,7 @@ mod chain_generics {
 
         use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
         use zingolib::testutils::scenarios::setup::ScenarioBuilder;
-        use zingoconfig::RegtestNetwork;
+        use zingolib::config::RegtestNetwork;
         use zingolib::lightclient::LightClient;
         use zingolib::wallet::WalletBase;
         pub(crate) struct LibtonodeEnvironment {

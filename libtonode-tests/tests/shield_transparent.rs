@@ -1,6 +1,5 @@
-use zingolib::testutils::{
-    get_base_address_macro, lightclient::from_inputs, scenarios::faucet_recipient_default,
-};
+use zingolib::get_base_address_macro;
+use zingolib::testutils::{lightclient::from_inputs, scenarios::faucet_recipient_default};
 
 #[tokio::test]
 #[ignore]
