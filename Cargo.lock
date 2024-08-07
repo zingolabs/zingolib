@@ -4263,6 +4263,7 @@ dependencies = [
  "sha2 0.9.9",
  "shardtree",
  "subtle",
+ "tempdir",
  "tempfile",
  "test-case",
  "thiserror",

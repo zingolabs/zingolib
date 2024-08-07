@@ -685,7 +685,6 @@ pub mod scenarios {
             seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
             REG_Z_ADDR_FROM_ABANDONART,
         };
-        use tempfile::TempDir;
         use zcash_client_backend::{PoolType, ShieldedProtocol};
 
         use super::super::paths::get_regtest_dir;
@@ -924,7 +923,9 @@ pub mod scenarios {
                 let lightwalletd_rpcservice_port =
                     TestEnvironmentGenerator::pick_unused_port_to_string(set_lightwalletd_port);
                 let regtest_manager = RegtestManager::new(
-                    TempDir::new_in("zingo_libtonode_test").unwrap().into_path(),
+                    tempdir::TempDir::new("zingo_libtonode_test")
+                        .unwrap()
+                        .into_path(),
                 );
                 let server_uri = crate::config::construct_lightwalletd_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_rpcservice_port}"
