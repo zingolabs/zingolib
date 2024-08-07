@@ -242,5 +242,5 @@ impl LightWallet {
     }
 }
 
-#[cfg(any(test, feature = "test-elevation"))]
+#[cfg(feature = "test-elevation")]
 pub mod testing;

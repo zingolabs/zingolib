@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use crate::config::ZingoConfig;
 
 use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 

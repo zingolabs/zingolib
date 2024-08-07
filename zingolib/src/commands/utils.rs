@@ -1,6 +1,7 @@
 // Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
+use crate::config::ChainType;
 use crate::data::receivers::Receivers;
 use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
 use crate::wallet;
@@ -8,7 +9,6 @@ use json::JsonValue;
 use zcash_client_backend::address::Address;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use crate::config::ChainType;
 
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:

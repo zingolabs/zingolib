@@ -633,9 +633,9 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 
 #[cfg(test)]
 mod tests {
-    use tokio::runtime::Runtime;
-    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use crate::config::{ChainType, RegtestNetwork, ZingoConfig};
+    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use tokio::runtime::Runtime;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 

@@ -19,7 +19,7 @@ pub mod wallet;
 
 #[cfg(test)]
 pub(crate) mod mocks;
-#[cfg(any(test, feature = "test-elevation"))]
+#[cfg(feature = "test-elevation")]
 pub mod testutils;
 #[cfg(any(test, feature = "testvectors"))]
 pub mod testvectors;

@@ -328,7 +328,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
-            zingo_testutils::paths::get_regtest_dir()
+            zingolib::testutils::paths::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
         };

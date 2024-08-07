@@ -359,8 +359,8 @@ pub mod proposal {
         components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
-    use zcash_client_backend::wallet::NoteId;
     use crate::config::{ChainType, RegtestNetwork};
+    use zcash_client_backend::wallet::NoteId;
 
     use crate::utils::conversion::address_from_str;
     use crate::utils::{build_method, build_method_push};

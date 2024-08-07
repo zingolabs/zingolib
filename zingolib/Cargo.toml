@@ -13,7 +13,6 @@ darkside_tests = []
 test-elevation = ["portpicker", "testvectors", "tempfile"]
 testvectors = []
 tempfile = ["dep:tempfile"]
-portpicker = ["dep:portpicker"]
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
@@ -81,6 +80,7 @@ log4rs.workspace = true
 
 [dev-dependencies]
 concat-idents = { workspace = true }
+tempfile = { workspace = true }
 
 [build-dependencies]
 build_utils = { workspace = true }
