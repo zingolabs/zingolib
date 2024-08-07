@@ -13,7 +13,7 @@ mod load_wallet {
     use zingolib::testutils::lightclient::from_inputs;
     use zingolib::testutils::paths::get_cargo_manifest_dir;
     use zingolib::testutils::scenarios;
-    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use zingolib::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use zingoconfig::ChainType;
     use zingoconfig::RegtestNetwork;
     use zingoconfig::ZingoConfig;

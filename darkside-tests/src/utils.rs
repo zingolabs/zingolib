@@ -500,7 +500,7 @@ pub mod scenarios {
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zingolib::testutils::scenarios::setup::ClientBuilder;
-    use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingoconfig::RegtestNetwork;
     use zingolib::lightclient::LightClient;
 
@@ -564,7 +564,7 @@ pub mod scenarios {
             self.faucet = Some(
                 self.client_builder
                     .build_client(
-                        zingo_testvectors::seeds::DARKSIDE_SEED.to_string(),
+                        zingolib::testvectors::seeds::DARKSIDE_SEED.to_string(),
                         0,
                         true,
                         self.regtest_network,
