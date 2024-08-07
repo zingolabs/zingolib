@@ -74,10 +74,12 @@ chrono = { workspace = true }
 enum_dispatch = { workspace = true }
 
 [dev-dependencies]
+zingo-testvectors = { path = "../zingo-testvectors" }
+zingoconfig = { path = "../zingoconfig" , features = ["test-elevation"] }
+
 portpicker = { workspace = true }
 tempfile = { workspace = true }
 concat-idents = { workspace = true }
-zingo-testvectors = { path = "../zingo-testvectors" }
 
 [build-dependencies]
 build_utils = { workspace = true }

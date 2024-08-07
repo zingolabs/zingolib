@@ -4,7 +4,7 @@
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
 use crate::{get_base_address_macro, lightclient::from_inputs};
-use zingolib::lightclient::LightClient;
+use zingolib::{lightclient::LightClient, wallet::LightWallet};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -39,7 +39,9 @@ pub trait ConductChain {
         let mut zingo_config = self.zingo_config();
         zingo_config.accept_server_txids = true;
 
-        LightClient::unsafe_from_buffer_testnet(data)
+        LightClient::create_from_wallet_async(LightWallet::unsafe_from_buffer_testnet(data).await)
+            .await
+            .unwrap()
     }
 
     /// moves the chain tip forward, creating 1 new block
