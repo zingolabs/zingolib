@@ -602,7 +602,7 @@ pub mod proposal {
             builder
                 .recipient_address(
                     address_from_str(
-                        zingo_testvectors::REG_O_ADDR_FROM_ABANDONART,
+                        crate::testvectors::REG_O_ADDR_FROM_ABANDONART,
                         &ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
                     )
                     .unwrap(),

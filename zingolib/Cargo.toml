@@ -12,6 +12,8 @@ lightclient-deprecated = []
 darkside_tests = []
 test-elevation = ["portpicker", "testvectors", "tempfile"]
 testvectors = []
+tempfile = ["dep:tempfile"]
+portpicker = ["dep:portpicker"]
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
@@ -73,7 +75,7 @@ hdwallet = { workspace = true }
 chrono = { workspace = true }
 enum_dispatch = { workspace = true }
 portpicker = { workspace = true, optional = true }
-tempfile = { workspace = true, optional = true}
+tempfile = { workspace = true, optional = true }
 dirs.workspace = true
 log4rs.workspace = true
 
