@@ -987,11 +987,7 @@ mod slow {
             assert!(matches!(
                 from_inputs::quick_send(
                     &watch_client,
-                    vec![(
-                        zingolib::testvectors::zingolib::config::XT_TADDR,
-                        1000,
-                        None
-                    )]
+                    vec![(zingolib::testvectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
                 Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
@@ -1030,11 +1026,7 @@ mod slow {
         let sent_value = 20_000;
         let sent_transaction_error = from_inputs::quick_send(
             &recipient,
-            vec![(
-                zingolib::testvectors::zingolib::config::XT_TADDR,
-                sent_value,
-                None,
-            )],
+            vec![(zingolib::testvectors::EXT_TADDR, sent_value, None)],
         )
         .await
         .unwrap_err();
@@ -3531,7 +3523,8 @@ mod slow {
 mod basic_transactions {
     use std::cmp;
 
-    use zingolib::testutils::{get_base_address_macro, lightclient::from_inputs, scenarios};
+    use zingolib::get_base_address_macro;
+    use zingolib::testutils::{lightclient::from_inputs, scenarios};
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
