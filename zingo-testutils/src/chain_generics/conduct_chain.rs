@@ -34,6 +34,14 @@ pub trait ConductChain {
         .unwrap()
     }
 
+    /// loads a client from bytes
+    async fn load_client(&mut self, data: &[u8]) -> LightClient {
+        let mut zingo_config = self.zingo_config();
+        zingo_config.accept_server_txids = true;
+
+        LightClient::unsafe_from_buffer_testnet(data)
+    }
+
     /// moves the chain tip forward, creating 1 new block
     /// and confirming transactions that were received by the server
     async fn bump_chain(&mut self);
