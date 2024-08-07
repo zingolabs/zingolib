@@ -30,8 +30,8 @@ impl Default for SyncState {
 }
 
 /// Unified general ID for any output
-#[derive(Getters)]
-#[getset(get = "pub")]
+#[derive(CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct OutputId {
     /// ID of associated transaction
     txid: TxId,

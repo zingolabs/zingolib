@@ -79,6 +79,7 @@ where
     let mut scan_ranges = sync_state.scan_ranges().write().unwrap();
 
     let wallet_height = if scan_ranges.is_empty() {
+        // TODO: add birthday
         parameters
             .activation_height(NetworkUpgrade::Sapling)
             .expect("sapling activation height should always return Some")

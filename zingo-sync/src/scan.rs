@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use incrementalmerkletree::Position;
 use orchard::keys::Scope;
 use tokio::sync::mpsc::UnboundedSender;
 use zcash_client_backend::{
@@ -9,7 +10,7 @@ use zcash_client_backend::{
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    transaction::TxId,
+    transaction::{components::sapling::zip212_enforcement, TxId},
     zip32::AccountId,
 };
 
@@ -147,27 +148,45 @@ where
         .iter()
         .chain(outgoing_output_ids.iter())
         .for_each(|output_id| {
-            relevent_txids.insert(*output_id.txid());
+            relevent_txids.insert(output_id.txid());
         });
 
-    // TODO: build shard tree, calculate nullifiers and positions for incoming outputs, map nullifiers and write compact blocks
+    let mut sapling_nullifiers_and_positions: HashMap<
+        OutputId,
+        (sapling_crypto::Nullifier, Position),
+    > = HashMap::new();
+    let mut orchard_nullifiers_and_positions: HashMap<
+        OutputId,
+        (orchard::note::Nullifier, Position),
+    > = HashMap::new();
     let mut sapling_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_tree_size = initial_scan_data.orchard_initial_tree_size;
+    // TODO: maybe putting sapling and orchard outputs ids together is non-optimal
+    let incoming_sapling_output_ids = incoming_output_ids
+        .iter()
+        .filter(|id| matches!(id.pool(), PoolType::Shielded(ShieldedProtocol::Sapling)))
+        .collect::<Vec<_>>();
     for block in compact_blocks {
-        // let zip212_enforcement = zip212_enforcement(parameters, compact_block.height());
+        let zip212_enforcement = zip212_enforcement(parameters, block.height());
         for transaction in block.vtx {
-            //
+            // TODO: add note commitment and retentions
+
+            incoming_sapling_output_ids
+                .iter()
+                .filter(|id| id.txid() == transaction.txid())
+                .for_each(|id| {
+                    let position = Position::from(u64::from(
+                        sapling_tree_size + u32::try_from(id.output_index()).unwrap(),
+                    ));
+                    // let nullifier =
+                    // sapling_nullifiers_and_positions.insert(id, ))
+                });
+
+            sapling_tree_size += u32::try_from(transaction.outputs.len())
+                .expect("should not be more than 2^32 outputs in a transaction");
         }
     }
-
-    // let mut sapling_nullifiers_and_positions: HashMap<
-    //     OutputId,
-    //     (sapling_crypto::Nullifier, Position),
-    // > = HashMap::new();
-    // let mut orchard_nullifiers_and_positions: HashMap<
-    //     OutputId,
-    //     (orchard::note::Nullifier, Position),
-    // > = HashMap::new();
+    // TODO: map nullifiers and write compact blocks
 
     Ok(())
 }
