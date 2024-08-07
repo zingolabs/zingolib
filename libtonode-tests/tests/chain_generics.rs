@@ -201,7 +201,6 @@ mod chain_generics {
         use zingo_testutils::scenarios::setup::ScenarioBuilder;
         use zingoconfig::RegtestNetwork;
         use zingolib::lightclient::LightClient;
-        use zingolib::wallet::WalletBase;
         pub(crate) struct LibtonodeEnvironment {
             regtest_network: RegtestNetwork,
             scenario_builder: ScenarioBuilder,
@@ -232,19 +231,10 @@ mod chain_generics {
                     .await
             }
 
-            async fn create_client(&mut self) -> LightClient {
-                let zingo_config = self
-                    .scenario_builder
+            fn zingo_config(&mut self) -> zingoconfig::ZingoConfig {
+                self.scenario_builder
                     .client_builder
-                    .make_unique_data_dir_and_load_config(self.regtest_network);
-                LightClient::create_from_wallet_base_async(
-                    WalletBase::FreshEntropy,
-                    &zingo_config,
-                    0,
-                    false,
-                )
-                .await
-                .unwrap()
+                    .make_unique_data_dir_and_load_config(self.regtest_network)
             }
 
             async fn bump_chain(&mut self) {

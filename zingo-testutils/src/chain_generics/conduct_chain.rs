@@ -16,8 +16,23 @@ pub trait ConductChain {
     async fn setup() -> Self;
     /// builds a faucet (funded from mining)
     async fn create_faucet(&mut self) -> LightClient;
+
+    /// sets server parameters
+    fn zingo_config(&mut self) -> zingoconfig::ZingoConfig;
+
     /// builds an empty client
-    async fn create_client(&mut self) -> LightClient;
+    async fn create_client(&mut self) -> LightClient {
+        let mut zingo_config = self.zingo_config();
+        zingo_config.accept_server_txids = true;
+        LightClient::create_from_wallet_base_async(
+            zingolib::wallet::WalletBase::FreshEntropy,
+            &zingo_config,
+            0,
+            false,
+        )
+        .await
+        .unwrap()
+    }
 
     /// moves the chain tip forward, creating 1 new block
     /// and confirming transactions that were received by the server
