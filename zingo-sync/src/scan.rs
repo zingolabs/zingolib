@@ -4,12 +4,12 @@ use std::{
 };
 
 use incrementalmerkletree::{Position, Retention};
-use orchard::keys::Scope;
+use orchard::{keys::Scope, note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
 use tokio::sync::mpsc::UnboundedSender;
 use zcash_client_backend::{
     data_api::scanning::ScanRange,
-    proto::compact_formats::{CompactBlock, CompactTx},
+    proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput},
     scanning::ScanningKeys,
 };
 use zcash_note_encryption::Domain;
@@ -145,6 +145,9 @@ where
     let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
     let mut relevent_txids: HashSet<TxId> = HashSet::new();
+    let mut sapling_leaves_and_retentions: Vec<(Node, Retention<BlockHeight>)> = Vec::new();
+    let mut orchard_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)> =
+        Vec::new();
     let mut sapling_nullifiers_and_positions: HashMap<
         OutputId,
         (sapling_crypto::Nullifier, Position),
@@ -156,8 +159,6 @@ where
     let mut sapling_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_tree_size = initial_scan_data.orchard_initial_tree_size;
     for block in &compact_blocks {
-        // let zip212_enforcement = zip212_enforcement(parameters, block.height());
-
         let mut transactions = block.vtx.iter().peekable();
         while let Some(transaction) = transactions.next() {
             // collect trial decryption results by transaction
@@ -179,14 +180,24 @@ where
             });
             // TODO: add outgoing outputs to relevent txids
 
-            // TODO: add note commitment and retentions
-            calculate_leaves_and_retentions(
-                block.height(),
-                transaction,
-                transactions.peek().is_none(),
-                &incoming_sapling_outputs,
-            )
-            .unwrap();
+            sapling_leaves_and_retentions.extend(
+                calculate_sapling_leaves_and_retentions(
+                    &transaction.outputs,
+                    block.height(),
+                    transactions.peek().is_none(),
+                    &incoming_sapling_outputs,
+                )
+                .unwrap(),
+            );
+            orchard_leaves_and_retentions.extend(
+                calculate_orchard_leaves_and_retentions(
+                    &transaction.actions,
+                    block.height(),
+                    transactions.peek().is_none(),
+                    &incoming_orchard_outputs,
+                )
+                .unwrap(),
+            );
 
             calculate_nullifiers_and_positions(
                 sapling_tree_size,
@@ -266,7 +277,7 @@ fn check_continuity(
     Ok(())
 }
 
-// calculates nullifiers and positions for a given compact transaction
+// calculates nullifiers and positions for a given compact transaction and insert into hash map
 // `tree_size` is the tree size of the corresponding shielded pool up to - and not including - the compact transaction
 // being processed
 fn calculate_nullifiers_and_positions<D, K, Nf>(
@@ -294,29 +305,67 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
         });
 }
 
-// calculates note commitment tree leaves and shardtree retentions for a given compact transaction
-fn calculate_leaves_and_retentions<D: Domain>(
+// TODO: unify sapling and orchard leaf and retention fns
+// calculates the sapling note commitment tree leaves and shardtree retentions for a given compact transaction
+fn calculate_sapling_leaves_and_retentions<D: Domain>(
+    outputs: &[CompactSaplingOutput],
     block_height: BlockHeight,
-    transaction: &CompactTx,
-    last_tx_in_block: bool,
-    incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+    last_outputs_in_block: bool,
+    decrypted_incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ()> {
-    let incoming_output_indices: Vec<usize> = incoming_outputs
+    let incoming_output_indices: Vec<usize> = decrypted_incoming_outputs
         .keys()
         .copied()
         .map(|output_id| output_id.output_index())
         .collect();
-    let last_output_index = transaction.outputs.len() - 1;
+    let last_output_index = outputs.len() - 1;
 
-    Ok(transaction
-        .outputs
+    Ok(outputs
         .iter()
         .enumerate()
         .map(|(output_index, output)| {
             let note_commitment = CompactOutputDescription::try_from(output).unwrap().cmu;
             let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
 
-            let last_output_in_block: bool = last_tx_in_block && output_index == last_output_index;
+            let last_output_in_block: bool =
+                last_outputs_in_block && output_index == last_output_index;
+            let decrypted: bool = incoming_output_indices.contains(&output_index);
+            let retention = match (decrypted, last_output_in_block) {
+                (is_marked, true) => Retention::Checkpoint {
+                    id: block_height,
+                    is_marked,
+                },
+                (true, false) => Retention::Marked,
+                (false, false) => Retention::Ephemeral,
+            };
+
+            (leaf, retention)
+        })
+        .collect())
+}
+// calculates the orchard note commitment tree leaves and shardtree retentions for a given compact transaction
+fn calculate_orchard_leaves_and_retentions<D: Domain>(
+    actions: &[CompactOrchardAction],
+    block_height: BlockHeight,
+    last_outputs_in_block: bool,
+    decrypted_incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ()> {
+    let incoming_output_indices: Vec<usize> = decrypted_incoming_outputs
+        .keys()
+        .copied()
+        .map(|output_id| output_id.output_index())
+        .collect();
+    let last_output_index = actions.len() - 1;
+
+    Ok(actions
+        .iter()
+        .enumerate()
+        .map(|(output_index, output)| {
+            let note_commitment = CompactAction::try_from(output).unwrap().cmx();
+            let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
+
+            let last_output_in_block: bool =
+                last_outputs_in_block && output_index == last_output_index;
             let decrypted: bool = incoming_output_indices.contains(&output_index);
             let retention = match (decrypted, last_output_in_block) {
                 (is_marked, true) => Retention::Checkpoint {
