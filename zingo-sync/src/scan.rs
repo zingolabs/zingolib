@@ -3,8 +3,9 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use incrementalmerkletree::Position;
+use incrementalmerkletree::{Position, Retention};
 use orchard::keys::Scope;
+use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
 use tokio::sync::mpsc::UnboundedSender;
 use zcash_client_backend::{
     data_api::scanning::ScanRange,
@@ -24,7 +25,7 @@ use crate::{
     primitives::{OutputId, WalletCompactBlock},
 };
 
-use self::runners::BatchRunners;
+use self::runners::{BatchRunners, DecryptedOutput};
 
 pub(crate) mod runners;
 
@@ -141,9 +142,9 @@ where
 
     check_continuity(&compact_blocks, initial_scan_data.previous_block).unwrap();
 
-    let (incoming_sapling_outputs, incoming_orchard_outputs) =
-        trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
+    let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
+    let mut relevent_txids: HashSet<TxId> = HashSet::new();
     let mut sapling_nullifiers_and_positions: HashMap<
         OutputId,
         (sapling_crypto::Nullifier, Position),
@@ -154,20 +155,46 @@ where
     > = HashMap::new();
     let mut sapling_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_tree_size = initial_scan_data.orchard_initial_tree_size;
-    for block in compact_blocks {
+    for block in &compact_blocks {
         // let zip212_enforcement = zip212_enforcement(parameters, block.height());
-        for transaction in block.vtx {
+
+        let mut transactions = block.vtx.iter().peekable();
+        while let Some(transaction) = transactions.next() {
+            // collect trial decryption results by transaction
+            let incoming_sapling_outputs = runners
+                .sapling
+                .collect_results(block.hash(), transaction.txid());
+            let incoming_orchard_outputs = runners
+                .orchard
+                .collect_results(block.hash(), transaction.txid());
+
+            // gather the txids of all transactions relevent to the wallet
+            // the edge case of transactions that this capability created but did not receive change
+            // or create outgoing data is handled when the nullifiers are added and linked
+            incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
+                relevent_txids.insert(output_id.txid());
+            });
+            incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
+                relevent_txids.insert(output_id.txid());
+            });
+            // TODO: add outgoing outputs to relevent txids
+
             // TODO: add note commitment and retentions
+            calculate_leaves_and_retentions(
+                block.height(),
+                transaction,
+                transactions.peek().is_none(),
+                &incoming_sapling_outputs,
+            )
+            .unwrap();
 
             calculate_nullifiers_and_positions(
-                &transaction,
                 sapling_tree_size,
                 scanning_keys.sapling(),
                 &incoming_sapling_outputs,
                 &mut sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
-                &transaction,
                 orchard_tree_size,
                 scanning_keys.orchard(),
                 &incoming_orchard_outputs,
@@ -179,84 +206,30 @@ where
             orchard_tree_size += u32::try_from(transaction.actions.len())
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
+        // TODO: check tree size matches chain_metadata if available
     }
     // TODO: map nullifiers and write compact blocks
-
-    // gather the IDs of all transactions relevent to the wallet
-    // the edge case of transactions that this capability created but did not receive change
-    // or create outgoing data is handled when the nullifiers are added and linked
-    let mut relevent_txids: HashSet<TxId> = HashSet::new();
-    incoming_sapling_outputs
-        .iter()
-        .for_each(|(output_id, _, _)| {
-            relevent_txids.insert(output_id.txid());
-        });
-    incoming_orchard_outputs
-        .iter()
-        .for_each(|(output_id, _, _)| {
-            relevent_txids.insert(output_id.txid());
-        });
 
     Ok(())
 }
 
-// TODO: reduce type complexity once trial decryption is finalised
-#[allow(clippy::type_complexity)]
 fn trial_decrypt<P>(
     parameters: &P,
     scanning_keys: &ScanningKeys<AccountId, KeyId>,
     compact_blocks: &[CompactBlock],
-) -> Result<
-    (
-        Vec<(OutputId, sapling_crypto::Note, KeyId)>,
-        Vec<(OutputId, orchard::Note, KeyId)>,
-    ),
-    (),
->
+) -> Result<BatchRunners<KeyId, (), ()>, ()>
 where
     P: Parameters + Send + 'static,
 {
-    let mut runners = BatchRunners::<_, (), ()>::for_keys(100, scanning_keys);
+    // TODO: add outgoing decryption
+
+    let mut runners = BatchRunners::<KeyId, (), ()>::for_keys(100, scanning_keys);
     for block in compact_blocks {
         runners.add_block(parameters, block.clone()).unwrap();
     }
     runners.flush();
 
-    let mut incoming_sapling_outputs: Vec<(OutputId, sapling_crypto::Note, KeyId)> = Vec::new();
-    let mut incoming_orchard_outputs: Vec<(OutputId, orchard::Note, KeyId)> = Vec::new();
-
-    // TODO: add outgoing decryption
-    for block in compact_blocks {
-        for transaction in block.vtx.iter() {
-            let decrypted_sapling_outputs = runners
-                .sapling
-                .collect_results(block.hash(), transaction.txid());
-            decrypted_sapling_outputs
-                .iter()
-                .for_each(|((txid, output_index), output)| {
-                    incoming_sapling_outputs.push((
-                        OutputId::from_parts(*txid, *output_index),
-                        output.note.clone(),
-                        output.ivk_tag,
-                    ));
-                });
-
-            let decrypted_orchard_outputs = runners
-                .orchard
-                .collect_results(block.hash(), transaction.txid());
-            decrypted_orchard_outputs
-                .iter()
-                .for_each(|((txid, output_index), output)| {
-                    incoming_orchard_outputs.push((
-                        OutputId::from_parts(*txid, *output_index),
-                        output.note,
-                        output.ivk_tag,
-                    ));
-                });
-        }
-    }
-
-    Ok((incoming_sapling_outputs, incoming_orchard_outputs))
+    Ok(runners)
 }
 
 // checks height and hash continuity of a batch of compact blocks.
@@ -294,11 +267,12 @@ fn check_continuity(
 }
 
 // calculates nullifiers and positions for a given compact transaction
+// `tree_size` is the tree size of the corresponding shielded pool up to - and not including - the compact transaction
+// being processed
 fn calculate_nullifiers_and_positions<D, K, Nf>(
-    transaction: &CompactTx,
-    tx_initial_tree_size: u32,
+    tree_size: u32,
     keys: &HashMap<KeyId, K>,
-    incoming_outputs: &[(OutputId, D::Note, KeyId)],
+    incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
     nullifiers_and_positions: &mut HashMap<OutputId, (Nf, Position)>,
 ) where
     D: Domain,
@@ -306,17 +280,54 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
 {
     incoming_outputs
         .iter()
-        .filter(|(output_id, _, _)| output_id.txid() == transaction.txid())
-        .for_each(|(output_id, note, key_id)| {
+        .for_each(|(output_id, incoming_output)| {
             let position = Position::from(u64::from(
-                tx_initial_tree_size + u32::try_from(output_id.output_index()).unwrap(),
+                tree_size + u32::try_from(output_id.output_index()).unwrap(),
             ));
             let key = keys
-                .get(key_id)
+                .get(&incoming_output.ivk_tag)
                 .expect("key should be available as it was used to decrypt output");
             let nullifier = key
-                .nf(note, position)
+                .nf(&incoming_output.note, position)
                 .expect("only fvks currently supported");
             nullifiers_and_positions.insert(*output_id, (nullifier, position));
         });
+}
+
+// calculates note commitment tree leaves and shardtree retentions for a given compact transaction
+fn calculate_leaves_and_retentions<D: Domain>(
+    block_height: BlockHeight,
+    transaction: &CompactTx,
+    last_tx_in_block: bool,
+    incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+) -> Result<Vec<(Node, Retention<BlockHeight>)>, ()> {
+    let incoming_output_indices: Vec<usize> = incoming_outputs
+        .keys()
+        .copied()
+        .map(|output_id| output_id.output_index())
+        .collect();
+    let last_output_index = transaction.outputs.len() - 1;
+
+    Ok(transaction
+        .outputs
+        .iter()
+        .enumerate()
+        .map(|(output_index, output)| {
+            let note_commitment = CompactOutputDescription::try_from(output).unwrap().cmu;
+            let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
+
+            let last_output_in_block: bool = last_tx_in_block && output_index == last_output_index;
+            let decrypted: bool = incoming_output_indices.contains(&output_index);
+            let retention = match (decrypted, last_output_in_block) {
+                (is_marked, true) => Retention::Checkpoint {
+                    id: block_height,
+                    is_marked,
+                },
+                (true, false) => Retention::Marked,
+                (false, false) => Retention::Ephemeral,
+            };
+
+            (leaf, retention)
+        })
+        .collect())
 }
