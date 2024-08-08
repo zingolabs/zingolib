@@ -15,7 +15,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 pub mod fetch;
 
-/// Fetch requests are created and sent to the [`crate::client::fetcher::fetcher`] task when a connection to the server is required.
+/// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub enum FetchRequest {
 
 /// Gets the height of the blockchain from the server.
 ///
-/// Requires [`crate::client::fetcher::fetcher`] to be running concurrently, connected via the `fetch_request` channel.
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub async fn get_chain_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
 ) -> Result<BlockHeight, ()> {
@@ -44,7 +44,7 @@ pub async fn get_chain_height(
 }
 /// Gets the specified range of compact blocks from the server (end exclusive).
 ///
-/// Requires [`crate::client::fetcher::fetcher`] to be running concurrently, connected via the `fetch_request` channel.
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
@@ -59,7 +59,7 @@ pub async fn get_compact_block_range(
 }
 /// Gets the frontiers for a specified block height..
 ///
-/// Requires [`crate::client::fetcher::fetcher`] to be running concurrently, connected via the `fetch_request` channel.
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
