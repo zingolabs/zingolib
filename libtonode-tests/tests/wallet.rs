@@ -266,11 +266,11 @@ mod load_wallet {
         let zcd_datadir = &regtest_manager.zcashd_data_dir;
         let zingo_datadir = &regtest_manager.zingo_datadir;
         // This test is the unique consumer of:
-        // zingo-testutils/old_wallet_reorg_test_wallet
+        // zingolib/src/testvectors/old_wallet_reorg_test_wallet
         let cached_data_dir = get_cargo_manifest_dir()
             .parent()
             .unwrap()
-            .join("zingo-testvectors")
+            .join("zingolib/src/testvectors")
             .join("old_wallet_reorg_test_wallet");
         let zcd_source = cached_data_dir
             .join("zcashd")
