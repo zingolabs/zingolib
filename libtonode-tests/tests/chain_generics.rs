@@ -197,10 +197,10 @@ mod chain_generics {
 
         use zcash_client_backend::ShieldedProtocol::Sapling;
 
-        use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
-        use zingolib::testutils::scenarios::setup::ScenarioBuilder;
         use zingolib::config::RegtestNetwork;
         use zingolib::lightclient::LightClient;
+        use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+        use zingolib::testutils::scenarios::setup::ScenarioBuilder;
         use zingolib::wallet::WalletBase;
         pub(crate) struct LibtonodeEnvironment {
             regtest_network: RegtestNetwork,

@@ -37,8 +37,8 @@ pub(crate) mod impl_conduct_chain_for_darkside_environment {
     //!   - txids are regenerated randomly. zingo can optionally accept_server_txid
     //! these tests cannot portray the full range of network weather.
 
-    use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
     use zingolib::lightclient::LightClient;
+    use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
     use zingolib::wallet::WalletBase;
 
     use crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;

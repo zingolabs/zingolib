@@ -12,11 +12,11 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
+use zingolib::config::RegtestNetwork;
+use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::{
     lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
 };
-use zingolib::config::RegtestNetwork;
-use zingolib::lightclient::PoolBalances;
 use zingolib::wallet::data::summaries::ValueTransferKind;
 
 #[ignore]

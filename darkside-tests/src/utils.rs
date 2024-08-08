@@ -499,10 +499,10 @@ pub mod scenarios {
     };
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::{BlockHeight, BranchId};
-    use zingolib::testutils::scenarios::setup::ClientBuilder;
-    use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::config::RegtestNetwork;
     use zingolib::lightclient::LightClient;
+    use zingolib::testutils::scenarios::setup::ClientBuilder;
+    use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     use super::{
         init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
