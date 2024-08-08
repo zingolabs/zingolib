@@ -49,7 +49,7 @@ where
 
     let scan_range = prepare_next_scan_range(&sync_state);
     if let Some(range) = scan_range {
-        scan(
+        let scan_results = scan(
             fetch_request_sender,
             parameters,
             &scanning_keys,
@@ -57,8 +57,9 @@ where
         )
         .await
         .unwrap();
+
+        // TODO: set scanned range to `scanned`
     }
-    // TODO: set scanned range to `scanned`
 
     try_join_all(vec![fetcher_handle]).await.unwrap();
 

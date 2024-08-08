@@ -114,12 +114,35 @@ impl InitialScanData<'_> {
     }
 }
 
+pub(crate) struct ScanResults {
+    relevent_txids: HashSet<TxId>,
+    sapling_initial_position: Position,
+    sapling_leaves_and_retentions: Vec<(Node, Retention<BlockHeight>)>,
+    sapling_nullifiers_and_positions: HashMap<OutputId, (sapling_crypto::Nullifier, Position)>,
+    orchard_initial_position: Position,
+    orchard_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)>,
+    orchard_nullifiers_and_positions: HashMap<OutputId, (orchard::note::Nullifier, Position)>,
+}
+impl ScanResults {
+    fn new(sapling_initial_position: Position, orchard_initial_position: Position) -> Self {
+        ScanResults {
+            relevent_txids: HashSet::new(),
+            sapling_initial_position,
+            sapling_leaves_and_retentions: Vec::new(),
+            sapling_nullifiers_and_positions: HashMap::new(),
+            orchard_initial_position,
+            orchard_leaves_and_retentions: Vec::new(),
+            orchard_nullifiers_and_positions: HashMap::new(),
+        }
+    }
+}
+
 pub(crate) async fn scan<P>(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     parameters: &P,
     scanning_keys: &ScanningKeys<AccountId, KeyId>,
     scan_range: ScanRange,
-) -> Result<(), ()>
+) -> Result<ScanResults, ()>
 where
     P: Parameters + Send + 'static,
 {
@@ -144,18 +167,10 @@ where
 
     let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
-    let mut relevent_txids: HashSet<TxId> = HashSet::new();
-    let mut sapling_leaves_and_retentions: Vec<(Node, Retention<BlockHeight>)> = Vec::new();
-    let mut orchard_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)> =
-        Vec::new();
-    let mut sapling_nullifiers_and_positions: HashMap<
-        OutputId,
-        (sapling_crypto::Nullifier, Position),
-    > = HashMap::new();
-    let mut orchard_nullifiers_and_positions: HashMap<
-        OutputId,
-        (orchard::note::Nullifier, Position),
-    > = HashMap::new();
+    let mut scan_results = ScanResults::new(
+        Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
+        Position::from(u64::from(initial_scan_data.orchard_initial_tree_size)),
+    );
     let mut sapling_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_tree_size = initial_scan_data.orchard_initial_tree_size;
     for block in &compact_blocks {
@@ -173,14 +188,14 @@ where
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
-                relevent_txids.insert(output_id.txid());
+                scan_results.relevent_txids.insert(output_id.txid());
             });
             incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
-                relevent_txids.insert(output_id.txid());
+                scan_results.relevent_txids.insert(output_id.txid());
             });
             // TODO: add outgoing outputs to relevent txids
 
-            sapling_leaves_and_retentions.extend(
+            scan_results.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
                     &transaction.outputs,
                     block.height(),
@@ -189,7 +204,7 @@ where
                 )
                 .unwrap(),
             );
-            orchard_leaves_and_retentions.extend(
+            scan_results.orchard_leaves_and_retentions.extend(
                 calculate_orchard_leaves_and_retentions(
                     &transaction.actions,
                     block.height(),
@@ -203,13 +218,13 @@ where
                 sapling_tree_size,
                 scanning_keys.sapling(),
                 &incoming_sapling_outputs,
-                &mut sapling_nullifiers_and_positions,
+                &mut scan_results.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
                 orchard_tree_size,
                 scanning_keys.orchard(),
                 &incoming_orchard_outputs,
-                &mut orchard_nullifiers_and_positions,
+                &mut scan_results.orchard_nullifiers_and_positions,
             );
 
             sapling_tree_size += u32::try_from(transaction.outputs.len())
@@ -221,7 +236,7 @@ where
     }
     // TODO: map nullifiers and write compact blocks
 
-    Ok(())
+    Ok(scan_results)
 }
 
 fn trial_decrypt<P>(
