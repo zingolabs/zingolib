@@ -19,7 +19,6 @@ use tower::{util::BoxCloneService, ServiceExt};
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingolib::testutils::{
-    self,
     incrementalmerkletree::frontier::CommitmentTree,
     paths::{get_bin_dir, get_cargo_manifest_dir},
     regtest::launch_lightwalletd,

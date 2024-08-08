@@ -12,6 +12,7 @@ macro_rules! build_method {
         }
     };
 }
+#[cfg(test)] // temporary test gate as no production builders use this macros yet
 macro_rules! build_method_push {
     ($name:ident, $localtype:ty) => {
         #[doc = "Push a $ty to the builder."]
@@ -31,6 +32,7 @@ macro_rules! build_push_list {
 }
 
 pub(crate) use build_method;
+#[cfg(test)]
 pub(crate) use build_method_push;
 #[cfg(test)]
 pub(crate) use build_push_list;
