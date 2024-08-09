@@ -38,6 +38,9 @@ pub mod chain_generics;
 pub mod fee_tables;
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
+/// a mod containing shared utilities for loading 'wallets'
+/// from different versions of the software.
+pub mod legacy_loads;
 /// lightclient helpers
 pub mod lightclient;
 /// macros to help test
