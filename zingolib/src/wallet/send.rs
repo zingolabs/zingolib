@@ -185,12 +185,12 @@ pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest)
 mod tests {
     use std::str::FromStr;
 
+    use crate::config::ChainType;
     use zcash_client_backend::{address::Address, zip321::TransactionRequest};
     use zcash_primitives::{
         memo::{Memo, MemoBytes},
         transaction::components::amount::NonNegativeAmount,
     };
-    use zingoconfig::ChainType;
 
     use crate::data::receivers::{transaction_request_from_receivers, Receivers};
 

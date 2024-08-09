@@ -451,11 +451,11 @@ pub mod finsight {
 /// A "snapshot" of the state of the items in the wallet at the time the summary was constructed.
 /// Not to be used for internal logic in the system.
 pub mod summaries {
+    use crate::config::ChainType;
     use chrono::DateTime;
     use json::JsonValue;
     use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingoconfig::ChainType;
 
     use crate::{
         error::BuildError,

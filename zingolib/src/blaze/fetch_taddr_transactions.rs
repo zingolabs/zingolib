@@ -9,11 +9,11 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::oneshot;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
+use crate::config::ZingoConfig;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::Transaction;
-use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {
     wc: Arc<WalletCapability>,
@@ -285,7 +285,7 @@ mod tests {
                 1,
                 taddr_fetcher_transmitter,
                 full_transaction_scanner_transmitter,
-                zingoconfig::Network::FakeMainnet,
+                crate::config::Network::FakeMainnet,
             )
             .await;
         //Todo: Add regtest support

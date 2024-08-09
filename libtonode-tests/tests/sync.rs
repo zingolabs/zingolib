@@ -1,10 +1,13 @@
 use tempfile::TempDir;
 use zingo_netutils::GrpcConnector;
 use zingo_sync::sync::sync;
-use zingo_testutils::scenarios;
-use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingoconfig::{construct_lightwalletd_uri, load_clientconfig, DEFAULT_LIGHTWALLETD_SERVER};
-use zingolib::{lightclient::LightClient, wallet::WalletBase};
+use zingolib::{
+    config::{construct_lightwalletd_uri, load_clientconfig, DEFAULT_LIGHTWALLETD_SERVER},
+    lightclient::LightClient,
+    testutils::scenarios,
+    testvectors::seeds::HOSPITAL_MUSEUM_SEED,
+    wallet::WalletBase,
+};
 
 #[tokio::test]
 async fn sync_mainnet_test() {
@@ -16,7 +19,7 @@ async fn sync_mainnet_test() {
     let config = load_clientconfig(
         uri.clone(),
         Some(temp_path),
-        zingoconfig::ChainType::Mainnet,
+        zingolib::config::ChainType::Mainnet,
         true,
     )
     .unwrap();

@@ -2,6 +2,7 @@
 use crate::wallet::notes::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
+use crate::config::ChainType;
 use crate::data::witness_trees::WitnessTrees;
 use crate::wallet::notes::OutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
@@ -51,7 +52,6 @@ use zcash_primitives::{
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ChainType;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
 pub trait ToBytes<const N: usize> {

@@ -21,10 +21,10 @@ use zcash_client_backend::wallet::NoteId;
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 
-use zcash_primitives::transaction::TxId;
-use zingoconfig::{
+use crate::config::{
     ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
 };
+use zcash_primitives::transaction::TxId;
 
 pub mod trait_inputsource;
 
@@ -354,7 +354,7 @@ impl TransactionRecordsById {
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32(
-            (latest_height.saturating_sub(zingoconfig::MAX_REORG as u64)) as u32,
+            (latest_height.saturating_sub(crate::config::MAX_REORG as u64)) as u32,
         );
 
         let txids_to_remove = self

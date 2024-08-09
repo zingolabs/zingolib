@@ -1,6 +1,6 @@
 //! TODO: Add Mod Description Here!
 
-use zingolib::lightclient::LightClient;
+use crate::lightclient::LightClient;
 
 /// TODO: Add Doc Comment Here!
 pub async fn sync_with_timeout_millis(lightclient: &LightClient, timeout: u64) -> Result<(), ()> {

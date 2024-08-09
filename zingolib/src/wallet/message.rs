@@ -1,4 +1,5 @@
 //! TODO: Add Crate Discription Here!
+use crate::config::ChainType;
 use byteorder::ReadBytesExt;
 use bytes::{Buf, Bytes, IntoBuf};
 use group::GroupEncoding;
@@ -18,7 +19,6 @@ use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
 };
-use zingoconfig::ChainType;
 
 pub struct Message {
     pub to: PaymentAddress,

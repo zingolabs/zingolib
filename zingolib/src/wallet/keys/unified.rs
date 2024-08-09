@@ -14,6 +14,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
+use crate::config::ZingoConfig;
 use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
@@ -21,7 +22,6 @@ use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
-use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
