@@ -2,6 +2,7 @@
 
 //! Tools to facilitate mocks for structs of external crates and general mocking utilities for testing
 
+pub use proposal::ProposalBuilder;
 pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
 fn zaddr_from_seed(
