@@ -7,6 +7,7 @@ use crate::client::{fetch::fetch, get_chain_height};
 use crate::interface::SyncWallet;
 use crate::primitives::SyncState;
 use crate::scan::scan;
+use crate::witness::ShardTrees;
 
 use zcash_client_backend::scanning::ScanningKeys;
 use zcash_client_backend::{
@@ -33,8 +34,9 @@ where
     tracing::info!("Syncing wallet...");
 
     // TODO: add trait methods to read/write wallet data to/from sync engine
-    // this is where sync state would be read from wallet data
-    let sync_state = SyncState::new(); // placeholder
+    // this is where data would be read from wallet
+    let sync_state = SyncState::new(); // placeholderi
+    let shardtrees = ShardTrees::default();
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = unbounded_channel();
@@ -49,11 +51,12 @@ where
 
     let scan_range = prepare_next_scan_range(&sync_state);
     if let Some(range) = scan_range {
-        let scan_results = scan(
+        scan(
             fetch_request_sender,
             parameters,
             &scanning_keys,
             range.clone(),
+            &shardtrees,
         )
         .await
         .unwrap();

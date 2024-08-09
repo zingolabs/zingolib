@@ -13,9 +13,8 @@ zcash_primitives.workspace = true
 zcash_note_encryption.workspace = true
 sapling-crypto.workspace = true
 orchard.workspace = true
-
-# Commitment tree
 incrementalmerkletree.workspace = true
+shardtree.workspace = true
 
 # Async
 futures.workspace = true

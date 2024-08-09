@@ -4227,6 +4227,7 @@ dependencies = [
  "orchard",
  "rayon",
  "sapling-crypto",
+ "shardtree",
  "tokio",
  "tonic",
  "tracing",

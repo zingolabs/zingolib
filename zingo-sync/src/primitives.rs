@@ -48,7 +48,7 @@ impl OutputId {
 
 /// Wallet compact block data
 #[allow(dead_code)]
-#[derive(CopyGetters)]
+#[derive(Clone, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct WalletCompactBlock {
     block_height: BlockHeight,
