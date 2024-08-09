@@ -52,6 +52,9 @@ pub mod disk;
 pub mod send;
 pub mod witnesses;
 
+#[cfg(feature = "sync")]
+pub mod sync;
+
 pub(crate) use send::SendProgress;
 
 /// TODO: Add Doc Comment Here!
@@ -201,6 +204,10 @@ pub struct LightWallet {
     /// Local state needed to submit (compact)block-requests to the proxy
     /// and interpret responses
     pub transaction_context: TransactionContext,
+
+    #[cfg(feature = "sync")]
+    #[allow(dead_code)]
+    sync_state: zingo_sync::primitives::SyncState,
 }
 
 impl LightWallet {
@@ -357,6 +364,8 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
+            #[cfg(feature = "sync")]
+            sync_state: zingo_sync::primitives::SyncState::new(),
         })
     }
 

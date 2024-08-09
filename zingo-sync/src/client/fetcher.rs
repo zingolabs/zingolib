@@ -8,6 +8,7 @@ use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
         compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
+        TreeState,
     },
 };
 use zcash_primitives::consensus::BlockHeight;
@@ -16,7 +17,7 @@ use crate::client::FetchRequest;
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
 /// prioritisation and fetching from the server.
-/// Returns the data specified in the [`self::FetchRequest`] variant via the provided [`tokio::sync::mpsc::oneshot::Sender`].
+/// Returns the data specified in the [`self::FetchRequest`] variant via the provided [`tokio::sync::oneshot::Sender`].
 ///
 /// Allows all requests to the server to be handled from a single task for efficiency and also enables
 /// request prioritisation for further performance enhancement
@@ -52,7 +53,7 @@ async fn receive_fetch_requests(
     // if there are no fetch requests to process, sleep until the next fetch request is received
     // or channel is closed
     if fetch_request_queue.is_empty() {
-        while let Some(fetch_request) = receiver.recv().await {
+        if let Some(fetch_request) = receiver.recv().await {
             fetch_request_queue.push(fetch_request);
         }
     }
@@ -79,14 +80,12 @@ async fn receive_fetch_requests(
 // TODO: placeholder for algorythm that selects the next fetch request to be processed
 // return `None` if a fetch request could not be selected
 fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<FetchRequest> {
-    // TODO: add other fetch requests with priorities
-    let fetch_request_index = fetch_request_queue
-        .iter()
-        .enumerate()
-        .find(|(_, request)| matches!(request, FetchRequest::ChainTip(_)))
-        .map(|(index, _)| index);
-
-    fetch_request_index.map(|index| fetch_request_queue.remove(index))
+    // TODO: improve priority logic
+    if fetch_request_queue.first().is_some() {
+        Some(fetch_request_queue.remove(0))
+    } else {
+        None
+    }
 }
 
 //
@@ -96,12 +95,19 @@ async fn fetch_from_server(
 ) -> Result<(), ()> {
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
+            tracing::info!("Fetching chain tip.");
             let block_id = get_latest_block(client).await;
             sender.send(block_id).unwrap();
         }
         FetchRequest::CompactBlockRange(sender, block_range) => {
+            tracing::info!("Fetching compact blocks. {:?}", &block_range);
             let compact_blocks = get_block_range(client, block_range).await;
             sender.send(compact_blocks).unwrap();
+        }
+        FetchRequest::TreeState(sender, block_height) => {
+            tracing::info!("Fetching tree state. {:?}", &block_height);
+            let tree_state = get_tree_state(client, block_height).await;
+            sender.send(tree_state).unwrap();
         }
     }
 
@@ -115,7 +121,6 @@ async fn get_latest_block(
 
     client.get_latest_block(request).await.unwrap().into_inner()
 }
-
 async fn get_block_range(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_range: Range<BlockHeight>,
@@ -126,11 +131,11 @@ async fn get_block_range(
     let request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
             height: u64::from(block_range.start),
-            hash: Vec::new(),
+            hash: vec![],
         }),
         end: Some(BlockId {
             height: u64::from(block_range.end) - 1,
-            hash: Vec::new(),
+            hash: vec![],
         }),
     });
     let mut block_stream = client.get_block_range(request).await.unwrap().into_inner();
@@ -140,4 +145,15 @@ async fn get_block_range(
     }
 
     compact_blocks
+}
+async fn get_tree_state(
+    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    block_height: BlockHeight,
+) -> TreeState {
+    let request = tonic::Request::new(BlockId {
+        height: block_height.into(),
+        hash: vec![],
+    });
+
+    client.get_tree_state(request).await.unwrap().into_inner()
 }
