@@ -2,6 +2,7 @@ use super::super::LightWallet;
 
 /// i do not know the difference between these wallets but i will find out soon
 /// what can these files do?
+#[non_exhaustive]
 pub enum LegacyWalletCaseZingoV26 {
     /// /
     One,
@@ -9,6 +10,7 @@ pub enum LegacyWalletCaseZingoV26 {
     Two,
 }
 /// an enumeration of cases to test
+#[non_exhaustive]
 pub enum LegacyWalletCase {
     /// at this version, legacy testing began
     ZingoV26(LegacyWalletCaseZingoV26),
