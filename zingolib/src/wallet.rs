@@ -206,7 +206,8 @@ pub struct LightWallet {
     pub transaction_context: TransactionContext,
 
     #[cfg(feature = "sync")]
-    sync_state: zingo_sync::SyncState,
+    #[allow(dead_code)]
+    sync_state: zingo_sync::primitives::SyncState,
 }
 
 impl LightWallet {
@@ -364,7 +365,7 @@ impl LightWallet {
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
             #[cfg(feature = "sync")]
-            sync_state: zingo_sync::SyncState::new(),
+            sync_state: zingo_sync::primitives::SyncState::new(),
         })
     }
 
