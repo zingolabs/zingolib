@@ -17,6 +17,7 @@ mod load_wallet {
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::lightclient::LightClient;
     use zingolib::lightclient::PoolBalances;
+    use zingolib::testutils::legacy_loads::load_legacy_wallet;
     use zingolib::testutils::lightclient::from_inputs;
     use zingolib::testutils::paths::get_cargo_manifest_dir;
     use zingolib::testutils::scenarios;
@@ -130,8 +131,10 @@ mod load_wallet {
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
         // with 3 addresses containing all receivers.
         // including orchard and sapling transactions
-        let wallet = zingolib::testutils::legacy_loads::load_legacy_wallet(
-            zingolib::testutils::legacy_loads::LegacyWalletCase::ZingoV26,
+        let wallet = load_legacy_wallet(
+            zingolib::testutils::legacy_loads::LegacyWalletCase::ZingoV26(
+                zingolib::testutils::legacy_loads::LegacyWalletCaseZingoV26::One,
+            ),
         )
         .await;
 
@@ -154,8 +157,12 @@ mod load_wallet {
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
         // with 3 addresses containing all receivers.
         // including orchard and sapling transactions
-        let data = include_bytes!("zingo-wallet-v26-2.dat");
-        let wallet = LightWallet::unsafe_from_buffer_testnet(data).await;
+        let wallet = load_legacy_wallet(
+            zingolib::testutils::legacy_loads::LegacyWalletCase::ZingoV26(
+                zingolib::testutils::legacy_loads::LegacyWalletCaseZingoV26::Two,
+            ),
+        )
+        .await;
 
         loaded_wallet_assert(wallet, 10177826, 1).await;
     }
@@ -166,8 +173,8 @@ mod load_wallet {
         // We test that the LightWallet can be read from v28 .dat file
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
         // with 3 addresses containing all receivers.
-        let data = include_bytes!("zingo-wallet-v28.dat");
-        let wallet = LightWallet::unsafe_from_buffer_testnet(data).await;
+        let wallet =
+            load_legacy_wallet(zingolib::testutils::legacy_loads::LegacyWalletCase::ZingoV28).await;
 
         loaded_wallet_assert(wallet, 10342837, 3).await;
     }
@@ -180,31 +187,32 @@ mod load_wallet {
         // --birthday 0
         // --nosync
         // with 3 addresses containing all receivers.
-        let data = include_bytes!("zingo-wallet-v28.dat");
-
-        let config = zingolib::config::ZingoConfig::build(ChainType::Testnet).create();
-        let mid_wallet = LightWallet::read_internal(&data[..], &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
-            .unwrap();
+        let mid_wallet =
+            load_legacy_wallet(zingolib::testutils::legacy_loads::LegacyWalletCase::ZingoV28).await;
 
         let mid_client = LightClient::create_from_wallet_async(mid_wallet)
             .await
             .unwrap();
         let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
-        let wallet = LightWallet::read_internal(&mid_buffer[..], &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
-            .unwrap();
+        let wallet = LightWallet::read_internal(
+            &mid_buffer[..],
+            &mid_client.wallet.transaction_context.config,
+        )
+        .await
+        .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
+        .unwrap();
         let expected_mnemonic = (
             Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
             0,
         );
         assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
-        let expected_wc =
-            WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
-                .unwrap();
+        let expected_wc = WalletCapability::new_from_phrase(
+            &mid_client.wallet.transaction_context.config,
+            &expected_mnemonic.0,
+            expected_mnemonic.1,
+        )
+        .unwrap();
         let wc = wallet.wallet_capability();
 
         let Capability::Spend(orchard_sk) = &wc.orchard else {
@@ -242,13 +250,17 @@ mod load_wallet {
         }
 
         let ufvk = wc.ufvk().unwrap();
-        let ufvk_string = ufvk.encode(&config.chain.network_type());
+        let ufvk_string = ufvk.encode(&wallet.transaction_context.config.chain.network_type());
         let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
-        let view_wallet =
-            LightWallet::new(config.clone(), ufvk_base, wallet.get_birthday().await).unwrap();
+        let view_wallet = LightWallet::new(
+            wallet.transaction_context.config.clone(),
+            ufvk_base,
+            wallet.get_birthday().await,
+        )
+        .unwrap();
         let v_wc = view_wallet.wallet_capability();
         let vv = v_wc.ufvk().unwrap();
-        let vv_string = vv.encode(&config.chain.network_type());
+        let vv_string = vv.encode(&wallet.transaction_context.config.chain.network_type());
         assert_eq!(ufvk_string, vv_string);
 
         let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
