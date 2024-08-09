@@ -20,6 +20,7 @@ impl LightWallet {
 /// including from different versions of the software.
 pub mod examples;
 
+/// tests
 pub mod tests;
 
 async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_addresses: usize) {
