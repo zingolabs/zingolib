@@ -1,4 +1,4 @@
-use crate::wallet::LightWallet;
+use super::super::LightWallet;
 
 /// i do not know the difference between these wallets but i will find out soon
 /// what can these files do?
@@ -16,24 +16,18 @@ pub enum LegacyWalletCase {
     ZingoV28,
 }
 
-const wallet_examples_dir: &str = "../../test-data/examples/wallets";
-
 /// loads test wallets
 pub async fn load_legacy_wallet(case: LegacyWalletCase) -> LightWallet {
     match case {
         LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => {
-            LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                wallet_examples_dir.concat("zingo-wallet-v26.dat")
-            ))
+            LightWallet::unsafe_from_buffer_testnet(include_bytes!("examples/zingo-wallet-v26.dat"))
         }
         LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => {
-            LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                "../../test-data/zingo-wallet-v26-2.dat"
-            ))
+            LightWallet::unsafe_from_buffer_testnet(include_bytes!("examples/zingo-wallet-v26.dat"))
         }
-        LegacyWalletCase::ZingoV28 => LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-            "../../test-data/zingo-wallet-v28.dat"
-        )),
+        LegacyWalletCase::ZingoV28 => {
+            LightWallet::unsafe_from_buffer_testnet(include_bytes!("examples/zingo-wallet-v28.dat"))
+        }
     }
     .await
 }

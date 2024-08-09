@@ -38,9 +38,6 @@ pub mod chain_generics;
 pub mod fee_tables;
 /// TODO: Add Doc Comment Here!
 pub mod grpc_proxy;
-/// a mod containing shared utilities for loading 'wallets'
-/// from different versions of the software.
-pub mod legacy_loads;
 /// lightclient helpers
 pub mod lightclient;
 /// macros to help test
@@ -919,11 +916,8 @@ pub mod scenarios {
                     TestEnvironmentGenerator::pick_unused_port_to_string(None);
                 let lightwalletd_rpcservice_port =
                     TestEnvironmentGenerator::pick_unused_port_to_string(set_lightwalletd_port);
-                let regtest_manager = RegtestManager::new(
-                    tempdir::TempDir::new("zingo_libtonode_test")
-                        .unwrap()
-                        .into_path(),
-                );
+                let regtest_manager =
+                    RegtestManager::new(tempfile::TempDir::new().unwrap().into_path());
                 let server_uri = crate::config::construct_lightwalletd_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_rpcservice_port}"
                 )));

@@ -241,7 +241,7 @@ impl ZingoConfig {
         }
     }
 
-    #[cfg(feature = "test-elevation")]
+    #[cfg(any(test, feature = "test-elevation"))]
     /// create a ZingoConfig that helps a LightClient connect to a server.
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
