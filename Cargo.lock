@@ -4214,6 +4214,7 @@ dependencies = [
  "crossbeam-channel",
  "futures",
  "getset",
+ "incrementalmerkletree",
  "memuse",
  "orchard",
  "rayon",
