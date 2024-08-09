@@ -14,6 +14,9 @@ zcash_note_encryption.workspace = true
 sapling-crypto.workspace = true
 orchard.workspace = true
 
+# Commitment tree
+incrementalmerkletree.workspace = true
+
 # Async
 futures.workspace = true
 tokio.workspace = true
