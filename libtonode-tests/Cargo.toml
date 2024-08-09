@@ -8,11 +8,13 @@ chain_generic_tests = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { path = "../zingolib", features = ["deprecations", "test-elevation"] }
+zingolib = { path = "../zingolib", features = ["deprecations", "test-elevation", "sync"] }
 zingo-status = { path = "../zingo-status" }
 zingo-testutils = { path = "../zingo-testutils" }
 zingo-testvectors = { path = "../zingo-testvectors" }
 zingoconfig = { path = "../zingoconfig" }
+zingo-netutils = { path = "../zingo-netutils" }
+zingo-sync = { path = "../zingo-sync" }
 
 zcash_primitives = { workspace = true }
 orchard = { workspace = true }
@@ -29,3 +31,4 @@ itertools = { workspace = true }
 serde_json = { workspace = true }
 http.workspace = true
 tempfile.workspace = true
+tracing-subscriber.workspace = true
