@@ -13,11 +13,13 @@ darkside_tests = []
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 testvectors = []
 tempfile = ["dep:tempfile"]
+sync = [ "dep:zingo-sync" ]
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
+zingo-sync = { path = "../zingo-sync", optional = true }
 
 prost = { workspace = true }
 tonic = { workspace = true }

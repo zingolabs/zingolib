@@ -1611,6 +1611,7 @@ dependencies = [
  "sapling-crypto",
  "serde_json",
  "shardtree",
+ "tempfile",
  "tokio",
  "zcash_address",
  "zcash_client_backend",
@@ -4280,6 +4281,7 @@ dependencies = [
  "zingo-memo",
  "zingo-netutils",
  "zingo-status",
+ "zingo-sync",
  "zip32",
 ]
 

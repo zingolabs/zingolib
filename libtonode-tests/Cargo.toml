@@ -25,3 +25,4 @@ hex = { workspace = true }
 itertools = { workspace = true }
 serde_json = { workspace = true }
 http.workspace = true
+tempfile.workspace = true

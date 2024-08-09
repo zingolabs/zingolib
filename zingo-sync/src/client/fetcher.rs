@@ -16,7 +16,7 @@ use crate::client::FetchRequest;
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
 /// prioritisation and fetching from the server.
-/// Returns the data specified in the [`self::FetchRequest`] variant via the provided [`tokio::sync::mpsc::oneshot::Sender`].
+/// Returns the data specified in the [`self::FetchRequest`] variant via the provided [`tokio::sync::oneshot::Sender`].
 ///
 /// Allows all requests to the server to be handled from a single task for efficiency and also enables
 /// request prioritisation for further performance enhancement
