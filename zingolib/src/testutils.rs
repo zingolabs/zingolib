@@ -360,10 +360,7 @@ where
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn load_wallet(
-    dir: PathBuf,
-    chaintype: ChainType,
-) -> (crate::wallet::LightWallet, ZingoConfig) {
+pub async fn load_wallet(dir: PathBuf, chaintype: ChainType) -> crate::wallet::LightWallet {
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
@@ -373,12 +370,9 @@ pub async fn load_wallet(
     let read_lengths = vec![];
     let mut recording_reader = RecordingReader { from, read_lengths };
 
-    (
-        crate::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
-            .await
-            .unwrap(),
-        zingo_config,
-    )
+    crate::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
+        .await
+        .unwrap()
 }
 
 /// Number of notes created and consumed in a transaction.

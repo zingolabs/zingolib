@@ -113,7 +113,7 @@ mod load_wallet {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (_sap_wallet, _sap_path, sap_dir) =
             zingolib::testutils::get_wallet_nym("sap_only").unwrap();
-        let (_loaded_wallet, _) =
+        let _loaded_wallet =
             zingolib::testutils::load_wallet(sap_dir, ChainType::Regtest(regtest_network)).await;
     }
     #[tokio::test]
@@ -305,13 +305,18 @@ mod load_wallet {
             .expect("wallet copy failed");
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
-        let (wallet, conf) = zingolib::testutils::load_wallet(
+        let wallet = zingolib::testutils::load_wallet(
             zingo_dest.into(),
             ChainType::Regtest(regtest_network),
         )
         .await;
         println!("setting uri");
-        *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
+        *wallet
+            .transaction_context
+            .config
+            .lightwalletd_uri
+            .write()
+            .unwrap() = faucet.get_server_uri();
         println!("creating lightclient");
         let recipient = LightClient::create_from_wallet_async(wallet).await.unwrap();
         println!(
