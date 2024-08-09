@@ -28,12 +28,11 @@ mod load_wallet {
     use zingolib::wallet::LightWallet;
     use zingolib::wallet::WalletBase;
 
-    async fn load_wallet_from_data_and_assert(
-        data: &[u8],
+    async fn loaded_wallet_assert(
+        wallet: LightWallet,
         expected_balance: u64,
         num_addresses: usize,
     ) {
-        let wallet = LightWallet::unsafe_from_buffer_testnet(data).await;
         let expected_mnemonic = (
             Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
             0,
@@ -131,9 +130,12 @@ mod load_wallet {
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
         // with 3 addresses containing all receivers.
         // including orchard and sapling transactions
-        let data = include_bytes!("zingo-wallet-v26.dat");
+        let wallet = zingolib::testutils::legacy_loads::load_legacy_wallet(
+            zingolib::testutils::legacy_loads::LegacyWalletCase::ZingoV26,
+        )
+        .await;
 
-        load_wallet_from_data_and_assert(data, 0, 3).await;
+        loaded_wallet_assert(wallet, 0, 3).await;
     }
 
     #[ignore = "flakey test"]
@@ -153,8 +155,9 @@ mod load_wallet {
         // with 3 addresses containing all receivers.
         // including orchard and sapling transactions
         let data = include_bytes!("zingo-wallet-v26-2.dat");
+        let wallet = LightWallet::unsafe_from_buffer_testnet(data).await;
 
-        load_wallet_from_data_and_assert(data, 10177826, 1).await;
+        loaded_wallet_assert(wallet, 10177826, 1).await;
     }
 
     #[ignore = "flakey test"]
@@ -164,8 +167,9 @@ mod load_wallet {
         // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
         // with 3 addresses containing all receivers.
         let data = include_bytes!("zingo-wallet-v28.dat");
+        let wallet = LightWallet::unsafe_from_buffer_testnet(data).await;
 
-        load_wallet_from_data_and_assert(data, 10342837, 3).await;
+        loaded_wallet_assert(wallet, 10342837, 3).await;
     }
 
     #[tokio::test]
