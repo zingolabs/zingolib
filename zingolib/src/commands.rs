@@ -198,19 +198,19 @@ impl Command for ParseAddressCommand {
         match args.len() {
             1 => json::stringify_pretty(
                 [
-                    zingoconfig::ChainType::Mainnet,
-                    zingoconfig::ChainType::Testnet,
-                    zingoconfig::ChainType::Regtest(
-                        zingoconfig::RegtestNetwork::all_upgrades_active(),
+                    crate::config::ChainType::Mainnet,
+                    crate::config::ChainType::Testnet,
+                    crate::config::ChainType::Regtest(
+                        crate::config::RegtestNetwork::all_upgrades_active(),
                     ),
                 ]
                 .iter()
                 .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
                 .map(|(recipient_address, chain_name)| {
                     let chain_name_string = match chain_name {
-                        zingoconfig::ChainType::Mainnet => "main",
-                        zingoconfig::ChainType::Testnet => "test",
-                        zingoconfig::ChainType::Regtest(_) => "regtest",
+                        crate::config::ChainType::Mainnet => "main",
+                        crate::config::ChainType::Testnet => "test",
+                        crate::config::ChainType::Regtest(_) => "regtest",
                     };
 
                     match recipient_address {

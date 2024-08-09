@@ -9,6 +9,7 @@ extern crate rust_embed;
 
 pub mod blaze;
 pub mod commands;
+pub mod config;
 pub mod data;
 pub mod error;
 pub mod grpc_connector;
@@ -17,7 +18,11 @@ pub mod utils;
 pub mod wallet;
 
 #[cfg(test)]
-pub mod mocks;
+pub(crate) mod mocks;
+#[cfg(feature = "test-elevation")]
+pub mod testutils;
+#[cfg(any(test, feature = "testvectors"))]
+pub mod testvectors;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

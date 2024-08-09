@@ -26,7 +26,7 @@ use zcash_primitives::{
     transaction::Transaction,
 };
 
-use zingoconfig::MAX_REORG;
+use crate::config::MAX_REORG;
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
@@ -314,7 +314,7 @@ impl LightClient {
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let batch = cmp::min(latest_blockid.height, prev + zingoconfig::BATCH_SIZE);
+            let batch = cmp::min(latest_blockid.height, prev + crate::config::BATCH_SIZE);
             prev = batch;
             latest_block_batches.push(batch);
         }

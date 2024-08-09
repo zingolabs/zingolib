@@ -15,7 +15,7 @@ use zcash_client_backend::proto::{
     },
 };
 
-use crate::port_to_localhost_uri;
+use super::port_to_localhost_uri;
 
 macro_rules! define_grpc_passthrough {
     (fn

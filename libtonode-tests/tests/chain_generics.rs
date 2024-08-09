@@ -4,7 +4,7 @@ mod chain_generics {
     use zcash_client_backend::ShieldedProtocol::Orchard;
     use zcash_client_backend::ShieldedProtocol::Sapling;
 
-    use zingo_testutils::chain_generics::fixtures;
+    use zingolib::testutils::chain_generics::fixtures;
 
     use conduct_chain::LibtonodeEnvironment;
     #[tokio::test]
@@ -197,10 +197,11 @@ mod chain_generics {
 
         use zcash_client_backend::ShieldedProtocol::Sapling;
 
-        use zingo_testutils::chain_generics::conduct_chain::ConductChain;
-        use zingo_testutils::scenarios::setup::ScenarioBuilder;
-        use zingoconfig::RegtestNetwork;
+        use zingolib::config::RegtestNetwork;
         use zingolib::lightclient::LightClient;
+        use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+        use zingolib::testutils::scenarios::setup::ScenarioBuilder;
+
         pub(crate) struct LibtonodeEnvironment {
             regtest_network: RegtestNetwork,
             scenario_builder: ScenarioBuilder,
@@ -231,7 +232,7 @@ mod chain_generics {
                     .await
             }
 
-            fn zingo_config(&mut self) -> zingoconfig::ZingoConfig {
+            fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
                 self.scenario_builder
                     .client_builder
                     .make_unique_data_dir_and_load_config(self.regtest_network)

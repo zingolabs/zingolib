@@ -678,9 +678,6 @@ dependencies = [
  "tower",
  "zcash_client_backend",
  "zcash_primitives",
- "zingo-testutils",
- "zingo-testvectors",
- "zingoconfig",
  "zingolib",
 ]
 
@@ -1623,9 +1620,6 @@ dependencies = [
  "zingo-netutils",
  "zingo-status",
  "zingo-sync",
- "zingo-testutils",
- "zingo-testvectors",
- "zingoconfig",
  "zingolib",
 ]
 
@@ -3175,9 +3169,9 @@ dependencies = [
 
 [[package]]
 name = "thread-id"
-version = "4.2.1"
+version = "4.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0ec81c46e9eb50deaa257be2f148adf052d1fb7701cfd55ccfab2525280b70b"
+checksum = "cfe8f25bbdd100db7e1d34acf7fd2dc59c4bf8f7483f505eaa7d4f12f76cc0ea"
 dependencies = [
  "libc",
  "winapi",
@@ -4174,8 +4168,6 @@ dependencies = [
  "log",
  "rustyline",
  "shellwords",
- "zingo-testutils",
- "zingoconfig",
  "zingolib",
 ]
 
@@ -4236,50 +4228,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-testutils"
-version = "0.1.0"
-dependencies = [
- "http 0.2.12",
- "incrementalmerkletree",
- "json",
- "log",
- "nonempty",
- "orchard",
- "portpicker",
- "tempdir",
- "tokio",
- "tonic",
- "zcash_address",
- "zcash_client_backend",
- "zcash_primitives",
- "zingo-netutils",
- "zingo-status",
- "zingo-testvectors",
- "zingoconfig",
- "zingolib",
-]
-
-[[package]]
-name = "zingo-testvectors"
-version = "0.1.0"
-dependencies = [
- "zcash_primitives",
- "zingoconfig",
-]
-
-[[package]]
-name = "zingoconfig"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "http 0.2.12",
- "log",
- "log4rs",
- "tempdir",
- "zcash_primitives",
-]
-
-[[package]]
 name = "zingolib"
 version = "0.2.0"
 dependencies = [
@@ -4292,6 +4240,7 @@ dependencies = [
  "bytes 0.4.12",
  "chrono",
  "concat-idents",
+ "dirs",
  "enum_dispatch",
  "ff",
  "futures",
@@ -4306,6 +4255,7 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "log",
+ "log4rs",
  "nonempty",
  "orchard",
  "portpicker",
@@ -4324,6 +4274,7 @@ dependencies = [
  "sha2 0.9.9",
  "shardtree",
  "subtle",
+ "tempdir",
  "tempfile",
  "test-case",
  "thiserror",
@@ -4341,8 +4292,6 @@ dependencies = [
  "zingo-netutils",
  "zingo-status",
  "zingo-sync",
- "zingo-testvectors",
- "zingoconfig",
  "zip32",
 ]
 
