@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use crate::client::FetchRequest;
 use crate::client::{fetch::fetch, get_chain_height};
-use crate::interface::SyncWallet;
+use crate::interface::{SyncCompactBlocks, SyncWallet};
 use crate::primitives::SyncState;
 use crate::scan::scan;
 use crate::witness::ShardTrees;
@@ -25,18 +25,18 @@ const BATCH_SIZE: u32 = 1_000;
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     parameters: &P,
-    wallet: &mut W,
+    wallet: &W,
 ) -> Result<(), ()>
 where
     P: Parameters + Send + 'static,
-    W: SyncWallet,
+    W: SyncWallet + SyncCompactBlocks,
 {
     tracing::info!("Syncing wallet...");
 
     // TODO: add trait methods to read/write wallet data to/from sync engine
     // this is where data would be read from wallet
-    let sync_state = SyncState::new(); // placeholderi
-    let shardtrees = ShardTrees::default();
+    let sync_state = SyncState::new(); // placeholders
+    let shardtrees = ShardTrees::new();
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = unbounded_channel();
@@ -49,7 +49,7 @@ where
     let account_ufvks = wallet.get_unified_full_viewing_keys().unwrap();
     let scanning_keys = ScanningKeys::from_account_ufvks(account_ufvks);
 
-    let scan_range = prepare_next_scan_range(&sync_state);
+    let scan_range = prepare_next_scan_range(&sync_state).await;
     if let Some(range) = scan_range {
         scan(
             fetch_request_sender,
@@ -57,12 +57,16 @@ where
             &scanning_keys,
             range.clone(),
             &shardtrees,
+            wallet,
         )
         .await
         .unwrap();
 
         // TODO: set scanned range to `scanned`
     }
+
+    // TODO: add trait to store shardtree
+    // TODO: add trait to save wallet data to persistance for in-memory wallets
 
     try_join_all(vec![fetcher_handle]).await.unwrap();
 
@@ -80,7 +84,7 @@ where
 {
     let chain_height = get_chain_height(fetch_request_sender).await.unwrap();
 
-    let mut scan_ranges = sync_state.scan_ranges().write().unwrap();
+    let mut scan_ranges = sync_state.scan_ranges().write().await;
 
     let wallet_height = if scan_ranges.is_empty() {
         // TODO: add birthday
@@ -119,8 +123,8 @@ where
 }
 
 // returns `None` if there are no more ranges to scan
-fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
-    let mut scan_ranges = sync_state.scan_ranges().write().unwrap();
+async fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
+    let mut scan_ranges = sync_state.scan_ranges().write().await;
 
     // placeholder for algorythm that determines highest priority range to scan
     let (index, selected_scan_range) = scan_ranges.iter_mut().enumerate().find(|(_, range)| {

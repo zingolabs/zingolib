@@ -22,6 +22,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, get_compact_block_range, FetchRequest},
+    interface::SyncCompactBlocks,
     primitives::{OutputId, WalletCompactBlock},
     witness::{update_shardtrees, ShardTreeData, ShardTrees},
 };
@@ -135,15 +136,17 @@ impl Default for NoteData {
     }
 }
 
-pub(crate) async fn scan<P>(
+pub(crate) async fn scan<P, B>(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     parameters: &P,
     scanning_keys: &ScanningKeys<AccountId, KeyId>,
     scan_range: ScanRange,
     shardtrees: &ShardTrees,
+    wallet: &B,
 ) -> Result<(), ()>
 where
     P: Parameters + Send + 'static,
+    B: SyncCompactBlocks,
 {
     let compact_blocks = get_compact_block_range(
         fetch_request_sender.clone(),
@@ -162,13 +165,15 @@ where
     .await
     .unwrap();
 
-    let (_relevent_txids, _note_data, shardtree_data) =
+    let (blocks, _relevent_txids, _note_data, shardtree_data) =
         scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data)
             .await
             .unwrap();
 
     // TODO: scan transactions
 
+    // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
+    wallet.store_wallet_compact_blocks(blocks).await.unwrap();
     update_shardtrees(shardtrees, shardtree_data).await.unwrap();
 
     Ok(())
@@ -179,7 +184,15 @@ async fn scan_compact_blocks<P>(
     parameters: &P,
     scanning_keys: &ScanningKeys<AccountId, KeyId>,
     initial_scan_data: InitialScanData,
-) -> Result<(HashSet<TxId>, NoteData, ShardTreeData), ()>
+) -> Result<
+    (
+        HashMap<BlockHeight, WalletCompactBlock>,
+        HashSet<TxId>,
+        NoteData,
+        ShardTreeData,
+    ),
+    (),
+>
 where
     P: Parameters + Send + 'static,
 {
@@ -187,6 +200,7 @@ where
 
     let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
+    let mut wallet_blocks: HashMap<BlockHeight, WalletCompactBlock> = HashMap::new();
     let mut relevent_txids: HashSet<TxId> = HashSet::new();
     let mut note_data = NoteData::new();
     let mut shardtree_data = ShardTreeData::new(
@@ -254,11 +268,24 @@ where
             orchard_tree_size += u32::try_from(transaction.actions.len())
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
-        // TODO: check tree size matches chain_metadata if available
-    }
-    // TODO: map nullifiers and write compact blocks
 
-    Ok((relevent_txids, note_data, shardtree_data))
+        let wallet_block = WalletCompactBlock::from_parts(
+            block.height(),
+            block.hash(),
+            block.prev_hash(),
+            block.time,
+            block.vtx.iter().map(|tx| tx.txid()).collect(),
+            sapling_tree_size,
+            orchard_tree_size,
+        );
+
+        check_tree_size(block, &wallet_block).unwrap();
+
+        wallet_blocks.insert(wallet_block.block_height(), wallet_block);
+    }
+    // TODO: map nullifiers
+
+    Ok((wallet_blocks, relevent_txids, note_data, shardtree_data))
 }
 
 fn trial_decrypt<P>(
@@ -309,6 +336,26 @@ fn check_continuity(
 
         prev_height = Some(block.height());
         prev_hash = Some(block.hash());
+    }
+
+    Ok(())
+}
+
+fn check_tree_size(
+    compact_block: &CompactBlock,
+    wallet_block: &WalletCompactBlock,
+) -> Result<(), ()> {
+    if let Some(chain_metadata) = &compact_block.chain_metadata {
+        if chain_metadata.sapling_commitment_tree_size
+            != wallet_block.sapling_commitment_tree_size()
+        {
+            panic!("sapling tree size is incorrect!")
+        }
+        if chain_metadata.orchard_commitment_tree_size
+            != wallet_block.orchard_commitment_tree_size()
+        {
+            panic!("orchard tree size is incorrect!")
+        }
     }
 
     Ok(())

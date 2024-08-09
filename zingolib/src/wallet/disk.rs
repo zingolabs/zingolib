@@ -4,6 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::{error, info};
 
 use std::{
+    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
 };
@@ -236,6 +237,8 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
+            #[cfg(feature = "sync")]
+            compact_blocks: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         };

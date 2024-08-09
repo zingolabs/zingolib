@@ -1,8 +1,9 @@
 //! Module for primitive structs associated with the sync engine
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use getset::{CopyGetters, Getters, MutGetters};
+use tokio::sync::RwLock;
 
 use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
@@ -47,8 +48,7 @@ impl OutputId {
 }
 
 /// Wallet compact block data
-#[allow(dead_code)]
-#[derive(Clone, CopyGetters)]
+#[derive(Debug, Clone, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct WalletCompactBlock {
     block_height: BlockHeight,
@@ -62,6 +62,26 @@ pub struct WalletCompactBlock {
 }
 
 impl WalletCompactBlock {
+    pub fn from_parts(
+        block_height: BlockHeight,
+        block_hash: BlockHash,
+        prev_hash: BlockHash,
+        time: u32,
+        txids: Vec<TxId>,
+        sapling_commitment_tree_size: u32,
+        orchard_commitment_tree_size: u32,
+    ) -> Self {
+        Self {
+            block_height,
+            block_hash,
+            prev_hash,
+            time,
+            txids,
+            sapling_commitment_tree_size,
+            orchard_commitment_tree_size,
+        }
+    }
+
     pub fn txids(&self) -> &[TxId] {
         &self.txids
     }

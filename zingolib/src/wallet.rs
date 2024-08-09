@@ -3,16 +3,19 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use zcash_primitives::memo::Memo;
+use getset::Getters;
+use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
+use zingo_sync::primitives::WalletCompactBlock;
 
 use std::{
     cmp,
+    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
@@ -175,7 +178,8 @@ impl WalletBase {
     }
 }
 
-/// TODO: Add Doc Comment Here!
+/// In-memory wallet data struct
+#[derive(Getters)]
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
@@ -204,6 +208,11 @@ pub struct LightWallet {
     /// Local state needed to submit (compact)block-requests to the proxy
     /// and interpret responses
     pub transaction_context: TransactionContext,
+
+    /// wallet compact blocks
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub")]
+    compact_blocks: Arc<RwLock<HashMap<BlockHeight, WalletCompactBlock>>>,
 
     #[cfg(feature = "sync")]
     #[allow(dead_code)]
@@ -364,6 +373,8 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
+            #[cfg(feature = "sync")]
+            compact_blocks: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         })
