@@ -318,30 +318,37 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
         .copied()
         .map(|output_id| output_id.output_index())
         .collect();
-    let last_output_index = outputs.len() - 1;
 
-    Ok(outputs
-        .iter()
-        .enumerate()
-        .map(|(output_index, output)| {
-            let note_commitment = CompactOutputDescription::try_from(output).unwrap().cmu;
-            let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
+    if outputs.is_empty() {
+        Ok(Vec::new())
+    } else {
+        let last_output_index = outputs.len() - 1;
 
-            let last_output_in_block: bool =
-                last_outputs_in_block && output_index == last_output_index;
-            let decrypted: bool = incoming_output_indices.contains(&output_index);
-            let retention = match (decrypted, last_output_in_block) {
-                (is_marked, true) => Retention::Checkpoint {
-                    id: block_height,
-                    is_marked,
-                },
-                (true, false) => Retention::Marked,
-                (false, false) => Retention::Ephemeral,
-            };
+        let leaves_and_retentions = outputs
+            .iter()
+            .enumerate()
+            .map(|(output_index, output)| {
+                let note_commitment = CompactOutputDescription::try_from(output).unwrap().cmu;
+                let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
 
-            (leaf, retention)
-        })
-        .collect())
+                let last_output_in_block: bool =
+                    last_outputs_in_block && output_index == last_output_index;
+                let decrypted: bool = incoming_output_indices.contains(&output_index);
+                let retention = match (decrypted, last_output_in_block) {
+                    (is_marked, true) => Retention::Checkpoint {
+                        id: block_height,
+                        is_marked,
+                    },
+                    (true, false) => Retention::Marked,
+                    (false, false) => Retention::Ephemeral,
+                };
+
+                (leaf, retention)
+            })
+            .collect();
+
+        Ok(leaves_and_retentions)
+    }
 }
 // calculates the orchard note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_orchard_leaves_and_retentions<D: Domain>(
@@ -355,28 +362,35 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
         .copied()
         .map(|output_id| output_id.output_index())
         .collect();
-    let last_output_index = actions.len() - 1;
 
-    Ok(actions
-        .iter()
-        .enumerate()
-        .map(|(output_index, output)| {
-            let note_commitment = CompactAction::try_from(output).unwrap().cmx();
-            let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
+    if actions.is_empty() {
+        Ok(Vec::new())
+    } else {
+        let last_output_index = actions.len() - 1;
 
-            let last_output_in_block: bool =
-                last_outputs_in_block && output_index == last_output_index;
-            let decrypted: bool = incoming_output_indices.contains(&output_index);
-            let retention = match (decrypted, last_output_in_block) {
-                (is_marked, true) => Retention::Checkpoint {
-                    id: block_height,
-                    is_marked,
-                },
-                (true, false) => Retention::Marked,
-                (false, false) => Retention::Ephemeral,
-            };
+        let leaves_and_retentions = actions
+            .iter()
+            .enumerate()
+            .map(|(output_index, output)| {
+                let note_commitment = CompactAction::try_from(output).unwrap().cmx();
+                let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
 
-            (leaf, retention)
-        })
-        .collect())
+                let last_output_in_block: bool =
+                    last_outputs_in_block && output_index == last_output_index;
+                let decrypted: bool = incoming_output_indices.contains(&output_index);
+                let retention = match (decrypted, last_output_in_block) {
+                    (is_marked, true) => Retention::Checkpoint {
+                        id: block_height,
+                        is_marked,
+                    },
+                    (true, false) => Retention::Marked,
+                    (false, false) => Retention::Ephemeral,
+                };
+
+                (leaf, retention)
+            })
+            .collect();
+
+        Ok(leaves_and_retentions)
+    }
 }
