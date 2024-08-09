@@ -2,7 +2,7 @@
 
 //! Tools to facilitate mocks for structs of external crates and general mocking utilities for testing
 
-pub use proposal::{ProposalBuilder, StepBuilder};
+pub use proposal::ProposalBuilder;
 pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
 fn zaddr_from_seed(
@@ -359,8 +359,8 @@ pub mod proposal {
         components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
+    use crate::config::{ChainType, RegtestNetwork};
     use zcash_client_backend::wallet::NoteId;
-    use zingoconfig::{ChainType, RegtestNetwork};
 
     use crate::utils::conversion::address_from_str;
     use crate::utils::{build_method, build_method_push};
@@ -602,7 +602,7 @@ pub mod proposal {
             builder
                 .recipient_address(
                     address_from_str(
-                        zingo_testvectors::REG_O_ADDR_FROM_ABANDONART,
+                        crate::testvectors::REG_O_ADDR_FROM_ABANDONART,
                         &ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
                     )
                     .unwrap(),

@@ -67,7 +67,7 @@ impl BlockManagementData {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
-            batch_size: zingoconfig::BATCH_SIZE,
+            batch_size: crate::config::BATCH_SIZE,
             highest_verified_trees: None,
             sync_status,
         }

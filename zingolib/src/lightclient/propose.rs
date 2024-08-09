@@ -10,10 +10,11 @@ use zcash_client_backend::zip321::Zip321Error;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 
+use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
+use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use thiserror::Error;
-use zingoconfig::ZENNIES_FOR_ZINGO_AMOUNT;
-use zingoconfig::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 
+use crate::config::ChainType;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
@@ -23,7 +24,6 @@ use crate::lightclient::LightClient;
 use crate::wallet::send::change_memo_from_transaction_request;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
 use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
-use zingoconfig::ChainType;
 
 type GISKit = GreedyInputSelector<
     TxMapAndMaybeTrees,
@@ -315,9 +315,9 @@ mod shielding {
 
     async fn create_basic_client() -> crate::lightclient::LightClient {
         crate::lightclient::LightClient::create_unconnected(
-            &zingoconfig::ZingoConfigBuilder::default().create(),
+            &crate::config::ZingoConfigBuilder::default().create(),
             crate::wallet::WalletBase::MnemonicPhrase(
-                zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             ),
             0,
         )

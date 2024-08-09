@@ -8,19 +8,19 @@ mod load_wallet {
     use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::consensus::Parameters as _;
     use zcash_primitives::zip339::Mnemonic;
-    use zingo_testutils::check_client_balances;
-    use zingo_testutils::get_base_address_macro;
-    use zingo_testutils::lightclient::from_inputs;
-    use zingo_testutils::paths::get_cargo_manifest_dir;
-    use zingo_testutils::scenarios;
-    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingoconfig::ChainType;
-    use zingoconfig::RegtestNetwork;
-    use zingoconfig::ZingoConfig;
+    use zingolib::check_client_balances;
+    use zingolib::config::ChainType;
+    use zingolib::config::RegtestNetwork;
+    use zingolib::config::ZingoConfig;
+    use zingolib::get_base_address_macro;
     use zingolib::lightclient::propose::ProposeSendError::Proposal;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::lightclient::LightClient;
     use zingolib::lightclient::PoolBalances;
+    use zingolib::testutils::lightclient::from_inputs;
+    use zingolib::testutils::paths::get_cargo_manifest_dir;
+    use zingolib::testutils::scenarios;
+    use zingolib::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use zingolib::utils;
     use zingolib::wallet::keys::extended_transparent::ExtendedPrivKey;
     use zingolib::wallet::keys::unified::Capability;
@@ -112,9 +112,9 @@ mod load_wallet {
     async fn load_and_parse_different_wallet_versions() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (_sap_wallet, _sap_path, sap_dir) =
-            zingo_testutils::get_wallet_nym("sap_only").unwrap();
+            zingolib::testutils::get_wallet_nym("sap_only").unwrap();
         let (_loaded_wallet, _) =
-            zingo_testutils::load_wallet(sap_dir, ChainType::Regtest(regtest_network)).await;
+            zingolib::testutils::load_wallet(sap_dir, ChainType::Regtest(regtest_network)).await;
     }
     #[tokio::test]
     async fn load_wallet_from_v26_dat_file() {
@@ -178,7 +178,7 @@ mod load_wallet {
         // with 3 addresses containing all receivers.
         let data = include_bytes!("zingo-wallet-v28.dat");
 
-        let config = zingoconfig::ZingoConfig::build(ChainType::Testnet).create();
+        let config = zingolib::config::ZingoConfig::build(ChainType::Testnet).create();
         let mid_wallet = LightWallet::read_internal(&data[..], &config)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet version 28 file: {}", e))
@@ -266,11 +266,11 @@ mod load_wallet {
         let zcd_datadir = &regtest_manager.zcashd_data_dir;
         let zingo_datadir = &regtest_manager.zingo_datadir;
         // This test is the unique consumer of:
-        // zingo-testutils/old_wallet_reorg_test_wallet
+        // zingolib/src/testvectors/old_wallet_reorg_test_wallet
         let cached_data_dir = get_cargo_manifest_dir()
             .parent()
             .unwrap()
-            .join("zingo-testvectors")
+            .join("zingolib/src/testvectors")
             .join("old_wallet_reorg_test_wallet");
         let zcd_source = cached_data_dir
             .join("zcashd")
@@ -305,9 +305,11 @@ mod load_wallet {
             .expect("wallet copy failed");
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
-        let (wallet, conf) =
-            zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest(regtest_network))
-                .await;
+        let (wallet, conf) = zingolib::testutils::load_wallet(
+            zingo_dest.into(),
+            ChainType::Regtest(regtest_network),
+        )
+        .await;
         println!("setting uri");
         *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
         println!("creating lightclient");
@@ -426,7 +428,7 @@ mod load_wallet {
             regtest_network,
         )
         .await;
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
 
@@ -462,9 +464,10 @@ mod load_wallet {
         let mut wallet_location = regtest_manager.zingo_datadir;
         wallet_location.pop();
         wallet_location.push("zingo_client_1");
-        let zingo_config = ZingoConfig::build(zingoconfig::ChainType::Regtest(regtest_network))
-            .set_wallet_dir(wallet_location.clone())
-            .create();
+        let zingo_config =
+            ZingoConfig::build(zingolib::config::ChainType::Regtest(regtest_network))
+                .set_wallet_dir(wallet_location.clone())
+                .create();
         wallet_location.push("zingo-wallet.dat");
         let read_buffer = File::open(wallet_location.clone()).unwrap();
 
@@ -514,12 +517,12 @@ mod load_wallet {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
             .await
             .unwrap();
 
         // Without sync push server forward 2 blocks
-        zingo_testutils::increase_server_height(&regtest_manager, 2).await;
+        zingolib::testutils::increase_server_height(&regtest_manager, 2).await;
         let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.

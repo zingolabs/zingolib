@@ -1,10 +1,10 @@
 use std::{cmp::max, sync::Arc};
 
+use crate::config::ZingoConfig;
 use crate::grpc_connector::GrpcConnector;
 use log::debug;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zingoconfig::ZingoConfig;
 pub struct FetchCompactBlocks {
     config: ZingoConfig,
 }

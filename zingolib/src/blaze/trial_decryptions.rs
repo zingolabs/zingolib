@@ -5,6 +5,7 @@
 
 use crate::error::ZingoLibResult;
 
+use crate::config::ZingoConfig;
 use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
@@ -35,7 +36,6 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
 
 use super::syncdata::BlazeSyncData;
 
@@ -264,7 +264,7 @@ impl TrialDecryptions {
         compact_block: &CompactBlock,
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
-        config: &zingoconfig::ZingoConfig,
+        config: &crate::config::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
