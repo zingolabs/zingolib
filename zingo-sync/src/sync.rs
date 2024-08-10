@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use crate::client::FetchRequest;
 use crate::client::{fetch::fetch, get_chain_height};
-use crate::interface::{SyncCompactBlocks, SyncWallet};
+use crate::interface::{SyncCompactBlocks, SyncNullifiers, SyncWallet};
 use crate::primitives::SyncState;
 use crate::scan::scan;
 use crate::witness::ShardTrees;
@@ -19,17 +19,18 @@ use futures::future::try_join_all;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
-const BATCH_SIZE: u32 = 1_000;
+const BATCH_SIZE: u32 = 10;
+// const BATCH_SIZE: u32 = 1_000;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     parameters: &P,
-    wallet: &W,
+    wallet: &mut W,
 ) -> Result<(), ()>
 where
     P: Parameters + Send + 'static,
-    W: SyncWallet + SyncCompactBlocks,
+    W: SyncWallet + SyncCompactBlocks + SyncNullifiers,
 {
     tracing::info!("Syncing wallet...");
 

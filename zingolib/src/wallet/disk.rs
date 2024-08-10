@@ -240,6 +240,8 @@ impl LightWallet {
             #[cfg(feature = "sync")]
             compact_blocks: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "sync")]
+            nullifier_map: zingo_sync::primitives::NullifierMap::new(),
+            #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         };
 

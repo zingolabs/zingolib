@@ -1,6 +1,6 @@
 //! Module for primitive structs associated with the sync engine
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use getset::{CopyGetters, Getters, MutGetters};
 use tokio::sync::RwLock;
@@ -44,6 +44,29 @@ impl OutputId {
     /// Creates new OutputId from parts
     pub fn from_parts(txid: TxId, output_index: usize) -> Self {
         OutputId { txid, output_index }
+    }
+}
+
+/// Binary tree map of nullifiers from transaction spends or actions
+#[derive(Debug, MutGetters)]
+#[getset(get = "pub", get_mut = "pub")]
+pub struct NullifierMap {
+    sapling: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)>,
+    orchard: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)>,
+}
+
+impl NullifierMap {
+    pub fn new() -> Self {
+        Self {
+            sapling: BTreeMap::new(),
+            orchard: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for NullifierMap {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

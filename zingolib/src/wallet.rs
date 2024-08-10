@@ -3,7 +3,7 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use getset::Getters;
+use getset::{Getters, MutGetters};
 use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use log::{info, warn};
@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
-use zingo_sync::primitives::WalletCompactBlock;
+use zingo_sync::primitives::{NullifierMap, WalletCompactBlock};
 
 use std::{
     cmp,
@@ -179,7 +179,7 @@ impl WalletBase {
 }
 
 /// In-memory wallet data struct
-#[derive(Getters)]
+#[derive(Getters, MutGetters)]
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
@@ -209,10 +209,15 @@ pub struct LightWallet {
     /// and interpret responses
     pub transaction_context: TransactionContext,
 
-    /// wallet compact blocks
+    /// Wallet compact blocks
     #[cfg(feature = "sync")]
     #[getset(get = "pub")]
     compact_blocks: Arc<RwLock<HashMap<BlockHeight, WalletCompactBlock>>>,
+
+    /// Nullifier map
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    nullifier_map: NullifierMap,
 
     #[cfg(feature = "sync")]
     #[allow(dead_code)]
@@ -375,6 +380,8 @@ impl LightWallet {
             transaction_context,
             #[cfg(feature = "sync")]
             compact_blocks: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "sync")]
+            nullifier_map: zingo_sync::primitives::NullifierMap::new(),
             #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         })

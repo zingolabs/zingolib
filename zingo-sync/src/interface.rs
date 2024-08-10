@@ -7,7 +7,7 @@ use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::zip32::AccountId;
 
-use crate::primitives::WalletCompactBlock;
+use crate::primitives::{NullifierMap, WalletCompactBlock};
 
 /// Temporary dump for all neccessary wallet functionality for PoC
 pub trait SyncWallet {
@@ -35,4 +35,11 @@ pub trait SyncCompactBlocks: SyncWallet {
         &self,
         wallet_compact_blocks: HashMap<BlockHeight, WalletCompactBlock>,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send;
+}
+
+/// Trait for interfacing nullifiers with wallet data
+/// Intended to be implemented on - or within - the wallet data struct
+pub trait SyncNullifiers: SyncWallet {
+    /// Store nullifier map in wallet data
+    fn store_nullifier_map(&mut self, nullifier_map: NullifierMap) -> Result<(), Self::Error>;
 }

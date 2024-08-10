@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
-use zingo_sync::interface::{SyncCompactBlocks, SyncWallet};
+use zingo_sync::interface::{SyncCompactBlocks, SyncNullifiers, SyncWallet};
 use zip32::AccountId;
 
 use crate::wallet::LightWallet;
@@ -58,6 +58,22 @@ impl SyncCompactBlocks for LightWallet {
             .write()
             .await
             .extend(wallet_compact_blocks);
+
+        Ok(())
+    }
+}
+
+impl SyncNullifiers for LightWallet {
+    fn store_nullifier_map(
+        &mut self,
+        mut nullifier_map: zingo_sync::primitives::NullifierMap,
+    ) -> Result<(), ()> {
+        for (nf, value) in nullifier_map.sapling_mut() {
+            self.nullifier_map.sapling_mut().insert(*nf, *value);
+        }
+        for (nf, value) in nullifier_map.orchard_mut() {
+            self.nullifier_map.orchard_mut().insert(*nf, *value);
+        }
 
         Ok(())
     }
