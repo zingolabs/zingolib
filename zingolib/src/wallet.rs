@@ -15,7 +15,7 @@ use zingo_sync::primitives::WalletCompactBlock;
 
 use std::{
     cmp,
-    collections::HashMap,
+    collections::BTreeMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
@@ -212,7 +212,7 @@ pub struct LightWallet {
     /// wallet compact blocks
     #[cfg(feature = "sync")]
     #[getset(get = "pub")]
-    compact_blocks: Arc<RwLock<HashMap<BlockHeight, WalletCompactBlock>>>,
+    compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
 
     #[cfg(feature = "sync")]
     #[allow(dead_code)]
@@ -374,7 +374,7 @@ impl LightWallet {
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
             #[cfg(feature = "sync")]
-            compact_blocks: Arc::new(RwLock::new(HashMap::new())),
+            compact_blocks: BTreeMap::new(),
             #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         })

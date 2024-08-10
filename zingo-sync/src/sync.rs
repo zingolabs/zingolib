@@ -25,7 +25,7 @@ const BATCH_SIZE: u32 = 1_000;
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     parameters: &P,
-    wallet: &W,
+    wallet: &mut W,
 ) -> Result<(), ()>
 where
     P: Parameters + Send + 'static,
@@ -51,11 +51,15 @@ where
 
     let scan_range = prepare_next_scan_range(&sync_state).await;
     if let Some(range) = scan_range {
+        let previous_wallet_block = wallet
+            .get_wallet_compact_block(range.block_range().start - 1)
+            .ok();
         scan(
             fetch_request_sender,
             parameters,
             &scanning_keys,
             range.clone(),
+            previous_wallet_block,
             &shardtrees,
             wallet,
         )
