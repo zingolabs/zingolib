@@ -1,6 +1,6 @@
 //! Traits for interfacing a wallet with the sync engine
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
 use zcash_client_backend::keys::UnifiedFullViewingKey;
@@ -28,13 +28,13 @@ pub trait SyncCompactBlocks: SyncWallet {
     fn get_wallet_compact_block(
         &self,
         block_height: BlockHeight,
-    ) -> impl std::future::Future<Output = Result<WalletCompactBlock, Self::Error>> + Send;
+    ) -> Result<WalletCompactBlock, Self::Error>;
 
     /// Store wallet compact blocks in wallet data
     fn store_wallet_compact_blocks(
-        &self,
-        wallet_compact_blocks: HashMap<BlockHeight, WalletCompactBlock>,
-    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send;
+        &mut self,
+        wallet_compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
+    ) -> Result<(), Self::Error>;
 }
 
 /// Trait for interfacing nullifiers with wallet data

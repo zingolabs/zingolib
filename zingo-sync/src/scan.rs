@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
 };
 
 use tokio::sync::mpsc::UnboundedSender;
@@ -45,18 +45,16 @@ impl InitialScanData {
         fetch_request_sender: UnboundedSender<FetchRequest>,
         parameters: &P,
         first_block: &CompactBlock,
+        previous_wallet_block: Option<WalletCompactBlock>,
     ) -> Result<Self, ()>
     where
         P: Parameters + Send + 'static,
     {
-        // TODO: get last block of adjacent lower scan range a.k.a. previous_block
-        let previous_block: Option<WalletCompactBlock> = None;
-
         // gets initial tree size from previous block if available
         // otherwise, from first block if available
         // otherwise, fetches frontiers from server
         let (sapling_initial_tree_size, orchard_initial_tree_size) =
-            if let Some(prev) = &previous_block {
+            if let Some(prev) = &previous_wallet_block {
                 (
                     prev.sapling_commitment_tree_size(),
                     prev.orchard_commitment_tree_size(),
@@ -110,7 +108,7 @@ impl InitialScanData {
             };
 
         Ok(InitialScanData {
-            previous_block,
+            previous_block: previous_wallet_block,
             sapling_initial_tree_size,
             orchard_initial_tree_size,
         })
@@ -137,11 +135,14 @@ impl Default for NoteData {
     }
 }
 
+// scans a given range and returns all data relevent to the specified keys
+// `previous_wallet_block` is the block with height [scan_range.start - 1]
 pub(crate) async fn scan<P, W>(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     parameters: &P,
     scanning_keys: &ScanningKeys<AccountId, KeyId>,
     scan_range: ScanRange,
+    previous_wallet_block: Option<WalletCompactBlock>,
     shardtrees: &ShardTrees,
     wallet: &mut W,
 ) -> Result<(), ()>
@@ -162,11 +163,12 @@ where
         compact_blocks
             .first()
             .expect("compacts blocks should not be empty"),
+        previous_wallet_block,
     )
     .await
     .unwrap();
 
-    let (nullifier_map, blocks, _relevent_txids, _note_data, shardtree_data) =
+    let (nullifier_map, wallet_blocks, _relevent_txids, _note_data, shardtree_data) =
         scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data)
             .await
             .unwrap();
@@ -176,7 +178,7 @@ where
     wallet.store_nullifier_map(nullifier_map).unwrap();
     // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
     // must still retain top 100 blocks for re-org purposes
-    wallet.store_wallet_compact_blocks(blocks).await.unwrap();
+    wallet.store_wallet_compact_blocks(wallet_blocks).unwrap();
     // TODO: get shard tree trait
     update_shardtrees(shardtrees, shardtree_data).await.unwrap();
 
@@ -191,7 +193,7 @@ async fn scan_compact_blocks<P>(
 ) -> Result<
     (
         NullifierMap,
-        HashMap<BlockHeight, WalletCompactBlock>,
+        BTreeMap<BlockHeight, WalletCompactBlock>,
         HashSet<TxId>,
         NoteData,
         ShardTreeData,
@@ -205,7 +207,7 @@ where
 
     let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
-    let mut wallet_blocks: HashMap<BlockHeight, WalletCompactBlock> = HashMap::new();
+    let mut wallet_blocks: BTreeMap<BlockHeight, WalletCompactBlock> = BTreeMap::new();
     let mut nullifier_map = NullifierMap::new();
     let mut relevent_txids: HashSet<TxId> = HashSet::new();
     let mut note_data = NoteData::new();

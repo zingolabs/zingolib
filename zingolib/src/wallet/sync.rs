@@ -1,9 +1,13 @@
 //! Trait implmentations for sync interface
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
-use zingo_sync::interface::{SyncCompactBlocks, SyncNullifiers, SyncWallet};
+use zcash_primitives::consensus::BlockHeight;
+use zingo_sync::{
+    interface::{SyncCompactBlocks, SyncNullifiers, SyncWallet},
+    primitives::{NullifierMap, WalletCompactBlock},
+};
 use zip32::AccountId;
 
 use crate::wallet::LightWallet;
@@ -35,39 +39,25 @@ impl SyncWallet for LightWallet {
 }
 
 impl SyncCompactBlocks for LightWallet {
-    async fn get_wallet_compact_block(
+    fn get_wallet_compact_block(
         &self,
-        block_height: zcash_primitives::consensus::BlockHeight,
-    ) -> Result<zingo_sync::primitives::WalletCompactBlock, Self::Error> {
-        self.compact_blocks
-            .read()
-            .await
-            .get(&block_height)
-            .cloned()
-            .ok_or(())
+        block_height: BlockHeight,
+    ) -> Result<WalletCompactBlock, Self::Error> {
+        self.compact_blocks.get(&block_height).cloned().ok_or(())
     }
 
-    async fn store_wallet_compact_blocks(
-        &self,
-        wallet_compact_blocks: HashMap<
-            zcash_primitives::consensus::BlockHeight,
-            zingo_sync::primitives::WalletCompactBlock,
-        >,
+    fn store_wallet_compact_blocks(
+        &mut self,
+        wallet_compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
     ) -> Result<(), Self::Error> {
-        self.compact_blocks
-            .write()
-            .await
-            .extend(wallet_compact_blocks);
+        self.compact_blocks.extend(wallet_compact_blocks);
 
         Ok(())
     }
 }
 
 impl SyncNullifiers for LightWallet {
-    fn store_nullifier_map(
-        &mut self,
-        mut nullifier_map: zingo_sync::primitives::NullifierMap,
-    ) -> Result<(), ()> {
+    fn store_nullifier_map(&mut self, mut nullifier_map: NullifierMap) -> Result<(), ()> {
         for (nf, value) in nullifier_map.sapling_mut() {
             self.nullifier_map.sapling_mut().insert(*nf, *value);
         }
