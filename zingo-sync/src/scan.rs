@@ -115,21 +115,21 @@ impl InitialScanData {
     }
 }
 
-struct NoteData {
+struct DecryptedNoteData {
     sapling_nullifiers_and_positions: HashMap<OutputId, (sapling_crypto::Nullifier, Position)>,
     orchard_nullifiers_and_positions: HashMap<OutputId, (orchard::note::Nullifier, Position)>,
 }
 
-impl NoteData {
+impl DecryptedNoteData {
     fn new() -> Self {
-        NoteData {
+        DecryptedNoteData {
             sapling_nullifiers_and_positions: HashMap::new(),
             orchard_nullifiers_and_positions: HashMap::new(),
         }
     }
 }
 
-impl Default for NoteData {
+impl Default for DecryptedNoteData {
     fn default() -> Self {
         Self::new()
     }
@@ -168,17 +168,17 @@ where
     .await
     .unwrap();
 
-    let (nullifier_map, wallet_blocks, _relevent_txids, _note_data, shardtree_data) =
+    let (nullifiers, wallet_blocks, _relevent_txids, _note_data, shardtree_data) =
         scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data)
             .await
             .unwrap();
 
     // TODO: scan transactions
 
-    wallet.store_nullifier_map(nullifier_map).unwrap();
+    wallet.append_nullifiers(nullifiers).unwrap();
     // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
     // must still retain top 100 blocks for re-org purposes
-    wallet.store_wallet_compact_blocks(wallet_blocks).unwrap();
+    wallet.append_wallet_compact_blocks(wallet_blocks).unwrap();
     // TODO: get shard tree trait
     update_shardtrees(shardtrees, shardtree_data).await.unwrap();
 
@@ -195,7 +195,7 @@ async fn scan_compact_blocks<P>(
         NullifierMap,
         BTreeMap<BlockHeight, WalletCompactBlock>,
         HashSet<TxId>,
-        NoteData,
+        DecryptedNoteData,
         ShardTreeData,
     ),
     (),
@@ -208,9 +208,9 @@ where
     let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletCompactBlock> = BTreeMap::new();
-    let mut nullifier_map = NullifierMap::new();
+    let mut nullifiers = NullifierMap::new();
     let mut relevent_txids: HashSet<TxId> = HashSet::new();
-    let mut note_data = NoteData::new();
+    let mut note_data = DecryptedNoteData::new();
     let mut shardtree_data = ShardTreeData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
         Position::from(u64::from(initial_scan_data.orchard_initial_tree_size)),
@@ -239,7 +239,7 @@ where
             });
             // TODO: add outgoing outputs to relevent txids
 
-            populate_nullifier_map(&mut nullifier_map, block.height(), transaction).unwrap();
+            collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
 
             shardtree_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -296,7 +296,7 @@ where
     // TODO: map nullifiers
 
     Ok((
-        nullifier_map,
+        nullifiers,
         wallet_blocks,
         relevent_txids,
         note_data,
@@ -496,7 +496,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
 }
 
 // converts and adds the nullifiers from a compact transaction to the nullifier map
-fn populate_nullifier_map(
+fn collect_nullifiers(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
     transaction: &CompactTx,

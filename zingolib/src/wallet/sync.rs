@@ -46,24 +46,24 @@ impl SyncCompactBlocks for LightWallet {
         self.compact_blocks.get(&block_height).cloned().ok_or(())
     }
 
-    fn store_wallet_compact_blocks(
+    fn append_wallet_compact_blocks(
         &mut self,
-        wallet_compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
+        mut wallet_compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
     ) -> Result<(), Self::Error> {
-        self.compact_blocks.extend(wallet_compact_blocks);
+        self.compact_blocks.append(&mut wallet_compact_blocks);
 
         Ok(())
     }
 }
 
 impl SyncNullifiers for LightWallet {
-    fn store_nullifier_map(&mut self, mut nullifier_map: NullifierMap) -> Result<(), ()> {
-        for (nf, value) in nullifier_map.sapling_mut() {
-            self.nullifier_map.sapling_mut().insert(*nf, *value);
-        }
-        for (nf, value) in nullifier_map.orchard_mut() {
-            self.nullifier_map.orchard_mut().insert(*nf, *value);
-        }
+    fn append_nullifiers(&mut self, mut nullifier_map: NullifierMap) -> Result<(), ()> {
+        self.nullifier_map
+            .sapling_mut()
+            .append(nullifier_map.sapling_mut());
+        self.nullifier_map
+            .orchard_mut()
+            .append(nullifier_map.orchard_mut());
 
         Ok(())
     }

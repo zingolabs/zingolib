@@ -30,8 +30,8 @@ pub trait SyncCompactBlocks: SyncWallet {
         block_height: BlockHeight,
     ) -> Result<WalletCompactBlock, Self::Error>;
 
-    /// Store wallet compact blocks in wallet data
-    fn store_wallet_compact_blocks(
+    /// Append wallet compact blocks to wallet data
+    fn append_wallet_compact_blocks(
         &mut self,
         wallet_compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
     ) -> Result<(), Self::Error>;
@@ -40,6 +40,6 @@ pub trait SyncCompactBlocks: SyncWallet {
 /// Trait for interfacing nullifiers with wallet data
 /// Intended to be implemented on - or within - the wallet data struct
 pub trait SyncNullifiers: SyncWallet {
-    /// Store nullifier map in wallet data
-    fn store_nullifier_map(&mut self, nullifier_map: NullifierMap) -> Result<(), Self::Error>;
+    /// Append nullifiers to wallet data
+    fn append_nullifiers(&mut self, nullifier_map: NullifierMap) -> Result<(), Self::Error>;
 }
