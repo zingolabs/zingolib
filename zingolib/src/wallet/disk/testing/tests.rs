@@ -1,11 +1,10 @@
 use zcash_address::unified::Encoding;
 use zcash_primitives::zip339::Mnemonic;
 
+use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 
 use super::super::LightWallet;
-
-use super::loaded_wallet_assert;
 
 use super::examples::load_legacy_wallet;
 use super::examples::LegacyWalletCase;
