@@ -21,6 +21,7 @@ impl LightWallet {
 pub mod examples;
 
 /// tests
+#[cfg(test)]
 pub mod tests;
 
 async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_addresses: usize) {
