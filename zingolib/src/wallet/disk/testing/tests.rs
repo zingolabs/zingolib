@@ -11,7 +11,6 @@ use super::examples::load_legacy_wallet;
 use super::examples::LegacyWalletCase;
 use super::examples::LegacyWalletCaseZingoV26;
 
-
 async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_addresses: usize) {
     let expected_mnemonic = (
         zcash_primitives::zip339::Mnemonic::from_phrase(
@@ -95,7 +94,7 @@ async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_ad
         .unwrap();
     }
 }
-<
+
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
     let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
