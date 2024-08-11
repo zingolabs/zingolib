@@ -3,11 +3,8 @@ mod load_wallet {
 
     use std::fs::File;
 
-    use zcash_address::unified::Encoding as _;
     use zcash_client_backend::PoolType;
     use zcash_client_backend::ShieldedProtocol;
-    use zcash_primitives::consensus::Parameters as _;
-    use zcash_primitives::zip339::Mnemonic;
     use zingolib::check_client_balances;
     use zingolib::config::ChainType;
     use zingolib::config::RegtestNetwork;
@@ -20,13 +17,7 @@ mod load_wallet {
     use zingolib::testutils::lightclient::from_inputs;
     use zingolib::testutils::paths::get_cargo_manifest_dir;
     use zingolib::testutils::scenarios;
-    use zingolib::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use zingolib::utils;
-    use zingolib::wallet::keys::extended_transparent::ExtendedPrivKey;
-    use zingolib::wallet::keys::unified::Capability;
-    use zingolib::wallet::keys::unified::WalletCapability;
-    use zingolib::wallet::LightWallet;
-    use zingolib::wallet::WalletBase;
 
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
