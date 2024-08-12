@@ -53,7 +53,7 @@ impl LightWallet {
             }
             LegacyWalletCase::OldWalletReorgTestWallet => {
                 LightWallet::unsafe_from_buffer_regtest(include_bytes!(
-                    "../../../testvectors/old_wallet_reorg_test_wallet/zingo-wallet.dat"
+                    "examples/old_wallet_reorg_test_wallet/zingo-wallet.dat"
                 ))
                 .await
             }
