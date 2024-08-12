@@ -24,14 +24,12 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use zcash_address::unified::{Fvk, Ufvk};
 
-use crate::config::{ChainType, ZingoConfig};
+use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
-
-use scenarios::setup::TestEnvironmentGenerator;
 
 pub mod assertions;
 pub mod chain_generics;
@@ -357,22 +355,6 @@ where
         self.read_lengths.push(for_info);
         Ok(for_info)
     }
-}
-
-/// TODO: Add Doc Comment Here!
-pub async fn load_wallet(dir: PathBuf, chaintype: ChainType) -> crate::wallet::LightWallet {
-    let wallet = dir.join("zingo-wallet.dat");
-    let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
-    let zingo_config =
-        crate::config::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
-    let from = std::fs::File::open(wallet).unwrap();
-
-    let read_lengths = vec![];
-    let mut recording_reader = RecordingReader { from, read_lengths };
-
-    crate::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
-        .await
-        .unwrap()
 }
 
 /// Number of notes created and consumed in a transaction.

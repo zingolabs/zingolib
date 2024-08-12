@@ -6,7 +6,6 @@ mod load_wallet {
     use zcash_client_backend::PoolType;
     use zcash_client_backend::ShieldedProtocol;
     use zingolib::check_client_balances;
-    use zingolib::config::ChainType;
     use zingolib::config::RegtestNetwork;
     use zingolib::config::ZingoConfig;
     use zingolib::get_base_address_macro;
