@@ -11,7 +11,10 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
-use zingo_sync::primitives::{NullifierMap, WalletCompactBlock};
+use zingo_sync::{
+    primitives::{NullifierMap, WalletBlock},
+    witness::ShardTrees,
+};
 
 use std::{
     cmp,
@@ -212,12 +215,17 @@ pub struct LightWallet {
     /// Wallet compact blocks
     #[cfg(feature = "sync")]
     #[getset(get = "pub")]
-    compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
+    compact_blocks: BTreeMap<BlockHeight, WalletBlock>,
 
     /// Nullifier map
     #[cfg(feature = "sync")]
     #[getset(get = "pub", get_mut = "pub")]
     nullifier_map: NullifierMap,
+
+    /// Nullifier map
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    shard_trees: ShardTrees,
 
     #[cfg(feature = "sync")]
     #[allow(dead_code)]
@@ -382,6 +390,8 @@ impl LightWallet {
             compact_blocks: BTreeMap::new(),
             #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
+            #[cfg(feature = "sync")]
+            shard_trees: zingo_sync::witness::ShardTrees::new(),
             #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         })

@@ -242,6 +242,8 @@ impl LightWallet {
             #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
             #[cfg(feature = "sync")]
+            shard_trees: zingo_sync::witness::ShardTrees::new(),
+            #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         };
 

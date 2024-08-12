@@ -9,4 +9,4 @@ pub mod interface;
 pub mod primitives;
 pub(crate) mod scan;
 pub mod sync;
-pub(crate) mod witness;
+pub mod witness;

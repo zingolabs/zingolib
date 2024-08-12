@@ -23,9 +23,8 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, get_compact_block_range, FetchRequest},
-    interface::{SyncCompactBlocks, SyncNullifiers},
-    primitives::{NullifierMap, OutputId, WalletCompactBlock},
-    witness::{update_shardtrees, ShardTreeData, ShardTrees},
+    primitives::{NullifierMap, OutputId, WalletBlock},
+    witness::ShardTreeData,
 };
 
 use self::runners::{BatchRunners, DecryptedOutput};
@@ -35,7 +34,7 @@ pub(crate) mod runners;
 type KeyId = (AccountId, Scope);
 
 struct InitialScanData {
-    previous_block: Option<WalletCompactBlock>,
+    previous_block: Option<WalletBlock>,
     sapling_initial_tree_size: u32,
     orchard_initial_tree_size: u32,
 }
@@ -45,7 +44,7 @@ impl InitialScanData {
         fetch_request_sender: UnboundedSender<FetchRequest>,
         parameters: &P,
         first_block: &CompactBlock,
-        previous_wallet_block: Option<WalletCompactBlock>,
+        previous_wallet_block: Option<WalletBlock>,
     ) -> Result<Self, ()>
     where
         P: Parameters + Send + 'static,
@@ -115,6 +114,12 @@ impl InitialScanData {
     }
 }
 
+pub(crate) struct ScanData {
+    pub(crate) nullifiers: NullifierMap,
+    pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub(crate) shard_tree_data: ShardTreeData,
+}
+
 struct DecryptedNoteData {
     sapling_nullifiers_and_positions: HashMap<OutputId, (sapling_crypto::Nullifier, Position)>,
     orchard_nullifiers_and_positions: HashMap<OutputId, (orchard::note::Nullifier, Position)>,
@@ -137,18 +142,15 @@ impl Default for DecryptedNoteData {
 
 // scans a given range and returns all data relevent to the specified keys
 // `previous_wallet_block` is the block with height [scan_range.start - 1]
-pub(crate) async fn scan<P, W>(
+pub(crate) async fn scan<P>(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     parameters: &P,
     scanning_keys: &ScanningKeys<AccountId, KeyId>,
     scan_range: ScanRange,
-    previous_wallet_block: Option<WalletCompactBlock>,
-    shardtrees: &ShardTrees,
-    wallet: &mut W,
-) -> Result<(), ()>
+    previous_wallet_block: Option<WalletBlock>,
+) -> Result<ScanData, ()>
 where
     P: Parameters + Send + 'static,
-    W: SyncCompactBlocks + SyncNullifiers,
 {
     let compact_blocks = get_compact_block_range(
         fetch_request_sender.clone(),
@@ -168,21 +170,18 @@ where
     .await
     .unwrap();
 
-    let (nullifiers, wallet_blocks, _relevent_txids, _note_data, shardtree_data) =
+    let (nullifiers, wallet_blocks, _relevent_txids, _note_data, shard_tree_data) =
         scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data)
             .await
             .unwrap();
 
     // TODO: scan transactions
 
-    wallet.append_nullifiers(nullifiers).unwrap();
-    // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
-    // must still retain top 100 blocks for re-org purposes
-    wallet.append_wallet_compact_blocks(wallet_blocks).unwrap();
-    // TODO: get shard tree trait
-    update_shardtrees(shardtrees, shardtree_data).await.unwrap();
-
-    Ok(())
+    Ok(ScanData {
+        nullifiers,
+        wallet_blocks,
+        shard_tree_data,
+    })
 }
 
 async fn scan_compact_blocks<P>(
@@ -193,7 +192,7 @@ async fn scan_compact_blocks<P>(
 ) -> Result<
     (
         NullifierMap,
-        BTreeMap<BlockHeight, WalletCompactBlock>,
+        BTreeMap<BlockHeight, WalletBlock>,
         HashSet<TxId>,
         DecryptedNoteData,
         ShardTreeData,
@@ -207,11 +206,11 @@ where
 
     let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
-    let mut wallet_blocks: BTreeMap<BlockHeight, WalletCompactBlock> = BTreeMap::new();
+    let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
     let mut relevent_txids: HashSet<TxId> = HashSet::new();
     let mut note_data = DecryptedNoteData::new();
-    let mut shardtree_data = ShardTreeData::new(
+    let mut shard_tree_data = ShardTreeData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
         Position::from(u64::from(initial_scan_data.orchard_initial_tree_size)),
     );
@@ -241,7 +240,7 @@ where
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
 
-            shardtree_data.sapling_leaves_and_retentions.extend(
+            shard_tree_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
                     &transaction.outputs,
                     block.height(),
@@ -250,7 +249,7 @@ where
                 )
                 .unwrap(),
             );
-            shardtree_data.orchard_leaves_and_retentions.extend(
+            shard_tree_data.orchard_leaves_and_retentions.extend(
                 calculate_orchard_leaves_and_retentions(
                     &transaction.actions,
                     block.height(),
@@ -279,7 +278,7 @@ where
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
 
-        let wallet_block = WalletCompactBlock::from_parts(
+        let wallet_block = WalletBlock::from_parts(
             block.height(),
             block.hash(),
             block.prev_hash(),
@@ -300,7 +299,7 @@ where
         wallet_blocks,
         relevent_txids,
         note_data,
-        shardtree_data,
+        shard_tree_data,
     ))
 }
 
@@ -327,7 +326,7 @@ where
 // takes the last wallet compact block of the adjacent lower scan range, if available.
 fn check_continuity(
     compact_blocks: &[CompactBlock],
-    previous_compact_block: Option<&WalletCompactBlock>,
+    previous_compact_block: Option<&WalletBlock>,
 ) -> Result<(), ()> {
     let mut prev_height: Option<BlockHeight> = None;
     let mut prev_hash: Option<BlockHash> = None;
@@ -357,10 +356,7 @@ fn check_continuity(
     Ok(())
 }
 
-fn check_tree_size(
-    compact_block: &CompactBlock,
-    wallet_block: &WalletCompactBlock,
-) -> Result<(), ()> {
+fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
     if let Some(chain_metadata) = &compact_block.chain_metadata {
         if chain_metadata.sapling_commitment_tree_size
             != wallet_block.sapling_commitment_tree_size()

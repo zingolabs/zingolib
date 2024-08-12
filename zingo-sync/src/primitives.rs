@@ -70,10 +70,10 @@ impl Default for NullifierMap {
     }
 }
 
-/// Wallet compact block data
+/// Wallet block data
 #[derive(Debug, Clone, CopyGetters)]
 #[getset(get_copy = "pub")]
-pub struct WalletCompactBlock {
+pub struct WalletBlock {
     block_height: BlockHeight,
     block_hash: BlockHash,
     prev_hash: BlockHash,
@@ -84,7 +84,7 @@ pub struct WalletCompactBlock {
     orchard_commitment_tree_size: u32,
 }
 
-impl WalletCompactBlock {
+impl WalletBlock {
     pub fn from_parts(
         block_height: BlockHeight,
         block_hash: BlockHash,

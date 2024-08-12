@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, HashMap};
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zingo_sync::{
-    interface::{SyncCompactBlocks, SyncNullifiers, SyncWallet},
-    primitives::{NullifierMap, WalletCompactBlock},
+    interface::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncWallet},
+    primitives::{NullifierMap, WalletBlock},
+    witness::ShardTrees,
 };
 use zip32::AccountId;
 
@@ -38,17 +39,14 @@ impl SyncWallet for LightWallet {
     }
 }
 
-impl SyncCompactBlocks for LightWallet {
-    fn get_wallet_compact_block(
-        &self,
-        block_height: BlockHeight,
-    ) -> Result<WalletCompactBlock, Self::Error> {
+impl SyncBlocks for LightWallet {
+    fn get_wallet_block(&self, block_height: BlockHeight) -> Result<WalletBlock, Self::Error> {
         self.compact_blocks.get(&block_height).cloned().ok_or(())
     }
 
-    fn append_wallet_compact_blocks(
+    fn append_wallet_blocks(
         &mut self,
-        mut wallet_compact_blocks: BTreeMap<BlockHeight, WalletCompactBlock>,
+        mut wallet_compact_blocks: BTreeMap<BlockHeight, WalletBlock>,
     ) -> Result<(), Self::Error> {
         self.compact_blocks.append(&mut wallet_compact_blocks);
 
@@ -57,7 +55,7 @@ impl SyncCompactBlocks for LightWallet {
 }
 
 impl SyncNullifiers for LightWallet {
-    fn append_nullifiers(&mut self, mut nullifier_map: NullifierMap) -> Result<(), ()> {
+    fn append_nullifiers(&mut self, mut nullifier_map: NullifierMap) -> Result<(), Self::Error> {
         self.nullifier_map
             .sapling_mut()
             .append(nullifier_map.sapling_mut());
@@ -66,5 +64,11 @@ impl SyncNullifiers for LightWallet {
             .append(nullifier_map.orchard_mut());
 
         Ok(())
+    }
+}
+
+impl SyncShardTrees for LightWallet {
+    fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error> {
+        Ok(self.shard_trees_mut())
     }
 }

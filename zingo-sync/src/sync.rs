@@ -4,10 +4,9 @@ use std::ops::Range;
 
 use crate::client::FetchRequest;
 use crate::client::{fetch::fetch, get_chain_height};
-use crate::interface::{SyncCompactBlocks, SyncNullifiers, SyncWallet};
+use crate::interface::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncWallet};
 use crate::primitives::SyncState;
-use crate::scan::scan;
-use crate::witness::ShardTrees;
+use crate::scan::{scan, ScanData};
 
 use zcash_client_backend::scanning::ScanningKeys;
 use zcash_client_backend::{
@@ -30,14 +29,13 @@ pub async fn sync<P, W>(
 ) -> Result<(), ()>
 where
     P: Parameters + Send + 'static,
-    W: SyncWallet + SyncCompactBlocks + SyncNullifiers,
+    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncShardTrees,
 {
     tracing::info!("Syncing wallet...");
 
     // TODO: add trait methods to read/write wallet data to/from sync engine
     // this is where data would be read from wallet
     let sync_state = SyncState::new(); // placeholders
-    let shardtrees = ShardTrees::new();
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = unbounded_channel();
@@ -52,25 +50,32 @@ where
 
     let scan_range = prepare_next_scan_range(&sync_state).await;
     if let Some(range) = scan_range {
-        let previous_wallet_block = wallet
-            .get_wallet_compact_block(range.block_range().start - 1)
-            .ok();
-        scan(
+        let previous_wallet_block = wallet.get_wallet_block(range.block_range().start - 1).ok();
+        let scan_data = scan(
             fetch_request_sender,
             parameters,
             &scanning_keys,
             range.clone(),
             previous_wallet_block,
-            &shardtrees,
-            wallet,
         )
         .await
         .unwrap();
 
+        let ScanData {
+            nullifiers,
+            wallet_blocks,
+            shard_tree_data,
+        } = scan_data;
+
+        // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
+        // must still retain top 100 blocks for re-org purposes
+        wallet.append_wallet_blocks(wallet_blocks).unwrap();
+        wallet.append_nullifiers(nullifiers).unwrap();
+        wallet.update_shard_trees(shard_tree_data).unwrap();
+
         // TODO: set scanned range to `scanned`
     }
 
-    // TODO: add trait to store shardtree
     // TODO: add trait to save wallet data to persistance for in-memory wallets
 
     try_join_all(vec![fetcher_handle]).await.unwrap();
@@ -142,11 +147,11 @@ async fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
     {
         scan_ranges.splice(index..=index, vec![lower_range.clone(), higher_range]);
 
-        // TODO: set selected scan range to `ignored` so the same range is not selected twice when multiple tasks call this fn
+        // TODO: add an `exclude` parameter so the same range is not selected twice when multiple tasks call this fn
 
         Some(lower_range)
     } else {
-        // TODO: set selected scan range to `ignored` so the same range is not selected twice when multiple tasks call this fn
+        // TODO: add an `exclude` parameter so the same range is not selected twice when multiple tasks call this fn
 
         Some(selected_scan_range.clone())
     }
