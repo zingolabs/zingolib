@@ -18,6 +18,7 @@ mod load_wallet {
     use zingolib::testutils::paths::get_cargo_manifest_dir;
     use zingolib::testutils::scenarios;
     use zingolib::utils;
+    use zingolib::wallet::LightWallet;
 
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
@@ -72,11 +73,17 @@ mod load_wallet {
             .expect("wallet copy failed");
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
-        let wallet = zingolib::testutils::load_wallet(
-            zingo_dest.into(),
-            ChainType::Regtest(regtest_network),
+
+        let wallet = LightWallet::load_example_wallet(
+            zingolib::wallet::disk::testing::examples::LegacyWalletCase::OldWalletReorgTestWallet,
         )
         .await;
+
+        // let wallet = zingolib::testutils::load_wallet(
+        //     zingo_dest.into(),
+        //     ChainType::Regtest(regtest_network),
+        // )
+        // .await;
         println!("setting uri");
         *wallet
             .transaction_context

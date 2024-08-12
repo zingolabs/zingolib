@@ -18,6 +18,8 @@ pub enum LegacyWalletCase {
     ZingoV26(LegacyWalletCaseZingoV26),
     /// ?
     ZingoV28,
+    /// ...
+    OldWalletReorgTestWallet,
 }
 
 /// loads test wallets
@@ -46,6 +48,12 @@ impl LightWallet {
             LegacyWalletCase::ZingoV28 => {
                 LightWallet::unsafe_from_buffer_testnet(include_bytes!(
                     "examples/zingo-wallet-v28.dat"
+                ))
+                .await
+            }
+            LegacyWalletCase::OldWalletReorgTestWallet => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "../../../testvectors/old_wallet_reorg_test_wallet/zingo-wallet.dat"
                 ))
                 .await
             }
