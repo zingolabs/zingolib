@@ -3,6 +3,7 @@ use super::super::LightWallet;
 /// i do not know the difference between these wallets but i will find out soon
 /// what can these files do?
 #[non_exhaustive]
+#[derive(Clone)]
 pub enum LegacyWalletCaseZingoV26 {
     /// /
     One,
@@ -13,6 +14,7 @@ pub enum LegacyWalletCaseZingoV26 {
 }
 /// an enumeration of cases to test
 #[non_exhaustive]
+#[derive(Clone)]
 pub enum LegacyWalletCase {
     /// at this version, legacy testing began
     ZingoV26(LegacyWalletCaseZingoV26),
@@ -57,6 +59,17 @@ impl LightWallet {
                 ))
                 .await
             }
+        }
+    }
+
+    /// each wallet file has a saved balance
+    pub fn example_expected_balance(case: LegacyWalletCase) -> u64 {
+        match case {
+            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => 0,
+            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 10177826,
+            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => 1,
+            LegacyWalletCase::ZingoV28 => 10342837,
+            LegacyWalletCase::OldWalletReorgTestWallet => 1,
         }
     }
 }

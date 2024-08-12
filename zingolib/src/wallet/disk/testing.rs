@@ -32,9 +32,9 @@ impl LightWallet {
     }
 }
 
-async fn assert_test_wallet(case: examples::LegacyWalletCase) {
-    let wallet = LightWallet::load_example_wallet(case).await;
-}
+// async fn assert_test_wallet(case: examples::LegacyWalletCase) {
+//     let wallet = LightWallet::load_example_wallet(case).await;
+// }
 
 /// example wallets
 /// including from different versions of the software.

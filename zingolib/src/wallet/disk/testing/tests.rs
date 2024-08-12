@@ -116,11 +116,11 @@ async fn load_wallet_from_v26_dat_file() {
     // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
     // with 3 addresses containing all receivers.
     // including orchard and sapling transactions
-    let wallet =
-        LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One))
-            .await;
+    let case = LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One);
 
-    loaded_wallet_assert(wallet, 0, 3).await;
+    let wallet = LightWallet::load_example_wallet(case.clone()).await;
+
+    loaded_wallet_assert(wallet, LightWallet::example_expected_balance(case), 3).await;
 }
 
 #[ignore = "flakey test"]
@@ -139,11 +139,11 @@ async fn load_wallet_from_v26_2_dat_file() {
     // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
     // with 3 addresses containing all receivers.
     // including orchard and sapling transactions
-    let wallet =
-        LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two))
-            .await;
+    let case = LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two);
 
-    loaded_wallet_assert(wallet, 10177826, 1).await;
+    let wallet = LightWallet::load_example_wallet(case.clone()).await;
+
+    loaded_wallet_assert(wallet, LightWallet::example_expected_balance(case), 1).await;
 }
 
 #[ignore = "flakey test"]
@@ -152,9 +152,11 @@ async fn load_wallet_from_v28_dat_file() {
     // We test that the LightWallet can be read from v28 .dat file
     // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
     // with 3 addresses containing all receivers.
-    let wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV28).await;
+    let case = LegacyWalletCase::ZingoV28;
 
-    loaded_wallet_assert(wallet, 10342837, 3).await;
+    let wallet = LightWallet::load_example_wallet(case.clone()).await;
+
+    loaded_wallet_assert(wallet, LightWallet::example_expected_balance(case), 3).await;
 }
 
 #[tokio::test]
