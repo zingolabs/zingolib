@@ -23,6 +23,8 @@ use zcash_primitives::{block::BlockHash, transaction::TxId};
 
 use memuse::DynamicUsage;
 
+use crate::primitives::OutputId;
+
 type TaggedSaplingBatch<IvkTag> = Batch<
     IvkTag,
     SaplingDomain,
@@ -593,7 +595,7 @@ where
         &mut self,
         block_tag: BlockHash,
         txid: TxId,
-    ) -> HashMap<(TxId, usize), DecryptedOutput<IvkTag, D, Dec::Memo>> {
+    ) -> HashMap<OutputId, DecryptedOutput<IvkTag, D, Dec::Memo>> {
         self.pending_results
             .remove(&ResultKey(block_tag, txid))
             // We won't have a pending result if the transaction didn't have outputs of
@@ -610,7 +612,9 @@ where
                         |OutputIndex {
                              output_index,
                              value,
-                         }| { ((txid, output_index), value) },
+                         }| {
+                            (OutputId::from_parts(txid, output_index), value)
+                        },
                     )
                     .collect()
             })
