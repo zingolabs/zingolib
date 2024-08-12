@@ -95,7 +95,7 @@ async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_ad
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
-    let _loaded_wallet = LightWallet::load_legacy_wallet(LegacyWalletCase::ZingoV26(
+    let _loaded_wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(
         LegacyWalletCaseZingoV26::RegtestSapOnly,
     ))
     .await;
@@ -117,7 +117,7 @@ async fn load_wallet_from_v26_dat_file() {
     // with 3 addresses containing all receivers.
     // including orchard and sapling transactions
     let wallet =
-        LightWallet::load_legacy_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One))
+        LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One))
             .await;
 
     loaded_wallet_assert(wallet, 0, 3).await;
@@ -140,7 +140,7 @@ async fn load_wallet_from_v26_2_dat_file() {
     // with 3 addresses containing all receivers.
     // including orchard and sapling transactions
     let wallet =
-        LightWallet::load_legacy_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two))
+        LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two))
             .await;
 
     loaded_wallet_assert(wallet, 10177826, 1).await;
@@ -152,7 +152,7 @@ async fn load_wallet_from_v28_dat_file() {
     // We test that the LightWallet can be read from v28 .dat file
     // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
     // with 3 addresses containing all receivers.
-    let wallet = LightWallet::load_legacy_wallet(LegacyWalletCase::ZingoV28).await;
+    let wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV28).await;
 
     loaded_wallet_assert(wallet, 10342837, 3).await;
 }
@@ -173,7 +173,7 @@ async fn reload_wallet_from_buffer() {
     // --birthday 0
     // --nosync
     // with 3 addresses containing all receivers.
-    let mid_wallet = LightWallet::load_legacy_wallet(LegacyWalletCase::ZingoV28).await;
+    let mid_wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV28).await;
 
     let mid_client = LightClient::create_from_wallet_async(mid_wallet)
         .await
