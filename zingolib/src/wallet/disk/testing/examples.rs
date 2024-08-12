@@ -21,25 +21,34 @@ pub enum LegacyWalletCase {
 }
 
 /// loads test wallets
-pub async fn load_legacy_wallet(case: LegacyWalletCase) -> LightWallet {
-    match case {
-        LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => {
-            LightWallet::unsafe_from_buffer_testnet(include_bytes!("examples/zingo-wallet-v26.dat"))
+impl LightWallet {
+    /// loads any one of the test wallets included in the examples
+    pub async fn load_legacy_wallet(case: LegacyWalletCase) -> Self {
+        match case {
+            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/zingo-wallet-v26.dat"
+                ))
                 .await
-        }
-        LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => {
-            LightWallet::unsafe_from_buffer_testnet(include_bytes!("examples/zingo-wallet-v26.dat"))
+            }
+            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/zingo-wallet-v26.dat"
+                ))
                 .await
-        }
-        LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => {
-            LightWallet::unsafe_from_buffer_regtest(include_bytes!(
-                "examples/v26/202302_release/regtest/sap_only/zingo-wallet.dat"
-            ))
-            .await
-        }
-        LegacyWalletCase::ZingoV28 => {
-            LightWallet::unsafe_from_buffer_testnet(include_bytes!("examples/zingo-wallet-v28.dat"))
+            }
+            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "examples/v26/202302_release/regtest/sap_only/zingo-wallet.dat"
+                ))
                 .await
+            }
+            LegacyWalletCase::ZingoV28 => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/zingo-wallet-v28.dat"
+                ))
+                .await
+            }
         }
     }
 }
