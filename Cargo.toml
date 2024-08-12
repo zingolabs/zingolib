@@ -30,7 +30,7 @@ zip32 = "0.1"
 clap = "4.4"
 tempdir = "0.3"
 portpicker = "0.1"
-incrementalmerkletree = { version = "0.5" }
+incrementalmerkletree = { version = "0.5.1" }
 futures = "0.3.15"
 shardtree = "0.3"
 build_utils = { path = "./build_utils" }
