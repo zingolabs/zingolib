@@ -96,11 +96,10 @@ async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_ad
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
-    let (_sap_wallet, _sap_path, sap_dir) = crate::testutils::get_wallet_nym("sap_only").unwrap();
-    let _loaded_wallet =
-        crate::testutils::load_wallet(sap_dir, crate::config::ChainType::Regtest(regtest_network))
-            .await;
+    let _loaded_wallet = load_legacy_wallet(LegacyWalletCase::ZingoV26(
+        LegacyWalletCaseZingoV26::RegtestSapOnly,
+    ))
+    .await;
 }
 
 #[tokio::test]
