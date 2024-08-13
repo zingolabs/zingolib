@@ -6,23 +6,22 @@ use std::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use incrementalmerkletree::{Position, Retention};
-use orchard::{keys::Scope, note_encryption::CompactAction, tree::MerkleHashOrchard};
+use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
 use zcash_client_backend::{
     data_api::scanning::ScanRange,
     proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx},
-    scanning::ScanningKeys,
 };
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     transaction::TxId,
-    zip32::AccountId,
 };
 
 use crate::{
     client::{self, get_compact_block_range, FetchRequest},
+    keys::{KeyId, ScanningKeyOps, ScanningKeys},
     primitives::{NullifierMap, OutputId, WalletBlock},
     witness::ShardTreeData,
 };
@@ -30,8 +29,6 @@ use crate::{
 use self::runners::{BatchRunners, DecryptedOutput};
 
 pub(crate) mod runners;
-
-type KeyId = (AccountId, Scope);
 
 struct InitialScanData {
     previous_block: Option<WalletBlock>,
@@ -47,7 +44,7 @@ impl InitialScanData {
         previous_wallet_block: Option<WalletBlock>,
     ) -> Result<Self, ()>
     where
-        P: Parameters + Send + 'static,
+        P: Parameters + Sync + Send + 'static,
     {
         // gets initial tree size from previous block if available
         // otherwise, from first block if available
@@ -145,12 +142,12 @@ impl Default for DecryptedNoteData {
 pub(crate) async fn scan<P>(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     parameters: &P,
-    scanning_keys: &ScanningKeys<AccountId, KeyId>,
     scan_range: ScanRange,
+    scanning_keys: &ScanningKeys,
     previous_wallet_block: Option<WalletBlock>,
 ) -> Result<ScanData, ()>
 where
-    P: Parameters + Send + 'static,
+    P: Parameters + Sync + Send + 'static,
 {
     let compact_blocks = get_compact_block_range(
         fetch_request_sender.clone(),
@@ -171,9 +168,7 @@ where
     .unwrap();
 
     let (nullifiers, wallet_blocks, _relevent_txids, _note_data, shard_tree_data) =
-        scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data)
-            .await
-            .unwrap();
+        scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data).unwrap();
 
     // TODO: scan transactions
 
@@ -184,10 +179,11 @@ where
     })
 }
 
-async fn scan_compact_blocks<P>(
+#[allow(clippy::type_complexity)]
+fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
     parameters: &P,
-    scanning_keys: &ScanningKeys<AccountId, KeyId>,
+    scanning_keys: &ScanningKeys,
     initial_scan_data: InitialScanData,
 ) -> Result<
     (
@@ -200,7 +196,7 @@ async fn scan_compact_blocks<P>(
     (),
 >
 where
-    P: Parameters + Send + 'static,
+    P: Parameters + Sync + Send + 'static,
 {
     check_continuity(&compact_blocks, initial_scan_data.previous_block.as_ref()).unwrap();
 
@@ -305,15 +301,15 @@ where
 
 fn trial_decrypt<P>(
     parameters: &P,
-    scanning_keys: &ScanningKeys<AccountId, KeyId>,
+    scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
-) -> Result<BatchRunners<KeyId, (), ()>, ()>
+) -> Result<BatchRunners<(), ()>, ()>
 where
     P: Parameters + Send + 'static,
 {
     // TODO: add outgoing decryption
 
-    let mut runners = BatchRunners::<KeyId, (), ()>::for_keys(100, scanning_keys);
+    let mut runners = BatchRunners::<(), ()>::for_keys(100, scanning_keys);
     for block in compact_blocks {
         runners.add_block(parameters, block.clone()).unwrap();
     }
@@ -379,11 +375,11 @@ fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> 
 fn calculate_nullifiers_and_positions<D, K, Nf>(
     tree_size: u32,
     keys: &HashMap<KeyId, K>,
-    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
     nullifiers_and_positions: &mut HashMap<OutputId, (Nf, Position)>,
 ) where
     D: Domain,
-    K: zcash_client_backend::scanning::ScanningKeyOps<D, AccountId, Nf>,
+    K: ScanningKeyOps<D, Nf>,
 {
     incoming_decrypted_outputs
         .iter()
@@ -407,7 +403,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
     outputs: &[CompactSaplingOutput],
     block_height: BlockHeight,
     last_outputs_in_block: bool,
-    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ()> {
     let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
         .keys()
@@ -451,7 +447,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     actions: &[CompactOrchardAction],
     block_height: BlockHeight,
     last_outputs_in_block: bool,
-    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ()> {
     let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
         .keys()

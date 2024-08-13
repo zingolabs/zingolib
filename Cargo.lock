@@ -4232,6 +4232,7 @@ dependencies = [
  "tonic",
  "tracing",
  "zcash_client_backend",
+ "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
  "zingo-netutils",

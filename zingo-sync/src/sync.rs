@@ -5,10 +5,10 @@ use std::ops::Range;
 use crate::client::FetchRequest;
 use crate::client::{fetch::fetch, get_chain_height};
 use crate::interface::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncWallet};
+use crate::keys::ScanningKeys;
 use crate::primitives::SyncState;
 use crate::scan::{scan, ScanData};
 
-use zcash_client_backend::scanning::ScanningKeys;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
@@ -28,7 +28,7 @@ pub async fn sync<P, W>(
     wallet: &mut W,
 ) -> Result<(), ()>
 where
-    P: Parameters + Send + 'static,
+    P: Parameters + Sync + Send + 'static,
     W: SyncWallet + SyncBlocks + SyncNullifiers + SyncShardTrees,
 {
     tracing::info!("Syncing wallet...");
@@ -45,21 +45,26 @@ where
         .await
         .unwrap();
 
-    let account_ufvks = wallet.get_unified_full_viewing_keys().unwrap();
-    let scanning_keys = ScanningKeys::from_account_ufvks(account_ufvks);
+    let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
+    let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
 
     let scan_range = prepare_next_scan_range(&sync_state).await;
     if let Some(range) = scan_range {
         let previous_wallet_block = wallet.get_wallet_block(range.block_range().start - 1).ok();
-        let scan_data = scan(
-            fetch_request_sender,
-            parameters,
-            &scanning_keys,
-            range.clone(),
-            previous_wallet_block,
-        )
-        .await
-        .unwrap();
+
+        let parameters = parameters.clone();
+        let scan_handle = tokio::spawn(async move {
+            scan(
+                fetch_request_sender,
+                &parameters,
+                range.clone(),
+                &scanning_keys,
+                previous_wallet_block,
+            )
+            .await
+        });
+
+        let scan_data = scan_handle.await.unwrap().unwrap();
 
         let ScanData {
             nullifiers,
@@ -72,11 +77,10 @@ where
         wallet.append_wallet_blocks(wallet_blocks).unwrap();
         wallet.append_nullifiers(nullifiers).unwrap();
         wallet.update_shard_trees(shard_tree_data).unwrap();
+        // TODO: add trait to save wallet data to persistance for in-memory wallets
 
         // TODO: set scanned range to `scanned`
     }
-
-    // TODO: add trait to save wallet data to persistance for in-memory wallets
 
     try_join_all(vec![fetcher_handle]).await.unwrap();
 

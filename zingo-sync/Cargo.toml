@@ -11,6 +11,7 @@ zingo-netutils = { path = "../zingo-netutils" }
 zcash_client_backend.workspace = true
 zcash_primitives.workspace = true
 zcash_note_encryption.workspace = true
+zcash_keys.workspace = true
 sapling-crypto.workspace = true
 orchard.workspace = true
 incrementalmerkletree.workspace = true
