@@ -41,14 +41,14 @@ impl SyncWallet for LightWallet {
 
 impl SyncBlocks for LightWallet {
     fn get_wallet_block(&self, block_height: BlockHeight) -> Result<WalletBlock, Self::Error> {
-        self.compact_blocks.get(&block_height).cloned().ok_or(())
+        self.wallet_blocks.get(&block_height).cloned().ok_or(())
     }
 
     fn append_wallet_blocks(
         &mut self,
         mut wallet_compact_blocks: BTreeMap<BlockHeight, WalletBlock>,
     ) -> Result<(), Self::Error> {
-        self.compact_blocks.append(&mut wallet_compact_blocks);
+        self.wallet_blocks.append(&mut wallet_compact_blocks);
 
         Ok(())
     }

@@ -215,7 +215,7 @@ pub struct LightWallet {
     /// Wallet compact blocks
     #[cfg(feature = "sync")]
     #[getset(get = "pub")]
-    compact_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
 
     /// Nullifier map
     #[cfg(feature = "sync")]
@@ -387,7 +387,7 @@ impl LightWallet {
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
             #[cfg(feature = "sync")]
-            compact_blocks: BTreeMap::new(),
+            wallet_blocks: BTreeMap::new(),
             #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
             #[cfg(feature = "sync")]

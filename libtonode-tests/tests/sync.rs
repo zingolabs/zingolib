@@ -35,7 +35,7 @@ async fn sync_mainnet_test() {
         .await
         .unwrap();
 
-    dbg!(lightclient.wallet.shard_trees());
+    dbg!(lightclient.wallet.wallet_blocks());
 }
 
 #[tokio::test]
@@ -56,5 +56,5 @@ async fn sync_test() {
     .await
     .unwrap();
 
-    dbg!(recipient.wallet.shard_trees());
+    dbg!(recipient.wallet.wallet_blocks());
 }

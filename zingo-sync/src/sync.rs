@@ -45,43 +45,76 @@ where
         .await
         .unwrap();
 
-    let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
-    let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
+    let mut scan_handles = Vec::new();
 
-    let scan_range = prepare_next_scan_range(&sync_state).await;
-    if let Some(range) = scan_range {
-        let previous_wallet_block = wallet.get_wallet_block(range.block_range().start - 1).ok();
-
+    let scan_handle = if let Some(scan_range) = prepare_next_scan_range(&sync_state).await {
+        let previous_wallet_block = wallet
+            .get_wallet_block(scan_range.block_range().start - 1)
+            .ok();
+        let fetch_request_sender = fetch_request_sender.clone();
         let parameters = parameters.clone();
-        let scan_handle = tokio::spawn(async move {
+        let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
+        let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
+        Some(tokio::spawn(async move {
             scan(
                 fetch_request_sender,
                 &parameters,
-                range.clone(),
+                scan_range.clone(),
                 &scanning_keys,
                 previous_wallet_block,
             )
             .await
-        });
+        }))
+    } else {
+        None
+    };
+    scan_handles.push(scan_handle);
 
-        let scan_data = scan_handle.await.unwrap().unwrap();
+    let scan_handle = if let Some(scan_range) = prepare_next_scan_range(&sync_state).await {
+        let previous_wallet_block = wallet
+            .get_wallet_block(scan_range.block_range().start - 1)
+            .ok();
+        let fetch_request_sender = fetch_request_sender.clone();
+        let parameters = parameters.clone();
+        let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
+        let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
+        Some(tokio::spawn(async move {
+            scan(
+                fetch_request_sender,
+                &parameters,
+                scan_range.clone(),
+                &scanning_keys,
+                previous_wallet_block,
+            )
+            .await
+        }))
+    } else {
+        None
+    };
+    scan_handles.push(scan_handle);
 
-        let ScanData {
-            nullifiers,
-            wallet_blocks,
-            shard_tree_data,
-        } = scan_data;
+    for scan_handle in scan_handles {
+        if let Some(handle) = scan_handle {
+            let scan_data = handle.await.unwrap().unwrap();
 
-        // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
-        // must still retain top 100 blocks for re-org purposes
-        wallet.append_wallet_blocks(wallet_blocks).unwrap();
-        wallet.append_nullifiers(nullifiers).unwrap();
-        wallet.update_shard_trees(shard_tree_data).unwrap();
-        // TODO: add trait to save wallet data to persistance for in-memory wallets
+            let ScanData {
+                nullifiers,
+                wallet_blocks,
+                shard_tree_data,
+            } = scan_data;
 
-        // TODO: set scanned range to `scanned`
+            // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
+            // must still retain top 100 blocks for re-org purposes
+            wallet.append_wallet_blocks(wallet_blocks).unwrap();
+            wallet.append_nullifiers(nullifiers).unwrap();
+            wallet.update_shard_trees(shard_tree_data).unwrap();
+            // TODO: add trait to save wallet data to persistance for in-memory wallets
+
+            // TODO: set scanned range to `scanned`
+        }
     }
 
+    drop(fetch_request_sender);
     try_join_all(vec![fetcher_handle]).await.unwrap();
 
     Ok(())
@@ -149,13 +182,18 @@ async fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
     if let Some((lower_range, higher_range)) = selected_scan_range
         .split_at(selected_scan_range.block_range().start + BlockHeight::from_u32(BATCH_SIZE))
     {
-        scan_ranges.splice(index..=index, vec![lower_range.clone(), higher_range]);
-
-        // TODO: add an `exclude` parameter so the same range is not selected twice when multiple tasks call this fn
+        let lower_range_ignored =
+            ScanRange::from_parts(lower_range.block_range().clone(), ScanPriority::Ignored);
+        scan_ranges.splice(index..=index, vec![lower_range_ignored, higher_range]);
 
         Some(lower_range)
     } else {
-        // TODO: add an `exclude` parameter so the same range is not selected twice when multiple tasks call this fn
+        let selected_scan_range = selected_scan_range.clone();
+        let selected_range_ignored = ScanRange::from_parts(
+            selected_scan_range.block_range().clone(),
+            ScanPriority::Ignored,
+        );
+        scan_ranges.splice(index..=index, vec![selected_range_ignored]);
 
         Some(selected_scan_range.clone())
     }

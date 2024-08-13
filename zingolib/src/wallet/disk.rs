@@ -238,7 +238,7 @@ impl LightWallet {
             price: Arc::new(RwLock::new(price)),
             transaction_context,
             #[cfg(feature = "sync")]
-            compact_blocks: BTreeMap::new(),
+            wallet_blocks: BTreeMap::new(),
             #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
             #[cfg(feature = "sync")]
