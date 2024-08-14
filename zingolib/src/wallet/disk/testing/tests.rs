@@ -132,7 +132,6 @@ async fn load_wallet_from_v26_dat_file() {
     .await;
 }
 
-#[ignore = "flakey test"]
 #[tokio::test]
 async fn load_wallet_from_v26_2_dat_file() {
     // We test that the LightWallet can be read from v26 .dat file
@@ -160,7 +159,6 @@ async fn load_wallet_from_v26_2_dat_file() {
     .await;
 }
 
-#[ignore = "flakey test"]
 #[tokio::test]
 async fn load_wallet_from_v28_dat_file() {
     // We test that the LightWallet can be read from v28 .dat file
