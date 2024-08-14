@@ -124,7 +124,12 @@ async fn load_wallet_from_v26_dat_file() {
 
     let wallet = LightWallet::load_example_wallet(case.clone()).await;
 
-    loaded_wallet_assert(wallet, LightWallet::example_expected_balance(case), 3).await;
+    loaded_wallet_assert(
+        wallet,
+        LightWallet::example_expected_balance(case.clone()),
+        LightWallet::example_expected_num_addresses(case),
+    )
+    .await;
 }
 
 #[ignore = "flakey test"]
@@ -147,7 +152,12 @@ async fn load_wallet_from_v26_2_dat_file() {
 
     let wallet = LightWallet::load_example_wallet(case.clone()).await;
 
-    loaded_wallet_assert(wallet, LightWallet::example_expected_balance(case), 1).await;
+    loaded_wallet_assert(
+        wallet,
+        LightWallet::example_expected_balance(case.clone()),
+        LightWallet::example_expected_num_addresses(case),
+    )
+    .await;
 }
 
 #[ignore = "flakey test"]
@@ -160,7 +170,12 @@ async fn load_wallet_from_v28_dat_file() {
 
     let wallet = LightWallet::load_example_wallet(case.clone()).await;
 
-    loaded_wallet_assert(wallet, LightWallet::example_expected_balance(case), 3).await;
+    loaded_wallet_assert(
+        wallet,
+        LightWallet::example_expected_balance(case.clone()),
+        LightWallet::example_expected_num_addresses(case),
+    )
+    .await;
 }
 
 #[tokio::test]
