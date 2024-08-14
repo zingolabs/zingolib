@@ -9,7 +9,11 @@ use super::super::LightWallet;
 use super::examples::LegacyWalletCase;
 use super::examples::LegacyWalletCaseZingoV26;
 
-async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_addresses: usize) {
+async fn loaded_wallet_assert(
+    wallet: LightWallet,
+    expected_balance: u64,
+    expected_num_addresses: usize,
+) {
     let expected_mnemonic = (
         zcash_primitives::zip339::Mnemonic::from_phrase(
             crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
@@ -60,7 +64,7 @@ async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_ad
             .unwrap()
     );
 
-    assert_eq!(wc.addresses().len(), num_addresses);
+    assert_eq!(wc.addresses().len(), expected_num_addresses);
     for addr in wc.addresses().iter() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
