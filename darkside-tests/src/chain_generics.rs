@@ -31,7 +31,7 @@ proptest! {
         });
      }
 }
-pub(crate) mod impl_conduct_chain_for_darkside_environment {
+pub(crate) mod conduct_chain {
     //! known issues include
     //!   - transparent sends do not work
     //!   - txids are regenerated randomly. zingo can optionally accept_server_txid
@@ -67,19 +67,9 @@ pub(crate) mod impl_conduct_chain_for_darkside_environment {
             .unwrap()
         }
 
-        async fn create_client(&mut self) -> LightClient {
-            let mut zingo_config = self
-                .client_builder
-                .make_unique_data_dir_and_load_config(self.regtest_network);
-            zingo_config.accept_server_txids = true;
-            LightClient::create_from_wallet_base_async(
-                WalletBase::FreshEntropy,
-                &zingo_config,
-                0,
-                false,
-            )
-            .await
-            .unwrap()
+        fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
+            self.client_builder
+                .make_unique_data_dir_and_load_config(self.regtest_network)
         }
 
         async fn bump_chain(&mut self) {

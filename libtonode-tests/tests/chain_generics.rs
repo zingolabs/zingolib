@@ -6,7 +6,7 @@ mod chain_generics {
 
     use zingolib::testutils::chain_generics::fixtures;
 
-    use environment::LibtonodeEnvironment;
+    use conduct_chain::LibtonodeEnvironment;
     #[tokio::test]
     async fn generate_a_range_of_value_transfers() {
         fixtures::create_various_value_transfers::<LibtonodeEnvironment>().await;
@@ -192,7 +192,7 @@ mod chain_generics {
     async fn simpool_change_50_000_orchard_to_orchard() {
         fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Shielded(Orchard), 50_000).await;
     }
-    mod environment {
+    mod conduct_chain {
         use zcash_client_backend::PoolType;
 
         use zcash_client_backend::ShieldedProtocol::Sapling;
@@ -201,7 +201,7 @@ mod chain_generics {
         use zingolib::lightclient::LightClient;
         use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
         use zingolib::testutils::scenarios::setup::ScenarioBuilder;
-        use zingolib::wallet::WalletBase;
+
         pub(crate) struct LibtonodeEnvironment {
             regtest_network: RegtestNetwork,
             scenario_builder: ScenarioBuilder,
@@ -232,19 +232,10 @@ mod chain_generics {
                     .await
             }
 
-            async fn create_client(&mut self) -> LightClient {
-                let zingo_config = self
-                    .scenario_builder
+            fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
+                self.scenario_builder
                     .client_builder
-                    .make_unique_data_dir_and_load_config(self.regtest_network);
-                LightClient::create_from_wallet_base_async(
-                    WalletBase::FreshEntropy,
-                    &zingo_config,
-                    0,
-                    false,
-                )
-                .await
-                .unwrap()
+                    .make_unique_data_dir_and_load_config(self.regtest_network)
             }
 
             async fn bump_chain(&mut self) {

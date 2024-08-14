@@ -82,8 +82,9 @@ dirs.workspace = true
 log4rs.workspace = true
 
 [dev-dependencies]
-concat-idents = { workspace = true }
+portpicker = { workspace = true }
 tempfile = { workspace = true }
+concat-idents = { workspace = true }
 
 [build-dependencies]
 build_utils = { workspace = true }

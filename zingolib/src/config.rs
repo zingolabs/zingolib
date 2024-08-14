@@ -233,16 +233,6 @@ impl Default for ZingoConfigBuilder {
 }
 
 impl ZingoConfig {
-    #[deprecated]
-    /// Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
-        if let Some(dir) = dir {
-            ZingoConfig::build(chain).set_wallet_dir(dir).create()
-        } else {
-            ZingoConfig::build(chain).create()
-        }
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn build(chain: ChainType) -> ZingoConfigBuilder {
         ZingoConfigBuilder {
@@ -251,7 +241,7 @@ impl ZingoConfig {
         }
     }
 
-    #[cfg(feature = "test-elevation")]
+    #[cfg(any(test, feature = "test-elevation"))]
     /// create a ZingoConfig that helps a LightClient connect to a server.
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
@@ -261,6 +251,16 @@ impl ZingoConfig {
                     .unwrap(),
             )
             .create()
+    }
+
+    #[cfg(feature = "test-elevation")]
+    /// create a ZingoConfig that signals a LightClient not to connect to a server.
+    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+        if let Some(dir) = dir {
+            ZingoConfig::build(chain).set_wallet_dir(dir).create()
+        } else {
+            ZingoConfig::build(chain).create()
+        }
     }
 
     /// Convenience wrapper
