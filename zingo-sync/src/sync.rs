@@ -5,21 +5,18 @@ use std::ops::Range;
 use crate::client::FetchRequest;
 use crate::client::{fetch::fetch, get_chain_height};
 use crate::interface::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncWallet};
-use crate::keys::ScanningKeys;
 use crate::primitives::SyncState;
-use crate::scan::{scan, ScanData};
+use crate::scan::{ScanResults, ScanTask, Scanner};
 
-use tokio::task::JoinHandle;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-
-use futures::future::try_join_all;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
-const SCAN_WORKERS: usize = 2;
+use futures::future::try_join_all;
+use tokio::sync::mpsc;
+
 const BATCH_SIZE: u32 = 10;
 // const BATCH_SIZE: u32 = 1_000;
 
@@ -40,41 +37,51 @@ where
     let sync_state = SyncState::new(); // placeholders
 
     // create channel for sending fetch requests and launch fetcher task
-    let (fetch_request_sender, fetch_request_receiver) = unbounded_channel();
+    let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
     let fetcher_handle = tokio::spawn(fetch(fetch_request_receiver, client));
 
     update_scan_ranges(fetch_request_sender.clone(), parameters, &sync_state)
         .await
         .unwrap();
 
-    // let scan_handle_a = run_scan_task(
-    //     fetch_request_sender.clone(),
-    //     parameters.clone(),
-    //     wallet,
-    //     &sync_state,
-    // )
-    // .await;
+    let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
+    let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
+    let scanner = Scanner::new(
+        scan_results_sender,
+        fetch_request_sender,
+        parameters.clone(),
+        ufvks,
+    );
 
-    // if let Some(handle) = scan_handle_a {
-    //     let scan_data = handle.await.unwrap().unwrap();
+    if scanner.is_worker_idle() {
+        if let Some(scan_range) = prepare_next_scan_range(&sync_state).await {
+            let previous_wallet_block = wallet
+                .get_wallet_block(scan_range.block_range().start - 1)
+                .ok();
 
-    //     let ScanData {
-    //         nullifiers,
-    //         wallet_blocks,
-    //         shard_tree_data,
-    //     } = scan_data;
+            scanner
+                .add_scan_task(ScanTask::from_parts(scan_range, previous_wallet_block))
+                .unwrap();
+        }
+    }
 
-    //     // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
-    //     // must still retain top 100 blocks for re-org purposes
-    //     wallet.append_wallet_blocks(wallet_blocks).unwrap();
-    //     wallet.append_nullifiers(nullifiers).unwrap();
-    //     wallet.update_shard_trees(shard_tree_data).unwrap();
-    //     // TODO: add trait to save wallet data to persistance for in-memory wallets
+    while let Some(scan_results) = scan_results_receiver.recv().await {
+        let ScanResults {
+            nullifiers,
+            wallet_blocks,
+            shard_tree_data,
+        } = scan_results;
 
-    //     // TODO: set scanned range to `scanned`
-    // }
+        // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
+        // must still retain top 100 blocks for re-org purposes
+        wallet.append_wallet_blocks(wallet_blocks).unwrap();
+        wallet.append_nullifiers(nullifiers).unwrap();
+        wallet.update_shard_trees(shard_tree_data).unwrap();
+        // TODO: add trait to save wallet data to persistance for in-memory wallets
 
-    drop(fetch_request_sender);
+        // TODO: set scanned range to `scanned`
+    }
+
     try_join_all(vec![fetcher_handle]).await.unwrap();
 
     Ok(())
@@ -82,7 +89,7 @@ where
 
 // update scan_ranges to include blocks between the last known chain height (wallet height) and the chain height from the server
 async fn update_scan_ranges<P>(
-    fetch_request_sender: UnboundedSender<FetchRequest>,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
     sync_state: &SyncState,
 ) -> Result<(), ()>
@@ -156,36 +163,5 @@ async fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
         scan_ranges.splice(index..=index, vec![selected_range_ignored]);
 
         Some(selected_scan_range.clone())
-    }
-}
-
-async fn run_scan_task<P, W>(
-    fetch_request_sender: UnboundedSender<FetchRequest>,
-    parameters: P,
-    wallet: &mut W,
-    sync_state: &SyncState, // temp
-) -> Result<Option<JoinHandle<Result<ScanData, ()>>>, ()>
-where
-    P: Parameters + Sync + Send + 'static,
-    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncShardTrees,
-{
-    if let Some(scan_range) = prepare_next_scan_range(&sync_state).await {
-        let previous_wallet_block = wallet
-            .get_wallet_block(scan_range.block_range().start - 1)
-            .ok();
-        let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
-        let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
-        Ok(Some(tokio::spawn(async move {
-            scan(
-                fetch_request_sender,
-                &parameters,
-                scan_range.clone(),
-                &scanning_keys,
-                previous_wallet_block,
-            )
-            .await
-        })))
-    } else {
-        Ok(None)
     }
 }

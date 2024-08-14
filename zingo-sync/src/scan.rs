@@ -1,9 +1,13 @@
 use std::{
-    cmp::Ordering,
+    cmp,
     collections::{BTreeMap, HashMap, HashSet},
+    sync::{
+        atomic::{self, AtomicBool},
+        Arc,
+    },
 };
 
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 use incrementalmerkletree::{Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
@@ -12,11 +16,13 @@ use zcash_client_backend::{
     data_api::scanning::ScanRange,
     proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx},
 };
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     transaction::TxId,
+    zip32::AccountId,
 };
 
 use crate::{
@@ -30,6 +36,136 @@ use self::runners::{BatchRunners, DecryptedOutput};
 
 pub(crate) mod runners;
 
+const SCAN_WORKER_POOLSIZE: usize = 2;
+
+type WorkerHandle = (
+    JoinHandle<Result<(), ()>>,
+    mpsc::UnboundedSender<ScanTask>,
+    Arc<AtomicBool>,
+);
+
+pub(crate) struct Scanner {
+    workers: Vec<WorkerHandle>,
+}
+
+impl Scanner {
+    pub(crate) fn new<P>(
+        scan_results_sender: mpsc::UnboundedSender<ScanResults>,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+        parameters: P,
+        ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+    ) -> Self
+    where
+        P: Parameters + Sync + Send + 'static,
+    {
+        let mut workers: Vec<WorkerHandle> = Vec::with_capacity(SCAN_WORKER_POOLSIZE);
+
+        for _ in 0..SCAN_WORKER_POOLSIZE {
+            let (scan_task_sender, scan_task_receiver) = mpsc::unbounded_channel();
+            let worker = ScanWorker::new(
+                scan_task_receiver,
+                scan_results_sender.clone(),
+                fetch_request_sender.clone(),
+                parameters.clone(),
+                ufvks.clone(),
+            );
+            let worker_status = Arc::clone(&worker.scanning);
+            let worker_handle = tokio::spawn(async move { worker.run().await });
+            workers.push((worker_handle, scan_task_sender, worker_status));
+        }
+
+        Self { workers }
+    }
+
+    pub(crate) fn is_worker_idle(&self) -> bool {
+        self.workers
+            .iter()
+            .any(|(_, _, status)| !status.load(atomic::Ordering::Acquire))
+    }
+
+    pub(crate) fn add_scan_task(self, scan_task: ScanTask) -> Result<(), ()> {
+        for (_, scan_task_sender, status) in self.workers {
+            if !status.load(atomic::Ordering::Acquire) {
+                scan_task_sender.send(scan_task).unwrap();
+                break;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+struct ScanWorker<P> {
+    scanning: Arc<AtomicBool>,
+    scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
+    scan_results_sender: mpsc::UnboundedSender<ScanResults>,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    parameters: P,
+    scanning_keys: ScanningKeys,
+}
+
+impl<P> ScanWorker<P>
+where
+    P: Parameters + Sync + Send + 'static,
+{
+    fn new(
+        scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
+        scan_results_sender: mpsc::UnboundedSender<ScanResults>,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+        parameters: P,
+        ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+    ) -> Self {
+        let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
+        Self {
+            scanning: Arc::new(AtomicBool::new(false)),
+            scan_task_receiver,
+            scan_results_sender,
+            fetch_request_sender,
+            parameters,
+            scanning_keys,
+        }
+    }
+
+    async fn run(mut self) -> Result<(), ()> {
+        while let Some(scan_task) = self.scan_task_receiver.recv().await {
+            self.scanning.store(true, atomic::Ordering::Release);
+
+            let scan_results = scan(
+                self.fetch_request_sender.clone(),
+                &self.parameters.clone(),
+                &self.scanning_keys,
+                scan_task.scan_range,
+                scan_task.previous_wallet_block,
+            )
+            .await
+            .unwrap();
+
+            self.scan_results_sender.send(scan_results).unwrap();
+
+            self.scanning.store(false, atomic::Ordering::Release);
+        }
+
+        Ok(())
+    }
+}
+
+pub(crate) struct ScanTask {
+    scan_range: ScanRange,
+    previous_wallet_block: Option<WalletBlock>,
+}
+
+impl ScanTask {
+    pub(crate) fn from_parts(
+        scan_range: ScanRange,
+        previous_wallet_block: Option<WalletBlock>,
+    ) -> Self {
+        Self {
+            scan_range,
+            previous_wallet_block,
+        }
+    }
+}
+
 struct InitialScanData {
     previous_block: Option<WalletBlock>,
     sapling_initial_tree_size: u32,
@@ -38,7 +174,7 @@ struct InitialScanData {
 
 impl InitialScanData {
     async fn new<P>(
-        fetch_request_sender: UnboundedSender<FetchRequest>,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: &P,
         first_block: &CompactBlock,
         previous_wallet_block: Option<WalletBlock>,
@@ -88,7 +224,7 @@ impl InitialScanData {
                     .expect("should have some sapling activation height");
 
                 match first_block.height().cmp(&sapling_activation_height) {
-                    Ordering::Greater => {
+                    cmp::Ordering::Greater => {
                         let frontiers =
                             client::get_frontiers(fetch_request_sender, first_block.height() - 1)
                                 .await
@@ -98,8 +234,8 @@ impl InitialScanData {
                             frontiers.final_orchard_tree().tree_size() as u32,
                         )
                     }
-                    Ordering::Equal => (0, 0),
-                    Ordering::Less => panic!("pre-sapling not supported!"),
+                    cmp::Ordering::Equal => (0, 0),
+                    cmp::Ordering::Less => panic!("pre-sapling not supported!"),
                 }
             };
 
@@ -111,7 +247,16 @@ impl InitialScanData {
     }
 }
 
-pub(crate) struct ScanData {
+#[allow(dead_code)]
+struct ScanData {
+    pub(crate) nullifiers: NullifierMap,
+    pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub(crate) relevent_txids: HashSet<TxId>,
+    pub(crate) decrypted_note_data: DecryptedNoteData,
+    pub(crate) shard_tree_data: ShardTreeData,
+}
+
+pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     pub(crate) shard_tree_data: ShardTreeData,
@@ -140,12 +285,12 @@ impl Default for DecryptedNoteData {
 // scans a given range and returns all data relevent to the specified keys
 // `previous_wallet_block` is the block with height [scan_range.start - 1]
 pub(crate) async fn scan<P>(
-    fetch_request_sender: UnboundedSender<FetchRequest>,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
-    scan_range: ScanRange,
     scanning_keys: &ScanningKeys,
+    scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
-) -> Result<ScanData, ()>
+) -> Result<ScanResults, ()>
 where
     P: Parameters + Sync + Send + 'static,
 {
@@ -167,12 +312,20 @@ where
     .await
     .unwrap();
 
-    let (nullifiers, wallet_blocks, _relevent_txids, _note_data, shard_tree_data) =
+    let scan_data =
         scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data).unwrap();
+
+    let ScanData {
+        nullifiers,
+        wallet_blocks,
+        relevent_txids: _,
+        decrypted_note_data: _,
+        shard_tree_data,
+    } = scan_data;
 
     // TODO: scan transactions
 
-    Ok(ScanData {
+    Ok(ScanResults {
         nullifiers,
         wallet_blocks,
         shard_tree_data,
@@ -185,16 +338,7 @@ fn scan_compact_blocks<P>(
     parameters: &P,
     scanning_keys: &ScanningKeys,
     initial_scan_data: InitialScanData,
-) -> Result<
-    (
-        NullifierMap,
-        BTreeMap<BlockHeight, WalletBlock>,
-        HashSet<TxId>,
-        DecryptedNoteData,
-        ShardTreeData,
-    ),
-    (),
->
+) -> Result<ScanData, ()>
 where
     P: Parameters + Sync + Send + 'static,
 {
@@ -205,7 +349,7 @@ where
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
     let mut relevent_txids: HashSet<TxId> = HashSet::new();
-    let mut note_data = DecryptedNoteData::new();
+    let mut decrypted_note_data = DecryptedNoteData::new();
     let mut shard_tree_data = ShardTreeData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
         Position::from(u64::from(initial_scan_data.orchard_initial_tree_size)),
@@ -259,13 +403,13 @@ where
                 sapling_tree_size,
                 scanning_keys.sapling(),
                 &incoming_sapling_outputs,
-                &mut note_data.sapling_nullifiers_and_positions,
+                &mut decrypted_note_data.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
                 orchard_tree_size,
                 scanning_keys.orchard(),
                 &incoming_orchard_outputs,
-                &mut note_data.orchard_nullifiers_and_positions,
+                &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );
 
             sapling_tree_size += u32::try_from(transaction.outputs.len())
@@ -290,13 +434,13 @@ where
     }
     // TODO: map nullifiers
 
-    Ok((
+    Ok(ScanData {
         nullifiers,
         wallet_blocks,
         relevent_txids,
-        note_data,
+        decrypted_note_data,
         shard_tree_data,
-    ))
+    })
 }
 
 fn trial_decrypt<P>(
