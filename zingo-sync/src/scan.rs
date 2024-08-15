@@ -1,28 +1,21 @@
 use std::{
     cmp,
     collections::{BTreeMap, HashMap, HashSet},
-    sync::{
-        atomic::{self, AtomicBool},
-        Arc,
-    },
 };
-
-use tokio::{sync::mpsc, task::JoinHandle};
 
 use incrementalmerkletree::{Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
+use tokio::sync::mpsc;
 use zcash_client_backend::{
     data_api::scanning::ScanRange,
     proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx},
 };
-use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     transaction::TxId,
-    zip32::AccountId,
 };
 
 use crate::{
@@ -35,136 +28,7 @@ use crate::{
 use self::runners::{BatchRunners, DecryptedOutput};
 
 pub(crate) mod runners;
-
-const SCAN_WORKER_POOLSIZE: usize = 2;
-
-type WorkerHandle = (
-    JoinHandle<Result<(), ()>>,
-    mpsc::UnboundedSender<ScanTask>,
-    Arc<AtomicBool>,
-);
-
-pub(crate) struct Scanner {
-    workers: Vec<WorkerHandle>,
-}
-
-impl Scanner {
-    pub(crate) fn new<P>(
-        scan_results_sender: mpsc::UnboundedSender<ScanResults>,
-        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-        parameters: P,
-        ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
-    ) -> Self
-    where
-        P: Parameters + Sync + Send + 'static,
-    {
-        let mut workers: Vec<WorkerHandle> = Vec::with_capacity(SCAN_WORKER_POOLSIZE);
-
-        for _ in 0..SCAN_WORKER_POOLSIZE {
-            let (scan_task_sender, scan_task_receiver) = mpsc::unbounded_channel();
-            let worker = ScanWorker::new(
-                scan_task_receiver,
-                scan_results_sender.clone(),
-                fetch_request_sender.clone(),
-                parameters.clone(),
-                ufvks.clone(),
-            );
-            let worker_status = Arc::clone(&worker.scanning);
-            let worker_handle = tokio::spawn(async move { worker.run().await });
-            workers.push((worker_handle, scan_task_sender, worker_status));
-        }
-
-        Self { workers }
-    }
-
-    pub(crate) fn is_worker_idle(&self) -> bool {
-        self.workers
-            .iter()
-            .any(|(_, _, status)| !status.load(atomic::Ordering::Acquire))
-    }
-
-    pub(crate) fn add_scan_task(self, scan_task: ScanTask) -> Result<(), ()> {
-        for (_, scan_task_sender, status) in self.workers {
-            if !status.load(atomic::Ordering::Acquire) {
-                scan_task_sender.send(scan_task).unwrap();
-                break;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-struct ScanWorker<P> {
-    scanning: Arc<AtomicBool>,
-    scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-    scan_results_sender: mpsc::UnboundedSender<ScanResults>,
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    parameters: P,
-    scanning_keys: ScanningKeys,
-}
-
-impl<P> ScanWorker<P>
-where
-    P: Parameters + Sync + Send + 'static,
-{
-    fn new(
-        scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-        scan_results_sender: mpsc::UnboundedSender<ScanResults>,
-        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-        parameters: P,
-        ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
-    ) -> Self {
-        let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
-        Self {
-            scanning: Arc::new(AtomicBool::new(false)),
-            scan_task_receiver,
-            scan_results_sender,
-            fetch_request_sender,
-            parameters,
-            scanning_keys,
-        }
-    }
-
-    async fn run(mut self) -> Result<(), ()> {
-        while let Some(scan_task) = self.scan_task_receiver.recv().await {
-            self.scanning.store(true, atomic::Ordering::Release);
-
-            let scan_results = scan(
-                self.fetch_request_sender.clone(),
-                &self.parameters.clone(),
-                &self.scanning_keys,
-                scan_task.scan_range,
-                scan_task.previous_wallet_block,
-            )
-            .await
-            .unwrap();
-
-            self.scan_results_sender.send(scan_results).unwrap();
-
-            self.scanning.store(false, atomic::Ordering::Release);
-        }
-
-        Ok(())
-    }
-}
-
-pub(crate) struct ScanTask {
-    scan_range: ScanRange,
-    previous_wallet_block: Option<WalletBlock>,
-}
-
-impl ScanTask {
-    pub(crate) fn from_parts(
-        scan_range: ScanRange,
-        previous_wallet_block: Option<WalletBlock>,
-    ) -> Self {
-        Self {
-            scan_range,
-            previous_wallet_block,
-        }
-    }
-}
+pub(crate) mod workers;
 
 struct InitialScanData {
     previous_block: Option<WalletBlock>,
