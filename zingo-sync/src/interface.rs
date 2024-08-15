@@ -7,7 +7,7 @@ use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::zip32::AccountId;
 
-use crate::primitives::{NullifierMap, WalletBlock};
+use crate::primitives::{NullifierMap, SyncState, WalletBlock};
 use crate::witness::{ShardTreeData, ShardTrees};
 
 /// Temporary dump for all neccessary wallet functionality for PoC
@@ -17,6 +17,9 @@ pub trait SyncWallet {
 
     /// Returns block height wallet was created
     fn get_birthday(&self) -> BlockHeight;
+
+    /// Returns mutable reference to wallet sync state
+    fn get_sync_state_mut(&mut self) -> &mut SyncState;
 
     /// Returns all unified full viewing keys known to this wallet.
     fn get_unified_full_viewing_keys(

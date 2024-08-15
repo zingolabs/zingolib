@@ -20,7 +20,7 @@ const SCAN_WORKER_POOLSIZE: usize = 2;
 
 pub(crate) struct Scanner<P> {
     workers: Vec<WorkerHandle>,
-    scan_results_sender: mpsc::UnboundedSender<ScanResults>,
+    scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -32,7 +32,7 @@ where
     P: Parameters + Sync + Send + 'static,
 {
     pub(crate) fn new(
-        scan_results_sender: mpsc::UnboundedSender<ScanResults>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -102,7 +102,7 @@ impl WorkerHandle {
 struct ScanWorker<P> {
     is_scanning: Arc<AtomicBool>,
     scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-    scan_results_sender: mpsc::UnboundedSender<ScanResults>,
+    scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
     scanning_keys: ScanningKeys,
@@ -114,7 +114,7 @@ where
 {
     fn new(
         scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-        scan_results_sender: mpsc::UnboundedSender<ScanResults>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -138,13 +138,15 @@ where
                 self.fetch_request_sender.clone(),
                 &self.parameters.clone(),
                 &self.scanning_keys,
-                scan_task.scan_range,
+                scan_task.scan_range.clone(),
                 scan_task.previous_wallet_block,
             )
             .await
             .unwrap();
 
-            self.scan_results_sender.send(scan_results).unwrap();
+            self.scan_results_sender
+                .send((scan_task.scan_range, scan_results))
+                .unwrap();
 
             self.is_scanning.store(false, atomic::Ordering::Release);
         }

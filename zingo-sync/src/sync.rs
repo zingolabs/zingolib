@@ -38,10 +38,6 @@ where
 
     let mut handles = Vec::new();
 
-    // TODO: add trait methods to read/write wallet data to/from sync engine
-    // this is where data would be read from wallet
-    let sync_state = SyncState::new(); // placeholders
-
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
     let fetcher_handle = tokio::spawn(fetch(fetch_request_receiver, client));
@@ -50,12 +46,13 @@ where
     update_scan_ranges(
         fetch_request_sender.clone(),
         parameters,
-        &sync_state,
-        wallet,
+        wallet.get_birthday(),
+        wallet.get_sync_state_mut(),
     )
     .await
     .unwrap();
 
+    // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
     let mut scanner = Scanner::new(
@@ -70,8 +67,9 @@ where
     loop {
         interval.tick().await;
 
+        // if a scan worker is idle, send it a new scan task
         if scanner.is_worker_idle() {
-            if let Some(scan_range) = prepare_next_scan_range(&sync_state).await {
+            if let Some(scan_range) = prepare_next_scan_range(wallet.get_sync_state_mut()) {
                 let previous_wallet_block = wallet
                     .get_wallet_block(scan_range.block_range().start - 1)
                     .ok();
@@ -86,10 +84,9 @@ where
         }
 
         match scan_results_receiver.try_recv() {
-            Ok(scan_results) => {
+            Ok((scan_range, scan_results)) => {
                 update_wallet_data(wallet, scan_results).unwrap();
-
-                // TODO: set scanned range to `scanned`
+                mark_scanned(scan_range, wallet.get_sync_state_mut()).unwrap();
             }
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => break,
@@ -97,10 +94,9 @@ where
     }
 
     drop(scanner);
-    while let Some(scan_results) = scan_results_receiver.recv().await {
+    while let Some((scan_range, scan_results)) = scan_results_receiver.recv().await {
         update_wallet_data(wallet, scan_results).unwrap();
-
-        // TODO: set scanned range to `scanned`
+        mark_scanned(scan_range, wallet.get_sync_state_mut()).unwrap();
     }
 
     try_join_all(handles).await.unwrap();
@@ -109,28 +105,26 @@ where
 }
 
 // update scan_ranges to include blocks between the last known chain height (wallet height) and the chain height from the server
-async fn update_scan_ranges<P, W>(
+async fn update_scan_ranges<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
-    sync_state: &SyncState,
-    wallet: &mut W,
+    wallet_birthday: BlockHeight,
+    sync_state: &mut SyncState,
 ) -> Result<(), ()>
 where
-    P: Parameters + Sync + Send + 'static,
-    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncShardTrees,
+    P: Parameters,
 {
     let chain_height = get_chain_height(fetch_request_sender).await.unwrap();
 
-    let mut scan_ranges = sync_state.scan_ranges().write().await;
+    let scan_ranges = sync_state.scan_ranges_mut();
 
     let wallet_height = if scan_ranges.is_empty() {
         let sapling_activation_height = parameters
             .activation_height(NetworkUpgrade::Sapling)
             .expect("sapling activation height should always return Some");
-        let birthday = wallet.get_birthday();
 
-        match birthday.cmp(&sapling_activation_height) {
-            cmp::Ordering::Greater | cmp::Ordering::Equal => birthday,
+        match wallet_birthday.cmp(&sapling_activation_height) {
+            cmp::Ordering::Greater | cmp::Ordering::Equal => wallet_birthday,
             cmp::Ordering::Less => sapling_activation_height,
         }
     } else {
@@ -165,8 +159,8 @@ where
 }
 
 // returns `None` if there are no more ranges to scan
-async fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
-    let mut scan_ranges = sync_state.scan_ranges().write().await;
+fn prepare_next_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
+    let scan_ranges = sync_state.scan_ranges_mut();
 
     // placeholder for algorythm that determines highest priority range to scan
     let (index, selected_scan_range) = scan_ranges.iter_mut().enumerate().find(|(_, range)| {
@@ -194,9 +188,27 @@ async fn prepare_next_scan_range(sync_state: &SyncState) -> Option<ScanRange> {
     }
 }
 
+fn mark_scanned(scan_range: ScanRange, sync_state: &mut SyncState) -> Result<(), ()> {
+    let scan_ranges = sync_state.scan_ranges_mut();
+
+    if let Some((index, range)) = scan_ranges
+        .iter()
+        .enumerate()
+        .find(|(_, range)| range.block_range() == scan_range.block_range())
+    {
+        scan_ranges[index] =
+            ScanRange::from_parts(range.block_range().clone(), ScanPriority::Scanned);
+    } else {
+        panic!("scanned range not found!")
+    }
+    // TODO: also combine adjacent scanned ranges together
+
+    Ok(())
+}
+
 fn update_wallet_data<W>(wallet: &mut W, scan_results: ScanResults) -> Result<(), ()>
 where
-    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncShardTrees,
+    W: SyncBlocks + SyncNullifiers + SyncShardTrees,
 {
     let ScanResults {
         nullifiers,

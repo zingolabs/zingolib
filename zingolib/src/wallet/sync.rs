@@ -9,7 +9,7 @@ use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zingo_sync::{
     interface::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncWallet},
-    primitives::{NullifierMap, WalletBlock},
+    primitives::{NullifierMap, SyncState, WalletBlock},
     witness::ShardTrees,
 };
 use zip32::AccountId;
@@ -22,6 +22,10 @@ impl SyncWallet for LightWallet {
     fn get_birthday(&self) -> BlockHeight {
         let birthday = self.birthday.load(atomic::Ordering::Relaxed);
         BlockHeight::from_u32(birthday as u32)
+    }
+
+    fn get_sync_state_mut(&mut self) -> &mut SyncState {
+        &mut self.sync_state
     }
 
     fn get_unified_full_viewing_keys(
