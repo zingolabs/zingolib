@@ -46,8 +46,8 @@ where
     update_scan_ranges(
         fetch_request_sender.clone(),
         parameters,
-        wallet.get_birthday(),
-        wallet.get_sync_state_mut(),
+        wallet.get_birthday().unwrap(),
+        wallet.get_sync_state_mut().unwrap(),
     )
     .await
     .unwrap();
@@ -69,7 +69,8 @@ where
 
         // if a scan worker is idle, send it a new scan task
         if scanner.is_worker_idle() {
-            if let Some(scan_range) = prepare_next_scan_range(wallet.get_sync_state_mut()) {
+            if let Some(scan_range) = prepare_next_scan_range(wallet.get_sync_state_mut().unwrap())
+            {
                 let previous_wallet_block = wallet
                     .get_wallet_block(scan_range.block_range().start - 1)
                     .ok();
@@ -86,7 +87,9 @@ where
         match scan_results_receiver.try_recv() {
             Ok((scan_range, scan_results)) => {
                 update_wallet_data(wallet, scan_results).unwrap();
-                mark_scanned(scan_range, wallet.get_sync_state_mut()).unwrap();
+                // TODO: link nullifiers and scan linked transactions
+                remove_irrelevant_data(wallet, &scan_range).unwrap();
+                mark_scanned(scan_range, wallet.get_sync_state_mut().unwrap()).unwrap();
             }
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => break,
@@ -96,7 +99,9 @@ where
     drop(scanner);
     while let Some((scan_range, scan_results)) = scan_results_receiver.recv().await {
         update_wallet_data(wallet, scan_results).unwrap();
-        mark_scanned(scan_range, wallet.get_sync_state_mut()).unwrap();
+        // TODO: link nullifiers and scan linked transactions
+        remove_irrelevant_data(wallet, &scan_range).unwrap();
+        mark_scanned(scan_range, wallet.get_sync_state_mut().unwrap()).unwrap();
     }
 
     try_join_all(handles).await.unwrap();
@@ -222,6 +227,33 @@ where
     wallet.append_nullifiers(nullifiers).unwrap();
     wallet.update_shard_trees(shard_tree_data).unwrap();
     // TODO: add trait to save wallet data to persistance for in-memory wallets
+
+    Ok(())
+}
+
+fn remove_irrelevant_data<W>(wallet: &mut W, scan_range: &ScanRange) -> Result<(), ()>
+where
+    W: SyncBlocks + SyncNullifiers,
+{
+    if scan_range.priority() != ScanPriority::Historic {
+        return Ok(());
+    }
+
+    // TODO: also retain blocks that contain transactions relevant to the wallet
+    wallet
+        .get_wallet_blocks_mut()
+        .unwrap()
+        .retain(|height, _| *height >= scan_range.block_range().end);
+    wallet
+        .get_nullifiers_mut()
+        .unwrap()
+        .sapling_mut()
+        .retain(|_, (height, _)| *height >= scan_range.block_range().end);
+    wallet
+        .get_nullifiers_mut()
+        .unwrap()
+        .orchard_mut()
+        .retain(|_, (height, _)| *height >= scan_range.block_range().end);
 
     Ok(())
 }

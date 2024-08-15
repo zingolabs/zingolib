@@ -12,7 +12,7 @@ use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
 use zingo_sync::{
-    primitives::{NullifierMap, WalletBlock},
+    primitives::{NullifierMap, SyncState, WalletBlock},
     witness::ShardTrees,
 };
 
@@ -214,7 +214,7 @@ pub struct LightWallet {
 
     /// Wallet compact blocks
     #[cfg(feature = "sync")]
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
 
     /// Nullifier map
@@ -228,8 +228,8 @@ pub struct LightWallet {
     shard_trees: ShardTrees,
 
     #[cfg(feature = "sync")]
-    #[allow(dead_code)]
-    sync_state: zingo_sync::primitives::SyncState,
+    #[getset(get = "pub", get_mut = "pub")]
+    sync_state: SyncState,
 }
 
 impl LightWallet {

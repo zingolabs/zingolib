@@ -8,7 +8,7 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
 /// Encapsulates the current state of sync
-#[derive(Getters, MutGetters)]
+#[derive(Debug, Getters, MutGetters)]
 #[getset(get = "pub", get_mut = "pub")]
 pub struct SyncState {
     scan_ranges: Vec<ScanRange>,

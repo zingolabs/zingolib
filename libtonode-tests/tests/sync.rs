@@ -36,6 +36,8 @@ async fn sync_mainnet_test() {
         .unwrap();
 
     dbg!(lightclient.wallet.wallet_blocks());
+    dbg!(lightclient.wallet.nullifier_map());
+    dbg!(lightclient.wallet.sync_state());
 }
 
 #[tokio::test]
@@ -57,4 +59,6 @@ async fn sync_test() {
     .unwrap();
 
     dbg!(recipient.wallet.wallet_blocks());
+    dbg!(recipient.wallet.nullifier_map());
+    dbg!(recipient.wallet.sync_state());
 }

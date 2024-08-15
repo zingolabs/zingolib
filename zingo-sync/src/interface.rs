@@ -16,10 +16,10 @@ pub trait SyncWallet {
     type Error: Debug;
 
     /// Returns block height wallet was created
-    fn get_birthday(&self) -> BlockHeight;
+    fn get_birthday(&self) -> Result<BlockHeight, Self::Error>;
 
     /// Returns mutable reference to wallet sync state
-    fn get_sync_state_mut(&mut self) -> &mut SyncState;
+    fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error>;
 
     /// Returns all unified full viewing keys known to this wallet.
     fn get_unified_full_viewing_keys(
@@ -35,6 +35,11 @@ pub trait SyncBlocks: SyncWallet {
     /// Must return error if block is not found
     fn get_wallet_block(&self, block_height: BlockHeight) -> Result<WalletBlock, Self::Error>;
 
+    /// Get mutable reference to wallet blocks
+    fn get_wallet_blocks_mut(
+        &mut self,
+    ) -> Result<&mut BTreeMap<BlockHeight, WalletBlock>, Self::Error>;
+
     /// Append wallet compact blocks to wallet data
     fn append_wallet_blocks(
         &mut self,
@@ -45,6 +50,9 @@ pub trait SyncBlocks: SyncWallet {
 /// Trait for interfacing nullifiers with wallet data
 pub trait SyncNullifiers: SyncWallet {
     // TODO: add method to get wallet data for writing defualt implementations on other methods
+
+    /// Get mutable reference to wallet nullifier map
+    fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, Self::Error>;
 
     /// Append nullifiers to wallet data
     fn append_nullifiers(&mut self, nullifier_map: NullifierMap) -> Result<(), Self::Error>;
