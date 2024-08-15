@@ -52,7 +52,7 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {
-            uas: Vector::read(&mut reader, |r| read_unified_address_from_raw_encoding(r))?,
+            uas: Vector::read(&mut reader, |r| read_unified_address_from_raw_encoding(**r))?,
         }),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -89,10 +89,10 @@ pub fn write_unified_address_to_raw_encoding<W: Write + Clone>(
 /// A helper function to decode a UA from a CompactSize specifying the number of
 /// receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
-pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<UnifiedAddress> {
-    let receivers = Vector::read(reader, |mut r| {
-        let typecode: usize = CompactSize::read_t(&mut r)?;
-        let addr_len: usize = CompactSize::read_t(&mut r)?;
+pub fn read_unified_address_from_raw_encoding<R: Read + Clone>(reader: R) -> io::Result<UnifiedAddress> {
+    let receivers = Vector::read(reader, |r| {
+        let typecode: usize = CompactSize::read_t(r.clone())?;
+        let addr_len: usize = CompactSize::read_t(r.clone())?;
         let mut receiver_bytes = vec![0; addr_len];
         r.read_exact(&mut receiver_bytes)?;
         decode_receiver(typecode, receiver_bytes)
