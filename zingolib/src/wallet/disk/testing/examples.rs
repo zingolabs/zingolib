@@ -1,5 +1,32 @@
 use super::super::LightWallet;
 
+/// as opposed to [LegacyWalletCase], which enumerates test cases compiled from the history of zingo wallt tests, this ExampleWalletNetworkCase is meant to fully organize the set of test cases.
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleWalletNetworkCase {
+    /// /
+    Mainnet(ExampleMainnetWalletSeedCase),
+    /// /
+    Testnet(ExampleTestnetWalletSeedCase),
+    /// /
+    Regtest(ExampleRegtestWalletSeedCase),
+    /// /
+    Legacy(LegacyWalletCase),
+}
+
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleMainnetWalletSeedCase {}
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleTestnetWalletSeedCase {}
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleRegtestWalletSeedCase {}
+
 /// i do not know the difference between these wallets but i will find out soon
 /// what can these files do?
 #[non_exhaustive]
