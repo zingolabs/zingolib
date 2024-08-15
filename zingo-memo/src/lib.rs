@@ -33,7 +33,7 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, 0usize)?;
     Vector::write(&mut uas_bytes_vec, uas, |w, ua| {
-        write_unified_address_to_raw_encoding(ua, w)
+        write_unified_address_to_raw_encoding(ua, w.clone())
     })?;
     let mut uas_bytes = [0u8; 511];
     if uas_bytes_vec.len() > 511 {
@@ -65,14 +65,14 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
 /// A helper function to encode a UA as a CompactSize specifying the number
 /// of receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
-pub fn write_unified_address_to_raw_encoding<W: Write>(
+pub fn write_unified_address_to_raw_encoding<W: Write + Clone>(
     ua: &UnifiedAddress,
     writer: W,
 ) -> io::Result<()> {
     let mainnet_encoded_ua = ua.encode(&zcash_primitives::consensus::MAIN_NETWORK);
     let (_mainnet, address) = Address::decode(&mainnet_encoded_ua).unwrap();
     let receivers = address.items();
-    Vector::write(writer, &receivers, |mut w, receiver| {
+    Vector::write(writer, &receivers, |w, receiver| {
         let (typecode, data): (u32, &[u8]) = match receiver {
             Receiver::Orchard(ref data) => (3, data),
             Receiver::Sapling(ref data) => (2, data),
@@ -80,8 +80,8 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
             Receiver::P2sh(ref data) => (1, data),
             Receiver::Unknown { typecode, ref data } => (*typecode, data.as_slice()),
         };
-        CompactSize::write(&mut w, typecode as usize)?;
-        CompactSize::write(&mut w, data.len())?;
+        CompactSize::write(w.clone(), typecode as usize)?;
+        CompactSize::write(w.clone(), data.len())?;
         w.write_all(data)
     })
 }
