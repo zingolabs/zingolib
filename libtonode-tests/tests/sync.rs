@@ -23,7 +23,7 @@ async fn sync_mainnet_test() {
     let mut lightclient = LightClient::create_from_wallet_base_async(
         WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
         &config,
-        2_590_000,
+        2_611_700,
         true,
     )
     .await

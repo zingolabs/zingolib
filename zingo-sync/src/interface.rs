@@ -15,6 +15,9 @@ pub trait SyncWallet {
     /// Errors associated with interfacing the sync engine with wallet data
     type Error: Debug;
 
+    /// Returns block height wallet was created
+    fn get_birthday(&self) -> BlockHeight;
+
     /// Returns all unified full viewing keys known to this wallet.
     fn get_unified_full_viewing_keys(
         &self,

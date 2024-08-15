@@ -1,5 +1,6 @@
 //! Entrypoint for sync engine
 
+use std::cmp;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -46,9 +47,14 @@ where
     let fetcher_handle = tokio::spawn(fetch(fetch_request_receiver, client));
     handles.push(fetcher_handle);
 
-    update_scan_ranges(fetch_request_sender.clone(), parameters, &sync_state)
-        .await
-        .unwrap();
+    update_scan_ranges(
+        fetch_request_sender.clone(),
+        parameters,
+        &sync_state,
+        wallet,
+    )
+    .await
+    .unwrap();
 
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
@@ -103,26 +109,30 @@ where
 }
 
 // update scan_ranges to include blocks between the last known chain height (wallet height) and the chain height from the server
-async fn update_scan_ranges<P>(
+async fn update_scan_ranges<P, W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
     sync_state: &SyncState,
+    wallet: &mut W,
 ) -> Result<(), ()>
 where
-    P: Parameters,
+    P: Parameters + Sync + Send + 'static,
+    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncShardTrees,
 {
     let chain_height = get_chain_height(fetch_request_sender).await.unwrap();
 
     let mut scan_ranges = sync_state.scan_ranges().write().await;
 
     let wallet_height = if scan_ranges.is_empty() {
-        // TODO: add birthday
-        parameters
+        let sapling_activation_height = parameters
             .activation_height(NetworkUpgrade::Sapling)
-            .expect("sapling activation height should always return Some")
+            .expect("sapling activation height should always return Some");
+        let birthday = wallet.get_birthday();
 
-        // HARDCODED BDAY FOR TESTING MAINNET
-        // BlockHeight::from_u32(2_611_620)
+        match birthday.cmp(&sapling_activation_height) {
+            cmp::Ordering::Greater | cmp::Ordering::Equal => birthday,
+            cmp::Ordering::Less => sapling_activation_height,
+        }
     } else {
         scan_ranges
             .last()

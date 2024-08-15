@@ -1,6 +1,9 @@
 //! Trait implmentations for sync interface
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::atomic,
+};
 
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::consensus::BlockHeight;
@@ -15,6 +18,11 @@ use crate::wallet::LightWallet;
 
 impl SyncWallet for LightWallet {
     type Error = ();
+
+    fn get_birthday(&self) -> BlockHeight {
+        let birthday = self.birthday.load(atomic::Ordering::Relaxed);
+        BlockHeight::from_u32(birthday as u32)
+    }
 
     fn get_unified_full_viewing_keys(
         &self,
