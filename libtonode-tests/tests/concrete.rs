@@ -391,9 +391,10 @@ mod fast {
     async fn diversification_deterministic_and_coherent() {
         let (_regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
+        let seed_phrase =
+            zcash_primitives::zip339::Mnemonic::<bip0039::English>::from_entropy([1; 32])
+                .unwrap()
+                .to_string();
         let recipient1 = client_builder
             .build_client(seed_phrase, 0, false, regtest_network)
             .await;
@@ -2635,9 +2636,10 @@ mod slow {
             scenarios::custom_clients_default().await;
         let faucet = client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
-        let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
+        let seed_phrase_of_recipient1 =
+            zcash_primitives::zip339::Mnemonic::<bip0039::English>::from_entropy([1; 32])
+                .unwrap()
+                .to_string();
         let recipient1 = client_builder
             .build_client(seed_phrase_of_recipient1, 0, false, regtest_network)
             .await;

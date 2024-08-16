@@ -17,7 +17,13 @@ async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_ad
         .unwrap(),
         0,
     );
-    assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+    assert_eq!(
+        wallet
+            .mnemonic()
+            .map(|(mnemonic, account_index)| (mnemonic.phrase(), account_index)),
+        Some(&expected_mnemonic)
+            .map(|(mnemonic, account_number)| (mnemonic.phrase(), account_number))
+    );
 
     let expected_wc = crate::wallet::keys::unified::WalletCapability::new_from_phrase(
         &wallet.transaction_context.config,
@@ -190,7 +196,13 @@ async fn reload_wallet_from_buffer() {
         Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
         0,
     );
-    assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+    assert_eq!(
+        wallet
+            .mnemonic()
+            .map(|(mnemonic, account_index)| (mnemonic.phrase(), account_index)),
+        Some(&expected_mnemonic)
+            .map(|(mnemonic, account_index)| (mnemonic.phrase(), account_index))
+    );
 
     let expected_wc = WalletCapability::new_from_phrase(
         &mid_client.wallet.transaction_context.config,

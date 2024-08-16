@@ -72,6 +72,8 @@ impl GrpcConnector {
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
             if uri.scheme_str() == Some("https") {
+                // Much simpler than trying to feature-gate out the mut
+                #[allow(unused_mut)]
                 let mut roots = RootCertStore {
                     roots: webpki_roots::TLS_SERVER_ROOTS
                         .0

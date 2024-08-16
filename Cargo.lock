@@ -1624,6 +1624,7 @@ dependencies = [
 name = "libtonode-tests"
 version = "0.2.0"
 dependencies = [
+ "bip0039",
  "hex",
  "http 0.2.12",
  "itertools 0.10.5",
@@ -4348,6 +4349,7 @@ dependencies = [
  "append-only-vec",
  "base58",
  "base64 0.13.1",
+ "bip0039",
  "bls12_381",
  "build_utils",
  "byteorder",

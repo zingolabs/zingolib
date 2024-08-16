@@ -26,6 +26,7 @@ zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", rev = 
 sapling-crypto = "0.1.2"
 orchard = "0.8"
 zip32 = "0.1"
+bip0039 = "0.11.0"
 
 clap = "4.4"
 tempdir = "0.3"

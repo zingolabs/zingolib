@@ -29,3 +29,4 @@ serde_json = { workspace = true }
 http.workspace = true
 tempfile.workspace = true
 tracing-subscriber.workspace = true
+bip0039.workspace = true
