@@ -6,8 +6,7 @@
 //! darkside known issues:
 //!   - transparent
 //!   - txids
-
-//! libtonode known issues:
+//!     libtonode known issues:
 //!   - mempool
 
 pub mod conduct_chain;

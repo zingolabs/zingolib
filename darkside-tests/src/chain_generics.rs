@@ -35,7 +35,7 @@ pub(crate) mod conduct_chain {
     //! known issues include
     //!   - transparent sends do not work
     //!   - txids are regenerated randomly. zingo can optionally accept_server_txid
-    //! these tests cannot portray the full range of network weather.
+    //!     these tests cannot portray the full range of network weather.
 
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
