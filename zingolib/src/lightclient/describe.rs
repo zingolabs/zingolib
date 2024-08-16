@@ -11,7 +11,7 @@ use zcash_primitives::{
     memo::Memo,
 };
 
-use zingoconfig::margin_fee;
+use crate::config::margin_fee;
 
 use super::{AccountBackupInfo, LightClient, PoolBalances, UserBalances};
 use crate::{

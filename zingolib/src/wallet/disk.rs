@@ -15,7 +15,7 @@ use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
 
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
@@ -236,6 +236,8 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
+            #[cfg(feature = "sync")]
+            sync_state: zingo_sync::primitives::SyncState::new(),
         };
 
         Ok(lw)

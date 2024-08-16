@@ -681,9 +681,6 @@ dependencies = [
  "tower",
  "zcash_client_backend",
  "zcash_primitives",
- "zingo-testutils",
- "zingo-testvectors",
- "zingoconfig",
  "zingolib",
 ]
 
@@ -1636,14 +1633,15 @@ dependencies = [
  "sapling-crypto",
  "serde_json",
  "shardtree",
+ "tempfile",
  "tokio",
+ "tracing-subscriber",
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
+ "zingo-netutils",
  "zingo-status",
- "zingo-testutils",
- "zingo-testvectors",
- "zingoconfig",
+ "zingo-sync",
  "zingolib",
 ]
 
@@ -4282,8 +4280,6 @@ dependencies = [
  "log",
  "rustyline",
  "shellwords",
- "zingo-testutils",
- "zingoconfig",
  "zingolib",
 ]
 
@@ -4328,58 +4324,21 @@ dependencies = [
 name = "zingo-sync"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "futures",
+ "getset",
+ "incrementalmerkletree",
+ "memuse",
+ "orchard",
+ "rayon",
+ "sapling-crypto",
  "tokio",
  "tonic",
  "tracing",
  "zcash_client_backend",
+ "zcash_note_encryption",
  "zcash_primitives",
  "zingo-netutils",
-]
-
-[[package]]
-name = "zingo-testutils"
-version = "0.1.0"
-dependencies = [
- "http 0.2.12",
- "incrementalmerkletree",
- "json",
- "log",
- "nonempty",
- "orchard",
- "portpicker",
- "tempdir",
- "tokio",
- "tonic",
- "zcash_address",
- "zcash_client_backend",
- "zcash_primitives",
- "zingo-netutils",
- "zingo-status",
- "zingo-testvectors",
- "zingoconfig",
- "zingolib",
-]
-
-[[package]]
-name = "zingo-testvectors"
-version = "0.1.0"
-dependencies = [
- "bip0039",
- "zcash_primitives",
- "zingoconfig",
-]
-
-[[package]]
-name = "zingoconfig"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "http 0.2.12",
- "log",
- "log4rs",
- "tempdir",
- "zcash_primitives",
 ]
 
 [[package]]
@@ -4395,6 +4354,7 @@ dependencies = [
  "bytes 0.4.12",
  "chrono",
  "concat-idents",
+ "dirs",
  "enum_dispatch",
  "ff",
  "futures",
@@ -4409,6 +4369,7 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "log",
+ "log4rs",
  "nonempty",
  "orchard",
  "portpicker",
@@ -4427,6 +4388,7 @@ dependencies = [
  "sha2 0.9.9",
  "shardtree",
  "subtle",
+ "tempdir",
  "tempfile",
  "test-case",
  "thiserror",
@@ -4443,8 +4405,7 @@ dependencies = [
  "zingo-memo",
  "zingo-netutils",
  "zingo-status",
- "zingo-testvectors",
- "zingoconfig",
+ "zingo-sync",
  "zip32",
 ]
 

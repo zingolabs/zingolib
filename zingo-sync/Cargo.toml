@@ -4,12 +4,35 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Zingo
 zingo-netutils = { path = "../zingo-netutils" }
 
+# Zcash
 zcash_client_backend.workspace = true
 zcash_primitives.workspace = true
+zcash_note_encryption.workspace = true
+sapling-crypto.workspace = true
+orchard.workspace = true
 
+# Commitment tree
+incrementalmerkletree.workspace = true
+
+# Async
 futures.workspace = true
 tokio.workspace = true
+
+# Client
 tonic.workspace = true
-tracing = "0.1.40"
+
+# Logging
+tracing.workspace = true
+
+# Metrics
+memuse.workspace = true
+
+# Parallel processing
+crossbeam-channel.workspace = true
+rayon.workspace = true
+
+# Minimise boilerplate
+getset.workspace = true

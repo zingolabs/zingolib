@@ -18,8 +18,7 @@ use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingo_testutils::{
-    self,
+use zingolib::testutils::{
     incrementalmerkletree::frontier::CommitmentTree,
     paths::{get_bin_dir, get_cargo_manifest_dir},
     regtest::launch_lightwalletd,
@@ -397,7 +396,7 @@ pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
 ) -> Result<(DarksideHandler, DarksideConnector), String> {
     let handler = DarksideHandler::new(set_port);
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         handler.grpc_port
     )));
@@ -499,10 +498,10 @@ pub mod scenarios {
     };
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::{BlockHeight, BranchId};
-    use zingo_testutils::scenarios::setup::ClientBuilder;
-    use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-    use zingoconfig::RegtestNetwork;
+    use zingolib::config::RegtestNetwork;
     use zingolib::lightclient::LightClient;
+    use zingolib::testutils::scenarios::setup::ClientBuilder;
+    use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     use super::{
         init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
@@ -564,7 +563,7 @@ pub mod scenarios {
             self.faucet = Some(
                 self.client_builder
                     .build_client(
-                        zingo_testvectors::seeds::DARKSIDE_SEED.to_string(),
+                        zingolib::testvectors::seeds::DARKSIDE_SEED.to_string(),
                         0,
                         true,
                         self.regtest_network,
@@ -679,7 +678,7 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            zingo_testutils::lightclient::from_inputs::quick_send(
+            zingolib::testutils::lightclient::from_inputs::quick_send(
                 lightclient,
                 vec![(receiver_address, value, None)],
             )
