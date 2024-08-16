@@ -166,7 +166,7 @@ mod tests {
             else {
                 panic!("Couldn't decode test_vector UA")
             };
-            let mut serialized_ua = Vec::new();
+            let serialized_ua = Vec::new();
             write_unified_address_to_raw_encoding(&ua, serialized_ua.clone()).unwrap();
             assert_eq!(
                 ua,
