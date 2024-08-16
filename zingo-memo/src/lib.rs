@@ -167,7 +167,7 @@ mod tests {
                 panic!("Couldn't decode test_vector UA")
             };
             let mut serialized_ua = Vec::new();
-            write_unified_address_to_raw_encoding(&ua, &mut serialized_ua).unwrap();
+            write_unified_address_to_raw_encoding(&ua, serialized_ua.clone()).unwrap();
             assert_eq!(
                 ua,
                 read_unified_address_from_raw_encoding(&*serialized_ua).unwrap()
