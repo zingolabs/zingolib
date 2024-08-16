@@ -17,6 +17,7 @@ tonic.workspace = true
 prost.workspace = true
 thiserror.workspace = true
 rustls-pemfile = { workspace = true }
+rustls-pki-types = "1.7.0"
 
 [features]
 test-features = []

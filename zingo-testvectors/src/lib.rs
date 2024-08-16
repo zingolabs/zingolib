@@ -11,9 +11,10 @@ pub mod seeds {
 "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread";
     #[test]
     fn validate_seeds() {
-        let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
-            .unwrap()
-            .to_string();
+        let abandon_art_seed =
+            zcash_primitives::zip339::Mnemonic::<bip0039::language::English>::from_entropy([0; 32])
+                .unwrap()
+                .to_string();
         assert_eq!(ABANDON_ART_SEED, abandon_art_seed);
         // TODO user get_zaddr_from_bip39seed to generate this address from that seed.
     }

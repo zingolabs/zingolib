@@ -72,22 +72,24 @@ impl GrpcConnector {
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
             if uri.scheme_str() == Some("https") {
-                let mut roots = RootCertStore::empty();
-                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-                    |anchor_ref| {
-                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            anchor_ref.subject,
-                            anchor_ref.spki,
-                            anchor_ref.name_constraints,
-                        )
-                    },
-                ));
+                let mut roots = RootCertStore {
+                    roots: webpki_roots::TLS_SERVER_ROOTS
+                        .0
+                        .iter()
+                        .map(|anchor| rustls_pki_types::TrustAnchor {
+                            subject: rustls_pki_types::Der::from_slice(anchor.subject),
+                            subject_public_key_info: rustls_pki_types::Der::from_slice(anchor.spki),
+                            name_constraints: anchor
+                                .name_constraints
+                                .map(|o| rustls_pki_types::Der::from_slice(o)),
+                        })
+                        .collect(),
+                };
 
                 #[cfg(test)]
                 add_test_cert_to_roots(&mut roots);
 
                 let tls = ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(roots)
                     .with_no_client_auth();
                 let connector = tower::ServiceBuilder::new()
@@ -158,9 +160,11 @@ impl GrpcConnector {
 
 #[cfg(test)]
 fn add_test_cert_to_roots(roots: &mut RootCertStore) {
+    use rustls_pki_types::CertificateDer;
+
     const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
     let fd = std::fs::File::open(TEST_PEMFILE_PATH).unwrap();
     let mut buf = std::io::BufReader::new(&fd);
     let certs = rustls_pemfile::certs(&mut buf).unwrap();
-    roots.add_parsable_certificates(&certs);
+    roots.add_parsable_certificates(certs.iter().map(|cert| CertificateDer::from_slice(cert)));
 }
