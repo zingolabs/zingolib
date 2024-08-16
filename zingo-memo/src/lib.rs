@@ -89,7 +89,9 @@ pub fn write_unified_address_to_raw_encoding<W: Write + Clone>(
 /// A helper function to decode a UA from a CompactSize specifying the number of
 /// receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
-pub fn read_unified_address_from_raw_encoding<R: Read + Clone>(reader: R) -> io::Result<UnifiedAddress> {
+pub fn read_unified_address_from_raw_encoding<R: Read + Clone>(
+    reader: R,
+) -> io::Result<UnifiedAddress> {
     let receivers = Vector::read(reader, |r| {
         let typecode: usize = CompactSize::read_t(r.clone())?;
         let addr_len: usize = CompactSize::read_t(r.clone())?;
