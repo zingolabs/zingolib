@@ -5,7 +5,7 @@ use thiserror::Error;
 use zcash_client_backend::address::Address;
 use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
 
-use zingoconfig::ChainType;
+use crate::config::ChainType;
 
 use super::error::ConversionError;
 

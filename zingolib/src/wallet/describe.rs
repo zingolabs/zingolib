@@ -174,7 +174,7 @@ impl LightWallet {
     }
     /// TODO: Add Doc Comment Here!
     pub(crate) fn note_address<D: DomainWalletExt>(
-        network: &zingoconfig::ChainType,
+        network: &crate::config::ChainType,
         note: &D::WalletNote,
         wallet_capability: &WalletCapability,
     ) -> String
@@ -292,8 +292,8 @@ mod tests {
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
 
+    use crate::config::ZingoConfigBuilder;
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingoconfig::ZingoConfigBuilder;
 
     use crate::{
         mocks::{orchard_note::OrchardCryptoNoteBuilder, SaplingCryptoNoteBuilder},

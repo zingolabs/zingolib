@@ -3,8 +3,9 @@
 //! lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
-use crate::{get_base_address_macro, lightclient::from_inputs};
-use zingolib::lightclient::LightClient;
+use crate::get_base_address_macro;
+use crate::testutils::lightclient::from_inputs;
+use crate::{lightclient::LightClient, wallet::LightWallet};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -16,8 +17,33 @@ pub trait ConductChain {
     async fn setup() -> Self;
     /// builds a faucet (funded from mining)
     async fn create_faucet(&mut self) -> LightClient;
+
+    /// sets server parameters
+    fn zingo_config(&mut self) -> crate::config::ZingoConfig;
+
     /// builds an empty client
-    async fn create_client(&mut self) -> LightClient;
+    async fn create_client(&mut self) -> LightClient {
+        let mut zingo_config = self.zingo_config();
+        zingo_config.accept_server_txids = true;
+        LightClient::create_from_wallet_base_async(
+            crate::wallet::WalletBase::FreshEntropy,
+            &zingo_config,
+            0,
+            false,
+        )
+        .await
+        .unwrap()
+    }
+
+    /// loads a client from bytes
+    async fn load_client(&mut self, data: &[u8]) -> LightClient {
+        let mut zingo_config = self.zingo_config();
+        zingo_config.accept_server_txids = true;
+
+        LightClient::create_from_wallet_async(LightWallet::unsafe_from_buffer_testnet(data).await)
+            .await
+            .unwrap()
+    }
 
     /// moves the chain tip forward, creating 1 new block
     /// and confirming transactions that were received by the server

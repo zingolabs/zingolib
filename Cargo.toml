@@ -4,13 +4,10 @@
 #  This doesn't account for all dependency relations, for example, zingocli depends on zingoconfig directly (for now).
 [workspace]
 members = [
-    "zingo-testutils",
     "libtonode-tests",
     "darkside-tests",
     "zingocli",
     "zingolib",
-    "zingoconfig",
-    "zingo-testvectors",
     "zingo-netutils",
     "zingo-memo",
     "zingo-sync",

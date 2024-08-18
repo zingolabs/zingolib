@@ -1,7 +1,7 @@
 //! This mod is mostly to take inputs, raw data amd comvert it into lightclient actions
 //! (obvisouly) in a test environment.
+use crate::{error::ZingoLibError, lightclient::LightClient};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
-use zingolib::{error::ZingoLibError, lightclient::LightClient};
 
 /// Create a lightclient from the buffer of another
 pub async fn new_client_from_save_buffer(
@@ -36,11 +36,11 @@ pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
 
-    use zingolib::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
+    use crate::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send(
-        quick_sender: &zingolib::lightclient::LightClient,
+        quick_sender: &crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
         let request = transaction_request_from_send_inputs(quick_sender, raw_receivers)
@@ -51,36 +51,35 @@ pub mod from_inputs {
     /// Panics if the address, amount or memo conversion fails.
     pub fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-        chain: &zingoconfig::ChainType,
-    ) -> zingolib::data::receivers::Receivers {
+        chain: &crate::config::ChainType,
+    ) -> crate::data::receivers::Receivers {
         raw_receivers
             .into_iter()
             .map(|(address, amount, memo)| {
-                let recipient_address =
-                    zingolib::utils::conversion::address_from_str(address, chain)
-                        .expect("should be a valid address");
-                let amount = zingolib::utils::conversion::zatoshis_from_u64(amount)
+                let recipient_address = crate::utils::conversion::address_from_str(address, chain)
+                    .expect("should be a valid address");
+                let amount = crate::utils::conversion::zatoshis_from_u64(amount)
                     .expect("should be inside the range of valid zatoshis");
                 let memo = memo.map(|memo| {
-                    zingolib::wallet::utils::interpret_memo_string(memo.to_string())
+                    crate::wallet::utils::interpret_memo_string(memo.to_string())
                         .expect("should be able to interpret memo")
                 });
 
-                zingolib::data::receivers::Receiver::new(recipient_address, amount, memo)
+                crate::data::receivers::Receiver::new(recipient_address, amount, memo)
             })
             .collect()
     }
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
     pub fn transaction_request_from_send_inputs(
-        requester: &zingolib::lightclient::LightClient,
+        requester: &crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
         zcash_client_backend::zip321::TransactionRequest,
         zcash_client_backend::zip321::Zip321Error,
     > {
         let receivers = receivers_from_send_inputs(raw_receivers, &requester.config().chain);
-        zingolib::data::receivers::transaction_request_from_receivers(receivers)
+        crate::data::receivers::transaction_request_from_receivers(receivers)
     }
 
     /// Panics if the address, amount or memo conversion fails.
@@ -88,8 +87,8 @@ pub mod from_inputs {
         proposer: &LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
-        zingolib::data::proposal::ProportionalFeeProposal,
-        zingolib::lightclient::propose::ProposeSendError,
+        crate::data::proposal::ProportionalFeeProposal,
+        crate::lightclient::propose::ProposeSendError,
     > {
         let request = transaction_request_from_send_inputs(proposer, raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");

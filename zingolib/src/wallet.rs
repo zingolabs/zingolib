@@ -26,9 +26,9 @@ use std::{
 use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
+use crate::config::ZingoConfig;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
-use zingoconfig::ZingoConfig;
 
 use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
