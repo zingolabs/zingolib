@@ -4,21 +4,12 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-zingolib = { path = "../zingolib/", features = ["deprecations"] }
-zingoconfig = { path = "../zingoconfig/" }
-zingo-testutils = { path = "../zingo-testutils" }
+zingolib = { path = "../zingolib/", features = ["deprecations", "test-elevation"] }
 
 clap = { workspace = true }
 http = { workspace = true }
-hyper-rustls = { workspace = true }
 
-rustyline = "11.0.0"
-log = "0.4.17"
-shellwords = "1.1.0"
-futures = "0.3.15"
-rustls-pemfile = "1.0.0"
-tokio =  { version = "1.24.2", features = ["full"] }
-tokio-stream = "0.1.6"
-tokio-rustls = { workspace = true }
-webpki-roots.workspace = true
-json = "0.12.4"
+rustyline = { workspace = true }
+log = { workspace = true }
+shellwords = { workspace = true }
+json = { workspace = true }

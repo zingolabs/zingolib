@@ -26,7 +26,7 @@ use zcash_primitives::{
     transaction::Transaction,
 };
 
-use zingoconfig::MAX_REORG;
+use crate::config::MAX_REORG;
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
@@ -149,28 +149,6 @@ impl LightClient {
     pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
         *self.interrupt_sync.write().await = set_interrupt;
     }
-    #[cfg(feature = "embed_params")]
-    pub(super) fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
-        // Read Sapling Params
-        use crate::SaplingParams;
-        let mut sapling_output = vec![];
-        sapling_output.extend_from_slice(
-            SaplingParams::get("sapling-output.params")
-                .unwrap()
-                .data
-                .as_ref(),
-        );
-
-        let mut sapling_spend = vec![];
-        sapling_spend.extend_from_slice(
-            SaplingParams::get("sapling-spend.params")
-                .unwrap()
-                .data
-                .as_ref(),
-        );
-
-        Ok((sapling_output, sapling_spend))
-    }
 
     /// TODO: Add Doc Comment Here!
     pub fn start_mempool_monitor(lc: Arc<LightClient>) {
@@ -213,24 +191,35 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
-                            let price = price.read().await.clone();
-                            //debug!("Mempool attempting to scan {}", tx.txid());
-                            let status = ConfirmationStatus::Broadcast(BlockHeight::from_u32(
-                                rtransaction.height as u32,
-                            ));
+                            // If the txid is already in the db, then it's already recorded
+                            // there's nothing new to do until it's read from chain.
+                            // ASSUMPTION: A transaction from the mempool_receiver is not on-chain
+                            if transaction_metadata_set
+                                .read()
+                                .await
+                                .transaction_records_by_id
+                                .get(&transaction.txid())
+                                .is_none()
+                            {
+                                let price = price.read().await.clone();
+                                //debug!("Mempool attempting to scan {}", tx.txid());
+                                let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
+                                    rtransaction.height as u32,
+                                ));
 
-                            TransactionContext::new(
-                                &config,
-                                key.clone(),
-                                transaction_metadata_set.clone(),
-                            )
-                            .scan_full_tx(
-                                &transaction,
-                                status,
-                                now() as u32,
-                                get_price(now(), &price),
-                            )
-                            .await;
+                                TransactionContext::new(
+                                    &config,
+                                    key.clone(),
+                                    transaction_metadata_set.clone(),
+                                )
+                                .scan_full_tx(
+                                    &transaction,
+                                    status,
+                                    Some(now() as u32),
+                                    get_price(now(), &price),
+                                )
+                                .await;
+                            }
                         }
                     }
                 });
@@ -325,7 +314,7 @@ impl LightClient {
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let batch = cmp::min(latest_blockid.height, prev + zingoconfig::BATCH_SIZE);
+            let batch = cmp::min(latest_blockid.height, prev + crate::config::BATCH_SIZE);
             prev = batch;
             latest_block_batches.push(batch);
         }
@@ -451,22 +440,21 @@ impl LightClient {
             self.wallet.wallet_capability(),
             self.wallet.transactions(),
         );
-        let (
-            fetch_full_transactions_handle,
-            fetch_full_transaction_transmitter,
-            fetch_taddr_transactions_transmitter,
-        ) = crate::blaze::fetch_full_transaction::start(
-            transaction_context,
-            full_transaction_fetcher_transmitter.clone(),
-            bsync_data.clone(),
-        )
-        .await;
+
+        // Fetches full transactions only in the batch currently being processed
+        let (fetch_full_transactions_handle, txid_sender, full_transaction_sender) =
+            crate::blaze::full_transactions_processor::start(
+                transaction_context.clone(),
+                full_transaction_fetcher_transmitter.clone(),
+                bsync_data.clone(),
+            )
+            .await;
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
         let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
             update_notes_processor
-                .start(bsync_data.clone(), fetch_full_transaction_transmitter)
+                .start(bsync_data.clone(), txid_sender)
                 .await;
 
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
@@ -484,7 +472,7 @@ impl LightClient {
                     .read()
                     .await
                     .transaction_size_filter,
-                full_transaction_fetcher_transmitter,
+                full_transaction_fetcher_transmitter.clone(),
             )
             .await;
 
@@ -523,7 +511,7 @@ impl LightClient {
             start_block,
             earliest_block,
             taddr_fetcher_transmitter,
-            fetch_taddr_transactions_transmitter,
+            full_transaction_sender,
             self.config.chain,
         )
         .await;
@@ -531,7 +519,15 @@ impl LightClient {
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
 
-        // 3. Verify all the downloaded data
+        // 3. Targetted rescan to update transactions with missing information
+        let targetted_rescan_handle = crate::blaze::targetted_rescan::start(
+            self.wallet.blocks.clone(),
+            transaction_context,
+            full_transaction_fetcher_transmitter,
+        )
+        .await;
+
+        // 4. Verify all the downloaded data
         let block_data = bsync_data.clone();
 
         // Wait for everything to finish
@@ -553,6 +549,7 @@ impl LightClient {
             taddr_transactions_handle,
             fetch_compact_blocks_handle,
             fetch_full_transactions_handle,
+            targetted_rescan_handle,
             r1,
         ])
         .await
@@ -597,6 +594,7 @@ impl LightClient {
             .transactions()
             .write()
             .await
+            .transaction_records_by_id
             .clear_expired_mempool(start_block);
 
         // 6. Set the highest verified tree

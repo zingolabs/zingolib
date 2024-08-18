@@ -12,14 +12,13 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use crate::{
     blaze::syncdata::BlazeSyncData,
     wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress},
 };
 
-#[cfg(feature = "zip317")]
 use crate::data::proposal::ZingoProposal;
 
 /// TODO: Add Doc Comment Here!
@@ -90,13 +89,16 @@ pub struct LightWalletSendProgress {
 impl LightWalletSendProgress {
     /// TODO: Add Doc Comment Here!
     pub fn to_json(&self) -> JsonValue {
+        let last_result = self.progress.last_result.clone();
+        let txid: Option<String> = last_result.clone().and_then(|result| result.ok());
+        let error: Option<String> = last_result.and_then(|result| result.err());
         object! {
             "id" => self.progress.id,
             "sending" => self.progress.is_send_in_progress,
             "progress" => self.progress.progress,
             "total" => self.progress.total,
-            "txid" => self.progress.last_transaction_id.clone(),
-            "error" => self.progress.last_error.clone(),
+            "txid" => txid,
+            "error" => error,
             "sync_interrupt" => self.interrupt_sync
         }
     }
@@ -207,11 +209,11 @@ pub struct UserBalances {
     /// making them essentially inaccessible.
     pub dust: u64,
 
-    /// The sum of all *unconfirmed* UTXOs and notes that are not change.
+    /// The sum of all *pending* UTXOs and notes that are not change.
     /// This value includes any applicable `incoming_dust`.
     pub incoming: u64,
 
-    /// The sum of all *unconfirmed* UTXOs and notes that are not change and are each counted as dust.
+    /// The sum of all *pending* UTXOs and notes that are not change and are each counted as dust.
     pub incoming_dust: u64,
 }
 
@@ -235,7 +237,6 @@ pub struct LightClient {
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 
-    #[cfg(feature = "zip317")]
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>,
 
     save_buffer: ZingoSaveBuffer,
@@ -253,7 +254,7 @@ pub mod instantiation {
         sync::{Mutex, RwLock},
     };
 
-    use zingoconfig::ZingoConfig;
+    use crate::config::ZingoConfig;
 
     use super::{LightClient, ZingoSaveBuffer};
     use crate::{
@@ -265,12 +266,10 @@ pub mod instantiation {
         // toDo rework ZingoConfig.
 
         /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
-        pub async fn create_from_wallet_async(
-            wallet: LightWallet,
-            config: ZingoConfig,
-        ) -> io::Result<Self> {
+        pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
+            let config = wallet.transaction_context.config.clone();
             Ok(LightClient {
                 wallet,
                 config: config.clone(),
@@ -278,7 +277,6 @@ pub mod instantiation {
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
                 interrupt_sync: Arc::new(RwLock::new(false)),
-                #[cfg(feature = "zip317")]
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
             })
@@ -319,10 +317,11 @@ pub mod instantiation {
                 ));
                 }
             }
-            let lightclient = LightClient::create_from_wallet_async(
-                LightWallet::new(config.clone(), wallet_base, birthday)?,
+            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
                 config.clone(),
-            )
+                wallet_base,
+                birthday,
+            )?)
             .await?;
 
             lightclient.set_wallet_initial_state(birthday).await;
@@ -342,10 +341,11 @@ pub mod instantiation {
             wallet_base: WalletBase,
             height: u64,
         ) -> io::Result<Self> {
-            let lightclient = LightClient::create_from_wallet_async(
-                LightWallet::new(config.clone(), wallet_base, height)?,
+            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
                 config.clone(),
-            )
+                wallet_base,
+                height,
+            )?)
             .await?;
             Ok(lightclient)
         }
@@ -396,6 +396,8 @@ pub mod sync;
 
 pub mod send;
 
+pub mod propose;
+
 // other functions
 impl LightClient {
     /// TODO: Add Doc Comment Here!
@@ -437,14 +439,14 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn do_encrypt_message(&self, to_address_str: String, memo: Memo) -> JsonValue {
+    pub fn do_encrypt_message(&self, recipient_address_str: String, memo: Memo) -> JsonValue {
         let to = match decode_payment_address(
             self.config.chain.hrp_sapling_payment_address(),
-            &to_address_str,
+            &recipient_address_str,
         ) {
             Ok(to) => to,
             _ => {
-                return object! {"error" => format!("Couldn't parse {} as a z-address", to_address_str) };
+                return object! {"error" => format!("Couldn't parse {} as a z-address", recipient_address_str) };
             }
         };
 
@@ -475,98 +477,6 @@ impl LightClient {
         // self.save_internal_rust().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
-    }
-
-    #[cfg(not(feature = "embed_params"))]
-    fn read_sapling_params(&self) -> Result<(vec<u8>, vec<u8>), String> {
-        let path = self
-            .config
-            .get_zcash_params_path()
-            .map_err(|e| e.to_string())?;
-
-        let mut path_buf = path.to_path_buf();
-        path_buf.push("sapling-output.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
-        let mut sapling_output = vec![];
-        file.read_to_end(&mut sapling_output)
-            .map_err(|e| e.to_string())?;
-
-        let mut path_buf = path.to_path_buf();
-        path_buf.push("sapling-spend.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
-        let mut sapling_spend = vec![];
-        file.read_to_end(&mut sapling_spend)
-            .map_err(|e| e.to_string())?;
-
-        Ok((sapling_output, sapling_spend))
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn set_sapling_params(
-        &mut self,
-        sapling_output: &[u8],
-        sapling_spend: &[u8],
-    ) -> Result<(), String> {
-        use sha2::{Digest, Sha256};
-
-        // The hashes of the params need to match
-        const SAPLING_OUTPUT_HASH: &str =
-            "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
-        const SAPLING_SPEND_HASH: &str =
-            "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
-
-        if !sapling_output.is_empty()
-            && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output))
-        {
-            return Err(format!(
-                "sapling-output hash didn't match. expected {}, found {}",
-                SAPLING_OUTPUT_HASH,
-                hex::encode(Sha256::digest(sapling_output))
-            ));
-        }
-
-        if !sapling_spend.is_empty()
-            && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend))
-        {
-            return Err(format!(
-                "sapling-spend hash didn't match. expected {}, found {}",
-                SAPLING_SPEND_HASH,
-                hex::encode(Sha256::digest(sapling_spend))
-            ));
-        }
-
-        // Ensure that the sapling params are stored on disk properly as well. Only on desktop
-        match self.config.get_zcash_params_path() {
-            Ok(zcash_params_dir) => {
-                // Create the sapling output and spend params files
-                match LightClient::write_file_if_not_exists(
-                    &zcash_params_dir,
-                    "sapling-output.params",
-                    sapling_output,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        return Err(format!("Warning: Couldn't write the output params!\n{}", e))
-                    }
-                };
-
-                match LightClient::write_file_if_not_exists(
-                    &zcash_params_dir,
-                    "sapling-spend.params",
-                    sapling_spend,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        return Err(format!("Warning: Couldn't write the spend params!\n{}", e))
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(format!("{}", e));
-            }
-        };
-
-        Ok(())
     }
 
     /// TODO: Add Doc Comment Here!
@@ -602,19 +512,23 @@ impl LightClient {
         }
     }
 
+    /// TODO!! This function sorts notes into
+    /// unspent
+    /// spend_is_pending
+    /// spend_is_confirmed
     fn unspent_pending_spent(
         &self,
         note: JsonValue,
         unspent: &mut Vec<JsonValue>,
-        pending: &mut Vec<JsonValue>,
-        spent: &mut Vec<JsonValue>,
+        spend_is_pending: &mut Vec<JsonValue>,
+        spend_is_confirmed: &mut Vec<JsonValue>,
     ) {
-        if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
+        if note["spent"].is_null() && note["pending_spent"].is_null() {
             unspent.push(note);
         } else if !note["spent"].is_null() {
-            spent.push(note);
+            spend_is_confirmed.push(note);
         } else {
-            pending.push(note);
+            spend_is_pending.push(note);
         }
     }
 }
@@ -719,9 +633,9 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{ChainType, RegtestNetwork, ZingoConfig};
+    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use tokio::runtime::Runtime;
-    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
@@ -784,7 +698,3 @@ mod tests {
 
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
-
-/// TODO: Add Doc Comment Here!
-#[cfg(feature = "test-features")]
-pub mod test_features;

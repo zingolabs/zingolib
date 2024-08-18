@@ -2,6 +2,7 @@
 !zingolib/test-data/openssl_cfg
 *.json.txt
 .DS_Store
+.helix
 /procgov
 /testdata
 cobertura.xml
@@ -16,6 +17,7 @@ zingocli/tests/data/lightwalletd.yml
 zingocli/tests/times/*
 zingocli/wallets/*
 zingolib/target
+zingolib/proptest-regressions
 zingolib/test-data/*
 zingo-testutils/test_binaries/bins/lightwalletd
 zingo-testutils/test_binaries/bins/zcash-cli

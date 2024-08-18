@@ -1,27 +1,27 @@
 //! TODO: Add Mod Discription Here!
-use std::marker::PhantomData;
 use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Read, Write},
     sync::atomic::AtomicBool,
 };
+use std::{marker::PhantomData, sync::Arc};
 
 use append_only_vec::AppendOnlyVec;
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-use zcash_primitives::consensus::{NetworkConstants, Parameters};
+use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
+use crate::config::ZingoConfig;
 use secp256k1::SecretKey;
-use zcash_address::unified::{Container, Encoding, Ufvk};
+use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
-use zcash_encoding::Vector;
+use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
-use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
@@ -83,7 +83,7 @@ pub struct WalletCapability {
     /// TODO: Add Doc Comment Here!
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
-    transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
+    transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
     addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
@@ -95,13 +95,19 @@ impl Default for WalletCapability {
             orchard: Capability::None,
             sapling: Capability::None,
             transparent: Capability::None,
-            transparent_child_keys: AppendOnlyVec::new(),
+            transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
             addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
         }
     }
 }
 
+impl crate::wallet::LightWallet {
+    /// This is the interface to expose the wallet key
+    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
+        self.transaction_context.key.clone()
+    }
+}
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
@@ -174,14 +180,8 @@ impl WalletCapability {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn transparent_child_keys(
-        &self,
-    ) -> Result<&AppendOnlyVec<(usize, secp256k1::SecretKey)>, String> {
-        if self.transparent.can_spend() {
-            Ok(&self.transparent_child_keys)
-        } else {
-            Err("The wallet is not capable of spending transparent funds.".to_string())
-        }
+    pub fn transparent_child_addresses(&self) -> &Arc<AppendOnlyVec<(usize, TransparentAddress)>> {
+        &self.transparent_child_addresses
     }
 
     /// TODO: Add Doc Comment Here!
@@ -261,35 +261,43 @@ impl WalletCapability {
         };
 
         let transparent_receiver = if desired_receivers.transparent {
-            let child_index = KeyIndex::from_index(self.addresses.len() as u32).unwrap();
-            match &self.transparent {
+            let child_index = KeyIndex::from_index(self.addresses.len() as u32);
+            let child_pk = match &self.transparent {
                 Capability::Spend(ext_sk) => {
-                    let child_sk = match ext_sk.derive_private_key(child_index) {
-                        Err(e) => {
-                            self.addresses_write_lock
-                                .swap(false, atomic::Ordering::Release);
-                            return Err(format!("Transparent private key derivation failed: {e}"));
-                        }
-                        Ok(res) => res.private_key,
-                    };
                     let secp = secp256k1::Secp256k1::new();
-                    let child_pk = secp256k1::PublicKey::from_secret_key(&secp, &child_sk);
-                    self.transparent_child_keys
-                        .push((self.addresses.len(), child_sk));
-                    Some(child_pk)
-                }
-                Capability::View(ext_pk) => {
-                    let child_pk = match ext_pk.derive_public_key(child_index) {
-                        Err(e) => {
-                            self.addresses_write_lock
-                                .swap(false, atomic::Ordering::Release);
-                            return Err(format!("Transparent public key derivation failed: {e}"));
+                    Some(
+                        match ext_sk.derive_private_key(child_index) {
+                            Err(e) => {
+                                self.addresses_write_lock
+                                    .swap(false, atomic::Ordering::Release);
+                                return Err(format!(
+                                    "Transparent private key derivation failed: {e}"
+                                ));
+                            }
+                            Ok(res) => res.private_key,
                         }
-                        Ok(res) => res.public_key,
-                    };
-                    Some(child_pk)
+                        .public_key(&secp),
+                    )
                 }
+                Capability::View(ext_pk) => Some(match ext_pk.derive_public_key(child_index) {
+                    Err(e) => {
+                        self.addresses_write_lock
+                            .swap(false, atomic::Ordering::Release);
+                        return Err(format!("Transparent public key derivation failed: {e}"));
+                    }
+                    Ok(res) => res.public_key,
+                }),
                 Capability::None => None,
+            };
+            if let Some(pk) = child_pk {
+                self.transparent_child_addresses.push((
+                    self.addresses.len(),
+                    #[allow(deprecated)]
+                    zcash_primitives::legacy::keys::pubkey_to_address(&pk),
+                ));
+                Some(pk)
+            } else {
+                None
             }
         } else {
             None
@@ -328,29 +336,23 @@ impl WalletCapability {
         &self,
         config: &ZingoConfig,
     ) -> Result<HashMap<String, secp256k1::SecretKey>, String> {
-        if self.transparent.can_spend() {
-            Ok(self
-                .addresses
+        if let Capability::Spend(transparent_sk) = &self.transparent {
+            self.transparent_child_addresses()
                 .iter()
-                .enumerate()
-                .filter_map(|(i, ua)| {
-                    ua.transparent().zip(
-                        self.transparent_child_keys
-                            .iter()
-                            .find(|(index, _key)| i == *index),
-                    )
-                })
-                .map(|(taddr, key)| {
+                .map(|(i, taddr)| -> Result<_, String> {
                     let hash = match taddr {
                         TransparentAddress::PublicKeyHash(hash) => hash,
                         TransparentAddress::ScriptHash(hash) => hash,
                     };
-                    (
+                    Ok((
                         hash.to_base58check(&config.chain.b58_pubkey_address_prefix(), &[]),
-                        key.1,
-                    )
+                        transparent_sk
+                            .derive_private_key(KeyIndex::Normal(*i as u32))
+                            .map_err(|e| e.to_string())?
+                            .private_key,
+                    ))
                 })
-                .collect())
+                .collect::<Result<_, _>>()
         } else {
             Err("Wallet is no capable to spend transparent funds".to_string())
         }
@@ -494,9 +496,9 @@ impl WalletCapability {
 
     /// TODO: Add Doc Comment Here!
     //TODO: NAME?????!!
-    pub fn get_trees_witness_trees(&self) -> Option<crate::wallet::data::WitnessTrees> {
+    pub fn get_trees_witness_trees(&self) -> Option<crate::data::witness_trees::WitnessTrees> {
         if self.can_spend_from_all_pools() {
-            Some(crate::wallet::data::WitnessTrees::default())
+            Some(crate::data::witness_trees::WitnessTrees::default())
         } else {
             None
         }
@@ -803,6 +805,49 @@ impl TryFrom<&WalletCapability> for sapling_crypto::keys::OutgoingViewingKey {
     }
 }
 
+impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
+    type Error = io::Error;
+
+    fn try_from(value: &WalletCapability) -> Result<Self, Self::Error> {
+        let transparent = &value.transparent;
+        let sapling = &value.sapling;
+        let orchard = &value.orchard;
+        match (transparent, sapling, orchard) {
+            (Capability::Spend(tkey), Capability::Spend(skey), Capability::Spend(okey)) => {
+                let mut key_bytes = Vec::new();
+                // orchard Era usk
+                key_bytes.write_u32::<LittleEndian>(BranchId::Nu5.into())?;
+
+                let okey_bytes = okey.to_bytes();
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::Orchard) as usize)?;
+                CompactSize::write(&mut key_bytes, okey_bytes.len())?;
+                key_bytes.write_all(okey_bytes)?;
+
+                let skey_bytes = skey.to_bytes();
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::Sapling) as usize)?;
+                CompactSize::write(&mut key_bytes, skey_bytes.len())?;
+                key_bytes.write_all(&skey_bytes)?;
+
+                let mut tkey_bytes = Vec::new();
+                tkey_bytes.write_all(tkey.private_key.as_ref())?;
+                tkey_bytes.write_all(&tkey.chain_code)?;
+
+                CompactSize::write(&mut key_bytes, u32::from(Typecode::P2pkh) as usize)?;
+                CompactSize::write(&mut key_bytes, tkey_bytes.len())?;
+                key_bytes.write_all(&tkey_bytes)?;
+
+                UnifiedSpendingKey::from_bytes(Era::Orchard, &key_bytes).map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidInput, format!("bad usk: {e}"))
+                })
+            }
+            _otherwise => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "don't have spend keys",
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 pub async fn get_transparent_secretkey_pubkey_taddr(
     lightclient: &crate::lightclient::LightClient,
@@ -821,11 +866,14 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
             let child_ext_pk = ext_pk.derive_public_key(KeyIndex::Normal(0)).ok();
             (None, child_ext_pk.map(|x| x.public_key))
         }
-        Capability::Spend(_) => {
-            let sk = wc.transparent_child_keys[0].1;
+        Capability::Spend(master_sk) => {
             let secp = secp256k1::Secp256k1::new();
-            let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
-            (Some(sk), Some(pk))
+            let extsk = master_sk
+                .derive_private_key(KeyIndex::Normal(wc.transparent_child_addresses[0].0 as u32))
+                .unwrap();
+            let pk = extsk.private_key.public_key(&secp);
+            #[allow(deprecated)]
+            (Some(extsk.private_key), Some(pk))
         }
     };
     let taddr = wc.addresses()[0]

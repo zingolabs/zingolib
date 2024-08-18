@@ -1,6 +1,7 @@
 //! TODO: Add Mod Description Here!
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
+use crate::config::{ChainType, ZingoConfig};
 use base58::ToBase58;
 use ripemd160::Digest;
 use sapling_crypto::{
@@ -12,7 +13,6 @@ use zcash_client_backend::address;
 use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
 };
-use zingoconfig::{ChainType, ZingoConfig};
 
 pub mod extended_transparent;
 pub mod unified;
@@ -83,19 +83,12 @@ pub fn get_zaddr_from_bip39seed(
     (extsk, fvk, address)
 }
 
-/// TODO: Add Doc Comment Here!
+/// Checks if the address str is a valid zcash address
+#[deprecated(note = "address strings are now immediately converted to valid addresses")]
 pub fn is_shielded_address(addr: &str, chain: &ChainType) -> bool {
     matches!(
         address::Address::decode(chain, addr),
         Some(address::Address::Sapling(_)) | Some(address::Address::Unified(_))
-    )
-}
-
-/// TODO: Add Doc Comment Here!
-pub fn is_transparent_address(addr: &str, chain: &ChainType) -> bool {
-    matches!(
-        address::Address::decode(chain, addr),
-        Some(address::Address::Transparent(_))
     )
 }
 

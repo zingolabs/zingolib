@@ -14,9 +14,8 @@ use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::{self};
 
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
@@ -28,7 +27,7 @@ use super::LightWallet;
 use super::{
     data::{BlockData, WalletZecPriceInfo},
     transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
 
 impl LightWallet {
@@ -139,22 +138,11 @@ impl LightWallet {
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut transactions = if external_version <= 14 {
+        let transactions = if external_version <= 14 {
             TxMapAndMaybeTrees::read_old(&mut reader, &wallet_capability)
         } else {
             TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
         }?;
-        let txids = transactions
-            .transaction_records_by_id
-            .keys()
-            .cloned()
-            .collect::<Vec<transaction::TxId>>();
-        // We've marked notes as change inconsistently in the past
-        // so we make sure that they are marked as change or not based on our
-        // current definition
-        for txid in txids {
-            transactions.check_notes_mark_change(&txid)
-        }
 
         let chain_name = utils::read_string(&mut reader)?;
 
@@ -248,8 +236,13 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
+            #[cfg(feature = "sync")]
+            sync_state: zingo_sync::primitives::SyncState::new(),
         };
 
         Ok(lw)
     }
 }
+
+#[cfg(any(test, feature = "test-elevation"))]
+pub mod testing;

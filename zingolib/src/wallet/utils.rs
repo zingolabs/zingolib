@@ -65,3 +65,23 @@ pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
         }
     }
 }
+pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
+    use crate::SaplingParams;
+    let mut sapling_output = vec![];
+    sapling_output.extend_from_slice(
+        SaplingParams::get("sapling-output.params")
+            .unwrap()
+            .data
+            .as_ref(),
+    );
+
+    let mut sapling_spend = vec![];
+    sapling_spend.extend_from_slice(
+        SaplingParams::get("sapling-spend.params")
+            .unwrap()
+            .data
+            .as_ref(),
+    );
+
+    Ok((sapling_output, sapling_spend))
+}

@@ -5,13 +5,14 @@
 
 use crate::error::ZingoLibResult;
 
+use crate::config::ZingoConfig;
 use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
     utils::txid_from_slice,
     MemoDownloadOption,
 };
@@ -35,7 +36,6 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
 
 use super::syncdata::BlazeSyncData;
 
@@ -264,7 +264,7 @@ impl TrialDecryptions {
         compact_block: &CompactBlock,
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
-        config: &zingoconfig::ZingoConfig,
+        config: &crate::config::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
@@ -310,7 +310,7 @@ impl TrialDecryptions {
                     let bsync_data = bsync_data.clone();
                     let transaction_metadata_set = transaction_metadata_set.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
-                    let timestamp = compact_block.time as u64;
+                    let timestamp = compact_block.time;
                     let config = config.clone();
 
                     workers.push(tokio::spawn(async move {
@@ -344,17 +344,21 @@ impl TrialDecryptions {
                         );
 
                         let status = ConfirmationStatus::Confirmed(height);
-                        transaction_metadata_set.write().await.add_new_note::<D>(
-                            transaction_id,
-                            status,
-                            timestamp,
-                            note,
-                            to,
-                            have_spending_key,
-                            Some(spend_nullifier),
-                            i as u32,
-                            witness.witnessed_position(),
-                        );
+                        transaction_metadata_set
+                            .write()
+                            .await
+                            .transaction_records_by_id
+                            .add_new_note::<D>(
+                                transaction_id,
+                                status,
+                                Some(timestamp),
+                                note,
+                                to,
+                                have_spending_key,
+                                Some(spend_nullifier),
+                                i as u32,
+                                witness.witnessed_position(),
+                            );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
 

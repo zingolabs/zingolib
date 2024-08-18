@@ -10,27 +10,28 @@ default = ["grpc-proxy"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zingoconfig = { path = "../zingoconfig" }
-zingolib = { path = "../zingolib", features = ["test-features"] }
+zingoconfig = { path = "../zingoconfig" , features = ["test-elevation"] }
+zingolib = { path = "../zingolib" , features = ["test-elevation"] }
 zingo-netutils = { path = "../zingo-netutils", features = ["test-features"] }
+zingo-testvectors = { path = "../zingo-testvectors" }
+zingo-status = { path = "../zingo-status" }
 
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 orchard = { workspace = true }
-futures = { workspace = true }
 portpicker = { workspace = true}
 tempdir = { workspace = true }
 incrementalmerkletree = { workspace = true }
 
-json = "0.12.4"
-log = "0.4.19"
-tokio = "1.28.2"
+json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
 http.workspace = true
 tonic = { workspace = true, optional = true }
-tracing = "0.1.37"
-serde_json = "1.0.100"
-serde = { version = "1.0.166", features = ["derive"] }
+nonempty.workspace = true
 
-[build-dependencies]
-tonic-build = { workspace = true }
+[dev-dependencies]
+zingoconfig = { path = "../zingoconfig" , features = ["test-elevation"] }
+zingolib = { path = "../zingolib" , features = ["test-elevation"] }
+

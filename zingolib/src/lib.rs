@@ -9,23 +9,25 @@ extern crate rust_embed;
 
 pub mod blaze;
 pub mod commands;
+pub mod config;
 pub mod data;
 pub mod error;
 pub mod grpc_connector;
 pub mod lightclient;
 pub mod utils;
 pub mod wallet;
-#[cfg(feature = "test-features")]
-pub use zingo_testvectors as testvectors;
 
-#[cfg(feature = "test-features")]
-pub mod test_framework;
+#[cfg(test)]
+pub(crate) mod mocks;
+#[cfg(any(test, feature = "test-elevation"))]
+pub mod testutils;
+#[cfg(any(test, feature = "testvectors"))]
+pub mod testvectors;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 
 /// TODO: Add Doc Comment Here!
-#[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
 pub struct SaplingParams;

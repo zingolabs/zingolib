@@ -4,7 +4,7 @@ use log::error;
 
 use std::{
     fs::{remove_file, File},
-    io::{self, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
 use tokio::runtime::Runtime;
@@ -18,7 +18,19 @@ impl LightClient {
     /// Called internally at sync checkpoints to save state. Should not be called midway through sync.
     pub(super) async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
         match self.save_internal_buffer().await {
-            Ok(()) => self.rust_write_save_buffer_to_file().await,
+            Ok(_vu8) => {
+                // Save_internal_buffer ran without error. At this point, we assume that the save buffer is good to go. Depending on operating system, we may be able to write it to disk. (Otherwise, we wait for the FFI to offer save export.
+
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    self.rust_write_save_buffer_to_file().await?;
+                    Ok(true)
+                }
+                #[cfg(any(target_os = "ios", target_os = "android"))]
+                {
+                    Ok(false)
+                }
+            }
             Err(err) => {
                 error!("{}", err);
                 Err(err)
@@ -26,38 +38,33 @@ impl LightClient {
         }
     }
 
-    pub(super) async fn save_internal_buffer(&self) -> ZingoLibResult<()> {
+    /// write down the state of the lightclient as a `Vec<u8>`
+    pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet
             .write(&mut buffer)
             .await
             .map_err(ZingoLibError::InternalWriteBufferError)?;
-        *self.save_buffer.buffer.write().await = buffer;
-        Ok(())
+        (self.save_buffer.buffer.write().await).clone_from(&buffer);
+        Ok(buffer)
     }
 
-    /// If possible, write to disk. todo conditionally compile this function
-    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<bool> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // on mobile platforms, saving from this buffer will be handled by the native layer
-        {
-            // on ios and android just return ok
-            return Ok(false);
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    /// If possible, write to disk.
+    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<()> {
         {
             let read_buffer = self.save_buffer.buffer.read().await;
             if !read_buffer.is_empty() {
                 LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
                     .map_err(ZingoLibError::WriteFileError)?;
-                Ok(true)
+                Ok(())
             } else {
                 ZingoLibError::EmptySaveBuffer.handle()
             }
         }
     }
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
         let mut file = File::create(path)?;
         file.write_all(buffer)?;
@@ -80,17 +87,6 @@ impl LightClient {
             .unwrap()
             .block_on(async move { self.export_save_buffer_async().await })
             .map_err(String::from)
-    }
-
-    pub(super) fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
-        let mut file_path = dir.to_path_buf();
-        file_path.push(name);
-        if !file_path.exists() {
-            let mut file = File::create(&file_path)?;
-            file.write_all(bytes)?;
-        }
-
-        Ok(())
     }
 
     /// Only relevant in non-mobile, this function removes the save file.

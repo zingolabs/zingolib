@@ -15,9 +15,8 @@ hyper.workspace = true
 http-body.workspace = true
 tonic.workspace = true
 prost.workspace = true
-rustls-pemfile = "1.0.0"
+thiserror.workspace = true
+rustls-pemfile = { workspace = true }
 
 [features]
 test-features = []
-
-

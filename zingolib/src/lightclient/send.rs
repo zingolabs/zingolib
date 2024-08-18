@@ -1,18 +1,9 @@
 //! TODO: Add Mod Description Here!
-use log::{debug, error};
 
-use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::MemoBytes,
-    transaction::{components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE},
-};
-use zcash_proofs::prover::LocalTxProver;
+use zcash_primitives::consensus::BlockHeight;
 
-use super::{LightClient, LightWalletSendProgress};
-use crate::wallet::Pool;
-
-#[cfg(feature = "zip317")]
-use zcash_primitives::transaction::TxId;
+use super::LightClient;
+use super::LightWalletSendProgress;
 
 impl LightClient {
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
@@ -23,126 +14,6 @@ impl LightClient {
         ) + 1)
     }
 
-    fn map_tos_to_receivers(
-        &self,
-        tos: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<
-        Vec<(
-            zcash_client_backend::address::Address,
-            NonNegativeAmount,
-            Option<MemoBytes>,
-        )>,
-        String,
-    > {
-        if tos.is_empty() {
-            return Err("Need at least one destination address".to_string());
-        }
-        tos.iter()
-            .map(|to| {
-                let ra = match zcash_client_backend::address::Address::decode(
-                    &self.config.chain,
-                    to.0,
-                ) {
-                    Some(to) => to,
-                    None => {
-                        let e = format!("Invalid recipient address: '{}'", to.0);
-                        error!("{}", e);
-                        return Err(e);
-                    }
-                };
-
-                let value = NonNegativeAmount::from_u64(to.1).unwrap();
-
-                Ok((ra, value, to.2.clone()))
-            })
-            .collect()
-    }
-
-    /// Unstable function to expose the zip317 interface for development
-    // TOdo: add correct functionality and doc comments / tests
-    // TODO: Add migrate_sapling_to_orchard argument
-    #[cfg(feature = "zip317")]
-    pub async fn do_propose_spend(
-        &self,
-        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<crate::data::proposal::TransferProposal, String> {
-        use crate::test_framework::mocks::ProposalBuilder;
-
-        let proposal = ProposalBuilder::default().build();
-        let mut latest_proposal_lock = self.latest_proposal.write().await;
-        *latest_proposal_lock = Some(crate::data::proposal::ZingoProposal::Transfer(
-            proposal.clone(),
-        ));
-        Ok(proposal)
-    }
-
-    /// Unstable function to expose the zip317 interface for development
-    // TOdo: add correct functionality and doc comments / tests
-    #[cfg(feature = "zip317")]
-    pub async fn do_propose_shield(
-        &self,
-        _address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<crate::data::proposal::ShieldProposal, String> {
-        todo!()
-    }
-
-    /// Unstable function to expose the zip317 interface for development
-    // TODO: add correct functionality and doc comments / tests
-    #[cfg(feature = "zip317")]
-    pub async fn do_send_proposal(&self) -> Result<Vec<TxId>, String> {
-        if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-            match proposal {
-                crate::lightclient::ZingoProposal::Transfer(_) => {
-                    Ok(vec![TxId::from_bytes([1u8; 32])])
-                }
-                crate::lightclient::ZingoProposal::Shield(_) => {
-                    Ok(vec![TxId::from_bytes([222u8; 32])])
-                }
-            }
-        } else {
-            Err("No proposal. Call do_propose first.".to_string())
-        }
-    }
-
-    /// TODO: Add migrate_sapling_to_orchard argument
-    pub async fn do_send(
-        &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
-    ) -> Result<String, String> {
-        let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
-        let transaction_submission_height = self.get_submission_height().await?;
-        // First, get the consensus branch ID
-        debug!("Creating transaction");
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            // I am not clear on how long this operation may take, but it's
-            // clearly unnecessary in a send that doesn't include sapling
-            // TODO: Remove from sends that don't include Sapling
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
-
-            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
-                    // spend from transparent.
-                    receivers,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
@@ -151,62 +22,169 @@ impl LightClient {
             interrupt_sync: *self.interrupt_sync.read().await,
         })
     }
+}
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn do_shield(
-        &self,
-        pools_to_shield: &[Pool],
-        address: Option<String>,
-    ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
-                                          // as a fn of the transactions structure.
-        let tbal = self
-            .wallet
-            .tbalance(None)
-            .await
-            .expect("to receive a balance");
-        let sapling_bal = self
-            .wallet
-            .spendable_sapling_balance(None)
-            .await
-            .unwrap_or(0);
+/// patterns for newfangled propose flow
+pub mod send_with_proposal {
+    use std::{convert::Infallible, ops::DerefMut as _};
 
-        // Make sure there is a balance, and it is greater than the amount
-        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
-            tbal
-        } else {
-            0
-        } + if pools_to_shield.contains(&Pool::Sapling) {
-            sapling_bal
-        } else {
-            0
-        };
-        if balance_to_shield <= fee {
-            return Err(format!(
-                "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                balance_to_shield, fee
-            ));
-        }
+    use hdwallet::traits::Deserialize as _;
+    use nonempty::NonEmpty;
 
-        let addr = address
-            .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
+    use secp256k1::SecretKey;
+    use zcash_client_backend::wallet::NoteId;
+    use zcash_client_backend::zip321::TransactionRequest;
+    use zcash_client_backend::{proposal::Proposal, wallet::TransparentAddressMetadata};
+    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_primitives::transaction::TxId;
 
-        let receiver = self
-            .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
-            .expect("To build shield receiver.");
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+    use thiserror::Error;
+    use zcash_proofs::prover::LocalTxProver;
 
+    use crate::lightclient::LightClient;
+    use crate::{
+        lightclient::propose::{ProposeSendError, ProposeShieldError},
+        wallet::utils::read_sapling_params,
+    };
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum CompleteAndBroadcastError {
+        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
+        NoSpendCapability,
+        #[error("No proposal. Call do_propose first.")]
+        NoProposal,
+        #[error("Cant get submission height. Server connection?: {0:?}")]
+        SubmissionHeight(String),
+        #[error("Could not load sapling_params: {0:?}")]
+        SaplingParams(String),
+        #[error("Could not find UnifiedSpendKey: {0:?}")]
+        UnifiedSpendKey(std::io::Error),
+        #[error("Can't Calculate {0:?}")]
+        Calculation(
+            #[from]
+            zcash_client_backend::data_api::error::Error<
+                crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+                std::convert::Infallible,
+                std::convert::Infallible,
+                zcash_primitives::transaction::fees::zip317::FeeError,
+            >,
+        ),
+        #[error("Broadcast failed: {0:?}")]
+        Broadcast(String),
+        #[error("Sending to exchange addresses is not supported yet!")]
+        ExchangeAddressesNotSupported,
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum CompleteAndBroadcastStoredProposalError {
+        #[error("No proposal. Call do_propose first.")]
+        NoStoredProposal,
+        #[error("send {0:?}")]
+        CompleteAndBroadcast(CompleteAndBroadcastError),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum QuickSendError {
+        #[error("propose send {0:?}")]
+        ProposeSend(#[from] ProposeSendError),
+        #[error("send {0:?}")]
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
+    pub enum QuickShieldError {
+        #[error("propose shield {0:?}")]
+        Propose(#[from] ProposeShieldError),
+        #[error("send {0:?}")]
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
+    }
+
+    impl LightClient {
+        /// Calculates, signs and broadcasts transactions from a proposal.
+        async fn complete_and_broadcast<NoteRef>(
+            &self,
+            proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            if self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .witness_trees()
+                .is_none()
+            {
+                return Err(CompleteAndBroadcastError::NoSpendCapability);
+            }
+
+            // Reset the progress to start. Any errors will get recorded here
+            self.wallet.reset_send_progress().await;
+
+            let submission_height = self
+                .get_submission_height()
+                .await
+                .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
+
+            let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+                read_sapling_params().map_err(CompleteAndBroadcastError::SaplingParams)?;
             let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let unified_spend_key =
+                UnifiedSpendingKey::try_from(self.wallet.wallet_capability().as_ref())
+                    .map_err(CompleteAndBroadcastError::UnifiedSpendKey)?;
 
-            self.wallet
-                .send_to_addresses(
-                    sapling_prover,
-                    pools_to_shield.to_vec(),
-                    receiver,
-                    transaction_submission_height,
+            // We don't support zip320 yet. Only one step.
+            if proposal.steps().len() != 1 {
+                return Err(CompleteAndBroadcastError::ExchangeAddressesNotSupported);
+            }
+
+            let step = proposal.steps().first();
+
+            // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
+            // transparent key it contains is not the account spending key, but the
+            // externally-scoped derivative key. The goal is to fix this, but in the
+            // interim we use this special-case logic.
+            fn usk_to_tkey(
+                unified_spend_key: &UnifiedSpendingKey,
+                t_metadata: &TransparentAddressMetadata,
+            ) -> SecretKey {
+                hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
+                    .expect("This a hack to do a type conversion, and will not fail")
+                    .derive_private_key(t_metadata.address_index().into())
+                    // This is unwrapped in librustzcash, so I'm not too worried about it
+                    .expect("private key derivation failed")
+                    .private_key
+            }
+
+            let build_result =
+                zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .write()
+                        .await
+                        .deref_mut(),
+                    &self.wallet.transaction_context.config.chain,
+                    &sapling_prover,
+                    &sapling_prover,
+                    &unified_spend_key,
+                    zcash_client_backend::wallet::OvkPolicy::Sender,
+                    proposal.fee_rule(),
+                    proposal.min_target_height(),
+                    &[],
+                    step,
+                    Some(usk_to_tkey),
+                    Some(self.wallet.wallet_capability().first_sapling_address()),
+                )?;
+
+            let result = self
+                .wallet
+                .send_to_addresses_inner(
+                    build_result.transaction(),
+                    submission_height,
                     |transaction_bytes| {
                         crate::grpc_connector::send_transaction(
                             self.get_server_uri(),
@@ -215,8 +193,87 @@ impl LightClient {
                     },
                 )
                 .await
-        };
+                .map_err(CompleteAndBroadcastError::Broadcast)
+                .map(NonEmpty::singleton);
 
-        result.map(|(transaction_id, _)| transaction_id)
+            self.wallet
+                .set_send_result(
+                    result
+                        .as_ref()
+                        .map(|txids| txids.first().to_string())
+                        .map_err(|e| e.to_string()),
+                )
+                .await;
+
+            result
+        }
+
+        /// Calculates, signs and broadcasts transactions from a stored proposal.
+        pub async fn complete_and_broadcast_stored_proposal(
+            &self,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
+            if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+                match proposal {
+                    crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
+                        self.complete_and_broadcast::<NoteId>(transfer_proposal)
+                            .await
+                    }
+                    crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
+                        self.complete_and_broadcast::<Infallible>(shield_proposal)
+                            .await
+                    }
+                }
+                .map_err(CompleteAndBroadcastStoredProposalError::CompleteAndBroadcast)
+            } else {
+                Err(CompleteAndBroadcastStoredProposalError::NoStoredProposal)
+            }
+        }
+
+        /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
+        pub async fn quick_send(
+            &self,
+            request: TransactionRequest,
+        ) -> Result<NonEmpty<TxId>, QuickSendError> {
+            let proposal = self.create_send_proposal(request).await?;
+            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
+        }
+
+        /// Shields all transparent funds without confirmation.
+        pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
+            let proposal = self.create_shield_proposal().await?;
+            Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
+        }
+    }
+
+    #[cfg(all(test, feature = "testvectors"))]
+    mod tests {
+
+        #[tokio::test]
+        async fn complete_and_broadcast() {
+            use crate::{
+                config::ZingoConfigBuilder,
+                lightclient::{send::send_with_proposal::CompleteAndBroadcastError, LightClient},
+                mocks::ProposalBuilder,
+                testvectors::seeds::ABANDON_ART_SEED,
+            };
+            let lc = LightClient::create_unconnected(
+                &ZingoConfigBuilder::default().create(),
+                crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+                1,
+            )
+            .await
+            .unwrap();
+            let proposal = ProposalBuilder::default().build();
+            assert_eq!(
+                CompleteAndBroadcastError::SubmissionHeight(
+                    "Error getting client: InvalidScheme".to_string(),
+                )
+                .to_string(),
+                lc.complete_and_broadcast(&proposal)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+            );
+        }
     }
 }

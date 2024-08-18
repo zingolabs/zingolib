@@ -3,7 +3,7 @@ use crate::wallet::{
     data::{BlockData, PoolNullifier},
     notes::ShieldedNoteInterface,
     traits::DomainWalletExt,
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
@@ -36,7 +36,7 @@ type Node<D> = <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::No
 const ORCHARD_START: &str = "000000";
 /// The data relating to the blocks in the current batch
 pub struct BlockManagementData {
-    // List of all downloaded blocks in the current batch and
+    // List of all downloaded Compact Blocks in the current batch and
     // their hashes/commitment trees. Stored with the tallest
     // block first, and the shortest last.
     blocks_in_current_batch: Arc<RwLock<Vec<BlockData>>>,
@@ -67,7 +67,7 @@ impl BlockManagementData {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
-            batch_size: zingoconfig::BATCH_SIZE,
+            batch_size: crate::config::BATCH_SIZE,
             highest_verified_trees: None,
             sync_status,
         }
@@ -447,13 +447,19 @@ impl BlockManagementData {
         self.wait_for_block(after_height).await;
 
         {
-            // Read Lock
+            // Read Lock for the Block Cache
             let blocks = self.blocks_in_current_batch.read().await;
+            // take the height of the first/highest block in the batch and subtract target height to get index into the block list
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
                 PoolNullifier::Sapling(nf) => {
                     let nf = nf.to_vec();
 
+                    // starting with a block and searching until the top of the batch
+                    //     if this block contains a transaction
+                    //         that contains a spent
+                    //             with the given nullifier
+                    //                 return its height
                     for i in (0..pos + 1).rev() {
                         let cb = &blocks.get(i as usize).unwrap().cb();
                         for compact_transaction in &cb.vtx {
@@ -497,7 +503,7 @@ impl BlockManagementData {
     /// This function handles Orchard and Sapling domains.
     /// This function takes data from the light server and uses it to construct a witness locally.  should?
     /// currently of the opinion that this function should be factored into separate concerns.
-    pub(crate) async fn get_note_witness<D>(
+    pub(crate) async fn get_note_witness<D: DomainWalletExt>(
         &self,
         uri: Uri,
         height: BlockHeight,
@@ -505,11 +511,6 @@ impl BlockManagementData {
         output_num: usize,
         activation_height: u64,
     ) -> Result<IncrementalWitness<<D::WalletNote as ShieldedNoteInterface>::Node, 32>, String>
-    where
-        D: DomainWalletExt,
-        D::Note: PartialEq + Clone,
-        D::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        D::Recipient: crate::wallet::traits::Recipient,
     {
         // Get the previous block's height, because that block's commitment trees are the states at the start
         // of the requested block.
@@ -835,7 +836,9 @@ mod tests {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
+                Arc::new(RwLock::new(
+                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                )),
                 reorg_transmitter,
             )
             .await;
@@ -884,7 +887,9 @@ mod tests {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
+                Arc::new(RwLock::new(
+                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                )),
                 reorg_transmitter,
             )
             .await;
@@ -980,7 +985,9 @@ mod tests {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees())),
+                Arc::new(RwLock::new(
+                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                )),
                 reorg_transmitter,
             )
             .await;

@@ -18,8 +18,7 @@ use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingo_testutils::{
-    self,
+use zingolib::testutils::{
     incrementalmerkletree::frontier::CommitmentTree,
     paths::{get_bin_dir, get_cargo_manifest_dir},
     regtest::launch_lightwalletd,
@@ -397,7 +396,7 @@ pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
 ) -> Result<(DarksideHandler, DarksideConnector), String> {
     let handler = DarksideHandler::new(set_port);
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         handler.grpc_port
     )));
@@ -493,37 +492,36 @@ pub mod scenarios {
     use std::fs::File;
     use std::ops::Add;
 
-    use zcash_primitives::consensus::{BlockHeight, BranchId};
-    use zingo_testutils::scenarios::setup::ClientBuilder;
-    use zingoconfig::RegtestNetwork;
-    use zingolib::{
-        lightclient::LightClient, testvectors::seeds::HOSPITAL_MUSEUM_SEED, wallet::Pool,
-    };
-
     use crate::{
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
+    use zcash_primitives::consensus::{BlockHeight, BranchId};
+    use zingolib::config::RegtestNetwork;
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::scenarios::setup::ClientBuilder;
+    use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     use super::{
         init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
         DarksideConnector, DarksideHandler,
     };
 
-    pub struct DarksideScenario {
+    pub struct DarksideEnvironment {
         darkside_handler: DarksideHandler,
-        darkside_connector: DarksideConnector,
-        client_builder: ClientBuilder,
-        regtest_network: RegtestNetwork,
+        pub(crate) darkside_connector: DarksideConnector,
+        pub(crate) client_builder: ClientBuilder,
+        pub(crate) regtest_network: RegtestNetwork,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
-        staged_blockheight: BlockHeight,
-        tree_state: TreeState,
+        pub(crate) staged_blockheight: BlockHeight,
+        pub(crate) tree_state: TreeState,
         transaction_set_index: u64,
     }
-    impl DarksideScenario {
+    impl DarksideEnvironment {
         /// Initialises and launches darksidewalletd, stages the genesis block and creates the lightclient builder
-        pub async fn new(set_port: Option<portpicker::Port>) -> DarksideScenario {
+        pub async fn new(set_port: Option<portpicker::Port>) -> DarksideEnvironment {
             let (darkside_handler, darkside_connector) =
                 init_darksidewalletd(set_port).await.unwrap();
             let client_builder = ClientBuilder::new(
@@ -531,7 +529,7 @@ pub mod scenarios {
                 darkside_handler.darkside_dir.clone(),
             );
             let regtest_network = RegtestNetwork::all_upgrades_active();
-            DarksideScenario {
+            DarksideEnvironment {
                 darkside_handler,
                 darkside_connector,
                 client_builder,
@@ -543,11 +541,11 @@ pub mod scenarios {
                 transaction_set_index: 0,
             }
         }
-        pub async fn default() -> DarksideScenario {
-            DarksideScenario::new(None).await
+        pub async fn default() -> DarksideEnvironment {
+            DarksideEnvironment::new(None).await
         }
-        pub async fn default_faucet_recipient(funded_pool: Pool) -> DarksideScenario {
-            let mut scenario = DarksideScenario::new(None).await;
+        pub async fn default_faucet_recipient(funded_pool: PoolType) -> DarksideEnvironment {
+            let mut scenario = DarksideEnvironment::new(None).await;
             scenario
                 .build_faucet(funded_pool)
                 .await
@@ -558,7 +556,7 @@ pub mod scenarios {
 
         /// Builds a lightclient with spending capability to the initial source of funds to the darkside blockchain
         /// The staged block with the funding transaction is not applied and the faucet is not synced
-        pub async fn build_faucet(&mut self, funded_pool: Pool) -> &mut DarksideScenario {
+        pub async fn build_faucet(&mut self, funded_pool: PoolType) -> &mut DarksideEnvironment {
             if self.faucet.is_some() {
                 panic!("Error: Faucet already exists!");
             }
@@ -574,9 +572,13 @@ pub mod scenarios {
             );
 
             let faucet_funding_transaction = match funded_pool {
-                Pool::Orchard => constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT,
-                Pool::Sapling => constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT,
-                Pool::Transparent => {
+                PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                    constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT
+                }
+                PoolType::Shielded(ShieldedProtocol::Sapling) => {
+                    constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT
+                }
+                PoolType::Transparent => {
                     panic!("Error: Transparent funding transactions for faucet are not currently implemented!")
                 }
             };
@@ -584,7 +586,11 @@ pub mod scenarios {
             self
         }
         /// Builds a new lightclient from a seed phrase
-        pub async fn build_client(&mut self, seed: String, birthday: u64) -> &mut DarksideScenario {
+        pub async fn build_client(
+            &mut self,
+            seed: String,
+            birthday: u64,
+        ) -> &mut DarksideEnvironment {
             let lightclient = self
                 .client_builder
                 .build_client(seed, birthday, true, self.regtest_network)
@@ -598,7 +604,7 @@ pub mod scenarios {
             &mut self,
             target_blockheight: u64,
             nonce: u64,
-        ) -> &mut DarksideScenario {
+        ) -> &mut DarksideEnvironment {
             let count = target_blockheight - u64::from(self.staged_blockheight);
             self.darkside_connector
                 .stage_blocks_create(
@@ -619,7 +625,7 @@ pub mod scenarios {
             self
         }
         /// Apply blocks up to target height.
-        pub async fn apply_blocks(&mut self, target_blockheight: u64) -> &mut DarksideScenario {
+        pub async fn apply_blocks(&mut self, target_blockheight: u64) -> &mut DarksideEnvironment {
             self.darkside_connector
                 .apply_staged(target_blockheight as i32)
                 .await
@@ -631,7 +637,7 @@ pub mod scenarios {
             &mut self,
             target_blockheight: u64,
             nonce: u64,
-        ) -> &mut DarksideScenario {
+        ) -> &mut DarksideEnvironment {
             self.stage_blocks(target_blockheight, nonce).await;
             self.apply_blocks(target_blockheight).await;
             self
@@ -648,7 +654,7 @@ pub mod scenarios {
             receiver_address: &str,
             value: u64,
             chainbuild_file: &File,
-        ) -> &mut DarksideScenario {
+        ) -> &mut DarksideEnvironment {
             let (_, raw_tx) = self.send_transaction(sender, receiver_address, value).await;
             write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
             self
@@ -661,7 +667,7 @@ pub mod scenarios {
             sender: DarksideSender<'_>,
             receiver_address: &str,
             value: u64,
-        ) -> (&mut DarksideScenario, RawTransaction) {
+        ) -> (&mut DarksideEnvironment, RawTransaction) {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
                 .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
@@ -672,10 +678,12 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            lightclient
-                .do_send(vec![(receiver_address, value, None)])
-                .await
-                .unwrap();
+            zingolib::testutils::lightclient::from_inputs::quick_send(
+                lightclient,
+                vec![(receiver_address, value, None)],
+            )
+            .await
+            .unwrap();
             let mut streamed_raw_txns = self
                 .darkside_connector
                 .get_incoming_transactions()
@@ -709,8 +717,7 @@ pub mod scenarios {
             // We can't just take a reference to a LightClient, as that might be a reference to
             // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
             sender: DarksideSender<'_>,
-            pool_to_shield: Pool,
-        ) -> (&mut DarksideScenario, RawTransaction) {
+        ) -> (&mut DarksideEnvironment, RawTransaction) {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
                 .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
@@ -721,10 +728,8 @@ pub mod scenarios {
                 DarksideSender::IndexedClient(n) => self.get_lightclient(n),
                 DarksideSender::ExternalClient(lc) => lc,
             };
-            lightclient
-                .do_shield(&[pool_to_shield], None)
-                .await
-                .unwrap();
+            // upgrade sapling
+            lightclient.quick_shield().await.unwrap();
             let mut streamed_raw_txns = self
                 .darkside_connector
                 .get_incoming_transactions()
@@ -763,16 +768,18 @@ pub mod scenarios {
             // We can't just take a reference to a LightClient, as that might be a reference to
             // a field of the DarksideScenario which we're taking by exclusive (i.e. mut) reference
             sender: DarksideSender<'_>,
-            pool_to_shield: Pool,
             chainbuild_file: &File,
-        ) -> &mut DarksideScenario {
-            let (_, raw_tx) = self.shield_transaction(sender, pool_to_shield).await;
+        ) -> &mut DarksideEnvironment {
+            let (_, raw_tx) = self.shield_transaction(sender).await;
             write_raw_transaction(&raw_tx, BranchId::Nu5, chainbuild_file);
             self
         }
         /// Stage a block and transaction, then update tree state.
         /// Does not apply block.
-        pub async fn stage_transaction(&mut self, hex_transaction: &str) -> &mut DarksideScenario {
+        pub async fn stage_transaction(
+            &mut self,
+            hex_transaction: &str,
+        ) -> &mut DarksideEnvironment {
             self.staged_blockheight = self.staged_blockheight.add(1);
             self.darkside_connector
                 .stage_blocks_create(u32::from(self.staged_blockheight) as i32, 1, 0)
@@ -806,7 +813,7 @@ pub mod scenarios {
         pub async fn stage_next_transaction(
             &mut self,
             transaction_set: &[String],
-        ) -> &mut DarksideScenario {
+        ) -> &mut DarksideEnvironment {
             self.stage_transaction(&transaction_set[self.transaction_set_index as usize])
                 .await;
             self.transaction_set_index += 1;

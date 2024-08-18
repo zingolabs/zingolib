@@ -1,4 +1,5 @@
 //! TODO: Add Crate Discription Here!
+use crate::config::ChainType;
 use byteorder::ReadBytesExt;
 use bytes::{Buf, Bytes, IntoBuf};
 use group::GroupEncoding;
@@ -18,7 +19,6 @@ use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
 };
-use zingoconfig::ChainType;
 
 pub struct Message {
     pub to: PaymentAddress,
@@ -213,7 +213,7 @@ mod tests {
     use ff::Field;
     use zcash_note_encryption::OUT_PLAINTEXT_SIZE;
 
-    use crate::test_framework::mocks::random_zaddr;
+    use crate::mocks::random_zaddr;
 
     use super::*;
 

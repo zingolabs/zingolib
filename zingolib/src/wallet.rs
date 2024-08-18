@@ -3,15 +3,11 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use zcash_primitives::memo::Memo;
 
-use json::JsonValue;
 use log::{info, warn};
-use orchard::keys::SpendingKey as OrchardSpendingKey;
-use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
 use rand::rngs::OsRng;
 use rand::Rng;
-use sapling_crypto::note_encryption::SaplingDomain;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
 
@@ -24,20 +20,10 @@ use std::{
 use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
+use crate::config::ZingoConfig;
 use zcash_client_backend::proto::service::TreeState;
-use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::Domain;
+use zcash_encoding::Optional;
 
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
-
-use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
-
-use crate::wallet::notes::ShieldedNoteInterface;
-
-use crate::wallet::traits::ReadableWriteable;
-
-use self::data::{WitnessTrees, COMMITMENT_TREE_LEVELS};
 use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
 
@@ -45,18 +31,19 @@ use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
 
 pub mod data;
+pub mod error;
 pub mod keys;
 pub(crate) mod message;
 pub mod notes;
 pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
-pub(crate) mod transaction_records_by_id;
-pub(crate) mod transactions;
+pub mod transaction_records_by_id;
+pub mod tx_map_and_maybe_trees;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
@@ -64,6 +51,9 @@ pub mod describe;
 pub mod disk;
 pub mod send;
 pub mod witnesses;
+
+#[cfg(feature = "sync")]
+pub mod sync;
 
 pub(crate) use send::SendProgress;
 
@@ -73,28 +63,6 @@ pub fn now() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs()
-}
-
-/// TODO: Add Doc Comment Here!
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Pool {
-    /// TODO: Add Doc Comment Here!
-    Orchard,
-    /// TODO: Add Doc Comment Here!
-    Sapling,
-    /// TODO: Add Doc Comment Here!
-    Transparent,
-}
-
-/// TODO: Add Doc Comment Here!
-impl From<Pool> for JsonValue {
-    fn from(value: Pool) -> Self {
-        match value {
-            Pool::Orchard => JsonValue::String(String::from("Orchard")),
-            Pool::Sapling => JsonValue::String(String::from("Sapling")),
-            Pool::Transparent => JsonValue::String(String::from("Transparent")),
-        }
-    }
 }
 
 /// TODO: Add Doc Comment Here!
@@ -236,6 +204,10 @@ pub struct LightWallet {
     /// Local state needed to submit (compact)block-requests to the proxy
     /// and interpret responses
     pub transaction_context: TransactionContext,
+
+    #[cfg(feature = "sync")]
+    #[allow(dead_code)]
+    sync_state: zingo_sync::primitives::SyncState,
 }
 
 impl LightWallet {
@@ -373,9 +345,13 @@ impl LightWallet {
             ));
         };
         let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees(
+                wc.transparent_child_addresses().clone(),
+            )))
         } else {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless()))
+            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless(
+                wc.transparent_child_addresses().clone(),
+            )))
         };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
@@ -388,6 +364,8 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
+            #[cfg(feature = "sync")]
+            sync_state: zingo_sync::primitives::SyncState::new(),
         })
     }
 
@@ -426,47 +404,12 @@ impl LightWallet {
         info!("Set current ZEC Price to USD {}", price);
     }
 
-    // Set the previous send's status as an error
-    async fn set_send_error(&self, e: String) {
+    // Set the previous send's status as an error or success
+    pub(super) async fn set_send_result(&self, result: Result<String, String>) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;
-        p.last_error = Some(e);
-    }
-
-    // Set the previous send's status as success
-    async fn set_send_success(&self, transaction_id: String) {
-        let mut p = self.send_progress.write().await;
-
-        p.is_send_in_progress = false;
-        p.last_transaction_id = Some(transaction_id);
-    }
-}
-
-//This function will likely be used again if/when we re-implement key import
-#[allow(dead_code)]
-fn decode_orchard_spending_key(
-    expected_hrp: &str,
-    s: &str,
-) -> Result<Option<OrchardSpendingKey>, String> {
-    match bech32::decode(s) {
-        Ok((hrp, bytes, variant)) => {
-            use bech32::FromBase32;
-            if hrp != expected_hrp {
-                return Err(format!(
-                    "invalid human-readable-part {hrp}, expected {expected_hrp}.",
-                ));
-            }
-            if variant != bech32::Variant::Bech32m {
-                return Err("Wrong encoding, expected bech32m".to_string());
-            }
-            match Vec::<u8>::from_base32(&bytes).map(<[u8; 32]>::try_from) {
-                Ok(Ok(b)) => Ok(OrchardSpendingKey::from_bytes(b).into()),
-                Ok(Err(e)) => Err(format!("key {s} decodes to {e:?}, which is not 32 bytes")),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-        Err(e) => Err(e.to_string()),
+        p.last_result = Some(result);
     }
 }
 

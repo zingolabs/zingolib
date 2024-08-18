@@ -1,17 +1,20 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
+use crate::wallet::notes::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
-use super::{
+use crate::config::ChainType;
+use crate::data::witness_trees::WitnessTrees;
+use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::{
     data::{
         PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
-        WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    transactions::TxMapAndMaybeTrees,
+    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
 };
-use crate::wallet::notes::NoteInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
@@ -33,6 +36,7 @@ use zcash_client_backend::{
         compact_formats::{CompactOrchardAction, CompactSaplingOutput, CompactTx},
         service::TreeState,
     },
+    ShieldedProtocol,
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
@@ -47,7 +51,7 @@ use zcash_primitives::{
         Transaction, TxId,
     },
 };
-use zingoconfig::ChainType;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
 pub trait ToBytes<const N: usize> {
@@ -285,11 +289,7 @@ fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
 }
 
 /// TODO: Add Doc Comment Here!
-pub trait CompactOutput<D: DomainWalletExt>: Sized + Clone
-where
-    D::Recipient: Recipient,
-    <D as Domain>::Note: PartialEq + Clone,
-{
+pub trait CompactOutput<D: DomainWalletExt>: Sized + Clone {
     /// TODO: Add Doc Comment Here!
     type CompactAction: ShieldedOutput<D, COMPACT_NOTE_SIZE>;
 
@@ -357,11 +357,7 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
 /// domain. In the Orchard Domain bundles comprise Actions each of which contains
 /// both a Spend and an Output (though either or both may be dummies). Sapling transmissions,
 /// as implemented, contain a 1:1 ratio of Spends and Outputs.
-pub trait Bundle<D: DomainWalletExt>
-where
-    D::Recipient: Recipient,
-    D::Note: PartialEq + Clone,
-{
+pub trait Bundle<D: DomainWalletExt> {
     /// An expenditure of an output, such that its value is distributed among *this* transaction's outputs.
     type Spend: Spend;
     /// A value store that is completely emptied by transfer of its contents to another output.
@@ -452,16 +448,22 @@ type MemoryStoreShardTree<T> =
     ShardTree<MemoryShardStore<T, BlockHeight>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>;
 
 /// TODO: Add Doc Comment Here!
-pub trait DomainWalletExt: Domain + BatchDomain
-where
-    Self: Sized,
-    Self::Note: PartialEq + Clone,
-    Self::Recipient: Recipient,
+pub trait DomainWalletExt:
+    Domain<
+        Note: PartialEq + Clone,
+        Recipient: Recipient,
+        ExtractedCommitmentBytes: Into<[u8; 32]>,
+        Memo: ToBytes<512>,
+        IncomingViewingKey: Clone,
+    > + BatchDomain
+    + Sized
 {
     /// TODO: Add Doc Comment Here!
     const NU: NetworkUpgrade;
     /// TODO: Add Doc Comment Here!
     const NAME: &'static str;
+    /// The [zcash_client_backend::ShieldedProtocol] this domain represents
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
 
     /// TODO: Add Doc Comment Here!
     type Fvk: Clone
@@ -487,7 +489,7 @@ where
 
     /// TODO: Add Doc Comment Here!
     fn sum_pool_change(transaction_md: &TransactionRecord) -> u64 {
-        Self::to_notes_vec(transaction_md)
+        Self::WalletNote::get_record_outputs(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())
@@ -533,12 +535,6 @@ where
     fn get_tree(tree_state: &TreeState) -> &String;
 
     /// TODO: Add Doc Comment Here!
-    fn to_notes_vec(_: &TransactionRecord) -> &Vec<Self::WalletNote>;
-
-    /// TODO: Add Doc Comment Here!
-    fn to_notes_vec_mut(_: &mut TransactionRecord) -> &mut Vec<Self::WalletNote>;
-
-    /// TODO: Add Doc Comment Here!
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -554,6 +550,7 @@ where
 impl DomainWalletExt for SaplingDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
     const NAME: &'static str = "sapling";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
     type Fvk = sapling_crypto::zip32::DiversifiableFullViewingKey;
 
@@ -599,14 +596,6 @@ impl DomainWalletExt for SaplingDomain {
         &tree_state.sapling_tree
     }
 
-    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
-        &transaction_md.sapling_notes
-    }
-
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
-        &mut transaction.sapling_notes
-    }
-
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -629,6 +618,7 @@ impl DomainWalletExt for SaplingDomain {
 impl DomainWalletExt for OrchardDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
     const NAME: &'static str = "orchard";
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
     type Fvk = orchard::keys::FullViewingKey;
 
@@ -672,14 +662,6 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
-    }
-
-    fn to_notes_vec(transaction_md: &TransactionRecord) -> &Vec<Self::WalletNote> {
-        &transaction_md.orchard_notes
-    }
-
-    fn to_notes_vec_mut(transaction: &mut TransactionRecord) -> &mut Vec<Self::WalletNote> {
-        &mut transaction.orchard_notes
     }
 
     fn ua_from_contained_receiver<'a>(
@@ -755,7 +737,7 @@ where
         spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
         // Include only non-0 value notes that haven't been spent, or haven't been included
-        // in an unconfirmed spend yet.
+        // in an pending spend yet.
         if Self::check_spendability_of_note(note_and_metadata, spend_key) {
             // Filter out notes with nullifier or position not yet known
             if let (Some(nf), Some(pos)) = (
@@ -783,8 +765,7 @@ where
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
     ) -> bool {
-        note_and_metadata.spent().is_none()
-            && note_and_metadata.pending_spent().is_none()
+        note_and_metadata.spending_tx_status().is_none()
             && spend_key.is_some()
             && note_and_metadata.value() != 0
     }
@@ -1139,8 +1120,8 @@ where
         reader.read_exact(&mut nullifier)?;
         let nullifier = T::Nullifier::from_bytes(nullifier);
 
-        // Note that this is only the spent field, we ignore the unconfirmed_spent field.
-        // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
+        // Note that this is only the spent field, we ignore the pending_spent field.
+        // The reason is that pending spents are only in memory, and we need to get the actual value of spent
         // from the blockchain anyway.
         let spent = Optional::read(&mut reader, |r| {
             let mut transaction_id_bytes = [0u8; 32];
@@ -1149,8 +1130,11 @@ where
             Ok((TxId::from_bytes(transaction_id_bytes), height))
         })?;
 
+        let spend =
+            spent.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
+
         if external_version < 3 {
-            let _unconfirmed_spent = {
+            let _pending_spent = {
                 Optional::read(&mut reader, |r| {
                     let mut transaction_bytes = [0u8; 32];
                     r.read_exact(&mut transaction_bytes)?;
@@ -1196,8 +1180,7 @@ where
             note,
             Some(witnessed_position),
             Some(nullifier),
-            spent,
-            None,
+            spend,
             memo,
             is_change,
             have_spending_key,
@@ -1229,12 +1212,17 @@ where
                 .to_bytes(),
         )?;
 
+        let confirmed_spend = self
+            .spending_tx_status()
+            .as_ref()
+            .and_then(|(txid, status)| status.get_confirmed_height().map(|height| (txid, height)));
+
         Optional::write(
             &mut writer,
-            self.spent().as_ref(),
+            confirmed_spend,
             |w, (transaction_id, height)| {
                 w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(*height)
+                w.write_u32::<LittleEndian>(height.into())
             },
         )?;
 
