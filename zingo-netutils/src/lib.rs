@@ -83,7 +83,7 @@ impl GrpcConnector {
                             subject_public_key_info: rustls_pki_types::Der::from_slice(anchor.spki),
                             name_constraints: anchor
                                 .name_constraints
-                                .map(|o| rustls_pki_types::Der::from_slice(o)),
+                                .map(rustls_pki_types::Der::from_slice),
                         })
                         .collect(),
                 };
