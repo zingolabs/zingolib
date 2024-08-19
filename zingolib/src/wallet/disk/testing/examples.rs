@@ -17,11 +17,31 @@ pub enum ExampleWalletNetworkCase {
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleMainnetWalletSeedCase {}
+pub enum ExampleMainnetWalletSeedCase {
+    /// this is a mainnet seed
+    VTFCORFBCBPCTCFUPMEGMWBP(ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase),
+}
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleTestnetWalletSeedCase {}
+pub enum ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase {
+    /// wallet was last saved in this serialization version
+    V28,
+}
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleTestnetWalletSeedCase {
+    /// This is a testnet seed.
+    MSKMGDBHOTBPETCJWCSPGOPP(ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletCommitCase),
+}
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletCommitCase {
+    /// wallet was last saved by the code in this commit
+    Gab72a38b,
+}
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
