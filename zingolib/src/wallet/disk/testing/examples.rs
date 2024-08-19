@@ -10,8 +10,6 @@ pub enum ExampleWalletNetworkCase {
     Testnet(ExampleTestnetWalletSeedCase),
     /// /
     Regtest(ExampleRegtestWalletSeedCase),
-    /// /
-    Legacy(LegacyWalletCase),
 }
 
 /// /
@@ -33,12 +31,12 @@ pub enum ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase {
 #[derive(Clone)]
 pub enum ExampleTestnetWalletSeedCase {
     /// This is a testnet seed.
-    MSKMGDBHOTBPETCJWCSPGOPP(ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletCommitCase),
+    MSKMGDBHOTBPETCJWCSPGOPP(ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase),
 }
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletCommitCase {
+pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase {
     /// wallet was last saved by the code in this commit
     Gab72a38b,
 }
@@ -46,6 +44,36 @@ pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletCommitCase {
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum ExampleRegtestWalletSeedCase {}
+
+/// loads test wallets
+impl LightWallet {
+    /// loads any one of the test wallets included in the examples
+    pub async fn load_example_wallet(case: ExampleWalletNetworkCase) -> Self {
+        match case {
+            ExampleWalletNetworkCase::Mainnet(
+                ExampleMainnetWalletSeedCase::VTFCORFBCBPCTCFUPMEGMWBP(
+                    ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28,
+                ),
+            ) => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetworkCase::Testnet(
+                ExampleTestnetWalletSeedCase::MSKMGDBHOTBPETCJWCSPGOPP(
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b,
+                ),
+            ) => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat"
+                ))
+                .await
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
 
 /// i do not know the difference between these wallets but i will find out soon
 /// what can these files do?
