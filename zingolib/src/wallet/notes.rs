@@ -157,12 +157,12 @@ pub mod tests {
     use super::query::{OutputPoolQuery, OutputSpendStatusQuery};
 
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
-    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
+    use zingo_status::confirmation_status::ConfirmationStatus::Mempool;
 
     #[test]
     fn note_queries() {
         let confirmed_spend = Some((default_txid(), Confirmed(112358.into())));
-        let pending_spend = Some((default_txid(), Pending(112357.into())));
+        let pending_spend = Some((default_txid(), Mempool(112357.into())));
 
         let transparent_unspent_note = TransparentOutputBuilder::default().build();
         let transparent_pending_spent_note = TransparentOutputBuilder::default()

@@ -50,7 +50,7 @@ where
         sender,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(send_height.into()),
+        ConfirmationStatus::Transmitted(send_height.into()),
     )
     .await;
 
@@ -63,7 +63,7 @@ where
             sender,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(send_height.into()),
+            ConfirmationStatus::Transmitted(send_height.into()),
         )
         .await;
 
@@ -75,7 +75,7 @@ where
                     recipient,
                     &proposal,
                     &txids,
-                    ConfirmationStatus::Pending(send_height.into()),
+                    ConfirmationStatus::Transmitted(send_height.into()),
                 )
                 .await;
             }
@@ -126,7 +126,7 @@ where
         client,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(send_height.into()),
+        ConfirmationStatus::Mempool(send_height.into()),
     )
     .await;
 
@@ -137,7 +137,7 @@ where
             client,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(send_height.into()),
+            ConfirmationStatus::Mempool(send_height.into()),
         )
         .await;
     }

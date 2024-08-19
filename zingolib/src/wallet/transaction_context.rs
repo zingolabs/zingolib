@@ -458,6 +458,7 @@ mod decrypt_transaction {
                             note.clone(),
                             to,
                             output_index,
+                            status.is_mempool(),
                         );
                 } else {
                     self.transaction_metadata_set

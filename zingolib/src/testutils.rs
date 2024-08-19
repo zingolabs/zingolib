@@ -243,7 +243,11 @@ fn check_spend_status_equality(first: SpendSummary, second: SpendSummary) -> boo
         (first, second),
         (SpendSummary::Unspent, SpendSummary::Unspent)
             | (SpendSummary::Spent(_), SpendSummary::Spent(_))
-            | (SpendSummary::PendingSpent(_), SpendSummary::PendingSpent(_))
+            | (
+                SpendSummary::TransmittedSpent(_),
+                SpendSummary::TransmittedSpent(_)
+            )
+            | (SpendSummary::MempoolSpent(_), SpendSummary::MempoolSpent(_))
     )
 }
 

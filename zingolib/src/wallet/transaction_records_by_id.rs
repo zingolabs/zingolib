@@ -20,6 +20,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::wallet::NoteId;
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::{
     ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -469,7 +470,7 @@ impl TransactionRecordsById {
     pub(crate) fn create_modify_get_transaction_metadata(
         &mut self,
         txid: &TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: ConfirmationStatus,
         datetime: Option<u32>,
     ) -> &'_ mut TransactionRecord {
         // check if there is already a confirmed transaction with the same txid
@@ -507,7 +508,7 @@ impl TransactionRecordsById {
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: ConfirmationStatus,
         timestamp: Option<u32>,
         total_transparent_value_spent: u64,
     ) {
@@ -523,7 +524,7 @@ impl TransactionRecordsById {
         spent_txid: TxId,
         output_num: u32,
         source_txid: TxId,
-        spending_tx_status: zingo_status::confirmation_status::ConfirmationStatus,
+        spending_tx_status: ConfirmationStatus,
     ) -> u64 {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.get_mut(&spent_txid) {
@@ -555,7 +556,7 @@ impl TransactionRecordsById {
         &mut self,
         txid: TxId,
         taddr: String,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: ConfirmationStatus,
         timestamp: Option<u32>,
         vout: &zcash_primitives::transaction::components::TxOut,
         output_num: u32,
@@ -587,7 +588,7 @@ impl TransactionRecordsById {
     pub(crate) fn update_output_index<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: ConfirmationStatus,
         timestamp: Option<u32>,
         note: D::Note,
         output_index: usize,
@@ -612,8 +613,13 @@ impl TransactionRecordsById {
         note: D::Note,
         to: D::Recipient,
         output_index: usize,
+        in_mempool: bool,
     ) {
-        let status = zingo_status::confirmation_status::ConfirmationStatus::Pending(height);
+        let status = if in_mempool {
+            ConfirmationStatus::Mempool(height)
+        } else {
+            ConfirmationStatus::Transmitted(height)
+        };
         let transaction_record =
             self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
@@ -644,7 +650,7 @@ impl TransactionRecordsById {
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        status: zingo_status::confirmation_status::ConfirmationStatus,
+        status: ConfirmationStatus,
         timestamp: Option<u32>,
         note: <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Note,
         to: D::Recipient,

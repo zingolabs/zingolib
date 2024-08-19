@@ -350,8 +350,8 @@ mod tests {
                     .clone(),
             )
             .build();
-        let pending_tx_record = TransactionRecordBuilder::default()
-            .status(ConfirmationStatus::Pending(95.into()))
+        let mempool_tx_record = TransactionRecordBuilder::default()
+            .status(ConfirmationStatus::Mempool(95.into()))
             .transparent_outputs(TransparentOutputBuilder::default())
             .sapling_notes(SaplingNoteBuilder::default())
             .orchard_notes(OrchardNoteBuilder::default())
@@ -367,7 +367,7 @@ mod tests {
                 .insert_transaction_record(confirmed_tx_record);
             tx_map
                 .transaction_records_by_id
-                .insert_transaction_record(pending_tx_record);
+                .insert_transaction_record(mempool_tx_record);
         }
 
         assert_eq!(
