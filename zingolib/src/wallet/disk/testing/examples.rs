@@ -55,7 +55,7 @@ impl LightWallet {
                     ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28,
                 ),
             ) => {
-                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
                     "examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat"
                 ))
                 .await
@@ -65,7 +65,7 @@ impl LightWallet {
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b,
                 ),
             ) => {
-                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
                     "examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat"
                 ))
                 .await

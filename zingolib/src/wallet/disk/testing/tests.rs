@@ -12,7 +12,7 @@ use super::examples::LegacyWalletCaseZingoV26;
 
 #[tokio::test]
 async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
-    let wallet =
+    let _wallet =
         LightWallet::load_example_wallet(super::examples::ExampleWalletNetworkCase::Mainnet(
             ExampleMainnetWalletSeedCase::VTFCORFBCBPCTCFUPMEGMWBP(
                 super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28,
@@ -22,7 +22,7 @@ async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
 }
 #[tokio::test]
 async fn verify_example_wallet_mainnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
-    let wallet =
+    let _wallet =
         LightWallet::load_example_wallet(super::examples::ExampleWalletNetworkCase::Testnet(
             super::examples::ExampleTestnetWalletSeedCase::MSKMGDBHOTBPETCJWCSPGOPP(
                 super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b,
