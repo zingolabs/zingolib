@@ -109,7 +109,7 @@ async fn loaded_wallet_assert(
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
-    let _loaded_wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(
+    let _loaded_wallet = LightWallet::load_example_wallet_legacy(LegacyWalletCase::ZingoV26(
         LegacyWalletCaseZingoV26::RegtestSapOnly,
     ))
     .await;
@@ -132,7 +132,7 @@ async fn load_wallet_from_v26_dat_file() {
     // including orchard and sapling transactions
     let case = LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One);
 
-    let wallet = LightWallet::load_example_wallet(case.clone()).await;
+    let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
 
     loaded_wallet_assert(
         wallet,
@@ -160,7 +160,7 @@ async fn load_wallet_from_v26_2_dat_file() {
     // including orchard and sapling transactions
     let case = LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two);
 
-    let wallet = LightWallet::load_example_wallet(case.clone()).await;
+    let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
 
     loaded_wallet_assert(
         wallet,
@@ -178,7 +178,7 @@ async fn load_wallet_from_v28_dat_file() {
     // with 3 addresses containing all receivers.
     let case = LegacyWalletCase::ZingoV28;
 
-    let wallet = LightWallet::load_example_wallet(case.clone()).await;
+    let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
 
     loaded_wallet_assert(
         wallet,
@@ -204,7 +204,7 @@ async fn reload_wallet_from_buffer() {
     // --birthday 0
     // --nosync
     // with 3 addresses containing all receivers.
-    let mid_wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV28).await;
+    let mid_wallet = LightWallet::load_example_wallet_legacy(LegacyWalletCase::ZingoV28).await;
 
     let mid_client = LightClient::create_from_wallet_async(mid_wallet)
         .await

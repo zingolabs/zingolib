@@ -74,7 +74,7 @@ pub enum LegacyWalletCase {
 /// loads test wallets
 impl LightWallet {
     /// loads any one of the test wallets included in the examples
-    pub async fn load_example_wallet(case: LegacyWalletCase) -> Self {
+    pub async fn load_example_wallet_legacy(case: LegacyWalletCase) -> Self {
         match case {
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => {
                 LightWallet::unsafe_from_buffer_testnet(include_bytes!(
