@@ -18,6 +18,9 @@ pub trait SyncWallet {
     /// Returns block height wallet was created
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error>;
 
+    /// Returns reference to wallet sync state
+    fn get_sync_state(&mut self) -> Result<&SyncState, Self::Error>;
+
     /// Returns mutable reference to wallet sync state
     fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error>;
 

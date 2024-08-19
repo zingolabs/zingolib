@@ -5,23 +5,27 @@ use std::{
 
 use incrementalmerkletree::{Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
-use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
+use sapling_crypto::{
+    bundle::{GrothProofBytes, OutputDescription},
+    note_encryption::{CompactOutputDescription, SaplingDomain},
+    Node,
+};
 use tokio::sync::mpsc;
 use zcash_client_backend::{
     data_api::scanning::ScanRange,
     proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx},
 };
-use zcash_note_encryption::Domain;
+use zcash_note_encryption::{batch, BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    transaction::TxId,
+    transaction::{components::sapling::zip212_enforcement, Transaction, TxId},
 };
 
 use crate::{
     client::{self, get_compact_block_range, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, WalletBlock},
+    primitives::{NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::ShardTreeData,
 };
 
@@ -115,7 +119,7 @@ impl InitialScanData {
 struct ScanData {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    pub(crate) relevent_txids: HashSet<TxId>,
+    pub(crate) relevant_txids: HashSet<TxId>,
     pub(crate) decrypted_note_data: DecryptedNoteData,
     pub(crate) shard_tree_data: ShardTreeData,
 }
@@ -146,8 +150,8 @@ impl Default for DecryptedNoteData {
     }
 }
 
-// scans a given range and returns all data relevent to the specified keys
-// `previous_wallet_block` is the block with height [scan_range.start - 1]
+// scans a given range and returns all data relevant to the specified keys
+// `previous_wallet_block` is the wallet block with height [scan_range.start - 1]
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
@@ -166,7 +170,7 @@ where
     .unwrap();
 
     let initial_scan_data = InitialScanData::new(
-        fetch_request_sender,
+        fetch_request_sender.clone(),
         parameters,
         compact_blocks
             .first()
@@ -182,12 +186,21 @@ where
     let ScanData {
         nullifiers,
         wallet_blocks,
-        relevent_txids: _,
-        decrypted_note_data: _,
+        relevant_txids,
+        decrypted_note_data,
         shard_tree_data,
     } = scan_data;
 
-    // TODO: scan transactions
+    scan_transactions(
+        fetch_request_sender,
+        parameters,
+        scanning_keys,
+        relevant_txids,
+        decrypted_note_data,
+        &wallet_blocks,
+    )
+    .await
+    .unwrap();
 
     Ok(ScanResults {
         nullifiers,
@@ -196,7 +209,97 @@ where
     })
 }
 
-#[allow(clippy::type_complexity)]
+async fn scan_transactions<P>(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    parameters: &P,
+    scanning_keys: &ScanningKeys,
+    relevant_txids: HashSet<TxId>,
+    decrypted_note_data: DecryptedNoteData,
+    wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+) -> Result<(), ()>
+where
+    P: Parameters,
+{
+    let mut wallet_transactions = Vec::with_capacity(relevant_txids.len());
+
+    for txid in relevant_txids {
+        let (transaction, block_height) =
+            client::get_transaction_and_block_height(fetch_request_sender.clone(), txid)
+                .await
+                .unwrap();
+
+        if let Some(wallet_block) = wallet_blocks.get(&block_height) {
+            if !wallet_block.txids().contains(&transaction.txid()) {
+                panic!("txid is not found in the wallet block at the transaction height!");
+            }
+        } else {
+            panic!("wallet block at transaction height not found!");
+        }
+
+        let wallet_transaction = scan_transaction(
+            parameters,
+            scanning_keys,
+            transaction,
+            block_height,
+            &decrypted_note_data,
+        )
+        .unwrap();
+        wallet_transactions.push(wallet_transaction);
+    }
+
+    Ok(())
+}
+
+fn scan_transaction<P>(
+    parameters: &P,
+    scanning_keys: &ScanningKeys,
+    transaction: Transaction,
+    block_height: BlockHeight,
+    decrypted_note_data: &DecryptedNoteData,
+) -> Result<WalletTransaction, ()>
+where
+    P: Parameters,
+{
+    // TODO: price?
+    let zip212_enforcement = zip212_enforcement(parameters, block_height);
+
+    if let Some(bundle) = transaction.sapling_bundle() {
+        let sapling_outputs: Vec<(SaplingDomain, OutputDescription<GrothProofBytes>)> = bundle
+            .shielded_outputs()
+            .iter()
+            .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
+            .collect();
+        let mut sapling_keys = Vec::with_capacity(scanning_keys.sapling().len());
+        for (_, key) in scanning_keys.sapling() {
+            sapling_keys.push(key.prepare());
+        }
+
+        scan_shielded_bundle::<SaplingDomain, OutputDescription<GrothProofBytes>>(
+            &sapling_keys,
+            &sapling_outputs,
+        )
+        .unwrap();
+    }
+
+    Ok(WalletTransaction::from_parts(
+        transaction.txid(),
+        block_height,
+    ))
+}
+
+fn scan_shielded_bundle<D, Op>(
+    ivks: &[D::IncomingViewingKey],
+    outputs: &[(D, Op)],
+) -> Result<(), ()>
+where
+    D: BatchDomain,
+    Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+{
+    let x = batch::try_note_decryption(ivks, outputs);
+
+    Ok(())
+}
+
 fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
     parameters: &P,
@@ -212,7 +315,7 @@ where
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
-    let mut relevent_txids: HashSet<TxId> = HashSet::new();
+    let mut relevant_txids: HashSet<TxId> = HashSet::new();
     let mut decrypted_note_data = DecryptedNoteData::new();
     let mut shard_tree_data = ShardTreeData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
@@ -231,16 +334,16 @@ where
                 .orchard
                 .collect_results(block.hash(), transaction.txid());
 
-            // gather the txids of all transactions relevent to the wallet
+            // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
-                relevent_txids.insert(output_id.txid());
+                relevant_txids.insert(output_id.txid());
             });
             incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
-                relevent_txids.insert(output_id.txid());
+                relevant_txids.insert(output_id.txid());
             });
-            // TODO: add outgoing outputs to relevent txids
+            // TODO: add outgoing outputs to relevant txids
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
 
@@ -301,7 +404,7 @@ where
     Ok(ScanData {
         nullifiers,
         wallet_blocks,
-        relevent_txids,
+        relevant_txids,
         decrypted_note_data,
         shard_tree_data,
     })

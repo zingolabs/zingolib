@@ -222,11 +222,12 @@ pub struct LightWallet {
     #[getset(get = "pub", get_mut = "pub")]
     nullifier_map: NullifierMap,
 
-    /// Nullifier map
+    /// Shard trees
     #[cfg(feature = "sync")]
     #[getset(get = "pub", get_mut = "pub")]
     shard_trees: ShardTrees,
 
+    /// Sync state
     #[cfg(feature = "sync")]
     #[getset(get = "pub", get_mut = "pub")]
     sync_state: SyncState,

@@ -108,3 +108,17 @@ impl WalletBlock {
         &self.txids
     }
 }
+
+/// Wallet transaction
+#[derive(Debug, CopyGetters)]
+pub struct WalletTransaction {
+    #[getset(get_copy = "pub")]
+    txid: TxId,
+    block_height: BlockHeight,
+}
+
+impl WalletTransaction {
+    pub fn from_parts(txid: TxId, block_height: BlockHeight) -> Self {
+        Self { txid, block_height }
+    }
+}

@@ -24,6 +24,10 @@ impl SyncWallet for LightWallet {
         Ok(BlockHeight::from_u32(birthday as u32))
     }
 
+    fn get_sync_state(&mut self) -> Result<&SyncState, Self::Error> {
+        Ok(&self.sync_state())
+    }
+
     fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error> {
         Ok(self.sync_state_mut())
     }
