@@ -3,8 +3,14 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
+use getset::Getters;
 use incrementalmerkletree::{Position, Retention};
-use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
+use orchard::{
+    note_encryption::{CompactAction, OrchardDomain},
+    primitives::redpallas::{Signature, SpendAuth},
+    tree::MerkleHashOrchard,
+    Action,
+};
 use sapling_crypto::{
     bundle::{GrothProofBytes, OutputDescription},
     note_encryption::{CompactOutputDescription, SaplingDomain},
@@ -25,7 +31,9 @@ use zcash_primitives::{
 use crate::{
     client::{self, get_compact_block_range, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, WalletBlock, WalletTransaction},
+    primitives::{
+        NullifierMap, OrchardNote, OutputId, SaplingNote, SyncNote, WalletBlock, WalletTransaction,
+    },
     witness::ShardTreeData,
 };
 
@@ -228,6 +236,7 @@ where
                 .await
                 .unwrap();
 
+        // wallet block must exist, otherwise the transaction wil not have access to essential data such as the time it was mined
         if let Some(wallet_block) = wallet_blocks.get(&block_height) {
             if !wallet_block.txids().contains(&transaction.txid()) {
                 panic!("txid is not found in the wallet block at the transaction height!");
@@ -262,21 +271,49 @@ where
 {
     // TODO: price?
     let zip212_enforcement = zip212_enforcement(parameters, block_height);
+    let mut sapling_notes: Vec<SaplingNote> = Vec::new();
+    let mut orchard_notes: Vec<OrchardNote> = Vec::new();
 
     if let Some(bundle) = transaction.sapling_bundle() {
+        let sapling_keys: Vec<sapling_crypto::keys::PreparedIncomingViewingKey> = scanning_keys
+            .sapling()
+            .iter()
+            .map(|(_, key)| key.prepare())
+            .collect();
         let sapling_outputs: Vec<(SaplingDomain, OutputDescription<GrothProofBytes>)> = bundle
             .shielded_outputs()
             .iter()
             .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
             .collect();
-        let mut sapling_keys = Vec::with_capacity(scanning_keys.sapling().len());
-        for (_, key) in scanning_keys.sapling() {
-            sapling_keys.push(key.prepare());
-        }
 
-        scan_shielded_bundle::<SaplingDomain, OutputDescription<GrothProofBytes>>(
+        scan_shielded_bundle::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
+            &mut sapling_notes,
+            transaction.txid(),
             &sapling_keys,
             &sapling_outputs,
+            &decrypted_note_data.sapling_nullifiers_and_positions,
+        )
+        .unwrap();
+    }
+
+    if let Some(bundle) = transaction.orchard_bundle() {
+        let orchard_keys: Vec<orchard::keys::PreparedIncomingViewingKey> = scanning_keys
+            .orchard()
+            .iter()
+            .map(|(_, key)| key.prepare())
+            .collect();
+        let orchard_outputs: Vec<(OrchardDomain, Action<Signature<SpendAuth>>)> = bundle
+            .actions()
+            .iter()
+            .map(|action| (OrchardDomain::for_action(action), action.clone()))
+            .collect();
+
+        scan_shielded_bundle::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
+            &mut orchard_notes,
+            transaction.txid(),
+            &orchard_keys,
+            &orchard_outputs,
+            &decrypted_note_data.orchard_nullifiers_and_positions,
         )
         .unwrap();
     }
@@ -287,15 +324,29 @@ where
     ))
 }
 
-fn scan_shielded_bundle<D, Op>(
+fn scan_shielded_bundle<D, Op, N>(
+    wallet_notes: &mut Vec<N::WalletNote>,
+    txid: TxId,
     ivks: &[D::IncomingViewingKey],
     outputs: &[(D, Op)],
+    nullifiers_and_positions: &HashMap<OutputId, (N::Nullifier, Position)>,
 ) -> Result<(), ()>
 where
     D: BatchDomain,
     Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    N: SyncNote<ZcashNote = D::Note, Memo = D::Memo>,
 {
-    let x = batch::try_note_decryption(ivks, outputs);
+    for (output_index, output) in batch::try_note_decryption(ivks, outputs)
+        .into_iter()
+        .enumerate()
+    {
+        if let Some(((note, _, memo), _)) = output {
+            let output_id = OutputId::from_parts(txid, output_index);
+            let (nullifier, position) = nullifiers_and_positions.get(&output_id).unwrap();
+            let wallet_note = N::from_parts(output_id, note, *nullifier, *position, memo);
+            wallet_notes.push(wallet_note);
+        }
+    }
 
     Ok(())
 }

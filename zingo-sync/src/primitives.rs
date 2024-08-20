@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use getset::{CopyGetters, Getters, MutGetters};
 
+use incrementalmerkletree::Position;
 use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
@@ -121,4 +122,83 @@ impl WalletTransaction {
     pub fn from_parts(txid: TxId, block_height: BlockHeight) -> Self {
         Self { txid, block_height }
     }
+}
+
+// TODO: change memo to correct type
+
+pub struct SaplingNote {
+    output_id: OutputId,
+    note: sapling_crypto::Note,
+    nullifier: sapling_crypto::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
+    position: Position,
+    memo: [u8; 512],
+}
+
+impl SyncNote for SaplingNote {
+    type WalletNote = Self;
+    type ZcashNote = sapling_crypto::Note;
+    type Nullifier = sapling_crypto::Nullifier;
+    type Memo = [u8; 512];
+
+    fn from_parts(
+        output_id: OutputId,
+        note: Self::ZcashNote,
+        nullifier: Self::Nullifier,
+        position: Position,
+        memo: Self::Memo,
+    ) -> Self::WalletNote {
+        Self {
+            output_id,
+            note,
+            nullifier,
+            position,
+            memo,
+        }
+    }
+}
+
+pub struct OrchardNote {
+    output_id: OutputId,
+    note: orchard::Note,
+    nullifier: orchard::note::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
+    position: Position,
+    memo: [u8; 512],
+}
+
+impl SyncNote for OrchardNote {
+    type WalletNote = Self;
+    type ZcashNote = orchard::Note;
+    type Nullifier = orchard::note::Nullifier;
+    type Memo = [u8; 512];
+
+    fn from_parts(
+        output_id: OutputId,
+        note: Self::ZcashNote,
+        nullifier: Self::Nullifier,
+        position: Position,
+        memo: Self::Memo,
+    ) -> Self::WalletNote {
+        Self {
+            output_id,
+            note,
+            nullifier,
+            position,
+            memo,
+        }
+    }
+}
+
+pub trait SyncNote {
+    type WalletNote;
+    type ZcashNote;
+    type Nullifier: Copy;
+    type Memo;
+
+    fn from_parts(
+        output_id: OutputId,
+        note: Self::ZcashNote,
+        nullifier: Self::Nullifier,
+        position: Position,
+        memo: Self::Memo,
+    ) -> Self::WalletNote;
 }
