@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `lightclient.bsync_data.uri()`
+
+## [mobile-release-1.4.3-0-g9fa99407]
+
 ### Deprecated
 
 - `lightclient::LightClient::do_list_transactions`
