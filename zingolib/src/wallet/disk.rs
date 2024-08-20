@@ -191,8 +191,16 @@ impl LightWallet {
             WalletZecPriceInfo::read(&mut reader)?
         };
 
+        // this initialization combines two types of data
         let transaction_context = TransactionContext::new(
+            // Config data could be used differently based on the circumstances
+            // hardcoded?
+            // entered at init by user?
+            // stored on disk in a separate location and connected by a descendant library (such as zingo-mobile)?
             config,
+            // Saveable Arc data
+            //   - Arcs allow access between threads.
+            //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
             Arc::new(wallet_capability),
             Arc::new(RwLock::new(transactions)),
         );
