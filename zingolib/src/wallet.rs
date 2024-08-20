@@ -3,16 +3,22 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use zcash_primitives::memo::Memo;
+use getset::{Getters, MutGetters};
+use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
+use zingo_sync::{
+    primitives::{NullifierMap, SyncState, WalletBlock},
+    witness::ShardTrees,
+};
 
 use std::{
     cmp,
+    collections::BTreeMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
@@ -175,7 +181,8 @@ impl WalletBase {
     }
 }
 
-/// TODO: Add Doc Comment Here!
+/// In-memory wallet data struct
+#[derive(Getters, MutGetters)]
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
@@ -205,9 +212,25 @@ pub struct LightWallet {
     /// and interpret responses
     pub transaction_context: TransactionContext,
 
+    /// Wallet compact blocks
     #[cfg(feature = "sync")]
-    #[allow(dead_code)]
-    sync_state: zingo_sync::primitives::SyncState,
+    #[getset(get = "pub", get_mut = "pub")]
+    wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+
+    /// Nullifier map
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    nullifier_map: NullifierMap,
+
+    /// Shard trees
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    shard_trees: ShardTrees,
+
+    /// Sync state
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    sync_state: SyncState,
 }
 
 impl LightWallet {
@@ -364,6 +387,12 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
+            #[cfg(feature = "sync")]
+            wallet_blocks: BTreeMap::new(),
+            #[cfg(feature = "sync")]
+            nullifier_map: zingo_sync::primitives::NullifierMap::new(),
+            #[cfg(feature = "sync")]
+            shard_trees: zingo_sync::witness::ShardTrees::new(),
             #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         })

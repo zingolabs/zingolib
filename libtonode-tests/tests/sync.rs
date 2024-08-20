@@ -26,7 +26,7 @@ async fn sync_mainnet_test() {
     let mut lightclient = LightClient::create_from_wallet_base_async(
         WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
         &config,
-        2_590_000,
+        2_611_700,
         true,
     )
     .await
@@ -37,7 +37,12 @@ async fn sync_mainnet_test() {
     sync(client, &config.chain, &mut lightclient.wallet)
         .await
         .unwrap();
+
+    dbg!(lightclient.wallet.wallet_blocks());
+    dbg!(lightclient.wallet.nullifier_map());
+    dbg!(lightclient.wallet.sync_state());
 }
+
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();
@@ -55,4 +60,8 @@ async fn sync_test() {
     )
     .await
     .unwrap();
+
+    dbg!(recipient.wallet.wallet_blocks());
+    dbg!(recipient.wallet.nullifier_map());
+    dbg!(recipient.wallet.sync_state());
 }
