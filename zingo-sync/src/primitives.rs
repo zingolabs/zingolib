@@ -1,6 +1,6 @@
 //! Module for primitive structs associated with the sync engine
 
-use std::sync::{Arc, RwLock};
+use std::collections::BTreeMap;
 
 use getset::{CopyGetters, Getters, MutGetters};
 
@@ -8,17 +8,17 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
 /// Encapsulates the current state of sync
-#[derive(Getters, MutGetters)]
-#[getset(get = "pub")]
+#[derive(Debug, Getters, MutGetters)]
+#[getset(get = "pub", get_mut = "pub")]
 pub struct SyncState {
-    scan_ranges: Arc<RwLock<Vec<ScanRange>>>,
+    scan_ranges: Vec<ScanRange>,
 }
 
 impl SyncState {
     /// Create new SyncState
     pub fn new() -> Self {
         SyncState {
-            scan_ranges: Arc::new(RwLock::new(Vec::new())),
+            scan_ranges: Vec::new(),
         }
     }
 }
@@ -46,11 +46,33 @@ impl OutputId {
     }
 }
 
-/// Wallet compact block data
-#[allow(dead_code)]
-#[derive(CopyGetters)]
+/// Binary tree map of nullifiers from transaction spends or actions
+#[derive(Debug, MutGetters)]
+#[getset(get = "pub", get_mut = "pub")]
+pub struct NullifierMap {
+    sapling: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)>,
+    orchard: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)>,
+}
+
+impl NullifierMap {
+    pub fn new() -> Self {
+        Self {
+            sapling: BTreeMap::new(),
+            orchard: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for NullifierMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Wallet block data
+#[derive(Debug, Clone, CopyGetters)]
 #[getset(get_copy = "pub")]
-pub struct WalletCompactBlock {
+pub struct WalletBlock {
     block_height: BlockHeight,
     block_hash: BlockHash,
     prev_hash: BlockHash,
@@ -61,7 +83,27 @@ pub struct WalletCompactBlock {
     orchard_commitment_tree_size: u32,
 }
 
-impl WalletCompactBlock {
+impl WalletBlock {
+    pub fn from_parts(
+        block_height: BlockHeight,
+        block_hash: BlockHash,
+        prev_hash: BlockHash,
+        time: u32,
+        txids: Vec<TxId>,
+        sapling_commitment_tree_size: u32,
+        orchard_commitment_tree_size: u32,
+    ) -> Self {
+        Self {
+            block_height,
+            block_hash,
+            prev_hash,
+            time,
+            txids,
+            sapling_commitment_tree_size,
+            orchard_commitment_tree_size,
+        }
+    }
+
     pub fn txids(&self) -> &[TxId] {
         &self.txids
     }
