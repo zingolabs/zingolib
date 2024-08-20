@@ -31,7 +31,7 @@ impl Default for SyncState {
 }
 
 /// Output ID for a given pool type
-#[derive(PartialEq, Eq, Hash, Clone, Copy, CopyGetters)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct OutputId {
     /// ID of associated transaction
@@ -112,25 +112,55 @@ impl WalletBlock {
 
 /// Wallet transaction
 #[derive(Debug, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct WalletTransaction {
     #[getset(get_copy = "pub")]
     txid: TxId,
+    #[getset(get_copy = "pub")]
     block_height: BlockHeight,
+    #[getset(skip)]
+    sapling_notes: Vec<SaplingNote>,
+    #[getset(skip)]
+    orchard_notes: Vec<OrchardNote>,
 }
 
 impl WalletTransaction {
-    pub fn from_parts(txid: TxId, block_height: BlockHeight) -> Self {
-        Self { txid, block_height }
+    pub fn from_parts(
+        txid: TxId,
+        block_height: BlockHeight,
+        sapling_notes: Vec<SaplingNote>,
+        orchard_notes: Vec<OrchardNote>,
+    ) -> Self {
+        Self {
+            txid,
+            block_height,
+            sapling_notes,
+            orchard_notes,
+        }
+    }
+
+    pub fn sapling_notes(&self) -> &[SaplingNote] {
+        &self.sapling_notes
+    }
+
+    pub fn orchard_notes(&self) -> &[OrchardNote] {
+        &self.orchard_notes
     }
 }
 
 // TODO: change memo to correct type
 
+#[derive(Debug, Getters, CopyGetters)]
 pub struct SaplingNote {
+    #[getset(get_copy = "pub")]
     output_id: OutputId,
+    #[getset(get = "pub")]
     note: sapling_crypto::Note,
+    #[getset(get_copy = "pub")]
     nullifier: sapling_crypto::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
+    #[getset(get_copy = "pub")]
     position: Position,
+    #[getset(get_copy = "pub")]
     memo: [u8; 512],
 }
 
@@ -157,11 +187,17 @@ impl SyncNote for SaplingNote {
     }
 }
 
+#[derive(Debug, Getters, CopyGetters)]
 pub struct OrchardNote {
+    #[getset(get_copy = "pub")]
     output_id: OutputId,
+    #[getset(get = "pub")]
     note: orchard::Note,
+    #[getset(get_copy = "pub")]
     nullifier: orchard::note::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
+    #[getset(get_copy = "pub")]
     position: Position,
+    #[getset(get_copy = "pub")]
     memo: [u8; 512],
 }
 

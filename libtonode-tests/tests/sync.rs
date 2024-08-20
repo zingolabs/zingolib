@@ -6,6 +6,7 @@ use zingo_testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingoconfig::{construct_lightwalletd_uri, load_clientconfig, DEFAULT_LIGHTWALLETD_SERVER};
 use zingolib::{lightclient::LightClient, wallet::WalletBase};
 
+#[ignore]
 #[tokio::test]
 async fn sync_mainnet_test() {
     tracing_subscriber::fmt().init();
@@ -40,6 +41,7 @@ async fn sync_mainnet_test() {
     dbg!(lightclient.wallet.sync_state());
 }
 
+// #[ignore]
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();
@@ -58,7 +60,5 @@ async fn sync_test() {
     .await
     .unwrap();
 
-    dbg!(recipient.wallet.wallet_blocks());
-    dbg!(recipient.wallet.nullifier_map());
-    dbg!(recipient.wallet.sync_state());
+    dbg!(recipient.wallet.wallet_transactions());
 }
