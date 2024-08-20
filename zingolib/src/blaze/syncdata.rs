@@ -11,23 +11,17 @@ use crate::wallet::WalletOptions;
 
 pub struct BlazeSyncData {
     pub(crate) block_data: BlockManagementData,
-    uri: Arc<std::sync::RwLock<Uri>>,
     pub(crate) wallet_options: WalletOptions,
 }
 
 impl BlazeSyncData {
-    pub fn new(config: &ZingoConfig) -> Self {
+    pub fn new() -> Self {
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
 
         Self {
-            uri: config.lightwalletd_uri.clone(),
             block_data: BlockManagementData::new(sync_status),
             wallet_options: WalletOptions::default(),
         }
-    }
-
-    pub fn uri(&self) -> Uri {
-        self.uri.read().unwrap().clone()
     }
 
     pub async fn setup_nth_batch(
