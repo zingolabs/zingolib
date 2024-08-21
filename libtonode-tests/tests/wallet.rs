@@ -74,7 +74,7 @@ mod load_wallet {
         println!("loading wallet");
 
         let wallet = LightWallet::load_example_wallet(
-            zingolib::wallet::disk::testing::examples::ExampleWalletNetworkCase::Regtest(zingolib::wallet::disk::testing::examples::ExampleRegtestWalletSeedCase::HMVASMUVWMSSVICHCARBPOCT(zingolib::wallet::disk::testing::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase::V27))
+            zingolib::wallet::disk::testing::examples::ExampleWalletNetwork::Regtest(zingolib::wallet::disk::testing::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(zingolib::wallet::disk::testing::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27))
         )
         .await;
 

@@ -6,17 +6,17 @@ use crate::lightclient::LightClient;
 
 use super::super::LightWallet;
 
-use super::examples::ExampleWalletNetworkCase::Mainnet;
-use super::examples::ExampleWalletNetworkCase::Regtest;
-use super::examples::ExampleWalletNetworkCase::Testnet;
+use super::examples::ExampleWalletNetwork::Mainnet;
+use super::examples::ExampleWalletNetwork::Regtest;
+use super::examples::ExampleWalletNetwork::Testnet;
 
-use super::examples::ExampleMainnetWalletSeedCase::VTFCORFBCBPCTCFUPMEGMWBP;
-use super::examples::ExampleRegtestWalletSeedCase::HMVASMUVWMSSVICHCARBPOCT;
-use super::examples::ExampleTestnetWalletSeedCase::MSKMGDBHOTBPETCJWCSPGOPP;
+use super::examples::ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP;
+use super::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT;
+use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
 
-use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase::V27;
-use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b;
-use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28;
+use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27;
+use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b;
+use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion::V28;
 
 use super::examples::LegacyWalletCase;
 use super::examples::LegacyWalletCaseZingoV26;

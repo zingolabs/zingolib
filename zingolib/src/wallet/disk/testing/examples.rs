@@ -3,54 +3,54 @@ use super::super::LightWallet;
 /// as opposed to [LegacyWalletCase], which enumerates test cases compiled from the history of zingo wallt tests, this ExampleWalletNetworkCase is meant to fully organize the set of test cases.
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleWalletNetworkCase {
+pub enum ExampleWalletNetwork {
     /// /
-    Mainnet(ExampleMainnetWalletSeedCase),
+    Regtest(ExampleRegtestWalletSeed),
     /// /
-    Testnet(ExampleTestnetWalletSeedCase),
+    Testnet(ExampleTestnetWalletSeed),
     /// /
-    Regtest(ExampleRegtestWalletSeedCase),
+    Mainnet(ExampleMainnetWalletSeed),
 }
 
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleMainnetWalletSeedCase {
+pub enum ExampleMainnetWalletSeed {
     /// this is a mainnet seed
-    VTFCORFBCBPCTCFUPMEGMWBP(ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase),
+    VTFCORFBCBPCTCFUPMEGMWBP(ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion),
 }
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase {
+pub enum ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion {
     /// wallet was last saved in this serialization version
     V28,
 }
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleTestnetWalletSeedCase {
+pub enum ExampleTestnetWalletSeed {
     /// This is a testnet seed.
-    MSKMGDBHOTBPETCJWCSPGOPP(ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase),
+    MSKMGDBHOTBPETCJWCSPGOPP(ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion),
 }
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase {
+pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion {
     /// wallet was last saved by the code in this commit
     Gab72a38b,
 }
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleRegtestWalletSeedCase {
+pub enum ExampleRegtestWalletSeed {
     /// this is a regtest seed.
-    HMVASMUVWMSSVICHCARBPOCT(ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase),
+    HMVASMUVWMSSVICHCARBPOCT(ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion),
 }
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase {
+pub enum ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion {
     /// wallet was last saved in this serialization version
     V27,
 }
@@ -58,38 +58,32 @@ pub enum ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase {
 /// loads test wallets
 impl LightWallet {
     /// loads any one of the test wallets included in the examples
-    pub async fn load_example_wallet(case: ExampleWalletNetworkCase) -> Self {
+    pub async fn load_example_wallet(case: ExampleWalletNetwork) -> Self {
         match case {
-            ExampleWalletNetworkCase::Mainnet(
-                ExampleMainnetWalletSeedCase::VTFCORFBCBPCTCFUPMEGMWBP(
-                    ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28,
-                ),
-            ) => {
-                LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
-                    "examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat"
+            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
+                ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
+            )) => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat"
                 ))
                 .await
             }
-            ExampleWalletNetworkCase::Testnet(
-                ExampleTestnetWalletSeedCase::MSKMGDBHOTBPETCJWCSPGOPP(
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b,
-                ),
-            ) => {
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b,
+            )) => {
                 LightWallet::unsafe_from_buffer_testnet(include_bytes!(
                     "examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat"
                 ))
                 .await
             }
-            ExampleWalletNetworkCase::Regtest(
-                ExampleRegtestWalletSeedCase::HMVASMUVWMSSVICHCARBPOCT(
-                    ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase::V27,
-                ),
-            ) => {
-                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
-                    "examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat"
+            ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
+                ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion::V28,
+            )) => {
+                LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
+                    "examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat"
                 ))
                 .await
-            } // _ => unimplemented!(),
+            }
         }
     }
 }
