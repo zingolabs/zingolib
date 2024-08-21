@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use getset::{CopyGetters, Getters, MutGetters};
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::data_api::scanning::ScanRange;
-use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
+use zcash_client_backend::{data_api::scanning::ScanRange, PoolType};
+use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::{block::BlockHash, consensus::BlockHeight, memo::Memo, transaction::TxId};
 
 /// Encapsulates the current state of sync
 #[derive(Debug, Getters, MutGetters)]
@@ -148,8 +149,6 @@ impl WalletTransaction {
     }
 }
 
-// TODO: change memo to correct type
-
 #[derive(Debug, Getters, CopyGetters)]
 pub struct SaplingNote {
     #[getset(get_copy = "pub")]
@@ -160,15 +159,15 @@ pub struct SaplingNote {
     nullifier: sapling_crypto::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
     #[getset(get_copy = "pub")]
     position: Position,
-    #[getset(get_copy = "pub")]
-    memo: [u8; 512],
+    #[getset(get = "pub")]
+    memo: Memo,
 }
 
 impl SyncNote for SaplingNote {
     type WalletNote = Self;
     type ZcashNote = sapling_crypto::Note;
     type Nullifier = sapling_crypto::Nullifier;
-    type Memo = [u8; 512];
+    type Memo = Memo;
 
     fn from_parts(
         output_id: OutputId,
@@ -184,6 +183,10 @@ impl SyncNote for SaplingNote {
             position,
             memo,
         }
+    }
+
+    fn memo(&self) -> &Self::Memo {
+        &self.memo
     }
 }
 
@@ -197,15 +200,14 @@ pub struct OrchardNote {
     nullifier: orchard::note::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
     #[getset(get_copy = "pub")]
     position: Position,
-    #[getset(get_copy = "pub")]
-    memo: [u8; 512],
+    memo: Memo,
 }
 
 impl SyncNote for OrchardNote {
     type WalletNote = Self;
     type ZcashNote = orchard::Note;
     type Nullifier = orchard::note::Nullifier;
-    type Memo = [u8; 512];
+    type Memo = Memo;
 
     fn from_parts(
         output_id: OutputId,
@@ -222,9 +224,13 @@ impl SyncNote for OrchardNote {
             memo,
         }
     }
+
+    fn memo(&self) -> &Self::Memo {
+        &self.memo
+    }
 }
 
-pub trait SyncNote {
+pub(crate) trait SyncNote {
     type WalletNote;
     type ZcashNote;
     type Nullifier: Copy;
@@ -237,4 +243,22 @@ pub trait SyncNote {
         position: Position,
         memo: Self::Memo,
     ) -> Self::WalletNote;
+
+    fn memo(&self) -> &Self::Memo;
+}
+
+#[derive(Debug, Clone)]
+pub struct OutgoingData {
+    /// ID of output sent from this capability to the recipient address
+    pub output_id: OutputId,
+    /// Pool of output sent from this capability to the recipient address
+    pub pool: PoolType, // TODO: consider moving pooltype back into output id
+    /// Recipient address that was sent to from this capability
+    pub recipient_address: String,
+    /// Full unified address encoded in change memo
+    pub recipient_ua: Option<UnifiedAddress>,
+    /// Amount of funds sent to receipient address
+    pub value: u64,
+    /// Memo sent to recipient address
+    pub memo: Memo,
 }
