@@ -182,7 +182,7 @@ where
 fn parse_encoded_memos<P, N>(
     parameters: &P,
     wallet_notes: &[N],
-    outgoing_data: &mut Vec<OutgoingData>,
+    outgoing_data: &mut [OutgoingData],
 ) -> Result<(), ()>
 where
     P: Parameters,
@@ -213,7 +213,7 @@ where
 fn add_recipient_unified_address<P>(
     parameters: &P,
     unified_addresses: Vec<UnifiedAddress>,
-    outgoing_data: &mut Vec<OutgoingData>,
+    outgoing_data: &mut [OutgoingData],
 ) where
     P: Parameters + NetworkConstants,
 {
