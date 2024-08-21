@@ -11,8 +11,8 @@ use std::sync::Arc;
 use log::{error, info};
 
 use clap::{self, Arg};
-use zingo_testutils::regtest;
-use zingoconfig::ChainType;
+use zingolib::config::ChainType;
+use zingolib::testutils::regtest;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -56,7 +56,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
-                .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER))
+                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -328,7 +328,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
-            zingo_testutils::paths::get_regtest_dir()
+            zingolib::testutils::paths::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
         };
@@ -348,16 +348,18 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             None
         };
-        let server = zingoconfig::construct_lightwalletd_uri(server);
+        let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
+                "regtest" => {
+                    ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
+                }
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active())
+            ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
         } else {
             ChainType::Mainnet
         };
@@ -403,7 +405,7 @@ pub fn startup(
     } else {
         filled_template.data_dir.clone()
     };
-    let config = zingoconfig::load_clientconfig(
+    let config = zingolib::config::load_clientconfig(
         filled_template.server.clone(),
         Some(data_dir),
         filled_template.chaintype,

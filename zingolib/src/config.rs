@@ -163,7 +163,7 @@ impl ZingoConfigBuilder {
     /// Set the URI of the proxy server we download blockchain information from.
     /// # Examples
     /// ```
-    /// use zingoconfig::ZingoConfigBuilder;
+    /// use zingolib::config::ZingoConfigBuilder;
     /// use http::Uri;
     /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
     /// ```
@@ -178,8 +178,8 @@ impl ZingoConfigBuilder {
     /// Note "chain type" is not a formal standard.
     /// # Examples
     /// ```
-    /// use zingoconfig::ZingoConfigBuilder;
-    /// use zingoconfig::ChainType::Testnet;
+    /// use zingolib::config::ZingoConfigBuilder;
+    /// use zingolib::config::ChainType::Testnet;
     /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
     /// ```
     pub fn set_chain(&mut self, chain: ChainType) -> &mut Self {
@@ -190,7 +190,7 @@ impl ZingoConfigBuilder {
     /// Set the wallet directory where client transaction data will be stored in a wallet.
     /// # Examples
     /// ```
-    /// use zingoconfig::ZingoConfigBuilder;
+    /// use zingolib::config::ZingoConfigBuilder;
     /// use tempdir::TempDir;
     /// let dir = TempDir::new("zingo_doc_test").unwrap().into_path();
     /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
@@ -233,16 +233,6 @@ impl Default for ZingoConfigBuilder {
 }
 
 impl ZingoConfig {
-    #[deprecated]
-    /// Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
-        if let Some(dir) = dir {
-            ZingoConfig::build(chain).set_wallet_dir(dir).create()
-        } else {
-            ZingoConfig::build(chain).create()
-        }
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn build(chain: ChainType) -> ZingoConfigBuilder {
         ZingoConfigBuilder {
@@ -251,7 +241,7 @@ impl ZingoConfig {
         }
     }
 
-    #[cfg(feature = "test-elevation")]
+    #[cfg(any(test, feature = "test-elevation"))]
     /// create a ZingoConfig that helps a LightClient connect to a server.
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
@@ -261,6 +251,16 @@ impl ZingoConfig {
                     .unwrap(),
             )
             .create()
+    }
+
+    #[cfg(feature = "test-elevation")]
+    /// create a ZingoConfig that signals a LightClient not to connect to a server.
+    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+        if let Some(dir) = dir {
+            ZingoConfig::build(chain).set_wallet_dir(dir).create()
+        } else {
+            ZingoConfig::build(chain).create()
+        }
     }
 
     /// Convenience wrapper

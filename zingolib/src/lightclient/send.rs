@@ -245,18 +245,17 @@ pub mod send_with_proposal {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "testvectors"))]
     mod tests {
-        use zingo_testvectors::seeds::ABANDON_ART_SEED;
-        use zingoconfig::ZingoConfigBuilder;
-
-        use crate::{
-            lightclient::{send::send_with_proposal::CompleteAndBroadcastError, LightClient},
-            mocks::ProposalBuilder,
-        };
 
         #[tokio::test]
         async fn complete_and_broadcast() {
+            use crate::{
+                config::ZingoConfigBuilder,
+                lightclient::{send::send_with_proposal::CompleteAndBroadcastError, LightClient},
+                mocks::ProposalBuilder,
+                testvectors::seeds::ABANDON_ART_SEED,
+            };
             let lc = LightClient::create_unconnected(
                 &ZingoConfigBuilder::default().create(),
                 crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
