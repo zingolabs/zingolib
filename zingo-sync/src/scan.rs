@@ -565,7 +565,11 @@ where
                 .await
                 .unwrap();
 
-        // wallet block must exist, otherwise the transaction wil not have access to essential data such as the time it was mined
+        if transaction.txid() != txid {
+            panic!("transaction txid does not match txid requested!")
+        }
+
+        // wallet block must exist, otherwise the transaction will not have access to essential data such as the time it was mined
         if let Some(wallet_block) = wallet_blocks.get(&block_height) {
             if !wallet_block.txids().contains(&transaction.txid()) {
                 panic!("txid is not found in the wallet block at the transaction height!");
@@ -615,7 +619,7 @@ where
             .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
             .collect();
 
-        scan_shielded_bundle::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
+        scan_notes::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
             &mut sapling_notes,
             transaction.txid(),
             &sapling_keys,
@@ -637,7 +641,7 @@ where
             .map(|action| (OrchardDomain::for_action(action), action.clone()))
             .collect();
 
-        scan_shielded_bundle::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
+        scan_notes::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
             &mut orchard_notes,
             transaction.txid(),
             &orchard_keys,
@@ -655,7 +659,7 @@ where
     ))
 }
 
-fn scan_shielded_bundle<D, Op, N>(
+fn scan_notes<D, Op, N>(
     wallet_notes: &mut Vec<N::WalletNote>,
     txid: TxId,
     ivks: &[D::IncomingViewingKey],
