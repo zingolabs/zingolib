@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::client::FetchRequest;
 use crate::client::{fetch::fetch, get_chain_height};
 use crate::primitives::SyncState;
-use crate::scan::workers::{ScanTask, Scanner};
+use crate::scan::task::{ScanTask, Scanner};
 use crate::scan::ScanResults;
 use crate::traits::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncTransactions, SyncWallet};
 
