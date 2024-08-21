@@ -134,10 +134,7 @@ impl LightWallet {
                 .await
             }
             LegacyWalletCase::ZingoV28 => {
-                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                    "examples/zingo-wallet-v28.dat"
-                ))
-                .await
+                unimplemented!()
             }
         }
     }
