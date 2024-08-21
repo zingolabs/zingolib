@@ -73,8 +73,8 @@ mod load_wallet {
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
 
-        let wallet = LightWallet::load_example_wallet_legacy(
-            zingolib::wallet::disk::testing::examples::LegacyWalletCase::OldWalletReorgTestWallet,
+        let wallet = LightWallet::load_example_wallet(
+            zingolib::wallet::disk::testing::examples::ExampleWalletNetworkCase::Regtest(zingolib::wallet::disk::testing::examples::ExampleRegtestWalletSeedCase::HMVASMUVWMSSVICHCARBPOCT(zingolib::wallet::disk::testing::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase::V27))
         )
         .await;
 

@@ -6,29 +6,33 @@ use crate::lightclient::LightClient;
 
 use super::super::LightWallet;
 
-use super::examples::ExampleMainnetWalletSeedCase;
+use super::examples::ExampleWalletNetworkCase::Mainnet;
+use super::examples::ExampleWalletNetworkCase::Regtest;
+use super::examples::ExampleWalletNetworkCase::Testnet;
+
+use super::examples::ExampleMainnetWalletSeedCase::VTFCORFBCBPCTCFUPMEGMWBP;
+use super::examples::ExampleRegtestWalletSeedCase::HMVASMUVWMSSVICHCARBPOCT;
+use super::examples::ExampleTestnetWalletSeedCase::MSKMGDBHOTBPETCJWCSPGOPP;
+
+use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase::V27;
+use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b;
+use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28;
+
 use super::examples::LegacyWalletCase;
 use super::examples::LegacyWalletCaseZingoV26;
 
 #[tokio::test]
 async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
-    let _wallet =
-        LightWallet::load_example_wallet(super::examples::ExampleWalletNetworkCase::Mainnet(
-            ExampleMainnetWalletSeedCase::VTFCORFBCBPCTCFUPMEGMWBP(
-                super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28,
-            ),
-        ))
-        .await;
+    let _wallet = LightWallet::load_example_wallet(Mainnet(VTFCORFBCBPCTCFUPMEGMWBP(V28))).await;
 }
 #[tokio::test]
 async fn verify_example_wallet_mainnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
     let _wallet =
-        LightWallet::load_example_wallet(super::examples::ExampleWalletNetworkCase::Testnet(
-            super::examples::ExampleTestnetWalletSeedCase::MSKMGDBHOTBPETCJWCSPGOPP(
-                super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b,
-            ),
-        ))
-        .await;
+        LightWallet::load_example_wallet(Testnet(MSKMGDBHOTBPETCJWCSPGOPP(Gab72a38b))).await;
+}
+#[tokio::test]
+async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
+    let _wallet = LightWallet::load_example_wallet(Regtest(HMVASMUVWMSSVICHCARBPOCT(V27))).await;
 }
 
 async fn loaded_wallet_assert(

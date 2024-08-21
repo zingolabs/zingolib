@@ -43,7 +43,17 @@ pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase {
 /// /
 #[non_exhaustive]
 #[derive(Clone)]
-pub enum ExampleRegtestWalletSeedCase {}
+pub enum ExampleRegtestWalletSeedCase {
+    /// this is a regtest seed.
+    HMVASMUVWMSSVICHCARBPOCT(ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase),
+}
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase {
+    /// wallet was last saved in this serialization version
+    V27,
+}
 
 /// loads test wallets
 impl LightWallet {
@@ -70,7 +80,16 @@ impl LightWallet {
                 ))
                 .await
             }
-            _ => unimplemented!(),
+            ExampleWalletNetworkCase::Regtest(
+                ExampleRegtestWalletSeedCase::HMVASMUVWMSSVICHCARBPOCT(
+                    ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersionCase::V27,
+                ),
+            ) => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat"
+                ))
+                .await
+            } // _ => unimplemented!(),
         }
     }
 }
@@ -95,8 +114,6 @@ pub enum LegacyWalletCase {
     ZingoV26(LegacyWalletCaseZingoV26),
     /// ?
     ZingoV28,
-    /// ...
-    OldWalletReorgTestWallet,
 }
 
 /// loads test wallets
@@ -128,12 +145,6 @@ impl LightWallet {
                 ))
                 .await
             }
-            LegacyWalletCase::OldWalletReorgTestWallet => {
-                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
-                    "examples/old_wallet_reorg_test_wallet/zingo-wallet.dat"
-                ))
-                .await
-            }
         }
     }
 
@@ -144,7 +155,6 @@ impl LightWallet {
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 10177826,
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => todo!(),
             LegacyWalletCase::ZingoV28 => 10342837,
-            LegacyWalletCase::OldWalletReorgTestWallet => todo!(),
         }
     }
 
@@ -155,7 +165,6 @@ impl LightWallet {
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 1,
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => todo!(),
             LegacyWalletCase::ZingoV28 => 3,
-            LegacyWalletCase::OldWalletReorgTestWallet => todo!(),
         }
     }
 }
