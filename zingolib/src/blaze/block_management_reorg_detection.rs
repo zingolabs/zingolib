@@ -505,7 +505,7 @@ impl BlockManagementData {
     /// currently of the opinion that this function should be factored into separate concerns.
     pub(crate) async fn get_note_witness<D: DomainWalletExt>(
         &self,
-        uri: Uri,
+        lightwalletd_uri: Uri,
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
@@ -521,7 +521,8 @@ impl BlockManagementData {
             let tree = if prev_height < activation_height {
                 frontier::CommitmentTree::<<D::WalletNote as ShieldedNoteInterface>::Node, 32>::empty()
             } else {
-                let tree_state = crate::grpc_connector::get_trees(uri, prev_height).await?;
+                let tree_state =
+                    crate::grpc_connector::get_trees(lightwalletd_uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
                 self.unverified_treestates.write().await.push(tree_state);
                 read_commitment_tree(&tree[..]).map_err(|e| format!("{}", e))?

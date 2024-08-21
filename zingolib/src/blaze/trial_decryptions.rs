@@ -301,6 +301,7 @@ impl TrialDecryptions {
             .collect::<Vec<_>>();
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
+
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
             let (output_num, witnessed) =
                 if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
@@ -321,7 +322,6 @@ impl TrialDecryptions {
 
                         //TODO: Wrong. We don't have fvk import, all our keys are spending
                         let have_spending_key = true;
-                        let uri = bsync_data.read().await.uri().clone();
 
                         // Get the witness for the note
                         let witness = bsync_data
@@ -329,7 +329,7 @@ impl TrialDecryptions {
                             .await
                             .block_data
                             .get_note_witness::<D>(
-                                uri,
+                                config.get_lightwalletd_uri(),
                                 height,
                                 transaction_num,
                                 i,
