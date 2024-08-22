@@ -11,16 +11,16 @@ use super::examples::ExampleWalletNetwork::Regtest;
 use super::examples::ExampleWalletNetwork::Testnet;
 
 use super::examples::ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP;
+use super::examples::ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA;
 use super::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT;
 use super::examples::ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR;
 use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
 
+use super::examples::ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion;
 use super::examples::ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion;
 use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion;
 use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion;
 use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion;
-
-use super::examples::LegacyWalletCase;
 
 // moving toward completeness: each of these tests should assert everything known about the LightWallet without network.
 
@@ -31,6 +31,17 @@ async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
     )))
     .await;
 }
+#[ignore = "test fails because ZFZ panics in regtest"]
+#[tokio::test]
+async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
+    let wallet = LightWallet::load_example_wallet(Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
+        ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion::V26,
+    )))
+    .await;
+
+    loaded_wallet_assert(wallet, 10342837, 3).await;
+}
+
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
     let _wallet = LightWallet::load_example_wallet(Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
@@ -160,24 +171,6 @@ async fn loaded_wallet_assert(
     }
 }
 
-#[ignore = "test fails because ZFZ panics in regtest"]
-#[tokio::test]
-async fn load_wallet_from_v28_dat_file() {
-    // We test that the LightWallet can be read from v28 .dat file
-    // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
-    // with 3 addresses containing all receivers.
-    let case = LegacyWalletCase::ZingoV28;
-
-    let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
-
-    loaded_wallet_assert(
-        wallet,
-        LightWallet::example_expected_balance(case.clone()),
-        LightWallet::example_expected_num_addresses(case),
-    )
-    .await;
-}
-
 #[tokio::test]
 async fn reload_wallet_from_buffer() {
     use zcash_primitives::consensus::Parameters;
@@ -188,13 +181,10 @@ async fn reload_wallet_from_buffer() {
     use crate::wallet::WalletBase;
     use crate::wallet::WalletCapability;
 
-    // We test that the LightWallet can be read from v28 .dat file
-    // A testnet wallet initiated with
-    // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
-    // --birthday 0
-    // --nosync
-    // with 3 addresses containing all receivers.
-    let mid_wallet = LightWallet::load_example_wallet_legacy(LegacyWalletCase::ZingoV28).await;
+    let mid_wallet = LightWallet::load_example_wallet(Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
+        ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion::V26,
+    )))
+    .await;
 
     let mid_client = LightClient::create_from_wallet_async(mid_wallet)
         .await
