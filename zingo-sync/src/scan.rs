@@ -105,13 +105,12 @@ impl InitialScanData {
     }
 }
 
-#[allow(dead_code)]
 struct ScanData {
-    pub(crate) nullifiers: NullifierMap,
-    pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    pub(crate) relevant_txids: HashSet<TxId>,
-    pub(crate) decrypted_note_data: DecryptedNoteData,
-    pub(crate) shard_tree_data: ShardTreeData,
+    nullifiers: NullifierMap,
+    wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    relevant_txids: HashSet<TxId>,
+    decrypted_note_data: DecryptedNoteData,
+    shard_tree_data: ShardTreeData,
 }
 
 pub(crate) struct ScanResults {
@@ -132,12 +131,6 @@ impl DecryptedNoteData {
             sapling_nullifiers_and_positions: HashMap::new(),
             orchard_nullifiers_and_positions: HashMap::new(),
         }
-    }
-}
-
-impl Default for DecryptedNoteData {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

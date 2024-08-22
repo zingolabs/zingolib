@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use base58::ToBase58;
 use incrementalmerkletree::Position;
 use orchard::{
     note_encryption::OrchardDomain,
@@ -13,12 +12,12 @@ use sapling_crypto::{
 };
 use tokio::sync::mpsc;
 
+use zcash_client_backend::PoolType;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
-use zcash_note_encryption::{BatchDomain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
+use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants, Parameters},
-    legacy::TransparentAddress,
-    memo::{Memo, MemoBytes},
+    memo::Memo,
     transaction::{Transaction, TxId},
 };
 use zingo_memo::ParsedMemo;
@@ -27,11 +26,39 @@ use crate::{
     client::{self, FetchRequest},
     keys::{ScanningKeyOps as _, ScanningKeys},
     primitives::{
-        OrchardNote, OutgoingData, OutputId, SaplingNote, SyncNote, WalletBlock, WalletTransaction,
+        OrchardNote, OutgoingNote, OutputId, SaplingNote, SyncNote, SyncOutgoingNotes, WalletBlock,
+        WalletTransaction,
     },
+    utils,
 };
 
 use super::DecryptedNoteData;
+
+trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> {
+    fn out_ciphertext(&self) -> [u8; 80];
+
+    fn value_commitment(&self) -> D::ValueCommitment;
+}
+
+impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
+    fn out_ciphertext(&self) -> [u8; 80] {
+        self.encrypted_note().out_ciphertext
+    }
+
+    fn value_commitment(&self) -> <OrchardDomain as Domain>::ValueCommitment {
+        self.cv_net().clone()
+    }
+}
+
+impl<Proof> ShieldedOutputExt<SaplingDomain> for OutputDescription<Proof> {
+    fn out_ciphertext(&self) -> [u8; 80] {
+        *self.out_ciphertext()
+    }
+
+    fn value_commitment(&self) -> <SaplingDomain as Domain>::ValueCommitment {
+        self.cv().clone()
+    }
+}
 
 pub(crate) async fn scan_transactions<P: Parameters>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -90,43 +117,58 @@ fn scan_transaction<P: Parameters>(
     );
     let mut sapling_notes: Vec<SaplingNote> = Vec::new();
     let mut orchard_notes: Vec<OrchardNote> = Vec::new();
-    let mut outgoing_data: Vec<OutgoingData> = Vec::new();
+    let mut outgoing_sapling_notes: Vec<OutgoingNote<sapling_crypto::Note>> = Vec::new();
+    let mut outgoing_orchard_notes: Vec<OutgoingNote<orchard::Note>> = Vec::new();
+    let mut encoded_memos = Vec::new();
+
+    // TODO: add key ids to wallet notes
+    // TODO: scan transparent bundle
 
     if let Some(bundle) = transaction.sapling_bundle() {
-        let sapling_keys: Vec<sapling_crypto::keys::PreparedIncomingViewingKey> = scanning_keys
-            .sapling()
-            .iter()
-            .map(|(_, key)| key.prepare())
-            .collect();
         let sapling_outputs: Vec<(SaplingDomain, OutputDescription<GrothProofBytes>)> = bundle
             .shielded_outputs()
             .iter()
             .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
             .collect();
 
-        scan_notes::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
+        let sapling_incoming_keys: Vec<sapling_crypto::keys::PreparedIncomingViewingKey> =
+            scanning_keys
+                .sapling()
+                .iter()
+                .map(|(_, key)| key.prepare())
+                .collect();
+        scan_incoming_notes::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
             &mut sapling_notes,
             transaction.txid(),
-            &sapling_keys,
+            &sapling_incoming_keys,
             &sapling_outputs,
             &decrypted_note_data.sapling_nullifiers_and_positions,
         )
         .unwrap();
+
+        scan_outgoing_notes(
+            &mut outgoing_sapling_notes,
+            transaction.txid(),
+            ovks,
+            &sapling_outputs,
+        );
+
+        encoded_memos.append(&mut parse_encoded_memos(&sapling_notes).unwrap());
     }
 
     if let Some(bundle) = transaction.orchard_bundle() {
-        let orchard_keys: Vec<orchard::keys::PreparedIncomingViewingKey> = scanning_keys
-            .orchard()
-            .iter()
-            .map(|(_, key)| key.prepare())
-            .collect();
         let orchard_actions: Vec<(OrchardDomain, Action<Signature<SpendAuth>>)> = bundle
             .actions()
             .iter()
             .map(|action| (OrchardDomain::for_action(action), action.clone()))
             .collect();
 
-        scan_notes::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
+        let orchard_keys: Vec<orchard::keys::PreparedIncomingViewingKey> = scanning_keys
+            .orchard()
+            .iter()
+            .map(|(_, key)| key.prepare())
+            .collect();
+        scan_incoming_notes::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
             &mut orchard_notes,
             transaction.txid(),
             &orchard_keys,
@@ -134,11 +176,28 @@ fn scan_transaction<P: Parameters>(
             &decrypted_note_data.orchard_nullifiers_and_positions,
         )
         .unwrap();
+
+        scan_outgoing_notes(
+            &mut outgoing_orchard_notes,
+            transaction.txid(),
+            ovks,
+            &orchard_actions,
+        );
+
+        encoded_memos.append(&mut parse_encoded_memos(&orchard_notes).unwrap());
     }
 
-    parse_encoded_memos(parameters, &sapling_notes, &mut outgoing_data).unwrap();
-    parse_encoded_memos(parameters, &orchard_notes, &mut outgoing_data).unwrap();
-
+    for encoded_memo in encoded_memos {
+        match encoded_memo {
+            ParsedMemo::Version0 { uas } => {
+                add_recipient_unified_address(parameters, uas.clone(), &mut outgoing_sapling_notes);
+                add_recipient_unified_address(parameters, uas, &mut outgoing_orchard_notes);
+            }
+            _ => panic!(
+                "memo version not supported. please ensure that your software is up-to-date."
+            ),
+        }
+    }
     Ok(WalletTransaction::from_parts(
         transaction.txid(),
         block_height,
@@ -147,7 +206,7 @@ fn scan_transaction<P: Parameters>(
     ))
 }
 
-fn scan_notes<D, Op, N>(
+fn scan_incoming_notes<D, Op, N>(
     wallet_notes: &mut Vec<N::WalletNote>,
     txid: TxId,
     ivks: &[D::IncomingViewingKey],
@@ -167,9 +226,7 @@ where
         if let Some(((note, _, memo_bytes), _)) = output {
             let output_id = OutputId::from_parts(txid, output_index);
             let (nullifier, position) = nullifiers_and_positions.get(&output_id).unwrap();
-            let memo_bytes = MemoBytes::from_bytes(memo_bytes.as_ref()).unwrap();
-            let memo =
-                Memo::try_from(memo_bytes.clone()).unwrap_or_else(|_| Memo::Future(memo_bytes));
+            let memo = Memo::from_bytes(memo_bytes.as_ref()).unwrap();
 
             let wallet_note = N::from_parts(output_id, note, *nullifier, *position, memo);
             wallet_notes.push(wallet_note);
@@ -179,119 +236,98 @@ where
     Ok(())
 }
 
-fn parse_encoded_memos<P, N>(
-    parameters: &P,
-    wallet_notes: &[N],
-    outgoing_data: &mut [OutgoingData],
+fn scan_outgoing_notes<D, Op, N>(
+    outgoing_notes: &mut Vec<OutgoingNote<N>>,
+    txid: TxId,
+    ovks: &[D::OutgoingViewingKey],
+    outputs: &[(D, Op)],
 ) -> Result<(), ()>
 where
-    P: Parameters,
-    N: SyncNote<Memo = Memo>,
+    D: Domain<Note = N>,
+    D::Memo: AsRef<[u8]>,
+    Op: ShieldedOutputExt<D>,
 {
-    if outgoing_data.is_empty() {
-        return Ok(());
-    }
-
-    for note in wallet_notes {
-        if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo() {
-            let encoded_memo = zingo_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()).unwrap();
-
-            match encoded_memo {
-                ParsedMemo::Version0 { uas } => {
-                    add_recipient_unified_address(parameters, uas, outgoing_data);
-                }
-                _ => panic!(
-                    "memo version not supported. please ensure that your software is up-to-date."
-                ),
-            }
+    for (output_index, (domain, output)) in outputs.iter().enumerate() {
+        if let Some(((note, _, memo_bytes), _key_index)) = try_output_recovery_with_ovks(
+            domain,
+            ovks,
+            output,
+            &output.value_commitment(),
+            &output.out_ciphertext(),
+        ) {
+            outgoing_notes.push(OutgoingNote::from_parts(
+                OutputId::from_parts(txid, output_index),
+                note,
+                Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                None,
+            ));
         }
     }
 
     Ok(())
 }
 
-fn add_recipient_unified_address<P>(
+fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>>(
+    domain: &D,
+    ovks: &[D::OutgoingViewingKey],
+    output: &Output,
+    cv: &D::ValueCommitment,
+    out_ciphertext: &[u8; zcash_note_encryption::OUT_CIPHERTEXT_SIZE],
+) -> Option<((D::Note, D::Recipient, D::Memo), usize)> {
+    for (key_index, ovk) in ovks.iter().enumerate() {
+        if let Some(decrypted_output) = zcash_note_encryption::try_output_recovery_with_ovk(
+            domain,
+            ovk,
+            output,
+            cv,
+            out_ciphertext,
+        ) {
+            return Some((decrypted_output, key_index));
+        }
+    }
+    None
+}
+
+fn parse_encoded_memos<N>(wallet_notes: &[N]) -> Result<Vec<ParsedMemo>, ()>
+where
+    N: SyncNote<Memo = Memo>,
+{
+    let encoded_memos = wallet_notes
+        .iter()
+        .flat_map(|note| {
+            if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo() {
+                Some(zingo_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()).unwrap())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(encoded_memos)
+}
+
+// TODO: consider comparing types instead of encoding to string
+fn add_recipient_unified_address<P, Nz>(
     parameters: &P,
     unified_addresses: Vec<UnifiedAddress>,
-    outgoing_data: &mut [OutgoingData],
+    outgoing_notes: &mut [OutgoingNote<Nz>],
 ) where
     P: Parameters + NetworkConstants,
+    OutgoingNote<Nz>: SyncOutgoingNotes,
 {
     for ua in unified_addresses {
         let ua_receivers = [
-            encode_orchard_receiver(parameters, ua.orchard().unwrap()).unwrap(),
+            utils::encode_orchard_receiver(parameters, ua.orchard().unwrap()).unwrap(),
             encode_payment_address(
                 parameters.hrp_sapling_payment_address(),
                 ua.sapling().unwrap(),
             ),
-            address_from_pubkeyhash(parameters, ua.transparent().unwrap()),
+            utils::address_from_pubkeyhash(parameters, ua.transparent().unwrap()),
             ua.encode(parameters),
         ];
-        outgoing_data
+        outgoing_notes
             .iter_mut()
-            .filter(|od| ua_receivers.contains(&od.recipient_address))
-            .for_each(|od| od.recipient_ua = Some(ua.clone()))
+            .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
+            .for_each(|note| *note.recipient_ua_mut() = Some(ua.clone()))
     }
 }
-
-// TODO: remove temp encoding and replace string with address enums in outgoing data
-//
-// TEMP
-//
-//
-fn encode_orchard_receiver<P: Parameters>(
-    parameters: &P,
-    orchard_address: &orchard::Address,
-) -> Result<String, ()> {
-    Ok(zcash_address::unified::Encoding::encode(
-        &<zcash_address::unified::Address as zcash_address::unified::Encoding>::try_from_items(
-            vec![zcash_address::unified::Receiver::Orchard(
-                orchard_address.to_raw_address_bytes(),
-            )],
-        )
-        .unwrap(),
-        &parameters.network_type(),
-    ))
-}
-fn address_from_pubkeyhash<P: NetworkConstants>(
-    parameters: &P,
-    transparent_address: &TransparentAddress,
-) -> String {
-    match transparent_address {
-        TransparentAddress::PublicKeyHash(hash) => {
-            hash.to_base58check(&parameters.b58_pubkey_address_prefix(), &[])
-        }
-        TransparentAddress::ScriptHash(hash) => {
-            hash.to_base58check(&parameters.b58_script_address_prefix(), &[])
-        }
-    }
-}
-/// A trait for converting a [u8] to base58 encoded string.
-trait ToBase58Check {
-    /// Converts a value of `self` to a base58 value, returning the owned string.
-    /// The version is a coin-specific prefix that is added.
-    /// The suffix is any bytes that we want to add at the end (like the "iscompressed" flag for
-    /// Secret key encoding)
-    fn to_base58check(&self, version: &[u8], suffix: &[u8]) -> String;
-}
-impl ToBase58Check for [u8] {
-    fn to_base58check(&self, version: &[u8], suffix: &[u8]) -> String {
-        let mut payload: Vec<u8> = Vec::new();
-        payload.extend_from_slice(version);
-        payload.extend_from_slice(self);
-        payload.extend_from_slice(suffix);
-
-        let checksum = double_sha256(&payload);
-        payload.append(&mut checksum[..4].to_vec());
-        payload.to_base58()
-    }
-}
-/// Sha256(Sha256(value))
-fn double_sha256(payload: &[u8]) -> Vec<u8> {
-    let h1 = <sha2::Sha256 as sha2::Digest>::digest(payload);
-    let h2 = <sha2::Sha256 as sha2::Digest>::digest(&h1);
-    h2.to_vec()
-}
-//
-// TEMP
-//

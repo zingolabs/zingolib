@@ -6,8 +6,15 @@ use getset::{CopyGetters, Getters, MutGetters};
 
 use incrementalmerkletree::Position;
 use zcash_client_backend::{data_api::scanning::ScanRange, PoolType};
-use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{block::BlockHash, consensus::BlockHeight, memo::Memo, transaction::TxId};
+use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
+use zcash_primitives::{
+    block::BlockHash,
+    consensus::{BlockHeight, NetworkConstants, Parameters},
+    memo::Memo,
+    transaction::TxId,
+};
+
+use crate::utils;
 
 /// Encapsulates the current state of sync
 #[derive(Debug, Getters, MutGetters)]
@@ -247,18 +254,62 @@ pub(crate) trait SyncNote {
     fn memo(&self) -> &Self::Memo;
 }
 
-#[derive(Debug, Clone)]
-pub struct OutgoingData {
-    /// ID of output sent from this capability to the recipient address
-    pub output_id: OutputId,
-    /// Pool of output sent from this capability to the recipient address
-    pub pool: PoolType, // TODO: consider moving pooltype back into output id
-    /// Recipient address that was sent to from this capability
-    pub recipient_address: String,
-    /// Full unified address encoded in change memo
-    pub recipient_ua: Option<UnifiedAddress>,
-    /// Amount of funds sent to receipient address
-    pub value: u64,
-    /// Memo sent to recipient address
-    pub memo: Memo,
+/// Note sent from this capability to a recipient
+#[derive(Debug, Clone, Getters, CopyGetters, MutGetters)]
+pub struct OutgoingNote<N> {
+    /// Output ID
+    #[getset(get_copy = "pub")]
+    output_id: OutputId,
+    /// Decrypted note with recipient and value
+    #[getset(get = "pub")]
+    note: N,
+    /// Memo
+    #[getset(get = "pub")]
+    memo: Memo,
+    /// Recipient's full unified address from encoded memo
+    #[getset(get = "pub", get_mut = "pub")]
+    recipient_ua: Option<UnifiedAddress>,
+}
+
+impl<N> OutgoingNote<N> {
+    pub fn from_parts(
+        output_id: OutputId,
+        note: N,
+        memo: Memo,
+        recipient_ua: Option<UnifiedAddress>,
+    ) -> Self {
+        Self {
+            output_id,
+            note,
+            memo,
+            recipient_ua,
+        }
+    }
+}
+
+impl SyncOutgoingNotes for OutgoingNote<sapling_crypto::Note> {
+    fn encoded_recipient<P>(&self, parameters: &P) -> String
+    where
+        P: Parameters + NetworkConstants,
+    {
+        encode_payment_address(
+            parameters.hrp_sapling_payment_address(),
+            &self.note().recipient(),
+        )
+    }
+}
+
+impl SyncOutgoingNotes for OutgoingNote<orchard::Note> {
+    fn encoded_recipient<P>(&self, parameters: &P) -> String
+    where
+        P: Parameters + NetworkConstants,
+    {
+        utils::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
+    }
+}
+
+pub(crate) trait SyncOutgoingNotes {
+    fn encoded_recipient<P>(&self, parameters: &P) -> String
+    where
+        P: Parameters + NetworkConstants;
 }
