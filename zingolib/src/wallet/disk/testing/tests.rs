@@ -12,27 +12,44 @@ use super::examples::ExampleWalletNetwork::Testnet;
 
 use super::examples::ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP;
 use super::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT;
+use super::examples::ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR;
 use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
 
-use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27;
-use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b;
-use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion::V28;
+use super::examples::ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion;
+use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion;
+use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion;
+use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion;
 
 use super::examples::LegacyWalletCase;
 use super::examples::LegacyWalletCaseZingoV26;
 
 #[tokio::test]
-async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
-    let _wallet = LightWallet::load_example_wallet(Mainnet(VTFCORFBCBPCTCFUPMEGMWBP(V28))).await;
-}
-#[tokio::test]
-async fn verify_example_wallet_mainnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
-    let _wallet =
-        LightWallet::load_example_wallet(Testnet(MSKMGDBHOTBPETCJWCSPGOPP(Gab72a38b))).await;
-}
-#[tokio::test]
 async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
-    let _wallet = LightWallet::load_example_wallet(Regtest(HMVASMUVWMSSVICHCARBPOCT(V27))).await;
+    let _wallet = LightWallet::load_example_wallet(Regtest(HMVASMUVWMSSVICHCARBPOCT(
+        ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
+    )))
+    .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
+    let _wallet = LightWallet::load_example_wallet(Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
+        ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b,
+    )))
+    .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
+    let _wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
+        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
+    )))
+    .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
+    let _wallet = LightWallet::load_example_wallet(Mainnet(VTFCORFBCBPCTCFUPMEGMWBP(
+        ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion::V28,
+    )))
+    .await;
 }
 
 async fn loaded_wallet_assert(
