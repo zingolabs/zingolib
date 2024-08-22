@@ -181,8 +181,8 @@ async fn reload_wallet_from_buffer() {
     use crate::wallet::WalletBase;
     use crate::wallet::WalletCapability;
 
-    let mid_wallet = LightWallet::load_example_wallet(Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
-        ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion::V26,
+    let mid_wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
+        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
     )))
     .await;
 
