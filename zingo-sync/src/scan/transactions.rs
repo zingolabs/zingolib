@@ -12,7 +12,6 @@ use sapling_crypto::{
 };
 use tokio::sync::mpsc;
 
-use zcash_client_backend::PoolType;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
@@ -131,27 +130,32 @@ fn scan_transaction<P: Parameters>(
             .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
             .collect();
 
-        let sapling_incoming_keys: Vec<sapling_crypto::keys::PreparedIncomingViewingKey> =
-            scanning_keys
-                .sapling()
-                .iter()
-                .map(|(_, key)| key.prepare())
-                .collect();
+        let sapling_ivks: Vec<sapling_crypto::keys::PreparedIncomingViewingKey> = scanning_keys
+            .sapling()
+            .iter()
+            .map(|(_, key)| key.prepare())
+            .collect();
         scan_incoming_notes::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
             &mut sapling_notes,
             transaction.txid(),
-            &sapling_incoming_keys,
+            &sapling_ivks,
             &sapling_outputs,
             &decrypted_note_data.sapling_nullifiers_and_positions,
         )
         .unwrap();
 
+        let sapling_ovks: Vec<sapling_crypto::keys::OutgoingViewingKey> = scanning_keys
+            .sapling()
+            .iter()
+            .map(|(_, key)| key.ovk())
+            .collect();
         scan_outgoing_notes(
             &mut outgoing_sapling_notes,
             transaction.txid(),
-            ovks,
+            &sapling_ovks,
             &sapling_outputs,
-        );
+        )
+        .unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&sapling_notes).unwrap());
     }
@@ -163,7 +167,7 @@ fn scan_transaction<P: Parameters>(
             .map(|action| (OrchardDomain::for_action(action), action.clone()))
             .collect();
 
-        let orchard_keys: Vec<orchard::keys::PreparedIncomingViewingKey> = scanning_keys
+        let orchard_ivks: Vec<orchard::keys::PreparedIncomingViewingKey> = scanning_keys
             .orchard()
             .iter()
             .map(|(_, key)| key.prepare())
@@ -171,18 +175,24 @@ fn scan_transaction<P: Parameters>(
         scan_incoming_notes::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
             &mut orchard_notes,
             transaction.txid(),
-            &orchard_keys,
+            &orchard_ivks,
             &orchard_actions,
             &decrypted_note_data.orchard_nullifiers_and_positions,
         )
         .unwrap();
 
+        let orchard_ovks: Vec<orchard::keys::OutgoingViewingKey> = scanning_keys
+            .orchard()
+            .iter()
+            .map(|(_, key)| key.ovk())
+            .collect();
         scan_outgoing_notes(
             &mut outgoing_orchard_notes,
             transaction.txid(),
-            ovks,
+            &orchard_ovks,
             &orchard_actions,
-        );
+        )
+        .unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&orchard_notes).unwrap());
     }
@@ -267,6 +277,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>>(
     domain: &D,
     ovks: &[D::OutgoingViewingKey],

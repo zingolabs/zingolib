@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use getset::{CopyGetters, Getters, MutGetters};
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::{data_api::scanning::ScanRange, PoolType};
+use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
