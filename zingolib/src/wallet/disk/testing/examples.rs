@@ -47,6 +47,8 @@ pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion {
 #[derive(Clone)]
 pub enum ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion {
     /// wallet was last saved in this serialization version
+    V26,
+    V27,
     V28,
 }
 /// /
@@ -86,6 +88,22 @@ impl LightWallet {
                 .await
             }
             ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V26,
+            )) => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/testnet/cbbhrwiilgbrababsshsmtpr/v26/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V27,
+            )) => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/testnet/cbbhrwiilgbrababsshsmtpr/v27/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                 ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
             )) => {
                 LightWallet::unsafe_from_buffer_testnet(include_bytes!(
@@ -110,10 +128,6 @@ impl LightWallet {
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum LegacyWalletCaseZingoV26 {
-    /// /
-    One,
-    /// /
-    Two,
     /// regtest sap only wallet
     RegtestSapOnly,
 }
@@ -132,18 +146,6 @@ impl LightWallet {
     /// loads any one of the test wallets included in the examples
     pub async fn load_example_wallet_legacy(case: LegacyWalletCase) -> Self {
         match case {
-            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => {
-                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                    "examples/v26-1/zingo-wallet.dat"
-                ))
-                .await
-            }
-            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => {
-                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                    "examples/v26-2/zingo-wallet.dat"
-                ))
-                .await
-            }
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => {
                 LightWallet::unsafe_from_buffer_regtest(include_bytes!(
                     "examples/v26/202302_release/regtest/sap_only/zingo-wallet.dat"
@@ -159,8 +161,8 @@ impl LightWallet {
     /// each wallet file has a saved balance
     pub fn example_expected_balance(case: LegacyWalletCase) -> u64 {
         match case {
-            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => 0,
-            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 10177826,
+            // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => 0,
+            // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 10177826,
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => todo!(),
             LegacyWalletCase::ZingoV28 => 10342837,
         }
@@ -169,8 +171,8 @@ impl LightWallet {
     /// each wallet file has a saved balance
     pub fn example_expected_num_addresses(case: LegacyWalletCase) -> usize {
         match case {
-            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => 3,
-            LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 1,
+            // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => 3,
+            // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 1,
             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => todo!(),
             LegacyWalletCase::ZingoV28 => 3,
         }

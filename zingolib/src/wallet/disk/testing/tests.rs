@@ -38,6 +38,24 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
     .await;
 }
 #[tokio::test]
+async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
+    let wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
+        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V26,
+    )))
+    .await;
+
+    loaded_wallet_assert(wallet, 0, 3).await;
+}
+#[tokio::test]
+async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
+    let wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
+        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V27,
+    )))
+    .await;
+
+    loaded_wallet_assert(wallet, 10177826, 1).await;
+}
+#[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
     let _wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
@@ -166,13 +184,6 @@ async fn load_wallet_from_v26_dat_file() {
     let case = LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One);
 
     let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
-
-    loaded_wallet_assert(
-        wallet,
-        LightWallet::example_expected_balance(case.clone()),
-        LightWallet::example_expected_num_addresses(case),
-    )
-    .await;
 }
 
 #[ignore = "test proves note has no index bug is a breaker"]
