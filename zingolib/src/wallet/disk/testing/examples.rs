@@ -1,6 +1,7 @@
 use super::super::LightWallet;
 
-/// as opposed to [LegacyWalletCase], which enumerates test cases compiled from the history of zingo wallt tests, this ExampleWalletNetworkCase is meant to fully organize the set of test cases.
+/// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
+/// It is public so that any consumer can select and load any example wallet.
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum ExampleWalletNetwork {
@@ -80,9 +81,10 @@ pub enum ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion {
     V26,
 }
 
-/// loads test wallets
-// this function can be improved by a macro.
 impl LightWallet {
+    /// loads test wallets
+    /// this function can be improved by a macro. even better would be to derive directly from the enum.
+    // this file is fuc
     /// loads any one of the test wallets included in the examples
     pub async fn load_example_wallet(case: ExampleWalletNetwork) -> Self {
         match case {
