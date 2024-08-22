@@ -22,6 +22,8 @@ use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion;
 
 use super::examples::LegacyWalletCase;
 
+// moving toward completeness: each of these tests should assert everything known about the LightWallet without network.
+
 #[tokio::test]
 async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
     let _wallet = LightWallet::load_example_wallet(Regtest(HMVASMUVWMSSVICHCARBPOCT(
@@ -38,19 +40,6 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
 }
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
-    // We test that the LightWallet can be read from v26 .dat file
-    // Changes in version 27:
-    //   - The wallet does not have to have a mnemonic.
-    //     Absence of mnemonic is represented by an empty byte vector in v27.
-    //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
-    //   - The wallet capabilities can be restricted from spending to view-only or none.
-    //     We introduce `Capability` type represent different capability types in v27.
-    //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
-
-    // A testnet wallet initiated with
-    // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
-    // with 3 addresses containing all receivers.
-    // including orchard and sapling transactions
     let wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V26,
     )))
@@ -61,19 +50,6 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
 #[ignore = "test proves note has no index bug is a breaker"]
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
-    // We test that the LightWallet can be read from v26 .dat file
-    // Changes in version 27:
-    //   - The wallet does not have to have a mnemonic.
-    //     Absence of mnemonic is represented by an empty byte vector in v27.
-    //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
-    //   - The wallet capabilities can be restricted from spending to view-only or none.
-    //     We introduce `Capability` type represent different capability types in v27.
-    //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
-
-    // A testnet wallet initiated with
-    // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
-    // with 3 addresses containing all receivers.
-    // including orchard and sapling transactions
     let wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V27,
     )))

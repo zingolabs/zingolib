@@ -42,13 +42,18 @@ pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion {
     /// wallet was last saved by the code in this commit
     Gab72a38b,
 }
-/// /
+/// A testnet wallet initiated with
+/// --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+/// with 3 addresses containing all receivers.
+/// including orchard and sapling transactions
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion {
     /// wallet was last saved in this serialization version
     V26,
+    /// wallet was last saved in this serialization version
     V27,
+    /// wallet was last saved in this serialization version
     V28,
 }
 /// /
