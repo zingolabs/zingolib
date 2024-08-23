@@ -4,14 +4,6 @@
 use super::LightWallet;
 
 impl LightWallet {
-    /// parses a wallet as an testnet wallet, aimed at a default testnet server
-    pub async fn unsafe_from_buffer_testnet(data: &[u8]) -> Self {
-        let config = crate::config::ZingoConfig::create_testnet();
-        Self::read_internal(data, &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
-            .unwrap()
-    }
     /// connects a wallet to a local regtest node.
     pub async fn unsafe_from_buffer_regtest(data: &[u8]) -> Self {
         // this step starts a TestEnvironment and picks a new port!
@@ -30,7 +22,27 @@ impl LightWallet {
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap()
     }
+    /// parses a wallet as an testnet wallet, aimed at a default testnet server
+    pub async fn unsafe_from_buffer_testnet(data: &[u8]) -> Self {
+        let config = crate::config::ZingoConfig::create_testnet();
+        Self::read_internal(data, &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
+            .unwrap()
+    }
+    /// parses a wallet as an testnet wallet, aimed at a default testnet server
+    pub async fn unsafe_from_buffer_mainnet(data: &[u8]) -> Self {
+        let config = crate::config::ZingoConfig::create_mainnet();
+        Self::read_internal(data, &config)
+            .await
+            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
+            .unwrap()
+    }
 }
+
+// async fn assert_test_wallet(case: examples::LegacyWalletCase) {
+//     let wallet = LightWallet::load_example_wallet(case).await;
+// }
 
 /// example wallets
 /// including from different versions of the software.
