@@ -14,7 +14,7 @@ use zcash_primitives::{
     transaction::TxId,
 };
 
-use crate::utils;
+use crate::{keys::KeyId, utils};
 
 /// Encapsulates the current state of sync
 #[derive(Debug, Getters, MutGetters)]
@@ -130,6 +130,10 @@ pub struct WalletTransaction {
     sapling_notes: Vec<SaplingNote>,
     #[getset(skip)]
     orchard_notes: Vec<OrchardNote>,
+    #[getset(skip)]
+    outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
+    #[getset(skip)]
+    outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
 }
 
 impl WalletTransaction {
@@ -138,12 +142,16 @@ impl WalletTransaction {
         block_height: BlockHeight,
         sapling_notes: Vec<SaplingNote>,
         orchard_notes: Vec<OrchardNote>,
+        outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
+        outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
     ) -> Self {
         Self {
             txid,
             block_height,
             sapling_notes,
             orchard_notes,
+            outgoing_sapling_notes,
+            outgoing_orchard_notes,
         }
     }
 
@@ -154,105 +162,64 @@ impl WalletTransaction {
     pub fn orchard_notes(&self) -> &[OrchardNote] {
         &self.orchard_notes
     }
+
+    pub fn outgoing_sapling_notes(&self) -> &[OutgoingSaplingNote] {
+        &self.outgoing_sapling_notes
+    }
+
+    pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
+        &self.outgoing_orchard_notes
+    }
 }
 
+pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
+pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
+
+/// Wallet note, shielded output with metadata relevant to the wallet
 #[derive(Debug, Getters, CopyGetters)]
-pub struct SaplingNote {
+pub struct WalletNote<N, Nf: Copy> {
+    /// Output ID
     #[getset(get_copy = "pub")]
     output_id: OutputId,
-    #[getset(get = "pub")]
-    note: sapling_crypto::Note,
+    /// Identifier for key used to decrypt output
     #[getset(get_copy = "pub")]
-    nullifier: sapling_crypto::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
+    key_id: KeyId,
+    /// Decrypted note with recipient and value
+    #[getset(get = "pub")]
+    note: N,
+    /// Derived nullifier
+    #[getset(get_copy = "pub")]
+    nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
+    /// Commitment tree leaf position
     #[getset(get_copy = "pub")]
     position: Position,
+    /// Memo
     #[getset(get = "pub")]
     memo: Memo,
 }
 
-impl SyncNote for SaplingNote {
-    type WalletNote = Self;
-    type ZcashNote = sapling_crypto::Note;
-    type Nullifier = sapling_crypto::Nullifier;
-    type Memo = Memo;
-
-    fn from_parts(
+impl<N, Nf: Copy> WalletNote<N, Nf> {
+    pub fn from_parts(
         output_id: OutputId,
-        note: Self::ZcashNote,
-        nullifier: Self::Nullifier,
+        key_id: KeyId,
+        note: N,
+        nullifier: Option<Nf>,
         position: Position,
-        memo: Self::Memo,
-    ) -> Self::WalletNote {
+        memo: Memo,
+    ) -> Self {
         Self {
             output_id,
+            key_id,
             note,
             nullifier,
             position,
             memo,
         }
     }
-
-    fn memo(&self) -> &Self::Memo {
-        &self.memo
-    }
 }
 
-#[derive(Debug, Getters, CopyGetters)]
-pub struct OrchardNote {
-    #[getset(get_copy = "pub")]
-    output_id: OutputId,
-    #[getset(get = "pub")]
-    note: orchard::Note,
-    #[getset(get_copy = "pub")]
-    nullifier: orchard::note::Nullifier, //TODO: make option and add handling for syncing without nullfiier deriving key
-    #[getset(get_copy = "pub")]
-    position: Position,
-    memo: Memo,
-}
-
-impl SyncNote for OrchardNote {
-    type WalletNote = Self;
-    type ZcashNote = orchard::Note;
-    type Nullifier = orchard::note::Nullifier;
-    type Memo = Memo;
-
-    fn from_parts(
-        output_id: OutputId,
-        note: Self::ZcashNote,
-        nullifier: Self::Nullifier,
-        position: Position,
-        memo: Self::Memo,
-    ) -> Self::WalletNote {
-        Self {
-            output_id,
-            note,
-            nullifier,
-            position,
-            memo,
-        }
-    }
-
-    fn memo(&self) -> &Self::Memo {
-        &self.memo
-    }
-}
-
-pub(crate) trait SyncNote {
-    type WalletNote;
-    type ZcashNote;
-    type Nullifier: Copy;
-    type Memo;
-
-    fn from_parts(
-        output_id: OutputId,
-        note: Self::ZcashNote,
-        nullifier: Self::Nullifier,
-        position: Position,
-        memo: Self::Memo,
-    ) -> Self::WalletNote;
-
-    fn memo(&self) -> &Self::Memo;
-}
+pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
+pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
 /// Note sent from this capability to a recipient
 #[derive(Debug, Clone, Getters, CopyGetters, MutGetters)]
@@ -260,6 +227,9 @@ pub struct OutgoingNote<N> {
     /// Output ID
     #[getset(get_copy = "pub")]
     output_id: OutputId,
+    /// Identifier for key used to decrypt output
+    #[getset(get_copy = "pub")]
+    key_id: KeyId,
     /// Decrypted note with recipient and value
     #[getset(get = "pub")]
     note: N,
@@ -274,12 +244,14 @@ pub struct OutgoingNote<N> {
 impl<N> OutgoingNote<N> {
     pub fn from_parts(
         output_id: OutputId,
+        key_id: KeyId,
         note: N,
         memo: Memo,
         recipient_ua: Option<UnifiedAddress>,
     ) -> Self {
         Self {
             output_id,
+            key_id,
             note,
             memo,
             recipient_ua,
@@ -308,6 +280,7 @@ impl SyncOutgoingNotes for OutgoingNote<orchard::Note> {
     }
 }
 
+// TODO: condsider replacing with address enum instead of encoding to string
 pub(crate) trait SyncOutgoingNotes {
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where

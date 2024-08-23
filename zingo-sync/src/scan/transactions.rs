@@ -23,10 +23,10 @@ use zingo_memo::ParsedMemo;
 
 use crate::{
     client::{self, FetchRequest},
-    keys::{ScanningKeyOps as _, ScanningKeys},
+    keys::{KeyId, ScanningKeyOps as _, ScanningKeys},
     primitives::{
-        OrchardNote, OutgoingNote, OutputId, SaplingNote, SyncNote, SyncOutgoingNotes, WalletBlock,
-        WalletTransaction,
+        OrchardNote, OutgoingNote, OutputId, SaplingNote, SyncOutgoingNotes, WalletBlock,
+        WalletNote, WalletTransaction,
     },
     utils,
 };
@@ -120,7 +120,6 @@ fn scan_transaction<P: Parameters>(
     let mut outgoing_orchard_notes: Vec<OutgoingNote<orchard::Note>> = Vec::new();
     let mut encoded_memos = Vec::new();
 
-    // TODO: add key ids to wallet notes
     // TODO: scan transparent bundle
 
     if let Some(bundle) = transaction.sapling_bundle() {
@@ -130,29 +129,35 @@ fn scan_transaction<P: Parameters>(
             .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
             .collect();
 
-        let sapling_ivks: Vec<sapling_crypto::keys::PreparedIncomingViewingKey> = scanning_keys
-            .sapling()
-            .iter()
-            .map(|(_, key)| key.prepare())
-            .collect();
-        scan_incoming_notes::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
+        let sapling_ivks: Vec<(KeyId, sapling_crypto::keys::PreparedIncomingViewingKey)> =
+            scanning_keys
+                .sapling()
+                .iter()
+                .map(|(key_id, key)| (*key_id, key.prepare()))
+                .collect();
+        scan_incoming_notes::<
+            SaplingDomain,
+            OutputDescription<GrothProofBytes>,
+            sapling_crypto::Note,
+            sapling_crypto::Nullifier,
+        >(
             &mut sapling_notes,
             transaction.txid(),
-            &sapling_ivks,
+            sapling_ivks,
             &sapling_outputs,
             &decrypted_note_data.sapling_nullifiers_and_positions,
         )
         .unwrap();
 
-        let sapling_ovks: Vec<sapling_crypto::keys::OutgoingViewingKey> = scanning_keys
+        let sapling_ovks: Vec<(KeyId, sapling_crypto::keys::OutgoingViewingKey)> = scanning_keys
             .sapling()
             .iter()
-            .map(|(_, key)| key.ovk())
+            .map(|(key_id, key)| (*key_id, key.ovk()))
             .collect();
         scan_outgoing_notes(
             &mut outgoing_sapling_notes,
             transaction.txid(),
-            &sapling_ovks,
+            sapling_ovks,
             &sapling_outputs,
         )
         .unwrap();
@@ -167,29 +172,34 @@ fn scan_transaction<P: Parameters>(
             .map(|action| (OrchardDomain::for_action(action), action.clone()))
             .collect();
 
-        let orchard_ivks: Vec<orchard::keys::PreparedIncomingViewingKey> = scanning_keys
+        let orchard_ivks: Vec<(KeyId, orchard::keys::PreparedIncomingViewingKey)> = scanning_keys
             .orchard()
             .iter()
-            .map(|(_, key)| key.prepare())
+            .map(|(key_id, key)| (*key_id, key.prepare()))
             .collect();
-        scan_incoming_notes::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
+        scan_incoming_notes::<
+            OrchardDomain,
+            Action<Signature<SpendAuth>>,
+            orchard::Note,
+            orchard::note::Nullifier,
+        >(
             &mut orchard_notes,
             transaction.txid(),
-            &orchard_ivks,
+            orchard_ivks,
             &orchard_actions,
             &decrypted_note_data.orchard_nullifiers_and_positions,
         )
         .unwrap();
 
-        let orchard_ovks: Vec<orchard::keys::OutgoingViewingKey> = scanning_keys
+        let orchard_ovks: Vec<(KeyId, orchard::keys::OutgoingViewingKey)> = scanning_keys
             .orchard()
             .iter()
-            .map(|(_, key)| key.ovk())
+            .map(|(key_id, key)| (*key_id, key.ovk()))
             .collect();
         scan_outgoing_notes(
             &mut outgoing_orchard_notes,
             transaction.txid(),
-            &orchard_ovks,
+            orchard_ovks,
             &orchard_actions,
         )
         .unwrap();
@@ -213,33 +223,41 @@ fn scan_transaction<P: Parameters>(
         block_height,
         sapling_notes,
         orchard_notes,
+        outgoing_sapling_notes,
+        outgoing_orchard_notes,
     ))
 }
 
-fn scan_incoming_notes<D, Op, N>(
-    wallet_notes: &mut Vec<N::WalletNote>,
+fn scan_incoming_notes<D, Op, N, Nf>(
+    wallet_notes: &mut Vec<WalletNote<N, Nf>>,
     txid: TxId,
-    ivks: &[D::IncomingViewingKey],
+    ivks: Vec<(KeyId, D::IncomingViewingKey)>,
     outputs: &[(D, Op)],
-    nullifiers_and_positions: &HashMap<OutputId, (N::Nullifier, Position)>,
+    nullifiers_and_positions: &HashMap<OutputId, (Nf, Position)>,
 ) -> Result<(), ()>
 where
-    D: BatchDomain,
+    D: BatchDomain<Note = N>,
     D::Memo: AsRef<[u8]>,
     Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
-    N: SyncNote<ZcashNote = D::Note, Memo = Memo>,
+    Nf: Copy,
 {
-    for (output_index, output) in zcash_note_encryption::batch::try_note_decryption(ivks, outputs)
+    let (key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
+
+    for (output_index, output) in zcash_note_encryption::batch::try_note_decryption(&ivks, outputs)
         .into_iter()
         .enumerate()
     {
-        if let Some(((note, _, memo_bytes), _)) = output {
+        if let Some(((note, _, memo_bytes), key_index)) = output {
             let output_id = OutputId::from_parts(txid, output_index);
             let (nullifier, position) = nullifiers_and_positions.get(&output_id).unwrap();
-            let memo = Memo::from_bytes(memo_bytes.as_ref()).unwrap();
-
-            let wallet_note = N::from_parts(output_id, note, *nullifier, *position, memo);
-            wallet_notes.push(wallet_note);
+            wallet_notes.push(WalletNote::from_parts(
+                output_id,
+                key_ids[key_index],
+                note,
+                Some(*nullifier),
+                *position,
+                Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+            ));
         }
     }
 
@@ -249,7 +267,7 @@ where
 fn scan_outgoing_notes<D, Op, N>(
     outgoing_notes: &mut Vec<OutgoingNote<N>>,
     txid: TxId,
-    ovks: &[D::OutgoingViewingKey],
+    ovks: Vec<(KeyId, D::OutgoingViewingKey)>,
     outputs: &[(D, Op)],
 ) -> Result<(), ()>
 where
@@ -257,16 +275,19 @@ where
     D::Memo: AsRef<[u8]>,
     Op: ShieldedOutputExt<D>,
 {
+    let (key_ids, ovks): (Vec<_>, Vec<_>) = ovks.into_iter().unzip();
+
     for (output_index, (domain, output)) in outputs.iter().enumerate() {
-        if let Some(((note, _, memo_bytes), _key_index)) = try_output_recovery_with_ovks(
+        if let Some(((note, _, memo_bytes), key_index)) = try_output_recovery_with_ovks(
             domain,
-            ovks,
+            &ovks,
             output,
             &output.value_commitment(),
             &output.out_ciphertext(),
         ) {
             outgoing_notes.push(OutgoingNote::from_parts(
                 OutputId::from_parts(txid, output_index),
+                key_ids[key_index],
                 note,
                 Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
                 None,
@@ -299,10 +320,9 @@ fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHER
     None
 }
 
-fn parse_encoded_memos<N>(wallet_notes: &[N]) -> Result<Vec<ParsedMemo>, ()>
-where
-    N: SyncNote<Memo = Memo>,
-{
+fn parse_encoded_memos<N, Nf: Copy>(
+    wallet_notes: &[WalletNote<N, Nf>],
+) -> Result<Vec<ParsedMemo>, ()> {
     let encoded_memos = wallet_notes
         .iter()
         .flat_map(|note| {
