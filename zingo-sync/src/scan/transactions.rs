@@ -25,8 +25,8 @@ use crate::{
     client::{self, FetchRequest},
     keys::{KeyId, ScanningKeyOps as _, ScanningKeys},
     primitives::{
-        OrchardNote, OutgoingNote, OutputId, SaplingNote, SyncOutgoingNotes, WalletBlock,
-        WalletNote, WalletTransaction,
+        OrchardNote, OutgoingNote, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote,
+        SyncOutgoingNotes, WalletBlock, WalletNote, WalletTransaction,
     },
     utils,
 };
@@ -116,8 +116,8 @@ fn scan_transaction<P: Parameters>(
     );
     let mut sapling_notes: Vec<SaplingNote> = Vec::new();
     let mut orchard_notes: Vec<OrchardNote> = Vec::new();
-    let mut outgoing_sapling_notes: Vec<OutgoingNote<sapling_crypto::Note>> = Vec::new();
-    let mut outgoing_orchard_notes: Vec<OutgoingNote<orchard::Note>> = Vec::new();
+    let mut outgoing_sapling_notes: Vec<OutgoingSaplingNote> = Vec::new();
+    let mut outgoing_orchard_notes: Vec<OutgoingOrchardNote> = Vec::new();
     let mut encoded_memos = Vec::new();
 
     // TODO: scan transparent bundle
