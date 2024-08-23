@@ -4,7 +4,7 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use getset::{Getters, MutGetters};
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
+use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
 
 use log::{info, warn};
 use rand::rngs::OsRng;
@@ -12,13 +12,13 @@ use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
 use zingo_sync::{
-    primitives::{NullifierMap, SyncState, WalletBlock},
+    primitives::{NullifierMap, SyncState, WalletBlock, WalletTransaction},
     witness::ShardTrees,
 };
 
 use std::{
     cmp,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
@@ -217,6 +217,11 @@ pub struct LightWallet {
     #[getset(get = "pub", get_mut = "pub")]
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
 
+    /// Wallet transactions
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    wallet_transactions: HashMap<TxId, WalletTransaction>,
+
     /// Nullifier map
     #[cfg(feature = "sync")]
     #[getset(get = "pub", get_mut = "pub")]
@@ -389,6 +394,8 @@ impl LightWallet {
             transaction_context,
             #[cfg(feature = "sync")]
             wallet_blocks: BTreeMap::new(),
+            #[cfg(feature = "sync")]
+            wallet_transactions: HashMap::new(),
             #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
             #[cfg(feature = "sync")]
