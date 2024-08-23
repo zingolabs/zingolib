@@ -236,7 +236,7 @@ where
 
 fn remove_irrelevant_data<W>(wallet: &mut W, scan_range: &ScanRange) -> Result<(), ()>
 where
-    W: SyncWallet + SyncBlocks + SyncNullifiers,
+    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
 {
     if scan_range.priority() != ScanPriority::Historic {
         return Ok(());
@@ -251,9 +251,16 @@ where
         .block_range()
         .end;
 
-    // TODO: also retain blocks that contain transactions relevant to the wallet
+    let wallet_transaction_heights = wallet
+        .get_wallet_transactions()
+        .unwrap()
+        .values()
+        .map(|tx| tx.block_height())
+        .collect::<Vec<_>>();
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
-        *height >= scan_range.block_range().end || *height >= wallet_height.saturating_sub(100)
+        *height >= scan_range.block_range().end
+            || *height >= wallet_height.saturating_sub(100)
+            || wallet_transaction_heights.contains(height)
     });
     wallet
         .get_nullifiers_mut()
