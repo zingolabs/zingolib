@@ -4211,6 +4211,7 @@ dependencies = [
 name = "zingo-sync"
 version = "0.1.0"
 dependencies = [
+ "base58",
  "crossbeam-channel",
  "futures",
  "getset",
@@ -4219,14 +4220,17 @@ dependencies = [
  "orchard",
  "rayon",
  "sapling-crypto",
+ "sha2 0.9.9",
  "shardtree",
  "tokio",
  "tonic",
  "tracing",
+ "zcash_address",
  "zcash_client_backend",
  "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
+ "zingo-memo",
  "zingo-netutils",
 ]
 

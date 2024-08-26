@@ -2,6 +2,8 @@
 
 use std::ops::Range;
 
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
+
 use zcash_client_backend::{
     data_api::chain::ChainState,
     proto::{
@@ -9,9 +11,10 @@ use zcash_client_backend::{
         service::{BlockId, TreeState},
     },
 };
-use zcash_primitives::consensus::BlockHeight;
-
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    transaction::{Transaction, TxId},
+};
 
 pub mod fetch;
 
@@ -26,6 +29,8 @@ pub enum FetchRequest {
     CompactBlockRange(oneshot::Sender<Vec<CompactBlock>>, Range<BlockHeight>),
     /// Gets the tree states for a specified block height..
     TreeState(oneshot::Sender<TreeState>, BlockHeight),
+    /// Get a full transaction by txid.
+    Transaction(oneshot::Sender<(Transaction, BlockHeight)>, TxId),
 }
 
 /// Gets the height of the blockchain from the server.
@@ -34,7 +39,7 @@ pub enum FetchRequest {
 pub async fn get_chain_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
 ) -> Result<BlockHeight, ()> {
-    let (sender, receiver) = oneshot::channel::<BlockId>();
+    let (sender, receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::ChainTip(sender))
         .unwrap();
@@ -49,7 +54,7 @@ pub async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
 ) -> Result<Vec<CompactBlock>, ()> {
-    let (sender, receiver) = oneshot::channel::<Vec<CompactBlock>>();
+    let (sender, receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(sender, block_range))
         .unwrap();
@@ -57,14 +62,14 @@ pub async fn get_compact_block_range(
 
     Ok(compact_blocks)
 }
-/// Gets the frontiers for a specified block height..
+/// Gets the frontiers for a specified block height.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
 ) -> Result<ChainState, ()> {
-    let (sender, receiver) = oneshot::channel::<TreeState>();
+    let (sender, receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TreeState(sender, block_height))
         .unwrap();
@@ -72,4 +77,19 @@ pub async fn get_frontiers(
     let frontiers = tree_state.to_chain_state().unwrap();
 
     Ok(frontiers)
+}
+/// Gets a full transaction for a specified txid.
+///
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+pub async fn get_transaction_and_block_height(
+    fetch_request_sender: UnboundedSender<FetchRequest>,
+    txid: TxId,
+) -> Result<(Transaction, BlockHeight), ()> {
+    let (sender, receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(FetchRequest::Transaction(sender, txid))
+        .unwrap();
+    let transaction_and_block_height = receiver.await.unwrap();
+
+    Ok(transaction_and_block_height)
 }

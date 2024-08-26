@@ -6,10 +6,10 @@ use std::time::Duration;
 
 use crate::client::FetchRequest;
 use crate::client::{fetch::fetch, get_chain_height};
-use crate::interface::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncWallet};
 use crate::primitives::SyncState;
-use crate::scan::workers::{ScanTask, Scanner};
+use crate::scan::task::{ScanTask, Scanner};
 use crate::scan::ScanResults;
+use crate::traits::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncTransactions, SyncWallet};
 
 use tokio::sync::mpsc::error::TryRecvError;
 use zcash_client_backend::{
@@ -32,7 +32,7 @@ pub async fn sync<P, W>(
 ) -> Result<(), ()>
 where
     P: Parameters + Sync + Send + 'static,
-    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncShardTrees,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
     tracing::info!("Syncing wallet...");
 
@@ -40,7 +40,7 @@ where
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
-    let fetcher_handle = tokio::spawn(fetch(fetch_request_receiver, client));
+    let fetcher_handle = tokio::spawn(fetch(fetch_request_receiver, client, parameters.clone()));
     handles.push(fetcher_handle);
 
     update_scan_ranges(
@@ -213,18 +213,21 @@ fn mark_scanned(scan_range: ScanRange, sync_state: &mut SyncState) -> Result<(),
 
 fn update_wallet_data<W>(wallet: &mut W, scan_results: ScanResults) -> Result<(), ()>
 where
-    W: SyncBlocks + SyncNullifiers + SyncShardTrees,
+    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
     let ScanResults {
         nullifiers,
         wallet_blocks,
+        wallet_transactions,
         shard_tree_data,
     } = scan_results;
 
-    // TODO: if scan priority is historic, retain only relevent blocks and nullifiers as we have all information and requires a lot of memory / storage
-    // must still retain top 100 blocks for re-org purposes
     wallet.append_wallet_blocks(wallet_blocks).unwrap();
+    wallet
+        .extend_wallet_transactions(wallet_transactions)
+        .unwrap();
     wallet.append_nullifiers(nullifiers).unwrap();
+    // TODO: pararellise shard tree, this is currently the bottleneck on sync
     wallet.update_shard_trees(shard_tree_data).unwrap();
     // TODO: add trait to save wallet data to persistance for in-memory wallets
 
@@ -233,17 +236,32 @@ where
 
 fn remove_irrelevant_data<W>(wallet: &mut W, scan_range: &ScanRange) -> Result<(), ()>
 where
-    W: SyncBlocks + SyncNullifiers,
+    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
 {
     if scan_range.priority() != ScanPriority::Historic {
         return Ok(());
     }
 
-    // TODO: also retain blocks that contain transactions relevant to the wallet
-    wallet
-        .get_wallet_blocks_mut()
+    let wallet_height = wallet
+        .get_sync_state()
         .unwrap()
-        .retain(|height, _| *height >= scan_range.block_range().end);
+        .scan_ranges()
+        .last()
+        .expect("wallet should always have scan ranges after sync has started")
+        .block_range()
+        .end;
+
+    let wallet_transaction_heights = wallet
+        .get_wallet_transactions()
+        .unwrap()
+        .values()
+        .map(|tx| tx.block_height())
+        .collect::<Vec<_>>();
+    wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
+        *height >= scan_range.block_range().end
+            || *height >= wallet_height.saturating_sub(100)
+            || wallet_transaction_heights.contains(height)
+    });
     wallet
         .get_nullifiers_mut()
         .unwrap()
