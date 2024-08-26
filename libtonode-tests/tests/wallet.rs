@@ -73,7 +73,7 @@ mod load_wallet {
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
 
-        let wallet = LightWallet::load_example_wallet(
+        let wallet = LightWallet::load_example_wallet_legacy(
             zingolib::wallet::disk::testing::examples::LegacyWalletCase::OldWalletReorgTestWallet,
         )
         .await;
