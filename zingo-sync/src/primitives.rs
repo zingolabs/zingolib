@@ -56,7 +56,7 @@ impl OutputId {
 }
 
 /// Binary tree map of nullifiers from transaction spends or actions
-#[derive(Debug, MutGetters)]
+#[derive(Debug, Getters, MutGetters)]
 #[getset(get = "pub", get_mut = "pub")]
 pub struct NullifierMap {
     sapling: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)>,

@@ -57,7 +57,7 @@ pub trait SyncBlocks: SyncWallet {
 
 /// Trait for interfacing [`crate::primitives::WalletTransaction`]s with wallet data
 pub trait SyncTransactions: SyncWallet {
-    /// Get mutable reference to wallet transactions
+    /// Get wallet transactions
     fn get_wallet_transactions(&self) -> Result<&HashMap<TxId, WalletTransaction>, Self::Error>;
 
     /// Get mutable reference to wallet transactions
@@ -80,6 +80,9 @@ pub trait SyncTransactions: SyncWallet {
 /// Trait for interfacing nullifiers with wallet data
 pub trait SyncNullifiers: SyncWallet {
     // TODO: add method to get wallet data for writing defualt implementations on other methods
+
+    // /// Get wallet nullifier map
+    // fn get_nullifiers(&self) -> Result<&NullifierMap, Self::Error>;
 
     /// Get mutable reference to wallet nullifier map
     fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, Self::Error>;

@@ -1,6 +1,7 @@
 //! Entrypoint for sync engine
 
 use std::cmp;
+use std::collections::HashSet;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -26,7 +27,7 @@ const BATCH_SIZE: u32 = 10;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>, // TODO: change underlying service for generic
     parameters: &P,
     wallet: &mut W,
 ) -> Result<(), ()>
@@ -65,7 +66,7 @@ where
 
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
-        interval.tick().await;
+        interval.tick().await; // TODO: tokio select to recieve scan results before tick
 
         // if a scan worker is idle, send it a new scan task
         if scanner.is_worker_idle() {
@@ -86,10 +87,7 @@ where
 
         match scan_results_receiver.try_recv() {
             Ok((scan_range, scan_results)) => {
-                update_wallet_data(wallet, scan_results).unwrap();
-                // TODO: link nullifiers and scan linked transactions
-                remove_irrelevant_data(wallet, &scan_range).unwrap();
-                mark_scanned(scan_range, wallet.get_sync_state_mut().unwrap()).unwrap();
+                process_scan_results(wallet, scan_range, scan_results).unwrap()
             }
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => break,
@@ -98,10 +96,7 @@ where
 
     drop(scanner);
     while let Some((scan_range, scan_results)) = scan_results_receiver.recv().await {
-        update_wallet_data(wallet, scan_results).unwrap();
-        // TODO: link nullifiers and scan linked transactions
-        remove_irrelevant_data(wallet, &scan_range).unwrap();
-        mark_scanned(scan_range, wallet.get_sync_state_mut().unwrap()).unwrap();
+        process_scan_results(wallet, scan_range, scan_results).unwrap();
     }
 
     try_join_all(handles).await.unwrap();
@@ -159,6 +154,7 @@ where
 
     // TODO: add logic to combine chain tip scan range with wallet tip scan range
     // TODO: add scan priority logic
+    // TODO: replace `ignored` (a.k.a scanning) priority with `verify` to prioritise ranges that were being scanned when sync was interrupted
 
     Ok(())
 }
@@ -193,20 +189,18 @@ fn prepare_next_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     }
 }
 
-fn mark_scanned(scan_range: ScanRange, sync_state: &mut SyncState) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
-
-    if let Some((index, range)) = scan_ranges
-        .iter()
-        .enumerate()
-        .find(|(_, range)| range.block_range() == scan_range.block_range())
-    {
-        scan_ranges[index] =
-            ScanRange::from_parts(range.block_range().clone(), ScanPriority::Scanned);
-    } else {
-        panic!("scanned range not found!")
-    }
-    // TODO: also combine adjacent scanned ranges together
+fn process_scan_results<W>(
+    wallet: &mut W,
+    scan_range: ScanRange,
+    scan_results: ScanResults,
+) -> Result<(), ()>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
+{
+    update_wallet_data(wallet, scan_results).unwrap();
+    link_nullifiers(wallet).unwrap();
+    remove_irrelevant_data(wallet, &scan_range).unwrap();
+    mark_scanned(scan_range, wallet.get_sync_state_mut().unwrap()).unwrap();
 
     Ok(())
 }
@@ -230,6 +224,65 @@ where
     // TODO: pararellise shard tree, this is currently the bottleneck on sync
     wallet.update_shard_trees(shard_tree_data).unwrap();
     // TODO: add trait to save wallet data to persistance for in-memory wallets
+
+    Ok(())
+}
+
+fn link_nullifiers<W>(wallet: &mut W) -> Result<(), ()>
+where
+    W: SyncWallet + SyncTransactions + SyncNullifiers,
+{
+    let wallet_transactions = wallet.get_wallet_transactions().unwrap();
+    let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
+    let sapling_nullifiers = wallet_transactions
+        .values()
+        .flat_map(|tx| tx.sapling_notes())
+        .flat_map(|note| note.nullifier())
+        .collect::<Vec<_>>();
+    let orchard_nullifiers = wallet_transactions
+        .values()
+        .flat_map(|tx| tx.orchard_notes())
+        .flat_map(|note| note.nullifier())
+        .collect::<Vec<_>>();
+
+    let mut spend_locations = Vec::new();
+    let nullifier_map = wallet.get_nullifiers_mut().unwrap();
+    spend_locations.extend(
+        sapling_nullifiers
+            .iter()
+            .flat_map(|nf| nullifier_map.sapling_mut().remove(&nf)),
+    );
+    spend_locations.extend(
+        orchard_nullifiers
+            .iter()
+            .flat_map(|nf| nullifier_map.orchard_mut().remove(&nf)),
+    );
+
+    for (block_height, txid) in spend_locations {
+        // skip found spend if transaction already exists in the wallet
+        if wallet_txids.get(&txid).is_some() {
+            continue;
+        }
+
+        let scan_ranges = wallet.get_sync_state_mut().unwrap().scan_ranges_mut();
+        let (range_index, scan_range) = scan_ranges
+            .iter()
+            .enumerate()
+            .find(|(_, range)| range.block_range().contains(&block_height))
+            .expect("scan range should always exist for mapped nullifiers");
+
+        // if the scan range with the found spend is already scanned, the wallet blocks will already be stored and the transaction can be scanned
+        // if the scan range is currently being scanned (has `Ignored` priority), TODO: explain how the txid is stored for future scanning
+        // otherwise, create a scan range with `FoundNote` priority TODO: explain how txid is stored here also
+        if scan_range.priority() == ScanPriority::Scanned {
+            // TODO: scan tx
+        } else if scan_range.priority() == ScanPriority::Ignored {
+            // TODO: store txid for scanning
+        } else {
+            // TODO: store txid for scanning
+            // TODO: create found note range
+        }
+    }
 
     Ok(())
 }
@@ -272,6 +325,24 @@ where
         .unwrap()
         .orchard_mut()
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
+
+    Ok(())
+}
+
+fn mark_scanned(scan_range: ScanRange, sync_state: &mut SyncState) -> Result<(), ()> {
+    let scan_ranges = sync_state.scan_ranges_mut();
+
+    if let Some((index, range)) = scan_ranges
+        .iter()
+        .enumerate()
+        .find(|(_, range)| range.block_range() == scan_range.block_range())
+    {
+        scan_ranges[index] =
+            ScanRange::from_parts(range.block_range().clone(), ScanPriority::Scanned);
+    } else {
+        panic!("scanned range not found!")
+    }
+    // TODO: also combine adjacent scanned ranges together
 
     Ok(())
 }
