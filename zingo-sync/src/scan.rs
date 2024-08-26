@@ -1,59 +1,56 @@
 use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
+    cmp,
+    collections::{BTreeMap, HashMap, HashSet},
 };
 
 use incrementalmerkletree::{Position, Retention};
-use orchard::{keys::Scope, note_encryption::CompactAction, tree::MerkleHashOrchard};
+use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc;
 use zcash_client_backend::{
     data_api::scanning::ScanRange,
-    proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput},
-    scanning::ScanningKeys,
+    proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx},
 };
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     transaction::TxId,
-    zip32::AccountId,
 };
 
 use crate::{
     client::{self, get_compact_block_range, FetchRequest},
-    primitives::{OutputId, WalletCompactBlock},
+    keys::{KeyId, ScanningKeyOps, ScanningKeys},
+    primitives::{NullifierMap, OutputId, WalletBlock},
+    witness::ShardTreeData,
 };
 
 use self::runners::{BatchRunners, DecryptedOutput};
 
 pub(crate) mod runners;
+pub(crate) mod workers;
 
-type KeyId = (AccountId, Scope);
-
-struct InitialScanData<'a> {
-    previous_block: Option<&'a WalletCompactBlock>,
+struct InitialScanData {
+    previous_block: Option<WalletBlock>,
     sapling_initial_tree_size: u32,
     orchard_initial_tree_size: u32,
 }
 
-impl InitialScanData<'_> {
+impl InitialScanData {
     async fn new<P>(
-        fetch_request_sender: UnboundedSender<FetchRequest>,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: &P,
         first_block: &CompactBlock,
+        previous_wallet_block: Option<WalletBlock>,
     ) -> Result<Self, ()>
     where
-        P: Parameters + Send + 'static,
+        P: Parameters + Sync + Send + 'static,
     {
-        // TODO: get last block of adjacent lower scan range a.k.a. previous_block
-        let previous_block: Option<&WalletCompactBlock> = None;
-
         // gets initial tree size from previous block if available
         // otherwise, from first block if available
         // otherwise, fetches frontiers from server
         let (sapling_initial_tree_size, orchard_initial_tree_size) =
-            if let Some(prev) = previous_block {
+            if let Some(prev) = &previous_wallet_block {
                 (
                     prev.sapling_commitment_tree_size(),
                     prev.orchard_commitment_tree_size(),
@@ -91,7 +88,7 @@ impl InitialScanData<'_> {
                     .expect("should have some sapling activation height");
 
                 match first_block.height().cmp(&sapling_activation_height) {
-                    Ordering::Greater => {
+                    cmp::Ordering::Greater => {
                         let frontiers =
                             client::get_frontiers(fetch_request_sender, first_block.height() - 1)
                                 .await
@@ -101,27 +98,65 @@ impl InitialScanData<'_> {
                             frontiers.final_orchard_tree().tree_size() as u32,
                         )
                     }
-                    Ordering::Equal => (0, 0),
-                    Ordering::Less => panic!("pre-sapling not supported!"),
+                    cmp::Ordering::Equal => (0, 0),
+                    cmp::Ordering::Less => panic!("pre-sapling not supported!"),
                 }
             };
 
         Ok(InitialScanData {
-            previous_block,
+            previous_block: previous_wallet_block,
             sapling_initial_tree_size,
             orchard_initial_tree_size,
         })
     }
 }
 
+#[allow(dead_code)]
+struct ScanData {
+    pub(crate) nullifiers: NullifierMap,
+    pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub(crate) relevent_txids: HashSet<TxId>,
+    pub(crate) decrypted_note_data: DecryptedNoteData,
+    pub(crate) shard_tree_data: ShardTreeData,
+}
+
+pub(crate) struct ScanResults {
+    pub(crate) nullifiers: NullifierMap,
+    pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub(crate) shard_tree_data: ShardTreeData,
+}
+
+struct DecryptedNoteData {
+    sapling_nullifiers_and_positions: HashMap<OutputId, (sapling_crypto::Nullifier, Position)>,
+    orchard_nullifiers_and_positions: HashMap<OutputId, (orchard::note::Nullifier, Position)>,
+}
+
+impl DecryptedNoteData {
+    fn new() -> Self {
+        DecryptedNoteData {
+            sapling_nullifiers_and_positions: HashMap::new(),
+            orchard_nullifiers_and_positions: HashMap::new(),
+        }
+    }
+}
+
+impl Default for DecryptedNoteData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// scans a given range and returns all data relevent to the specified keys
+// `previous_wallet_block` is the block with height [scan_range.start - 1]
 pub(crate) async fn scan<P>(
-    fetch_request_sender: UnboundedSender<FetchRequest>,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
-    scanning_keys: &ScanningKeys<AccountId, KeyId>,
+    scanning_keys: &ScanningKeys,
     scan_range: ScanRange,
-) -> Result<(), ()>
+    previous_wallet_block: Option<WalletBlock>,
+) -> Result<ScanResults, ()>
 where
-    P: Parameters + Send + 'static,
+    P: Parameters + Sync + Send + 'static,
 {
     let compact_blocks = get_compact_block_range(
         fetch_request_sender.clone(),
@@ -136,26 +171,53 @@ where
         compact_blocks
             .first()
             .expect("compacts blocks should not be empty"),
+        previous_wallet_block,
     )
     .await
     .unwrap();
 
-    check_continuity(&compact_blocks, initial_scan_data.previous_block).unwrap();
+    let scan_data =
+        scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data).unwrap();
+
+    let ScanData {
+        nullifiers,
+        wallet_blocks,
+        relevent_txids: _,
+        decrypted_note_data: _,
+        shard_tree_data,
+    } = scan_data;
+
+    // TODO: scan transactions
+
+    Ok(ScanResults {
+        nullifiers,
+        wallet_blocks,
+        shard_tree_data,
+    })
+}
+
+#[allow(clippy::type_complexity)]
+fn scan_compact_blocks<P>(
+    compact_blocks: Vec<CompactBlock>,
+    parameters: &P,
+    scanning_keys: &ScanningKeys,
+    initial_scan_data: InitialScanData,
+) -> Result<ScanData, ()>
+where
+    P: Parameters + Sync + Send + 'static,
+{
+    check_continuity(&compact_blocks, initial_scan_data.previous_block.as_ref()).unwrap();
 
     let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
 
+    let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
+    let mut nullifiers = NullifierMap::new();
     let mut relevent_txids: HashSet<TxId> = HashSet::new();
-    let mut sapling_leaves_and_retentions: Vec<(Node, Retention<BlockHeight>)> = Vec::new();
-    let mut orchard_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)> =
-        Vec::new();
-    let mut sapling_nullifiers_and_positions: HashMap<
-        OutputId,
-        (sapling_crypto::Nullifier, Position),
-    > = HashMap::new();
-    let mut orchard_nullifiers_and_positions: HashMap<
-        OutputId,
-        (orchard::note::Nullifier, Position),
-    > = HashMap::new();
+    let mut decrypted_note_data = DecryptedNoteData::new();
+    let mut shard_tree_data = ShardTreeData::new(
+        Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
+        Position::from(u64::from(initial_scan_data.orchard_initial_tree_size)),
+    );
     let mut sapling_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_tree_size = initial_scan_data.orchard_initial_tree_size;
     for block in &compact_blocks {
@@ -180,7 +242,9 @@ where
             });
             // TODO: add outgoing outputs to relevent txids
 
-            sapling_leaves_and_retentions.extend(
+            collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
+
+            shard_tree_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
                     &transaction.outputs,
                     block.height(),
@@ -189,7 +253,7 @@ where
                 )
                 .unwrap(),
             );
-            orchard_leaves_and_retentions.extend(
+            shard_tree_data.orchard_leaves_and_retentions.extend(
                 calculate_orchard_leaves_and_retentions(
                     &transaction.actions,
                     block.height(),
@@ -203,13 +267,13 @@ where
                 sapling_tree_size,
                 scanning_keys.sapling(),
                 &incoming_sapling_outputs,
-                &mut sapling_nullifiers_and_positions,
+                &mut decrypted_note_data.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
                 orchard_tree_size,
                 scanning_keys.orchard(),
                 &incoming_orchard_outputs,
-                &mut orchard_nullifiers_and_positions,
+                &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );
 
             sapling_tree_size += u32::try_from(transaction.outputs.len())
@@ -217,24 +281,43 @@ where
             orchard_tree_size += u32::try_from(transaction.actions.len())
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
-        // TODO: check tree size matches chain_metadata if available
-    }
-    // TODO: map nullifiers and write compact blocks
 
-    Ok(())
+        let wallet_block = WalletBlock::from_parts(
+            block.height(),
+            block.hash(),
+            block.prev_hash(),
+            block.time,
+            block.vtx.iter().map(|tx| tx.txid()).collect(),
+            sapling_tree_size,
+            orchard_tree_size,
+        );
+
+        check_tree_size(block, &wallet_block).unwrap();
+
+        wallet_blocks.insert(wallet_block.block_height(), wallet_block);
+    }
+    // TODO: map nullifiers
+
+    Ok(ScanData {
+        nullifiers,
+        wallet_blocks,
+        relevent_txids,
+        decrypted_note_data,
+        shard_tree_data,
+    })
 }
 
 fn trial_decrypt<P>(
     parameters: &P,
-    scanning_keys: &ScanningKeys<AccountId, KeyId>,
+    scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
-) -> Result<BatchRunners<KeyId, (), ()>, ()>
+) -> Result<BatchRunners<(), ()>, ()>
 where
     P: Parameters + Send + 'static,
 {
     // TODO: add outgoing decryption
 
-    let mut runners = BatchRunners::<KeyId, (), ()>::for_keys(100, scanning_keys);
+    let mut runners = BatchRunners::<(), ()>::for_keys(100, scanning_keys);
     for block in compact_blocks {
         runners.add_block(parameters, block.clone()).unwrap();
     }
@@ -247,7 +330,7 @@ where
 // takes the last wallet compact block of the adjacent lower scan range, if available.
 fn check_continuity(
     compact_blocks: &[CompactBlock],
-    previous_compact_block: Option<&WalletCompactBlock>,
+    previous_compact_block: Option<&WalletBlock>,
 ) -> Result<(), ()> {
     let mut prev_height: Option<BlockHeight> = None;
     let mut prev_hash: Option<BlockHash> = None;
@@ -277,19 +360,36 @@ fn check_continuity(
     Ok(())
 }
 
-// calculates nullifiers and positions for a given compact transaction and insert into hash map
+fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
+    if let Some(chain_metadata) = &compact_block.chain_metadata {
+        if chain_metadata.sapling_commitment_tree_size
+            != wallet_block.sapling_commitment_tree_size()
+        {
+            panic!("sapling tree size is incorrect!")
+        }
+        if chain_metadata.orchard_commitment_tree_size
+            != wallet_block.orchard_commitment_tree_size()
+        {
+            panic!("orchard tree size is incorrect!")
+        }
+    }
+
+    Ok(())
+}
+
+// calculates nullifiers and positions of incoming decrypted outputs for a given compact transaction and insert into hash map
 // `tree_size` is the tree size of the corresponding shielded pool up to - and not including - the compact transaction
 // being processed
 fn calculate_nullifiers_and_positions<D, K, Nf>(
     tree_size: u32,
     keys: &HashMap<KeyId, K>,
-    incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
     nullifiers_and_positions: &mut HashMap<OutputId, (Nf, Position)>,
 ) where
     D: Domain,
-    K: zcash_client_backend::scanning::ScanningKeyOps<D, AccountId, Nf>,
+    K: ScanningKeyOps<D, Nf>,
 {
-    incoming_outputs
+    incoming_decrypted_outputs
         .iter()
         .for_each(|(output_id, incoming_output)| {
             let position = Position::from(u64::from(
@@ -311,9 +411,9 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
     outputs: &[CompactSaplingOutput],
     block_height: BlockHeight,
     last_outputs_in_block: bool,
-    decrypted_incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ()> {
-    let incoming_output_indices: Vec<usize> = decrypted_incoming_outputs
+    let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
         .keys()
         .copied()
         .map(|output_id| output_id.output_index())
@@ -355,9 +455,9 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     actions: &[CompactOrchardAction],
     block_height: BlockHeight,
     last_outputs_in_block: bool,
-    decrypted_incoming_outputs: &HashMap<OutputId, DecryptedOutput<KeyId, D, ()>>,
+    incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ()> {
-    let incoming_output_indices: Vec<usize> = decrypted_incoming_outputs
+    let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
         .keys()
         .copied()
         .map(|output_id| output_id.output_index())
@@ -393,4 +493,34 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
 
         Ok(leaves_and_retentions)
     }
+}
+
+// converts and adds the nullifiers from a compact transaction to the nullifier map
+fn collect_nullifiers(
+    nullifier_map: &mut NullifierMap,
+    block_height: BlockHeight,
+    transaction: &CompactTx,
+) -> Result<(), ()> {
+    transaction
+        .spends
+        .iter()
+        .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()).unwrap())
+        .for_each(|nullifier| {
+            nullifier_map
+                .sapling_mut()
+                .insert(nullifier, (block_height, transaction.txid()));
+        });
+    transaction
+        .actions
+        .iter()
+        .map(|action| {
+            orchard::note::Nullifier::from_bytes(action.nullifier.as_slice().try_into().unwrap())
+                .unwrap()
+        })
+        .for_each(|nullifier| {
+            nullifier_map
+                .orchard_mut()
+                .insert(nullifier, (block_height, transaction.txid()));
+        });
+    Ok(())
 }

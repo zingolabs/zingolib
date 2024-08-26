@@ -6,10 +6,36 @@ use crate::lightclient::LightClient;
 
 use super::super::LightWallet;
 
+use super::examples::ExampleMainnetWalletSeedCase;
 use super::examples::LegacyWalletCase;
 use super::examples::LegacyWalletCaseZingoV26;
 
-async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_addresses: usize) {
+#[tokio::test]
+async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
+    let _wallet =
+        LightWallet::load_example_wallet(super::examples::ExampleWalletNetworkCase::Mainnet(
+            ExampleMainnetWalletSeedCase::VTFCORFBCBPCTCFUPMEGMWBP(
+                super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersionCase::V28,
+            ),
+        ))
+        .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_mainnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
+    let _wallet =
+        LightWallet::load_example_wallet(super::examples::ExampleWalletNetworkCase::Testnet(
+            super::examples::ExampleTestnetWalletSeedCase::MSKMGDBHOTBPETCJWCSPGOPP(
+                super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersionCase::Gab72a38b,
+            ),
+        ))
+        .await;
+}
+
+async fn loaded_wallet_assert(
+    wallet: LightWallet,
+    expected_balance: u64,
+    expected_num_addresses: usize,
+) {
     let expected_mnemonic = (
         zcash_primitives::zip339::Mnemonic::from_phrase(
             crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
@@ -60,7 +86,7 @@ async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_ad
             .unwrap()
     );
 
-    assert_eq!(wc.addresses().len(), num_addresses);
+    assert_eq!(wc.addresses().len(), expected_num_addresses);
     for addr in wc.addresses().iter() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
@@ -95,7 +121,7 @@ async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64, num_ad
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
-    let _loaded_wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(
+    let _loaded_wallet = LightWallet::load_example_wallet_legacy(LegacyWalletCase::ZingoV26(
         LegacyWalletCaseZingoV26::RegtestSapOnly,
     ))
     .await;
@@ -116,14 +142,19 @@ async fn load_wallet_from_v26_dat_file() {
     // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
     // with 3 addresses containing all receivers.
     // including orchard and sapling transactions
-    let wallet =
-        LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One))
-            .await;
+    let case = LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One);
 
-    loaded_wallet_assert(wallet, 0, 3).await;
+    let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
+
+    loaded_wallet_assert(
+        wallet,
+        LightWallet::example_expected_balance(case.clone()),
+        LightWallet::example_expected_num_addresses(case),
+    )
+    .await;
 }
 
-#[ignore = "flakey test"]
+#[ignore = "test proves note has no index bug is a breaker"]
 #[tokio::test]
 async fn load_wallet_from_v26_2_dat_file() {
     // We test that the LightWallet can be read from v26 .dat file
@@ -139,22 +170,34 @@ async fn load_wallet_from_v26_2_dat_file() {
     // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
     // with 3 addresses containing all receivers.
     // including orchard and sapling transactions
-    let wallet =
-        LightWallet::load_example_wallet(LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two))
-            .await;
+    let case = LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two);
 
-    loaded_wallet_assert(wallet, 10177826, 1).await;
+    let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
+
+    loaded_wallet_assert(
+        wallet,
+        LightWallet::example_expected_balance(case.clone()),
+        LightWallet::example_expected_num_addresses(case),
+    )
+    .await;
 }
 
-#[ignore = "flakey test"]
+#[ignore = "test fails because ZFZ panics in regtest"]
 #[tokio::test]
 async fn load_wallet_from_v28_dat_file() {
     // We test that the LightWallet can be read from v28 .dat file
     // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
     // with 3 addresses containing all receivers.
-    let wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV28).await;
+    let case = LegacyWalletCase::ZingoV28;
 
-    loaded_wallet_assert(wallet, 10342837, 3).await;
+    let wallet = LightWallet::load_example_wallet_legacy(case.clone()).await;
+
+    loaded_wallet_assert(
+        wallet,
+        LightWallet::example_expected_balance(case.clone()),
+        LightWallet::example_expected_num_addresses(case),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -173,7 +216,7 @@ async fn reload_wallet_from_buffer() {
     // --birthday 0
     // --nosync
     // with 3 addresses containing all receivers.
-    let mid_wallet = LightWallet::load_example_wallet(LegacyWalletCase::ZingoV28).await;
+    let mid_wallet = LightWallet::load_example_wallet_legacy(LegacyWalletCase::ZingoV28).await;
 
     let mid_client = LightClient::create_from_wallet_async(mid_wallet)
         .await
