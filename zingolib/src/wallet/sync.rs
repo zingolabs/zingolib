@@ -68,6 +68,15 @@ impl SyncBlocks for LightWallet {
 }
 
 impl SyncTransactions for LightWallet {
+    fn get_wallet_transactions(
+        &self,
+    ) -> Result<
+        &HashMap<zcash_primitives::transaction::TxId, zingo_sync::primitives::WalletTransaction>,
+        Self::Error,
+    > {
+        Ok(self.wallet_transactions())
+    }
+
     fn get_wallet_transactions_mut(
         &mut self,
     ) -> Result<
