@@ -152,7 +152,7 @@ mod fast {
         let value_transfers = &recipient.value_transfers().await;
 
         dbg!(value_transfers);
-        
+
         assert!(value_transfers
             .iter()
             .any(|vt| vt.kind() == ValueTransferKind::SendToSelf));
