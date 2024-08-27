@@ -120,10 +120,10 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| transaction.status.is_confirmed()),
-            Box::new(|nnmd, _| !nnmd.pending_receipt()),
-        ];
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
+            &[Box::new(|nnmd, transaction| {
+                transaction.status.is_confirmed() && !nnmd.pending_receipt()
+            })];
         self.get_filtered_balance::<D>(filters).await
     }
     /// The amount in pending notes, not yet on chain
@@ -144,11 +144,12 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| transaction.status.is_confirmed()),
-            Box::new(|note, _| !note.pending_receipt()),
-            Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
-        ];
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
+            &[Box::new(|note, transaction| {
+                transaction.status.is_confirmed()
+                    && !note.pending_receipt()
+                    && note.value() >= MARGINAL_FEE.into_u64()
+            })];
         self.get_filtered_balance::<D>(filters).await
     }
 
