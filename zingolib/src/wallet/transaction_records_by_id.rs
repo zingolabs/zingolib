@@ -23,6 +23,7 @@ use zcash_primitives::consensus::BlockHeight;
 
 use crate::config::{
     ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+    ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
 };
 use zcash_primitives::transaction::TxId;
 
@@ -383,7 +384,7 @@ impl TransactionRecordsById {
     ) -> TransactionKind {
         let zfz_address = match chain {
             ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
-            ChainType::Testnet => unimplemented!(),
+            ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
             ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         };
 
