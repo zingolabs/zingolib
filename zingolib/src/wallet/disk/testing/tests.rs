@@ -39,7 +39,13 @@ async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
     )))
     .await;
 
-    loaded_wallet_assert(wallet, 10342837, 3).await;
+    loaded_wallet_assert(
+        wallet,
+        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+        10342837,
+        3,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -56,7 +62,13 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     )))
     .await;
 
-    loaded_wallet_assert(wallet, 0, 3).await;
+    loaded_wallet_assert(
+        wallet,
+        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+        0,
+        3,
+    )
+    .await;
 }
 #[ignore = "test proves note has no index bug is a breaker"]
 #[tokio::test]
@@ -66,7 +78,13 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
     )))
     .await;
 
-    loaded_wallet_assert(wallet, 10177826, 1).await;
+    loaded_wallet_assert(
+        wallet,
+        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+        10177826,
+        1,
+    )
+    .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
@@ -85,14 +103,12 @@ async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
 
 async fn loaded_wallet_assert(
     wallet: LightWallet,
+    expected_seed_phrase: String,
     expected_balance: u64,
     expected_num_addresses: usize,
 ) {
     let expected_mnemonic = (
-        zcash_primitives::zip339::Mnemonic::from_phrase(
-            crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
-        )
-        .unwrap(),
+        zcash_primitives::zip339::Mnemonic::from_phrase(expected_seed_phrase).unwrap(),
         0,
     );
     assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
