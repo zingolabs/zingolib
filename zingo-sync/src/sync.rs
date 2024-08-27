@@ -22,6 +22,7 @@ use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 use futures::future::try_join_all;
 use tokio::sync::mpsc;
 
+// TODO; replace fixed batches with orchard shard ranges (block ranges containing all note commitments to an orchard shard or fragment of a shard)
 const BATCH_SIZE: u32 = 10;
 // const BATCH_SIZE: u32 = 1_000;
 
@@ -250,41 +251,111 @@ where
     spend_locations.extend(
         sapling_nullifiers
             .iter()
-            .flat_map(|nf| nullifier_map.sapling_mut().remove(&nf)),
+            .flat_map(|nf| nullifier_map.sapling_mut().remove(nf)),
     );
     spend_locations.extend(
         orchard_nullifiers
             .iter()
-            .flat_map(|nf| nullifier_map.orchard_mut().remove(&nf)),
+            .flat_map(|nf| nullifier_map.orchard_mut().remove(nf)),
     );
 
+    let sync_state = wallet.get_sync_state_mut().unwrap();
     for (block_height, txid) in spend_locations {
-        // skip found spend if transaction already exists in the wallet
-        if wallet_txids.get(&txid).is_some() {
+        // skip if transaction already exists in the wallet
+        if wallet_txids.contains(&txid) {
             continue;
         }
 
-        let scan_ranges = wallet.get_sync_state_mut().unwrap().scan_ranges_mut();
-        let (range_index, scan_range) = scan_ranges
-            .iter()
-            .enumerate()
-            .find(|(_, range)| range.block_range().contains(&block_height))
-            .expect("scan range should always exist for mapped nullifiers");
-
-        // if the scan range with the found spend is already scanned, the wallet blocks will already be stored and the transaction can be scanned
-        // if the scan range is currently being scanned (has `Ignored` priority), TODO: explain how the txid is stored for future scanning
-        // otherwise, create a scan range with `FoundNote` priority TODO: explain how txid is stored here also
-        if scan_range.priority() == ScanPriority::Scanned {
-            // TODO: scan tx
-        } else if scan_range.priority() == ScanPriority::Ignored {
-            // TODO: store txid for scanning
-        } else {
-            // TODO: store txid for scanning
-            // TODO: create found note range
-        }
+        sync_state.spend_locations_mut().push((block_height, txid));
+        update_scan_priority(sync_state, block_height, ScanPriority::FoundNote);
     }
 
     Ok(())
+}
+
+/// Splits out a scan range surrounding a given block height with the specified priority
+fn update_scan_priority(
+    sync_state: &mut SyncState,
+    block_height: BlockHeight,
+    scan_priority: ScanPriority,
+) {
+    let (index, scan_range) = sync_state
+        .scan_ranges()
+        .iter()
+        .enumerate()
+        .find(|(_, range)| range.block_range().contains(&block_height))
+        .expect("scan range should always exist for mapped nullifiers");
+
+    // Skip if the given block height is within a range that is scanned or being scanning
+    if scan_range.priority() == ScanPriority::Scanned
+        || scan_range.priority() == ScanPriority::Ignored
+    {
+        return;
+    }
+
+    let new_block_range = determine_block_range(block_height);
+    let split_ranges = split_out_scan_range(scan_range, new_block_range, scan_priority);
+    sync_state
+        .scan_ranges_mut()
+        .splice(index..=index, split_ranges);
+}
+
+/// Determines which range of blocks should be scanned for a given block height
+fn determine_block_range(block_height: BlockHeight) -> Range<BlockHeight> {
+    let start = block_height - (u32::from(block_height) % BATCH_SIZE); // TODO: will be replaced with first block of associated orchard shard
+    let end = start + BATCH_SIZE; // TODO: will be replaced with last block of associated orchard shard
+    Range { start, end }
+}
+
+/// Takes a scan range and splits it at [block_range.start] and [block_range.end], returning a vec of scan ranges where
+/// the scan range with the specified [block_range] has the given [scan_priority].
+///
+/// If [block_range] goes beyond the bounds of [scan_range.block_range()] no splitting will occur at the upper and/or
+/// lower bound but the priority will still be updated
+///
+/// Panics if no blocks in [block_range] are contained within [scan_range.block_range()]
+fn split_out_scan_range(
+    scan_range: &ScanRange,
+    block_range: Range<BlockHeight>,
+    scan_priority: ScanPriority,
+) -> Vec<ScanRange> {
+    let mut split_ranges = Vec::new();
+    if let Some((lower_range, higher_range)) = scan_range.split_at(block_range.start) {
+        split_ranges.push(lower_range);
+        if let Some((middle_range, higher_range)) = higher_range.split_at(block_range.end) {
+            // [scan_range] is split at the upper and lower bound of [block_range]
+            split_ranges.push(ScanRange::from_parts(
+                middle_range.block_range().clone(),
+                scan_priority,
+            ));
+            split_ranges.push(higher_range);
+        } else {
+            // [scan_range] is split only at the lower bound of [block_range]
+            split_ranges.push(ScanRange::from_parts(
+                higher_range.block_range().clone(),
+                scan_priority,
+            ));
+        }
+    } else if let Some((lower_range, higher_range)) = scan_range.split_at(block_range.end) {
+        // [scan_range] is split only at the upper bound of [block_range]
+        split_ranges.push(ScanRange::from_parts(
+            lower_range.block_range().clone(),
+            scan_priority,
+        ));
+        split_ranges.push(higher_range);
+    } else {
+        // [scan_range] is not split as it is fully contained within [block_range]
+        // only scan priority is updated
+        assert!(scan_range.block_range().start >= block_range.start);
+        assert!(scan_range.block_range().end <= block_range.end);
+
+        split_ranges.push(ScanRange::from_parts(
+            scan_range.block_range().clone(),
+            scan_priority,
+        ));
+    };
+
+    split_ranges
 }
 
 fn remove_irrelevant_data<W>(wallet: &mut W, scan_range: &ScanRange) -> Result<(), ()>
