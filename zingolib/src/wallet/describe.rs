@@ -36,7 +36,7 @@ impl LightWallet {
     #[allow(clippy::type_complexity)]
     async fn get_filtered_balance<D>(
         &self,
-        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
+        filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>,
     ) -> Option<u64>
     where
         D: DomainWalletExt,
@@ -67,10 +67,8 @@ impl LightWallet {
                     let mut selected_notes: Box<dyn Iterator<Item = &D::WalletNote>> =
                         Box::new(D::WalletNote::transaction_metadata_notes(transaction).iter());
                     // All filters in iterator are applied, by this loop
-                    for filtering_fn in filters {
-                        selected_notes =
-                            Box::new(selected_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
-                    }
+                    selected_notes =
+                        Box::new(selected_notes.filter(|nnmd| filter_function(nnmd, transaction)));
                     selected_notes
                         .map(|notedata| {
                             if notedata.spending_tx_status().is_none() {
@@ -120,11 +118,11 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
-            &[Box::new(|nnmd, transaction| {
+        let filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool> =
+            Box::new(|nnmd, transaction| {
                 transaction.status.is_confirmed() && !nnmd.pending_receipt()
-            })];
-        self.get_filtered_balance::<D>(filters).await
+            });
+        self.get_filtered_balance::<D>(filter_function).await
     }
     /// The amount in pending notes, not yet on chain
     pub async fn pending_balance<D: DomainWalletExt>(&self) -> Option<u64>
@@ -132,7 +130,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        self.get_filtered_balance::<D>(&[Box::new(|note, _| note.pending_receipt())])
+        self.get_filtered_balance::<D>(Box::new(|note, _| note.pending_receipt()))
             .await
     }
 
@@ -144,13 +142,13 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] =
-            &[Box::new(|note, transaction| {
+        let filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool> =
+            Box::new(|note, transaction| {
                 transaction.status.is_confirmed()
                     && !note.pending_receipt()
                     && note.value() >= MARGINAL_FEE.into_u64()
-            })];
-        self.get_filtered_balance::<D>(filters).await
+            });
+        self.get_filtered_balance::<D>(filter_function).await
     }
 
     /// Returns total balance of all shielded pools excluding any notes with value less than marginal fee
