@@ -11,12 +11,12 @@ use super::examples::ExampleWalletNetwork::Regtest;
 use super::examples::ExampleWalletNetwork::Testnet;
 
 use super::examples::ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP;
-use super::examples::ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA;
+// use super::examples::ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA;
 use super::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT;
 use super::examples::ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR;
 use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
 
-use super::examples::ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion;
+// use super::examples::ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion;
 use super::examples::ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion;
 use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion;
 use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion;
@@ -31,22 +31,22 @@ async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
     )))
     .await;
 }
-#[ignore = "test fails because ZFZ panics in regtest"]
-#[tokio::test]
-async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
-    let wallet = LightWallet::load_example_wallet(Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
-        ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion::V26,
-    )))
-    .await;
+// #[ignore = "test fails because ZFZ panics in regtest"]
+// #[tokio::test]
+// async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
+//     let wallet = LightWallet::load_example_wallet(Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
+//         ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion::V26,
+//     )))
+//     .await;
 
-    loaded_wallet_assert(
-        wallet,
-        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
-        10342837,
-        3,
-    )
-    .await;
-}
+//     loaded_wallet_assert(
+//         wallet,
+//         crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
+//         10342837,
+//         3,
+//     )
+//     .await;
+// }
 
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
@@ -62,30 +62,31 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     )))
     .await;
 
-    loaded_wallet_assert(
-        wallet,
+    assert_wallet_capability_matches_seed_address_number(
+        &wallet,
         crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
-        0,
         3,
     )
     .await;
-}
-#[ignore = "test proves note has no index bug is a breaker"]
-#[tokio::test]
-async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
-    let wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V27,
-    )))
-    .await;
 
-    loaded_wallet_assert(
-        wallet,
-        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
-        10177826,
-        1,
-    )
-    .await;
+    loaded_wallet_assert(wallet, 0).await;
 }
+// #[ignore = "test proves note has no index bug is a breaker"]
+// #[tokio::test]
+// async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
+//     let wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
+//         ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V27,
+//     )))
+//     .await;
+
+//     loaded_wallet_assert(
+//         wallet,
+//         crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+//         10177826,
+//         1,
+//     )
+//     .await;
+// }
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
     let _wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
@@ -101,10 +102,9 @@ async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
     .await;
 }
 
-async fn loaded_wallet_assert(
-    wallet: LightWallet,
+async fn assert_wallet_capability_matches_seed_address_number(
+    wallet: &LightWallet,
     expected_seed_phrase: String,
-    expected_balance: u64,
     expected_num_addresses: usize,
 ) {
     let expected_mnemonic = (
@@ -160,7 +160,9 @@ async fn loaded_wallet_assert(
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());
     }
+}
 
+async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64) {
     let client = crate::lightclient::LightClient::create_from_wallet_async(wallet)
         .await
         .unwrap();
@@ -185,6 +187,7 @@ async fn loaded_wallet_assert(
         .await
         .unwrap();
     }
+    dbg!(client.do_seed_phrase().await.unwrap());
 }
 
 #[tokio::test]
