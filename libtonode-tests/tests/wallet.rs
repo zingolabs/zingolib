@@ -17,6 +17,7 @@ mod load_wallet {
     use zingolib::testutils::paths::get_cargo_manifest_dir;
     use zingolib::testutils::scenarios;
     use zingolib::utils;
+    use zingolib::wallet::disk::testing::examples;
     use zingolib::wallet::LightWallet;
 
     #[tokio::test]
@@ -73,9 +74,11 @@ mod load_wallet {
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
 
-        let wallet = LightWallet::load_example_wallet_legacy(
-            zingolib::wallet::disk::testing::examples::LegacyWalletCase::OldWalletReorgTestWallet,
-        )
+        let wallet = LightWallet::load_example_wallet(examples::ExampleWalletNetwork::Regtest(
+            examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
+                examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
+            ),
+        ))
         .await;
 
         // let wallet = zingolib::testutils::load_wallet(
