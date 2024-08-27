@@ -249,7 +249,7 @@ pub mod send_with_proposal {
     mod tests {
 
         #[tokio::test]
-        async fn complete_and_broadcast() {
+        async fn complete_and_broadcast_unconnected_error() {
             use crate::{
                 config::ZingoConfigBuilder,
                 lightclient::{send::send_with_proposal::CompleteAndBroadcastError, LightClient},
