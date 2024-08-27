@@ -247,6 +247,16 @@ pub mod send_with_proposal {
 
     #[cfg(all(test, feature = "testvectors"))]
     mod tests {
+        use crate::{
+            lightclient::LightClient,
+            wallet::{
+                disk::testing::examples::{
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion, ExampleTestnetWalletSeed,
+                    ExampleWalletNetwork,
+                },
+                LightWallet,
+            },
+        };
 
         #[tokio::test]
         async fn complete_and_broadcast_unconnected_error() {
@@ -274,6 +284,19 @@ pub mod send_with_proposal {
                     .unwrap_err()
                     .to_string(),
             );
+        }
+
+        #[ignore]
+        #[tokio::test]
+        async fn sync_testnet() {
+            let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
+                ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b,
+                ),
+            ))
+            .await;
+            let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+            let _ = lc.do_sync(true).await;
         }
     }
 }
