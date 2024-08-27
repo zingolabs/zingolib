@@ -1,7 +1,6 @@
 use zcash_address::unified::Encoding;
 use zcash_primitives::zip339::Mnemonic;
 
-use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 
 use super::super::LightWallet;
@@ -69,7 +68,10 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     )
     .await;
 
-    loaded_wallet_assert(wallet, 0).await;
+    let orchard_balance = wallet
+        .get_filtered_balance::<orchard::note_encryption::OrchardDomain>(Box::new(|_, _| true))
+        .await;
+    assert_eq!(orchard_balance, Some(0));
 }
 // #[ignore = "test proves note has no index bug is a breaker"]
 // #[tokio::test]
@@ -160,34 +162,6 @@ async fn assert_wallet_capability_matches_seed_address_number(
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());
     }
-}
-
-async fn loaded_wallet_assert(wallet: LightWallet, expected_balance: u64) {
-    let client = crate::lightclient::LightClient::create_from_wallet_async(wallet)
-        .await
-        .unwrap();
-    let balance = client.do_balance().await;
-    assert_eq!(balance.orchard_balance, Some(expected_balance));
-    if expected_balance > 0 {
-        let _ = crate::testutils::lightclient::from_inputs::quick_send(
-            &client,
-            vec![(&get_base_address_macro!(client, "sapling"), 11011, None)],
-        )
-        .await
-        .unwrap();
-        let _ = client.do_sync(true).await.unwrap();
-        let _ = crate::testutils::lightclient::from_inputs::quick_send(
-            &client,
-            vec![(
-                &crate::get_base_address_macro!(client, "transparent"),
-                28000,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-    }
-    dbg!(client.do_seed_phrase().await.unwrap());
 }
 
 #[tokio::test]
