@@ -55,6 +55,25 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
     .await;
 }
 #[tokio::test]
+async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
+    let wallet = LightWallet::load_example_wallet(Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
+        ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::G93738061a,
+    )))
+    .await;
+
+    // assert_wallet_capability_matches_seed_address_number(
+    //     &wallet,
+    //     "msk i i i i i i i i  i i i i ".to_string(),
+    //     4,
+    // )
+    // .await;
+
+    let orchard_balance = wallet
+        .get_filtered_balance::<orchard::note_encryption::OrchardDomain>(Box::new(|_, _| true))
+        .await;
+    assert_eq!(orchard_balance, Some(61988834));
+}
+#[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     let wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V26,
