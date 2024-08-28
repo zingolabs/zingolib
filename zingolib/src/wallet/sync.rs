@@ -8,8 +8,8 @@ use std::{
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zingo_sync::{
-    interface::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncWallet},
     primitives::{NullifierMap, SyncState, WalletBlock},
+    traits::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncTransactions, SyncWallet},
     witness::ShardTrees,
 };
 use zip32::AccountId;
@@ -22,6 +22,10 @@ impl SyncWallet for LightWallet {
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
         let birthday = self.birthday.load(atomic::Ordering::Relaxed);
         Ok(BlockHeight::from_u32(birthday as u32))
+    }
+
+    fn get_sync_state(&self) -> Result<&SyncState, Self::Error> {
+        Ok(self.sync_state())
     }
 
     fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error> {
@@ -61,31 +65,34 @@ impl SyncBlocks for LightWallet {
     ) -> Result<&mut BTreeMap<BlockHeight, WalletBlock>, Self::Error> {
         Ok(self.wallet_blocks_mut())
     }
+}
 
-    fn append_wallet_blocks(
+impl SyncTransactions for LightWallet {
+    fn get_wallet_transactions(
+        &self,
+    ) -> Result<
+        &HashMap<zcash_primitives::transaction::TxId, zingo_sync::primitives::WalletTransaction>,
+        Self::Error,
+    > {
+        Ok(self.wallet_transactions())
+    }
+
+    fn get_wallet_transactions_mut(
         &mut self,
-        mut wallet_compact_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    ) -> Result<(), Self::Error> {
-        self.wallet_blocks.append(&mut wallet_compact_blocks);
-
-        Ok(())
+    ) -> Result<
+        &mut HashMap<
+            zcash_primitives::transaction::TxId,
+            zingo_sync::primitives::WalletTransaction,
+        >,
+        Self::Error,
+    > {
+        Ok(self.wallet_transactions_mut())
     }
 }
 
 impl SyncNullifiers for LightWallet {
     fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, ()> {
         Ok(self.nullifier_map_mut())
-    }
-
-    fn append_nullifiers(&mut self, mut nullifier_map: NullifierMap) -> Result<(), Self::Error> {
-        self.nullifier_map
-            .sapling_mut()
-            .append(nullifier_map.sapling_mut());
-        self.nullifier_map
-            .orchard_mut()
-            .append(nullifier_map.orchard_mut());
-
-        Ok(())
     }
 }
 

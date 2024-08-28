@@ -12,7 +12,7 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{consensus::Parameters, zip32::AccountId};
 
-use crate::{client::FetchRequest, keys::ScanningKeys, primitives::WalletBlock};
+use crate::{client::FetchRequest, primitives::WalletBlock};
 
 use super::{scan, ScanResults};
 
@@ -74,7 +74,7 @@ where
 
     pub(crate) fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
         if let Some(worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
-            worker.add_scan_task(scan_task);
+            worker.add_scan_task(scan_task).unwrap();
         } else {
             panic!("no idle workers!")
         }
@@ -94,8 +94,10 @@ impl WorkerHandle {
         self.is_scanning.load(atomic::Ordering::Acquire)
     }
 
-    fn add_scan_task(&self, scan_task: ScanTask) {
+    fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
         self.scan_task_sender.send(scan_task).unwrap();
+
+        Ok(())
     }
 }
 
@@ -105,7 +107,7 @@ struct ScanWorker<P> {
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
-    scanning_keys: ScanningKeys,
+    ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
 }
 
 impl<P> ScanWorker<P>
@@ -119,14 +121,13 @@ where
         parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
     ) -> Self {
-        let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
         Self {
             is_scanning: Arc::new(AtomicBool::new(false)),
             scan_task_receiver,
             scan_results_sender,
             fetch_request_sender,
             parameters,
-            scanning_keys,
+            ufvks,
         }
     }
 
@@ -137,7 +138,7 @@ where
             let scan_results = scan(
                 self.fetch_request_sender.clone(),
                 &self.parameters.clone(),
-                &self.scanning_keys,
+                &self.ufvks,
                 scan_task.scan_range.clone(),
                 scan_task.previous_wallet_block,
             )
