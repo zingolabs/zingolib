@@ -3,9 +3,14 @@ use crate::wallet::now;
 
 use futures::Future;
 
+use hdwallet::traits::Deserialize as _;
 use log::error;
+use zcash_client_backend::proposal::Proposal;
+use zcash_keys::keys::UnifiedSpendingKey;
+use zcash_primitives::transaction::builder::BuildResult;
 
 use std::cmp;
+use std::ops::DerefMut as _;
 
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::Address;
@@ -89,6 +94,80 @@ impl LightWallet {
     /// Get the current sending status.
     pub async fn get_send_progress(&self) -> SendProgress {
         self.send_progress.read().await.clone()
+    }
+
+    pub(crate) async fn build_transaction<NoteRef>(
+        &self,
+        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        submission_height: BlockHeight,
+    ) -> Result<BuildResult, crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError>
+    {
+        if self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees()
+            .is_none()
+        {
+            return Err(crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::NoSpendCapability);
+        }
+
+        // Reset the progress to start. Any errors will get recorded here
+        self.reset_send_progress().await;
+
+        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) = crate::wallet::utils::read_sapling_params().map_err(
+            crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::SaplingParams,
+        )?;
+        let sapling_prover =
+            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let unified_spend_key =
+            UnifiedSpendingKey::try_from(self.wallet_capability().as_ref())
+                .map_err(crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::UnifiedSpendKey)?;
+
+        // We don't support zip320 yet. Only one step.
+        if proposal.steps().len() != 1 {
+            return Err(crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::ExchangeAddressesNotSupported);
+        }
+
+        let step = proposal.steps().first();
+
+        // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
+        // transparent key it contains is not the account spending key, but the
+        // externally-scoped derivative key. The goal is to fix this, but in the
+        // interim we use this special-case logic.
+        fn usk_to_tkey(
+            unified_spend_key: &UnifiedSpendingKey,
+            t_metadata: &zcash_client_backend::wallet::TransparentAddressMetadata,
+        ) -> secp256k1::SecretKey {
+            hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
+                .expect("This a hack to do a type conversion, and will not fail")
+                .derive_private_key(t_metadata.address_index().into())
+                // This is unwrapped in librustzcash, so I'm not too worried about it
+                .expect("private key derivation failed")
+                .private_key
+        }
+
+        Ok(
+            zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
+                self.transaction_context
+                    .transaction_metadata_set
+                    .write()
+                    .await
+                    .deref_mut(),
+                &self.transaction_context.config.chain,
+                &sapling_prover,
+                &sapling_prover,
+                &unified_spend_key,
+                zcash_client_backend::wallet::OvkPolicy::Sender,
+                proposal.fee_rule(),
+                proposal.min_target_height(),
+                &[],
+                step,
+                Some(usk_to_tkey),
+                Some(self.wallet_capability().first_sapling_address()),
+            )?,
+        )
     }
 
     pub(crate) async fn send_to_addresses_inner<F, Fut>(
