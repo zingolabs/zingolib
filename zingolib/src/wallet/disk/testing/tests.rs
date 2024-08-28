@@ -128,6 +128,9 @@ async fn assert_wallet_capability_matches_seed_address_number(
     expected_seed_phrase: String,
     expected_num_addresses: usize,
 ) {
+    let actual_seed_phrase = wallet.get_seed_phrase().await.unwrap();
+    assert_eq!(expected_seed_phrase, actual_seed_phrase);
+
     let expected_mnemonic = (
         zcash_primitives::zip339::Mnemonic::from_phrase(expected_seed_phrase).unwrap(),
         0,
