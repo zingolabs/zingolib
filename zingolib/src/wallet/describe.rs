@@ -284,6 +284,15 @@ impl LightWallet {
     pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
         self.transaction_context.transaction_metadata_set.clone()
     }
+
+    /// lists the transparent addresses known by the wallet.
+    pub fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
+        self.wallet_capability()
+            .transparent_child_addresses()
+            .iter()
+            .map(|(_index, sk)| *sk)
+            .collect::<Vec<_>>()
+    }
 }
 
 #[cfg(test)]

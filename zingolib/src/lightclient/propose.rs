@@ -180,7 +180,7 @@ impl LightClient {
             &input_selector,
             // don't shield dust
             NonNegativeAmount::const_from_u64(10_000),
-            &self.get_transparent_addresses(),
+            &self.wallet.get_transparent_addresses(),
             // review! do we want to require confirmations?
             // make it configurable?
             0,
@@ -287,15 +287,6 @@ impl LightClient {
                 required: shortfall,
             },
         ))
-    }
-
-    fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
-        self.wallet
-            .wallet_capability()
-            .transparent_child_addresses()
-            .iter()
-            .map(|(_index, sk)| *sk)
-            .collect::<Vec<_>>()
     }
 
     /// Creates and stores a proposal for shielding all transparent funds..
