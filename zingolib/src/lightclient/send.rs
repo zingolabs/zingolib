@@ -42,10 +42,9 @@ pub mod send_with_proposal {
     use zcash_proofs::prover::LocalTxProver;
 
     use crate::lightclient::LightClient;
-    use crate::{
-        lightclient::propose::{ProposeSendError, ProposeShieldError},
-        wallet::utils::read_sapling_params,
-    };
+    use crate::wallet::propose::ProposeSendError;
+    use crate::wallet::propose::ProposeShieldError;
+    use crate::wallet::utils::read_sapling_params;
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
