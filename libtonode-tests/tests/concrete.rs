@@ -11,11 +11,11 @@ use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::{consensus::BlockHeight, transaction::fees::zip317::MINIMUM_FEE};
-use zingolib::lightclient::propose::ProposeSendError;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{build_fvk_client, increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::data::summaries::TransactionSummaryInterface;
+use zingolib::wallet::propose::ProposeSendError;
 use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
 
 use zingolib::config::{ChainType, RegtestNetwork, MAX_REORG};

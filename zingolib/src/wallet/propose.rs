@@ -1,3 +1,5 @@
+//! creating proposals from wallet data
+
 use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut as _};
 
 use thiserror::Error;
