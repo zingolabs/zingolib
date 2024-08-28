@@ -95,12 +95,43 @@ impl LightWallet {
     pub async fn get_send_progress(&self) -> SendProgress {
         self.send_progress.read().await.clone()
     }
+}
 
+use thiserror::Error;
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, Error)]
+pub enum BuildTransactionError {
+    #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
+    NoSpendCapability,
+    #[error("No proposal. Call do_propose first.")]
+    NoProposal,
+    #[error("Cant get submission height. Server connection?: {0:?}")]
+    SubmissionHeight(String),
+    #[error("Could not load sapling_params: {0:?}")]
+    SaplingParams(String),
+    #[error("Could not find UnifiedSpendKey: {0:?}")]
+    UnifiedSpendKey(std::io::Error),
+    #[error("Can't Calculate {0:?}")]
+    Calculation(
+        #[from]
+        zcash_client_backend::data_api::error::Error<
+            crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+            std::convert::Infallible,
+            std::convert::Infallible,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+        >,
+    ),
+    #[error("Broadcast failed: {0:?}")]
+    Broadcast(String),
+    #[error("Sending to exchange addresses is not supported yet!")]
+    ExchangeAddressesNotSupported,
+}
+
+impl LightWallet {
     pub(crate) async fn build_transaction<NoteRef>(
         &self,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<BuildResult, crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError>
-    {
+    ) -> Result<BuildResult, BuildTransactionError> {
         if self
             .transaction_context
             .transaction_metadata_set
@@ -109,24 +140,23 @@ impl LightWallet {
             .witness_trees()
             .is_none()
         {
-            return Err(crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::NoSpendCapability);
+            return Err(BuildTransactionError::NoSpendCapability);
         }
 
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
 
-        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) = crate::wallet::utils::read_sapling_params().map_err(
-            crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::SaplingParams,
-        )?;
+        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+            crate::wallet::utils::read_sapling_params()
+                .map_err(BuildTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-        let unified_spend_key =
-            UnifiedSpendingKey::try_from(self.wallet_capability().as_ref())
-                .map_err(crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::UnifiedSpendKey)?;
+        let unified_spend_key = UnifiedSpendingKey::try_from(self.wallet_capability().as_ref())
+            .map_err(BuildTransactionError::UnifiedSpendKey)?;
 
         // We don't support zip320 yet. Only one step.
         if proposal.steps().len() != 1 {
-            return Err(crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError::ExchangeAddressesNotSupported);
+            return Err(BuildTransactionError::ExchangeAddressesNotSupported);
         }
 
         let step = proposal.steps().first();
