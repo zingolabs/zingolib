@@ -46,8 +46,6 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastError {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
-        NoSpendCapability,
         #[error("No proposal. Call do_propose first.")]
         NoProposal,
         #[error("Cant get submission height. Server connection?: {0:?}")]
