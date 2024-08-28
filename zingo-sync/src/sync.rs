@@ -23,6 +23,7 @@ use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use futures::future::try_join_all;
 use tokio::sync::mpsc;
+use zcash_primitives::transaction::TxId;
 
 // TODO; replace fixed batches with orchard shard ranges (block ranges containing all note commitments to an orchard shard or fragment of a shard)
 const BATCH_SIZE: u32 = 10;
@@ -271,6 +272,7 @@ where
     P: Parameters,
     W: SyncBlocks + SyncTransactions + SyncNullifiers,
 {
+    // locate spends
     let wallet_transactions = wallet.get_wallet_transactions().unwrap();
     let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
     let sapling_nullifiers = wallet_transactions
@@ -284,23 +286,25 @@ where
         .flat_map(|note| note.nullifier())
         .collect::<Vec<_>>();
 
-    let mut spend_locators = Vec::new();
     let nullifier_map = wallet.get_nullifiers_mut().unwrap();
-    spend_locators.extend(
+    let sapling_spend_locators: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)> =
         sapling_nullifiers
             .iter()
-            .flat_map(|nf| nullifier_map.sapling_mut().remove(nf)),
-    );
-    spend_locators.extend(
+            .flat_map(|nf| nullifier_map.sapling_mut().remove_entry(nf))
+            .collect();
+    let orchard_spend_locators: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)> =
         orchard_nullifiers
             .iter()
-            .flat_map(|nf| nullifier_map.orchard_mut().remove(nf)),
-    );
+            .flat_map(|nf| nullifier_map.orchard_mut().remove_entry(nf))
+            .collect();
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
     let mut spending_txids = HashSet::new();
     let mut wallet_blocks = BTreeMap::new();
-    for (block_height, txid) in spend_locators.iter() {
+    for (block_height, txid) in sapling_spend_locators
+        .values()
+        .chain(orchard_spend_locators.values())
+    {
         // skip if transaction already exists in the wallet
         if wallet_txids.contains(txid) {
             continue;
@@ -326,10 +330,32 @@ where
         .extend_wallet_transactions(spending_transactions)
         .unwrap();
 
-    if !spend_locators.is_empty() {
-
-        // TODO: add spent field to output and change to Some(TxId)
-    }
+    // add spending transaction for all spent notes
+    let wallet_transactions = wallet.get_wallet_transactions_mut().unwrap();
+    wallet_transactions
+        .values_mut()
+        .flat_map(|tx| tx.sapling_notes_mut())
+        .filter(|note| note.spending_transaction().is_none())
+        .for_each(|note| {
+            if let Some((_, txid)) = note
+                .nullifier()
+                .and_then(|nf| sapling_spend_locators.get(&nf))
+            {
+                note.set_spending_transaction(Some(*txid));
+            }
+        });
+    wallet_transactions
+        .values_mut()
+        .flat_map(|tx| tx.orchard_notes_mut())
+        .filter(|note| note.spending_transaction().is_none())
+        .for_each(|note| {
+            if let Some((_, txid)) = note
+                .nullifier()
+                .and_then(|nf| orchard_spend_locators.get(&nf))
+            {
+                note.set_spending_transaction(Some(*txid));
+            }
+        });
 
     Ok(())
 }

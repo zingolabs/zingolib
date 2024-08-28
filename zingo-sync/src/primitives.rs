@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use getset::{CopyGetters, Getters, MutGetters};
+use getset::{CopyGetters, Getters, MutGetters, Setters};
 
 use incrementalmerkletree::Position;
 use zcash_client_backend::data_api::scanning::ScanRange;
@@ -124,11 +124,10 @@ impl WalletBlock {
 }
 
 /// Wallet transaction
-#[derive(Debug, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct WalletTransaction {
-    #[getset(get_copy = "pub")]
-    txid: TxId,
+    #[getset(get = "pub")]
+    transaction: zcash_primitives::transaction::Transaction,
     #[getset(get_copy = "pub")]
     block_height: BlockHeight,
     #[getset(skip)]
@@ -143,7 +142,7 @@ pub struct WalletTransaction {
 
 impl WalletTransaction {
     pub fn from_parts(
-        txid: TxId,
+        transaction: zcash_primitives::transaction::Transaction,
         block_height: BlockHeight,
         sapling_notes: Vec<SaplingNote>,
         orchard_notes: Vec<OrchardNote>,
@@ -151,7 +150,7 @@ impl WalletTransaction {
         outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
     ) -> Self {
         Self {
-            txid,
+            transaction,
             block_height,
             sapling_notes,
             orchard_notes,
@@ -164,8 +163,16 @@ impl WalletTransaction {
         &self.sapling_notes
     }
 
+    pub fn sapling_notes_mut(&mut self) -> Vec<&mut SaplingNote> {
+        self.sapling_notes.iter_mut().collect()
+    }
+
     pub fn orchard_notes(&self) -> &[OrchardNote] {
         &self.orchard_notes
+    }
+
+    pub fn orchard_notes_mut(&mut self) -> Vec<&mut OrchardNote> {
+        self.orchard_notes.iter_mut().collect()
     }
 
     pub fn outgoing_sapling_notes(&self) -> &[OutgoingSaplingNote] {
@@ -181,7 +188,7 @@ pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifie
 pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
 /// Wallet note, shielded output with metadata relevant to the wallet
-#[derive(Debug, Getters, CopyGetters)]
+#[derive(Debug, Getters, CopyGetters, Setters)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
     #[getset(get_copy = "pub")]
@@ -201,6 +208,8 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Memo
     #[getset(get = "pub")]
     memo: Memo,
+    #[getset(get = "pub", set = "pub")]
+    spending_transaction: Option<TxId>,
 }
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
@@ -211,6 +220,7 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
         nullifier: Option<Nf>,
         position: Position,
         memo: Memo,
+        spending_transaction: Option<TxId>,
     ) -> Self {
         Self {
             output_id,
@@ -219,6 +229,7 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
             nullifier,
             position,
             memo,
+            spending_transaction,
         }
     }
 }
@@ -227,7 +238,7 @@ pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
 /// Note sent from this capability to a recipient
-#[derive(Debug, Clone, Getters, CopyGetters, MutGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
 pub struct OutgoingNote<N> {
     /// Output ID
     #[getset(get_copy = "pub")]
@@ -242,7 +253,7 @@ pub struct OutgoingNote<N> {
     #[getset(get = "pub")]
     memo: Memo,
     /// Recipient's full unified address from encoded memo
-    #[getset(get = "pub", get_mut = "pub")]
+    #[getset(get = "pub", set = "pub")]
     recipient_ua: Option<UnifiedAddress>,
 }
 

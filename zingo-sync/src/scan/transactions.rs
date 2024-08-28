@@ -219,7 +219,7 @@ fn scan_transaction<P: Parameters>(
         }
     }
     Ok(WalletTransaction::from_parts(
-        transaction.txid(),
+        transaction,
         block_height,
         sapling_notes,
         orchard_notes,
@@ -257,6 +257,7 @@ where
                 Some(*nullifier),
                 *position,
                 Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                None,
             ));
         }
     }
@@ -359,6 +360,8 @@ fn add_recipient_unified_address<P, Nz>(
         outgoing_notes
             .iter_mut()
             .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
-            .for_each(|note| *note.recipient_ua_mut() = Some(ua.clone()))
+            .for_each(|note| {
+                note.set_recipient_ua(Some(ua.clone()));
+            });
     }
 }
