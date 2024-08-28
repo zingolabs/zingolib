@@ -46,8 +46,6 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastError {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("No proposal. Call do_propose first.")]
-        NoProposal,
         #[error("Cant get submission height. Server connection?: {0:?}")]
         SubmissionHeight(String),
         #[error("Could not load sapling_params: {0:?}")]
