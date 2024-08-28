@@ -26,25 +26,24 @@ impl LightClient {
 
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
-    use std::{convert::Infallible, ops::DerefMut as _};
+    use std::{convert::Infallible};
 
-    use hdwallet::traits::Deserialize as _;
+    
     use nonempty::NonEmpty;
 
-    use secp256k1::SecretKey;
+    
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_client_backend::{proposal::Proposal, wallet::TransparentAddressMetadata};
-    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_client_backend::{proposal::Proposal};
+    
     use zcash_primitives::transaction::TxId;
 
     use thiserror::Error;
-    use zcash_proofs::prover::LocalTxProver;
+    
 
     use crate::lightclient::LightClient;
     use crate::{
         lightclient::propose::{ProposeSendError, ProposeShieldError},
-        wallet::utils::read_sapling_params,
     };
 
     #[allow(missing_docs)] // error types document themselves
