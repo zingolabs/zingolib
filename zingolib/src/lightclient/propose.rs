@@ -1,20 +1,12 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
-use std::convert::Infallible;
-use std::num::NonZeroU32;
-use std::ops::DerefMut;
-
-use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_client_backend::zip321::Zip321Error;
-use zcash_client_backend::ShieldedProtocol;
-use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::wallet::propose::ProposeSendError;
 use crate::wallet::propose::ProposeShieldError;
-use thiserror::Error;
 
 use crate::config::ChainType;
 use crate::data::proposal::ProportionalFeeProposal;
@@ -23,9 +15,6 @@ use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
-use crate::wallet::send::change_memo_from_transaction_request;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError;
 
 fn append_zingo_zenny_receiver(receivers: &mut Vec<Receiver>) {
     let dev_donation_receiver = Receiver::new(
