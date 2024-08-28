@@ -1,13 +1,12 @@
 //! Entrypoint for sync engine
 
 use std::cmp;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 use std::time::Duration;
 
 use crate::client::fetch::fetch;
 use crate::client::{self, FetchRequest};
-use crate::keys::ScanningKeys;
 use crate::primitives::SyncState;
 use crate::scan::task::{ScanTask, Scanner};
 use crate::scan::transactions::scan_transactions;
@@ -19,11 +18,13 @@ use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use futures::future::try_join_all;
 use tokio::sync::mpsc;
 use zcash_primitives::transaction::TxId;
+use zcash_primitives::zip32::AccountId;
 
 // TODO; replace fixed batches with orchard shard ranges (block ranges containing all note commitments to an orchard shard or fragment of a shard)
 const BATCH_SIZE: u32 = 10;
@@ -68,9 +69,6 @@ where
     );
     scanner.spawn_workers();
 
-    // TODO: replace scanning keys with ufvk for scan_tx
-    let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
-
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
         interval.tick().await; // TODO: tokio select to recieve scan results before tick
@@ -97,7 +95,7 @@ where
                 wallet,
                 fetch_request_sender.clone(),
                 parameters,
-                &scanning_keys,
+                &ufvks,
                 scan_range,
                 scan_results,
             )
@@ -114,7 +112,7 @@ where
             wallet,
             fetch_request_sender.clone(),
             parameters,
-            &scanning_keys,
+            &ufvks,
             scan_range,
             scan_results,
         )
@@ -221,7 +219,7 @@ async fn process_scan_results<P, W>(
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
-    scanning_keys: &ScanningKeys,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     scan_results: ScanResults,
 ) -> Result<(), ()>
@@ -230,7 +228,7 @@ where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
     update_wallet_data(wallet, scan_results).unwrap();
-    link_nullifiers(wallet, fetch_request_sender, parameters, scanning_keys)
+    link_nullifiers(wallet, fetch_request_sender, parameters, ufvks)
         .await
         .unwrap();
     remove_irrelevant_data(wallet, &scan_range).unwrap();
@@ -266,7 +264,7 @@ async fn link_nullifiers<P, W>(
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
-    scanning_keys: &ScanningKeys,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
 ) -> Result<(), ()>
 where
     P: Parameters,
@@ -319,7 +317,7 @@ where
     let spending_transactions = scan_transactions(
         fetch_request_sender,
         parameters,
-        scanning_keys,
+        ufvks,
         spending_txids,
         DecryptedNoteData::new(),
         &wallet_blocks,

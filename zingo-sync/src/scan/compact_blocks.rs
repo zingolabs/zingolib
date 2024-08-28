@@ -6,11 +6,13 @@ use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
 use zcash_client_backend::proto::compact_formats::{
     CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx,
 };
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, Parameters},
     transaction::TxId,
+    zip32::AccountId,
 };
 
 use crate::{
@@ -28,7 +30,7 @@ mod runners;
 pub(crate) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
     parameters: &P,
-    scanning_keys: &ScanningKeys,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
 ) -> Result<ScanData, ()>
 where
@@ -36,7 +38,8 @@ where
 {
     check_continuity(&compact_blocks, initial_scan_data.previous_block.as_ref()).unwrap();
 
-    let mut runners = trial_decrypt(parameters, scanning_keys, &compact_blocks).unwrap();
+    let scanning_keys = ScanningKeys::from_account_ufvks(ufvks.clone());
+    let mut runners = trial_decrypt(parameters, &scanning_keys, &compact_blocks).unwrap();
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();

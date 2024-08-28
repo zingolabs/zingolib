@@ -6,14 +6,15 @@ use std::{
 use incrementalmerkletree::Position;
 use tokio::sync::mpsc;
 use zcash_client_backend::{data_api::scanning::ScanRange, proto::compact_formats::CompactBlock};
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     transaction::TxId,
+    zip32::AccountId,
 };
 
 use crate::{
     client::{self, FetchRequest},
-    keys::ScanningKeys,
     primitives::{NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::ShardTreeData,
 };
@@ -139,7 +140,7 @@ impl DecryptedNoteData {
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
-    scanning_keys: &ScanningKeys,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
 ) -> Result<ScanResults, ()>
@@ -165,7 +166,7 @@ where
     .unwrap();
 
     let scan_data =
-        scan_compact_blocks(compact_blocks, parameters, scanning_keys, initial_scan_data).unwrap();
+        scan_compact_blocks(compact_blocks, parameters, ufvks, initial_scan_data).unwrap();
 
     let ScanData {
         nullifiers,
@@ -178,7 +179,7 @@ where
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
         parameters,
-        scanning_keys,
+        ufvks,
         relevant_txids,
         decrypted_note_data,
         &wallet_blocks,

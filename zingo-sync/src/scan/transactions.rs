@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use incrementalmerkletree::Position;
 use orchard::{
+    keys::Scope,
     note_encryption::OrchardDomain,
     primitives::redpallas::{Signature, SpendAuth},
     Action,
@@ -12,18 +13,21 @@ use sapling_crypto::{
 };
 use tokio::sync::mpsc;
 
-use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
+use zcash_keys::{
+    address::UnifiedAddress, encoding::encode_payment_address, keys::UnifiedFullViewingKey,
+};
 use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants, Parameters},
     memo::Memo,
     transaction::{Transaction, TxId},
+    zip32::AccountId,
 };
 use zingo_memo::ParsedMemo;
 
 use crate::{
     client::{self, FetchRequest},
-    keys::{KeyId, ScanningKeyOps as _, ScanningKeys},
+    keys::KeyId,
     primitives::{
         OrchardNote, OutgoingNote, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote,
         SyncOutgoingNotes, WalletBlock, WalletNote, WalletTransaction,
@@ -62,7 +66,7 @@ impl<Proof> ShieldedOutputExt<SaplingDomain> for OutputDescription<Proof> {
 pub(crate) async fn scan_transactions<P: Parameters>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
-    scanning_keys: &ScanningKeys,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     relevant_txids: HashSet<TxId>,
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
@@ -90,7 +94,7 @@ pub(crate) async fn scan_transactions<P: Parameters>(
 
         let wallet_transaction = scan_transaction(
             parameters,
-            scanning_keys,
+            ufvks,
             transaction,
             block_height,
             &decrypted_note_data,
@@ -104,7 +108,7 @@ pub(crate) async fn scan_transactions<P: Parameters>(
 
 fn scan_transaction<P: Parameters>(
     parameters: &P,
-    scanning_keys: &ScanningKeys,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     transaction: Transaction,
     block_height: BlockHeight,
     decrypted_note_data: &DecryptedNoteData,
@@ -120,6 +124,36 @@ fn scan_transaction<P: Parameters>(
     let mut outgoing_orchard_notes: Vec<OutgoingOrchardNote> = Vec::new();
     let mut encoded_memos = Vec::new();
 
+    let mut sapling_ivks = Vec::new();
+    let mut sapling_ovks = Vec::new();
+    let mut orchard_ivks = Vec::new();
+    let mut orchard_ovks = Vec::new();
+    for (account_id, ufvk) in ufvks {
+        if let Some(dfvk) = ufvk.sapling() {
+            for scope in [Scope::External, Scope::Internal] {
+                let key_id = KeyId::from_parts(*account_id, scope);
+                sapling_ivks.push((
+                    key_id,
+                    sapling_crypto::note_encryption::PreparedIncomingViewingKey::new(
+                        &dfvk.to_ivk(scope),
+                    ),
+                ));
+                sapling_ovks.push((key_id, dfvk.to_ovk(scope)));
+            }
+        }
+
+        if let Some(fvk) = ufvk.orchard() {
+            for scope in [Scope::External, Scope::Internal] {
+                let key_id = KeyId::from_parts(*account_id, scope);
+                orchard_ivks.push((
+                    key_id,
+                    orchard::keys::PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)),
+                ));
+                orchard_ovks.push((key_id, fvk.to_ovk(scope)));
+            }
+        }
+    }
+
     // TODO: scan transparent bundle
 
     if let Some(bundle) = transaction.sapling_bundle() {
@@ -129,12 +163,6 @@ fn scan_transaction<P: Parameters>(
             .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
             .collect();
 
-        let sapling_ivks: Vec<(KeyId, sapling_crypto::keys::PreparedIncomingViewingKey)> =
-            scanning_keys
-                .sapling()
-                .iter()
-                .map(|(key_id, key)| (*key_id, key.prepare()))
-                .collect();
         scan_incoming_notes::<
             SaplingDomain,
             OutputDescription<GrothProofBytes>,
@@ -149,11 +177,6 @@ fn scan_transaction<P: Parameters>(
         )
         .unwrap();
 
-        let sapling_ovks: Vec<(KeyId, sapling_crypto::keys::OutgoingViewingKey)> = scanning_keys
-            .sapling()
-            .iter()
-            .map(|(key_id, key)| (*key_id, key.ovk()))
-            .collect();
         scan_outgoing_notes(
             &mut outgoing_sapling_notes,
             transaction.txid(),
@@ -172,11 +195,6 @@ fn scan_transaction<P: Parameters>(
             .map(|action| (OrchardDomain::for_action(action), action.clone()))
             .collect();
 
-        let orchard_ivks: Vec<(KeyId, orchard::keys::PreparedIncomingViewingKey)> = scanning_keys
-            .orchard()
-            .iter()
-            .map(|(key_id, key)| (*key_id, key.prepare()))
-            .collect();
         scan_incoming_notes::<
             OrchardDomain,
             Action<Signature<SpendAuth>>,
@@ -191,11 +209,6 @@ fn scan_transaction<P: Parameters>(
         )
         .unwrap();
 
-        let orchard_ovks: Vec<(KeyId, orchard::keys::OutgoingViewingKey)> = scanning_keys
-            .orchard()
-            .iter()
-            .map(|(key_id, key)| (*key_id, key.ovk()))
-            .collect();
         scan_outgoing_notes(
             &mut outgoing_orchard_notes,
             transaction.txid(),
