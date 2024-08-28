@@ -48,24 +48,8 @@ pub mod send_with_proposal {
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
         #[error("Cant get submission height. Server connection?: {0:?}")]
         SubmissionHeight(String),
-        #[error("Could not load sapling_params: {0:?}")]
-        SaplingParams(String),
-        #[error("Could not find UnifiedSpendKey: {0:?}")]
-        UnifiedSpendKey(std::io::Error),
-        #[error("Can't Calculate {0:?}")]
-        Calculation(
-            #[from]
-            zcash_client_backend::data_api::error::Error<
-                crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
-                std::convert::Infallible,
-                std::convert::Infallible,
-                zcash_primitives::transaction::fees::zip317::FeeError,
-            >,
-        ),
         #[error("Broadcast failed: {0:?}")]
         Broadcast(String),
-        #[error("Sending to exchange addresses is not supported yet!")]
-        ExchangeAddressesNotSupported,
     }
 
     #[allow(missing_docs)] // error types document themselves
