@@ -253,6 +253,18 @@ impl ZingoConfig {
             .create()
     }
 
+    #[cfg(any(test, feature = "test-elevation"))]
+    /// create a ZingoConfig that helps a LightClient connect to a server.
+    pub fn create_mainnet() -> ZingoConfig {
+        ZingoConfig::build(ChainType::Mainnet)
+            .set_lightwalletd_uri(
+                ("https://zcash.mysideoftheweb.com:19067")
+                    .parse::<http::Uri>()
+                    .unwrap(),
+            )
+            .create()
+    }
+
     #[cfg(feature = "test-elevation")]
     /// create a ZingoConfig that signals a LightClient not to connect to a server.
     pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
