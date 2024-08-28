@@ -107,7 +107,7 @@ mod decrypt_transaction {
             let mut txid_indexed_zingo_memos = Vec::new();
 
             // Collect our t-addresses for easy checking
-            let taddrs_set = self.key.get_all_taddrs(&self.config);
+            let taddrs_set = self.key.get_all_taddrs(&self.config.chain);
 
             let mut outgoing_metadatas = vec![];
 
