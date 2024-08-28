@@ -61,10 +61,9 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
     )))
     .await;
 
-    assert_wallet_capability_matches_seed_address_number(
+    assert_wallet_capability_matches_seed(
         &wallet,
         "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
-        4,
     )
     .await;
 
@@ -80,12 +79,13 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     )))
     .await;
 
-    assert_wallet_capability_matches_seed_address_number(
+    assert_wallet_capability_matches_seed(
         &wallet,
         crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
-        3,
     )
     .await;
+
+    assert_wallet_capability_contains_n_triple_pool_receivers(&wallet, 3).await;
 
     let orchard_balance = wallet
         .get_filtered_balance::<orchard::note_encryption::OrchardDomain>(Box::new(|_, _| true))
@@ -123,11 +123,7 @@ async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
     .await;
 }
 
-async fn assert_wallet_capability_matches_seed_address_number(
-    wallet: &LightWallet,
-    expected_seed_phrase: String,
-    expected_num_addresses: usize,
-) {
+async fn assert_wallet_capability_matches_seed(wallet: &LightWallet, expected_seed_phrase: String) {
     let actual_seed_phrase = wallet.get_seed_phrase().await.unwrap();
     assert_eq!(expected_seed_phrase, actual_seed_phrase);
 
@@ -177,6 +173,13 @@ async fn assert_wallet_capability_matches_seed_address_number(
         &crate::wallet::keys::extended_transparent::ExtendedPrivKey::try_from(&expected_wc)
             .unwrap()
     );
+}
+
+async fn assert_wallet_capability_contains_n_triple_pool_receivers(
+    wallet: &LightWallet,
+    expected_num_addresses: usize,
+) {
+    let wc = wallet.wallet_capability();
 
     assert_eq!(wc.addresses().len(), expected_num_addresses);
     for addr in wc.addresses().iter() {
