@@ -44,6 +44,8 @@ pub mod send_with_proposal {
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
     pub enum CompleteAndBroadcastError {
+        #[error("The transaction could not be calculated: {0:?}")]
+        BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
         #[error("No proposal. Call do_propose first.")]
