@@ -121,8 +121,6 @@ pub enum BuildTransactionError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("Broadcast failed: {0:?}")]
-    Broadcast(String),
     #[error("Sending to exchange addresses is not supported yet!")]
     ExchangeAddressesNotSupported,
 }
