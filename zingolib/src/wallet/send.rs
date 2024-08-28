@@ -103,10 +103,6 @@ use thiserror::Error;
 pub enum BuildTransactionError {
     #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
     NoSpendCapability,
-    #[error("No proposal. Call do_propose first.")]
-    NoProposal,
-    #[error("Cant get submission height. Server connection?: {0:?}")]
-    SubmissionHeight(String),
     #[error("Could not load sapling_params: {0:?}")]
     SaplingParams(String),
     #[error("Could not find UnifiedSpendKey: {0:?}")]
