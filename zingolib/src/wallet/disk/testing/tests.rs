@@ -67,6 +67,16 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
     )
     .await;
 
+    let transparent_balance = wallet.get_transparent_balance().await;
+    assert_eq!(transparent_balance, Some(0));
+
+    let sapling_balance = wallet
+        .get_filtered_balance::<sapling_crypto::note_encryption::SaplingDomain>(Box::new(|_, _| {
+            true
+        }))
+        .await;
+    assert_eq!(sapling_balance, Some(28792140));
+
     let orchard_balance = wallet
         .get_filtered_balance::<orchard::note_encryption::OrchardDomain>(Box::new(|_, _| true))
         .await;
