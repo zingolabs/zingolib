@@ -14,7 +14,27 @@ use sapling_crypto::{
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 
-pub(crate) type KeyId = (zcash_primitives::zip32::AccountId, Scope);
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct KeyId {
+    account_id: zcash_primitives::zip32::AccountId,
+    scope: Scope,
+}
+
+impl KeyId {
+    pub fn from_parts(account_id: zcash_primitives::zip32::AccountId, scope: Scope) -> Self {
+        Self { account_id, scope }
+    }
+}
+
+impl memuse::DynamicUsage for KeyId {
+    fn dynamic_usage(&self) -> usize {
+        self.scope.dynamic_usage()
+    }
+
+    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+        self.scope.dynamic_usage_bounds()
+    }
+}
 
 /// A key that can be used to perform trial decryption and nullifier
 /// computation for a [`CompactSaplingOutput`] or [`CompactOrchardAction`].
@@ -36,6 +56,9 @@ pub trait ScanningKeyOps<D: Domain, Nf> {
     /// IVK-based implementations of this trait cannot successfully derive
     /// nullifiers, in which this function will always return `None`.
     fn nf(&self, note: &D::Note, note_position: Position) -> Option<Nf>;
+
+    /// Returns the outgtoing viewing key
+    fn ovk(&self) -> D::OutgoingViewingKey;
 }
 impl<D: Domain, Nf, K: ScanningKeyOps<D, Nf>> ScanningKeyOps<D, Nf> for &K {
     fn prepare(&self) -> D::IncomingViewingKey {
@@ -53,17 +76,21 @@ impl<D: Domain, Nf, K: ScanningKeyOps<D, Nf>> ScanningKeyOps<D, Nf> for &K {
     fn nf(&self, note: &D::Note, note_position: Position) -> Option<Nf> {
         (*self).nf(note, note_position)
     }
+
+    fn ovk(&self) -> D::OutgoingViewingKey {
+        (*self).ovk()
+    }
 }
 
-pub(crate) struct ScanningKey<Ivk, Nk> {
+pub(crate) struct ScanningKey<Ivk, Nk, Ovk> {
     key_id: KeyId,
     ivk: Ivk,
-    // TODO: Ovk
     nk: Option<Nk>,
+    ovk: Ovk,
 }
 
 impl ScanningKeyOps<SaplingDomain, sapling::Nullifier>
-    for ScanningKey<SaplingIvk, NullifierDerivingKey>
+    for ScanningKey<SaplingIvk, NullifierDerivingKey, sapling::keys::OutgoingViewingKey>
 {
     fn prepare(&self) -> sapling::note_encryption::PreparedIncomingViewingKey {
         sapling_crypto::note_encryption::PreparedIncomingViewingKey::new(&self.ivk)
@@ -73,17 +100,21 @@ impl ScanningKeyOps<SaplingDomain, sapling::Nullifier>
         self.nk.as_ref().map(|key| note.nf(key, position.into()))
     }
 
+    fn ovk(&self) -> <SaplingDomain as Domain>::OutgoingViewingKey {
+        self.ovk
+    }
+
     fn account_id(&self) -> &zcash_primitives::zip32::AccountId {
-        &self.key_id.0
+        &self.key_id.account_id
     }
 
     fn key_scope(&self) -> Option<Scope> {
-        Some(self.key_id.1)
+        Some(self.key_id.scope)
     }
 }
 
 impl ScanningKeyOps<OrchardDomain, orchard::note::Nullifier>
-    for ScanningKey<IncomingViewingKey, FullViewingKey>
+    for ScanningKey<IncomingViewingKey, FullViewingKey, orchard::keys::OutgoingViewingKey>
 {
     fn prepare(&self) -> orchard::keys::PreparedIncomingViewingKey {
         orchard::keys::PreparedIncomingViewingKey::new(&self.ivk)
@@ -97,12 +128,16 @@ impl ScanningKeyOps<OrchardDomain, orchard::note::Nullifier>
         self.nk.as_ref().map(|key| note.nullifier(key))
     }
 
+    fn ovk(&self) -> <OrchardDomain as Domain>::OutgoingViewingKey {
+        self.ovk.clone()
+    }
+
     fn account_id(&self) -> &zcash_primitives::zip32::AccountId {
-        &self.key_id.0
+        &self.key_id.account_id
     }
 
     fn key_scope(&self) -> Option<Scope> {
-        Some(self.key_id.1)
+        Some(self.key_id.scope)
     }
 }
 
@@ -110,8 +145,14 @@ impl ScanningKeyOps<OrchardDomain, orchard::note::Nullifier>
 #[derive(Getters)]
 #[getset(get = "pub(crate)")]
 pub(crate) struct ScanningKeys {
-    sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>>,
-    orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
+    sapling: HashMap<
+        KeyId,
+        ScanningKey<SaplingIvk, NullifierDerivingKey, sapling::keys::OutgoingViewingKey>,
+    >,
+    orchard: HashMap<
+        KeyId,
+        ScanningKey<IncomingViewingKey, FullViewingKey, orchard::keys::OutgoingViewingKey>,
+    >,
 }
 
 impl ScanningKeys {
@@ -122,20 +163,26 @@ impl ScanningKeys {
     ) -> Self {
         #![allow(clippy::type_complexity)]
 
-        let mut sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>> =
-            HashMap::new();
-        let mut orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>> =
-            HashMap::new();
+        let mut sapling: HashMap<
+            KeyId,
+            ScanningKey<SaplingIvk, NullifierDerivingKey, sapling::keys::OutgoingViewingKey>,
+        > = HashMap::new();
+        let mut orchard: HashMap<
+            KeyId,
+            ScanningKey<IncomingViewingKey, FullViewingKey, orchard::keys::OutgoingViewingKey>,
+        > = HashMap::new();
 
         for (account_id, ufvk) in ufvks {
             if let Some(dfvk) = ufvk.sapling() {
                 for scope in [Scope::External, Scope::Internal] {
+                    let key_id = KeyId::from_parts(account_id, scope);
                     sapling.insert(
-                        (account_id, scope),
+                        key_id,
                         ScanningKey {
-                            key_id: (account_id, scope),
+                            key_id,
                             ivk: dfvk.to_ivk(scope),
                             nk: Some(dfvk.to_nk(scope)),
+                            ovk: dfvk.to_ovk(scope),
                         },
                     );
                 }
@@ -143,12 +190,14 @@ impl ScanningKeys {
 
             if let Some(fvk) = ufvk.orchard() {
                 for scope in [Scope::External, Scope::Internal] {
+                    let key_id = KeyId::from_parts(account_id, scope);
                     orchard.insert(
-                        (account_id, scope),
+                        key_id,
                         ScanningKey {
-                            key_id: (account_id, scope),
+                            key_id,
                             ivk: fvk.to_ivk(scope),
                             nk: Some(fvk.clone()),
+                            ovk: fvk.to_ovk(scope),
                         },
                     );
                 }
