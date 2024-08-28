@@ -108,10 +108,7 @@ pub mod send_with_proposal {
                 .await
                 .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
 
-            let build_result = self
-                .wallet
-                .build_transaction(proposal, submission_height)
-                .await?;
+            let build_result = self.wallet.build_transaction(proposal).await?;
 
             let result = self
                 .wallet

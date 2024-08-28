@@ -99,7 +99,6 @@ impl LightWallet {
     pub(crate) async fn build_transaction<NoteRef>(
         &self,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-        submission_height: BlockHeight,
     ) -> Result<BuildResult, crate::lightclient::send::send_with_proposal::CompleteAndBroadcastError>
     {
         if self
