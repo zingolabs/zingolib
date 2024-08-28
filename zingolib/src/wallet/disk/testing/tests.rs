@@ -61,12 +61,12 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
     )))
     .await;
 
-    // assert_wallet_capability_matches_seed_address_number(
-    //     &wallet,
-    //     "msk i i i i i i i i  i i i i ".to_string(),
-    //     4,
-    // )
-    // .await;
+    assert_wallet_capability_matches_seed_address_number(
+        &wallet,
+        "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
+        4,
+    )
+    .await;
 
     let orchard_balance = wallet
         .get_filtered_balance::<orchard::note_encryption::OrchardDomain>(Box::new(|_, _| true))
