@@ -1,15 +1,17 @@
 //! Entrypoint for sync engine
 
 use std::cmp;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 use std::time::Duration;
 
-use crate::client::FetchRequest;
-use crate::client::{fetch::fetch, get_chain_height};
+use crate::client::fetch::fetch;
+use crate::client::{self, FetchRequest};
+use crate::keys::ScanningKeys;
 use crate::primitives::SyncState;
 use crate::scan::task::{ScanTask, Scanner};
-use crate::scan::ScanResults;
+use crate::scan::transactions::scan_transactions;
+use crate::scan::{DecryptedNoteData, ScanResults};
 use crate::traits::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncTransactions, SyncWallet};
 
 use tokio::sync::mpsc::error::TryRecvError;
@@ -59,11 +61,14 @@ where
     let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
     let mut scanner = Scanner::new(
         scan_results_sender,
-        fetch_request_sender,
+        fetch_request_sender.clone(),
         parameters.clone(),
-        ufvks,
+        ufvks.clone(),
     );
     scanner.spawn_workers();
+
+    // TODO: replace scanning keys with ufvk for scan_tx
+    let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
 
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
@@ -87,9 +92,16 @@ where
         }
 
         match scan_results_receiver.try_recv() {
-            Ok((scan_range, scan_results)) => {
-                process_scan_results(wallet, scan_range, scan_results).unwrap()
-            }
+            Ok((scan_range, scan_results)) => process_scan_results(
+                wallet,
+                fetch_request_sender.clone(),
+                parameters,
+                &scanning_keys,
+                scan_range,
+                scan_results,
+            )
+            .await
+            .unwrap(),
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => break,
         }
@@ -97,15 +109,25 @@ where
 
     drop(scanner);
     while let Some((scan_range, scan_results)) = scan_results_receiver.recv().await {
-        process_scan_results(wallet, scan_range, scan_results).unwrap();
+        process_scan_results(
+            wallet,
+            fetch_request_sender.clone(),
+            parameters,
+            &scanning_keys,
+            scan_range,
+            scan_results,
+        )
+        .await
+        .unwrap();
     }
 
+    drop(fetch_request_sender);
     try_join_all(handles).await.unwrap();
 
     Ok(())
 }
 
-// update scan_ranges to include blocks between the last known chain height (wallet height) and the chain height from the server
+/// Update scan ranges to include blocks between the last known chain height (wallet height) and the chain height from the server
 async fn update_scan_ranges<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
@@ -115,7 +137,9 @@ async fn update_scan_ranges<P>(
 where
     P: Parameters,
 {
-    let chain_height = get_chain_height(fetch_request_sender).await.unwrap();
+    let chain_height = client::get_chain_height(fetch_request_sender)
+        .await
+        .unwrap();
 
     let scan_ranges = sync_state.scan_ranges_mut();
 
@@ -160,7 +184,8 @@ where
     Ok(())
 }
 
-// returns `None` if there are no more ranges to scan
+/// Prepares the next scan range for scanning.
+/// Returns `None` if there are no more ranges to scan
 fn prepare_next_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     let scan_ranges = sync_state.scan_ranges_mut();
 
@@ -190,16 +215,23 @@ fn prepare_next_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     }
 }
 
-fn process_scan_results<W>(
+/// Scan post-processing
+async fn process_scan_results<P, W>(
     wallet: &mut W,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    parameters: &P,
+    scanning_keys: &ScanningKeys,
     scan_range: ScanRange,
     scan_results: ScanResults,
 ) -> Result<(), ()>
 where
+    P: Parameters,
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
     update_wallet_data(wallet, scan_results).unwrap();
-    link_nullifiers(wallet).unwrap();
+    link_nullifiers(wallet, fetch_request_sender, parameters, scanning_keys)
+        .await
+        .unwrap();
     remove_irrelevant_data(wallet, &scan_range).unwrap();
     mark_scanned(scan_range, wallet.get_sync_state_mut().unwrap()).unwrap();
 
@@ -229,9 +261,15 @@ where
     Ok(())
 }
 
-fn link_nullifiers<W>(wallet: &mut W) -> Result<(), ()>
+async fn link_nullifiers<P, W>(
+    wallet: &mut W,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    parameters: &P,
+    scanning_keys: &ScanningKeys,
+) -> Result<(), ()>
 where
-    W: SyncWallet + SyncTransactions + SyncNullifiers,
+    P: Parameters,
+    W: SyncBlocks + SyncTransactions + SyncNullifiers,
 {
     let wallet_transactions = wallet.get_wallet_transactions().unwrap();
     let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
@@ -246,34 +284,58 @@ where
         .flat_map(|note| note.nullifier())
         .collect::<Vec<_>>();
 
-    let mut spend_locations = Vec::new();
+    let mut spend_locators = Vec::new();
     let nullifier_map = wallet.get_nullifiers_mut().unwrap();
-    spend_locations.extend(
+    spend_locators.extend(
         sapling_nullifiers
             .iter()
             .flat_map(|nf| nullifier_map.sapling_mut().remove(nf)),
     );
-    spend_locations.extend(
+    spend_locators.extend(
         orchard_nullifiers
             .iter()
             .flat_map(|nf| nullifier_map.orchard_mut().remove(nf)),
     );
 
-    let sync_state = wallet.get_sync_state_mut().unwrap();
-    for (block_height, txid) in spend_locations {
+    // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
+    let mut spending_txids = HashSet::new();
+    let mut wallet_blocks = BTreeMap::new();
+    for (block_height, txid) in spend_locators.iter() {
         // skip if transaction already exists in the wallet
-        if wallet_txids.contains(&txid) {
+        if wallet_txids.contains(txid) {
             continue;
         }
 
-        sync_state.spend_locations_mut().push((block_height, txid));
-        update_scan_priority(sync_state, block_height, ScanPriority::FoundNote);
+        spending_txids.insert(*txid);
+        wallet_blocks.insert(
+            *block_height,
+            wallet.get_wallet_block(*block_height).unwrap(),
+        );
+    }
+    let spending_transactions = scan_transactions(
+        fetch_request_sender,
+        parameters,
+        scanning_keys,
+        spending_txids,
+        DecryptedNoteData::new(),
+        &wallet_blocks,
+    )
+    .await
+    .unwrap();
+    wallet
+        .extend_wallet_transactions(spending_transactions)
+        .unwrap();
+
+    if !spend_locators.is_empty() {
+
+        // TODO: add spent field to output and change to Some(TxId)
     }
 
     Ok(())
 }
 
 /// Splits out a scan range surrounding a given block height with the specified priority
+#[allow(dead_code)]
 fn update_scan_priority(
     sync_state: &mut SyncState,
     block_height: BlockHeight,

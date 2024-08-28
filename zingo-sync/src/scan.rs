@@ -22,7 +22,7 @@ use self::{compact_blocks::scan_compact_blocks, transactions::scan_transactions}
 
 mod compact_blocks;
 pub(crate) mod task;
-mod transactions;
+pub(crate) mod transactions;
 
 struct InitialScanData {
     previous_block: Option<WalletBlock>,
@@ -120,13 +120,13 @@ pub(crate) struct ScanResults {
     pub(crate) shard_tree_data: ShardTreeData,
 }
 
-struct DecryptedNoteData {
+pub(crate) struct DecryptedNoteData {
     sapling_nullifiers_and_positions: HashMap<OutputId, (sapling_crypto::Nullifier, Position)>,
     orchard_nullifiers_and_positions: HashMap<OutputId, (orchard::note::Nullifier, Position)>,
 }
 
 impl DecryptedNoteData {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         DecryptedNoteData {
             sapling_nullifiers_and_positions: HashMap::new(),
             orchard_nullifiers_and_positions: HashMap::new(),
