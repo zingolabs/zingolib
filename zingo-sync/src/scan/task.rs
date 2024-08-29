@@ -14,13 +14,13 @@ use zcash_primitives::{consensus::Parameters, zip32::AccountId};
 
 use crate::{client::FetchRequest, primitives::WalletBlock};
 
-use super::{scan, ScanResults};
+use super::{error::ScanError, scan, ScanResults};
 
 const SCAN_WORKER_POOLSIZE: usize = 2;
 
 pub(crate) struct Scanner<P> {
     workers: Vec<WorkerHandle>,
-    scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+    scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -32,7 +32,7 @@ where
     P: Parameters + Sync + Send + 'static,
 {
     pub(crate) fn new(
-        scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -104,7 +104,7 @@ impl WorkerHandle {
 struct ScanWorker<P> {
     is_scanning: Arc<AtomicBool>,
     scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-    scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+    scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -116,7 +116,7 @@ where
 {
     fn new(
         scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-        scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -142,8 +142,7 @@ where
                 scan_task.scan_range.clone(),
                 scan_task.previous_wallet_block,
             )
-            .await
-            .unwrap();
+            .await;
 
             self.scan_results_sender
                 .send((scan_task.scan_range, scan_results))

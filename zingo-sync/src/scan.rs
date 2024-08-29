@@ -19,9 +19,12 @@ use crate::{
     witness::ShardTreeData,
 };
 
-use self::{compact_blocks::scan_compact_blocks, transactions::scan_transactions};
+use self::{
+    compact_blocks::scan_compact_blocks, error::ScanError, transactions::scan_transactions,
+};
 
 mod compact_blocks;
+pub mod error;
 pub(crate) mod task;
 pub(crate) mod transactions;
 
@@ -135,15 +138,15 @@ impl DecryptedNoteData {
     }
 }
 
-// scans a given range and returns all data relevant to the specified keys
-// `previous_wallet_block` is the wallet block with height [scan_range.start - 1]
+/// Scans a given range and returns all data relevant to the specified keys.
+/// `previous_wallet_block` is the wallet block with height [scan_range.start - 1].
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
-) -> Result<ScanResults, ()>
+) -> Result<ScanResults, ScanError>
 where
     P: Parameters + Sync + Send + 'static,
 {
@@ -165,8 +168,7 @@ where
     .await
     .unwrap();
 
-    let scan_data =
-        scan_compact_blocks(compact_blocks, parameters, ufvks, initial_scan_data).unwrap();
+    let scan_data = scan_compact_blocks(compact_blocks, parameters, ufvks, initial_scan_data)?;
 
     let ScanData {
         nullifiers,

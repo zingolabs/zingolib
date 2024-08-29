@@ -4,6 +4,7 @@
 //! Entrypoint: [`crate::sync::sync`]
 
 pub mod client;
+pub mod error;
 pub(crate) mod keys;
 #[allow(missing_docs)]
 pub mod primitives;

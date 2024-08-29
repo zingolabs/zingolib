@@ -23,7 +23,10 @@ use crate::{
 
 use self::runners::{BatchRunners, DecryptedOutput};
 
-use super::{DecryptedNoteData, InitialScanData, ScanData};
+use super::{
+    error::{ContinuityError, ScanError},
+    DecryptedNoteData, InitialScanData, ScanData,
+};
 
 mod runners;
 
@@ -32,11 +35,11 @@ pub(crate) fn scan_compact_blocks<P>(
     parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
-) -> Result<ScanData, ()>
+) -> Result<ScanData, ScanError>
 where
     P: Parameters + Sync + Send + 'static,
 {
-    check_continuity(&compact_blocks, initial_scan_data.previous_block.as_ref()).unwrap();
+    check_continuity(&compact_blocks, initial_scan_data.previous_block.as_ref())?;
 
     let scanning_keys = ScanningKeys::from_account_ufvks(ufvks.clone());
     let mut runners = trial_decrypt(parameters, &scanning_keys, &compact_blocks).unwrap();
@@ -162,7 +165,7 @@ where
 fn check_continuity(
     compact_blocks: &[CompactBlock],
     previous_compact_block: Option<&WalletBlock>,
-) -> Result<(), ()> {
+) -> Result<(), ContinuityError> {
     let mut prev_height: Option<BlockHeight> = None;
     let mut prev_hash: Option<BlockHash> = None;
 
@@ -174,13 +177,20 @@ fn check_continuity(
     for block in compact_blocks {
         if let Some(prev_height) = prev_height {
             if block.height() != prev_height + 1 {
-                panic!("height discontinuity");
+                return Err(ContinuityError::HeightDiscontinuity {
+                    height: block.height(),
+                    previous_block_height: prev_height,
+                });
             }
         }
 
         if let Some(prev_hash) = prev_hash {
             if block.prev_hash() != prev_hash {
-                panic!("hash discontinuity");
+                return Err(ContinuityError::HashDiscontinuity {
+                    height: block.height(),
+                    prev_hash: block.prev_hash(),
+                    previous_block_hash: prev_hash,
+                });
             }
         }
 
