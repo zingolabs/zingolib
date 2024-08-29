@@ -12,15 +12,16 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{consensus::Parameters, zip32::AccountId};
 
-use crate::{client::FetchRequest, keys::ScanningKeys, primitives::WalletBlock};
+use crate::{client::FetchRequest, primitives::WalletBlock};
 
-use super::{scan, ScanResults};
+use super::{error::ScanError, scan, ScanResults};
 
 const SCAN_WORKER_POOLSIZE: usize = 2;
 
 pub(crate) struct Scanner<P> {
     workers: Vec<WorkerHandle>,
-    scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+    workers_count: usize,
+    scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -32,7 +33,7 @@ where
     P: Parameters + Sync + Send + 'static,
 {
     pub(crate) fn new(
-        scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -41,6 +42,7 @@ where
 
         Self {
             workers,
+            workers_count: 0,
             scan_results_sender,
             fetch_request_sender,
             parameters,
@@ -61,10 +63,12 @@ where
             let is_scanning = Arc::clone(&worker.is_scanning);
             let handle = tokio::spawn(async move { worker.run().await });
             self.workers.push(WorkerHandle {
-                _handle: handle,
+                _id: self.workers_count,
+                handle,
                 is_scanning,
                 scan_task_sender,
             });
+            self.workers_count += 1;
         }
     }
 
@@ -72,9 +76,19 @@ where
         self.workers.iter().any(|worker| !worker.is_scanning())
     }
 
+    pub(crate) fn shutdown_idle_workers(&self) {
+        // TODO: use take() with options on senders and handles to shutdown workers gracefully
+        self.workers
+            .iter()
+            .filter(|worker| !worker.is_scanning())
+            .for_each(|worker| {
+                worker.handle.abort();
+            });
+    }
+
     pub(crate) fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
         if let Some(worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
-            worker.add_scan_task(scan_task);
+            worker.add_scan_task(scan_task).unwrap();
         } else {
             panic!("no idle workers!")
         }
@@ -84,7 +98,8 @@ where
 }
 
 struct WorkerHandle {
-    _handle: JoinHandle<Result<(), ()>>,
+    _id: usize,
+    handle: JoinHandle<Result<(), ()>>,
     is_scanning: Arc<AtomicBool>,
     scan_task_sender: mpsc::UnboundedSender<ScanTask>,
 }
@@ -94,18 +109,20 @@ impl WorkerHandle {
         self.is_scanning.load(atomic::Ordering::Acquire)
     }
 
-    fn add_scan_task(&self, scan_task: ScanTask) {
+    fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
         self.scan_task_sender.send(scan_task).unwrap();
+
+        Ok(())
     }
 }
 
 struct ScanWorker<P> {
     is_scanning: Arc<AtomicBool>,
     scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-    scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+    scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
-    scanning_keys: ScanningKeys,
+    ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
 }
 
 impl<P> ScanWorker<P>
@@ -114,19 +131,18 @@ where
 {
     fn new(
         scan_task_receiver: mpsc::UnboundedReceiver<ScanTask>,
-        scan_results_sender: mpsc::UnboundedSender<(ScanRange, ScanResults)>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
     ) -> Self {
-        let scanning_keys = ScanningKeys::from_account_ufvks(ufvks);
         Self {
             is_scanning: Arc::new(AtomicBool::new(false)),
             scan_task_receiver,
             scan_results_sender,
             fetch_request_sender,
             parameters,
-            scanning_keys,
+            ufvks,
         }
     }
 
@@ -137,12 +153,11 @@ where
             let scan_results = scan(
                 self.fetch_request_sender.clone(),
                 &self.parameters.clone(),
-                &self.scanning_keys,
+                &self.ufvks,
                 scan_task.scan_range.clone(),
                 scan_task.previous_wallet_block,
             )
-            .await
-            .unwrap();
+            .await;
 
             self.scan_results_sender
                 .send((scan_task.scan_range, scan_results))

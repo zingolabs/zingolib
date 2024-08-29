@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # Zingo
 zingo-netutils = { path = "../zingo-netutils" }
+zingo-memo = { path = "../zingo-memo" }
 
 # Zcash
 zcash_client_backend.workspace = true
@@ -36,3 +37,11 @@ rayon.workspace = true
 
 # Minimise boilerplate
 getset.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# temp
+zcash_address.workspace = true
+sha2.workspace = true
+base58.workspace = true
