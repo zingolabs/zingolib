@@ -192,34 +192,37 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
-                            // If the txid is already in the db, then it's already recorded
-                            // there's nothing new to do until it's read from chain.
-                            // ASSUMPTION: A transaction from the mempool_receiver is not on-chain
-                            if transaction_metadata_set
-                                .read()
+                            let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
+                                rtransaction.height as u32,
+                            ));
+                            match transaction_metadata_set
+                                .write()
                                 .await
                                 .transaction_records_by_id
-                                .get(&transaction.txid())
-                                .is_none()
+                                .get_mut(&transaction.txid())
                             {
-                                let price = price.read().await.clone();
-                                //debug!("Mempool attempting to scan {}", tx.txid());
-                                let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
-                                    rtransaction.height as u32,
-                                ));
+                                None => {
+                                    let price = price.read().await.clone();
+                                    //debug!("Mempool attempting to scan {}", tx.txid());
 
-                                TransactionContext::new(
-                                    &config,
-                                    key.clone(),
-                                    transaction_metadata_set.clone(),
-                                )
-                                .scan_full_tx(
-                                    &transaction,
-                                    status,
-                                    Some(now() as u32),
-                                    get_price(now(), &price),
-                                )
-                                .await;
+                                    TransactionContext::new(
+                                        &config,
+                                        key.clone(),
+                                        transaction_metadata_set.clone(),
+                                    )
+                                    .scan_full_tx(
+                                        &transaction,
+                                        status,
+                                        Some(now() as u32),
+                                        get_price(now(), &price),
+                                    )
+                                    .await;
+                                }
+                                // If the txid is already in the db, then it's already recorded
+                                // the only thing to do is confirm its presence in the mempool.
+                                Some(ref mut transaction_record) => {
+                                    transaction_record.status = status
+                                }
                             }
                         }
                     }

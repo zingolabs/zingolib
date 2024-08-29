@@ -523,12 +523,12 @@ where
     //     0
     // );
 
-    let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+    let ref_secondary: Arc<LightClient> = Arc::new(secondary);
 
     // mempool monitor
-    let check_mempool = false;
+    let check_mempool = true;
     if check_mempool {
-        LightClient::start_mempool_monitor(ref_tertiary.clone());
+        LightClient::start_mempool_monitor(ref_secondary.clone());
         dbg!("mm started");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
@@ -537,8 +537,8 @@ where
         expected_fee,
         with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
-            &secondary,
-            vec![(&ref_tertiary, pool, 100_000 - expected_fee, None)],
+            &ref_secondary,
+            vec![(&tertiary, pool, 100_000 - expected_fee, None)],
             check_mempool,
         )
         .await
