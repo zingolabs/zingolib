@@ -20,6 +20,7 @@ const SCAN_WORKER_POOLSIZE: usize = 2;
 
 pub(crate) struct Scanner<P> {
     workers: Vec<WorkerHandle>,
+    workers_count: usize,
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: P,
@@ -41,6 +42,7 @@ where
 
         Self {
             workers,
+            workers_count: 0,
             scan_results_sender,
             fetch_request_sender,
             parameters,
@@ -61,15 +63,27 @@ where
             let is_scanning = Arc::clone(&worker.is_scanning);
             let handle = tokio::spawn(async move { worker.run().await });
             self.workers.push(WorkerHandle {
-                _handle: handle,
+                _id: self.workers_count,
+                handle,
                 is_scanning,
                 scan_task_sender,
             });
+            self.workers_count += 1;
         }
     }
 
     pub(crate) fn is_worker_idle(&self) -> bool {
         self.workers.iter().any(|worker| !worker.is_scanning())
+    }
+
+    pub(crate) fn shutdown_idle_workers(&self) {
+        // TODO: use take() with options on senders and handles to shutdown workers gracefully
+        self.workers
+            .iter()
+            .filter(|worker| !worker.is_scanning())
+            .for_each(|worker| {
+                worker.handle.abort();
+            });
     }
 
     pub(crate) fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
@@ -84,7 +98,8 @@ where
 }
 
 struct WorkerHandle {
-    _handle: JoinHandle<Result<(), ()>>,
+    _id: usize,
+    handle: JoinHandle<Result<(), ()>>,
     is_scanning: Arc<AtomicBool>,
     scan_task_sender: mpsc::UnboundedSender<ScanTask>,
 }

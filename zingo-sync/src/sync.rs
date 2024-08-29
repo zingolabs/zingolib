@@ -73,24 +73,8 @@ where
 
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
-        interval.tick().await; // TODO: tokio select to recieve scan results before tick
-
-        // if a scan worker is idle, send it a new scan task
-        if scanner.is_worker_idle() {
-            if let Some(scan_range) = select_scan_range(wallet.get_sync_state_mut().unwrap()) {
-                let previous_wallet_block = wallet
-                    .get_wallet_block(scan_range.block_range().start - 1)
-                    .ok();
-
-                scanner
-                    .add_scan_task(ScanTask::from_parts(scan_range, previous_wallet_block))
-                    .unwrap();
-            } else {
-                // when no more ranges are available to scan, break out of the loop
-                // TODO: is the case where there is less than WORKER_POOLSIZE ranges left to scan but re-org is hit covered?
-                break;
-            }
-        }
+        // TODO: add tokio select to optimise receiver
+        interval.tick().await;
 
         match scan_results_receiver.try_recv() {
             Ok((scan_range, scan_results)) => {
@@ -104,28 +88,45 @@ where
                 )
                 .await
                 .unwrap();
+
+                if scanner.is_worker_idle() {
+                    create_scan_task(wallet, &scanner).unwrap();
+                }
             }
-            Err(TryRecvError::Empty) => (),
+            Err(TryRecvError::Empty) => {
+                if scanner.is_worker_idle() {
+                    create_scan_task(wallet, &scanner).unwrap();
+                }
+
+                // TODO: if all workers have handle taken, drop scanner.
+            }
             Err(TryRecvError::Disconnected) => break,
         }
     }
 
-    drop(scanner);
-    while let Some((scan_range, scan_results)) = scan_results_receiver.recv().await {
-        process_scan_results(
-            wallet,
-            fetch_request_sender.clone(),
-            parameters,
-            &ufvks,
-            scan_range,
-            scan_results,
-        )
-        .await
-        .unwrap();
-    }
-
     drop(fetch_request_sender);
     try_join_all(handles).await.unwrap();
+
+    Ok(())
+}
+
+fn create_scan_task<P, W>(wallet: &mut W, scanner: &Scanner<P>) -> Result<(), ()>
+where
+    P: Parameters + Sync + Send + 'static,
+    W: SyncWallet + SyncBlocks,
+{
+    if let Some(scan_range) = select_scan_range(wallet.get_sync_state_mut().unwrap()) {
+        let previous_wallet_block = wallet
+            .get_wallet_block(scan_range.block_range().start - 1)
+            .ok();
+
+        scanner
+            .add_scan_task(ScanTask::from_parts(scan_range, previous_wallet_block))
+            .unwrap();
+    } else {
+        // when no more ranges are available to scan, shutdown idle workers
+        scanner.shutdown_idle_workers();
+    }
 
     Ok(())
 }
