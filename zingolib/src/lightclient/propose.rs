@@ -5,8 +5,7 @@ use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
-use crate::wallet::propose::ProposeSendError;
-use crate::wallet::propose::ProposeShieldError;
+use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
 use crate::config::ChainType;
 use crate::data::proposal::ProportionalFeeProposal;
