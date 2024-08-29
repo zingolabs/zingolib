@@ -253,15 +253,33 @@ where
                 // error handling in case of re-org where first block prev_hash in scan range does not match previous wallet block hash
                 let sync_state = wallet.get_sync_state_mut().unwrap();
                 set_scan_priority(sync_state, scan_range.block_range(), scan_range.priority())
-                    .unwrap();
-                verify_scan_range_tip(sync_state, height - 1);
-                // TODO: invalidate wallet data
+                    .unwrap(); // reset scan range to initial priority in wallet sync state
+                let scan_range_to_verify =
+                    verify_scan_range_tip(sync_state, height.saturating_sub(1));
+                invalidate_scan_range(wallet, scan_range_to_verify).unwrap();
             } else {
                 scan_results?;
             }
         }
         Err(e) => return Err(e.into()),
     }
+
+    Ok(())
+}
+
+fn invalidate_scan_range<W>(wallet: &mut W, scan_range_to_verify: ScanRange) -> Result<(), ()>
+where
+    W: SyncBlocks + SyncTransactions + SyncNullifiers,
+{
+    wallet
+        .remove_wallet_blocks(scan_range_to_verify.block_range())
+        .unwrap();
+    wallet
+        .remove_wallet_transactions(scan_range_to_verify.block_range())
+        .unwrap();
+    wallet
+        .remove_nullifiers(scan_range_to_verify.block_range())
+        .unwrap();
 
     Ok(())
 }
@@ -389,9 +407,10 @@ where
 
 /// Splits out the highest VERIFY_BLOCK_RANGE_SIZE blocks from the scan range containing the given block height
 /// and sets it's priority to `verify`.
+/// Returns a clone of the scan range to be verified.
 ///
 /// Panics if the scan range containing the given block height is not of priority `Scanned`
-fn verify_scan_range_tip(sync_state: &mut SyncState, block_height: BlockHeight) {
+fn verify_scan_range_tip(sync_state: &mut SyncState, block_height: BlockHeight) -> ScanRange {
     let (index, scan_range) = sync_state
         .scan_ranges()
         .iter()
@@ -412,9 +431,18 @@ fn verify_scan_range_tip(sync_state: &mut SyncState, block_height: BlockHeight) 
     };
     let split_ranges =
         split_out_scan_range(scan_range, block_range_to_verify, ScanPriority::Verify);
+
+    assert!(split_ranges.len() == 2);
+    let scan_range_to_verify = split_ranges
+        .last()
+        .expect("split_ranges should always have exactly 2 elements")
+        .clone();
+
     sync_state
         .scan_ranges_mut()
         .splice(index..=index, split_ranges);
+
+    scan_range_to_verify
 }
 
 /// Splits out a scan range surrounding a given block height with the specified priority

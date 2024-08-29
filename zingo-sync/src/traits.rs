@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
+use std::ops::Range;
 
 use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
@@ -33,8 +34,6 @@ pub trait SyncWallet {
 
 /// Trait for interfacing [`crate::primitives::WalletBlock`]s with wallet data
 pub trait SyncBlocks: SyncWallet {
-    // TODO: add method to get wallet data for writing defualt implementations on other methods
-
     /// Get a stored wallet compact block from wallet data by block height
     /// Must return error if block is not found
     fn get_wallet_block(&self, block_height: BlockHeight) -> Result<WalletBlock, Self::Error>;
@@ -50,6 +49,17 @@ pub trait SyncBlocks: SyncWallet {
         mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     ) -> Result<(), Self::Error> {
         self.get_wallet_blocks_mut()?.append(&mut wallet_blocks);
+
+        Ok(())
+    }
+
+    /// Removes all wallet blocks with block height's within the given [invalid_range] (end exclusive)
+    fn remove_wallet_blocks(
+        &mut self,
+        invalid_range: &Range<BlockHeight>,
+    ) -> Result<(), Self::Error> {
+        self.get_wallet_blocks_mut()?
+            .retain(|_, block| !invalid_range.contains(&block.block_height()));
 
         Ok(())
     }
@@ -75,12 +85,57 @@ pub trait SyncTransactions: SyncWallet {
 
         Ok(())
     }
+
+    /// Removes all wallet transactions with block height's within the given [invalid_range] (end exclusive)
+    /// Also sets any output's spending_transaction field to `None` if it's spending transaction was removed.
+    fn remove_wallet_transactions(
+        &mut self,
+        invalid_range: &Range<BlockHeight>,
+    ) -> Result<(), Self::Error> {
+        // Replace with `extract_if()` when it's in stable rust
+        let invalid_txids: Vec<TxId> = self
+            .get_wallet_transactions()?
+            .values()
+            .filter(|tx| invalid_range.contains(&tx.block_height()))
+            .map(|tx| tx.transaction().txid())
+            .collect();
+
+        let wallet_transactions = self.get_wallet_transactions_mut()?;
+        wallet_transactions
+            .values_mut()
+            .flat_map(|tx| tx.sapling_notes_mut())
+            .filter(|note| {
+                note.spending_transaction().map_or_else(
+                    || false,
+                    |spending_txid| invalid_txids.contains(&spending_txid),
+                )
+            })
+            .for_each(|note| {
+                note.set_spending_transaction(None);
+            });
+        wallet_transactions
+            .values_mut()
+            .flat_map(|tx| tx.orchard_notes_mut())
+            .filter(|note| {
+                note.spending_transaction().map_or_else(
+                    || false,
+                    |spending_txid| invalid_txids.contains(&spending_txid),
+                )
+            })
+            .for_each(|note| {
+                note.set_spending_transaction(None);
+            });
+
+        invalid_txids.iter().for_each(|invalid_txid| {
+            wallet_transactions.remove(invalid_txid);
+        });
+
+        Ok(())
+    }
 }
 
 /// Trait for interfacing nullifiers with wallet data
 pub trait SyncNullifiers: SyncWallet {
-    // TODO: add method to get wallet data for writing defualt implementations on other methods
-
     // /// Get wallet nullifier map
     // fn get_nullifiers(&self) -> Result<&NullifierMap, Self::Error>;
 
@@ -95,6 +150,19 @@ pub trait SyncNullifiers: SyncWallet {
         self.get_nullifiers_mut()?
             .orchard_mut()
             .append(nullifier_map.orchard_mut());
+
+        Ok(())
+    }
+
+    /// Removes all mapped nullifiers with block height's within the given [invalid_range] (end exclusive)
+    fn remove_nullifiers(&mut self, invalid_range: &Range<BlockHeight>) -> Result<(), Self::Error> {
+        let nullifier_map = self.get_nullifiers_mut()?;
+        nullifier_map
+            .sapling_mut()
+            .retain(|_, (block_height, _)| !invalid_range.contains(block_height));
+        nullifier_map
+            .orchard_mut()
+            .retain(|_, (block_height, _)| !invalid_range.contains(block_height));
 
         Ok(())
     }
@@ -131,4 +199,6 @@ pub trait SyncShardTrees: SyncWallet {
 
         Ok(())
     }
+
+    // TODO: check if shard tree needs to be invalidated due to re-org or leaves can be inserted to replace invalid parts of commitment tree
 }
