@@ -88,7 +88,7 @@ pub mod from_inputs {
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
         crate::data::proposal::ProportionalFeeProposal,
-        crate::lightclient::propose::ProposeSendError,
+        crate::wallet::propose::ProposeSendError,
     > {
         let request = transaction_request_from_send_inputs(proposer, raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
