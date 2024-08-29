@@ -152,6 +152,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub fn start_mempool_monitor(lc: Arc<LightClient>) {
+        dbg!("starting mempool monitor");
         if !lc.config.monitor_mempool {
             return;
         }
