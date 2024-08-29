@@ -30,13 +30,21 @@ use crate::wallet::LightWallet;
 use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
 impl LightWallet {
+    /// returns Some seed phrase for the wallet.
+    /// if wallet does not have a seed phrase, returns None
+    pub async fn get_seed_phrase(&self) -> Option<String> {
+        self.mnemonic()
+            .map(|(mnemonic, _)| mnemonic.phrase().to_string())
+    }
     // Core shielded_balance function, other public methods dispatch specific sets of filters to this
     // method for processing.
-    // This methods ensures that None is returned in the case of a missing view capability
+    /// Returns the sum of unspent notes recorded by the wallet
+    /// with optional filtering.
+    /// This method ensures that None is returned in the case of a missing view capability.
     #[allow(clippy::type_complexity)]
-    async fn get_filtered_balance<D>(
+    pub async fn get_filtered_balance<D>(
         &self,
-        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>],
+        filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>,
     ) -> Option<u64>
     where
         D: DomainWalletExt,
@@ -67,10 +75,8 @@ impl LightWallet {
                     let mut selected_notes: Box<dyn Iterator<Item = &D::WalletNote>> =
                         Box::new(D::WalletNote::transaction_metadata_notes(transaction).iter());
                     // All filters in iterator are applied, by this loop
-                    for filtering_fn in filters {
-                        selected_notes =
-                            Box::new(selected_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
-                    }
+                    selected_notes =
+                        Box::new(selected_notes.filter(|nnmd| filter_function(nnmd, transaction)));
                     selected_notes
                         .map(|notedata| {
                             if notedata.spending_tx_status().is_none() {
@@ -98,7 +104,7 @@ impl LightWallet {
         }
     }
     /// Sums the transparent balance (unspent)
-    pub async fn tbalance(&self) -> Option<u64> {
+    pub async fn get_transparent_balance(&self) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
                 self.get_utxos()
@@ -120,11 +126,11 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| transaction.status.is_confirmed()),
-            Box::new(|nnmd, _| !nnmd.pending_receipt()),
-        ];
-        self.get_filtered_balance::<D>(filters).await
+        let filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool> =
+            Box::new(|nnmd, transaction| {
+                transaction.status.is_confirmed() && !nnmd.pending_receipt()
+            });
+        self.get_filtered_balance::<D>(filter_function).await
     }
     /// The amount in pending notes, not yet on chain
     pub async fn pending_balance<D: DomainWalletExt>(&self) -> Option<u64>
@@ -132,7 +138,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        self.get_filtered_balance::<D>(&[Box::new(|note, _| note.pending_receipt())])
+        self.get_filtered_balance::<D>(Box::new(|note, _| note.pending_receipt()))
             .await
     }
 
@@ -144,12 +150,13 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool>] = &[
-            Box::new(|_, transaction| transaction.status.is_confirmed()),
-            Box::new(|note, _| !note.pending_receipt()),
-            Box::new(|note, _| note.value() >= MARGINAL_FEE.into_u64()),
-        ];
-        self.get_filtered_balance::<D>(filters).await
+        let filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool> =
+            Box::new(|note, transaction| {
+                transaction.status.is_confirmed()
+                    && !note.pending_receipt()
+                    && note.value() >= MARGINAL_FEE.into_u64()
+            });
+        self.get_filtered_balance::<D>(filter_function).await
     }
 
     /// Returns total balance of all shielded pools excluding any notes with value less than marginal fee
@@ -284,6 +291,15 @@ impl LightWallet {
     /// TODO: Add Doc Comment Here!
     pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
         self.transaction_context.transaction_metadata_set.clone()
+    }
+
+    /// lists the transparent addresses known by the wallet.
+    pub fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
+        self.wallet_capability()
+            .transparent_child_addresses()
+            .iter()
+            .map(|(_index, sk)| *sk)
+            .collect::<Vec<_>>()
     }
 }
 
