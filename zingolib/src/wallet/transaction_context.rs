@@ -414,6 +414,8 @@ mod decrypt_transaction {
             .await;
         }
 
+        /// account here is a verb meaning record note data
+        /// and perform some other appropriate actions
         async fn account_for_shielded_receipts<D>(
             &self,
             ivk: Ivk<D, External>,
@@ -446,19 +448,18 @@ mod decrypt_transaction {
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
                 // if status is pending add the whole pending note
                 // otherwise, just update the output index
-                if let Some(height) = status.get_pending_height() {
+                if status.is_pending() {
                     self.transaction_metadata_set
                         .write()
                         .await
                         .transaction_records_by_id
                         .add_pending_note::<D>(
                             transaction.txid(),
-                            height,
                             block_time,
                             note.clone(),
                             to,
                             output_index,
-                            status.is_mempool(),
+                            status,
                         );
                 } else {
                     self.transaction_metadata_set
