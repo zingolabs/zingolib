@@ -38,8 +38,8 @@ pub mod send_with_proposal {
 
     use thiserror::Error;
 
-    use crate::lightclient::propose::{ProposeSendError, ProposeShieldError};
     use crate::lightclient::LightClient;
+    use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
@@ -146,13 +146,13 @@ pub mod send_with_proposal {
             &self,
             request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
-            let proposal = self.create_send_proposal(request).await?;
+            let proposal = self.wallet.create_send_proposal(request).await?;
             Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
         }
 
         /// Shields all transparent funds without confirmation.
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
-            let proposal = self.create_shield_proposal().await?;
+            let proposal = self.wallet.create_shield_proposal().await?;
             Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
         }
     }
