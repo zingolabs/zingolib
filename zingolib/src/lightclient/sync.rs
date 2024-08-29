@@ -193,14 +193,17 @@ impl LightClient {
                             ),
                         ) {
                             let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
-                                rtransaction.height as u32,
+                                // The mempool transaction's height field is the height
+                                // it entered the mempool. Making it one above that height,
+                                // i.e. the target height, keeps this value consistant with
+                                // the transmitted height, which we record as the target height.
+                                rtransaction.height as u32 + 1,
                             ));
-                            match transaction_metadata_set
-                                .write()
-                                .await
+                            let tms_readlock = transaction_metadata_set.read().await;
+                            let record = tms_readlock
                                 .transaction_records_by_id
-                                .get_mut(&transaction.txid())
-                            {
+                                .get(&transaction.txid());
+                            match record {
                                 None => {
                                     let price = price.read().await.clone();
                                     //debug!("Mempool attempting to scan {}", tx.txid());
@@ -218,10 +221,21 @@ impl LightClient {
                                     )
                                     .await;
                                 }
-                                // If the txid is already in the db, then it's already recorded
-                                // the only thing to do is confirm its presence in the mempool.
-                                Some(ref mut transaction_record) => {
-                                    transaction_record.status = status
+                                Some(r) => {
+                                    if matches!(r.status, ConfirmationStatus::Transmitted(_)) {
+                                        // In this case, we need write access, to change the status
+                                        // from Transmitted to Mempool
+                                        drop(tms_readlock);
+                                        println!("setting transaction to mempool");
+                                        transaction_metadata_set
+                                            .write()
+                                            .await
+                                            .transaction_records_by_id
+                                            .get_mut(&transaction.txid())
+                                            .expect("None case has already been handled")
+                                            .status = status;
+                                        println!("set transaction to mempool");
+                                    }
                                 }
                             }
                         }

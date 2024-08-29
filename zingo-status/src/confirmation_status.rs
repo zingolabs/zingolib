@@ -13,7 +13,7 @@ pub enum ConfirmationStatus {
     Transmitted(BlockHeight),
 
     /// The transaction is known to be or have been in the mempool.
-    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    /// The BlockHeight is the 1 + the height of the chain as the transaction entered the mempool, i.e. the target height.
     Mempool(BlockHeight),
 
     /// The transaction has been included in at-least one block mined to the zcash blockchain.

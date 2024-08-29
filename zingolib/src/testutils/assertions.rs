@@ -20,6 +20,7 @@ pub async fn assert_record_fee_and_status<NoteId>(
     txids: &NonEmpty<TxId>,
     expected_status: ConfirmationStatus,
 ) -> u64 {
+    println!("acquiring record lock");
     let records = &client
         .wallet
         .transaction_context
@@ -27,11 +28,16 @@ pub async fn assert_record_fee_and_status<NoteId>(
         .read()
         .await
         .transaction_records_by_id;
+    println!("record lock acquired");
 
     assert_eq!(proposal.steps().len(), txids.len());
     let mut total_fee = 0;
     for (i, step) in proposal.steps().iter().enumerate() {
-        let record = records.get(&txids[i]).expect("sender must recognize txid");
+        let record = records.get(&txids[i]).expect(&format!(
+            "sender must recognize txid.\nExpected {}\nRecognised: {:?}",
+            txids[i],
+            records.0.values().collect::<Vec<_>>()
+        ));
         // does this record match this step?
         // we can check that it has the expected status
         assert_eq!(record.status, expected_status);
