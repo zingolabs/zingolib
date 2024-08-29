@@ -38,9 +38,11 @@ impl LightWallet {
     }
     // Core shielded_balance function, other public methods dispatch specific sets of filters to this
     // method for processing.
-    // This methods ensures that None is returned in the case of a missing view capability
+    /// Returns the sum of unspent notes recorded by the wallet
+    /// with optional filtering.
+    /// This method ensures that None is returned in the case of a missing view capability.
     #[allow(clippy::type_complexity)]
-    async fn get_filtered_balance<D>(
+    pub async fn get_filtered_balance<D>(
         &self,
         filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>,
     ) -> Option<u64>
@@ -102,7 +104,7 @@ impl LightWallet {
         }
     }
     /// Sums the transparent balance (unspent)
-    pub async fn tbalance(&self) -> Option<u64> {
+    pub async fn get_transparent_balance(&self) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
                 self.get_utxos()
