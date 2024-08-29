@@ -30,6 +30,12 @@ use crate::wallet::LightWallet;
 use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
 
 impl LightWallet {
+    /// returns Some seed phrase for the wallet.
+    /// if wallet does not have a seed phrase, returns None
+    pub async fn get_seed_phrase(&self) -> Option<String> {
+        self.mnemonic()
+            .map(|(mnemonic, _)| mnemonic.phrase().to_string())
+    }
     // Core shielded_balance function, other public methods dispatch specific sets of filters to this
     // method for processing.
     // This methods ensures that None is returned in the case of a missing view capability
