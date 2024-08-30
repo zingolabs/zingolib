@@ -461,26 +461,23 @@ mod decrypt_transaction {
                     block_time,
                 );
 
+                // now that the transaction exists, add_pending_note or update_output_index will succeed _todo_error_stack is not to be handled.
+
                 if status.is_pending() {
-                    let _todo_error_stack = self
-                        .transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .add_pending_note::<D>(transaction.txid(), note.clone(), to, output_index);
+                    let _todo_error_stack = tx_map.add_pending_note::<D>(
+                        transaction.txid(),
+                        note.clone(),
+                        to,
+                        output_index,
+                    );
                 } else {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .update_output_index::<D>(
-                            transaction.txid(),
-                            status,
-                            block_time,
-                            note.clone(),
-                            output_index,
-                        )
+                    let _todo_error_stack = tx_map.update_output_index::<D>(
+                        transaction.txid(),
+                        note.clone(),
+                        output_index,
+                    );
                 }
+
                 let memo = memo_bytes
                     .clone()
                     .try_into()
