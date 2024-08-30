@@ -448,19 +448,26 @@ mod decrypt_transaction {
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
                 // if status is pending add the whole pending note
                 // otherwise, just update the output index
+
+                let tx_map = &mut self
+                    .transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id;
+
+                let _transaction_record = tx_map.create_modify_get_transaction_metadata(
+                    &transaction.txid(),
+                    status,
+                    block_time,
+                );
+
                 if status.is_pending() {
-                    self.transaction_metadata_set
+                    let _todo_error_stack = self
+                        .transaction_metadata_set
                         .write()
                         .await
                         .transaction_records_by_id
-                        .add_pending_note::<D>(
-                            transaction.txid(),
-                            block_time,
-                            note.clone(),
-                            to,
-                            output_index,
-                            status,
-                        );
+                        .add_pending_note::<D>(transaction.txid(), note.clone(), to, output_index);
                 } else {
                     self.transaction_metadata_set
                         .write()

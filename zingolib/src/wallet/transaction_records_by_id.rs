@@ -615,18 +615,9 @@ impl TransactionRecordsById {
         note: D::Note,
         to: D::Recipient,
         output_index: usize,
-        status: ConfirmationStatus,
     ) -> Result<(), ()> {
-        if status.is_confirmed() {
-            // this could be a complex error variant... but i suspect it will disappear before i get a chance to write it
-            return Err(());
-        }
-
         let has_transaction = self.get_mut(&txid);
         let transaction_record = has_transaction.ok_or(())?;
-
-        // let transaction_record =
-        //     self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
         match D::WalletNote::get_record_outputs(transaction_record)
             .iter_mut()
