@@ -217,7 +217,7 @@ pub struct UserBalances {
     pub incoming_dust: u64,
 }
 
-/// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
+/// The LightClient connects one LightWallet to one lightwalletd server via gRPC.
 ///  1. initialization of stored state
 ///      * from seed
 ///      * from keys
@@ -226,6 +226,8 @@ pub struct UserBalances {
 ///  2. synchronization of the client with the state of the blockchain via a gRPC server
 ///      *
 pub struct LightClient {
+    // / the LightClient connects to one server.
+    // pub(crate) server_uri: Arc<RwLock<Uri>>,
     pub(crate) config: ZingoConfig,
     /// TODO: Add Doc Comment Here!
     pub wallet: LightWallet,
@@ -242,7 +244,7 @@ pub struct LightClient {
     save_buffer: ZingoSaveBuffer,
 }
 
-///  This is the omnibus interface to the library, we are currently in the process of refining this typez broad definition!
+/// all the wonderfully intertwined ways to conjure a LightClient
 pub mod instantiation {
     use log::debug;
     use std::{
@@ -275,7 +277,7 @@ pub mod instantiation {
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new())),
                 interrupt_sync: Arc::new(RwLock::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),

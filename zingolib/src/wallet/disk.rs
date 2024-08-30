@@ -32,7 +32,13 @@ use super::{
 };
 
 impl LightWallet {
-    /// TODO: Add Doc Comment Here!
+    /// Changes in version 27:
+    ///   - The wallet does not have to have a mnemonic.
+    ///     Absence of mnemonic is represented by an empty byte vector in v27.
+    ///     v26 serialized wallet is always loaded with `Some(mnemonic)`.
+    ///   - The wallet capabilities can be restricted from spending to view-only or none.
+    ///     We introduce `Capability` type represent different capability types in v27.
+    ///     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
     pub const fn serialized_version() -> u64 {
         28
     }
@@ -191,8 +197,16 @@ impl LightWallet {
             WalletZecPriceInfo::read(&mut reader)?
         };
 
+        // this initialization combines two types of data
         let transaction_context = TransactionContext::new(
+            // Config data could be used differently based on the circumstances
+            // hardcoded?
+            // entered at init by user?
+            // stored on disk in a separate location and connected by a descendant library (such as zingo-mobile)?
             config,
+            // Saveable Arc data
+            //   - Arcs allow access between threads.
+            //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
             Arc::new(wallet_capability),
             Arc::new(RwLock::new(transactions)),
         );
