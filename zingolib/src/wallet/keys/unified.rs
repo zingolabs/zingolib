@@ -14,7 +14,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
-use crate::config::ZingoConfig;
+use crate::config::{ChainType, ZingoConfig};
 use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
@@ -334,7 +334,7 @@ impl WalletCapability {
     /// TODO: Add Doc Comment Here!
     pub fn get_taddr_to_secretkey_map(
         &self,
-        config: &ZingoConfig,
+        chain: &ChainType,
     ) -> Result<HashMap<String, secp256k1::SecretKey>, String> {
         if let Capability::Spend(transparent_sk) = &self.transparent {
             self.transparent_child_addresses()
@@ -345,7 +345,7 @@ impl WalletCapability {
                         TransparentAddress::ScriptHash(hash) => hash,
                     };
                     Ok((
-                        hash.to_base58check(&config.chain.b58_pubkey_address_prefix(), &[]),
+                        hash.to_base58check(&chain.b58_pubkey_address_prefix(), &[]),
                         transparent_sk
                             .derive_private_key(KeyIndex::Normal(*i as u32))
                             .map_err(|e| e.to_string())?
@@ -461,7 +461,7 @@ impl WalletCapability {
         Ok(wc)
     }
 
-    pub(crate) fn get_all_taddrs(&self, config: &ZingoConfig) -> HashSet<String> {
+    pub(crate) fn get_all_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.addresses
             .iter()
             .filter_map(|address| {
@@ -471,7 +471,7 @@ impl WalletCapability {
                     {
                         Some(super::ToBase58Check::to_base58check(
                             hash.as_slice(),
-                            &config.chain.b58_pubkey_address_prefix(),
+                            &chain.b58_pubkey_address_prefix(),
                             &[],
                         ))
                     } else {
