@@ -610,42 +610,6 @@ impl TransactionRecordsById {
         }
     }
 
-    /// adds a note. however, does not fully commit to adding a note, because this note isnt chained into block
-    /// if the transaction is not already recorded, return Err(())
-    pub(crate) fn add_pending_note<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        note: D::Note,
-        to: D::Recipient,
-        output_index: usize,
-    ) -> Result<(), ()> {
-        let has_transaction = self.get_mut(&txid);
-        let transaction_record = has_transaction.ok_or(())?;
-
-        match D::WalletNote::get_record_outputs(transaction_record)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            None => {
-                let nd = D::WalletNote::from_parts(
-                    to.diversifier(),
-                    note,
-                    None,
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    false,
-                    Some(output_index as u32),
-                );
-
-                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(nd);
-            }
-            Some(_) => {}
-        }
-        Ok(())
-    }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,

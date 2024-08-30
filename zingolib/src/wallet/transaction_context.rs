@@ -455,7 +455,7 @@ mod decrypt_transaction {
                     .await
                     .transaction_records_by_id;
 
-                let _transaction_record = tx_map.create_modify_get_transaction_metadata(
+                let transaction_record = tx_map.create_modify_get_transaction_metadata(
                     &transaction.txid(),
                     status,
                     block_time,
@@ -464,12 +464,7 @@ mod decrypt_transaction {
                 // now that the transaction exists, add_pending_note or update_output_index will succeed _todo_error_stack is not to be handled.
 
                 if status.is_pending() {
-                    let _todo_error_stack = tx_map.add_pending_note::<D>(
-                        transaction.txid(),
-                        note.clone(),
-                        to,
-                        output_index,
-                    );
+                    transaction_record.add_pending_note::<D>(note.clone(), to, output_index);
                 } else {
                     let _todo_error_stack = tx_map.update_output_index::<D>(
                         transaction.txid(),
