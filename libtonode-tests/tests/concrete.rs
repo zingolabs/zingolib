@@ -25,7 +25,7 @@ use zingolib::{
     utils,
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
-        keys::unified::WalletCapability,
+        keys::keystore::Keystore,
     },
 };
 
@@ -59,7 +59,7 @@ fn check_expected_balance_with_fvks(
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
     balance: &PoolBalances,
-    watch_wc: &WalletCapability,
+    watch_wc: &Keystore,
     fvks: &[&Fvk],
     ovk: &Fvk,
     svk: &Fvk,
@@ -69,6 +69,9 @@ fn check_view_capability_bounds(
     sent_t_value: Option<u64>,
     notes: &JsonValue,
 ) {
+    let Keystore::InMemory(watch_wc) = watch_wc else {
+        todo!("Do this for ledger too")
+    };
     //Orchard
     if !fvks.contains(&ovk) {
         assert!(!watch_wc.orchard.can_view());
@@ -946,7 +949,7 @@ mod slow {
         check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
         // Extract viewing keys
-        let wallet_capability = original_recipient.wallet.wallet_capability().clone();
+        let wallet_capability = original_recipient.wallet.keystore().clone();
         let [o_fvk, s_fvk, t_fvk] =
             zingolib::testutils::build_fvks_from_wallet_capability(&wallet_capability);
         let fvks_sets = [
@@ -964,7 +967,7 @@ mod slow {
             log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
             let watch_client = build_fvk_client(fvks, &zingo_config).await;
-            let watch_wc = watch_client.wallet.wallet_capability();
+            let watch_wc = watch_client.wallet.keystore();
             // assert empty wallet before rescan
             let balance = watch_client.do_balance().await;
             check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
@@ -1795,7 +1798,7 @@ mod slow {
             addresses[0]["receivers"]["sapling"],
             encode_payment_address(
                 recipient.config().chain.hrp_sapling_payment_address(),
-                recipient.wallet.wallet_capability().addresses()[0]
+                recipient.wallet.keystore().addresses()[0]
                     .sapling()
                     .unwrap()
             ),
@@ -1810,7 +1813,7 @@ mod slow {
             assert_eq!(faucet_sent_transaction["amount"].as_u64().unwrap(), value);
             assert_eq!(
                 faucet_sent_transaction["address"],
-                recipient.wallet.wallet_capability().addresses()[0]
+                recipient.wallet.keystore().addresses()[0]
                     .encode(&recipient.config().chain)
             );
             assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 4);

@@ -385,6 +385,27 @@ pub mod instantiation {
 
             Self::create_with_new_wallet(config, latest_block)
         }
+
+        
+        fn create_with_new_wallet_with_ledger(config: &ZingoConfig, height: u64) -> io::Result<Self> {
+
+            Runtime::new().unwrap().block_on(async move {
+                let l = LightClient::create_unconnected(config, WalletBase::Ledger, height)
+                    .await?;
+                l.set_wallet_initial_state(height).await;
+
+                debug!("Created new wallet with a new seed!");
+                debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+
+                // Save
+                l.save_internal_rust()
+                    .await
+                    .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+
+                Ok(l)
+            })
+        }
+       
     }
 }
 
@@ -473,8 +494,12 @@ impl LightClient {
 
         let new_address = self
             .wallet
-            .wallet_capability()
-            .new_address(desired_receivers)?;
+            .keystore()
+            .new_address(
+                desired_receivers, 
+                #[cfg(feature = "ledger-support")]
+                &self.config
+            )?;
 
         // self.save_internal_rust().await?;
 

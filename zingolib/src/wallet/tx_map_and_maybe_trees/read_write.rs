@@ -10,7 +10,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::{
     data::witness_trees::WitnessTrees,
-    wallet::{data::TransactionRecord, keys::unified::WalletCapability},
+    wallet::{data::TransactionRecord, keys::keystore::Keystore},
 };
 
 use super::{TransactionRecordsById, TxMapAndMaybeTrees};
@@ -23,12 +23,12 @@ impl TxMapAndMaybeTrees {
     /// TODO: Doc-comment!
     pub fn read_old<R: Read>(
         mut reader: R,
-        wallet_capability: &WalletCapability,
+        keystore: &Keystore,
     ) -> io::Result<Self> {
         // Note, witness_trees will be Some(x) if the wallet has spend capability
         // so this check is a very un-ergonomic way of checking if the wallet
         // can spend.
-        let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut witness_trees = keystore.get_trees_witness_trees();
         let mut old_inc_witnesses = if witness_trees.is_some() {
             Some((Vec::new(), Vec::new()))
         } else {
@@ -40,7 +40,7 @@ impl TxMapAndMaybeTrees {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
+                TransactionRecord::read(r, (keystore, old_inc_witnesses.as_mut()))
                     .unwrap(),
             ))
         })?;
@@ -69,12 +69,12 @@ impl TxMapAndMaybeTrees {
         Ok(Self {
             transaction_records_by_id: map,
             witness_trees,
-            transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            transparent_child_addresses: keystore.transparent_child_addresses().clone(),
         })
     }
 
     /// TODO: Doc-comment!
-    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, keystore: &Keystore) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             return Err(io::Error::new(
@@ -83,7 +83,7 @@ impl TxMapAndMaybeTrees {
             ));
         }
 
-        let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut witness_trees = keystore.get_trees_witness_trees();
         let mut old_inc_witnesses = if witness_trees.is_some() {
             Some((Vec::new(), Vec::new()))
         } else {
@@ -95,7 +95,7 @@ impl TxMapAndMaybeTrees {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
+                TransactionRecord::read(r, (keystore, old_inc_witnesses.as_mut()))?,
             ))
         })?;
 
@@ -104,7 +104,7 @@ impl TxMapAndMaybeTrees {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
                 let transaction_metadata =
-                    TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?;
+                    TransactionRecord::read(r, (keystore, old_inc_witnesses.as_mut()))?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -136,7 +136,7 @@ impl TxMapAndMaybeTrees {
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
             witness_trees,
-            transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            transparent_child_addresses: keystore.transparent_child_addresses().clone(),
         })
     }
 

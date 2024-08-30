@@ -10,7 +10,7 @@ use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
-    keys::unified::WalletCapability,
+    keys::keystore::Keystore,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
     tx_map_and_maybe_trees::TxMapAndMaybeTrees,
     utils::txid_from_slice,
@@ -40,7 +40,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
-    wc: Arc<WalletCapability>,
+    wc: Arc<Keystore>,
     transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     config: Arc<ZingoConfig>,
 }
@@ -48,7 +48,7 @@ pub struct TrialDecryptions {
 impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
-        wc: Arc<WalletCapability>,
+        wc: Arc<Keystore>,
         transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
@@ -130,7 +130,7 @@ impl TrialDecryptions {
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
-        wc: Arc<WalletCapability>,
+        wc: Arc<Keystore>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: Option<Ivk<SaplingDomain, External>>,
         orchard_ivk: Option<Ivk<OrchardDomain, External>>,
@@ -265,7 +265,7 @@ impl TrialDecryptions {
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
         config: &crate::config::ZingoConfig,
-        wc: &Arc<WalletCapability>,
+        wc: &Arc<Keystore>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
         detected_transaction_id_sender: &UnboundedSender<(
@@ -427,7 +427,7 @@ fn update_witnesses<D>(
         BlockHeight,
     )>,
     txmds_writelock: &mut TxMapAndMaybeTrees,
-    wc: &Arc<WalletCapability>,
+    wc: &Arc<Keystore>,
 ) -> ZingoLibResult<()>
 where
     D: DomainWalletExt,

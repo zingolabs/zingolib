@@ -21,7 +21,8 @@ use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::traits::Diversifiable as _;
 
 use crate::wallet::error::BalanceError;
-use crate::wallet::keys::unified::{Capability, WalletCapability};
+use crate::wallet::keys::{keystore::Keystore, unified::Capability};
+
 use crate::wallet::notes::TransparentOutput;
 use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
@@ -52,14 +53,17 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
     {
         // For the moment we encode lack of view capability as None
+        let Keystore::InMemory(wc) = &*self.keystore() else {
+            todo!("Do this for ledger too")
+        };
         match D::SHIELDED_PROTOCOL {
             ShieldedProtocol::Sapling => {
-                if !self.wallet_capability().sapling.can_view() {
+                if !wc.sapling.can_view() {
                     return None;
                 }
             }
             ShieldedProtocol::Orchard => {
-                if !self.wallet_capability().orchard.can_view() {
+                if !wc.orchard.can_view() {
                     return None;
                 }
             }
@@ -97,7 +101,10 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        if let Capability::Spend(_) = self.wallet_capability().orchard {
+        let Keystore::InMemory(wc) = &*self.keystore() else {
+            todo!("Do this for ledger too")
+        };
+        if let Capability::Spend(_) = wc.orchard {
             self.confirmed_balance::<D>().await
         } else {
             None
@@ -105,7 +112,10 @@ impl LightWallet {
     }
     /// Sums the transparent balance (unspent)
     pub async fn get_transparent_balance(&self) -> Option<u64> {
-        if self.wallet_capability().transparent.can_view() {
+        let Keystore::InMemory(wc) = &*self.keystore() else {
+            todo!("Do this for ledger too")
+        };
+        if wc.transparent.can_view() {
             Some(
                 self.get_utxos()
                     .await
@@ -183,16 +193,16 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &crate::config::ChainType,
         note: &D::WalletNote,
-        wallet_capability: &WalletCapability,
+        keystore: &Keystore,
     ) -> String
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::wc_to_fvk(wallet_capability).expect("to get fvk from wc")
+        D::wc_to_fvk(keystore).expect("to get fvk from wc")
         .diversified_address(*note.diversifier())
         .and_then(|address| {
-            D::ua_from_contained_receiver(wallet_capability, &address)
+            D::ua_from_contained_receiver(keystore, &address)
                 .map(|ua| ua.encode(network))
         })
         .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
@@ -295,7 +305,7 @@ impl LightWallet {
 
     /// lists the transparent addresses known by the wallet.
     pub fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
-        self.wallet_capability()
+        self.keystore()
             .transparent_child_addresses()
             .iter()
             .map(|(_index, sk)| *sk)

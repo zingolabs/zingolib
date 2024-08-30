@@ -15,6 +15,9 @@ use zcash_primitives::{
 };
 
 pub mod extended_transparent;
+pub mod keystore;
+#[cfg(feature = "ledger-support")]
+pub mod ledger;
 pub mod unified;
 
 /// Sha256(Sha256(value))

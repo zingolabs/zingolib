@@ -175,7 +175,7 @@ impl LightClient {
                 let lc1 = lci.clone();
 
                 let h1 = tokio::spawn(async move {
-                    let key = lc1.wallet.wallet_capability();
+                    let key = lc1.wallet.keystore();
                     let transaction_metadata_set = lc1
                         .wallet
                         .transaction_context
@@ -437,7 +437,7 @@ impl LightClient {
         // Local state necessary for a transaction fetch
         let transaction_context = TransactionContext::new(
             &self.config,
-            self.wallet.wallet_capability(),
+            self.wallet.keystore(),
             self.wallet.transactions(),
         );
 
@@ -460,7 +460,7 @@ impl LightClient {
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(
             Arc::new(self.config.clone()),
-            self.wallet.wallet_capability(),
+            self.wallet.keystore(),
             self.wallet.transactions(),
         );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
@@ -504,7 +504,7 @@ impl LightClient {
 
         // 1. Fetch the transparent txns only after reorgs are done.
         let taddr_transactions_handle = FetchTaddrTransactions::new(
-            self.wallet.wallet_capability(),
+            self.wallet.keystore(),
             Arc::new(self.config.clone()),
         )
         .start(

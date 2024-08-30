@@ -6,7 +6,7 @@ use zcash_primitives::{memo::Memo, merkle_tree::HashSer, transaction::TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::{
-    keys::unified::WalletCapability,
+    keys::keystore::Keystore,
     notes::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery},
     traits::{FromBytes, FromCommitment, Nullifier, ReadableWriteable, ToBytes},
     transaction_record::TransactionRecord,
@@ -101,7 +101,7 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     /// TODO: Add Doc Comment Here!
     type Note: PartialEq
-        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
+        + for<'a> ReadableWriteable<(Self::Diversifier, &'a Keystore)>
         + Clone;
     /// TODO: Add Doc Comment Here!
     type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;

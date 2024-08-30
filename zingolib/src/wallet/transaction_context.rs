@@ -7,7 +7,9 @@ use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::{keys::keystore::Keystore, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+
+
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
@@ -15,7 +17,7 @@ pub struct TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub config: ZingoConfig,
     /// TODO: Add Doc Comment Here!
-    pub(crate) key: Arc<WalletCapability>,
+    pub(crate) key: Arc<Keystore>,
     /// TODO: Add Doc Comment Here!
     pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
 }
@@ -24,7 +26,7 @@ impl TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub fn new(
         config: &ZingoConfig,
-        key: Arc<WalletCapability>,
+        key: Arc<Keystore>,
         transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
@@ -107,7 +109,7 @@ mod decrypt_transaction {
             let mut txid_indexed_zingo_memos = Vec::new();
 
             // Collect our t-addresses for easy checking
-            let taddrs_set = self.key.get_all_taddrs(&self.config.chain);
+            let taddrs_set = self.key.get_all_taddrs(&self.config);
 
             let mut outgoing_metadatas = vec![];
 
