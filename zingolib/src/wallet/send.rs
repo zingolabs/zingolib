@@ -214,11 +214,10 @@ impl LightWallet {
         let serverz_transaction_id =
             broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
 
-        // Add this transaction to the mempool structure
         {
             let price = self.price.read().await.clone();
 
-            let status = ConfirmationStatus::Pending(submission_height);
+            let status = ConfirmationStatus::Transmitted(submission_height);
             self.transaction_context
                 .scan_full_tx(
                     transaction,

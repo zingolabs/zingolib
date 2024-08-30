@@ -531,7 +531,7 @@ pub mod mocks {
 
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
-    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
+    use zingo_status::confirmation_status::ConfirmationStatus::Mempool;
 
     use crate::{
         mocks::{
@@ -665,7 +665,7 @@ pub mod mocks {
         orchard_semi_spent: u64,
     ) -> TransactionRecord {
         let spend = Some((random_txid(), Confirmed(112358.into())));
-        let pending_spend = Some((random_txid(), Pending(853211.into())));
+        let pending_spend = Some((random_txid(), Mempool(853211.into())));
 
         TransactionRecordBuilder::default()
             .transparent_outputs(

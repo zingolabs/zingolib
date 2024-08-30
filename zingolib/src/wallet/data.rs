@@ -1738,8 +1738,11 @@ pub mod summaries {
         /// Output is not spent.
         Unspent,
         /// Output is pending spent.
-        /// The transaction consuming this output is pending.
-        PendingSpent(TxId),
+        /// The transaction consuming this output has been transmitted.
+        TransmittedSpent(TxId),
+        /// Output is pending spent.
+        /// The transaction consuming this output has been detected in the mempool.
+        MempoolSpent(TxId),
         /// Output is spent.
         /// The transaction consuming this output is confirmed.
         Spent(TxId),
@@ -1750,7 +1753,11 @@ pub mod summaries {
         pub fn from_spend(spend: &Option<(TxId, ConfirmationStatus)>) -> Self {
             match spend {
                 None => SpendSummary::Unspent,
-                Some((txid, ConfirmationStatus::Pending(_))) => SpendSummary::PendingSpent(*txid),
+                Some((txid, ConfirmationStatus::Transmitted(_))) => {
+                    SpendSummary::TransmittedSpent(*txid)
+                }
+
+                Some((txid, ConfirmationStatus::Mempool(_))) => SpendSummary::MempoolSpent(*txid),
                 Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
             }
         }
@@ -1760,8 +1767,9 @@ pub mod summaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
                 SpendSummary::Unspent => write!(f, "unspent"),
-                SpendSummary::PendingSpent(txid) => write!(f, "pending spent in {}", txid),
-                SpendSummary::Spent(txid) => write!(f, "spent in {}", txid),
+                SpendSummary::TransmittedSpent(txid) => write!(f, "transmitted: spent in {}", txid),
+                SpendSummary::Spent(txid) => write!(f, "confirmed: spent in {}", txid),
+                SpendSummary::MempoolSpent(txid) => write!(f, "mempool: spent in {}", txid),
             }
         }
     }

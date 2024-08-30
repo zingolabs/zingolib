@@ -203,7 +203,7 @@ impl LightClient {
                             {
                                 let price = price.read().await.clone();
                                 //debug!("Mempool attempting to scan {}", tx.txid());
-                                let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
+                                let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
                                     rtransaction.height as u32,
                                 ));
 
