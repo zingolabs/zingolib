@@ -113,8 +113,8 @@ impl TransactionRecord {
             }
         }
     }
+
     /// adds a note. however, does not fully commit to adding a note, because this note isnt chained into block
-    /// if the transaction is not already recorded, return Err(())
     pub(crate) fn add_pending_note<D: DomainWalletExt>(
         &mut self,
         note: D::Note,
@@ -142,6 +142,25 @@ impl TransactionRecord {
                 D::WalletNote::transaction_metadata_notes_mut(self).push(nd);
             }
             Some(_) => {}
+        }
+    }
+
+    /// returns Err(()) if note does not exist
+    pub(crate) fn update_output_index<D: DomainWalletExt>(
+        &mut self,
+        note: D::Note,
+        output_index: usize,
+    ) -> Result<(), ()> {
+        if let Some(n) = D::WalletNote::transaction_metadata_notes_mut(self)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            if n.output_index().is_none() {
+                *n.output_index_mut() = Some(output_index as u32)
+            }
+            Ok(())
+        } else {
+            Err(())
         }
     }
 }

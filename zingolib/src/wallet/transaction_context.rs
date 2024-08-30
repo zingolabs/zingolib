@@ -461,16 +461,11 @@ mod decrypt_transaction {
                     block_time,
                 );
 
-                // now that the transaction exists, add_pending_note or update_output_index will succeed _todo_error_stack is not to be handled.
-
                 if status.is_pending() {
                     transaction_record.add_pending_note::<D>(note.clone(), to, output_index);
                 } else {
-                    let _todo_error_stack = tx_map.update_output_index::<D>(
-                        transaction.txid(),
-                        note.clone(),
-                        output_index,
-                    );
+                    let _note_does_not_exist_result =
+                        transaction_record.update_output_index::<D>(note.clone(), output_index);
                 }
 
                 let memo = memo_bytes

@@ -587,29 +587,6 @@ impl TransactionRecordsById {
         }
     }
 
-    /// returns Err(()) if transaction or note does not exist
-    pub(crate) fn update_output_index<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        note: D::Note,
-        output_index: usize,
-    ) -> Result<(), ()> {
-        let has_transaction = self.get_mut(&txid);
-        let transaction_record = has_transaction.ok_or(())?;
-
-        if let Some(n) = D::WalletNote::transaction_metadata_notes_mut(transaction_record)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            if n.output_index().is_none() {
-                *n.output_index_mut() = Some(output_index as u32)
-            }
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
