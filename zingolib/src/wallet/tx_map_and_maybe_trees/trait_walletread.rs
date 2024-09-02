@@ -335,7 +335,7 @@ mod tests {
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
-    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
+    use zingo_status::confirmation_status::ConfirmationStatus::Mempool;
 
     use crate::{
         mocks::default_txid,
@@ -409,7 +409,7 @@ mod tests {
                         .build(),
                 );
             let spend = Some((default_txid(), Confirmed(112358.into())));
-            let pending_spend = Some((default_txid(), Pending(112357.into())));
+            let mempool_spend = Some((default_txid(), Mempool(112357.into())));
             transaction_records_and_maybe_trees
                 .transaction_records_by_id
                 .insert_transaction_record(
@@ -423,7 +423,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().spending_tx_status(pending_spend).clone())
+                        .orchard_notes(OrchardNoteBuilder::default().spending_tx_status(mempool_spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
                         .build(),
