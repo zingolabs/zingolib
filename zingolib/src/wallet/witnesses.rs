@@ -23,12 +23,15 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     pub async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
+        println!("Got to line {}", line!());
         let last_synced_height = self.last_synced_height().await;
+        println!("Got to line {}", line!());
         let mut txmds_writelock = self
             .transaction_context
             .transaction_metadata_set
             .write()
             .await;
+        println!("Got to line {}", line!());
         if let Some(ref mut trees) = txmds_writelock.witness_trees_mut() {
             trees
                 .witness_tree_sapling
