@@ -484,11 +484,7 @@ mod decrypt_transaction {
                         }
                     }
                 }
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
+                tx_map.add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
             }
         }
         /// Transactions contain per-protocol "bundles" of components.
