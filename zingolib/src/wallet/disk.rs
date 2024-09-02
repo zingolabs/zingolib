@@ -16,13 +16,13 @@ use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
 
-use crate::config::ZingoConfig;
+use crate::{config::ZingoConfig, wallet::keys::keystore::Keystore};
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
 use crate::wallet::{utils, SendProgress};
 
-use super::keys::unified::{Capability, WalletCapability};
+use super::keys::unified::Capability;
 
 use super::LightWallet;
 use super::{
@@ -120,19 +120,24 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let wallet_capability = WalletCapability::read(&mut reader, ())?;
-        info!("Keys in this wallet:");
-        match &wallet_capability.orchard {
+        let keystore = Arc::new(Keystore::read(&mut reader, ())?);
+
+        let Keystore::InMemory(wc) = &*keystore else {
+            todo!("Do this for ledger too")
+        };
+
+        // info!("Keys in this wallet:");
+        match &wc.orchard {
             Capability::None => (),
             Capability::View(_) => info!("  - Orchard Full Viewing Key"),
             Capability::Spend(_) => info!("  - Orchard Spending Key"),
         };
-        match &wallet_capability.sapling {
+        match &wc.sapling {
             Capability::None => (),
             Capability::View(_) => info!("  - Sapling Extended Full Viewing Key"),
             Capability::Spend(_) => info!("  - Sapling Extended Spending Key"),
         };
-        match &wallet_capability.transparent {
+        match &wc.transparent {
             Capability::None => (),
             Capability::View(_) => info!("  - transparent extended public key"),
             Capability::Spend(_) => info!("  - transparent extended private key"),
@@ -146,9 +151,9 @@ impl LightWallet {
         }
 
         let transactions = if external_version <= 14 {
-            TxMapAndMaybeTrees::read_old(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read_old(&mut reader, &keystore)
         } else {
-            TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
+            TxMapAndMaybeTrees::read(&mut reader, &keystore)
         }?;
 
         let chain_name = utils::read_string(&mut reader)?;
@@ -207,7 +212,7 @@ impl LightWallet {
             // Saveable Arc data
             //   - Arcs allow access between threads.
             //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
-            Arc::new(wallet_capability),
+            keystore,
             Arc::new(RwLock::new(transactions)),
         );
 

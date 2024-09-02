@@ -1,4 +1,5 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
+use crate::wallet::keys::keystore::Keystore;
 use crate::wallet::now;
 
 use futures::Future;
@@ -139,13 +140,17 @@ impl LightWallet {
 
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
-
+        
+        let Keystore::InMemory(ref wc) = *self.keystore() else {
+            unreachable!("Known to be InMemory due to new_from_phrase impl")
+        };
+        
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
             crate::wallet::utils::read_sapling_params()
                 .map_err(BuildTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-        let unified_spend_key = UnifiedSpendingKey::try_from(self.wallet_capability().as_ref())
+        let unified_spend_key = UnifiedSpendingKey::try_from(wc)
             .map_err(BuildTransactionError::UnifiedSpendKey)?;
 
         // We don't support zip320 yet. Only one step.
@@ -188,7 +193,7 @@ impl LightWallet {
                 &[],
                 step,
                 Some(usk_to_tkey),
-                Some(self.wallet_capability().first_sapling_address()),
+                Some(self.keystore().first_sapling_address()),
             )?,
         )
     }

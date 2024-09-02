@@ -9,7 +9,7 @@ use crate::wallet::data::summaries::{
     OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
     TransactionSummaryInterface as _, TransparentCoinSummary,
 };
-use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::keys::keystore::Keystore;
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
@@ -46,22 +46,22 @@ pub mod paths;
 pub mod regtest;
 
 /// TODO: Add Doc Comment Here!
-pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
+pub fn build_fvks_from_wallet_capability(keystore: &Keystore) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
-        orchard::keys::FullViewingKey::try_from(wallet_capability)
+        orchard::keys::FullViewingKey::try_from(keystore)
             .unwrap()
             .to_bytes(),
     );
     let s_fvk = Fvk::Sapling(
         zcash_client_backend::keys::sapling::DiversifiableFullViewingKey::try_from(
-            wallet_capability,
+            keystore,
         )
         .unwrap()
         .to_bytes(),
     );
     let mut t_fvk_bytes = [0u8; 65];
     let t_ext_pk: crate::wallet::keys::extended_transparent::ExtendedPubKey =
-        (wallet_capability).try_into().unwrap();
+        (keystore).try_into().unwrap();
     t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
     t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
     let t_fvk = Fvk::P2pkh(t_fvk_bytes);
@@ -85,7 +85,7 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
 /// Converts a Lightclient with spending capability to a Lightclient with only viewing capability
 pub async fn sk_client_to_fvk_client(client: &LightClient) -> LightClient {
     let [o_fvk, s_fvk, t_fvk] =
-        build_fvks_from_wallet_capability(&client.wallet.wallet_capability().clone());
+        build_fvks_from_wallet_capability(&client.wallet.keystore().clone());
     build_fvk_client(&[&o_fvk, &s_fvk, &t_fvk], client.config()).await
 }
 

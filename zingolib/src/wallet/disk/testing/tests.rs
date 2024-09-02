@@ -2,6 +2,7 @@ use zcash_address::unified::Encoding;
 use zcash_primitives::zip339::Mnemonic;
 
 use crate::lightclient::LightClient;
+use crate::wallet::keys::keystore::Keystore;
 
 use super::super::LightWallet;
 
@@ -141,7 +142,7 @@ async fn reload_wallet_from_buffer() {
     use crate::wallet::disk::Capability;
     use crate::wallet::keys::extended_transparent::ExtendedPrivKey;
     use crate::wallet::WalletBase;
-    use crate::wallet::WalletCapability;
+    use crate::wallet::keys::unified::WalletCapability;
 
     let mid_wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
@@ -165,13 +166,20 @@ async fn reload_wallet_from_buffer() {
     );
     assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
-    let expected_wc = WalletCapability::new_from_phrase(
+    let expected_wc = Keystore::new_from_phrase(
         &mid_client.wallet.transaction_context.config,
         &expected_mnemonic.0,
         expected_mnemonic.1,
     )
     .unwrap();
-    let wc = wallet.wallet_capability();
+
+    #[cfg(feature = "ledger-support")]
+    let Keystore::InMemory(ref wc) = *wallet.keystore() else {
+        unreachable!("Known to be InMemory due to new_from_phrase impl")
+    };
+
+    #[cfg(not(feature = "ledger-support"))]
+    let Keystore::InMemory(ref wc) = *wallet.keystore();
 
     let Capability::Spend(orchard_sk) = &wc.orchard else {
         panic!("Expected Orchard Spending Key");
@@ -215,7 +223,7 @@ async fn reload_wallet_from_buffer() {
         wallet.get_birthday().await,
     )
     .unwrap();
-    let v_wc = view_wallet.wallet_capability();
+    let v_wc = view_wallet.keystore();
     let vv = v_wc.ufvk().unwrap();
     let vv_string = vv.encode(&wallet.transaction_context.config.chain.network_type());
     assert_eq!(ufvk_string, vv_string);

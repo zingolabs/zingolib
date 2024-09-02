@@ -4,6 +4,7 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use getset::{Getters, MutGetters};
+use keys::ledger::LedgerWalletCapability;
 use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use log::{info, warn};
@@ -31,7 +32,8 @@ use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 
 use self::keys::unified::Fvk as _;
-use self::keys::unified::WalletCapability;
+use self::keys::keystore::Keystore;
+use self::keys::unified::Capability;
 
 use self::{
     data::{BlockData, WalletZecPriceInfo},
@@ -169,15 +171,19 @@ pub enum WalletBase {
     Ufvk(String),
     /// Unified spending key
     Usk(Vec<u8>),
+    #[cfg(feature = "ledger-support")]
+    /// Ledger Hardware wallet
+    Ledger,
 }
 
 impl WalletBase {
     /// TODO: Add Doc Comment Here!
     pub fn from_string(base: String) -> WalletBase {
-        if (&base[0..5]) == "uview" {
-            WalletBase::Ufvk(base)
-        } else {
-            WalletBase::MnemonicPhrase(base)
+        match base {
+            _ if base.starts_with("uview") => WalletBase::Ufvk(base.clone()),
+            #[cfg(feature = "ledger-support")]
+            _ if base.starts_with("ledger") => WalletBase::Ledger,
+            _ => WalletBase::MnemonicPhrase(base),
         }
     }
 }
@@ -263,7 +269,7 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?
+        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.keystore())?
             .derive_ivk::<keys::unified::External>();
 
         if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.ivk) {
@@ -339,18 +345,18 @@ impl LightWallet {
                 return Self::new(config, WalletBase::MnemonicAndIndex(mnemonic, 0), height);
             }
             WalletBase::MnemonicAndIndex(mnemonic, position) => {
-                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, position)
+                let wc = Keystore::new_from_phrase(&config, &mnemonic, position)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
                 (wc, Some((mnemonic, position)))
             }
             WalletBase::Ufvk(ufvk_encoded) => {
-                let wc = WalletCapability::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
+                let wc = Keystore::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
                     Error::new(ErrorKind::InvalidData, format!("Error parsing UFVK: {}", e))
                 })?;
                 (wc, None)
             }
             WalletBase::Usk(unified_spending_key) => {
-                let wc = WalletCapability::new_from_usk(unified_spending_key.as_slice()).map_err(
+                let wc = Keystore::new_from_usk(unified_spending_key.as_slice()).map_err(
                     |e| {
                         Error::new(
                             ErrorKind::InvalidData,
@@ -359,10 +365,29 @@ impl LightWallet {
                     },
                 )?;
                 (wc, None)
+            },
+            WalletBase::Ledger => {
+                let ledger = Keystore::new_ledger()
+                .map_err(
+                    |e| {
+                        Error::new(
+                            ErrorKind::Other,
+                            format!("Error intializing wallet from ledger: {}", e),
+                        )
+                    },
+                )?;
+
+                (ledger, None)
+                    
             }
+
         };
 
-        if let Err(e) = wc.new_address(wc.can_view()) {
+        if let Err(e) = wc.new_address(
+            wc.can_view(), 
+            #[cfg(feature = "ledger-support")]
+            &config
+        ) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("could not create initial address: {e}"),
@@ -377,6 +402,7 @@ impl LightWallet {
                 wc.transparent_child_addresses().clone(),
             )))
         };
+        
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {

@@ -15,6 +15,17 @@ testvectors = []
 tempfile = ["dep:tempfile"]
 sync = [ "dep:zingo-sync" ]
 
+## ledger
+hsm-compat = ["zcash-hsmbuilder"]
+ledger-support = [
+    "hsm-compat",
+    "ledger-zcash",
+    "ledger-transport-hid",
+    "ledger-transport",
+    "zx-bip44",
+    "bytemuck",
+]
+
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
@@ -80,6 +91,26 @@ tempdir = {workspace = true, optional = true }
 tempfile = {workspace = true, optional = true }
 dirs.workspace = true
 log4rs.workspace = true
+#hdwallet.workspace = true
+
+### ledger
+zcash-hsmbuilder = { git = "https://github.com/Zondax/ledger-zcash-rs", rev = "324a0851113df4ea77457b5711392beabd021407", default-features = false, features = [
+    "zecwallet-compat",
+], optional = true }
+# ledger-zcash = { git = "https://github.com/Zondax/ledger-zcash-rs", rev = "324a0851113df4ea77457b5711392beabd021407", default-features = false, features = [
+#     "zecwallet-compat",
+# ], optional = true }
+ledger-zcash = { git = "https://github.com/Zondax/ledger-zcash-rs", branch = "feat/zingolib", default-features = false, features = [
+    "zecwallet-compat",
+], optional = true }
+ledger-transport-hid = { version = "0.9", optional = true }
+ledger-transport = { version = "0.9.0", optional = true }
+zx-bip44 = { version = "0.1.0", optional = true }
+bytemuck = { version = "1.9.1", optional = true }
+cfg-if = "1.0.0"
+
+
+
 
 [dev-dependencies]
 portpicker = { workspace = true }

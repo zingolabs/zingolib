@@ -1,6 +1,8 @@
 //! functionality for testing the save and load functions of LightWallet.
 //! do not compile test-elevation feature for production.
 
+use crate::wallet::keys::keystore::Keystore;
+
 use super::LightWallet;
 
 impl LightWallet {
@@ -68,13 +70,21 @@ pub async fn assert_wallet_capability_matches_seed(
     );
     assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
-    let expected_wc = crate::wallet::keys::unified::WalletCapability::new_from_phrase(
+    let expected_wc = crate::wallet::keys::keystore::Keystore::new_from_phrase(
         &wallet.transaction_context.config,
         &expected_mnemonic.0,
         expected_mnemonic.1,
     )
     .unwrap();
-    let wc = wallet.wallet_capability();
+
+    #[cfg(feature = "ledger-support")]
+    let Keystore::InMemory(ref wc) = *wallet.keystore() else {
+        unreachable!("Known to be InMemory due to new_from_phrase impl")
+    };
+    
+    #[cfg(not(feature = "ledger-support"))]
+    let Keystore::InMemory(ref wc) = *wallet.keystore();
+
 
     // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
     // so we have to compare each component instead
@@ -115,7 +125,7 @@ pub async fn assert_wallet_capability_contains_n_triple_pool_receivers(
     wallet: &LightWallet,
     expected_num_addresses: usize,
 ) {
-    let wc = wallet.wallet_capability();
+    let wc = wallet.keystore();
 
     assert_eq!(wc.addresses().len(), expected_num_addresses);
     for addr in wc.addresses().iter() {

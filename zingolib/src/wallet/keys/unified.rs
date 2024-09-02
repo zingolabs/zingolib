@@ -16,7 +16,7 @@ use zcash_primitives::zip339::Mnemonic;
 
 use crate::config::{ChainType, ZingoConfig};
 use secp256k1::SecretKey;
-use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
+use zcash_address::unified::{self, Container, Encoding, Typecode, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::{CompactSize, Vector};
@@ -25,6 +25,7 @@ use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
+use super::keystore::Keystore;
 use super::{
     extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
     get_zaddr_from_bip39seed, ToBase58Check,
@@ -83,12 +84,13 @@ pub struct WalletCapability {
     /// TODO: Add Doc Comment Here!
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
-    transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
-    addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
+    pub(crate) transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    pub(crate) addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
-    addresses_write_lock: AtomicBool,
+    pub(crate) addresses_write_lock: AtomicBool,
 }
+
 impl Default for WalletCapability {
     fn default() -> Self {
         Self {
@@ -103,8 +105,8 @@ impl Default for WalletCapability {
 }
 
 impl crate::wallet::LightWallet {
-    /// This is the interface to expose the wallet key
-    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
+    /// This is the interface to expose the wallet keystore abstraction
+    pub fn keystore(&self) -> Arc<Keystore> {
         self.transaction_context.key.clone()
     }
 }
@@ -184,13 +186,19 @@ impl WalletCapability {
         &self.transparent_child_addresses
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn ufvk(&self) -> Result<Ufvk, std::string::String> {
+    /// Returns the unified full viewing key
+    /// - Error: unified::ParseError::InvalidEncoding if the given
+    /// pool is not supported by this implementation.
+    /// - Note: Ledger Keystore can't handle Orchard.
+    pub fn ufvk(&self) -> Result<Ufvk, unified::ParseError> {
         use zcash_address::unified::Fvk as UfvkComponent;
         let o_fvk =
-            UfvkComponent::Orchard(orchard::keys::FullViewingKey::try_from(self)?.to_bytes());
+            UfvkComponent::Orchard(orchard::keys::FullViewingKey::try_from(self)
+                .map_err(|s | unified::ParseError::InvalidEncoding(s))?.to_bytes());
+
         let s_fvk = UfvkComponent::Sapling(
-            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?.to_bytes(),
+            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)
+                .map_err(|s | unified::ParseError::InvalidEncoding(s))?.to_bytes()
         );
         let mut t_fvk_bytes = [0u8; 65];
         let possible_transparent_key: Result<ExtendedPubKey, String> = self.try_into();
@@ -198,9 +206,9 @@ impl WalletCapability {
             t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
             t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
             let t_fvk = UfvkComponent::P2pkh(t_fvk_bytes);
-            Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk]).map_err(|e| e.to_string())
+            Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk])
         } else {
-            Ufvk::try_from_items(vec![o_fvk, s_fvk]).map_err(|e| e.to_string())
+            Ufvk::try_from_items(vec![o_fvk, s_fvk])
         }
     }
 
@@ -858,7 +866,10 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
 ) {
     use super::address_from_pubkeyhash;
 
-    let wc = lightclient.wallet.wallet_capability();
+    let Keystore::InMemory(wc) = &*lightclient.wallet.keystore() else {
+        todo!("Do this for ledger too")
+    };
+
     // 2. Get an incoming transaction to a t address
     let (sk, pk) = match &wc.transparent {
         Capability::None => (None, None),

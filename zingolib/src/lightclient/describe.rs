@@ -58,7 +58,7 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self.wallet.wallet_capability().addresses().iter() {
+        for address in self.wallet.keystore().addresses().iter() {
             let encoded_ua = address.encode(&self.config.chain);
             let transparent = address
                 .transparent()
@@ -771,7 +771,7 @@ impl LightClient {
                     if !all_notes && note_metadata.spending_tx_status().is_some() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
+                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.keystore());
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -815,7 +815,7 @@ impl LightClient {
                     if !all_notes && note_metadata.is_spent_confirmed() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
+                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, &self.wallet.keystore());
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -872,7 +872,7 @@ impl LightClient {
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => utxo.value,
                             "scriptkey"          => hex::encode(utxo.script.clone()),
-                            "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
+                            "address"            => self.wallet.keystore().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spendable"          => spendable,
                             "spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
                             "pending_spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),

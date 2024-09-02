@@ -18,9 +18,22 @@ use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
+fn add_if_ledger(cmd: clap::Command) -> clap::Command {
+    
+    #[cfg(feature = "ledger-support")]
+    return cmd
+    .arg(Arg::new("ledger")
+                .long("ledger")
+                .value_name("ledger")
+                .help("Create a new wallet by connecting to a ledger")
+                .action(clap::ArgAction::SetTrue));
+
+    #[cfg(not(feature = "ledger-support"))]
+    return cmd;
+}
 /// TODO: Add Doc Comment Here!
 pub fn build_clap_app() -> clap::ArgMatches {
-    clap::Command::new("Zingo CLI").version(version::VERSION)
+   let cmd = clap::Command::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::new("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
@@ -71,7 +84,9 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .num_args(1..)
                 .index(2)
                 .action(clap::ArgAction::Append)
-        ).get_matches()
+        );
+        add_if_ledger(cmd)
+            .get_matches()
 }
 
 /// Custom function to parse a string into an http::Uri
@@ -262,6 +277,8 @@ pub struct ConfigTemplate {
     #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
     child_process_handler: Option<regtest::ChildProcessHandler>,
     chaintype: ChainType,
+    #[cfg(feature = "ledger-support")]
+    ledger: bool,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -325,6 +342,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         };
 
         let clean_regtest_data = !matches.get_flag("no-clean");
+        let ledger = !matches.get_flag("ledger");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
@@ -383,6 +401,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             regtest_manager,
             child_process_handler,
             chaintype,
+            #[cfg(feature = "ledger-support")]
+            ledger,
         })
     }
 }
@@ -421,6 +441,8 @@ pub fn startup(
             filled_template.birthday,
             false,
         )?),
+        #[cfg(feature = "ledger-support")]
+        None if ledger => Arc::new(LightClient::with_ledger(&config, birthday)?),
         None => {
             if config.wallet_path_exists() {
                 Arc::new(LightClient::read_wallet_from_disk(&config)?)

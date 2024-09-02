@@ -93,6 +93,8 @@ pub fn load_clientconfig(
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         accept_server_txids: false,
+        #[cfg(feature = "ledger-support")]
+        use_ledger: false,
     };
 
     Ok(config)
@@ -138,6 +140,9 @@ pub struct ZingoConfigBuilder {
     pub logfile_name: Option<PathBuf>,
     /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
     pub accept_server_txids: bool,
+    /// set to true if you will use a ledger hw wallet
+    #[cfg(feature = "ledger-support")]
+    pub use_ledger: bool
 }
 
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
@@ -159,6 +164,9 @@ pub struct ZingoConfig {
     pub logfile_name: PathBuf,
     /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
     pub accept_server_txids: bool,
+    /// if this option is enabled the wallet will use a ledger device
+    #[cfg(feature = "ledger-support")]
+    pub use_ledger: bool,
 }
 
 impl ZingoConfigBuilder {
@@ -202,6 +210,13 @@ impl ZingoConfigBuilder {
         self.wallet_dir = Some(dir);
         self
     }
+    
+    #[cfg(feature = "ledger-support")]
+    /// set to true to use a ledger hardware wallet
+    pub fn set_use_ledger(&mut self, ledger: bool) -> &mut Self {
+        self.set_use_ledger(ledger);
+        self
+    }
 
     /// TODO: Add Doc Comment Here!
     pub fn create(&self) -> ZingoConfig {
@@ -215,6 +230,8 @@ impl ZingoConfigBuilder {
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
             accept_server_txids: self.accept_server_txids,
+            #[cfg(feature = "ledger-support")]
+            use_ledger: self.use_ledger,
         }
     }
 }
@@ -230,6 +247,8 @@ impl Default for ZingoConfigBuilder {
             logfile_name: None,
             chain: ChainType::Mainnet,
             accept_server_txids: false,
+            #[cfg(feature = "ledger-support")]
+            use_ledger: false,
         }
     }
 }

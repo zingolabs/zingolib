@@ -2,6 +2,7 @@
 //! upgrade-or-replace
 
 use crate::data::proposal;
+use crate::wallet::keys::keystore::Keystore;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -136,7 +137,12 @@ impl Command for WalletKindCommand {
             if lightclient.do_seed_phrase().await.is_ok() {
                 object! {"kind" => "Seeded"}.pretty(4)
             } else {
-                let capability = lightclient.wallet.wallet_capability();
+                // let capability = lightclient.wallet.keystore();
+                
+                let Keystore::InMemory(ref capability) = *lightclient.wallet.keystore() else {
+                    todo!("do this for ledger too!")
+                };
+                
                 object! {
                     "kind" => "Loaded from key",
                     "transparent" => capability.transparent.kind_str(),
