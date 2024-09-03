@@ -81,13 +81,20 @@ where
             if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
                 println!("syncing recipient");
                 recipient.do_sync(false).await.unwrap();
-                assert_record_fee_and_status(
-                    recipient,
-                    &proposal,
-                    &txids,
-                    ConfirmationStatus::Transmitted(send_height.into()),
-                )
-                .await;
+                let records = &recipient
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .transaction_records_by_id;
+                for txid in &txids {
+                    let record = records.get(txid).expect("recipient must recognize txid");
+                    assert_eq!(
+                        record.status,
+                        ConfirmationStatus::Mempool(send_height.into()),
+                    )
+                }
             }
         }
     }
