@@ -18,7 +18,7 @@ use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxS
 
 type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<bool>,
+    http::Response<hyper::body::Incoming>,
     hyper::Error,
 >;
 
