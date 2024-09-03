@@ -5,7 +5,6 @@
 
 #![warn(missing_docs)]
 use std::sync::Arc;
-use tower::ServiceExt;
 
 use http::{uri::PathAndQuery, Uri};
 use http_body::combinators::UnsyncBoxBody;
@@ -16,10 +15,9 @@ use tonic::Status;
 use tower::util::BoxCloneService;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
-/// TODO: add doc-comment
-pub type UnderlyingService = BoxCloneService<
+type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<hyper::Body>,
+    http::Response<dyn hyper::body::Body>,
     hyper::Error,
 >;
 
@@ -72,27 +70,19 @@ impl GrpcConnector {
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
             if uri.scheme_str() == Some("https") {
-                let mut roots = RootCertStore::empty();
-                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-                    |anchor_ref| {
-                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            anchor_ref.subject,
-                            anchor_ref.spki,
-                            anchor_ref.name_constraints,
-                        )
-                    },
-                ));
+                let mut root_store = RootCertStore::empty();
+                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter());
 
                 #[cfg(test)]
-                add_test_cert_to_roots(&mut roots);
+                add_test_cert_to_roots(&mut root_store);
 
-                let tls = ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_root_certificates(roots)
+                let config = ClientConfig::builder()
+                    .with_root_certificates(root_store)
                     .with_no_client_auth();
+
                 let connector = tower::ServiceBuilder::new()
                     .layer_fn(move |s| {
-                        let tls = tls.clone();
+                        let tls = config.clone();
 
                         hyper_rustls::HttpsConnectorBuilder::new()
                             .with_tls_config(tls)
