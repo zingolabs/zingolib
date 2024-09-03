@@ -71,8 +71,19 @@ impl GrpcConnector {
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
             if uri.scheme_str() == Some("https") {
+                // let mut roots = RootCertStore::empty();
+                // roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                //     |anchor_ref| {
+                //         tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                //             anchor_ref.subject,
+                //             anchor_ref.spki,
+                //             anchor_ref.name_constraints,
+                //         )
+                //     },
+                // ));
+
                 let mut root_store = RootCertStore::empty();
-                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter());
+                // root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter());
 
                 #[cfg(test)]
                 add_test_cert_to_roots(&mut root_store);
