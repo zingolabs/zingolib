@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use http::{uri::PathAndQuery, Uri};
 use http_body_util::combinators::UnsyncBoxBody;
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use thiserror::Error;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
@@ -16,7 +17,7 @@ use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxS
 
 type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<dyn hyper::body::Body>,
+    http::Response<bool>,
     hyper::Error,
 >;
 
@@ -90,7 +91,7 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http_connector);
-                let client = Box::new(hyper::Client::builder().build(connector));
+                let client = Box::new(Client::builder().build(connector));
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -116,11 +117,7 @@ impl GrpcConnector {
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = Box::new(
-                    hyper::client::Client::builder()
-                        .http2_only(true)
-                        .build(connector),
-                );
+                let client = Box::new(Client::builder().http2_only(true).build(connector));
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
