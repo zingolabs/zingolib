@@ -15,14 +15,14 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change", features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change", features = ["transparent-inputs", "sapling", "orchard" ] }
+zcash_address = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/components/zcash_address" }
+zcash_client_backend = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/zcash_client_backend", features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
+zcash_encoding = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/components/zcash_encoding" }
+zcash_keys = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/zcash_keys", features = ["orchard"] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change" }
-zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change" }
+zcash_primitives = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/zcash_primitives" }
+zcash_proofs = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/zcash_proofs" }
+zcash_protocol = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash" }
 sapling-crypto = "0.1.2"
 orchard = "0.8"
 zip32 = "0.1"
