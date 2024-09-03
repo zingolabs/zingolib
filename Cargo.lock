@@ -4181,6 +4181,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "http-body",
+ "http-body-util",
  "hyper",
  "hyper-rustls",
  "prost",
