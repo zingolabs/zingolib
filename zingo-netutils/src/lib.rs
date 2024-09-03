@@ -13,6 +13,7 @@ use thiserror::Error;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
 use tower::util::BoxCloneService;
+use tower::ServiceExt;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 type UnderlyingService = BoxCloneService<
