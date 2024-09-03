@@ -6,7 +6,6 @@ edition = "2021"
 
 [dependencies]
 zingolib = { workspace = true }
-zingoconfig = { workspace = true }
 http = "0.2.4"
 lazy_static = "1.4.0"
 base64 = "0.22"
