@@ -9,6 +9,7 @@ http-body-util.workspace = true
 http-body.workspace = true
 http.workspace = true
 hyper-rustls.workspace = true
+hyper-util.workspace = true
 hyper.workspace = true
 prost.workspace = true
 rustls-pemfile = { workspace = true }

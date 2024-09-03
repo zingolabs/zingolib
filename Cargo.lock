@@ -4184,6 +4184,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-rustls",
+ "hyper-util",
  "prost",
  "rustls-pemfile",
  "thiserror",

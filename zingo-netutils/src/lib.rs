@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use http::{uri::PathAndQuery, Uri};
 use http_body_util::combinators::UnsyncBoxBody;
-use hyper::client::HttpConnector;
 use thiserror::Error;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
