@@ -42,6 +42,8 @@ pub enum ExampleTestnetWalletSeed {
 pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion {
     /// wallet was last saved by the code in this commit
     Gab72a38b,
+    /// this wallet was synced in this version. does it have a bunch of taz scattered around different addresses?
+    G93738061a,
 }
 /// A testnet wallet initiated with
 /// --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
@@ -109,6 +111,14 @@ impl LightWallet {
             )) => {
                 LightWallet::unsafe_from_buffer_testnet(include_bytes!(
                     "examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::G93738061a,
+            )) => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/testnet/mskmgdbhotbpetcjwcspgopp/G93738061a/zingo-wallet.dat"
                 ))
                 .await
             }

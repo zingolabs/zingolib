@@ -9,7 +9,6 @@ mod load_wallet {
     use zingolib::config::RegtestNetwork;
     use zingolib::config::ZingoConfig;
     use zingolib::get_base_address_macro;
-    use zingolib::lightclient::propose::ProposeSendError::Proposal;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::lightclient::LightClient;
     use zingolib::lightclient::PoolBalances;
@@ -18,6 +17,7 @@ mod load_wallet {
     use zingolib::testutils::scenarios;
     use zingolib::utils;
     use zingolib::wallet::disk::testing::examples;
+    use zingolib::wallet::propose::ProposeSendError::Proposal;
     use zingolib::wallet::LightWallet;
 
     #[tokio::test]

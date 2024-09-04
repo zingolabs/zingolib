@@ -414,6 +414,8 @@ mod decrypt_transaction {
             .await;
         }
 
+        /// account here is a verb meaning record note data
+        /// and perform some other appropriate actions
         async fn account_for_shielded_receipts<D>(
             &self,
             ivk: Ivk<D, External>,
@@ -446,33 +448,26 @@ mod decrypt_transaction {
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
                 // if status is pending add the whole pending note
                 // otherwise, just update the output index
-                if let Some(height) = status.get_pending_height() {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .add_pending_note::<D>(
-                            transaction.txid(),
-                            height,
-                            block_time,
-                            note.clone(),
-                            to,
-                            output_index,
-                            status.is_mempool(),
-                        );
+
+                let tx_map = &mut self
+                    .transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id;
+
+                let transaction_record = tx_map.create_modify_get_transaction_metadata(
+                    &transaction.txid(),
+                    status,
+                    block_time,
+                );
+
+                if status.is_pending() {
+                    transaction_record.add_pending_note::<D>(note.clone(), to, output_index);
                 } else {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .update_output_index::<D>(
-                            transaction.txid(),
-                            status,
-                            block_time,
-                            note.clone(),
-                            output_index,
-                        )
+                    let _note_does_not_exist_result =
+                        transaction_record.update_output_index::<D>(note.clone(), output_index);
                 }
+
                 let memo = memo_bytes
                     .clone()
                     .try_into()
@@ -489,11 +484,7 @@ mod decrypt_transaction {
                         }
                     }
                 }
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
+                tx_map.add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
             }
         }
         /// Transactions contain per-protocol "bundles" of components.
