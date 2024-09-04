@@ -218,7 +218,7 @@ mod fast {
                 .find(|tx| tx.value() == 20_000)
                 .unwrap()
                 .status(),
-            ConfirmationStatus::Mempool(BlockHeight::from_u32(5)) // FIXME: mempool blockheight is at chain hieght instead of chain height + 1
+            ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
         );
 
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
