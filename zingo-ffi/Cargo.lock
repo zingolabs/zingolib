@@ -2708,6 +2708,7 @@ dependencies = [
  "json",
  "regchest_utils",
  "tokio",
+ "zingolib",
  "zingomobile_utils",
 ]
 
@@ -4675,6 +4676,7 @@ dependencies = [
  "log4rs",
  "nonempty",
  "orchard",
+ "portpicker",
  "proptest",
  "prost",
  "rand 0.8.5",
@@ -4690,6 +4692,8 @@ dependencies = [
  "sha2 0.9.9",
  "shardtree",
  "subtle",
+ "tempdir",
+ "tempfile",
  "test-case",
  "thiserror",
  "tokio",
