@@ -152,7 +152,6 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub fn start_mempool_monitor(lc: Arc<LightClient>) {
-        dbg!("starting mempool monitor");
         if !lc.config.monitor_mempool {
             return;
         }
@@ -275,11 +274,9 @@ impl LightClient {
         // execution often consumes most of the memory available, on other systems
         // we might parallelize sync.
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
-        println!("got synclock");
 
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
-        println!("got height");
 
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
@@ -287,7 +284,6 @@ impl LightClient {
         self.wallet
             .ensure_witness_tree_not_above_wallet_blocks()
             .await;
-        println!("Got to line {}", line!());
 
         // This is a fresh wallet. We need to get the initial trees
         if self.wallet.has_any_empty_commitment_trees().await
@@ -300,7 +296,6 @@ impl LightClient {
 
         let latest_blockid =
             crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
-        println!("Got to line {}", line!());
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
         let latest_blockid =
             crate::wallet::data::BlockData::new_with(latest_blockid.height, &latest_blockid.hash);
@@ -312,7 +307,6 @@ impl LightClient {
             warn!("{}", w);
             return Err(w);
         }
-        println!("Got to line {}", line!());
 
         if latest_blockid.height == last_synced_height
             && !latest_blockid.hash().is_empty()
@@ -331,12 +325,10 @@ impl LightClient {
             )
             .await;
         }
-        println!("Got to line {}", line!());
 
         // Re-read the last scanned height
         let last_scanned_height = self.wallet.last_synced_height().await;
 
-        println!("Got to line {}", line!());
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
@@ -345,7 +337,6 @@ impl LightClient {
             latest_block_batches.push(batch);
         }
 
-        println!("Got to line {}", line!());
         // Increment the sync ID so the caller can determine when it is over
         self.bsync_data
             .write()
@@ -356,7 +347,6 @@ impl LightClient {
             .await
             .start_new(latest_block_batches.len());
 
-        println!("Got to line {}", line!());
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;

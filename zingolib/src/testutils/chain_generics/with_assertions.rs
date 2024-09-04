@@ -57,7 +57,6 @@ where
     let send_ua_id = sender.do_addresses().await[0]["address"].clone();
 
     if test_mempool {
-        println!("testing mempool");
         // mempool scan shows the same
         sender.do_sync(false).await.unwrap();
 
@@ -65,7 +64,6 @@ where
         // to listen
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-        println!("asserting");
         assert_record_fee_and_status(
             sender,
             &proposal,
@@ -73,13 +71,10 @@ where
             ConfirmationStatus::Mempool(send_height.into()),
         )
         .await;
-        println!("asserted");
 
         // TODO: distribute receivers
         for (recipient, _, _, _) in sends.clone() {
-            println!("asserting recipient");
             if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
-                println!("syncing recipient");
                 recipient.do_sync(false).await.unwrap();
                 let records = &recipient
                     .wallet
@@ -100,7 +95,6 @@ where
     }
 
     environment.bump_chain().await;
-    println!("bumped chain");
     // chain scan shows the same
     sender.do_sync(false).await.unwrap();
     assert_record_fee_and_status(

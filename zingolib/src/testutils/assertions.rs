@@ -20,7 +20,6 @@ pub async fn assert_record_fee_and_status<NoteId>(
     txids: &NonEmpty<TxId>,
     expected_status: ConfirmationStatus,
 ) -> u64 {
-    println!("acquiring record lock");
     let records = &client
         .wallet
         .transaction_context
@@ -28,7 +27,6 @@ pub async fn assert_record_fee_and_status<NoteId>(
         .read()
         .await
         .transaction_records_by_id;
-    println!("record lock acquired");
 
     assert_eq!(proposal.steps().len(), txids.len());
     let mut total_fee = 0;
