@@ -1208,7 +1208,8 @@ mod slow {
         let first_send_to_transparent = 20_000;
         let summary_external_transparent = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(7))
-            .status(ConfirmationStatus::Mempool(BlockHeight::from_u32(7)))
+            // We're not monitoring the mempool for this test
+            .status(ConfirmationStatus::Transmitted(BlockHeight::from_u32(7)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
             .value(first_send_to_transparent)
