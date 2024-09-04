@@ -586,67 +586,7 @@ impl TransactionRecordsById {
             );
         }
     }
-    pub(crate) fn update_output_index<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        status: ConfirmationStatus,
-        timestamp: Option<u32>,
-        note: D::Note,
-        output_index: usize,
-    ) {
-        let transaction_record =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
 
-        if let Some(n) = D::WalletNote::transaction_metadata_notes_mut(transaction_record)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            if n.output_index().is_none() {
-                *n.output_index_mut() = Some(output_index as u32)
-            }
-        }
-    }
-    pub(crate) fn add_pending_note<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        height: BlockHeight,
-        timestamp: Option<u32>,
-        note: D::Note,
-        to: D::Recipient,
-        output_index: usize,
-        in_mempool: bool,
-    ) {
-        let status = if in_mempool {
-            ConfirmationStatus::Mempool(height)
-        } else {
-            ConfirmationStatus::Transmitted(height)
-        };
-        let transaction_record =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
-
-        match D::WalletNote::get_record_outputs(transaction_record)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            None => {
-                let nd = D::WalletNote::from_parts(
-                    to.diversifier(),
-                    note,
-                    None,
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    false,
-                    Some(output_index as u32),
-                );
-
-                D::WalletNote::transaction_metadata_notes_mut(transaction_record).push(nd);
-            }
-            Some(_) => {}
-        }
-    }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
