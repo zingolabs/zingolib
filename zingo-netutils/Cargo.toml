@@ -5,18 +5,18 @@ authors = ["zingo@zingolabs.org"]
 edition = "2021"
 
 [dependencies]
-http.workspace = true
-tokio-rustls.workspace = true
-zcash_client_backend.workspace = true
-tower.workspace = true
-hyper-rustls.workspace = true
-webpki-roots = "0.21.0"
-hyper.workspace = true
 http-body.workspace = true
-tonic.workspace = true
+http.workspace = true
+hyper-rustls.workspace = true
+hyper.workspace = true
 prost.workspace = true
-thiserror.workspace = true
 rustls-pemfile = { workspace = true }
+thiserror.workspace = true
+tokio-rustls.workspace = true
+tonic.workspace = true
+tower.workspace = true
+webpki-roots = "0.21.0"
+zcash_client_backend.workspace = true
 
 [features]
 test-features = []

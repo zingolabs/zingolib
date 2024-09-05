@@ -9,7 +9,7 @@ zingolib = { path = "../zingolib/", features = ["deprecations", "test-elevation"
 clap = { workspace = true }
 http = { workspace = true }
 
-rustyline = { workspace = true }
-log = { workspace = true }
-shellwords = { workspace = true }
 json = { workspace = true }
+log = { workspace = true }
+rustyline = { workspace = true }
+shellwords = { workspace = true }
