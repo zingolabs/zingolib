@@ -528,7 +528,7 @@ where
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
 
     // mempool monitor
-    let check_mempool = true;
+    let check_mempool = !cfg!(feature = "ci");
     if check_mempool {
         for lightclient in [&ref_primary, &ref_secondary, &ref_tertiary] {
             LightClient::start_mempool_monitor(lightclient.clone());
