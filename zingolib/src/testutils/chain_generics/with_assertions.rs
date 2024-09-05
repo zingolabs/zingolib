@@ -62,7 +62,7 @@ where
 
         // let the mempool monitor get a chance
         // to listen
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 
         assert_record_fee_and_status(
             sender,
