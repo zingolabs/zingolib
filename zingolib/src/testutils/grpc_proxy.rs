@@ -186,7 +186,7 @@ impl CompactTxStreamer for ProxyServer {
         'life0: 'async_trait,
         Self: 'async_trait,
     {
-        todo!("this isn't expected to be called. Please implement this if you need it")
+        unimplemented!("this isn't expected to be called. Please implement this if you need it")
     }
 
     #[doc = "Server streaming response type for the GetMempoolTx method."]
