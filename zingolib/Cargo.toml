@@ -35,6 +35,8 @@ zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 zip32.workspace = true
 
+bip0039.workspace = true
+
 append-only-vec = { workspace = true }
 base58 = { workspace = true }
 base64 = { workspace = true }

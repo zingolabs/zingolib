@@ -20,6 +20,7 @@ use zingo_sync::{
     witness::ShardTrees,
 };
 
+use bip0039::Mnemonic;
 #[cfg(feature = "sync")]
 use std::collections::BTreeMap;
 use std::{
@@ -29,7 +30,6 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
 
 use crate::config::ZingoConfig;
 use zcash_client_backend::proto::service::TreeState;
