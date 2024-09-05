@@ -12,7 +12,7 @@ test-elevation = []
 zcash_primitives.workspace = true
 http.workspace = true
 
-log4rs = { workspace = true }
-log = { workspace = true }
 dirs = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
 tempdir.workspace = true
