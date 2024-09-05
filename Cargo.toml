@@ -46,7 +46,7 @@ futures = "0.3.15"
 futures-util = "0.3.28"
 getset = "0.1.2"
 group = "0.13"
-hdwallet = "0.4.1"
+hdwallet = { git = "https://github.com/fluidvanadium/hdwallet.git", branch = "master" }
 hex = "0.4"
 http = "1.1.0"
 http-body-util = "0.1.2"
