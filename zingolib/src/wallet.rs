@@ -11,6 +11,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use sapling_crypto::zip32::DiversifiableFullViewingKey;
+#[cfg(feature = "sync")]
 use zingo_sync::{
     primitives::{NullifierMap, SyncState, WalletBlock},
     witness::ShardTrees,
