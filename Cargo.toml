@@ -4,13 +4,13 @@
 #  This doesn't account for all dependency relations, for example, zingocli depends on zingoconfig directly (for now).
 [workspace]
 members = [
-    "libtonode-tests",
     "darkside-tests",
+    "libtonode-tests",
+    "zingo-memo",
+    "zingo-netutils",
+    "zingo-sync",
     "zingocli",
     "zingolib",
-    "zingo-netutils",
-    "zingo-memo",
-    "zingo-sync",
 ]
 resolver = "2"
 
@@ -23,8 +23,10 @@ zcash_note_encryption = "0.4"
 zcash_primitives = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/zcash_primitives" }
 zcash_proofs = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash/zcash_proofs" }
 zcash_protocol = { path = "../../zcash_ecosystem_worktrees/librustzcashs/librustzcash" }
-sapling-crypto = "0.2.0"
+
+bip0039 = "0.11"
 orchard = "0.9"
+sapling-crypto = "0.2.0"
 zip32 = "0.1"
 
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
@@ -86,7 +88,7 @@ test-case = "3.3.1"
 thiserror = "1.0.59"
 tokio = "1.28.2"
 tokio-rustls = "0.26"
-tonic = {version = "0.12.2", features = ["tls", "tls-roots", "tls-webpki-roots"]}
+tonic = { version = "0.12.2", features = ["tls", "tls-roots", "tls-webpki-roots"] }
 tonic-build = "0.12"
 tower = { version = "0.4" }
 tracing = "0.1.40"
