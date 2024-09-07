@@ -19,7 +19,7 @@ pub mod unified;
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
     let h1 = <Sha256 as sha2::Digest>::digest(payload);
-    let h2 = <Sha256 as sha2::Digest>::digest(h1);
+    let h2 = <Sha256 as sha2::Digest>::digest(h1.as_slice());
     h2.to_vec()
 }
 
