@@ -39,8 +39,7 @@ pub mod send_with_proposal {
     use thiserror::Error;
 
     use crate::lightclient::LightClient;
-    use crate::wallet::propose::ProposeSendError;
-    use crate::wallet::propose::ProposeShieldError;
+    use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
