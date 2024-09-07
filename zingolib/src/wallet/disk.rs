@@ -4,10 +4,12 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::{error, info};
 
 use std::{
-    collections::BTreeMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
 };
+
+#[cfg(feature = "sync")]
+use std::collections::BTreeMap;
 use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
