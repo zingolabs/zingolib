@@ -7,16 +7,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+ci = []
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 darkside_tests = []
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 testvectors = []
 tempfile = ["dep:tempfile"]
-sync = [ "dep:zingo-sync" ]
-default = ["zingo-sync"]
-zingo-sync = ['dep:zingo-sync']
-
+default = ["sync"]
+sync = ['dep:zingo-sync']
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }

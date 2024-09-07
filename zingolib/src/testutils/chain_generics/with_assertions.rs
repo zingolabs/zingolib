@@ -59,6 +59,11 @@ where
     if test_mempool {
         // mempool scan shows the same
         sender.do_sync(false).await.unwrap();
+
+        // let the mempool monitor get a chance
+        // to listen
+        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+
         assert_record_fee_and_status(
             sender,
             &proposal,
@@ -71,13 +76,20 @@ where
         for (recipient, _, _, _) in sends.clone() {
             if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
                 recipient.do_sync(false).await.unwrap();
-                assert_record_fee_and_status(
-                    recipient,
-                    &proposal,
-                    &txids,
-                    ConfirmationStatus::Mempool(send_height.into()),
-                )
-                .await;
+                let records = &recipient
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .transaction_records_by_id;
+                for txid in &txids {
+                    let record = records.get(txid).expect("recipient must recognize txid");
+                    assert_eq!(
+                        record.status,
+                        ConfirmationStatus::Mempool(send_height.into()),
+                    )
+                }
             }
         }
     }

@@ -191,34 +191,52 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
-                            // If the txid is already in the db, then it's already recorded
-                            // there's nothing new to do until it's read from chain.
-                            // ASSUMPTION: A transaction from the mempool_receiver is not on-chain
-                            if transaction_metadata_set
-                                .read()
-                                .await
+                            let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
+                                // The mempool transaction's height field is the height
+                                // it entered the mempool. Making it one above that height,
+                                // i.e. the target height, keeps this value consistant with
+                                // the transmitted height, which we record as the target height.
+                                rtransaction.height as u32 + 1,
+                            ));
+                            let tms_readlock = transaction_metadata_set.read().await;
+                            let record = tms_readlock
                                 .transaction_records_by_id
-                                .get(&transaction.txid())
-                                .is_none()
-                            {
-                                let price = price.read().await.clone();
-                                //debug!("Mempool attempting to scan {}", tx.txid());
-                                let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
-                                    rtransaction.height as u32,
-                                ));
+                                .get(&transaction.txid());
+                            match record {
+                                None => {
+                                    // We only need this for the record, and we can't hold it
+                                    // for the later scan_full_tx call, as it needs write access.
+                                    drop(tms_readlock);
+                                    let price = price.read().await.clone();
+                                    //debug!("Mempool attempting to scan {}", tx.txid());
 
-                                TransactionContext::new(
-                                    &config,
-                                    key.clone(),
-                                    transaction_metadata_set.clone(),
-                                )
-                                .scan_full_tx(
-                                    &transaction,
-                                    status,
-                                    Some(now() as u32),
-                                    get_price(now(), &price),
-                                )
-                                .await;
+                                    TransactionContext::new(
+                                        &config,
+                                        key.clone(),
+                                        transaction_metadata_set.clone(),
+                                    )
+                                    .scan_full_tx(
+                                        &transaction,
+                                        status,
+                                        Some(now() as u32),
+                                        get_price(now(), &price),
+                                    )
+                                    .await;
+                                }
+                                Some(r) => {
+                                    if matches!(r.status, ConfirmationStatus::Transmitted(_)) {
+                                        // In this case, we need write access, to change the status
+                                        // from Transmitted to Mempool
+                                        drop(tms_readlock);
+                                        transaction_metadata_set
+                                            .write()
+                                            .await
+                                            .transaction_records_by_id
+                                            .get_mut(&transaction.txid())
+                                            .expect("None case has already been handled")
+                                            .status = status;
+                                    }
+                                }
                             }
                         }
                     }

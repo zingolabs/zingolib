@@ -218,7 +218,7 @@ mod fast {
                 .find(|tx| tx.value() == 20_000)
                 .unwrap()
                 .status(),
-            ConfirmationStatus::Mempool(BlockHeight::from_u32(5)) // FIXME: mempool blockheight is at chain hieght instead of chain height + 1
+            ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
         );
 
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
@@ -1208,6 +1208,7 @@ mod slow {
         let first_send_to_transparent = 20_000;
         let summary_external_transparent = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(7))
+            // We're not monitoring the mempool for this test
             .status(ConfirmationStatus::Transmitted(BlockHeight::from_u32(7)))
             .datetime(0)
             .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
