@@ -514,7 +514,7 @@ impl LightClient {
         }
     }
 
-    /// TODO!! This function sorts notes into
+    /// This function sorts notes into
     /// unspent
     /// spend_is_pending
     /// spend_is_confirmed
