@@ -14,8 +14,8 @@ darkside_tests = []
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 testvectors = []
 tempfile = ["dep:tempfile"]
-default = ["zingo-sync"]
-zingo-sync = ['dep:zingo-sync']
+default = ["sync"]
+sync = ['dep:zingo-sync']
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
