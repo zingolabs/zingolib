@@ -4,7 +4,9 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use getset::{Getters, MutGetters};
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
+#[cfg(feature = "sync")]
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::memo::Memo;
 
 use log::{info, warn};
 use rand::rngs::OsRng;
@@ -18,9 +20,10 @@ use zingo_sync::{
 };
 
 use bip0039::Mnemonic;
+#[cfg(feature = "sync")]
+use std::collections::BTreeMap;
 use std::{
     cmp,
-    collections::BTreeMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,

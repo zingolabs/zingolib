@@ -157,26 +157,3 @@ impl LightWallet {
         }
     }
 }
-
-// /// loads test wallets
-// impl LightWallet {
-//     /// each wallet file has a saved balance
-//     pub fn example_expected_balance(case: LegacyWalletCase) -> u64 {
-//         match case {
-//             // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => 0,
-//             // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 10177826,
-//             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => todo!(),
-//             LegacyWalletCase::ZingoV28 => 10342837,
-//         }
-//     }
-
-//     /// each wallet file has a saved balance
-//     pub fn example_expected_num_addresses(case: LegacyWalletCase) -> usize {
-//         match case {
-//             // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::One) => 3,
-//             // LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::Two) => 1,
-//             LegacyWalletCase::ZingoV26(LegacyWalletCaseZingoV26::RegtestSapOnly) => todo!(),
-//             LegacyWalletCase::ZingoV28 => 3,
-//         }
-//     }
-// }

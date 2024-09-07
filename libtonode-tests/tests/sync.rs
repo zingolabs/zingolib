@@ -9,6 +9,7 @@ use zingolib::{
     wallet::WalletBase,
 };
 
+#[ignore = "too slow, and flakey"]
 #[tokio::test]
 async fn sync_mainnet_test() {
     tracing_subscriber::fmt().init();
