@@ -322,7 +322,7 @@ impl LightWallet {
                 );
             }
             WalletBase::MnemonicPhraseAndIndex(phrase, position) => {
-                let mnemonic = Mnemonic::from_phrase(phrase)
+                let mnemonic = Mnemonic::<bip0039::English>::from_phrase(phrase)
                     .and_then(|m| Mnemonic::from_entropy(m.entropy()))
                     .map_err(|e| {
                         Error::new(
