@@ -814,7 +814,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -849,7 +849,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1176,9 +1176,8 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hdwallet"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a03ba7d4c9ea41552cd4351965ff96883e629693ae85005c501bb4b9e1c48a7"
+version = "0.4.2"
+source = "git+https://github.com/fluidvanadium/hdwallet.git?branch=master#fca2d8f5d93bfd4801a1ec5ba96f7a02d4c12eb7"
 dependencies = [
  "lazy_static",
  "rand_core 0.6.4",
@@ -2798,9 +2797,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.26.0"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4124a35fe33ae14259c490fd70fa199a32b9ce9502f2ee6bc4f81ec06fa65894"
+checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
 dependencies = [
  "secp256k1-sys",
 ]
@@ -3959,7 +3958,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "bech32",
  "bs58",
@@ -3971,7 +3970,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -4013,7 +4012,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4022,7 +4021,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "bech32",
  "blake2b_simd",
@@ -4063,7 +4062,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "aes",
  "bip0039",
@@ -4101,7 +4100,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4123,7 +4122,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=always_require_change#ae0d477addf1034fdb5ce9d2dfbdf975e58b714c"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1#028ac1201922a67a583dc5b8ef25f06718dfeb3c"
 dependencies = [
  "document-features",
  "memuse",
