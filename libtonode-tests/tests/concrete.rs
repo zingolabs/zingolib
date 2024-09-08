@@ -112,6 +112,7 @@ fn check_view_capability_bounds(
 
 mod fast {
 
+    use bip0039::Mnemonic;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -393,7 +394,7 @@ mod fast {
     async fn diversification_deterministic_and_coherent() {
         let (_regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+        let seed_phrase = Mnemonic::<bip0039::English>::from_entropy([1; 32])
             .unwrap()
             .to_string();
         let recipient1 = client_builder
@@ -597,6 +598,7 @@ mod slow {
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::{
         consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
+        zip339::Mnemonic,
     };
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::testutils::{
@@ -2638,9 +2640,7 @@ mod slow {
             scenarios::custom_clients_default().await;
         let faucet = client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
-        let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
+        let seed_phrase_of_recipient1 = Mnemonic::from_entropy([1; 32]).unwrap().to_string();
         let recipient1 = client_builder
             .build_client(seed_phrase_of_recipient1, 0, false, regtest_network)
             .await;
