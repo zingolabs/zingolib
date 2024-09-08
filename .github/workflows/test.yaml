@@ -26,7 +26,10 @@ jobs:
           toolchain: stable
 
       - name: Install nextest
-        uses: taiki-e/install-action@nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+          version: 0.9.67
 
       - name: Install protoc
         run: sudo apt-get install protobuf-compiler
