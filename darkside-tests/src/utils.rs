@@ -1,6 +1,4 @@
 use http::Uri;
-use http_body::Body;
-use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use sapling_crypto::note_encryption::SaplingDomain;
@@ -15,8 +13,7 @@ use std::{
 };
 use tempdir;
 use tokio::time::sleep;
-use tonic::Status;
-use tower::{util::BoxCloneService, ServiceExt};
+use tower::{ServiceExt};
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingo_netutils::UnderlyingService;

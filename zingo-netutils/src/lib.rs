@@ -9,7 +9,7 @@ use std::sync::Arc;
 use client::client_from_connector;
 use http::{uri::PathAndQuery, Uri};
 use http_body_util::combinators::UnsyncBoxBody;
-use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::client::legacy::{connect::HttpConnector};
 use thiserror::Error;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
@@ -40,7 +40,7 @@ pub enum GetClientError {
 pub mod client {
     use http_body::Body;
     use hyper_util::client::legacy::{
-        connect::{Connect, HttpConnector},
+        connect::{Connect},
         Client,
     };
     /// a utility used in multiple places
@@ -104,7 +104,7 @@ impl GrpcConnector {
                         subject_public_key_info: Der::from_slice(anchor_ref.spki),
                         name_constraints: anchor_ref
                             .name_constraints
-                            .map(|idh| Der::from_slice(idh)),
+                            .map(Der::from_slice),
                     }
                 }));
 
@@ -191,7 +191,7 @@ fn add_test_cert_to_roots(roots: &mut RootCertStore) {
     let certs_bytes = rustls_pemfile::certs(&mut buf).unwrap();
     let certs: Vec<CertificateDer<'_>> = certs_bytes
         .into_iter()
-        .map(|cert_bytes| CertificateDer::from(cert_bytes))
+        .map(CertificateDer::from)
         .collect();
 
     roots.add_parsable_certificates(certs);
