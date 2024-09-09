@@ -36,8 +36,14 @@ pub enum GetClientError {
 
 /// ?
 pub mod client {
-    use hyper_util::client::legacy::{connect::HttpConnector, Client};
-    pub fn client_from_connector(connector: u64) -> Box<Client<u64, u64>> {
+    use hyper_util::client::legacy::{
+        connect::{Connect, HttpConnector},
+        Client,
+    };
+    pub fn client_from_connector<Con>(connector: Con) -> Box<Client<Con, Con>>
+    where
+        Con: Connect + Clone + Send,
+    {
         Box::new(Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector))
     }
 }
