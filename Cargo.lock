@@ -4440,8 +4440,10 @@ version = "0.1.0"
 dependencies = [
  "http 1.1.0",
  "http-body 1.0.1",
+ "http-body-util",
  "hyper",
  "hyper-rustls",
+ "hyper-util",
  "prost 0.13.2",
  "rustls-pemfile 1.0.4",
  "thiserror",

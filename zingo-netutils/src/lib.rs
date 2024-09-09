@@ -5,22 +5,21 @@
 
 #![warn(missing_docs)]
 use std::sync::Arc;
-use tower::ServiceExt;
 
 use http::{uri::PathAndQuery, Uri};
-use http_body::combinators::UnsyncBoxBody;
-use hyper::client::HttpConnector;
+use http_body_util::combinators::UnsyncBoxBody;
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use thiserror::Error;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
 use tower::util::BoxCloneService;
+use tower::ServiceExt;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
-/// TODO: add doc-comment
-pub type UnderlyingService = BoxCloneService<
+type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<hyper::Body>,
-    hyper::Error,
+    http::Response<hyper::body::Incoming>,
+    hyper_util::client::legacy::Error,
 >;
 
 #[allow(missing_docs)] // error types document themselves
@@ -72,27 +71,30 @@ impl GrpcConnector {
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
             if uri.scheme_str() == Some("https") {
-                let mut roots = RootCertStore::empty();
-                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-                    |anchor_ref| {
-                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            anchor_ref.subject,
-                            anchor_ref.spki,
-                            anchor_ref.name_constraints,
-                        )
-                    },
-                ));
+                // let mut roots = RootCertStore::empty();
+                // roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                //     |anchor_ref| {
+                //         tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                //             anchor_ref.subject,
+                //             anchor_ref.spki,
+                //             anchor_ref.name_constraints,
+                //         )
+                //     },
+                // ));
+
+                let mut root_store = RootCertStore::empty();
+                // root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter());
 
                 #[cfg(test)]
-                add_test_cert_to_roots(&mut roots);
+                add_test_cert_to_roots(&mut root_store);
 
-                let tls = ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_root_certificates(roots)
+                let config = ClientConfig::builder()
+                    .with_root_certificates(root_store)
                     .with_no_client_auth();
+
                 let connector = tower::ServiceBuilder::new()
                     .layer_fn(move |s| {
-                        let tls = tls.clone();
+                        let tls = config.clone();
 
                         hyper_rustls::HttpsConnectorBuilder::new()
                             .with_tls_config(tls)
@@ -101,7 +103,9 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http_connector);
-                let client = Box::new(hyper::Client::builder().build(connector));
+                let client = Box::new(
+                    Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector),
+                );
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -127,7 +131,11 @@ impl GrpcConnector {
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+                let client = Box::new(
+                    Client::builder(hyper_util::rt::TokioExecutor::new())
+                        .http2_only(true)
+                        .build(connector),
+                );
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
