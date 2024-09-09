@@ -906,7 +906,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -941,7 +941,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1505,23 +1505,14 @@ dependencies = [
 
 [[package]]
 name = "incrementalmerkletree"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb1872810fb725b06b8c153dde9e86f3ec26747b9b60096da7a869883b549cbe"
-dependencies = [
- "either",
- "proptest",
- "rand 0.8.5",
- "rand_core 0.6.4",
-]
-
-[[package]]
-name = "incrementalmerkletree"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75346da3bd8e3d8891d02508245ed2df34447ca6637e343829f8d08986e9cde2"
 dependencies = [
  "either",
+ "proptest",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -2068,7 +2059,7 @@ dependencies = [
  "halo2_gadgets",
  "halo2_proofs",
  "hex",
- "incrementalmerkletree 0.6.0",
+ "incrementalmerkletree",
  "lazy_static",
  "memuse",
  "nonempty",
@@ -2925,9 +2916,9 @@ dependencies = [
 
 [[package]]
 name = "sapling-crypto"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02f4270033afcb0c74c5c7d59c73cfd1040367f67f224fe7ed9a919ae618f1b7"
+checksum = "15e379398fffad84e49f9a45a05635fc004f66086e65942dbf4eb95332c26d2a"
 dependencies = [
  "aes",
  "bellman",
@@ -2941,7 +2932,7 @@ dependencies = [
  "fpe",
  "group",
  "hex",
- "incrementalmerkletree 0.5.1",
+ "incrementalmerkletree",
  "jubjub",
  "lazy_static",
  "memuse",
@@ -3122,13 +3113,13 @@ dependencies = [
 
 [[package]]
 name = "shardtree"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b3cdd24424ce0b381646737fedddc33c4dcf7dcd2d545056b53f7982097bef5"
+checksum = "78222845cd8bbe5eb95687407648ff17693a35de5e8abaa39a4681fb21e033f9"
 dependencies = [
  "bitflags 2.6.0",
  "either",
- "incrementalmerkletree 0.5.1",
+ "incrementalmerkletree",
  "tracing",
 ]
 
@@ -4199,7 +4190,7 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 [[package]]
 name = "zcash_address"
 version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "bech32",
  "bs58",
@@ -4211,7 +4202,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "base64 0.21.7",
  "bech32",
@@ -4223,7 +4214,7 @@ dependencies = [
  "group",
  "hdwallet",
  "hex",
- "incrementalmerkletree 0.5.1",
+ "incrementalmerkletree",
  "memuse",
  "nom",
  "nonempty",
@@ -4253,7 +4244,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4262,7 +4253,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "bech32",
  "blake2b_simd",
@@ -4303,7 +4294,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "aes",
  "bip0039",
@@ -4316,7 +4307,7 @@ dependencies = [
  "group",
  "hdwallet",
  "hex",
- "incrementalmerkletree 0.5.1",
+ "incrementalmerkletree",
  "jubjub",
  "memuse",
  "nonempty",
@@ -4341,7 +4332,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4363,7 +4354,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_bip0039_to_0.11#4e8b2089d3a472e82f4f611ef519c81614244cc6"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=upgrade_sapling_crypto_and_shardtree#d6c9357fcf5052274c88eb05323acdc0dc28851f"
 dependencies = [
  "document-features",
  "memuse",
@@ -4475,7 +4466,7 @@ dependencies = [
  "crossbeam-channel",
  "futures",
  "getset",
- "incrementalmerkletree 0.5.1",
+ "incrementalmerkletree",
  "memuse",
  "orchard",
  "rayon",
@@ -4514,7 +4505,7 @@ dependencies = [
  "hdwallet",
  "hex",
  "http 1.1.0",
- "incrementalmerkletree 0.5.1",
+ "incrementalmerkletree",
  "indoc",
  "json",
  "jubjub",
