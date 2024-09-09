@@ -12,6 +12,7 @@ zingolib = { path = "../zingolib", features = ["darkside_tests", "testvectors"] 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
 http = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
 tonic = { workspace = true }

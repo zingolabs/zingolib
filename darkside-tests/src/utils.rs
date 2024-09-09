@@ -1,4 +1,5 @@
 use http::Uri;
+use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use sapling_crypto::note_encryption::SaplingDomain;
