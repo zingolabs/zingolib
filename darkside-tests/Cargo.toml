@@ -9,6 +9,7 @@ chain_generic_tests = []
 
 [dependencies]
 zingolib = { path = "../zingolib", features = ["darkside_tests", "testvectors"] }
+zingo-netutils = { path = "../zingo-netutils" }
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
 http = { workspace = true }

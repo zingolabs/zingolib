@@ -18,6 +18,7 @@ use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
+use zingo_netutils::UnderlyingService;
 use zingolib::testutils::{
     incrementalmerkletree::frontier::CommitmentTree,
     paths::{get_bin_dir, get_cargo_manifest_dir},
@@ -38,13 +39,6 @@ use super::{
     constants,
     darkside_types::{RawTransaction, TreeState},
 };
-
-type UnderlyingService = BoxCloneService<
-    http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<Body>,
-    hyper::Error,
->;
-
 macro_rules! define_darkside_connector_methods(
     ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
         #[allow(unused)]
