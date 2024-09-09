@@ -167,9 +167,16 @@ impl GrpcConnector {
 
 #[cfg(test)]
 fn add_test_cert_to_roots(roots: &mut RootCertStore) {
+    use tonic::transport::CertificateDer;
+
     const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
     let fd = std::fs::File::open(TEST_PEMFILE_PATH).unwrap();
     let mut buf = std::io::BufReader::new(&fd);
-    let certs = rustls_pemfile::certs(&mut buf).unwrap();
-    roots.add_parsable_certificates(&certs);
+    let certs_bytes = rustls_pemfile::certs(&mut buf).unwrap();
+    let certs: Vec<CertificateDer<'_>> = certs_bytes
+        .into_iter()
+        .map(|cert_bytes| CertificateDer::from(cert_bytes))
+        .collect();
+
+    roots.add_parsable_certificates(certs);
 }
