@@ -34,6 +34,14 @@ pub enum GetClientError {
     InvalidPathAndQuery,
 }
 
+/// ?
+pub mod client {
+    use hyper_util::client::legacy::{connect::HttpConnector, Client};
+    pub fn client_from_connector(connector: u64) -> Box<Client<u64, u64>> {
+        Box::new(Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector))
+    }
+}
+
 /// The connector, containing the URI to connect to.
 /// This type is mostly an interface to the get_client method,
 /// the proto-generated CompactTxStreamerClient type is the main
