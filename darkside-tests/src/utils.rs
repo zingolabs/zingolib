@@ -1,5 +1,4 @@
 use http::Uri;
-use http_body::combinators::UnsyncBoxBody;
 use hyper::client::HttpConnector;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use sapling_crypto::note_encryption::SaplingDomain;
@@ -41,7 +40,7 @@ use super::{
 
 type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<hyper::Body>,
+    http::Response<Body>,
     hyper::Error,
 >;
 
@@ -75,7 +74,7 @@ impl DarksideConnector {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
             let connector = tower::ServiceBuilder::new().service(http_connector);
-            let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+            let client = Box::new(Client::builder().http2_only(true).build(connector));
             let uri = uri.clone();
             let svc = tower::ServiceBuilder::new()
                 //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
