@@ -18,6 +18,9 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:
+      - name: Remove Cargo registry
+        run: rm -rf $HOME/.cargo/registry
+
       - name: Checkout repository
         uses: actions/checkout@v3
 
