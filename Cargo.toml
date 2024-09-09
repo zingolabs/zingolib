@@ -44,7 +44,7 @@ futures = "0.3.15"
 futures-util = "0.3.28"
 getset = "0.1.2"
 group = "0.13"
-hdwallet = { git = "https://github.com/fluidvanadium/hdwallet.git", branch = "master" }
+hdwallet = { git = "https://github.com/fluidvanadium/hdwallet.git", tag = "update_secp256k1_to_0.27.0" }
 hex = "0.4"
 http = "0.2.4"
 http-body = "0.4.4"
