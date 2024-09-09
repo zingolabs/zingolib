@@ -10,6 +10,7 @@ use http::{uri::PathAndQuery, Uri};
 use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use thiserror::Error;
+use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
 use tower::util::BoxCloneService;
@@ -75,8 +76,8 @@ impl GrpcConnector {
                 let mut root_store = RootCertStore::empty();
                 //webpki uses a different struct for TrustAnchor
                 root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|anchor_ref| {
-                    tokio_rustls::rustls::pki_types::TrustAnchor {
-                        subject: anchor_ref.subject,
+                    TrustAnchor {
+                        subject: Der::from_slice(anchor_ref.subject),
                         subject_public_key_info: anchor_ref.spki,
                         name_constraints: anchor_ref.name_constraints,
                     }
