@@ -8,12 +8,13 @@ pub const BASE_HEIGHT: u32 = 3;
 
 /// TODO: Add Mod Description Here!
 pub mod seeds {
+
     /// TODO: Add Doc Comment Here!
     pub const DARKSIDE_SEED: &str =
 "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread";
     #[test]
     fn validate_seeds() {
-        let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+        let abandon_art_seed = bip0039::Mnemonic::<bip0039::English>::from_entropy([0; 32])
             .unwrap()
             .to_string();
         assert_eq!(ABANDON_ART_SEED, abandon_art_seed);

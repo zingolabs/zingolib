@@ -309,7 +309,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef0f0152ec5cf17f49a5866afaa3439816207fd4f0a224c0211ffaf5e278426"
 dependencies = [
  "hmac",
- "pbkdf2",
+ "pbkdf2 0.10.1",
+ "rand 0.8.5",
+ "sha2 0.10.8",
+ "unicode-normalization",
+ "zeroize",
+]
+
+[[package]]
+name = "bip0039"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e68a5a99c65851e7be249f5cf510c0a136f18c9bca32139576d59bd3f577b043"
+dependencies = [
+ "hmac",
+ "pbkdf2 0.11.0",
  "rand 0.8.5",
  "sha2 0.10.8",
  "unicode-normalization",
@@ -1604,6 +1618,7 @@ dependencies = [
 name = "libtonode-tests"
 version = "0.2.0"
 dependencies = [
+ "bip0039 0.11.0",
  "hex",
  "http 0.2.12",
  "itertools 0.10.5",
@@ -2028,6 +2043,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "password-hash"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7676374caaee8a325c9e7a2ae557f216c5563a171d6997b0ef8a65af35147700"
+dependencies = [
+ "base64ct",
+ "rand_core 0.6.4",
+ "subtle",
+]
+
+[[package]]
 name = "pasta_curves"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2049,7 +2075,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271779f35b581956db91a3e55737327a03aa051e90b1c47aeb189508533adfd7"
 dependencies = [
  "digest 0.10.7",
- "password-hash",
+ "password-hash 0.3.2",
+]
+
+[[package]]
+name = "pbkdf2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83a0692ec44e4cf1ef28ca317f14f8f07da2d95ec3fa01f86e4467b725e60917"
+dependencies = [
+ "digest 0.10.7",
+ "password-hash 0.4.2",
 ]
 
 [[package]]
@@ -4078,7 +4114,7 @@ version = "0.15.0"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=update_secp256k1_to_0.27.0#a4c008275f2f06883c184ec3243ce9e5b4321144"
 dependencies = [
  "aes",
- "bip0039",
+ "bip0039 0.10.1",
  "blake2b_simd",
  "byteorder",
  "document-features",
@@ -4270,6 +4306,7 @@ dependencies = [
  "append-only-vec",
  "base58",
  "base64 0.13.1",
+ "bip0039 0.11.0",
  "bls12_381",
  "build_utils",
  "byteorder",

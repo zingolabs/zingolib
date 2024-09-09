@@ -9,7 +9,8 @@ use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::{cmp, sync::Arc};
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
+
+use bip0039::Mnemonic;
 
 use zcash_note_encryption::Domain;
 
