@@ -16,7 +16,7 @@ resolver = "2"
 
 [workspace.dependencies]
 bip0039 = "0.11"
-orchard = "0.8"
+orchard = "0.9"
 sapling-crypto = "0.1.2"
 zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change" }
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "always_require_change", features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
@@ -79,7 +79,7 @@ serde_json = "1.0.107"
 sha2 = "0.9.5"
 shardtree = "0.3"
 shellwords = "1.1.0"
-subtle = "2.4.1"
+subtle = "~2.5.0"
 tempdir = "0.3"
 tempfile = "3.3.0"
 test-case = "3.3.1"
