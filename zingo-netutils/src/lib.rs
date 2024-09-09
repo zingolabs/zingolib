@@ -78,8 +78,10 @@ impl GrpcConnector {
                 root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|anchor_ref| {
                     TrustAnchor {
                         subject: Der::from_slice(anchor_ref.subject),
-                        subject_public_key_info: anchor_ref.spki,
-                        name_constraints: anchor_ref.name_constraints,
+                        subject_public_key_info: Der::from_slice(anchor_ref.spki),
+                        name_constraints: anchor_ref
+                            .name_constraints
+                            .map(|idh| Der::from_slice(idh)),
                     }
                 }));
 
