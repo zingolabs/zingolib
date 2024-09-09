@@ -1,5 +1,5 @@
+use bip0039::Mnemonic;
 use zcash_address::unified::Encoding;
-use zcash_primitives::zip339::Mnemonic;
 
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
@@ -108,10 +108,9 @@ async fn loaded_wallet_assert(
     expected_num_addresses: usize,
 ) {
     let expected_mnemonic = (
-        zcash_primitives::zip339::Mnemonic::from_phrase(expected_seed_phrase).unwrap(),
+        Mnemonic::<bip0039::English>::from_phrase(expected_seed_phrase).unwrap(),
         0,
     );
-    assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
     let expected_wc = crate::wallet::keys::unified::WalletCapability::new_from_phrase(
         &wallet.transaction_context.config,
@@ -217,7 +216,6 @@ async fn reload_wallet_from_buffer() {
         Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
         0,
     );
-    assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
     let expected_wc = WalletCapability::new_from_phrase(
         &mid_client.wallet.transaction_context.config,

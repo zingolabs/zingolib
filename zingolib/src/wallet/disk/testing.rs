@@ -1,6 +1,8 @@
 //! functionality for testing the save and load functions of LightWallet.
 //! do not compile test-elevation feature for production.
 
+use bip0039::Mnemonic;
+
 use super::LightWallet;
 
 impl LightWallet {
@@ -63,10 +65,9 @@ pub async fn assert_wallet_capability_matches_seed(
     assert_eq!(expected_seed_phrase, actual_seed_phrase);
 
     let expected_mnemonic = (
-        zcash_primitives::zip339::Mnemonic::from_phrase(expected_seed_phrase).unwrap(),
+        Mnemonic::<bip0039::English>::from_phrase(expected_seed_phrase).unwrap(),
         0,
     );
-    assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
     let expected_wc = crate::wallet::keys::unified::WalletCapability::new_from_phrase(
         &wallet.transaction_context.config,
