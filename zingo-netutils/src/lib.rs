@@ -44,7 +44,7 @@ pub mod client {
         Client,
     };
     /// a utility used in multiple places
-    pub fn client_from_connector<C, B>(connector: C, http_only: bool) -> Box<Client<C, B>>
+    pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
     where
         C: Connect + Clone,
         B: Body + Send,
@@ -52,7 +52,7 @@ pub mod client {
     {
         Box::new(
             Client::builder(hyper_util::rt::TokioExecutor::new())
-                .http2_only(http_only)
+                .http2_only(http2_only)
                 .build(connector),
         )
     }
