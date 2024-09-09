@@ -2640,7 +2640,9 @@ mod slow {
             scenarios::custom_clients_default().await;
         let faucet = client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
-        let seed_phrase_of_recipient1 = Mnemonic::from_entropy([1; 32]).unwrap().to_string();
+        let seed_phrase_of_recipient1 = Mnemonic::<bip0039::English>::from_entropy([1; 32])
+            .unwrap()
+            .to_string();
         let recipient1 = client_builder
             .build_client(seed_phrase_of_recipient1, 0, false, regtest_network)
             .await;

@@ -6,17 +6,20 @@
 #![warn(missing_docs)]
 use std::sync::Arc;
 
+use client::client_from_connector;
 use http::{uri::PathAndQuery, Uri};
 use http_body_util::combinators::UnsyncBoxBody;
-use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::client::legacy::connect::HttpConnector;
 use thiserror::Error;
+use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
 use tower::util::BoxCloneService;
 use tower::ServiceExt;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
-type UnderlyingService = BoxCloneService<
+/// ?
+pub type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
     http::Response<hyper::body::Incoming>,
     hyper_util::client::legacy::Error,
@@ -31,6 +34,25 @@ pub enum GetClientError {
     InvalidAuthority,
     #[error("bad uri: invalid path and/or query")]
     InvalidPathAndQuery,
+}
+
+/// ?
+pub mod client {
+    use http_body::Body;
+    use hyper_util::client::legacy::{connect::Connect, Client};
+    /// a utility used in multiple places
+    pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
+    where
+        C: Connect + Clone,
+        B: Body + Send,
+        B::Data: Send,
+    {
+        Box::new(
+            Client::builder(hyper_util::rt::TokioExecutor::new())
+                .http2_only(http2_only)
+                .build(connector),
+        )
+    }
 }
 
 /// The connector, containing the URI to connect to.
@@ -71,19 +93,15 @@ impl GrpcConnector {
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
             if uri.scheme_str() == Some("https") {
-                // let mut roots = RootCertStore::empty();
-                // roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-                //     |anchor_ref| {
-                //         tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                //             anchor_ref.subject,
-                //             anchor_ref.spki,
-                //             anchor_ref.name_constraints,
-                //         )
-                //     },
-                // ));
-
                 let mut root_store = RootCertStore::empty();
-                // root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter());
+                //webpki uses a different struct for TrustAnchor
+                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|anchor_ref| {
+                    TrustAnchor {
+                        subject: Der::from_slice(anchor_ref.subject),
+                        subject_public_key_info: Der::from_slice(anchor_ref.spki),
+                        name_constraints: anchor_ref.name_constraints.map(Der::from_slice),
+                    }
+                }));
 
                 #[cfg(test)]
                 add_test_cert_to_roots(&mut root_store);
@@ -103,9 +121,7 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http_connector);
-                let client = Box::new(
-                    Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector),
-                );
+                let client = client_from_connector(connector, false);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -131,11 +147,7 @@ impl GrpcConnector {
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = Box::new(
-                    Client::builder(hyper_util::rt::TokioExecutor::new())
-                        .http2_only(true)
-                        .build(connector),
-                );
+                let client = client_from_connector(connector, true);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -166,9 +178,14 @@ impl GrpcConnector {
 
 #[cfg(test)]
 fn add_test_cert_to_roots(roots: &mut RootCertStore) {
+    use tonic::transport::CertificateDer;
+
     const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
     let fd = std::fs::File::open(TEST_PEMFILE_PATH).unwrap();
     let mut buf = std::io::BufReader::new(&fd);
-    let certs = rustls_pemfile::certs(&mut buf).unwrap();
-    roots.add_parsable_certificates(&certs);
+    let certs_bytes = rustls_pemfile::certs(&mut buf).unwrap();
+    let certs: Vec<CertificateDer<'_>> =
+        certs_bytes.into_iter().map(CertificateDer::from).collect();
+
+    roots.add_parsable_certificates(certs);
 }
