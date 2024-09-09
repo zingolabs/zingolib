@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 use std::sync::Arc;
 
+use client::client_from_connector;
 use http::{uri::PathAndQuery, Uri};
 use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
@@ -37,17 +38,23 @@ pub enum GetClientError {
 
 /// ?
 pub mod client {
-    use hyper::body::Body;
+    use http_body::Body;
     use hyper_util::client::legacy::{
         connect::{Connect, HttpConnector},
         Client,
     };
-    pub fn client_from_connector<Con>(connector: Con) -> Box<Client<Con, Con>>
+    /// a utility used in multiple places
+    pub fn client_from_connector<C, B>(connector: C, http_only: bool) -> Box<Client<C, B>>
     where
-        Con: Body + Connect + Clone + Send,
-        <Con as Body>::Data: Send,
+        C: Connect + Clone,
+        B: Body + Send,
+        B::Data: Send,
     {
-        Box::new(Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector))
+        Box::new(
+            Client::builder(hyper_util::rt::TokioExecutor::new())
+                .http2_only(http_only)
+                .build(connector),
+        )
     }
 }
 
@@ -119,9 +126,7 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http_connector);
-                let client = Box::new(
-                    Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector),
-                );
+                let client = client_from_connector(connector, false);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -147,11 +152,7 @@ impl GrpcConnector {
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = Box::new(
-                    Client::builder(hyper_util::rt::TokioExecutor::new())
-                        .http2_only(true)
-                        .build(connector),
-                );
+                let client = client_from_connector(connector, true);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
