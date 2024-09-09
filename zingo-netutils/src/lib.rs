@@ -16,7 +16,8 @@ use tower::util::BoxCloneService;
 use tower::ServiceExt;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
-type UnderlyingService = BoxCloneService<
+/// ?
+pub type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
     http::Response<hyper::body::Incoming>,
     hyper_util::client::legacy::Error,
