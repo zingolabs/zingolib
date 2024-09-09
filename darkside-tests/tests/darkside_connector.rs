@@ -4,9 +4,9 @@ use darkside_tests::darkside_types::{
 };
 
 use hyper::Uri;
-use hyper_util::client::legacy::{connect::HttpConnector};
+use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
-use tower::{ServiceExt};
+use tower::ServiceExt;
 use zingo_netutils::UnderlyingService;
 
 macro_rules! define_darkside_connector_methods(

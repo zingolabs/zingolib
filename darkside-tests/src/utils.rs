@@ -13,7 +13,7 @@ use std::{
 };
 use tempdir;
 use tokio::time::sleep;
-use tower::{ServiceExt};
+use tower::ServiceExt;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingo_netutils::UnderlyingService;
