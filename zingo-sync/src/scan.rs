@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
-use incrementalmerkletree::{Position, Retention};
+use incrementalmerkletree::{Marking, Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
 use tokio::sync::mpsc;
@@ -437,7 +437,11 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,
-                        is_marked,
+                        marking: if is_marked {
+                            Marking::Marked
+                        } else {
+                            Marking::None
+                        },
                     },
                     (true, false) => Retention::Marked,
                     (false, false) => Retention::Ephemeral,
@@ -481,7 +485,11 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,
-                        is_marked,
+                        marking: if is_marked {
+                            Marking::Marked
+                        } else {
+                            Marking::None
+                        },
                     },
                     (true, false) => Retention::Marked,
                     (false, false) => Retention::Ephemeral,
