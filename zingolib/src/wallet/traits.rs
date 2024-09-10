@@ -13,7 +13,7 @@ use crate::wallet::{
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMapAndMaybeTrees,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};

@@ -28,7 +28,7 @@ use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
 
 use crate::wallet::LightWallet;
-use crate::wallet::{data::BlockData, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::{data::BlockData, tx_map::TxMapAndMaybeTrees};
 
 impl LightWallet {
     /// returns Some seed phrase for the wallet.

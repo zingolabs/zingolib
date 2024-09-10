@@ -31,7 +31,7 @@ use super::LightWallet;
 use super::{
     data::{BlockData, WalletZecPriceInfo},
     transaction_context::TransactionContext,
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMapAndMaybeTrees,
 };
 
 impl LightWallet {

@@ -7,7 +7,7 @@ use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::{keys::unified::WalletCapability, tx_map::TxMapAndMaybeTrees};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]

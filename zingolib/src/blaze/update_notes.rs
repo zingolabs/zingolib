@@ -1,8 +1,6 @@
 use crate::error::ZingoLibResult;
 use crate::wallet::MemoDownloadOption;
-use crate::wallet::{
-    data::PoolNullifier, tx_map_and_maybe_trees::TxMapAndMaybeTrees, utils::txid_from_slice,
-};
+use crate::wallet::{data::PoolNullifier, tx_map::TxMapAndMaybeTrees, utils::txid_from_slice};
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;

@@ -185,7 +185,7 @@ mod load_wallet {
         )
         .await;
         if let Err(QuickSendError::ProposeSend(Proposal(
-                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
+                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map::TxMapAndMaybeTreesTraitError::InputSource(
                     zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(output_error)
                 )),
             ))) = missing_output_index {

@@ -154,7 +154,7 @@ impl super::TxMapAndMaybeTrees {
 }
 
 // shardtree
-impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
+impl crate::wallet::tx_map::TxMapAndMaybeTrees {
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(

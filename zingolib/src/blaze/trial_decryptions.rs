@@ -12,7 +12,7 @@ use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMapAndMaybeTrees,
     utils::txid_from_slice,
     MemoDownloadOption,
 };

@@ -615,7 +615,7 @@ mod slow {
             },
             notes::OutputInterface,
             transaction_record::{SendType, TransactionKind},
-            tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+            tx_map::TxMapAndMaybeTreesTraitError,
         },
     };
 

@@ -42,7 +42,7 @@ use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMapAndMaybeTrees,
 };
 
 pub mod data;
@@ -54,7 +54,7 @@ pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub mod transaction_records_by_id;
-pub mod tx_map_and_maybe_trees;
+pub mod tx_map;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet

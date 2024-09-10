@@ -14,7 +14,7 @@ use crate::config::ChainType;
 
 use super::{
     send::change_memo_from_transaction_request,
-    tx_map_and_maybe_trees::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
+    tx_map::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
     LightWallet,
 };
 
