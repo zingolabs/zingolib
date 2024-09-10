@@ -276,9 +276,9 @@ fn short_circuit_on_help(params: Vec<String>) {
 ///  * behave correctly as a function of each parameter that may have been passed
 ///      * add details of above here
 ///  * handle parameters as efficiently as possible.
-///      * If a ShortCircuitCommand
-///    is specified, then the system should execute only logic necessary to support that command,
-///    in other words "help" the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
+///      * If a ShortCircuitCommand is specified, then the system should execute
+///        only logic necessary to support that command, in other words "help"
+///        the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section

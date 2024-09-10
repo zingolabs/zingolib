@@ -459,7 +459,7 @@ impl ZingoConfig {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let mut backup_file_path = self.get_zingo_wallet_dir().into_path_buf();
-        backup_file_path.push(&format!(
+        backup_file_path.push(format!(
             "zingo-wallet.backup.{}.dat",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

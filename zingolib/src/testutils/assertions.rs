@@ -12,8 +12,9 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 /// 1. len of txids == num steps
 /// 2. the txid is stored in the records_by_ids database
 /// 3. if the fee from the calculate_transaction_fee matches the sum of the per-step fees
-/// this currently fails for any broadcast but not confirmed transaction: it seems like get_transaction_fee does not recognize pending spends
-/// returns the total fee for the transfer
+///    this currently fails for any broadcast but not confirmed transaction: it seems like
+///    get_transaction_fee does not recognize pending spends returns the total fee for the
+///    transfer
 pub async fn assert_record_fee_and_status<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
