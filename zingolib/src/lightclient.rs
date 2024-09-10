@@ -12,7 +12,7 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use crate::config::ZingoConfig;
+use crate::{config::ZingoConfig, wallet::keys::keystore::Keystore};
 
 use crate::{
     blaze::syncdata::BlazeSyncData,
@@ -386,8 +386,9 @@ pub mod instantiation {
             Self::create_with_new_wallet(config, latest_block)
         }
 
-        
-        fn create_with_new_wallet_with_ledger(config: &ZingoConfig, height: u64) -> io::Result<Self> {
+        #[cfg(feature = "ledger-support")]
+        /// create a brand new wallet using a Ledger Hardware wallet device
+        pub fn create_with_ledger(config: &ZingoConfig, height: u64) -> io::Result<Self> {
 
             Runtime::new().unwrap().block_on(async move {
                 let l = LightClient::create_unconnected(config, WalletBase::Ledger, height)
@@ -421,8 +422,24 @@ pub mod send;
 
 pub mod propose;
 
+use tokio::runtime::Runtime;
 // other functions
 impl LightClient {
+
+    pub fn do_wallet_kind_sync(&self) -> String {
+        Runtime::new().unwrap().block_on(async move {
+             self.do_wallet_kind().await 
+            }
+        )
+    }
+
+    pub async fn do_wallet_kind(&self) -> String {
+        match *self.wallet.keystore() {
+            Keystore::Ledger(_) => "ledger",
+            Keystore::InMemory(_) => "memory"
+        }
+        .to_string()
+    }
     /// TODO: Add Doc Comment Here!
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet

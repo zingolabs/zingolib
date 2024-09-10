@@ -13,3 +13,6 @@ rustyline = { workspace = true }
 log = { workspace = true }
 shellwords = { workspace = true }
 json = { workspace = true }
+
+[features]
+ledger-support = []

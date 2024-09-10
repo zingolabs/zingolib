@@ -191,6 +191,9 @@ impl WalletBase {
 /// In-memory wallet data struct
 #[derive(Getters, MutGetters)]
 pub struct LightWallet {
+    /// the underlying keystore of this wallet
+    keystore: Arc<RwLock<Keystore>>,
+
     // The block at which this wallet was born. Rescans
     // will start from here.
     birthday: AtomicU64,
@@ -289,6 +292,10 @@ impl LightWallet {
         }
     }
 
+    // pub fn keys(&self) -> &RwLock<Keystore> {
+    //     &self.keys
+    // }
+    
     /// TODO: Add Doc Comment Here!
     pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
         let (wc, mnemonic) = match base {
@@ -406,6 +413,7 @@ impl LightWallet {
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {
+            keystore:Arc::new(RwLock::new(wc.clone())),
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),

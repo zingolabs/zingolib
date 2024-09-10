@@ -342,6 +342,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         };
 
         let clean_regtest_data = !matches.get_flag("no-clean");
+        #[cfg(feature = "ledger-support")]
         let ledger = !matches.get_flag("ledger");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
@@ -442,7 +443,7 @@ pub fn startup(
             false,
         )?),
         #[cfg(feature = "ledger-support")]
-        None if ledger => Arc::new(LightClient::with_ledger(&config, birthday)?),
+        None if config.use_ledger => Arc::new(LightClient::create_with_ledger(&config, filled_template.birthday)?),
         None => {
             if config.wallet_path_exists() {
                 Arc::new(LightClient::read_wallet_from_disk(&config)?)
