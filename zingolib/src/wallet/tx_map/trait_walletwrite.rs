@@ -2,7 +2,7 @@
 
 use zcash_client_backend::data_api::WalletWrite;
 
-use super::TxMap;
+use super::{TxMap, TxMapTraitError};
 
 impl WalletWrite for TxMap {
     type UtxoRef = u32;
@@ -56,16 +56,15 @@ impl WalletWrite for TxMap {
         &mut self,
         sent_tx: &zcash_client_backend::data_api::SentTransaction<Self::AccountId>,
     ) -> Result<(), Self::Error> {
-        // match self.spending_data {
-        //     None => Err(TxMapTraitError::NoSpendCapability),
-        //     Some(ref mut spending_data) => {
-        //         spending_data
-        //             .cached_transactions_mut()
-        //             .insert(sent_tx.tx().txid(), *sent_tx.tx().clone());
-        //         Ok(())
-        //     }
-        // }
-        unimplemented!()
+        match self.spending_data {
+            None => Err(TxMapTraitError::NoSpendCapability),
+            Some(ref mut spending_data) => {
+                spending_data
+                    .cached_transactions_mut()
+                    .insert(sent_tx.tx().txid(), *sent_tx.tx().clone());
+                Ok(())
+            }
+        }
     }
 
     fn truncate_to_height(
