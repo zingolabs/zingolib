@@ -3,17 +3,11 @@ use darkside_tests::darkside_types::{
     DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
 };
 
-use http_body::combinators::UnsyncBoxBody;
-use hyper::{client::HttpConnector, Uri};
+use hyper::Uri;
+use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
-use tonic::Status;
-use tower::{util::BoxCloneService, ServiceExt};
-
-type UnderlyingService = BoxCloneService<
-    http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<hyper::Body>,
-    hyper::Error,
->;
+use tower::ServiceExt;
+use zingo_netutils::UnderlyingService;
 
 macro_rules! define_darkside_connector_methods(
     ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
@@ -49,7 +43,7 @@ impl DarksideConnector {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
             let connector = tower::ServiceBuilder::new().service(http_connector);
-            let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+            let client = zingo_netutils::client::client_from_connector(connector, true);
             let uri = uri.clone();
             let svc = tower::ServiceBuilder::new()
                 //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
