@@ -92,7 +92,7 @@ impl TxMap {
 }
 
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, PartialEq, Error)]
+#[derive(Debug, Error)]
 pub enum TxMapTraitError {
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,

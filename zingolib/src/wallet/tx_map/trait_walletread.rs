@@ -384,13 +384,13 @@ mod tests {
     #[test]
     fn get_target_and_anchor_heights_err() {
         let transaction_records_and_maybe_trees = TxMap::new_treeless_address_free();
-        assert_eq!(
+        assert!(matches!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
                 .err()
                 .unwrap(),
             TxMapTraitError::NoSpendCapability
-        );
+        ));
     }
 
     proptest! {
