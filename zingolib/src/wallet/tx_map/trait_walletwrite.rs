@@ -9,45 +9,45 @@ impl WalletWrite for TxMap {
 
     fn create_account(
         &mut self,
-        seed: &secrecy::SecretVec<u8>,
-        birthday: &zcash_client_backend::data_api::AccountBirthday,
+        _seed: &secrecy::SecretVec<u8>,
+        _birthday: &zcash_client_backend::data_api::AccountBirthday,
     ) -> Result<(Self::AccountId, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
         unimplemented!()
     }
 
     fn get_next_available_address(
         &mut self,
-        account: Self::AccountId,
-        request: zcash_keys::keys::UnifiedAddressRequest,
+        _account: Self::AccountId,
+        _request: zcash_keys::keys::UnifiedAddressRequest,
     ) -> Result<Option<zcash_keys::address::UnifiedAddress>, Self::Error> {
         unimplemented!()
     }
 
     fn update_chain_tip(
         &mut self,
-        tip_height: zcash_primitives::consensus::BlockHeight,
+        _tip_height: zcash_primitives::consensus::BlockHeight,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
     fn put_blocks(
         &mut self,
-        from_state: &zcash_client_backend::data_api::chain::ChainState,
-        blocks: Vec<zcash_client_backend::data_api::ScannedBlock<Self::AccountId>>,
+        _from_state: &zcash_client_backend::data_api::chain::ChainState,
+        _blocks: Vec<zcash_client_backend::data_api::ScannedBlock<Self::AccountId>>,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
     fn put_received_transparent_utxo(
         &mut self,
-        output: &zcash_client_backend::wallet::WalletTransparentOutput,
+        _output: &zcash_client_backend::wallet::WalletTransparentOutput,
     ) -> Result<Self::UtxoRef, Self::Error> {
         unimplemented!()
     }
 
     fn store_decrypted_tx(
         &mut self,
-        received_tx: zcash_client_backend::data_api::DecryptedTransaction<Self::AccountId>,
+        _received_tx: zcash_client_backend::data_api::DecryptedTransaction<Self::AccountId>,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
@@ -70,7 +70,7 @@ impl WalletWrite for TxMap {
 
     fn truncate_to_height(
         &mut self,
-        block_height: zcash_primitives::consensus::BlockHeight,
+        _block_height: zcash_primitives::consensus::BlockHeight,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
