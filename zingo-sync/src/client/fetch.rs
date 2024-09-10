@@ -126,7 +126,7 @@ async fn get_block_range(
     block_range: Range<BlockHeight>,
 ) -> Vec<CompactBlock> {
     let mut compact_blocks: Vec<CompactBlock> =
-        Vec::with_capacity(u64::from(block_range.end - block_range.start) as usize);
+        Vec::with_capacity(u64::from(block_range.end - block_range.start.into()) as usize);
 
     let request = tonic::Request::new(BlockRange {
         start: Some(BlockId {

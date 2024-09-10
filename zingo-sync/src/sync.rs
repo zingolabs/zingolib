@@ -173,9 +173,9 @@ fn prepare_next_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     })?;
 
     // if scan range is larger than BATCH_SIZE, split off and return a batch from the lower end and update scan ranges
-    if let Some((lower_range, higher_range)) = selected_scan_range
-        .split_at(selected_scan_range.block_range().start + BlockHeight::from_u32(BATCH_SIZE))
-    {
+    if let Some((lower_range, higher_range)) = selected_scan_range.split_at(
+        selected_scan_range.block_range().start + BlockHeight::from_u32(BATCH_SIZE).into(),
+    ) {
         let lower_range_ignored =
             ScanRange::from_parts(lower_range.block_range().clone(), ScanPriority::Ignored);
         scan_ranges.splice(index..=index, vec![lower_range_ignored, higher_range]);
