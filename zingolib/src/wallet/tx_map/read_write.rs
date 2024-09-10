@@ -13,7 +13,7 @@ use crate::{
     wallet::{data::TransactionRecord, keys::unified::WalletCapability},
 };
 
-use super::{TransactionRecordsById, TxMap};
+use super::{spending_data::SpendingData, TransactionRecordsById, TxMap};
 impl TxMap {
     /// TODO: Doc-comment!
     pub fn serialized_version() -> u64 {
@@ -68,7 +68,7 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: map,
-            spending_data: witness_trees,
+            spending_data: witness_trees.map(SpendingData::new),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
         })
     }
@@ -135,7 +135,7 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
-            spending_data: witness_trees,
+            spending_data: witness_trees.map(SpendingData::new),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
         })
     }
@@ -163,7 +163,7 @@ impl TxMap {
             })?;
         }
 
-        Optional::write(writer, self.spending_data.as_mut(), |w, t| t.write(w))
+        Optional::write(writer, self.witness_trees_mut(), |w, t| t.write(w))
     }
 }
 #[cfg(test)]

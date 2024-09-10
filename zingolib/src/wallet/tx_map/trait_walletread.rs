@@ -87,7 +87,7 @@ impl WalletRead for TxMap {
         )>,
         Self::Error,
     > {
-        match self.spending_data.as_ref() {
+        match self.witness_trees() {
             Some(trees) => {
                 let opt_max_downloaded_height =
                     match trees.witness_tree_orchard.store().max_checkpoint_id() {
