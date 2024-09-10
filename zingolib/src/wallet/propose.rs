@@ -18,10 +18,8 @@ use super::{
     LightWallet,
 };
 
-type GISKit = GreedyInputSelector<
-    TxMap,
-    zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
->;
+type GISKit =
+    GreedyInputSelector<TxMap, zcash_client_backend::fees::zip317::SingleOutputChangeStrategy>;
 
 // This private helper is a very small DRY, but it has already corrected a minor
 // divergence in change strategy.

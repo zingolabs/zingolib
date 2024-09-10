@@ -837,9 +837,7 @@ mod tests {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(
-                    TxMap::new_with_witness_trees_address_free(),
-                )),
+                Arc::new(RwLock::new(TxMap::new_with_witness_trees_address_free())),
                 reorg_transmitter,
             )
             .await;
@@ -888,9 +886,7 @@ mod tests {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(
-                    TxMap::new_with_witness_trees_address_free(),
-                )),
+                Arc::new(RwLock::new(TxMap::new_with_witness_trees_address_free())),
                 reorg_transmitter,
             )
             .await;
@@ -986,9 +982,7 @@ mod tests {
             .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(
-                    TxMap::new_with_witness_trees_address_free(),
-                )),
+                Arc::new(RwLock::new(TxMap::new_with_witness_trees_address_free())),
                 reorg_transmitter,
             )
             .await;
