@@ -91,15 +91,15 @@ impl TxMap {
     }
 }
 
-/// TODO: Doc-comment!
+#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, PartialEq, Error)]
 pub enum TxMapTraitError {
-    /// TODO: Doc-comment!
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,
-    /// TODO: Doc-comment!
     #[error("{0:?}")]
     InputSource(InputSourceError),
+    #[error("{0:?}")]
+    TransactionWrite(std::io::Error),
 }
 
 pub mod trait_stub_inputsource;
