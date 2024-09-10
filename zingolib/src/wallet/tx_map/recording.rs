@@ -1,4 +1,4 @@
-//! contains associated methods for modifying and updating TxMapAndMaybeTrees
+//! contains associated methods for modifying and updating TxMap
 
 use incrementalmerkletree::Position;
 use orchard::note_encryption::OrchardDomain;

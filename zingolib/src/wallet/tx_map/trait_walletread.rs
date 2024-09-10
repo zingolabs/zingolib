@@ -1,4 +1,4 @@
-//! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
+//! in this mod, we implement an LRZ type on the TxMap
 
 use crate::wallet::notes::{query::OutputSpendStatusQuery, Output, OutputInterface};
 
