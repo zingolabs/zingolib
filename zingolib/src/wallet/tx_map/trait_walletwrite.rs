@@ -2,7 +2,6 @@
 
 use zcash_client_backend::data_api::WalletWrite;
 
-
 use super::TxMap;
 
 impl WalletWrite for TxMap {
