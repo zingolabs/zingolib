@@ -105,3 +105,4 @@ pub enum TxMapTraitError {
 pub mod trait_stub_inputsource;
 pub mod trait_stub_walletcommitmenttrees;
 pub mod trait_walletread;
+pub mod trait_walletwrite;

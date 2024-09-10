@@ -25,4 +25,10 @@ impl SpendingData {
     pub fn witness_trees_mut(&mut self) -> &mut WitnessTrees {
         &mut self.witness_trees
     }
+    pub fn cached_transactions(&self) -> &HashMap<TxId, Transaction> {
+        &self.cached_transactions
+    }
+    pub fn cached_transactions_mut(&mut self) -> &mut HashMap<TxId, Transaction> {
+        &mut self.cached_transactions
+    }
 }
