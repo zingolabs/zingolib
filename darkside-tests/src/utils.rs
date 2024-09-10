@@ -1,5 +1,5 @@
 use http::Uri;
-use hyper_util::client::legacy::{connect::HttpConnector};
+use hyper_util::client::legacy::connect::HttpConnector;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use sapling_crypto::note_encryption::SaplingDomain;
 use std::{
