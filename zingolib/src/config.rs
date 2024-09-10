@@ -665,6 +665,7 @@ impl RegtestNetwork {
                 self.activation_heights
                     .get_activation_height(NetworkUpgrade::Nu5),
             ),
+            NetworkUpgrade::Nu6 => None,
         }
     }
 }
@@ -709,6 +710,7 @@ impl ActivationHeights {
             NetworkUpgrade::Heartwood => self.heartwood,
             NetworkUpgrade::Canopy => self.canopy,
             NetworkUpgrade::Nu5 => self.orchard,
+            NetworkUpgrade::Nu6 => todo!(),
         }
     }
 }
