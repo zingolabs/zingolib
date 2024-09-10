@@ -3,7 +3,7 @@ use crate::wallet::{
     data::{BlockData, PoolNullifier},
     notes::ShieldedNoteInterface,
     traits::DomainWalletExt,
-    tx_map::TxMapAndMaybeTrees,
+    tx_map::TxMap,
 };
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::{frontier, witness::IncrementalWitness, Hashable};
@@ -317,7 +317,7 @@ impl BlockManagementData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
     ) {
         let mut existing_blocks_writelock = existing_blocks.write().await;
         if existing_blocks_writelock.len() != 0 {
@@ -343,7 +343,7 @@ impl BlockManagementData {
         &self,
         start_block: u64,
         end_block: u64,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<Option<u64>, String>>,
@@ -591,7 +591,7 @@ struct BlockManagementThreadData {
 impl BlockManagementThreadData {
     async fn handle_reorgs_populate_data_inner(
         mut self,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> Result<Option<u64>, String> {
         // Temporary holding place for blocks while we process them.
@@ -838,7 +838,7 @@ mod tests {
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(
-                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                    TxMap::new_with_witness_trees_address_free(),
                 )),
                 reorg_transmitter,
             )
@@ -889,7 +889,7 @@ mod tests {
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(
-                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                    TxMap::new_with_witness_trees_address_free(),
                 )),
                 reorg_transmitter,
             )
@@ -987,7 +987,7 @@ mod tests {
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(
-                    TxMapAndMaybeTrees::new_with_witness_trees_address_free(),
+                    TxMap::new_with_witness_trees_address_free(),
                 )),
                 reorg_transmitter,
             )

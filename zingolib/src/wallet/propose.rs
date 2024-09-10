@@ -14,12 +14,12 @@ use crate::config::ChainType;
 
 use super::{
     send::change_memo_from_transaction_request,
-    tx_map::{TxMapAndMaybeTrees, TxMapTraitError},
+    tx_map::{TxMap, TxMapTraitError},
     LightWallet,
 };
 
 type GISKit = GreedyInputSelector<
-    TxMapAndMaybeTrees,
+    TxMap,
     zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
 >;
 
@@ -107,7 +107,7 @@ impl LightWallet {
             .await;
 
         zcash_client_backend::data_api::wallet::propose_transfer::<
-            TxMapAndMaybeTrees,
+            TxMap,
             ChainType,
             GISKit,
             TxMapTraitError,
@@ -142,7 +142,7 @@ impl LightWallet {
             .await;
 
         let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-            TxMapAndMaybeTrees,
+            TxMap,
             ChainType,
             GISKit,
             TxMapTraitError,

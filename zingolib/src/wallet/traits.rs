@@ -13,7 +13,7 @@ use crate::wallet::{
     },
     keys::unified::WalletCapability,
     notes::{OrchardNote, SaplingNote},
-    tx_map::TxMapAndMaybeTrees,
+    tx_map::TxMap,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
@@ -498,7 +498,7 @@ pub trait DomainWalletExt:
 
     /// TODO: Add Doc Comment Here!
     fn transaction_metadata_set_to_shardtree(
-        txmds: &TxMapAndMaybeTrees,
+        txmds: &TxMap,
     ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees()
@@ -507,7 +507,7 @@ pub trait DomainWalletExt:
 
     /// TODO: Add Doc Comment Here!
     fn transaction_metadata_set_to_shardtree_mut(
-        txmds: &mut TxMapAndMaybeTrees,
+        txmds: &mut TxMap,
     ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ShieldedNoteInterface>::Node>> {
         txmds
             .witness_trees_mut()

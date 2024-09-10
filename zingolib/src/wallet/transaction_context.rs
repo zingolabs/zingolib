@@ -7,7 +7,7 @@ use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{keys::unified::WalletCapability, tx_map::TxMapAndMaybeTrees};
+use crate::wallet::{keys::unified::WalletCapability, tx_map::TxMap};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
@@ -17,7 +17,7 @@ pub struct TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub(crate) key: Arc<WalletCapability>,
     /// TODO: Add Doc Comment Here!
-    pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+    pub transaction_metadata_set: Arc<RwLock<TxMap>>,
 }
 
 impl TransactionContext {
@@ -25,7 +25,7 @@ impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
     ) -> Self {
         Self {
             config: config.clone(),

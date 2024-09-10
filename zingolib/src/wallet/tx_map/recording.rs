@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Witness tree requiring methods, each method is noted with *HOW* it requires witness trees.
-impl super::TxMapAndMaybeTrees {
+impl super::TxMap {
     /// During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
@@ -154,7 +154,7 @@ impl super::TxMapAndMaybeTrees {
 }
 
 // shardtree
-impl crate::wallet::tx_map::TxMapAndMaybeTrees {
+impl crate::wallet::tx_map::TxMap {
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(

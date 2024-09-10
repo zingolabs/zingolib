@@ -28,7 +28,7 @@ use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
 
 use crate::wallet::LightWallet;
-use crate::wallet::{data::BlockData, tx_map::TxMapAndMaybeTrees};
+use crate::wallet::{data::BlockData, tx_map::TxMap};
 
 impl LightWallet {
     /// returns Some seed phrase for the wallet.
@@ -290,7 +290,7 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn transactions(&self) -> Arc<RwLock<TxMapAndMaybeTrees>> {
+    pub fn transactions(&self) -> Arc<RwLock<TxMap>> {
         self.transaction_context.transaction_metadata_set.clone()
     }
 

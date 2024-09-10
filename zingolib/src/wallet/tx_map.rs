@@ -16,7 +16,7 @@ use zcash_primitives::legacy::TransparentAddress;
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-pub struct TxMapAndMaybeTrees {
+pub struct TxMap {
     /// TODO: Doc-comment!
     pub transaction_records_by_id: TransactionRecordsById,
     witness_trees: Option<WitnessTrees>,
@@ -28,12 +28,12 @@ pub mod get;
 pub mod read_write;
 pub mod recording;
 
-impl TxMapAndMaybeTrees {
+impl TxMap {
     pub(crate) fn new_with_witness_trees(
         transparent_child_addresses: Arc<
             append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
         >,
-    ) -> TxMapAndMaybeTrees {
+    ) -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             witness_trees: Some(WitnessTrees::default()),
@@ -44,7 +44,7 @@ impl TxMapAndMaybeTrees {
         transparent_child_addresses: Arc<
             append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
         >,
-    ) -> TxMapAndMaybeTrees {
+    ) -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             witness_trees: None,
@@ -65,9 +65,9 @@ impl TxMapAndMaybeTrees {
     }
 }
 #[cfg(test)]
-impl TxMapAndMaybeTrees {
+impl TxMap {
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
-    pub(crate) fn new_with_witness_trees_address_free() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_with_witness_trees_address_free() -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             witness_trees: Some(WitnessTrees::default()),
@@ -75,7 +75,7 @@ impl TxMapAndMaybeTrees {
         }
     }
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
-    pub(crate) fn new_treeless_address_free() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_treeless_address_free() -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             witness_trees: None,
