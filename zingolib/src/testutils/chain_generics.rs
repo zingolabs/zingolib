@@ -6,7 +6,7 @@
 //! darkside known issues:
 //!   - transparent
 //!   - txids
-
+//!
 //! libtonode known issues:
 //!   - mempool
 
