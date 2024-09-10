@@ -2,7 +2,6 @@
 
 use zcash_client_backend::data_api::WalletWrite;
 
-use crate::wallet::tx_map::TxMapTraitError;
 
 use super::TxMap;
 
