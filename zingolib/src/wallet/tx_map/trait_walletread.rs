@@ -87,7 +87,7 @@ impl WalletRead for TxMap {
         )>,
         Self::Error,
     > {
-        match self.witness_trees.as_ref() {
+        match self.spending_data.as_ref() {
             Some(trees) => {
                 let opt_max_downloaded_height =
                     match trees.witness_tree_orchard.store().max_checkpoint_id() {
@@ -355,9 +355,10 @@ mod tests {
     fn get_target_and_anchor_heights() {
         let mut transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
         transaction_records_and_maybe_trees
-            .witness_trees
+            .spending_data
             .as_mut()
             .unwrap()
+            .witness_trees_mut()
             .add_checkpoint(8421.into());
 
         assert_eq!(

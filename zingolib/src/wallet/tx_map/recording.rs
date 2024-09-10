@@ -27,7 +27,7 @@ impl super::TxMap {
         self.transaction_records_by_id
             .invalidate_all_transactions_after_or_at_height(reorg_height);
 
-        if let Some(ref mut t) = self.witness_trees {
+        if let Some(ref mut t) = self.spending_data {
             t.witness_tree_sapling
                 .truncate_removing_checkpoint(&(reorg_height - 1))
                 .expect("Infallible");

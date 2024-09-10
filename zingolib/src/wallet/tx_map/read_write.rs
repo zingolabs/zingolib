@@ -68,7 +68,7 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: map,
-            witness_trees,
+            spending_data: witness_trees,
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
         })
     }
@@ -135,7 +135,7 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
-            witness_trees,
+            spending_data: witness_trees,
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
         })
     }
@@ -163,7 +163,7 @@ impl TxMap {
             })?;
         }
 
-        Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
+        Optional::write(writer, self.spending_data.as_mut(), |w, t| t.write(w))
     }
 }
 #[cfg(test)]
