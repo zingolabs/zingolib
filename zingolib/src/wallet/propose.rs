@@ -14,7 +14,7 @@ use crate::config::ChainType;
 
 use super::{
     send::change_memo_from_transaction_request,
-    tx_map::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
+    tx_map::{TxMapAndMaybeTrees, TxMapTraitError},
     LightWallet,
 };
 
@@ -50,8 +50,8 @@ pub enum ProposeSendError {
     #[error("{0}")]
     Proposal(
         zcash_client_backend::data_api::error::Error<
-            TxMapAndMaybeTreesTraitError,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
+            TxMapTraitError,
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
                 zcash_client_backend::wallet::NoteId,
@@ -80,8 +80,8 @@ pub enum ProposeShieldError {
     /// error in using trait to create shielding proposal
     Component(
         zcash_client_backend::data_api::error::Error<
-            TxMapAndMaybeTreesTraitError,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
+            TxMapTraitError,
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
                 Infallible,
@@ -110,7 +110,7 @@ impl LightWallet {
             TxMapAndMaybeTrees,
             ChainType,
             GISKit,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
         >(
             tmamt.deref_mut(),
             &self.transaction_context.config.chain,
@@ -145,7 +145,7 @@ impl LightWallet {
             TxMapAndMaybeTrees,
             ChainType,
             GISKit,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
         >(
             &mut tmamt,
             &self.transaction_context.config.chain,

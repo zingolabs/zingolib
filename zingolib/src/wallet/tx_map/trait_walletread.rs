@@ -2,7 +2,7 @@
 
 use crate::wallet::notes::{query::OutputSpendStatusQuery, Output, OutputInterface};
 
-use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
+use super::{TxMapAndMaybeTrees, TxMapTraitError};
 use secrecy::SecretVec;
 use shardtree::store::ShardStore;
 use zcash_client_backend::{
@@ -55,7 +55,7 @@ fn has_unspent_shielded_outputs(
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
 /// except those doc-comments starting with IMPL:
 impl WalletRead for TxMapAndMaybeTrees {
-    type Error = TxMapAndMaybeTreesTraitError;
+    type Error = TxMapTraitError;
     type AccountId = AccountId;
     type Account = ZingoAccount;
 
@@ -108,7 +108,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                         )
                     }))
             }
-            None => Err(TxMapAndMaybeTreesTraitError::NoSpendCapability),
+            None => Err(TxMapTraitError::NoSpendCapability),
         }
     }
 
@@ -203,7 +203,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         self.witness_trees()
-            .ok_or(TxMapAndMaybeTreesTraitError::NoSpendCapability)?
+            .ok_or(TxMapTraitError::NoSpendCapability)?
             .witness_tree_orchard
             .store()
             .max_checkpoint_id()
@@ -349,7 +349,7 @@ mod tests {
     };
 
     use super::TxMapAndMaybeTrees;
-    use super::TxMapAndMaybeTreesTraitError;
+    use super::TxMapTraitError;
 
     #[test]
     fn get_target_and_anchor_heights() {
@@ -390,7 +390,7 @@ mod tests {
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
                 .err()
                 .unwrap(),
-            TxMapAndMaybeTreesTraitError::NoSpendCapability
+            TxMapTraitError::NoSpendCapability
         );
     }
 

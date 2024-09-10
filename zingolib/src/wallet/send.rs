@@ -111,7 +111,7 @@ pub enum BuildTransactionError {
     Calculation(
         #[from]
         zcash_client_backend::data_api::error::Error<
-            crate::wallet::tx_map::TxMapAndMaybeTreesTraitError,
+            crate::wallet::tx_map::TxMapTraitError,
             std::convert::Infallible,
             std::convert::Infallible,
             zcash_primitives::transaction::fees::zip317::FeeError,

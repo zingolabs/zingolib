@@ -86,7 +86,7 @@ impl TxMapAndMaybeTrees {
 
 /// TODO: Doc-comment!
 #[derive(Debug, PartialEq, Error)]
-pub enum TxMapAndMaybeTreesTraitError {
+pub enum TxMapTraitError {
     /// TODO: Doc-comment!
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,
