@@ -46,6 +46,8 @@ pub mod send_with_proposal {
     pub enum BroadcastCreatedTransactionsError {
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
+        #[error("No Tx to broadcast!")]
+        NoTxCreated,
         #[error("Broadcast failed: {0:?}")]
         Broadcast(String),
     }
@@ -92,7 +94,7 @@ pub mod send_with_proposal {
         /// Calculates, signs and broadcasts transactions from a proposal.
         async fn broadcast_created_transactions(
             &self,
-        ) -> Result<Vec<TxId>, BroadcastCreatedTransactionsError> {
+        ) -> Result<NonEmpty<TxId>, BroadcastCreatedTransactionsError> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -102,7 +104,7 @@ pub mod send_with_proposal {
             match tx_map.spending_data_mut() {
                 None => Err(BroadcastCreatedTransactionsError::NoSpendCapability),
                 Some(ref mut spending_data) => {
-                    let mut serverz_transaction_ids = vec![];
+                    let mut serverz_txids = vec![];
                     for (txid, raw_tx) in spending_data.cached_raw_transactions() {
                         match crate::grpc_connector::send_transaction(
                             self.get_server_uri(),
@@ -110,15 +112,19 @@ pub mod send_with_proposal {
                         )
                         .await
                         {
-                            Ok(_todo_compare_string) => serverz_transaction_ids.push(*txid),
+                            Ok(_todo_compare_string) => serverz_txids.push(*txid),
                             Err(server_err) => {
                                 return Err(BroadcastCreatedTransactionsError::Broadcast(
                                     server_err,
                                 ))
-                            } // todo error handle
+                            }
                         };
                     }
-                    Ok(serverz_transaction_ids)
+
+                    let non_empty_serverz_txids = NonEmpty::from_vec(serverz_txids)
+                        .ok_or(BroadcastCreatedTransactionsError::NoTxCreated)?;
+
+                    Ok(non_empty_serverz_txids)
                 }
             }
         }
@@ -134,35 +140,23 @@ pub mod send_with_proposal {
 
             self.wallet.create_transaction(proposal).await?;
 
-            let txids: Option<NonEmpty<TxId>> = NonEmpty::from_vec(
-                self.broadcast_created_transactions()
-                    .await
-                    .map_err(|e| CompleteAndBroadcastError::Broadcast("todo".to_string()))?,
-            );
-
-            // TODO scan_created_transactions
-
-            // let result = self
-            //     .wallet
-            //     .send_to_addresses_inner(
-            //         build_result.transaction(),
-            //         submission_height,
-            //         self.get_server_uri(),
-            //     )
-            //     .await
-            //     .map_err(CompleteAndBroadcastError::Broadcast)
-            //     .map(NonEmpty::singleton);
+            let broadcast_result = self.broadcast_created_transactions().await;
 
             self.wallet
                 .set_send_result(
-                    txids
-                        .as_ref()
-                        .map(|txids| txids.first().to_string())
-                        .map_err(|e| e.to_string()),
+                    broadcast_result
+                        .map_err(|e| e.to_string())
+                        .map(|vec_txids| {
+                            vec_txids
+                                .iter()
+                                .map(|txid| "created txid: ".to_string() + &txid.to_string())
+                                .collect::<Vec<String>>()
+                                .join(" & ")
+                        }),
                 )
                 .await;
 
-            txids
+            Ok(broadcast_result?)
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.
