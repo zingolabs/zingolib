@@ -81,6 +81,29 @@ pub mod send_with_proposal {
 
     impl LightClient {
         /// Calculates, signs and broadcasts transactions from a proposal.
+        async fn send_created_transactions(&self) -> Result<(), ()> {
+            let tx_map = self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .write_owned()
+                .await;
+            match tx_map.spending_data_mut() {
+                None => Err(()),
+                Some(ref mut spending_data) => {
+                    for raw_tx in spending_data.cached_raw_transactions() {
+                        let serverz_transaction_id = crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            Box::new(raw_tx.1),
+                        )
+                        .await
+                        .unwrap();
+                    }
+                    Ok(())
+                }
+            }
+        }
+
         async fn complete_and_broadcast<NoteRef>(
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
@@ -90,29 +113,31 @@ pub mod send_with_proposal {
                 .await
                 .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
 
-            let build_result = self.wallet.build_transaction(proposal).await?;
+            self.wallet.create_transaction(proposal).await?;
 
-            let result = self
-                .wallet
-                .send_to_addresses_inner(
-                    build_result.transaction(),
-                    submission_height,
-                    self.get_server_uri(),
-                )
-                .await
-                .map_err(CompleteAndBroadcastError::Broadcast)
-                .map(NonEmpty::singleton);
+            let txids: NonEmpty<TxId> = self.send_created_transactions().await;
+
+            // let result = self
+            //     .wallet
+            //     .send_to_addresses_inner(
+            //         build_result.transaction(),
+            //         submission_height,
+            //         self.get_server_uri(),
+            //     )
+            //     .await
+            //     .map_err(CompleteAndBroadcastError::Broadcast)
+            //     .map(NonEmpty::singleton);
 
             self.wallet
                 .set_send_result(
-                    result
+                    txids
                         .as_ref()
                         .map(|txids| txids.first().to_string())
                         .map_err(|e| e.to_string()),
                 )
                 .await;
 
-            result
+            txids
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.

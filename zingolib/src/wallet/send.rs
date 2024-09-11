@@ -121,10 +121,10 @@ pub enum BuildTransactionError {
 }
 
 impl LightWallet {
-    pub(crate) async fn build_transaction<NoteRef>(
+    pub(crate) async fn create_transaction<NoteRef>(
         &self,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<BuildResult, BuildTransactionError> {
+    ) -> Result<(), BuildTransactionError> {
         if self
             .transaction_context
             .transaction_metadata_set
@@ -170,26 +170,25 @@ impl LightWallet {
                 .private_key
         }
 
-        Ok(
-            zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                self.transaction_context
-                    .transaction_metadata_set
-                    .write()
-                    .await
-                    .deref_mut(),
-                &self.transaction_context.config.chain,
-                &sapling_prover,
-                &sapling_prover,
-                &unified_spend_key,
-                zcash_client_backend::wallet::OvkPolicy::Sender,
-                proposal.fee_rule(),
-                proposal.min_target_height(),
-                &[],
-                step,
-                Some(usk_to_tkey),
-                Some(self.wallet_capability().first_sapling_address()),
-            )?,
-        )
+        zcash_client_backend::data_api::wallet::create_proposed_transactions(
+            self.transaction_context
+                .transaction_metadata_set
+                .write()
+                .await
+                .deref_mut(),
+            &self.transaction_context.config.chain,
+            &sapling_prover,
+            &sapling_prover,
+            &unified_spend_key,
+            zcash_client_backend::wallet::OvkPolicy::Sender,
+            proposal.fee_rule(),
+            proposal.min_target_height(),
+            &[],
+            step,
+            Some(usk_to_tkey),
+            Some(self.wallet_capability().first_sapling_address()),
+        )?;
+        Ok(())
     }
 
     pub(crate) async fn send_to_addresses_inner(
