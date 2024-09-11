@@ -125,6 +125,8 @@ pub mod send_with_proposal {
                     .map_err(|e| CompleteAndBroadcastError::Broadcast("todo".to_string()))?,
             );
 
+            // TODO scan_created_transactions
+
             // let result = self
             //     .wallet
             //     .send_to_addresses_inner(
