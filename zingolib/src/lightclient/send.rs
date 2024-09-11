@@ -42,7 +42,7 @@ pub mod send_with_proposal {
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, Error)]
+    #[derive(Clone, Debug, Error)]
     pub enum BroadcastCreatedTransactionsError {
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
@@ -60,7 +60,7 @@ pub mod send_with_proposal {
         #[error("Cant get submission height. Server connection?: {0:?}")]
         SubmissionHeight(String),
         #[error("Broadcast failed: {0:?}")]
-        Broadcast(String),
+        Broadcast(#[from] BroadcastCreatedTransactionsError),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -143,17 +143,15 @@ pub mod send_with_proposal {
             let broadcast_result = self.broadcast_created_transactions().await;
 
             self.wallet
-                .set_send_result(
-                    broadcast_result
-                        .map_err(|e| e.to_string())
-                        .map(|vec_txids| {
-                            vec_txids
-                                .iter()
-                                .map(|txid| "created txid: ".to_string() + &txid.to_string())
-                                .collect::<Vec<String>>()
-                                .join(" & ")
-                        }),
-                )
+                .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
+                    |vec_txids| {
+                        vec_txids
+                            .iter()
+                            .map(|txid| "created txid: ".to_string() + &txid.to_string())
+                            .collect::<Vec<String>>()
+                            .join(" & ")
+                    },
+                ))
                 .await;
 
             Ok(broadcast_result?)
