@@ -57,8 +57,6 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastError {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("Cant get submission height. Server connection?: {0:?}")]
-        SubmissionHeight(String),
         #[error("Broadcast failed: {0:?}")]
         Broadcast(#[from] BroadcastCreatedTransactionsError),
     }
@@ -133,11 +131,6 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            let submission_height = self
-                .get_submission_height()
-                .await
-                .map_err(CompleteAndBroadcastError::SubmissionHeight)?;
-
             self.wallet.create_transaction(proposal).await?;
 
             let broadcast_result = self.broadcast_created_transactions().await;
@@ -223,16 +216,12 @@ pub mod send_with_proposal {
             .await
             .unwrap();
             let proposal = ProposalBuilder::default().build();
-            assert_eq!(
-                CompleteAndBroadcastError::SubmissionHeight(
-                    "Error getting client: InvalidScheme".to_string(),
-                )
-                .to_string(),
-                lc.complete_and_broadcast(&proposal)
-                    .await
-                    .unwrap_err()
-                    .to_string(),
-            );
+            dbg!(lc
+                .complete_and_broadcast(&proposal)
+                .await
+                .unwrap_err()
+                .to_string(),);
+            todo!("refinish test");
         }
 
         #[ignore]
