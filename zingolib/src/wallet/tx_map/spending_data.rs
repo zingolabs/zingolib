@@ -2,13 +2,18 @@
 
 use std::collections::HashMap;
 
-use zcash_primitives::transaction::{Transaction, TxId};
+use getset::{Getters, MutGetters};
+
+use zcash_primitives::transaction::TxId;
 
 use crate::data::witness_trees::WitnessTrees;
 
 /// the subsection of TxMap that only applies to spending wallets
+#[derive(Getters, MutGetters)]
 pub(crate) struct SpendingData {
+    #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     witness_trees: WitnessTrees,
+    #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     cached_raw_transactions: HashMap<TxId, Vec<u8>>,
 }
 
@@ -18,17 +23,5 @@ impl SpendingData {
             witness_trees,
             cached_raw_transactions: HashMap::new(),
         }
-    }
-    pub fn witness_trees(&self) -> &WitnessTrees {
-        &self.witness_trees
-    }
-    pub fn witness_trees_mut(&mut self) -> &mut WitnessTrees {
-        &mut self.witness_trees
-    }
-    pub fn cached_transactions(&self) -> &HashMap<TxId, Vec<u8>> {
-        &self.cached_raw_transactions
-    }
-    pub fn cached_transactions_mut(&mut self) -> &mut HashMap<TxId, Vec<u8>> {
-        &mut self.cached_raw_transactions
     }
 }

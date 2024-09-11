@@ -1,7 +1,6 @@
 //! currently only implementing one method of WalletWrite
 
 use zcash_client_backend::data_api::WalletWrite;
-use zcash_primitives::transaction::Transaction;
 
 use super::{TxMap, TxMapTraitError};
 
@@ -67,7 +66,7 @@ impl WalletWrite for TxMap {
             None => Err(TxMapTraitError::NoSpendCapability),
             Some(ref mut spending_data) => {
                 spending_data
-                    .cached_transactions_mut()
+                    .cached_raw_transactions_mut()
                     .insert(tx.txid(), raw_tx);
                 Ok(())
             }
