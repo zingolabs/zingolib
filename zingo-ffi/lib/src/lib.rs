@@ -14,7 +14,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
-use zingoconfig::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
+use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::{commands, lightclient::LightClient, wallet::WalletBase};
 
 // We'll use a MUTEX to store a global lightclient instance,
@@ -48,7 +48,7 @@ fn construct_uri_load_config(
         "regtest" => ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
-    let mut config = match zingoconfig::load_clientconfig(
+    let mut config = match zingolib::config::load_clientconfig(
         lightwalletd_uri.clone(),
         None,
         chaintype,
@@ -244,11 +244,11 @@ pub fn get_latest_block_server(server_uri: String) -> String {
 }
 
 pub fn get_developer_donation_address() -> String {
-    zingoconfig::DEVELOPER_DONATION_ADDRESS.to_string()
+    zingolib::config::DEVELOPER_DONATION_ADDRESS.to_string()
 }
 
 pub fn get_zennies_for_zingo_donation_address() -> String {
-    zingoconfig::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
+    zingolib::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
 }
 
 pub fn get_transaction_summaries() -> String {
