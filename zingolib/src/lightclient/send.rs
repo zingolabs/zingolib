@@ -81,7 +81,7 @@ pub mod send_with_proposal {
 
     impl LightClient {
         /// Calculates, signs and broadcasts transactions from a proposal.
-        async fn send_created_transactions(&self) -> Result<(), ()> {
+        async fn send_created_transactions(&self) -> Result<Vec<TxId>, ()> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -92,18 +92,18 @@ pub mod send_with_proposal {
                 None => Err(()),
                 Some(ref mut spending_data) => {
                     let mut serverz_transaction_ids = vec![];
-                    for raw_tx in spending_data.cached_raw_transactions() {
-                        serverz_transaction_ids.push(
-                            crate::grpc_connector::send_transaction(
-                                self.get_server_uri(),
-                                raw_tx.1.clone().into_boxed_slice(),
-                            )
-                            .await
-                            .unwrap(),
-                            //todo better than unwrap
-                        );
+                    for (txid, raw_tx) in spending_data.cached_raw_transactions() {
+                        match crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            raw_tx.clone().into_boxed_slice(),
+                        )
+                        .await
+                        {
+                            Ok(_todo_compare_string) => serverz_transaction_ids.push(*txid),
+                            Err(_) => return Err(()), // todo error handle
+                        };
                     }
-                    Ok(())
+                    Ok(serverz_transaction_ids)
                 }
             }
         }
@@ -119,7 +119,11 @@ pub mod send_with_proposal {
 
             self.wallet.create_transaction(proposal).await?;
 
-            let txids: NonEmpty<TxId> = self.send_created_transactions().await;
+            let txids: Option<NonEmpty<TxId>> = NonEmpty::from_vec(
+                self.send_created_transactions()
+                    .await
+                    .map_err(|e| CompleteAndBroadcastError::Broadcast("todo".to_string()))?,
+            );
 
             // let result = self
             //     .wallet
