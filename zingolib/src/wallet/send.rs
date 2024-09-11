@@ -6,7 +6,6 @@ use http::Uri;
 use log::error;
 use zcash_client_backend::proposal::Proposal;
 use zcash_keys::keys::UnifiedSpendingKey;
-use zcash_primitives::transaction::builder::BuildResult;
 
 use std::cmp;
 use std::ops::DerefMut as _;

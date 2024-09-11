@@ -204,7 +204,7 @@ pub mod send_with_proposal {
         async fn complete_and_broadcast_unconnected_error() {
             use crate::{
                 config::ZingoConfigBuilder,
-                lightclient::{send::send_with_proposal::CompleteAndBroadcastError, LightClient},
+                lightclient::LightClient,
                 mocks::ProposalBuilder,
                 testvectors::seeds::ABANDON_ART_SEED,
             };
