@@ -1,7 +1,6 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 use crate::wallet::now;
 
-
 use hdwallet::traits::Deserialize as _;
 use http::Uri;
 use log::error;
