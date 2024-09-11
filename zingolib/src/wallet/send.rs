@@ -181,12 +181,8 @@ impl LightWallet {
             &sapling_prover,
             &unified_spend_key,
             zcash_client_backend::wallet::OvkPolicy::Sender,
-            proposal.fee_rule(),
-            proposal.min_target_height(),
-            &[],
-            step,
+            proposal,
             Some(usk_to_tkey),
-            Some(self.wallet_capability().first_sapling_address()),
         )?;
         Ok(())
     }
