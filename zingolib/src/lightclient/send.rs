@@ -43,6 +43,15 @@ pub mod send_with_proposal {
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, Error)]
+    pub enum BroadcastCreatedTransactionsError {
+        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
+        NoSpendCapability,
+        #[error("Broadcast failed: {0:?}")]
+        Broadcast(String),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, Error)]
     pub enum CompleteAndBroadcastError {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
@@ -81,7 +90,9 @@ pub mod send_with_proposal {
 
     impl LightClient {
         /// Calculates, signs and broadcasts transactions from a proposal.
-        async fn send_created_transactions(&self) -> Result<Vec<TxId>, ()> {
+        async fn broadcast_created_transactions(
+            &self,
+        ) -> Result<Vec<TxId>, BroadcastCreatedTransactionsError> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -89,7 +100,7 @@ pub mod send_with_proposal {
                 .write()
                 .await;
             match tx_map.spending_data_mut() {
-                None => Err(()),
+                None => Err(BroadcastCreatedTransactionsError::NoSpendCapability),
                 Some(ref mut spending_data) => {
                     let mut serverz_transaction_ids = vec![];
                     for (txid, raw_tx) in spending_data.cached_raw_transactions() {
@@ -100,7 +111,11 @@ pub mod send_with_proposal {
                         .await
                         {
                             Ok(_todo_compare_string) => serverz_transaction_ids.push(*txid),
-                            Err(_) => return Err(()), // todo error handle
+                            Err(server_err) => {
+                                return Err(BroadcastCreatedTransactionsError::Broadcast(
+                                    server_err,
+                                ))
+                            } // todo error handle
                         };
                     }
                     Ok(serverz_transaction_ids)
@@ -120,7 +135,7 @@ pub mod send_with_proposal {
             self.wallet.create_transaction(proposal).await?;
 
             let txids: Option<NonEmpty<TxId>> = NonEmpty::from_vec(
-                self.send_created_transactions()
+                self.broadcast_created_transactions()
                     .await
                     .map_err(|e| CompleteAndBroadcastError::Broadcast("todo".to_string()))?,
             );
