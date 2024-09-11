@@ -4,6 +4,7 @@ use crate::wallet::now;
 use futures::Future;
 
 use hdwallet::traits::Deserialize as _;
+use http::Uri;
 use log::error;
 use zcash_client_backend::proposal::Proposal;
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -193,16 +194,13 @@ impl LightWallet {
         )
     }
 
-    pub(crate) async fn send_to_addresses_inner<F, Fut>(
+    pub(crate) async fn send_to_addresses_inner(
         &self,
         transaction: &Transaction,
         submission_height: BlockHeight,
-        broadcast_fn: F,
+        server_uri: Uri,
     ) -> Result<TxId, String>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
-    {
+where {
         {
             self.send_progress.write().await.is_send_in_progress = false;
         }
@@ -212,7 +210,7 @@ impl LightWallet {
         transaction.write(&mut raw_transaction).unwrap();
 
         let serverz_transaction_id =
-            broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
+            crate::grpc_connector::send_transaction(server_uri, raw_transaction.into()).await?;
 
         {
             let price = self.price.read().await.clone();
