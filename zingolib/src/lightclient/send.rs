@@ -203,9 +203,7 @@ pub mod send_with_proposal {
         #[tokio::test]
         async fn complete_and_broadcast_unconnected_error() {
             use crate::{
-                config::ZingoConfigBuilder,
-                lightclient::LightClient,
-                mocks::ProposalBuilder,
+                config::ZingoConfigBuilder, lightclient::LightClient, mocks::ProposalBuilder,
                 testvectors::seeds::ABANDON_ART_SEED,
             };
             let lc = LightClient::create_unconnected(
