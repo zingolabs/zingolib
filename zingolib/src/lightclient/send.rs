@@ -82,22 +82,26 @@ pub mod send_with_proposal {
     impl LightClient {
         /// Calculates, signs and broadcasts transactions from a proposal.
         async fn send_created_transactions(&self) -> Result<(), ()> {
-            let tx_map = self
+            let mut tx_map = self
                 .wallet
                 .transaction_context
                 .transaction_metadata_set
-                .write_owned()
+                .write()
                 .await;
             match tx_map.spending_data_mut() {
                 None => Err(()),
                 Some(ref mut spending_data) => {
+                    let mut serverz_transaction_ids = vec![];
                     for raw_tx in spending_data.cached_raw_transactions() {
-                        let serverz_transaction_id = crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            Box::new(raw_tx.1),
-                        )
-                        .await
-                        .unwrap();
+                        serverz_transaction_ids.push(
+                            crate::grpc_connector::send_transaction(
+                                self.get_server_uri(),
+                                raw_tx.1.clone().into_boxed_slice(),
+                            )
+                            .await
+                            .unwrap(),
+                            //todo better than unwrap
+                        );
                     }
                     Ok(())
                 }
