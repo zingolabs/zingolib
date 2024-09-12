@@ -1,5 +1,4 @@
-//! A note can either be:
-//!  Pending === not on-record on-chain
+//! If a note is confirmed, it is:
 //!  Confirmed === on-record on-chain at BlockHeight
 
 use zcash_primitives::consensus::BlockHeight;
@@ -7,6 +6,9 @@ use zcash_primitives::consensus::BlockHeight;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
+    /// the transaction has been calculated but not yet broadcast to the chain.
+    Calculated(BlockHeight),
+
     /// The transaction has been sent to the zcash blockchain. It could be in the mempool, but if
     /// it's known to be, it will be Mempool instead,
     /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
@@ -32,10 +34,11 @@ impl ConfirmationStatus {
     }
 
     /// Is pending/unconfirmed. Use is_transmitted/is_mempool where possible
+    /// pending is used to mean either Transmitted or in mempool. transactions yet to be broadcast are NOT considered pending
     pub fn is_pending(&self) -> bool {
         match self {
             ConfirmationStatus::Transmitted(_) | ConfirmationStatus::Mempool(_) => true,
-            ConfirmationStatus::Confirmed(_) => false,
+            _ => false,
         }
     }
 
@@ -212,7 +215,7 @@ impl ConfirmationStatus {
             Self::Transmitted(self_height) | Self::Mempool(self_height) => {
                 self_height < comparison_height
             }
-            Self::Confirmed(_) => false,
+            _ => false,
         }
     }
 
@@ -267,6 +270,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn get_height(&self) -> BlockHeight {
         match self {
+            Self::Calculated(self_height) => *self_height,
             Self::Mempool(self_height) => *self_height,
             Self::Transmitted(self_height) => *self_height,
             Self::Confirmed(self_height) => *self_height,
@@ -277,6 +281,9 @@ impl ConfirmationStatus {
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Calculated(_) => {
+                write!(f, "transmitted")
+            }
             Self::Transmitted(_) => {
                 write!(f, "transmitted")
             }
