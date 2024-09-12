@@ -615,7 +615,7 @@ mod slow {
             },
             notes::OutputInterface,
             transaction_record::{SendType, TransactionKind},
-            tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError,
+            tx_map::TxMapTraitError,
         },
     };
 
@@ -996,7 +996,7 @@ mod slow {
                 .await,
                 Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
                     zcash_client_backend::data_api::error::Error::DataSource(
-                        TxMapAndMaybeTreesTraitError::NoSpendCapability
+                        TxMapTraitError::NoSpendCapability
                     )
                 )))
             ));

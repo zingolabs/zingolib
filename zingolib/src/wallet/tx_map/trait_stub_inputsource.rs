@@ -5,13 +5,13 @@ use zcash_client_backend::{
     wallet::NoteId,
 };
 
-use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
+use super::{TxMap, TxMapTraitError};
 
 /// A trait representing the capability to query a data store for unspent transaction outputs belonging to a wallet.
 /// combining this with WalletRead unlocks propose_transaction
 /// all implementations in this file redirect to transaction_records_by_id
-impl InputSource for TxMapAndMaybeTrees {
-    type Error = TxMapAndMaybeTreesTraitError;
+impl InputSource for TxMap {
+    type Error = TxMapTraitError;
     type AccountId = zcash_primitives::zip32::AccountId;
     type NoteRef = NoteId;
 
@@ -42,7 +42,7 @@ impl InputSource for TxMapAndMaybeTrees {
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         self.transaction_records_by_id
             .select_spendable_notes(account, target_value, sources, anchor_height, exclude)
-            .map_err(TxMapAndMaybeTreesTraitError::InputSource)
+            .map_err(TxMapTraitError::InputSource)
     }
 
     fn get_unspent_transparent_output(
@@ -60,6 +60,6 @@ impl InputSource for TxMapAndMaybeTrees {
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.transaction_records_by_id
             .get_unspent_transparent_outputs(address, max_height, exclude)
-            .map_err(TxMapAndMaybeTreesTraitError::InputSource)
+            .map_err(TxMapTraitError::InputSource)
     }
 }
