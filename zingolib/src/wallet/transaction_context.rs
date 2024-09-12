@@ -103,6 +103,7 @@ mod decrypt_transaction {
             block_time: Option<u32>, // block_time should only be None when re-scanning a tx that already exists in the wallet
             price: Option<f64>,
         ) {
+            dbg!("scanning transaction txid {} ", transaction.txid());
             // Set up data structures to record scan results
             let mut txid_indexed_zingo_memos = Vec::new();
 

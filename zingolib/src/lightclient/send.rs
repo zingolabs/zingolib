@@ -79,10 +79,12 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastError {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("Broadcast failed: {0:?}")]
+        #[error("Recording created transaction failed: {0:?}")]
         Record(#[from] RecordCachedTransactionsError),
         #[error("Broadcast failed: {0:?}")]
         Broadcast(#[from] BroadcastCachedTransactionsError),
+        #[error("TxIds did not work through?")]
+        EmptyList,
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -115,7 +117,9 @@ pub mod send_with_proposal {
     impl LightClient {
         /// When a transaction is created, it is added to a cache. This step records all cached transactions into TransactionRecord s.
         /// overwrites confirmation status to Calculated (not broadcast) so only call this if
-        async fn record_created_transactions(&self) -> Result<(), RecordCachedTransactionsError> {
+        async fn record_created_transactions(
+            &self,
+        ) -> Result<Vec<TxId>, RecordCachedTransactionsError> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -128,11 +132,6 @@ pub mod send_with_proposal {
                 .map_err(RecordCachedTransactionsError::Height)?;
             let mut transactions_to_record = vec![];
             if let Some(spending_data) = tx_map.spending_data_mut() {
-                if spending_data.cached_raw_transactions().is_empty() {
-                    return Err(RecordCachedTransactionsError::Cache(
-                        TransactionCacheError::NoCachedTx,
-                    ));
-                };
                 for raw_tx in spending_data.cached_raw_transactions().values() {
                     transactions_to_record.push(Transaction::read(
                         &raw_tx[..],
@@ -148,6 +147,7 @@ pub mod send_with_proposal {
                 ));
             }
             drop(tx_map);
+            let mut txids = vec![];
             for transaction in transactions_to_record {
                 self.wallet
                     .transaction_context
@@ -161,15 +161,16 @@ pub mod send_with_proposal {
                         ),
                     )
                     .await;
+                txids.push(transaction.txid());
             }
-            Ok(())
+            Ok(txids)
         }
 
         /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
         /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
         async fn broadcast_created_transactions(
             &self,
-        ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
+        ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -213,11 +214,7 @@ pub mod send_with_proposal {
                     }
                 }
 
-                Ok(
-                    NonEmpty::from_vec(txids).ok_or(BroadcastCachedTransactionsError::Cache(
-                        TransactionCacheError::NoCachedTx,
-                    ))?,
-                )
+                Ok(txids)
             } else {
                 Err(BroadcastCachedTransactionsError::Cache(
                     TransactionCacheError::NoSpendCapability,
@@ -247,7 +244,10 @@ pub mod send_with_proposal {
                 ))
                 .await;
 
-            Ok(broadcast_result?)
+            let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
+                .ok_or(CompleteAndBroadcastError::EmptyList)?;
+
+            Ok(dbg!(broadcast_txids))
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.
