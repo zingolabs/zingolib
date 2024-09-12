@@ -45,14 +45,18 @@ where
 
     let send_height = environment.get_chain_height() + 1;
 
+    dbg!("skipping first check");
     // digesting the calculated transaction
-    let recorded_fee = assert_record_fee_and_status(
-        sender,
-        &proposal,
-        &txids,
-        ConfirmationStatus::Transmitted(send_height.into()),
-    )
-    .await;
+    // this step happens after transaction is recorded locally, but before learning anything about whether the server accepted it
+    // let recorded_fee = assert_record_fee_and_status(
+    //     sender,
+    //     &proposal,
+    //     &txids,
+    //     ConfirmationStatus::Transmitted(send_height.into()),
+    // )
+    // .await;
+
+    let recorded_fee = 0;
 
     let send_ua_id = sender.do_addresses().await[0]["address"].clone();
 

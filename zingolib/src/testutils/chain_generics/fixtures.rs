@@ -514,18 +514,12 @@ where
 
     let tertiary = environment.create_client().await;
     let expected_fee = fee_tables::one_to_one(shpool, pool, true);
-    // assert_eq!(
-    //     secondary
-    //         .propose_send_all(tertiary,
-    //         get_base_address(tertiary, pool))
-    //         .await
-    //         .into_u64(),
-    //     0
-    // );
 
     let ref_primary: Arc<LightClient> = Arc::new(primary);
     let ref_secondary: Arc<LightClient> = Arc::new(secondary);
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+
+    dbg!("sending to tertiary");
 
     // mempool monitor
     let check_mempool = !cfg!(feature = "ci");
