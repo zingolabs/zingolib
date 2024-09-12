@@ -177,7 +177,7 @@ pub mod send_with_proposal {
                     TransactionCacheError::NoSpendCapability,
                 )),
                 Some(ref mut spending_data) => {
-                    let mut serverz_txids = vec![];
+                    let mut txids = vec![];
                     for (txid, raw_tx) in spending_data.cached_raw_transactions() {
                         match crate::grpc_connector::send_transaction(
                             self.get_server_uri(),
@@ -185,14 +185,20 @@ pub mod send_with_proposal {
                         )
                         .await
                         {
-                            Ok(_todo_compare_string) => serverz_txids.push(*txid),
+                            Ok(serverz_txid_string) => {
+                                txids.push(crate::utils::txid::compare_txid_to_string(
+                                    *txid,
+                                    serverz_txid_string,
+                                    self.wallet.transaction_context.config.accept_server_txids,
+                                ))
+                            }
                             Err(server_err) => {
                                 return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
                             }
                         };
                     }
 
-                    let non_empty_serverz_txids = NonEmpty::from_vec(serverz_txids).ok_or(
+                    let non_empty_serverz_txids = NonEmpty::from_vec(txids).ok_or(
                         BroadcastCachedTransactionsError::Cache(TransactionCacheError::NoCachedTx),
                     )?;
 
