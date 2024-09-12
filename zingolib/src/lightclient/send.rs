@@ -6,7 +6,7 @@ use super::LightClient;
 use super::LightWalletSendProgress;
 
 impl LightClient {
-    async fn get_submission_height(&self) -> Result<BlockHeight, String> {
+    async fn get_latest_block(&self) -> Result<BlockHeight, String> {
         Ok(BlockHeight::from_u32(
             crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
                 .await?
@@ -34,11 +34,13 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
+    use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{Transaction, TxId};
 
     use thiserror::Error;
 
     use crate::lightclient::LightClient;
+    use crate::wallet::now;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
     #[allow(missing_docs)] // error types document themselves
@@ -60,12 +62,14 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, Error)]
+    #[derive(Debug, Error)]
     pub enum RecordCachedTransactionsError {
         #[error("Cant record: {0:?}")]
         Cache(#[from] TransactionCacheError),
-        #[error("Recording failed: {0:?}")]
-        Recording(String),
+        #[error("Couldnt fetch server height: {0:?}")]
+        Height(String),
+        #[error("Decoding failed: {0:?}")]
+        Decode(#[from] std::io::Error),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -85,7 +89,7 @@ pub mod send_with_proposal {
         #[error("No proposal. Call do_propose first.")]
         NoStoredProposal,
         #[error("send {0:?}")]
-        CompleteAndBroadcast(CompleteAndBroadcastError),
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -125,17 +129,33 @@ pub mod send_with_proposal {
                             TransactionCacheError::NoCachedTx,
                         ));
                     };
-                    for (txid, raw_tx) in spending_data.cached_raw_transactions() {
-                        // let transaction = Transaction::read(raw_tx, _);
-                        // self.wallet
-                        //     .transaction_context
-                        //     .scan_full_tx(
-                        //         transaction,
-                        //         status,
-                        //         Some(now() as u32),
-                        //         get_price(now(), &price),
-                        //     )
-                        //     .await;
+                    let current_height = self
+                        .get_latest_block()
+                        .await
+                        .map_err(RecordCachedTransactionsError::Height)?;
+                    for (_txid, raw_tx) in spending_data.cached_raw_transactions() {
+                        let transaction = Transaction::read(
+                            &raw_tx[..],
+                            zcash_primitives::consensus::BranchId::for_height(
+                                &self.wallet.transaction_context.config.chain,
+                                current_height,
+                            ),
+                        )?;
+
+                        self.wallet
+                            .transaction_context
+                            .scan_full_tx(
+                                &transaction,
+                                zingo_status::confirmation_status::ConfirmationStatus::Transmitted(
+                                    current_height,
+                                ),
+                                Some(now() as u32),
+                                crate::wallet::utils::get_price(
+                                    now(),
+                                    &self.wallet.price.read().await.clone(),
+                                ),
+                            )
+                            .await;
                     }
 
                     Ok(())
