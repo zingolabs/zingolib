@@ -519,8 +519,6 @@ where
     let ref_secondary: Arc<LightClient> = Arc::new(secondary);
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
 
-    dbg!("sending to tertiary");
-
     // mempool monitor
     let check_mempool = !cfg!(feature = "ci");
     if check_mempool {

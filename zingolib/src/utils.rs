@@ -37,7 +37,7 @@ pub(crate) use build_method_push;
 #[cfg(test)]
 pub(crate) use build_push_list;
 
-/// mod
+/// this mod exists to allow the use statement without cluttering the parent mod
 pub mod txid {
     use log::error;
     use zcash_primitives::transaction::TxId;
