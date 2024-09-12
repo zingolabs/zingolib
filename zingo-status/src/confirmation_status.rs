@@ -40,13 +40,11 @@ impl ConfirmationStatus {
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Transmitted(10.into());
-    /// assert_eq!(status.is_transmitted(), true);
-    /// assert_eq!(status.is_confirmed(), false);
+    /// assert!(ConfirmationStatus::Transmitted(10.into()).is_transmitted());
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_transmitted());
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_transmitted(), false);
-    /// assert_eq!(status.is_confirmed(), true);
     /// ```
     pub fn is_transmitted(&self) -> bool {
         matches!(self, Self::Transmitted(_))
@@ -60,11 +58,9 @@ impl ConfirmationStatus {
     ///
     /// let status = ConfirmationStatus::Mempool(10.into());
     /// assert_eq!(status.is_mempool(), true);
-    /// assert_eq!(status.is_confirmed(), false);
     ///
     /// let status = ConfirmationStatus::Confirmed(10.into());
     /// assert_eq!(status.is_mempool(), false);
-    /// assert_eq!(status.is_confirmed(), true);
     /// ```
     pub fn is_mempool(&self) -> bool {
         matches!(self, Self::Mempool(_))
