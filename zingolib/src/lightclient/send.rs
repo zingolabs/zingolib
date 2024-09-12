@@ -185,20 +185,21 @@ pub mod send_with_proposal {
                 .map_err(BroadcastCachedTransactionsError::Height)?;
             if let Some(spending_data) = tx_map.spending_data_mut() {
                 let mut txids = vec![];
-                for (txid, raw_tx) in spending_data.cached_raw_transactions() {
+                for (txid, raw_tx) in spending_data.cached_raw_transactions().clone() {
                     // only send the txid if its status is created. when we do, change its status to broadcast (Transmitted).
-                    if let Some(transaction_record) = tx_map.transaction_records_by_id.get_mut(txid)
+                    if let Some(transaction_record) =
+                        tx_map.transaction_records_by_id.get_mut(&txid)
                     {
                         if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
                             match crate::grpc_connector::send_transaction(
                                 self.get_server_uri(),
-                                raw_tx.clone().into_boxed_slice(),
+                                raw_tx.into_boxed_slice(),
                             )
                             .await
                             {
                                 Ok(serverz_txid_string) => {
                                     txids.push(crate::utils::txid::compare_txid_to_string(
-                                        *txid,
+                                        txid,
                                         serverz_txid_string,
                                         self.wallet.transaction_context.config.accept_server_txids,
                                     ));
