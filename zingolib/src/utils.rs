@@ -36,3 +36,37 @@ pub(crate) use build_method;
 pub(crate) use build_method_push;
 #[cfg(test)]
 pub(crate) use build_push_list;
+
+/// mod
+pub mod txid {
+    use log::error;
+    use zcash_primitives::transaction::TxId;
+
+    /// used when the server reports a string txid
+    pub fn compare_txid_to_string(
+        txid: TxId,
+        reported_txid_string: String,
+        prefer_reported: bool,
+    ) -> TxId {
+        match crate::utils::conversion::txid_from_hex_encoded_str(reported_txid_string.as_str()) {
+            Ok(reported_txid) => {
+                if txid != reported_txid {
+                    // happens during darkside tests
+                    error!(
+                        "served txid {} does not match calulated txid {}",
+                        reported_txid, txid,
+                    );
+                };
+                if prefer_reported {
+                    reported_txid
+                } else {
+                    txid
+                }
+            }
+            Err(e) => {
+                error!("server returned invalid txid {}", e);
+                txid
+            }
+        }
+    }
+}
