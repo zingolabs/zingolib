@@ -184,45 +184,6 @@ impl LightWallet {
         )?;
         Ok(())
     }
-
-    pub(crate) async fn send_to_addresses_inner(
-        &self,
-        transaction: &Transaction,
-        submission_height: BlockHeight,
-        server_uri: Uri,
-    ) -> Result<TxId, String>
-where {
-        {
-            self.send_progress.write().await.is_send_in_progress = false;
-        }
-
-        // Create the transaction bytes
-        let mut raw_transaction = vec![];
-        transaction.write(&mut raw_transaction).unwrap();
-
-        let serverz_transaction_id =
-            crate::grpc_connector::send_transaction(server_uri, raw_transaction.into()).await?;
-
-        {
-            let price = self.price.read().await.clone();
-
-            let status = ConfirmationStatus::Transmitted(submission_height);
-            self.transaction_context
-                .scan_full_tx(
-                    transaction,
-                    status,
-                    Some(now() as u32),
-                    get_price(now(), &price),
-                )
-                .await;
-        }
-
-        Ok(crate::utils::txid::compare_txid_to_string(
-            transaction.txid(),
-            serverz_transaction_id,
-            self.transaction_context.config.accept_server_txids,
-        ))
-    }
 }
 
 // TODO: move to a more suitable place
