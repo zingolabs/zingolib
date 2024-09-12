@@ -17,7 +17,6 @@ use zingo_memo::create_wallet_internal_memo_version_0;
 
 use super::LightWallet;
 
-
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
 pub struct SendProgress {
