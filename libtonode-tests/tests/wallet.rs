@@ -226,14 +226,14 @@ mod load_wallet {
         .unwrap()
         .first();
 
-        assert!(faucet
+        assert!(!faucet
             .transaction_summaries()
             .await
             .iter()
             .find(|transaction_summary| transaction_summary.txid() == pending_txid)
             .unwrap()
             .status()
-            .is_pending());
+            .is_confirmed());
 
         assert_eq!(
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),

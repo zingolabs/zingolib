@@ -33,16 +33,6 @@ impl ConfirmationStatus {
         }
     }
 
-    /// Is pending/unconfirmed. Use is_transmitted/is_mempool where possible
-    /// pending is used to mean either Transmitted or in mempool. transactions yet to be broadcast are NOT considered pending
-    /// TOdo! this may create misunderstanding errors, that may be difficult to understand. we must replace this function with is_confirmed wherever possible. also, use matches!
-    pub fn is_pending(&self) -> bool {
-        match self {
-            ConfirmationStatus::Transmitted(_) | ConfirmationStatus::Mempool(_) => true,
-            _ => false,
-        }
-    }
-
     /// A wrapper matching the Transmitted case.
     /// # Examples
     ///

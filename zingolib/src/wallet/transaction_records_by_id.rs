@@ -487,7 +487,7 @@ impl TransactionRecordsById {
         });
 
         // prevent confirmed transaction from being overwritten by pending transaction
-        if existing_tx_confirmed && status.is_pending() {
+        if existing_tx_confirmed && !status.is_confirmed() {
             self.get_mut(txid)
                 .expect("previous check proves this tx exists")
         } else {
