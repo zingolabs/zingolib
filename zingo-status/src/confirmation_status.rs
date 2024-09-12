@@ -70,7 +70,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&11.into()));
     /// ```
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
+        matches!(self, Self::Confirmed(self_height) if self_height >= comparison_height)
     }
 
     /// To return true, the status must be confirmed and no later than specified height.
