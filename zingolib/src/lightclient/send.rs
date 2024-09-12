@@ -113,7 +113,7 @@ pub mod send_with_proposal {
     }
 
     impl LightClient {
-        /// Calculates, signs and broadcasts transactions from a proposal.
+        /// When a transaction is created, it is added to a cache. This step records all cached transactions into TransactionRecord s.
         /// overwrites confirmation status to Calculated (not broadcast) so only call this if
         async fn record_created_transactions(&self) -> Result<(), RecordCachedTransactionsError> {
             let mut tx_map = self
@@ -165,7 +165,7 @@ pub mod send_with_proposal {
             Ok(())
         }
 
-        /// Calculates, signs and broadcasts transactions from a proposal.
+        /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
         /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
         async fn broadcast_created_transactions(
             &self,
