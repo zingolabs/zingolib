@@ -139,12 +139,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_confirmed_before_or_at(&11.into()), true);
     /// ```
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => {
-                self.is_confirmed_before(comparison_height) || self_height == comparison_height
-            }
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
     }
 
     /// To return true, the status must be confirmed earlier than specified height.
