@@ -97,12 +97,7 @@ pub mod send_with_proposal {
                 .send_to_addresses_inner(
                     build_result.transaction(),
                     submission_height,
-                    |transaction_bytes| {
-                        crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            transaction_bytes,
-                        )
-                    },
+                    self.get_server_uri(),
                 )
                 .await
                 .map_err(CompleteAndBroadcastError::Broadcast)
