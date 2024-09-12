@@ -33,15 +33,6 @@ impl ConfirmationStatus {
         }
     }
 
-    /// Is pending/unconfirmed. Use is_transmitted/is_mempool where possible
-    /// pending is used to mean either Transmitted or in mempool. transactions yet to be broadcast are NOT considered pending
-    pub fn is_pending(&self) -> bool {
-        match self {
-            ConfirmationStatus::Transmitted(_) | ConfirmationStatus::Mempool(_) => true,
-            _ => false,
-        }
-    }
-
     /// A wrapper matching the Transmitted case.
     /// # Examples
     ///
@@ -115,10 +106,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_confirmed_after_or_at(&11.into()), false);
     /// ```
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => self_height >= comparison_height,
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
     }
 
     /// To return true, the status must be confirmed and no later than specified height.
@@ -138,12 +126,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_confirmed_before_or_at(&11.into()), true);
     /// ```
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => {
-                self.is_confirmed_before(comparison_height) || self_height == comparison_height
-            }
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
     }
 
     /// To return true, the status must be confirmed earlier than specified height.
@@ -163,35 +146,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_confirmed_before(&11.into()), true);
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => self_height < comparison_height,
-            _ => false,
-        }
-    }
-
-    /// To return true, the status must have broadcast at or later than specified height.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_pending_after_or_at(&9.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_pending_after_or_at(&10.into()), true);
-    ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_pending_after_or_at(&11.into()), false);
-    /// ```
-    pub fn is_pending_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Transmitted(self_height) | Self::Mempool(self_height) => {
-                self_height >= comparison_height
-            }
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height < comparison_height)
     }
 
     /// To return true, the status must not be confirmed and it must have been submitted sufficiently far in the past. This allows deduction of expired transactions.
@@ -210,6 +165,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Mempool(14.into());
     /// assert_eq!(status.is_pending_before(&14.into()), false);
     /// ```
+    // TODO remove 'pending' and fix spend status.
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
             Self::Transmitted(self_height) | Self::Mempool(self_height) => {
@@ -235,26 +191,6 @@ impl ConfirmationStatus {
     pub fn get_confirmed_height(&self) -> Option<BlockHeight> {
         match self {
             Self::Confirmed(self_height) => Some(*self_height),
-            _ => None,
-        }
-    }
-
-    /// Returns if transaction is confirmed, otherwise returns the height it was broadcast to the mempool.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Confirmed(16.into());
-    /// assert_eq!(status.get_pending_height(), None);
-    ///
-    /// let status = ConfirmationStatus::Mempool(15.into());
-    /// assert_eq!(status.get_pending_height(), Some(15.into()));
-    /// ```
-    pub fn get_pending_height(&self) -> Option<BlockHeight> {
-        match self {
-            Self::Mempool(self_height) | Self::Transmitted(self_height) => Some(*self_height),
             _ => None,
         }
     }
