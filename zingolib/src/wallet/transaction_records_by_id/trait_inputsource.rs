@@ -149,7 +149,7 @@ impl InputSource for TransactionRecordsById {
     }
 
     #[allow(rustdoc::private_intra_doc_links)]
-    /// the trait method below is used as a TxMapAndMaybeTrees trait method by propose_transaction.
+    /// the trait method below is used as a TxMap trait method by propose_transaction.
     /// this function is used inside a loop that calculates a fee and balances change
     /// this algorithm influences strategy for user fee minimization
     /// see [crate::wallet::LightWallet::create_send_proposal]

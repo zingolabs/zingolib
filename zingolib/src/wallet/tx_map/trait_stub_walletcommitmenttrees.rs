@@ -7,9 +7,9 @@ use zcash_client_backend::data_api::{chain::CommitmentTreeRoot, WalletCommitment
 
 use crate::data::witness_trees::OrchStore;
 use crate::data::witness_trees::SapStore;
-use crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees;
+use crate::wallet::tx_map::TxMap;
 
-impl WalletCommitmentTrees for TxMapAndMaybeTrees {
+impl WalletCommitmentTrees for TxMap {
     // review! could this be a zingolib error?
     type Error = Infallible;
 

@@ -42,7 +42,7 @@ use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMap,
 };
 
 pub mod data;
@@ -54,7 +54,7 @@ pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub mod transaction_records_by_id;
-pub mod tx_map_and_maybe_trees;
+pub mod tx_map;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
@@ -374,11 +374,11 @@ impl LightWallet {
             ));
         };
         let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees(
+            Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
             )))
         } else {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless(
+            Arc::new(RwLock::new(TxMap::new_treeless(
                 wc.transparent_child_addresses().clone(),
             )))
         };

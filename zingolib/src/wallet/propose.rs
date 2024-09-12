@@ -14,14 +14,12 @@ use crate::config::ChainType;
 
 use super::{
     send::change_memo_from_transaction_request,
-    tx_map_and_maybe_trees::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError},
+    tx_map::{TxMap, TxMapTraitError},
     LightWallet,
 };
 
-type GISKit = GreedyInputSelector<
-    TxMapAndMaybeTrees,
-    zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
->;
+type GISKit =
+    GreedyInputSelector<TxMap, zcash_client_backend::fees::zip317::SingleOutputChangeStrategy>;
 
 // This private helper is a very small DRY, but it has already corrected a minor
 // divergence in change strategy.
@@ -50,8 +48,8 @@ pub enum ProposeSendError {
     #[error("{0}")]
     Proposal(
         zcash_client_backend::data_api::error::Error<
-            TxMapAndMaybeTreesTraitError,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
+            TxMapTraitError,
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
                 zcash_client_backend::wallet::NoteId,
@@ -80,8 +78,8 @@ pub enum ProposeShieldError {
     /// error in using trait to create shielding proposal
     Component(
         zcash_client_backend::data_api::error::Error<
-            TxMapAndMaybeTreesTraitError,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
+            TxMapTraitError,
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
                 Infallible,
@@ -107,10 +105,10 @@ impl LightWallet {
             .await;
 
         zcash_client_backend::data_api::wallet::propose_transfer::<
-            TxMapAndMaybeTrees,
+            TxMap,
             ChainType,
             GISKit,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
         >(
             tmamt.deref_mut(),
             &self.transaction_context.config.chain,
@@ -142,10 +140,10 @@ impl LightWallet {
             .await;
 
         let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-            TxMapAndMaybeTrees,
+            TxMap,
             ChainType,
             GISKit,
-            TxMapAndMaybeTreesTraitError,
+            TxMapTraitError,
         >(
             &mut tmamt,
             &self.transaction_context.config.chain,
