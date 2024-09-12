@@ -213,11 +213,11 @@ pub mod send_with_proposal {
                     }
                 }
 
-                let non_empty_serverz_txids = NonEmpty::from_vec(txids).ok_or(
-                    BroadcastCachedTransactionsError::Cache(TransactionCacheError::NoCachedTx),
-                )?;
-
-                Ok(non_empty_serverz_txids)
+                Ok(
+                    NonEmpty::from_vec(txids).ok_or(BroadcastCachedTransactionsError::Cache(
+                        TransactionCacheError::NoCachedTx,
+                    ))?,
+                )
             } else {
                 Err(BroadcastCachedTransactionsError::Cache(
                     TransactionCacheError::NoSpendCapability,
