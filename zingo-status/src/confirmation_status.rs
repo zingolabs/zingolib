@@ -65,9 +65,9 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after_or_at(&9.into()));
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after_or_at(&10.into()));
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after_or_at(&11.into()));
-    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&9.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&9.into()));
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&10.into()));
-    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&11.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&11.into()));
     /// ```
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
@@ -89,9 +89,9 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before_or_at(&9.into()));
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before_or_at(&10.into()));
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before_or_at(&11.into()));
-    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&9.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&9.into()));
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&10.into()));
-    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&11.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&11.into()));
     /// ```
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
@@ -113,9 +113,9 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before(&9.into()));
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before(&10.into()));
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before(&11.into()));
-    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&9.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&10.into()));
-    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&11.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&11.into()));
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height < comparison_height)
@@ -131,12 +131,12 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&10.into()));
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&11.into()));
-    /// assert!(ConfirmationStatus::Transmitted(10.into()).is_pending_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&10.into()));
-    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&11.into()));
-    /// assert!(ConfirmationStatus::Mempool(10.into()).is_pending_before(&9.into()));
+    /// assert!(ConfirmationStatus::Transmitted(10.into()).is_pending_before(&11.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_pending_before(&10.into()));
-    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_pending_before(&11.into()));
+    /// assert!(ConfirmationStatus::Mempool(10.into()).is_pending_before(&11.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&10.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&11.into()));
