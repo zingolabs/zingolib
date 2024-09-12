@@ -127,28 +127,25 @@ pub mod send_with_proposal {
                 .await
                 .map_err(RecordCachedTransactionsError::Height)?;
             let mut transactions_to_record = vec![];
-            match tx_map.spending_data_mut() {
-                None => {
+            if let Some(spending_data) = tx_map.spending_data_mut() {
+                if spending_data.cached_raw_transactions().is_empty() {
                     return Err(RecordCachedTransactionsError::Cache(
-                        TransactionCacheError::NoSpendCapability,
+                        TransactionCacheError::NoCachedTx,
                     ));
+                };
+                for raw_tx in spending_data.cached_raw_transactions().values() {
+                    transactions_to_record.push(Transaction::read(
+                        &raw_tx[..],
+                        zcash_primitives::consensus::BranchId::for_height(
+                            &self.wallet.transaction_context.config.chain,
+                            current_height,
+                        ),
+                    )?);
                 }
-                Some(ref mut spending_data) => {
-                    if spending_data.cached_raw_transactions().is_empty() {
-                        return Err(RecordCachedTransactionsError::Cache(
-                            TransactionCacheError::NoCachedTx,
-                        ));
-                    };
-                    for raw_tx in spending_data.cached_raw_transactions().values() {
-                        transactions_to_record.push(Transaction::read(
-                            &raw_tx[..],
-                            zcash_primitives::consensus::BranchId::for_height(
-                                &self.wallet.transaction_context.config.chain,
-                                current_height,
-                            ),
-                        )?);
-                    }
-                }
+            } else {
+                return Err(RecordCachedTransactionsError::Cache(
+                    TransactionCacheError::NoSpendCapability,
+                ));
             }
             drop(tx_map);
             for transaction in transactions_to_record {
