@@ -183,54 +183,47 @@ pub mod send_with_proposal {
                 .get_latest_block()
                 .await
                 .map_err(BroadcastCachedTransactionsError::Height)?;
-            match tx_map.spending_data_mut() {
-                None => Err(BroadcastCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                )),
-                Some(ref mut spending_data) => {
-                    let mut txids = vec![];
-                    for (txid, raw_tx) in spending_data.cached_raw_transactions() {
-                        // only send the txid if its status is created. when we do, change its status to broadcast (Transmitted).
-                        if let Some(transaction_record) = tx_map.transaction_records_by_id.get(txid)
-                        {
-                            if matches!(
-                                transaction_record.status,
-                                ConfirmationStatus::Calculated(_)
-                            ) {
-                                match crate::grpc_connector::send_transaction(
-                                    self.get_server_uri(),
-                                    raw_tx.clone().into_boxed_slice(),
-                                )
-                                .await
-                                {
-                                    Ok(serverz_txid_string) => {
-                                        txids.push(crate::utils::txid::compare_txid_to_string(
-                                            *txid,
-                                            serverz_txid_string,
-                                            self.wallet
-                                                .transaction_context
-                                                .config
-                                                .accept_server_txids,
-                                        ));
-                                        transaction_record.status =
-                                            ConfirmationStatus::Transmitted(current_height);
-                                    }
-                                    Err(server_err) => {
-                                        return Err(BroadcastCachedTransactionsError::Broadcast(
-                                            server_err,
-                                        ))
-                                    }
-                                };
-                            }
+            if let Some(spending_data) = tx_map.spending_data_mut() {
+                let mut txids = vec![];
+                for (txid, raw_tx) in spending_data.cached_raw_transactions() {
+                    // only send the txid if its status is created. when we do, change its status to broadcast (Transmitted).
+                    if let Some(transaction_record) = tx_map.transaction_records_by_id.get_mut(txid)
+                    {
+                        if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
+                            match crate::grpc_connector::send_transaction(
+                                self.get_server_uri(),
+                                raw_tx.clone().into_boxed_slice(),
+                            )
+                            .await
+                            {
+                                Ok(serverz_txid_string) => {
+                                    txids.push(crate::utils::txid::compare_txid_to_string(
+                                        *txid,
+                                        serverz_txid_string,
+                                        self.wallet.transaction_context.config.accept_server_txids,
+                                    ));
+                                    transaction_record.status =
+                                        ConfirmationStatus::Transmitted(current_height);
+                                }
+                                Err(server_err) => {
+                                    return Err(BroadcastCachedTransactionsError::Broadcast(
+                                        server_err,
+                                    ))
+                                }
+                            };
                         }
                     }
-
-                    let non_empty_serverz_txids = NonEmpty::from_vec(txids).ok_or(
-                        BroadcastCachedTransactionsError::Cache(TransactionCacheError::NoCachedTx),
-                    )?;
-
-                    Ok(non_empty_serverz_txids)
                 }
+
+                let non_empty_serverz_txids = NonEmpty::from_vec(txids).ok_or(
+                    BroadcastCachedTransactionsError::Cache(TransactionCacheError::NoCachedTx),
+                )?;
+
+                Ok(non_empty_serverz_txids)
+            } else {
+                Err(BroadcastCachedTransactionsError::Cache(
+                    TransactionCacheError::NoSpendCapability,
+                ))
             }
         }
 
