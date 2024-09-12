@@ -118,48 +118,52 @@ pub mod send_with_proposal {
                 .transaction_metadata_set
                 .write()
                 .await;
+            let current_height = self
+                .get_latest_block()
+                .await
+                .map_err(RecordCachedTransactionsError::Height)?;
+            let mut transactions_to_record = vec![];
             match tx_map.spending_data_mut() {
-                None => Err(RecordCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                )),
+                None => {
+                    return Err(RecordCachedTransactionsError::Cache(
+                        TransactionCacheError::NoSpendCapability,
+                    ));
+                }
                 Some(ref mut spending_data) => {
                     if spending_data.cached_raw_transactions().is_empty() {
                         return Err(RecordCachedTransactionsError::Cache(
                             TransactionCacheError::NoCachedTx,
                         ));
                     };
-                    let current_height = self
-                        .get_latest_block()
-                        .await
-                        .map_err(RecordCachedTransactionsError::Height)?;
                     for raw_tx in spending_data.cached_raw_transactions().values() {
-                        let transaction = Transaction::read(
+                        transactions_to_record.push(Transaction::read(
                             &raw_tx[..],
                             zcash_primitives::consensus::BranchId::for_height(
                                 &self.wallet.transaction_context.config.chain,
                                 current_height,
                             ),
-                        )?;
-
-                        self.wallet
-                            .transaction_context
-                            .scan_full_tx(
-                                &transaction,
-                                zingo_status::confirmation_status::ConfirmationStatus::Transmitted(
-                                    current_height,
-                                ),
-                                Some(now() as u32),
-                                crate::wallet::utils::get_price(
-                                    now(),
-                                    &self.wallet.price.read().await.clone(),
-                                ),
-                            )
-                            .await;
+                        )?);
                     }
-
-                    Ok(())
                 }
             }
+            drop(tx_map);
+            for transaction in transactions_to_record {
+                self.wallet
+                    .transaction_context
+                    .scan_full_tx(
+                        &transaction,
+                        zingo_status::confirmation_status::ConfirmationStatus::Transmitted(
+                            current_height,
+                        ),
+                        Some(now() as u32),
+                        crate::wallet::utils::get_price(
+                            now(),
+                            &self.wallet.price.read().await.clone(),
+                        ),
+                    )
+                    .await;
+            }
+            Ok(())
         }
 
         /// Calculates, signs and broadcasts transactions from a proposal.
