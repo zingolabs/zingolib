@@ -240,26 +240,6 @@ impl ConfirmationStatus {
         }
     }
 
-    /// Returns if transaction is confirmed, otherwise returns the height it was broadcast to the mempool.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Confirmed(16.into());
-    /// assert_eq!(status.get_pending_height(), None);
-    ///
-    /// let status = ConfirmationStatus::Mempool(15.into());
-    /// assert_eq!(status.get_pending_height(), Some(15.into()));
-    /// ```
-    pub fn get_pending_height(&self) -> Option<BlockHeight> {
-        match self {
-            Self::Mempool(self_height) | Self::Transmitted(self_height) => Some(*self_height),
-            _ => None,
-        }
-    }
-
     /// # Examples
     ///
     /// ```
