@@ -183,6 +183,8 @@ pub mod send_with_proposal {
                 Some(ref mut spending_data) => {
                     let mut txids = vec![];
                     for (txid, raw_tx) in spending_data.cached_raw_transactions() {
+                        // only send the txid if its status is created. when we do, change its status to broadcast.
+
                         match crate::grpc_connector::send_transaction(
                             self.get_server_uri(),
                             raw_tx.clone().into_boxed_slice(),
@@ -215,16 +217,12 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            dbg!("creating transactions");
             self.wallet.create_transaction(proposal).await?;
 
-            dbg!("recording transactions");
             self.record_created_transactions().await?;
 
-            dbg!("broadcasting transactions");
             let broadcast_result = self.broadcast_created_transactions().await;
 
-            dbg!("result");
             self.wallet
                 .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
                     |vec_txids| {
