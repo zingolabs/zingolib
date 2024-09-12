@@ -217,32 +217,11 @@ where {
                 .await;
         }
 
-        let calculated_txid = transaction.txid();
-
-        let accepted_txid = match crate::utils::conversion::txid_from_hex_encoded_str(
-            serverz_transaction_id.as_str(),
-        ) {
-            Ok(serverz_txid) => {
-                if calculated_txid != serverz_txid {
-                    // happens during darkside tests
-                    error!(
-                        "served txid {} does not match calulated txid {}",
-                        serverz_txid, calculated_txid,
-                    );
-                };
-                if self.transaction_context.config.accept_server_txids {
-                    serverz_txid
-                } else {
-                    calculated_txid
-                }
-            }
-            Err(e) => {
-                error!("server returned invalid txid {}", e);
-                calculated_txid
-            }
-        };
-
-        Ok(accepted_txid)
+        Ok(crate::utils::txid::compare_txid_to_string(
+            transaction.txid(),
+            serverz_transaction_id,
+            self.transaction_context.config.accept_server_txids,
+        ))
     }
 }
 
