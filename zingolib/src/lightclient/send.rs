@@ -111,7 +111,7 @@ pub mod send_with_proposal {
 
     impl LightClient {
         /// Calculates, signs and broadcasts transactions from a proposal.
-        async fn scan_created_transactions(&self) -> Result<(), RecordCachedTransactionsError> {
+        async fn record_created_transactions(&self) -> Result<(), RecordCachedTransactionsError> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -211,12 +211,16 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            dbg!("creating transactions");
             self.wallet.create_transaction(proposal).await?;
 
-            self.scan_created_transactions().await?;
+            dbg!("recording transactions");
+            self.record_created_transactions().await?;
 
+            dbg!("broadcasting transactions");
             let broadcast_result = self.broadcast_created_transactions().await;
 
+            dbg!("result");
             self.wallet
                 .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
                     |vec_txids| {
