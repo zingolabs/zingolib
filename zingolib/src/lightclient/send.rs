@@ -123,7 +123,7 @@ pub mod send_with_proposal {
                     TransactionCacheError::NoSpendCapability,
                 )),
                 Some(ref mut spending_data) => {
-                    if spending_data.cached_raw_transactions().len() == 0 {
+                    if spending_data.cached_raw_transactions().is_empty() {
                         return Err(RecordCachedTransactionsError::Cache(
                             TransactionCacheError::NoCachedTx,
                         ));
@@ -213,7 +213,7 @@ pub mod send_with_proposal {
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
             self.wallet.create_transaction(proposal).await?;
 
-            let _scan_ok = self.scan_created_transactions().await?;
+            self.scan_created_transactions().await?;
 
             let broadcast_result = self.broadcast_created_transactions().await;
 

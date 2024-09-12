@@ -1,8 +1,6 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
-use crate::wallet::now;
 
 use hdwallet::traits::Deserialize as _;
-use http::Uri;
 use log::error;
 use zcash_client_backend::proposal::Proposal;
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -12,16 +10,13 @@ use std::ops::DerefMut as _;
 
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::Address;
-use zcash_primitives::transaction::Transaction;
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
-use zcash_primitives::{memo::MemoBytes, transaction::TxId};
+use zcash_primitives::memo::Memo;
+use zcash_primitives::memo::MemoBytes;
 
 use zingo_memo::create_wallet_internal_memo_version_0;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::LightWallet;
 
-use super::utils::get_price;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
