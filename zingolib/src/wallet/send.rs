@@ -151,8 +151,6 @@ impl LightWallet {
             return Err(BuildTransactionError::ExchangeAddressesNotSupported);
         }
 
-        let step = proposal.steps().first();
-
         // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
         // transparent key it contains is not the account spending key, but the
         // externally-scoped derivative key. The goal is to fix this, but in the

@@ -34,7 +34,6 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
-    use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{Transaction, TxId};
 
     use thiserror::Error;
