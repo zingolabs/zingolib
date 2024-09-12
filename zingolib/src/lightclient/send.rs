@@ -34,7 +34,7 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
-    use zcash_primitives::transaction::TxId;
+    use zcash_primitives::transaction::{Transaction, TxId};
 
     use thiserror::Error;
 
@@ -43,13 +43,29 @@ pub mod send_with_proposal {
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Clone, Debug, Error)]
-    pub enum BroadcastCreatedTransactionsError {
+    pub enum TransactionCacheError {
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
-        #[error("No Tx to broadcast!")]
-        NoTxCreated,
+        #[error("No Tx in cached!")]
+        NoCachedTx,
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Clone, Debug, Error)]
+    pub enum BroadcastCachedTransactionsError {
+        #[error("Cant broadcast: {0:?}")]
+        Cache(#[from] TransactionCacheError),
         #[error("Broadcast failed: {0:?}")]
         Broadcast(String),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Clone, Debug, Error)]
+    pub enum RecordCachedTransactionsError {
+        #[error("Cant record: {0:?}")]
+        Cache(#[from] TransactionCacheError),
+        #[error("Recording failed: {0:?}")]
+        Recording(String),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -58,7 +74,9 @@ pub mod send_with_proposal {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
         #[error("Broadcast failed: {0:?}")]
-        Broadcast(#[from] BroadcastCreatedTransactionsError),
+        Record(#[from] RecordCachedTransactionsError),
+        #[error("Broadcast failed: {0:?}")]
+        Broadcast(#[from] BroadcastCachedTransactionsError),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -90,9 +108,7 @@ pub mod send_with_proposal {
 
     impl LightClient {
         /// Calculates, signs and broadcasts transactions from a proposal.
-        async fn broadcast_created_transactions(
-            &self,
-        ) -> Result<NonEmpty<TxId>, BroadcastCreatedTransactionsError> {
+        async fn scan_created_transactions(&self) -> Result<(), RecordCachedTransactionsError> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -100,7 +116,47 @@ pub mod send_with_proposal {
                 .write()
                 .await;
             match tx_map.spending_data_mut() {
-                None => Err(BroadcastCreatedTransactionsError::NoSpendCapability),
+                None => Err(RecordCachedTransactionsError::Cache(
+                    TransactionCacheError::NoSpendCapability,
+                )),
+                Some(ref mut spending_data) => {
+                    if spending_data.cached_raw_transactions().len() == 0 {
+                        return Err(RecordCachedTransactionsError::Cache(
+                            TransactionCacheError::NoCachedTx,
+                        ));
+                    };
+                    for (txid, raw_tx) in spending_data.cached_raw_transactions() {
+                        // let transaction = Transaction::read(raw_tx, _);
+                        // self.wallet
+                        //     .transaction_context
+                        //     .scan_full_tx(
+                        //         transaction,
+                        //         status,
+                        //         Some(now() as u32),
+                        //         get_price(now(), &price),
+                        //     )
+                        //     .await;
+                    }
+
+                    Ok(())
+                }
+            }
+        }
+
+        /// Calculates, signs and broadcasts transactions from a proposal.
+        async fn broadcast_created_transactions(
+            &self,
+        ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
+            let mut tx_map = self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .write()
+                .await;
+            match tx_map.spending_data_mut() {
+                None => Err(BroadcastCachedTransactionsError::Cache(
+                    TransactionCacheError::NoSpendCapability,
+                )),
                 Some(ref mut spending_data) => {
                     let mut serverz_txids = vec![];
                     for (txid, raw_tx) in spending_data.cached_raw_transactions() {
@@ -112,15 +168,14 @@ pub mod send_with_proposal {
                         {
                             Ok(_todo_compare_string) => serverz_txids.push(*txid),
                             Err(server_err) => {
-                                return Err(BroadcastCreatedTransactionsError::Broadcast(
-                                    server_err,
-                                ))
+                                return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
                             }
                         };
                     }
 
-                    let non_empty_serverz_txids = NonEmpty::from_vec(serverz_txids)
-                        .ok_or(BroadcastCreatedTransactionsError::NoTxCreated)?;
+                    let non_empty_serverz_txids = NonEmpty::from_vec(serverz_txids).ok_or(
+                        BroadcastCachedTransactionsError::Cache(TransactionCacheError::NoCachedTx),
+                    )?;
 
                     Ok(non_empty_serverz_txids)
                 }
@@ -132,6 +187,8 @@ pub mod send_with_proposal {
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
             self.wallet.create_transaction(proposal).await?;
+
+            let _scan_ok = self.scan_created_transactions().await?;
 
             let broadcast_result = self.broadcast_created_transactions().await;
 
