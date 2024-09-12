@@ -132,7 +132,7 @@ pub mod send_with_proposal {
                         .get_latest_block()
                         .await
                         .map_err(RecordCachedTransactionsError::Height)?;
-                    for (_txid, raw_tx) in spending_data.cached_raw_transactions() {
+                    for raw_tx in spending_data.cached_raw_transactions().values() {
                         let transaction = Transaction::read(
                             &raw_tx[..],
                             zcash_primitives::consensus::BranchId::for_height(
