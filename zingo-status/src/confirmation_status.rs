@@ -164,10 +164,7 @@ impl ConfirmationStatus {
     /// assert_eq!(status.is_confirmed_before(&11.into()), true);
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => self_height < comparison_height,
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height < comparison_height)
     }
 
     /// To return true, the status must not be confirmed and it must have been submitted sufficiently far in the past. This allows deduction of expired transactions.
