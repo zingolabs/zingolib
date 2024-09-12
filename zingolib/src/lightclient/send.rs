@@ -37,6 +37,7 @@ pub mod send_with_proposal {
     use zcash_primitives::transaction::{Transaction, TxId};
 
     use thiserror::Error;
+    use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::lightclient::LightClient;
     use crate::wallet::now;
@@ -111,6 +112,7 @@ pub mod send_with_proposal {
 
     impl LightClient {
         /// Calculates, signs and broadcasts transactions from a proposal.
+        /// overwrites confirmation status to Calculated (not broadcast) so only call this if
         async fn record_created_transactions(&self) -> Result<(), RecordCachedTransactionsError> {
             let mut tx_map = self
                 .wallet
@@ -152,9 +154,7 @@ pub mod send_with_proposal {
                     .transaction_context
                     .scan_full_tx(
                         &transaction,
-                        zingo_status::confirmation_status::ConfirmationStatus::Transmitted(
-                            current_height,
-                        ),
+                        ConfirmationStatus::Calculated(current_height),
                         Some(now() as u32),
                         crate::wallet::utils::get_price(
                             now(),
@@ -167,6 +167,7 @@ pub mod send_with_proposal {
         }
 
         /// Calculates, signs and broadcasts transactions from a proposal.
+        /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
         async fn broadcast_created_transactions(
             &self,
         ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
@@ -184,24 +185,31 @@ pub mod send_with_proposal {
                     let mut txids = vec![];
                     for (txid, raw_tx) in spending_data.cached_raw_transactions() {
                         // only send the txid if its status is created. when we do, change its status to broadcast.
-
-                        match crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            raw_tx.clone().into_boxed_slice(),
-                        )
-                        .await
-                        {
-                            Ok(serverz_txid_string) => {
-                                txids.push(crate::utils::txid::compare_txid_to_string(
-                                    *txid,
-                                    serverz_txid_string,
-                                    self.wallet.transaction_context.config.accept_server_txids,
-                                ))
-                            }
-                            Err(server_err) => {
-                                return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
-                            }
-                        };
+                        if matches!(
+                            tx_map.transaction_records_by_id.get(txid).status,
+                            ConfirmationStatus::Calculated(_)
+                        ) {
+                            match crate::grpc_connector::send_transaction(
+                                self.get_server_uri(),
+                                raw_tx.clone().into_boxed_slice(),
+                            )
+                            .await
+                            {
+                                Ok(serverz_txid_string) => {
+                                    txids.push(crate::utils::txid::compare_txid_to_string(
+                                        *txid,
+                                        serverz_txid_string,
+                                        self.wallet.transaction_context.config.accept_server_txids,
+                                    ))
+                                    transaction_record.status = ConfirmationStatus::Broadcast
+                                }
+                                Err(server_err) => {
+                                    return Err(BroadcastCachedTransactionsError::Broadcast(
+                                        server_err,
+                                    ))
+                                }
+                            };
+                        }
                     }
 
                     let non_empty_serverz_txids = NonEmpty::from_vec(txids).ok_or(
