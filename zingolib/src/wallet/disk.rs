@@ -49,7 +49,7 @@ impl LightWallet {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write all the keys
-        self.transaction_context.key.write(&mut writer)?;
+        self.transaction_context.keystore.write(&mut writer)?;
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
@@ -120,9 +120,9 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let keystore = Arc::new(Keystore::read(&mut reader, ())?);
+        let keystore = Keystore::read(&mut reader, ())?;
 
-        let Keystore::InMemory(wc) = &*keystore else {
+        let Keystore::InMemory(wc) = keystore else {
             todo!("Do this for ledger too")
         };
 
@@ -212,7 +212,7 @@ impl LightWallet {
             // Saveable Arc data
             //   - Arcs allow access between threads.
             //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
-            keystore,
+            Arc::new(keystore),
             Arc::new(RwLock::new(transactions)),
         );
 
@@ -248,6 +248,7 @@ impl LightWallet {
         };
 
         let lw = Self {
+            keystore: Arc::new(RwLock::new(keystore)),
             blocks: Arc::new(RwLock::new(blocks)),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),

@@ -390,6 +390,8 @@ impl LightWallet {
 
         };
 
+        let arc_wc = Arc::new(RwLock::new(wc));
+
         if let Err(e) = wc.new_address(
             wc.can_view(), 
             #[cfg(feature = "ledger-support")]
@@ -411,9 +413,9 @@ impl LightWallet {
         };
         
         let transaction_context =
-            TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
+            TransactionContext::new(&config, arc_wc, transaction_metadata_set);
         Ok(Self {
-            keystore:Arc::new(RwLock::new(wc.clone())),
+            keystore: arc_wc,
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),

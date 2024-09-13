@@ -697,7 +697,7 @@ impl Command for ExportUfvkCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let ufvk_res = lightclient.wallet.transaction_context.key.ufvk();
+        let ufvk_res = lightclient.wallet.transaction_context.keystore.ufvk();
         match ufvk_res {
             Ok(ufvk) => {
                 use zcash_address::unified::Encoding as _;

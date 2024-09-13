@@ -107,7 +107,7 @@ impl Default for WalletCapability {
 impl crate::wallet::LightWallet {
     /// This is the interface to expose the wallet keystore abstraction
     pub fn keystore(&self) -> Arc<Keystore> {
-        self.transaction_context.key.clone()
+        self.transaction_context.keystore.clone()
     }
 }
 /// TODO: Add Doc Comment Here!

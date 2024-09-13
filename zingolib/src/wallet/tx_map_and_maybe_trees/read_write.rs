@@ -3,7 +3,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     collections::HashMap,
-    io::{self, Read, Write},
+    io::{self, Read, Write}, sync::Arc,
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::transaction::TxId;
@@ -23,7 +23,7 @@ impl TxMapAndMaybeTrees {
     /// TODO: Doc-comment!
     pub fn read_old<R: Read>(
         mut reader: R,
-        keystore: &Keystore,
+        keystore: &Arc<Keystore>,
     ) -> io::Result<Self> {
         // Note, witness_trees will be Some(x) if the wallet has spend capability
         // so this check is a very un-ergonomic way of checking if the wallet
@@ -74,7 +74,7 @@ impl TxMapAndMaybeTrees {
     }
 
     /// TODO: Doc-comment!
-    pub fn read<R: Read>(mut reader: R, keystore: &Keystore) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, keystore: Arc<Keystore>) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             return Err(io::Error::new(

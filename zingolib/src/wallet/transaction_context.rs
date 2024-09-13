@@ -17,7 +17,7 @@ pub struct TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub config: ZingoConfig,
     /// TODO: Add Doc Comment Here!
-    pub(crate) key: Arc<Keystore>,
+    pub(crate) keystore: Arc<RwLock<Keystore>>,
     /// TODO: Add Doc Comment Here!
     pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
 }
@@ -26,12 +26,12 @@ impl TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub fn new(
         config: &ZingoConfig,
-        key: Arc<Keystore>,
+        key: Arc<RwLock<Keystore>>,
         transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
             config: config.clone(),
-            key,
+            keystore: key,
             transaction_metadata_set,
         }
     }
@@ -84,7 +84,7 @@ mod decrypt_transaction {
     };
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
-    use std::{collections::HashSet, convert::TryInto};
+    use std::{collections::HashSet, convert::TryInto, ops::Deref};
 
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::{try_output_recovery_with_ovk, Domain};
@@ -107,9 +107,12 @@ mod decrypt_transaction {
         ) {
             // Set up data structures to record scan results
             let mut txid_indexed_zingo_memos = Vec::new();
-
+            
             // Collect our t-addresses for easy checking
-            let taddrs_set = self.key.get_all_taddrs(&self.config);
+            let taddrs_set = self.keystore
+                .read()
+                .await
+                .get_all_taddrs(&self.config);
 
             let mut outgoing_metadatas = vec![];
 
@@ -524,8 +527,12 @@ mod decrypt_transaction {
                         )
                     })
                     .collect::<Vec<_>>();
-
-            let Ok(fvk) = D::wc_to_fvk(&self.key) else {
+            let wc = self.keystore
+            .read()
+            .await;
+            let Ok(fvk) = D::wc_to_fvk(
+                &wc
+            ) else {
                 // skip scanning if wallet has not viewing capability
                 return;
             };
@@ -602,7 +609,13 @@ mod decrypt_transaction {
                             match Memo::from_bytes(&memo_bytes.to_bytes()) {
                                 Err(_) => None,
                                 Ok(memo) => {
-                                    if self.key.addresses().iter().any(|unified_address| {
+                                    
+                                    if self.keystore
+                                    .read()
+                                    .await
+                                    .addresses()
+                                    .iter()
+                                    .any(|unified_address| {
                                         [
                                             unified_address
                                                 .transparent()

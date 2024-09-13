@@ -3,7 +3,7 @@
 //! by its`nature this evolves through, different states of completeness.
 
 use crate::wallet::notes::interface::OutputConstructor;
-use std::io::{self, Read, Write};
+use std::{io::{self, Read, Write}, sync::Arc};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 
@@ -343,7 +343,7 @@ impl TransactionRecord {
     pub fn read<R: Read>(
         mut reader: R,
         (keystore, mut trees): (
-            &Keystore,
+            Arc<Keystore>,
             Option<&mut (
                 Vec<(
                     IncrementalWitness<sapling_crypto::Node, COMMITMENT_TREE_LEVELS>,
@@ -378,11 +378,11 @@ impl TransactionRecord {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         let sapling_notes = zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
-            SaplingNote::read(r, (keystore, trees.as_mut().map(|t| &mut t.0)))
+            SaplingNote::read(r, (&keystore, trees.as_mut().map(|t| &mut t.0)))
         })?;
         let orchard_notes = if version > 22 {
             zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
-                OrchardNote::read(r, (keystore, trees.as_mut().map(|t| &mut t.1)))
+                OrchardNote::read(r, (&keystore, trees.as_mut().map(|t| &mut t.1)))
             })?
         } else {
             vec![]
