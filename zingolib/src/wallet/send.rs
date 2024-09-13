@@ -12,7 +12,7 @@ use std::cmp;
 use std::ops::DerefMut as _;
 
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_keys::address::Address;
+use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::transaction::Transaction;
 use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
@@ -257,13 +257,15 @@ where {
 pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest) -> MemoBytes {
     let recipient_uas = request
         .payments()
-        .iter()
-        .filter_map(|(_, payment)| match payment.recipient_address {
-            Address::Transparent(_) => None,
-            Address::Sapling(_) => None,
-            Address::Unified(ref ua) => Some(ua.clone()),
+        .values()
+        .flat_map(|payment| {
+            payment
+                .recipient_address()
+                .kind()
+                .get_unified_address()
+                .and_then(|ua| ua.try_into().ok())
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<UnifiedAddress>>();
     let uas_bytes = match create_wallet_internal_memo_version_0(recipient_uas.as_slice()) {
         Ok(bytes) => bytes,
         Err(e) => {
