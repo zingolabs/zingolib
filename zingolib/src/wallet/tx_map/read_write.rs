@@ -1,4 +1,4 @@
-//! contains associated methods for writing TxMapAndMaybeTrees to disk and reading TxMapAndMaybeTrees from disk
+//! contains associated methods for writing TxMap to disk and reading TxMap from disk
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
@@ -13,8 +13,8 @@ use crate::{
     wallet::{data::TransactionRecord, keys::unified::WalletCapability},
 };
 
-use super::{TransactionRecordsById, TxMapAndMaybeTrees};
-impl TxMapAndMaybeTrees {
+use super::{spending_data::SpendingData, TransactionRecordsById, TxMap};
+impl TxMap {
     /// TODO: Doc-comment!
     pub fn serialized_version() -> u64 {
         22
@@ -68,7 +68,7 @@ impl TxMapAndMaybeTrees {
 
         Ok(Self {
             transaction_records_by_id: map,
-            witness_trees,
+            spending_data: witness_trees.map(SpendingData::new),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
         })
     }
@@ -135,7 +135,7 @@ impl TxMapAndMaybeTrees {
 
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
-            witness_trees,
+            spending_data: witness_trees.map(SpendingData::new),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
         })
     }
@@ -163,7 +163,7 @@ impl TxMapAndMaybeTrees {
             })?;
         }
 
-        Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
+        Optional::write(writer, self.witness_trees_mut(), |w, t| t.write(w))
     }
 }
 #[cfg(test)]
@@ -173,7 +173,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write() {
-        let mut tms = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+        let mut tms = TxMap::new_with_witness_trees_address_free();
         let mut buffer = Cursor::new(Vec::new());
 
         // Perform the write operation

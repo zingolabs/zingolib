@@ -1,7 +1,7 @@
 //! This mod should be called tx_map_and_maybe_trees.rs. it contains
-//! struct TxMapAndMaybeTrees
-//! implementations for TxMapAndMaybeTrees
-//! associated types for TxMapAndMaybeTrees that have no relevance elsewhere.
+//! struct TxMap
+//! implementations for TxMap
+//! associated types for TxMap that have no relevance elsewhere.
 
 use crate::{
     data::witness_trees::WitnessTrees,
@@ -9,6 +9,7 @@ use crate::{
         trait_inputsource::InputSourceError, TransactionRecordsById,
     },
 };
+use spending_data::SpendingData;
 use std::{fmt::Debug, sync::Arc};
 use thiserror::Error;
 use zcash_primitives::legacy::TransparentAddress;
@@ -16,10 +17,10 @@ use zcash_primitives::legacy::TransparentAddress;
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-pub struct TxMapAndMaybeTrees {
+pub struct TxMap {
     /// TODO: Doc-comment!
     pub transaction_records_by_id: TransactionRecordsById,
-    witness_trees: Option<WitnessTrees>,
+    spending_data: Option<SpendingData>,
     pub(crate) transparent_child_addresses:
         Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
 }
@@ -28,15 +29,17 @@ pub mod get;
 pub mod read_write;
 pub mod recording;
 
-impl TxMapAndMaybeTrees {
+pub mod spending_data;
+
+impl TxMap {
     pub(crate) fn new_with_witness_trees(
         transparent_child_addresses: Arc<
             append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
         >,
-    ) -> TxMapAndMaybeTrees {
+    ) -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
-            witness_trees: Some(WitnessTrees::default()),
+            spending_data: Some(SpendingData::new(WitnessTrees::default())),
             transparent_child_addresses,
         }
     }
@@ -44,41 +47,45 @@ impl TxMapAndMaybeTrees {
         transparent_child_addresses: Arc<
             append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
         >,
-    ) -> TxMapAndMaybeTrees {
+    ) -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
-            witness_trees: None,
+            spending_data: None,
             transparent_child_addresses,
         }
     }
     /// TODO: Doc-comment!
     pub fn witness_trees(&self) -> Option<&WitnessTrees> {
-        self.witness_trees.as_ref()
+        self.spending_data
+            .as_ref()
+            .map(|spending_data| spending_data.witness_trees())
     }
     pub(crate) fn witness_trees_mut(&mut self) -> Option<&mut WitnessTrees> {
-        self.witness_trees.as_mut()
+        self.spending_data
+            .as_mut()
+            .map(|spending_data| spending_data.witness_trees_mut())
     }
     /// TODO: Doc-comment!
     pub fn clear(&mut self) {
         self.transaction_records_by_id.clear();
-        self.witness_trees.as_mut().map(WitnessTrees::clear);
+        self.witness_trees_mut().map(WitnessTrees::clear);
     }
 }
 #[cfg(test)]
-impl TxMapAndMaybeTrees {
+impl TxMap {
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
-    pub(crate) fn new_with_witness_trees_address_free() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_with_witness_trees_address_free() -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
-            witness_trees: Some(WitnessTrees::default()),
+            spending_data: Some(SpendingData::new(WitnessTrees::default())),
             transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
         }
     }
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
-    pub(crate) fn new_treeless_address_free() -> TxMapAndMaybeTrees {
+    pub(crate) fn new_treeless_address_free() -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
-            witness_trees: None,
+            spending_data: None,
             transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
         }
     }
@@ -86,7 +93,7 @@ impl TxMapAndMaybeTrees {
 
 /// TODO: Doc-comment!
 #[derive(Debug, PartialEq, Error)]
-pub enum TxMapAndMaybeTreesTraitError {
+pub enum TxMapTraitError {
     /// TODO: Doc-comment!
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,
