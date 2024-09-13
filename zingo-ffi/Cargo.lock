@@ -588,7 +588,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/juanky201271/zingolib?branch=dev_trying_fix_ios_build#025125c3d739f9c3799349a68eff6db97a860c41"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6454707abf12671f8935c5937ba25e51ee2bace9"
 
 [[package]]
 name = "bumpalo"
@@ -885,7 +885,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/juanky201271/zingolib?branch=dev_trying_fix_ios_build#025125c3d739f9c3799349a68eff6db97a860c41"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6454707abf12671f8935c5937ba25e51ee2bace9"
 dependencies = [
  "futures-util",
  "hex",
@@ -2103,9 +2103,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
+checksum = "33ea5043e58958ee56f3e15a90aee535795cd7dfd319846288d93c5b57d85cbe"
 
 [[package]]
 name = "opaque-debug"
@@ -2456,7 +2456,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8650aabb6c35b860610e9cff5dc1af886c9e25073b7b1712a68972af4281302"
 dependencies = [
  "bytes 1.7.1",
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.13.0",
  "log",
  "multimap",
@@ -4682,7 +4682,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/juanky201271/zingolib?branch=dev_trying_fix_ios_build#025125c3d739f9c3799349a68eff6db97a860c41"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6454707abf12671f8935c5937ba25e51ee2bace9"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4694,7 +4694,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/juanky201271/zingolib?branch=dev_trying_fix_ios_build#025125c3d739f9c3799349a68eff6db97a860c41"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6454707abf12671f8935c5937ba25e51ee2bace9"
 dependencies = [
  "http",
  "http-body",
@@ -4715,7 +4715,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/juanky201271/zingolib?branch=dev_trying_fix_ios_build#025125c3d739f9c3799349a68eff6db97a860c41"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6454707abf12671f8935c5937ba25e51ee2bace9"
 dependencies = [
  "zcash_primitives",
 ]
@@ -4723,7 +4723,7 @@ dependencies = [
 [[package]]
 name = "zingo-sync"
 version = "0.1.0"
-source = "git+https://github.com/juanky201271/zingolib?branch=dev_trying_fix_ios_build#025125c3d739f9c3799349a68eff6db97a860c41"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6454707abf12671f8935c5937ba25e51ee2bace9"
 dependencies = [
  "crossbeam-channel",
  "futures",
@@ -4747,7 +4747,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/juanky201271/zingolib?branch=dev_trying_fix_ios_build#025125c3d739f9c3799349a68eff6db97a860c41"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6454707abf12671f8935c5937ba25e51ee2bace9"
 dependencies = [
  "append-only-vec",
  "base58",
