@@ -4,7 +4,8 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use getset::{Getters, MutGetters};
-use keys::ledger::LedgerWalletCapability;
+use keys::unified::Fvk;
+use sapling_crypto::{keys::PreparedIncomingViewingKey, note_encryption::SaplingDomain};
 use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use log::{info, warn};
@@ -24,7 +25,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
 };
-use tokio::sync::RwLock;
+use tokio::{runtime::Runtime, sync::RwLock};
 use zcash_primitives::zip339::Mnemonic;
 
 use crate::config::ZingoConfig;
@@ -192,7 +193,7 @@ impl WalletBase {
 #[derive(Getters, MutGetters)]
 pub struct LightWallet {
     /// the underlying keystore of this wallet
-    keystore: Arc<RwLock<Keystore>>,
+    pub(crate) keystore: Arc<RwLock<Keystore>>,
 
     // The block at which this wallet was born. Rescans
     // will start from here.
@@ -272,10 +273,24 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.keystore())?
-            .derive_ivk::<keys::unified::External>();
+        let keystore = self.keystore.read()
+            .await;
 
-        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.ivk) {
+        let maybe_wc = keystore
+            .wc();
+
+        let wc = match maybe_wc {
+            Some(wc) => Ok(wc),
+            None => Err("No Sapling Viewing Capabilities on this wallet".to_string())
+        }?;
+
+        let diversifiable_sapling_fvk = DiversifiableFullViewingKey::try_from(wc)
+            .map_err(|_| "Failed to get Full Viewing Key from UFVK".to_string())?;
+
+        let ivk = diversifiable_sapling_fvk.to_ivk(zip32::Scope::External);
+        let sapling_ivk = PreparedIncomingViewingKey::new(&ivk);
+        
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
             return Ok(msg);
         }
@@ -390,8 +405,6 @@ impl LightWallet {
 
         };
 
-        let arc_wc = Arc::new(RwLock::new(wc));
-
         if let Err(e) = wc.new_address(
             wc.can_view(), 
             #[cfg(feature = "ledger-support")]
@@ -412,10 +425,13 @@ impl LightWallet {
             )))
         };
         
+        let arc_wc = Arc::new(RwLock::new(wc));
+
         let transaction_context =
-            TransactionContext::new(&config, arc_wc, transaction_metadata_set);
+            TransactionContext::new(&config, arc_wc, transaction_metadata_set);  
+
         Ok(Self {
-            keystore: arc_wc,
+            keystore: Arc::new(RwLock::new(wc)),
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),

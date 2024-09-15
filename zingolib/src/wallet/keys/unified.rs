@@ -11,6 +11,7 @@ use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
+use tokio::sync::RwLock;
 use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
@@ -104,12 +105,6 @@ impl Default for WalletCapability {
     }
 }
 
-impl crate::wallet::LightWallet {
-    /// This is the interface to expose the wallet keystore abstraction
-    pub fn keystore(&self) -> Arc<Keystore> {
-        self.transaction_context.keystore.clone()
-    }
-}
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
@@ -865,10 +860,8 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
     Option<String>,
 ) {
     use super::address_from_pubkeyhash;
-
-    let Keystore::InMemory(wc) = &*lightclient.wallet.keystore() else {
-        todo!("Do this for ledger too")
-    };
+    let keystore = lightclient.wallet.keystore.read().await;
+    let wc = keystore.wc().unwrap();
 
     // 2. Get an incoming transaction to a t address
     let (sk, pk) = match &wc.transparent {
