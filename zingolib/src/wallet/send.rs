@@ -164,7 +164,7 @@ impl LightWallet {
         ) -> secp256k1::SecretKey {
             hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
                 .expect("This a hack to do a type conversion, and will not fail")
-                .derive_private_key(t_metadata.address_index().into())
+                .derive_private_key(t_metadata.address_index().index().into())
                 // This is unwrapped in librustzcash, so I'm not too worried about it
                 .expect("private key derivation failed")
                 .private_key
