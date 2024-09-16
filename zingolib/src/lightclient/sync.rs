@@ -249,6 +249,7 @@ impl LightClient {
                                                 transaction.txid(),
                                                 Some((transaction.txid(), status)),
                                             );
+                                        drop(tms_writelock);
                                     }
                                 }
                             }
