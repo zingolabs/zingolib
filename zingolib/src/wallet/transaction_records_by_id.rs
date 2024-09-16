@@ -114,9 +114,9 @@ impl TransactionRecordsById {
     pub fn insert_transaction_record(&mut self, transaction_record: TransactionRecord) {
         self.insert(transaction_record.txid, transaction_record);
     }
-    /// Invalidates all transactions from a given height including the block with block height `reorg_height`
+    /// Invalidates all transactions from a given height including the block with block height `reorg_height`.
     ///
-    /// All information above a certain height is invalidated during a reorg
+    /// All information above a certain height is invalidated during a reorg.
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: BlockHeight) {
         // First, collect txids that need to be removed
         let txids_to_remove = self
@@ -367,7 +367,6 @@ impl TransactionRecordsById {
             .iter()
             .for_each(|t| println!("Removing expired mempool tx {}", t));
 
-        // doesnt actually remove the TransactionRecord. all this does is change the spend status to not spent. this is broken because SpendStatus contains a duplicate source of truth as to the ConfirmationStatus of the spending transaction.
         self.invalidate_transactions(txids_to_remove);
     }
 

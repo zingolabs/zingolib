@@ -137,7 +137,7 @@ pub mod send_with_proposal {
                         &raw_tx[..],
                         zcash_primitives::consensus::BranchId::for_height(
                             &self.wallet.transaction_context.config.chain,
-                            current_height,
+                            current_height + 1,
                         ),
                     )?);
                 }
@@ -153,7 +153,7 @@ pub mod send_with_proposal {
                     .transaction_context
                     .scan_full_tx(
                         &transaction,
-                        ConfirmationStatus::Calculated(current_height),
+                        ConfirmationStatus::Calculated(current_height + 1),
                         Some(now() as u32),
                         crate::wallet::utils::get_price(
                             now(),
@@ -202,7 +202,7 @@ pub mod send_with_proposal {
                                         self.wallet.transaction_context.config.accept_server_txids,
                                     ));
                                     transaction_record.status =
-                                        ConfirmationStatus::Transmitted(current_height);
+                                        ConfirmationStatus::Transmitted(current_height + 1);
                                 }
                                 Err(server_err) => {
                                     return Err(BroadcastCachedTransactionsError::Broadcast(
