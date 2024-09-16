@@ -201,6 +201,101 @@ impl TransactionRecordsById {
         });
     }
 
+    /// Finds orchard note with given nullifier and updates its spend status
+    /// Currently only used for updating through pending statuses
+    /// For marking spent see [`crate::wallet::tx_map::TxMap::mark_note_as_spent`]i
+    // TODO: verify there is logic to mark pending notes back to unspent during invalidation
+    fn update_orchard_note_spend_status(
+        &mut self,
+        nullifier: &orchard::note::Nullifier,
+        spend_status: Option<(TxId, ConfirmationStatus)>,
+    ) {
+        let source_txid = self
+            .values()
+            .find(|tx| {
+                tx.orchard_notes()
+                    .iter()
+                    .flat_map(|note| note.nullifier)
+                    .find(|nf| nf == nullifier)
+                    .is_some()
+            })
+            .map(|tx| tx.txid);
+
+        if let Some(txid) = source_txid {
+            let source_tx = self.get_mut(&txid).expect("transaction should exist");
+            *source_tx
+                .orchard_notes
+                .iter_mut()
+                .find(|note| {
+                    if let Some(nf) = note.nullifier() {
+                        nf == *nullifier
+                    } else {
+                        false
+                    }
+                })
+                .expect("spend must exist")
+                .spending_tx_status_mut() = spend_status;
+        }
+    }
+    /// Finds sapling note with given nullifier and updates its spend status
+    /// Currently only used for updating through pending statuses
+    /// For marking spent see [`crate::wallet::tx_map::TxMap::mark_note_as_spent`]i
+    // TODO: verify there is logic to mark pending notes back to unspent during invalidation
+    fn update_sapling_note_spend_status(
+        &mut self,
+        nullifier: &sapling_crypto::Nullifier,
+        spend_status: Option<(TxId, ConfirmationStatus)>,
+    ) {
+        let source_txid = self
+            .values()
+            .find(|tx| {
+                tx.sapling_notes()
+                    .iter()
+                    .flat_map(|note| note.nullifier)
+                    .find(|nf| nf == nullifier)
+                    .is_some()
+            })
+            .map(|tx| tx.txid);
+
+        if let Some(txid) = source_txid {
+            let source_tx = self.get_mut(&txid).expect("transaction should exist");
+            *source_tx
+                .sapling_notes
+                .iter_mut()
+                .find(|note| {
+                    if let Some(nf) = note.nullifier() {
+                        nf == *nullifier
+                    } else {
+                        false
+                    }
+                })
+                .expect("spend must exist")
+                .spending_tx_status_mut() = spend_status;
+        }
+    }
+
+    /// Updates notes spent in spending transaction to the given spend status
+    ///
+    /// Panics if spending transaction doesn't exist in wallet data, intended to be called after `scan_full_tx`
+    pub(crate) fn update_note_spend_statuses(
+        &mut self,
+        spending_txid: TxId,
+        spend_status: Option<(TxId, ConfirmationStatus)>,
+    ) {
+        let spending_tx = self
+            .get(&spending_txid)
+            .expect("transaction must exist in wallet");
+        let orchard_nullifiers = spending_tx.spent_orchard_nullifiers.clone();
+        let sapling_nullifiers = spending_tx.spent_sapling_nullifiers.clone();
+
+        orchard_nullifiers
+            .iter()
+            .for_each(|nf| self.update_orchard_note_spend_status(nf, spend_status));
+        sapling_nullifiers
+            .iter()
+            .for_each(|nf| self.update_sapling_note_spend_status(nf, spend_status));
+    }
+
     fn find_sapling_spend(&self, nullifier: &sapling_crypto::Nullifier) -> Option<&SaplingNote> {
         self.values()
             .flat_map(|wallet_transaction_record| wallet_transaction_record.sapling_notes())

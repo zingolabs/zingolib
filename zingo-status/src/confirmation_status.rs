@@ -130,7 +130,7 @@ impl ConfirmationStatus {
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&10.into()));
-    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&11.into()));
+    /// assert!(ConfirmationStatus::Calculated(10.into()).is_pending_before(&11.into()));
     /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&10.into()));
     /// assert!(ConfirmationStatus::Transmitted(10.into()).is_pending_before(&11.into()));

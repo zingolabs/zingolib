@@ -161,6 +161,19 @@ pub mod send_with_proposal {
                         ),
                     )
                     .await;
+                self.wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id
+                    .update_note_spend_statuses(
+                        transaction.txid(),
+                        Some((
+                            transaction.txid(),
+                            ConfirmationStatus::Calculated(current_height + 1),
+                        )),
+                    );
                 txids.push(transaction.txid());
             }
             Ok(txids)
@@ -203,6 +216,20 @@ pub mod send_with_proposal {
                                     ));
                                     transaction_record.status =
                                         ConfirmationStatus::Transmitted(current_height + 1);
+
+                                    self.wallet
+                                        .transaction_context
+                                        .transaction_metadata_set
+                                        .write()
+                                        .await
+                                        .transaction_records_by_id
+                                        .update_note_spend_statuses(
+                                            transaction_record.txid,
+                                            Some((
+                                                transaction_record.txid,
+                                                ConfirmationStatus::Transmitted(current_height + 1),
+                                            )),
+                                        );
                                 }
                                 Err(server_err) => {
                                     return Err(BroadcastCachedTransactionsError::Broadcast(
@@ -247,7 +274,7 @@ pub mod send_with_proposal {
             let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-            Ok(dbg!(broadcast_txids))
+            Ok(broadcast_txids)
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.
