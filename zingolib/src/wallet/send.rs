@@ -9,9 +9,10 @@ use std::cmp;
 use std::ops::DerefMut as _;
 
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_keys::address::Address;
-use zcash_primitives::memo::Memo;
-use zcash_primitives::memo::MemoBytes;
+use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::transaction::Transaction;
+use zcash_primitives::{consensus::BlockHeight, memo::Memo};
+use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 
 use zingo_memo::create_wallet_internal_memo_version_0;
 
@@ -184,13 +185,15 @@ impl LightWallet {
 pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest) -> MemoBytes {
     let recipient_uas = request
         .payments()
-        .iter()
-        .filter_map(|(_, payment)| match payment.recipient_address {
-            Address::Transparent(_) => None,
-            Address::Sapling(_) => None,
-            Address::Unified(ref ua) => Some(ua.clone()),
+        .values()
+        .flat_map(|payment| {
+            payment
+                .recipient_address()
+                .kind()
+                .get_unified_address()
+                .and_then(|ua| ua.try_into().ok())
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<UnifiedAddress>>();
     let uas_bytes = match create_wallet_internal_memo_version_0(recipient_uas.as_slice()) {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -209,8 +212,8 @@ pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest)
 mod tests {
     use std::str::FromStr;
 
-    use crate::config::ChainType;
-    use zcash_client_backend::{address::Address, zip321::TransactionRequest};
+    use zcash_address::ZcashAddress;
+    use zcash_client_backend::zip321::TransactionRequest;
     use zcash_primitives::{
         memo::{Memo, MemoBytes},
         transaction::components::amount::NonNegativeAmount,
@@ -222,12 +225,12 @@ mod tests {
     fn test_build_request() {
         let amount_1 = NonNegativeAmount::const_from_u64(20000);
         let recipient_address_1 =
-            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
+            ZcashAddress::try_from_encoded("utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_1 = None;
 
         let amount_2 = NonNegativeAmount::const_from_u64(20000);
         let recipient_address_2 =
-            Address::decode(&ChainType::Testnet, "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
+            ZcashAddress::try_from_encoded("utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_2 = Some(MemoBytes::from(
             Memo::from_str("the lake wavers along the beach").expect("string can memofy"),
         ));

@@ -369,6 +369,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bip32"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa13fae8b6255872fd86f7faf4b41168661d7d78609f7bfe6771b85c6739a15b"
+dependencies = [
+ "bs58",
+ "hmac",
+ "rand_core 0.6.4",
+ "ripemd",
+ "secp256k1",
+ "sha2 0.10.8",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -909,7 +925,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -944,7 +960,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "blake2b_simd",
 ]
@@ -4035,8 +4051,8 @@ checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 
 [[package]]
 name = "zcash_address"
-version = "0.3.2"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+version = "0.4.0"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "bech32",
  "bs58",
@@ -4047,11 +4063,12 @@ dependencies = [
 
 [[package]]
 name = "zcash_client_backend"
-version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+version = "0.13.0"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "base64 0.21.7",
  "bech32",
+ "bip32",
  "bls12_381",
  "bs58",
  "byteorder",
@@ -4060,6 +4077,7 @@ dependencies = [
  "group",
  "hdwallet",
  "hex",
+ "hyper-util",
  "incrementalmerkletree",
  "memuse",
  "nom",
@@ -4085,12 +4103,13 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zip32",
+ "zip321",
 ]
 
 [[package]]
 name = "zcash_encoding"
-version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+version = "0.2.1"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4098,17 +4117,17 @@ dependencies = [
 
 [[package]]
 name = "zcash_keys"
-version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+version = "0.3.0"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "bech32",
+ "bip32",
  "blake2b_simd",
  "bls12_381",
  "bs58",
  "byteorder",
  "document-features",
  "group",
- "hdwallet",
  "memuse",
  "nonempty",
  "orchard",
@@ -4139,19 +4158,19 @@ dependencies = [
 
 [[package]]
 name = "zcash_primitives"
-version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+version = "0.16.0"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "aes",
- "bip0039",
+ "bip32",
  "blake2b_simd",
+ "bs58",
  "byteorder",
  "document-features",
  "equihash",
  "ff",
  "fpe",
  "group",
- "hdwallet",
  "hex",
  "incrementalmerkletree",
  "jubjub",
@@ -4177,8 +4196,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_proofs"
-version = "0.15.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+version = "0.16.0"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4199,8 +4218,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_protocol"
-version = "0.1.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=unhack_calculate_0.6#3149706a04583419af5e523813711b2906b4808c"
+version = "0.2.0"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
 dependencies = [
  "document-features",
  "memuse",
@@ -4386,4 +4405,16 @@ dependencies = [
  "blake2b_simd",
  "memuse",
  "subtle",
+]
+
+[[package]]
+name = "zip321"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=main_zingolib#4487437e069e9e31a7bef9f0bbad3a0f34f7ff25"
+dependencies = [
+ "base64 0.21.7",
+ "nom",
+ "percent-encoding",
+ "zcash_address",
+ "zcash_protocol",
 ]
