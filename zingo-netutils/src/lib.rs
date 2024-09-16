@@ -121,7 +121,7 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http_connector);
-                let client = Box::new(hyper::Client::builder().build(connector));
+                let client = client::client_from_connector(connector, false);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -147,7 +147,7 @@ impl GrpcConnector {
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+                let client = client::client_from_connector(connector, true);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {

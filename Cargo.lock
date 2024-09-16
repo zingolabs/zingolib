@@ -692,6 +692,7 @@ dependencies = [
  "tower",
  "zcash_client_backend",
  "zcash_primitives",
+ "zingo-netutils",
  "zingolib",
 ]
 

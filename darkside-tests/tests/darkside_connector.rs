@@ -49,7 +49,8 @@ impl DarksideConnector {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
             let connector = tower::ServiceBuilder::new().service(http_connector);
-            let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+
+            let client = zingo_netutils::client::client_from_connector(connector, true);
             let uri = uri.clone();
             let svc = tower::ServiceBuilder::new()
                 //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
