@@ -242,6 +242,7 @@ impl Command for ParseAddressCommand {
                                 "receivers_available" => receivers_available,
                             }
                         }
+                        Address::Tex(_) => todo!(),
                     }
                 }),
                 4,
