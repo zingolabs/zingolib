@@ -10,9 +10,8 @@ use std::ops::DerefMut as _;
 
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::transaction::Transaction;
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
-use zcash_primitives::{memo::MemoBytes, transaction::TxId};
+use zcash_primitives::memo::Memo;
+use zcash_primitives::memo::MemoBytes;
 
 use zingo_memo::create_wallet_internal_memo_version_0;
 
