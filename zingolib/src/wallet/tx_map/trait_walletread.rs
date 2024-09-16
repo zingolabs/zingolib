@@ -325,6 +325,12 @@ impl WalletRead for TxMap {
     > {
         Ok(std::collections::HashMap::new())
     }
+
+    fn transaction_data_requests(
+        &self,
+    ) -> Result<Vec<zcash_client_backend::data_api::TransactionDataRequest>, Self::Error> {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
