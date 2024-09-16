@@ -11,7 +11,7 @@ impl LightClient {
             crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
                 .await?
                 .height as u32,
-        ) + 1)
+        ))
     }
 
     /// TODO: Add Doc Comment Here!
