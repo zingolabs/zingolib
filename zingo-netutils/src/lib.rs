@@ -34,6 +34,26 @@ pub enum GetClientError {
     InvalidPathAndQuery,
 }
 
+/// helper
+pub mod client {
+    use http_body::Body;
+    use hyper::{client::connect::Connect, Client};
+
+    /// a utility used in multiple places
+    pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
+    where
+        C: Connect + Clone,
+        B: Body + Send,
+        B::Data: Send,
+    {
+        Box::new(
+            hyper::Client::builder()
+                .http2_only(http2_only)
+                .build(connector),
+        )
+    }
+}
+
 /// The connector, containing the URI to connect to.
 /// This type is mostly an interface to the get_client method,
 /// the proto-generated CompactTxStreamerClient type is the main
