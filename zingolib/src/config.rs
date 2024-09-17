@@ -665,7 +665,7 @@ impl RegtestNetwork {
                 self.activation_heights
                     .get_activation_height(NetworkUpgrade::Nu5),
             ),
-            NetworkUpgrade::Nu6 => todo!(),
+            NetworkUpgrade::Nu6 => None,
         }
     }
 }
