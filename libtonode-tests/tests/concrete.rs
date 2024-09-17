@@ -134,11 +134,7 @@ mod fast {
 
         recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(&recipient, "unified"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(&recipient, "unified")).unwrap(),
                 true,
                 None,
             )
@@ -3007,6 +3003,7 @@ mod slow {
                     zcash_client_backend::data_api::error::Error::AddressNotRecognized(_) => {
                         panic!()
                     }
+                    _ => panic!("Uncovered errors!"),
                 },
                 ProposeSendError::TransactionRequestFailed(_) => panic!(),
                 ProposeSendError::ZeroValueSendAll => panic!(),
