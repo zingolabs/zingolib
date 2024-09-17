@@ -55,7 +55,7 @@ impl InitialScanData {
                     prev.sapling_commitment_tree_size(),
                     prev.orchard_commitment_tree_size(),
                 )
-            } else if let Some(chain_metadata) = first_block.chain_metadata {
+            } else if let Some(chain_metadata) = &first_block.chain_metadata {
                 // calculate initial tree size by subtracting number of outputs in block from the blocks final tree size
                 let sapling_output_count: u32 = first_block
                     .vtx

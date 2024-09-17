@@ -130,7 +130,7 @@ impl ConfirmationStatus {
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&10.into()));
-    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&11.into()));
+    /// assert!(ConfirmationStatus::Calculated(10.into()).is_pending_before(&11.into()));
     /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&9.into()));
     /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&10.into()));
     /// assert!(ConfirmationStatus::Transmitted(10.into()).is_pending_before(&11.into()));
@@ -144,9 +144,9 @@ impl ConfirmationStatus {
     // TODO remove 'pending' and fix spend status.
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
-            Self::Transmitted(self_height) | Self::Mempool(self_height) => {
-                self_height < comparison_height
-            }
+            Self::Calculated(self_height)
+            | Self::Transmitted(self_height)
+            | Self::Mempool(self_height) => self_height < comparison_height,
             _ => false,
         }
     }
@@ -194,7 +194,7 @@ impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Calculated(_) => {
-                write!(f, "transmitted")
+                write!(f, "calculated")
             }
             Self::Transmitted(_) => {
                 write!(f, "transmitted")

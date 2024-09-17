@@ -11,7 +11,7 @@ impl LightClient {
             crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
                 .await?
                 .height as u32,
-        ) + 1)
+        ))
     }
 
     /// TODO: Add Doc Comment Here!
@@ -137,7 +137,7 @@ pub mod send_with_proposal {
                         &raw_tx[..],
                         zcash_primitives::consensus::BranchId::for_height(
                             &self.wallet.transaction_context.config.chain,
-                            current_height,
+                            current_height + 1,
                         ),
                     )?);
                 }
@@ -153,7 +153,7 @@ pub mod send_with_proposal {
                     .transaction_context
                     .scan_full_tx(
                         &transaction,
-                        ConfirmationStatus::Calculated(current_height),
+                        ConfirmationStatus::Calculated(current_height + 1),
                         Some(now() as u32),
                         crate::wallet::utils::get_price(
                             now(),
@@ -161,6 +161,19 @@ pub mod send_with_proposal {
                         ),
                     )
                     .await;
+                self.wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id
+                    .update_note_spend_statuses(
+                        transaction.txid(),
+                        Some((
+                            transaction.txid(),
+                            ConfirmationStatus::Calculated(current_height + 1),
+                        )),
+                    );
                 txids.push(transaction.txid());
             }
             Ok(txids)
@@ -181,45 +194,61 @@ pub mod send_with_proposal {
                 .get_latest_block()
                 .await
                 .map_err(BroadcastCachedTransactionsError::Height)?;
-            if let Some(spending_data) = tx_map.spending_data_mut() {
-                let mut txids = vec![];
-                for (txid, raw_tx) in spending_data.cached_raw_transactions().clone() {
-                    // only send the txid if its status is created. when we do, change its status to broadcast (Transmitted).
-                    if let Some(transaction_record) =
-                        tx_map.transaction_records_by_id.get_mut(&txid)
-                    {
-                        if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
-                            match crate::grpc_connector::send_transaction(
-                                self.get_server_uri(),
-                                raw_tx.into_boxed_slice(),
-                            )
-                            .await
-                            {
-                                Ok(serverz_txid_string) => {
-                                    txids.push(crate::utils::txid::compare_txid_to_string(
-                                        txid,
-                                        serverz_txid_string,
-                                        self.wallet.transaction_context.config.accept_server_txids,
-                                    ));
-                                    transaction_record.status =
-                                        ConfirmationStatus::Transmitted(current_height);
-                                }
-                                Err(server_err) => {
-                                    return Err(BroadcastCachedTransactionsError::Broadcast(
-                                        server_err,
-                                    ))
-                                }
-                            };
-                        }
+            let calculated_tx_cache = tx_map
+                .spending_data()
+                .as_ref()
+                .ok_or(BroadcastCachedTransactionsError::Cache(
+                    TransactionCacheError::NoSpendCapability,
+                ))?
+                .cached_raw_transactions()
+                .clone();
+            let mut txids = vec![];
+            for (txid, raw_tx) in calculated_tx_cache {
+                let mut spend_status = None;
+                // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
+                if let Some(transaction_record) = tx_map.transaction_records_by_id.get_mut(&txid) {
+                    if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
+                        match crate::grpc_connector::send_transaction(
+                            self.get_server_uri(),
+                            raw_tx.into_boxed_slice(),
+                        )
+                        .await
+                        {
+                            Ok(serverz_txid_string) => {
+                                txids.push(crate::utils::txid::compare_txid_to_string(
+                                    txid,
+                                    serverz_txid_string,
+                                    self.wallet.transaction_context.config.accept_server_txids,
+                                ));
+                                transaction_record.status =
+                                    ConfirmationStatus::Transmitted(current_height + 1);
+
+                                spend_status =
+                                    Some((transaction_record.txid, transaction_record.status));
+                            }
+                            Err(server_err) => {
+                                return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
+                            }
+                        };
                     }
                 }
-
-                Ok(txids)
-            } else {
-                Err(BroadcastCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                ))
+                if let Some(s) = spend_status {
+                    tx_map
+                        .transaction_records_by_id
+                        .update_note_spend_statuses(s.0, spend_status);
+                }
             }
+
+            tx_map
+                .spending_data_mut()
+                .as_mut()
+                .ok_or(BroadcastCachedTransactionsError::Cache(
+                    TransactionCacheError::NoSpendCapability,
+                ))?
+                .cached_raw_transactions_mut()
+                .clear();
+
+            Ok(txids)
         }
 
         async fn complete_and_broadcast<NoteRef>(
@@ -247,7 +276,7 @@ pub mod send_with_proposal {
             let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-            Ok(dbg!(broadcast_txids))
+            Ok(broadcast_txids)
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.
@@ -314,12 +343,8 @@ pub mod send_with_proposal {
             .await
             .unwrap();
             let proposal = ProposalBuilder::default().build();
-            dbg!(lc
-                .complete_and_broadcast(&proposal)
-                .await
-                .unwrap_err()
-                .to_string(),);
-            todo!("refinish test");
+            lc.complete_and_broadcast(&proposal).await.unwrap_err();
+            // TODO: match on specific error
         }
 
         #[ignore]
