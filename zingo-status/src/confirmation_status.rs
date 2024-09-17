@@ -1,5 +1,4 @@
-//! A note can either be:
-//!  Pending === not on-record on-chain
+//! If a note is confirmed, it is:
 //!  Confirmed === on-record on-chain at BlockHeight
 
 use zcash_primitives::consensus::BlockHeight;
@@ -7,6 +6,9 @@ use zcash_primitives::consensus::BlockHeight;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
+    /// the transaction has been calculated but not yet broadcast to the chain.
+    Calculated(BlockHeight),
+
     /// The transaction has been sent to the zcash blockchain. It could be in the mempool, but if
     /// it's known to be, it will be Mempool instead,
     /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
@@ -31,51 +33,6 @@ impl ConfirmationStatus {
         }
     }
 
-    /// Is pending/unconfirmed. Use is_transmitted/is_mempool where possible
-    pub fn is_pending(&self) -> bool {
-        match self {
-            ConfirmationStatus::Transmitted(_) | ConfirmationStatus::Mempool(_) => true,
-            ConfirmationStatus::Confirmed(_) => false,
-        }
-    }
-
-    /// A wrapper matching the Transmitted case.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Transmitted(10.into());
-    /// assert_eq!(status.is_transmitted(), true);
-    /// assert_eq!(status.is_confirmed(), false);
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_transmitted(), false);
-    /// assert_eq!(status.is_confirmed(), true);
-    /// ```
-    pub fn is_transmitted(&self) -> bool {
-        matches!(self, Self::Transmitted(_))
-    }
-    /// A wrapper matching the Mempool case.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_mempool(), true);
-    /// assert_eq!(status.is_confirmed(), false);
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_mempool(), false);
-    /// assert_eq!(status.is_confirmed(), true);
-    /// ```
-    pub fn is_mempool(&self) -> bool {
-        matches!(self, Self::Mempool(_))
-    }
-
     /// A wrapper matching the Confirmed case.
     /// # Examples
     ///
@@ -83,13 +40,10 @@ impl ConfirmationStatus {
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_confirmed(), false);
-    /// assert_eq!(status.is_pending(), true);
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed(), true);
-    /// assert_eq!(status.is_pending(), false);
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed());
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed());
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed());
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed());
     /// ```
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
@@ -102,20 +56,21 @@ impl ConfirmationStatus {
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_after_or_at(&9.into()), true);
-    ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_confirmed_after_or_at(&10.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_after_or_at(&11.into()), false);
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after_or_at(&9.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after_or_at(&10.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after_or_at(&11.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_after_or_at(&9.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_after_or_at(&10.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_after_or_at(&11.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after_or_at(&9.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after_or_at(&10.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after_or_at(&11.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&9.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&10.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&11.into()));
     /// ```
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => self_height >= comparison_height,
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height >= comparison_height)
     }
 
     /// To return true, the status must be confirmed and no later than specified height.
@@ -125,22 +80,21 @@ impl ConfirmationStatus {
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before_or_at(&9.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_confirmed_before_or_at(&10.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before_or_at(&11.into()), true);
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before_or_at(&9.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before_or_at(&10.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before_or_at(&11.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_before_or_at(&9.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_before_or_at(&10.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_before_or_at(&11.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before_or_at(&9.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before_or_at(&10.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before_or_at(&11.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&9.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&10.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&11.into()));
     /// ```
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => {
-                self.is_confirmed_before(comparison_height) || self_height == comparison_height
-            }
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
     }
 
     /// To return true, the status must be confirmed earlier than specified height.
@@ -150,45 +104,21 @@ impl ConfirmationStatus {
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&9.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&10.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_confirmed_before(&11.into()), true);
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before(&10.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before(&11.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_before(&10.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_before(&11.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before(&10.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_before(&11.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&10.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&11.into()));
     /// ```
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Confirmed(self_height) => self_height < comparison_height,
-            _ => false,
-        }
-    }
-
-    /// To return true, the status must have broadcast at or later than specified height.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Confirmed(10.into());
-    /// assert_eq!(status.is_pending_after_or_at(&9.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_pending_after_or_at(&10.into()), true);
-    ///
-    /// let status = ConfirmationStatus::Mempool(10.into());
-    /// assert_eq!(status.is_pending_after_or_at(&11.into()), false);
-    /// ```
-    pub fn is_pending_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
-        match self {
-            Self::Transmitted(self_height) | Self::Mempool(self_height) => {
-                self_height >= comparison_height
-            }
-            _ => false,
-        }
+        matches!(self, Self::Confirmed(self_height) if self_height < comparison_height)
     }
 
     /// To return true, the status must not be confirmed and it must have been submitted sufficiently far in the past. This allows deduction of expired transactions.
@@ -198,21 +128,26 @@ impl ConfirmationStatus {
     /// use zingo_status::confirmation_status::ConfirmationStatus;
     /// use zcash_primitives::consensus::BlockHeight;
     ///
-    /// let status = ConfirmationStatus::Confirmed(16.into());
-    /// assert_eq!(status.is_pending_before(&15.into()), false);
-    ///
-    /// let status = ConfirmationStatus::Mempool(12.into());
-    /// assert_eq!(status.is_pending_before(&13.into()), true);
-    ///
-    /// let status = ConfirmationStatus::Mempool(14.into());
-    /// assert_eq!(status.is_pending_before(&14.into()), false);
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&10.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&11.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_pending_before(&10.into()));
+    /// assert!(ConfirmationStatus::Transmitted(10.into()).is_pending_before(&11.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_pending_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_pending_before(&10.into()));
+    /// assert!(ConfirmationStatus::Mempool(10.into()).is_pending_before(&11.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&9.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&10.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&11.into()));
     /// ```
+    // TODO remove 'pending' and fix spend status.
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
             Self::Transmitted(self_height) | Self::Mempool(self_height) => {
                 self_height < comparison_height
             }
-            Self::Confirmed(_) => false,
+            _ => false,
         }
     }
 
@@ -236,26 +171,6 @@ impl ConfirmationStatus {
         }
     }
 
-    /// Returns if transaction is confirmed, otherwise returns the height it was broadcast to the mempool.
-    /// # Examples
-    ///
-    /// ```
-    /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
-    ///
-    /// let status = ConfirmationStatus::Confirmed(16.into());
-    /// assert_eq!(status.get_pending_height(), None);
-    ///
-    /// let status = ConfirmationStatus::Mempool(15.into());
-    /// assert_eq!(status.get_pending_height(), Some(15.into()));
-    /// ```
-    pub fn get_pending_height(&self) -> Option<BlockHeight> {
-        match self {
-            Self::Mempool(self_height) | Self::Transmitted(self_height) => Some(*self_height),
-            _ => None,
-        }
-    }
-
     /// # Examples
     ///
     /// ```
@@ -267,6 +182,7 @@ impl ConfirmationStatus {
     /// ```
     pub fn get_height(&self) -> BlockHeight {
         match self {
+            Self::Calculated(self_height) => *self_height,
             Self::Mempool(self_height) => *self_height,
             Self::Transmitted(self_height) => *self_height,
             Self::Confirmed(self_height) => *self_height,
@@ -277,6 +193,9 @@ impl ConfirmationStatus {
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Calculated(_) => {
+                write!(f, "transmitted")
+            }
             Self::Transmitted(_) => {
                 write!(f, "transmitted")
             }

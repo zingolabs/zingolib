@@ -7,7 +7,7 @@ use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::{keys::unified::WalletCapability, tx_map::TxMap};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
@@ -17,7 +17,7 @@ pub struct TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub(crate) key: Arc<WalletCapability>,
     /// TODO: Add Doc Comment Here!
-    pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+    pub transaction_metadata_set: Arc<RwLock<TxMap>>,
 }
 
 impl TransactionContext {
@@ -25,7 +25,7 @@ impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
     ) -> Self {
         Self {
             config: config.clone(),
@@ -103,6 +103,7 @@ mod decrypt_transaction {
             block_time: Option<u32>, // block_time should only be None when re-scanning a tx that already exists in the wallet
             price: Option<f64>,
         ) {
+            dbg!("scanning transaction txid {} ", transaction.txid());
             // Set up data structures to record scan results
             let mut txid_indexed_zingo_memos = Vec::new();
 
@@ -461,7 +462,7 @@ mod decrypt_transaction {
                     block_time,
                 );
 
-                if status.is_pending() {
+                if !status.is_confirmed() {
                     transaction_record.add_pending_note::<D>(note.clone(), to, output_index);
                 } else {
                     let _note_does_not_exist_result =
@@ -531,7 +532,7 @@ mod decrypt_transaction {
             .await;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
-            if status.is_pending() {
+            if !status.is_confirmed() {
                 let unspent_nullifiers = self
                     .transaction_metadata_set
                     .read()

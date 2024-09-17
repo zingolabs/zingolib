@@ -12,7 +12,6 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_client_backend::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
@@ -177,80 +176,79 @@ impl Command for InterruptCommand {
     }
 }
 
-struct ParseAddressCommand {}
-impl Command for ParseAddressCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Parse an address
-            Usage:
-            parse_address [address]
+// FIXME: re-implement this command or remove
+// struct ParseAddressCommand {}
+// impl Command for ParseAddressCommand {
+//     fn help(&self) -> &'static str {
+//         indoc! {r#"
+//             Parse an address
+//             Usage:
+//             parse_address [address]
 
-            Example
-            parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
-        "#}
-    }
+//             Example
+//             parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
+//         "#}
+//     }
 
-    fn short_help(&self) -> &'static str {
-        "Parse an address"
-    }
+//     fn short_help(&self) -> &'static str {
+//         "Parse an address"
+//     }
 
-    fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
-        match args.len() {
-            1 => json::stringify_pretty(
-                [
-                    crate::config::ChainType::Mainnet,
-                    crate::config::ChainType::Testnet,
-                    crate::config::ChainType::Regtest(
-                        crate::config::RegtestNetwork::all_upgrades_active(),
-                    ),
-                ]
-                .iter()
-                .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
-                .map(|(recipient_address, chain_name)| {
-                    let chain_name_string = match chain_name {
-                        crate::config::ChainType::Mainnet => "main",
-                        crate::config::ChainType::Testnet => "test",
-                        crate::config::ChainType::Regtest(_) => "regtest",
-                    };
-
-                    match recipient_address {
-                        Address::Sapling(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "sapling",
-                        },
-                        Address::Transparent(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "transparent",
-                        },
-                        Address::Unified(ua) => {
-                            let mut receivers_available = vec![];
-                            if ua.orchard().is_some() {
-                                receivers_available.push("orchard")
-                            }
-                            if ua.sapling().is_some() {
-                                receivers_available.push("sapling")
-                            }
-                            if ua.transparent().is_some() {
-                                receivers_available.push("transparent")
-                            }
-                            object! {
-                                "status" => "success",
-                                "chain_name" => chain_name_string,
-                                "address_kind" => "unified",
-                                "receivers_available" => receivers_available,
-                            }
-                        }
-                        Address::Tex(_) => todo!(),
-                    }
-                }),
-                4,
-            ),
-            _ => self.help().to_string(),
-        }
-    }
-}
+//     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
+//         match args.len() {
+//             1 => json::stringify_pretty(
+//                 [
+//                     crate::config::ChainType::Mainnet,
+//                     crate::config::ChainType::Testnet,
+//                     crate::config::ChainType::Regtest(
+//                         crate::config::RegtestNetwork::all_upgrades_active(),
+//                     ),
+//                 ]
+//                 .iter()
+//                 .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
+//                 .map(|(recipient_address, chain_name)| {
+//                     let chain_name_string = match chain_name {
+//                         crate::config::ChainType::Mainnet => "main",
+//                         crate::config::ChainType::Testnet => "test",
+//                         crate::config::ChainType::Regtest(_) => "regtest",
+//                     };
+//                     match recipient_address {
+//                         Address::Sapling(_) => object! {
+//                             "status" => "success",
+//                             "chain_name" => chain_name_string,
+//                             "address_kind" => "sapling",
+//                         },
+//                         Address::Transparent(_) => object! {
+//                             "status" => "success",
+//                             "chain_name" => chain_name_string,
+//                             "address_kind" => "transparent",
+//                         },
+//                         Address::Unified(ua) => {
+//                             let mut receivers_available = vec![];
+//                             if ua.orchard().is_some() {
+//                                 receivers_available.push("orchard")
+//                             }
+//                             if ua.sapling().is_some() {
+//                                 receivers_available.push("sapling")
+//                             }
+//                             if ua.transparent().is_some() {
+//                                 receivers_available.push("transparent")
+//                             }
+//                             object! {
+//                                 "status" => "success",
+//                                 "chain_name" => chain_name_string,
+//                                 "address_kind" => "unified",
+//                                 "receivers_available" => receivers_available,
+//                             }
+//                         }
+//                     }
+//                 }),
+//                 4,
+//             ),
+//             _ => self.help().to_string(),
+//         }
+//     }
+// }
 
 struct ParseViewKeyCommand {}
 impl Command for ParseViewKeyCommand {
@@ -624,16 +622,15 @@ impl Command for SpendableBalanceCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo) =
-            match parse_spendable_balance_args(args, &lightclient.config.chain) {
-                Ok(address_and_zennies) => address_and_zennies,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
-                        e
-                    );
-                }
-            };
+        let (address, zennies_for_zingo) = match parse_spendable_balance_args(args) {
+            Ok(address_and_zennies) => address_and_zennies,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    e
+                );
+            }
+        };
         RT.block_on(async move {
             match lightclient
                 .get_spendable_shielded_balance(address, zennies_for_zingo)
@@ -837,7 +834,7 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
@@ -901,16 +898,15 @@ impl Command for SendAllCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo, memo) =
-            match utils::parse_send_all_args(args, &lightclient.config().chain) {
-                Ok(parse_results) => parse_results,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help sendall' for correct usage and examples.",
-                        e
-                    )
-                }
-            };
+        let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
+            Ok(parse_results) => parse_results,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help sendall' for correct usage and examples.",
+                    e
+                )
+            }
+        };
         RT.block_on(async move {
             match lightclient
                 .propose_send_all(address, zennies_for_zingo, memo)
@@ -962,7 +958,7 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
@@ -1710,7 +1706,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
         ("decryptmessage", Box::new(DecryptMessageCommand {})),
-        ("parse_address", Box::new(ParseAddressCommand {})),
+        // ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
         ("interrupt_sync_after_batch", Box::new(InterruptCommand {})),
         ("changeserver", Box::new(ChangeServerCommand {})),
