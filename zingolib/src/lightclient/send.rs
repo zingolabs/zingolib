@@ -194,16 +194,18 @@ pub mod send_with_proposal {
                 .get_latest_block()
                 .await
                 .map_err(BroadcastCachedTransactionsError::Height)?;
-            let cache = tx_map
+            let calculated_tx_cache = tx_map
                 .spending_data()
+                .as_ref()
                 .ok_or(BroadcastCachedTransactionsError::Cache(
                     TransactionCacheError::NoSpendCapability,
                 ))?
                 .cached_raw_transactions()
                 .clone();
             let mut txids = vec![];
-            for (txid, raw_tx) in cache {
-                // only send the txid if its status is created. when we do, change its status to broadcast (Transmitted).
+            for (txid, raw_tx) in calculated_tx_cache {
+                let mut spend_status = None;
+                // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
                 if let Some(transaction_record) = tx_map.transaction_records_by_id.get_mut(&txid) {
                     if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
                         match crate::grpc_connector::send_transaction(
@@ -221,26 +223,19 @@ pub mod send_with_proposal {
                                 transaction_record.status =
                                     ConfirmationStatus::Transmitted(current_height + 1);
 
-                                // drop(tx_map);
-                                self.wallet
-                                    .transaction_context
-                                    .transaction_metadata_set
-                                    .write()
-                                    .await
-                                    .transaction_records_by_id
-                                    .update_note_spend_statuses(
-                                        transaction_record.txid,
-                                        Some((
-                                            transaction_record.txid,
-                                            ConfirmationStatus::Transmitted(current_height + 1),
-                                        )),
-                                    );
+                                spend_status =
+                                    Some((transaction_record.txid, transaction_record.status));
                             }
                             Err(server_err) => {
                                 return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
                             }
                         };
                     }
+                }
+                if let Some(s) = spend_status {
+                    tx_map
+                        .transaction_records_by_id
+                        .update_note_spend_statuses(s.0, spend_status);
                 }
             }
 
