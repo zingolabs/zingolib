@@ -3977,11 +3977,8 @@ mod send_all {
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        let external_uaddress = address_from_str(
-            &get_base_address_macro!(faucet, "unified"),
-            &faucet.config().chain,
-        )
-        .unwrap();
+        let external_uaddress =
+            address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap();
         let expected_balance =
             NonNegativeAmount::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
         assert_eq!(
@@ -4041,11 +4038,7 @@ mod send_all {
 
         recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "sapling"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
             )
@@ -4083,11 +4076,7 @@ mod send_all {
 
         let proposal_error = recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "sapling"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
             )
@@ -4114,11 +4103,7 @@ mod send_all {
 
         let proposal_error = recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "unified"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap(),
                 false,
                 None,
             )
