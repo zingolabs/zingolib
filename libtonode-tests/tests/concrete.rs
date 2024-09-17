@@ -594,11 +594,11 @@ mod fast {
     }
 }
 mod slow {
+    use bip0039::Mnemonic;
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::{
         consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
-        zip339::Mnemonic,
     };
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::testutils::{
