@@ -216,8 +216,7 @@ impl TransactionRecordsById {
                 tx.orchard_notes()
                     .iter()
                     .flat_map(|note| note.nullifier)
-                    .find(|nf| nf == nullifier)
-                    .is_some()
+                    .any(|nf| nf == *nullifier)
             })
             .map(|tx| tx.txid);
 
@@ -252,8 +251,7 @@ impl TransactionRecordsById {
                 tx.sapling_notes()
                     .iter()
                     .flat_map(|note| note.nullifier)
-                    .find(|nf| nf == nullifier)
-                    .is_some()
+                    .any(|nf| nf == *nullifier)
             })
             .map(|tx| tx.txid);
 
