@@ -44,6 +44,7 @@ pub async fn assert_record_fee_and_status<NoteId>(
         assert_eq!(record.status, expected_status);
         // may fail in uncertain ways if used on a transaction we dont have an OutgoingViewingKey for
         let recorded_fee = records.calculate_transaction_fee(record).unwrap();
+
         assert_eq!(recorded_fee, step.balance().fee_required().into_u64());
 
         total_fee += recorded_fee;

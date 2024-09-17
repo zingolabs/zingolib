@@ -461,7 +461,7 @@ mod decrypt_transaction {
                     block_time,
                 );
 
-                if status.is_pending() {
+                if !status.is_confirmed() {
                     transaction_record.add_pending_note::<D>(note.clone(), to, output_index);
                 } else {
                     let _note_does_not_exist_result =
@@ -531,7 +531,7 @@ mod decrypt_transaction {
             .await;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
-            if status.is_pending() {
+            if !status.is_confirmed() {
                 let unspent_nullifiers = self
                     .transaction_metadata_set
                     .read()

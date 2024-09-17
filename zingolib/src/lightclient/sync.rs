@@ -222,19 +222,34 @@ impl LightClient {
                                         get_price(now(), &price),
                                     )
                                     .await;
+                                    transaction_metadata_set
+                                        .write()
+                                        .await
+                                        .transaction_records_by_id
+                                        .update_note_spend_statuses(
+                                            transaction.txid(),
+                                            Some((transaction.txid(), status)),
+                                        );
                                 }
                                 Some(r) => {
                                     if matches!(r.status, ConfirmationStatus::Transmitted(_)) {
                                         // In this case, we need write access, to change the status
                                         // from Transmitted to Mempool
                                         drop(tms_readlock);
-                                        transaction_metadata_set
-                                            .write()
-                                            .await
+                                        let mut tms_writelock =
+                                            transaction_metadata_set.write().await;
+                                        tms_writelock
                                             .transaction_records_by_id
                                             .get_mut(&transaction.txid())
                                             .expect("None case has already been handled")
                                             .status = status;
+                                        tms_writelock
+                                            .transaction_records_by_id
+                                            .update_note_spend_statuses(
+                                                transaction.txid(),
+                                                Some((transaction.txid(), status)),
+                                            );
+                                        drop(tms_writelock);
                                     }
                                 }
                             }
