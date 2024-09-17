@@ -231,7 +231,7 @@ pub fn command_loop(
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
-        LightClient::start_mempool_monitor(lightclient.clone());
+        let _ = LightClient::start_mempool_monitor(lightclient.clone());
 
         while let Ok((cmd, args)) = command_receiver.recv() {
             let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();
