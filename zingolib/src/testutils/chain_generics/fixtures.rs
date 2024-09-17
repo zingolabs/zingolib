@@ -523,7 +523,8 @@ where
     let check_mempool = !cfg!(feature = "ci");
     if check_mempool {
         for lightclient in [&ref_primary, &ref_secondary, &ref_tertiary] {
-            LightClient::start_mempool_monitor(lightclient.clone());
+            LightClient::start_mempool_monitor(lightclient.clone())
+                .expect("should start mempool monitor");
             dbg!("mm started");
         }
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;

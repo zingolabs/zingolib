@@ -209,7 +209,8 @@ mod fast {
         .await
         .unwrap();
 
-        LightClient::start_mempool_monitor(recipient.clone());
+        LightClient::start_mempool_monitor(recipient.clone())
+            .expect("should start mempool monitor");
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         let transactions = &recipient.transaction_summaries().await.0;
@@ -3449,7 +3450,8 @@ mod slow {
                 .await
                 .unwrap(),
         );
-        LightClient::start_mempool_monitor(recipient_loaded.clone());
+        LightClient::start_mempool_monitor(recipient_loaded.clone())
+            .expect("should start mempool monitor");
         // This seems to be long enough for the mempool monitor to kick in.
         // One second is insufficient. Even if this fails, this can only ever be
         // a false negative, giving us a balance of 100_000. Still, could be improved.
