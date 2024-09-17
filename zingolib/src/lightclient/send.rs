@@ -239,6 +239,15 @@ pub mod send_with_proposal {
                 }
             }
 
+            tx_map
+                .spending_data_mut()
+                .as_mut()
+                .ok_or(BroadcastCachedTransactionsError::Cache(
+                    TransactionCacheError::NoSpendCapability,
+                ))?
+                .cached_raw_transactions_mut()
+                .clear();
+
             Ok(txids)
         }
 
