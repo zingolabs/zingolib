@@ -343,12 +343,8 @@ pub mod send_with_proposal {
             .await
             .unwrap();
             let proposal = ProposalBuilder::default().build();
-            dbg!(lc
-                .complete_and_broadcast(&proposal)
-                .await
-                .unwrap_err()
-                .to_string(),);
-            todo!("refinish test");
+            lc.complete_and_broadcast(&proposal).await.unwrap_err();
+            // TODO: match on specific error
         }
 
         #[ignore]
