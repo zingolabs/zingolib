@@ -9,6 +9,7 @@ use crate::{
         trait_inputsource::InputSourceError, TransactionRecordsById,
     },
 };
+use getset::{Getters, MutGetters};
 use spending_data::SpendingData;
 use std::{fmt::Debug, sync::Arc};
 use thiserror::Error;
@@ -17,9 +18,11 @@ use zcash_primitives::legacy::TransparentAddress;
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
+#[derive(Getters, MutGetters)]
 pub struct TxMap {
     /// TODO: Doc-comment!
     pub transaction_records_by_id: TransactionRecordsById,
+    #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     spending_data: Option<SpendingData>,
     pub(crate) transparent_child_addresses:
         Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
@@ -91,17 +94,18 @@ impl TxMap {
     }
 }
 
-/// TODO: Doc-comment!
-#[derive(Debug, PartialEq, Error)]
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, Error)]
 pub enum TxMapTraitError {
-    /// TODO: Doc-comment!
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,
-    /// TODO: Doc-comment!
     #[error("{0:?}")]
     InputSource(InputSourceError),
+    #[error("{0:?}")]
+    TransactionWrite(std::io::Error),
 }
 
 pub mod trait_stub_inputsource;
 pub mod trait_stub_walletcommitmenttrees;
 pub mod trait_walletread;
+pub mod trait_walletwrite;

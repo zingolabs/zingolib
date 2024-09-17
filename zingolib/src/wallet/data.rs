@@ -1752,13 +1752,13 @@ pub mod summaries {
         /// converts the interface spend to a SpendSummary
         pub fn from_spend(spend: &Option<(TxId, ConfirmationStatus)>) -> Self {
             match spend {
-                None => SpendSummary::Unspent,
                 Some((txid, ConfirmationStatus::Transmitted(_))) => {
                     SpendSummary::TransmittedSpent(*txid)
                 }
 
                 Some((txid, ConfirmationStatus::Mempool(_))) => SpendSummary::MempoolSpent(*txid),
                 Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
+                _ => SpendSummary::Unspent,
             }
         }
     }

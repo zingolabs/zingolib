@@ -46,6 +46,7 @@ where
     let send_height = environment.get_chain_height() + 1;
 
     // digesting the calculated transaction
+    // this step happens after transaction is recorded locally, but before learning anything about whether the server accepted it
     let recorded_fee = assert_record_fee_and_status(
         sender,
         &proposal,

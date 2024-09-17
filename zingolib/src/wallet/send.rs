@@ -1,28 +1,21 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
-use crate::wallet::now;
 
 use hdwallet::traits::Deserialize as _;
-use http::Uri;
 use log::error;
 use zcash_client_backend::proposal::Proposal;
 use zcash_keys::keys::UnifiedSpendingKey;
-use zcash_primitives::transaction::builder::BuildResult;
 
 use std::cmp;
 use std::ops::DerefMut as _;
 
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::Address;
-use zcash_primitives::transaction::Transaction;
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
-use zcash_primitives::{memo::MemoBytes, transaction::TxId};
+use zcash_primitives::memo::Memo;
+use zcash_primitives::memo::MemoBytes;
 
 use zingo_memo::create_wallet_internal_memo_version_0;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::LightWallet;
-
-use super::utils::get_price;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
@@ -121,10 +114,10 @@ pub enum BuildTransactionError {
 }
 
 impl LightWallet {
-    pub(crate) async fn build_transaction<NoteRef>(
+    pub(crate) async fn create_transaction<NoteRef>(
         &self,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<BuildResult, BuildTransactionError> {
+    ) -> Result<(), BuildTransactionError> {
         if self
             .transaction_context
             .transaction_metadata_set
@@ -152,8 +145,6 @@ impl LightWallet {
             return Err(BuildTransactionError::ExchangeAddressesNotSupported);
         }
 
-        let step = proposal.steps().first();
-
         // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
         // transparent key it contains is not the account spending key, but the
         // externally-scoped derivative key. The goal is to fix this, but in the
@@ -170,86 +161,22 @@ impl LightWallet {
                 .private_key
         }
 
-        Ok(
-            zcash_client_backend::data_api::wallet::calculate_proposed_transaction(
-                self.transaction_context
-                    .transaction_metadata_set
-                    .write()
-                    .await
-                    .deref_mut(),
-                &self.transaction_context.config.chain,
-                &sapling_prover,
-                &sapling_prover,
-                &unified_spend_key,
-                zcash_client_backend::wallet::OvkPolicy::Sender,
-                proposal.fee_rule(),
-                proposal.min_target_height(),
-                &[],
-                step,
-                Some(usk_to_tkey),
-                Some(self.wallet_capability().first_sapling_address()),
-            )?,
-        )
-    }
-
-    pub(crate) async fn send_to_addresses_inner(
-        &self,
-        transaction: &Transaction,
-        submission_height: BlockHeight,
-        server_uri: Uri,
-    ) -> Result<TxId, String>
-where {
-        {
-            self.send_progress.write().await.is_send_in_progress = false;
-        }
-
-        // Create the transaction bytes
-        let mut raw_transaction = vec![];
-        transaction.write(&mut raw_transaction).unwrap();
-
-        let serverz_transaction_id =
-            crate::grpc_connector::send_transaction(server_uri, raw_transaction.into()).await?;
-
-        {
-            let price = self.price.read().await.clone();
-
-            let status = ConfirmationStatus::Transmitted(submission_height);
+        zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self.transaction_context
-                .scan_full_tx(
-                    transaction,
-                    status,
-                    Some(now() as u32),
-                    get_price(now(), &price),
-                )
-                .await;
-        }
-
-        let calculated_txid = transaction.txid();
-
-        let accepted_txid = match crate::utils::conversion::txid_from_hex_encoded_str(
-            serverz_transaction_id.as_str(),
-        ) {
-            Ok(serverz_txid) => {
-                if calculated_txid != serverz_txid {
-                    // happens during darkside tests
-                    error!(
-                        "served txid {} does not match calulated txid {}",
-                        serverz_txid, calculated_txid,
-                    );
-                };
-                if self.transaction_context.config.accept_server_txids {
-                    serverz_txid
-                } else {
-                    calculated_txid
-                }
-            }
-            Err(e) => {
-                error!("server returned invalid txid {}", e);
-                calculated_txid
-            }
-        };
-
-        Ok(accepted_txid)
+                .transaction_metadata_set
+                .write()
+                .await
+                .deref_mut(),
+            &self.transaction_context.config.chain,
+            &sapling_prover,
+            &sapling_prover,
+            &unified_spend_key,
+            zcash_client_backend::wallet::OvkPolicy::Sender,
+            proposal,
+            Some(usk_to_tkey),
+            Some(self.wallet_capability().first_sapling_address()),
+        )?;
+        Ok(())
     }
 }
 
