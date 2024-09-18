@@ -359,5 +359,22 @@ pub mod send_with_proposal {
             let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
             let _ = lc.do_sync(true).await;
         }
+
+        #[tokio::test]
+        async fn testnet_shield_diversified() {
+            std::env::set_var("RUST_BACKTRACE", "1");
+            let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
+                ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
+                ),
+            ))
+            .await;
+            let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+            let _ = lc.do_sync(true).await;
+
+            lc.quick_shield()
+                .await
+                .expect("shield all transparent funds");
+        }
     }
 }
