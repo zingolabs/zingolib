@@ -153,7 +153,7 @@ impl WalletRead for TxMap {
     }
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        unimplemented!()
+        Ok(vec![(AccountId::ZERO)])
     }
     fn get_account(
         &self,
