@@ -515,9 +515,9 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 /// TODO: Add Doc Comment Here!
 pub fn run_cli() {
     // install default crypto provider (ring)
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
+    if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
+        eprintln!("Error installing crypto provider: {:?}", e)
+    };
 
     // Initialize logging
     if let Err(e) = LightClient::init_logging() {
