@@ -347,7 +347,7 @@ pub mod send_with_proposal {
             // TODO: match on specific error
         }
 
-        #[ignore]
+        #[ignore = "outdated wallet file"]
         #[tokio::test]
         async fn sync_testnet() {
             let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
