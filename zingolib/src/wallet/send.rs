@@ -178,7 +178,7 @@ impl LightWallet {
             &unified_spend_key,
             zcash_client_backend::wallet::OvkPolicy::Sender,
             proposal,
-            None,
+            Some(usk_to_tkey),
             Some(self.wallet_capability().first_sapling_address()),
         )?;
         Ok(())
