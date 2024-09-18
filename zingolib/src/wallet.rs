@@ -4,8 +4,7 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use getset::{Getters, MutGetters};
-use keys::unified::Fvk;
-use sapling_crypto::{keys::PreparedIncomingViewingKey, note_encryption::SaplingDomain};
+use sapling_crypto::keys::PreparedIncomingViewingKey;
 use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use log::{info, warn};
@@ -25,16 +24,14 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
 };
-use tokio::{runtime::Runtime, sync::RwLock};
+use tokio::sync::RwLock;
 use zcash_primitives::zip339::Mnemonic;
 
 use crate::config::ZingoConfig;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 
-use self::keys::unified::Fvk as _;
 use self::keys::keystore::Keystore;
-use self::keys::unified::Capability;
 
 use self::{
     data::{BlockData, WalletZecPriceInfo},
@@ -428,10 +425,10 @@ impl LightWallet {
         let arc_wc = Arc::new(RwLock::new(wc));
 
         let transaction_context =
-            TransactionContext::new(&config, arc_wc, transaction_metadata_set);  
+            TransactionContext::new(&config, arc_wc.clone(), transaction_metadata_set);  
 
         Ok(Self {
-            keystore: Arc::new(RwLock::new(wc)),
+            keystore: arc_wc,
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),

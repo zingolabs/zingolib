@@ -77,13 +77,16 @@ pub async fn assert_wallet_capability_matches_seed(
     )
     .unwrap();
 
+    let wc = wallet.keystore.read().await;
+
+    
     #[cfg(feature = "ledger-support")]
-    let Keystore::InMemory(ref wc) = *wallet.keystore() else {
+    let Keystore::InMemory(ref wc) = *wc else {
         unreachable!("Known to be InMemory due to new_from_phrase impl")
     };
     
     #[cfg(not(feature = "ledger-support"))]
-    let Keystore::InMemory(ref wc) = *wallet.keystore();
+    let Keystore::InMemory(ref wc) = *wc;
 
 
     // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
@@ -125,7 +128,7 @@ pub async fn assert_wallet_capability_contains_n_triple_pool_receivers(
     wallet: &LightWallet,
     expected_num_addresses: usize,
 ) {
-    let wc = wallet.keystore();
+    let wc = wallet.keystore.read().await;
 
     assert_eq!(wc.addresses().len(), expected_num_addresses);
     for addr in wc.addresses().iter() {

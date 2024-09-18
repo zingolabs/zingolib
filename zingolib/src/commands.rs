@@ -139,7 +139,7 @@ impl Command for WalletKindCommand {
             } else {
                 // let capability = lightclient.wallet.keystore();
                 
-                let Keystore::InMemory(ref capability) = *lightclient.wallet.keystore() else {
+                let Keystore::InMemory(ref capability) = *lightclient.wallet.keystore.read().await else {
                     todo!("do this for ledger too!")
                 };
                 
@@ -697,10 +697,10 @@ impl Command for ExportUfvkCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let ufvk_res = lightclient.wallet.transaction_context.keystore.ufvk();
+        RT.block_on(async move {
+            let ufvk_res = lightclient.wallet.transaction_context.keystore.read().await.ufvk();
         match ufvk_res {
             Ok(ufvk) => {
-                use zcash_address::unified::Encoding as _;
                 object! {
                     "ufvk" => ufvk.encode(&lightclient.config().chain.network_type()),
                     "birthday" => RT.block_on(lightclient.wallet.get_birthday())
@@ -709,6 +709,7 @@ impl Command for ExportUfvkCommand {
             }
             Err(e) => format!("Error: {e}"),
         }
+        })
     }
 }
 

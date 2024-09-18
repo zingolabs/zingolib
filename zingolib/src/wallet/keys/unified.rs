@@ -11,7 +11,6 @@ use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
-use tokio::sync::RwLock;
 use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
 use zcash_primitives::zip339::Mnemonic;
 
@@ -26,7 +25,6 @@ use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
-use super::keystore::Keystore;
 use super::{
     extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
     get_zaddr_from_bip39seed, ToBase58Check,

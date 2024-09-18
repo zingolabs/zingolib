@@ -142,7 +142,6 @@ async fn reload_wallet_from_buffer() {
     use crate::wallet::disk::Capability;
     use crate::wallet::keys::extended_transparent::ExtendedPrivKey;
     use crate::wallet::WalletBase;
-    use crate::wallet::keys::unified::WalletCapability;
 
     let mid_wallet = LightWallet::load_example_wallet(Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
@@ -173,13 +172,15 @@ async fn reload_wallet_from_buffer() {
     )
     .unwrap();
 
+    let wc = wallet.keystore.read().await;
+
     #[cfg(feature = "ledger-support")]
-    let Keystore::InMemory(ref wc) = *wallet.keystore() else {
+    let Keystore::InMemory(ref wc) = *wc else {
         unreachable!("Known to be InMemory due to new_from_phrase impl")
     };
 
     #[cfg(not(feature = "ledger-support"))]
-    let Keystore::InMemory(ref wc) = *wallet.keystore();
+    let Keystore::InMemory(ref wc) = *wc;
 
     let Capability::Spend(orchard_sk) = &wc.orchard else {
         panic!("Expected Orchard Spending Key");
@@ -221,14 +222,22 @@ async fn reload_wallet_from_buffer() {
         wallet.transaction_context.config.clone(),
         ufvk_base,
         wallet.get_birthday().await,
-    )
-    .unwrap();
-    let v_wc = view_wallet.keystore();
+    );
+    assert!(view_wallet.is_ok());
+
+    let v_wc = wc;
     let vv = v_wc.ufvk().unwrap();
     let vv_string = vv.encode(&wallet.transaction_context.config.chain.network_type());
     assert_eq!(ufvk_string, vv_string);
 
-    let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
+    let mid_wallet = LightWallet::read_internal(
+        &mid_buffer[..],
+        &mid_client.wallet.transaction_context.config,
+    )
+    .await
+    .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
+    .unwrap();
+    let client = LightClient::create_from_wallet_async(mid_wallet).await.unwrap();
     let balance = client.do_balance().await;
     assert_eq!(balance.orchard_balance, Some(10342837));
 }

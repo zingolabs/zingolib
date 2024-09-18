@@ -141,8 +141,9 @@ impl LightWallet {
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
         
-        let Keystore::InMemory(ref wc) = *self.keystore() else {
-            unreachable!("Known to be InMemory due to new_from_phrase impl")
+        let keystore = self.keystore.read().await;
+        let Keystore::InMemory(ref wc) = *keystore else {
+            todo!("do this for ledger")
         };
         
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
@@ -193,7 +194,7 @@ impl LightWallet {
                 &[],
                 step,
                 Some(usk_to_tkey),
-                Some(self.keystore().first_sapling_address()),
+                Some(wc.first_sapling_address()),
             )?,
         )
     }

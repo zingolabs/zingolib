@@ -84,7 +84,7 @@ mod decrypt_transaction {
     };
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
-    use std::{collections::HashSet, convert::TryInto, ops::Deref};
+    use std::{collections::HashSet, convert::TryInto};
 
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::{try_output_recovery_with_ovk, Domain};

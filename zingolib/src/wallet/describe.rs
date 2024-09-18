@@ -1,4 +1,5 @@
 //! Wallet-State reporters as LightWallet methods.
+use tokio::runtime::Runtime;
 use zcash_client_backend::ShieldedProtocol;
 
 use orchard::note_encryption::OrchardDomain;
@@ -52,8 +53,10 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
+        let keystore = self.keystore.read().await;
+
         // For the moment we encode lack of view capability as None
-        let Keystore::InMemory(wc) = &*self.keystore() else {
+        let Keystore::InMemory(ref wc) = *keystore else {
             todo!("Do this for ledger too")
         };
         match D::SHIELDED_PROTOCOL {
@@ -101,9 +104,12 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let Keystore::InMemory(wc) = &*self.keystore() else {
+        let keystore = self.keystore.read().await;
+        
+        let Keystore::InMemory(ref wc) = *keystore else {
             todo!("Do this for ledger too")
         };
+
         if let Capability::Spend(_) = wc.orchard {
             self.confirmed_balance::<D>().await
         } else {
@@ -112,9 +118,12 @@ impl LightWallet {
     }
     /// Sums the transparent balance (unspent)
     pub async fn get_transparent_balance(&self) -> Option<u64> {
-        let Keystore::InMemory(wc) = &*self.keystore() else {
+        let keystore = self.keystore.read().await;
+
+        let Keystore::InMemory(ref wc) = *keystore else {
             todo!("Do this for ledger too")
         };
+
         if wc.transparent.can_view() {
             Some(
                 self.get_utxos()
@@ -305,11 +314,15 @@ impl LightWallet {
 
     /// lists the transparent addresses known by the wallet.
     pub fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
-        self.keystore()
+        Runtime::new().unwrap().block_on(async {
+            self.keystore
+            .read()
+            .await
             .transparent_child_addresses()
             .iter()
             .map(|(_index, sk)| *sk)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>()    
+        })
     }
 }
 

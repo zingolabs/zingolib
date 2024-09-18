@@ -84,8 +84,10 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
 
 /// Converts a Lightclient with spending capability to a Lightclient with only viewing capability
 pub async fn sk_client_to_fvk_client(client: &LightClient) -> LightClient {
+    let keystore = client.wallet.keystore.read().await;
+
     let [o_fvk, s_fvk, t_fvk] =
-        build_fvks_from_wallet_capability(&client.wallet.keystore().clone());
+        build_fvks_from_wallet_capability(&keystore);
     build_fvk_client(&[&o_fvk, &s_fvk, &t_fvk], client.config()).await
 }
 

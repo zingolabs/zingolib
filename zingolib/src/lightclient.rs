@@ -434,7 +434,7 @@ impl LightClient {
     }
 
     pub async fn do_wallet_kind(&self) -> String {
-        match *self.wallet.keystore() {
+        match *self.wallet.keystore.read().await {
             Keystore::Ledger(_) => "ledger",
             Keystore::InMemory(_) => "memory"
         }
@@ -511,7 +511,9 @@ impl LightClient {
 
         let new_address = self
             .wallet
-            .keystore()
+            .keystore
+            .read()
+            .await
             .new_address(
                 desired_receivers, 
                 #[cfg(feature = "ledger-support")]
