@@ -460,6 +460,7 @@ impl TransactionRecordsById {
             .iter()
             .for_each(|t| println!("Removing expired mempool tx {}", t));
 
+        // doesnt actually remove the TransactionRecord. all this does is change the spend status to not spent. this is broken because SpendStatus contains a duplicate source of truth as to the ConfirmationStatus of the spending transaction, instead of a dynamic reference
         self.invalidate_transactions(txids_to_remove);
     }
 
