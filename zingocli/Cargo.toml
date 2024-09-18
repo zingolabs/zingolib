@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 zingolib = { path = "../zingolib/", features = ["deprecations", "test-elevation"] }
-rustls = { version = "0.23.13", features = ["ring"] }
 
 clap = { workspace = true }
 http = { workspace = true }
