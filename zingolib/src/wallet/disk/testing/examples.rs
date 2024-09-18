@@ -44,6 +44,8 @@ pub enum ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion {
     Gab72a38b,
     /// this wallet was synced in this version. does it have a bunch of taz scattered around different addresses?
     G93738061a,
+    /// NU6 added to zingolib re-allows testnet tests by this commit
+    Ga74fed621,
 }
 /// A testnet wallet initiated with
 /// --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
@@ -86,7 +88,6 @@ pub enum ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion {
 impl LightWallet {
     /// loads test wallets
     /// this function can be improved by a macro. even better would be to derive directly from the enum.
-    // this file is fuc
     /// loads any one of the test wallets included in the examples
     pub async fn load_example_wallet(case: ExampleWalletNetwork) -> Self {
         match case {
@@ -119,6 +120,14 @@ impl LightWallet {
             )) => {
                 LightWallet::unsafe_from_buffer_testnet(include_bytes!(
                     "examples/testnet/mskmgdbhotbpetcjwcspgopp/G93738061a/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
+            )) => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/testnet/mskmgdbhotbpetcjwcspgopp/Ga74fed621/zingo-wallet.dat"
                 ))
                 .await
             }
