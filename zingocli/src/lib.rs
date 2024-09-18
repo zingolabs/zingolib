@@ -11,7 +11,6 @@ use std::sync::Arc;
 use log::{error, info};
 
 use clap::{self, Arg};
-use rustls;
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
 use zingolib::wallet::WalletBase;
@@ -514,11 +513,6 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 
 /// TODO: Add Doc Comment Here!
 pub fn run_cli() {
-    // install default crypto provider (ring)
-    if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-        eprintln!("Error installing crypto provider: {:?}", e)
-    };
-
     // Initialize logging
     if let Err(e) = LightClient::init_logging() {
         eprintln!("Could not initialize logging: {e}")
