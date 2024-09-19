@@ -40,7 +40,7 @@ impl TxMapAndMaybeTrees {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionRecord::read(r, (keystore, old_inc_witnesses.as_mut()))
+                TransactionRecord::read(r, (keystore.clone(), old_inc_witnesses.as_mut()))
                     .unwrap(),
             ))
         })?;
@@ -95,7 +95,7 @@ impl TxMapAndMaybeTrees {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionRecord::read(r, (keystore, old_inc_witnesses.as_mut()))?,
+                TransactionRecord::read(r, (keystore.clone(), old_inc_witnesses.as_mut()))?,
             ))
         })?;
 
@@ -104,7 +104,7 @@ impl TxMapAndMaybeTrees {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
                 let transaction_metadata =
-                    TransactionRecord::read(r, (keystore, old_inc_witnesses.as_mut()))?;
+                    TransactionRecord::read(r, (keystore.clone(), old_inc_witnesses.as_mut()))?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?

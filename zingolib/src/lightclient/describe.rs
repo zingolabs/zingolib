@@ -2,7 +2,7 @@
 use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 use tokio::runtime::Runtime;
 
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
@@ -58,7 +58,7 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self.wallet.keystore().addresses().iter() {
+        for address in self.wallet.keystore.read().await.addresses().iter() {
             let encoded_ua = address.encode(&self.config.chain);
             let transparent = address
                 .transparent()
@@ -764,6 +764,8 @@ impl LightClient {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
+        let mut keystore = self.wallet.keystore.read().await;
+        let mut arc_keystore = Arc::new(*keystore);
         // Collect Sapling notes
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
@@ -771,7 +773,7 @@ impl LightClient {
                     if !all_notes && note_metadata.spending_tx_status().is_some() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.keystore());
+                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, arc_keystore.clone());
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -809,13 +811,15 @@ impl LightClient {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
+        let keystore = self.wallet.keystore.read().await;
+        let arc_keystore = Arc::new(*keystore);
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
                 transaction_metadata.orchard_notes.iter().filter_map(move |note_metadata|
                     if !all_notes && note_metadata.is_spent_confirmed() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, &self.wallet.keystore());
+                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, arc_keystore);
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();

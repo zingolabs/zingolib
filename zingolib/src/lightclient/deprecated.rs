@@ -44,6 +44,7 @@ impl LightClient {
     {
         D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.status.get_height().into();
+                    let address = LightWallet::note_address::<D>(&self.config.chain, nd, Arc::new(*unified_spend_auth));
                     object! {
                         "block_height" => block_height,
                         "pending"      => !transaction_metadata.status.is_confirmed(),
@@ -52,7 +53,7 @@ impl LightClient {
                         "txid"         => format!("{}", transaction_metadata.txid),
                         "amount"       => nd.value() as i64,
                         "zec_price"    => transaction_metadata.price.map(|p| (p * 100.0).round() / 100.0),
-                        "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
+                        "address"      => address,
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
                     }
 
@@ -114,6 +115,8 @@ impl LightClient {
     #[allow(deprecated)]
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
+        let keystore = self.wallet.keystore.read().await;
+
         let mut consumer_ui_notes = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -132,7 +135,7 @@ impl LightClient {
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &self.wallet.keystore()));
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &keystore));
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point

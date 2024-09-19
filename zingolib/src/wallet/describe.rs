@@ -202,16 +202,16 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &crate::config::ChainType,
         note: &D::WalletNote,
-        keystore: &Keystore,
+        keystore: Arc<Keystore>,
     ) -> String
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::wc_to_fvk(keystore).expect("to get fvk from wc")
+        D::wc_to_fvk(keystore.as_ref()).expect("to get fvk from wc")
         .diversified_address(*note.diversifier())
         .and_then(|address| {
-            D::ua_from_contained_receiver(keystore, &address)
+            D::ua_from_contained_receiver(keystore.as_ref(), &address)
                 .map(|ua| ua.encode(network))
         })
         .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
