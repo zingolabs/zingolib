@@ -352,7 +352,7 @@ mod tests {
                 OrchardNoteBuilder::default()
                     .note(
                         OrchardCryptoNoteBuilder::default()
-                            .value(orchard::value::NoteValue::from_raw(5_000))
+                            .value(orchard::value::NoteValue::from_raw(5_001))
                             .clone(),
                     )
                     .clone(),
@@ -397,7 +397,7 @@ mod tests {
             wallet
                 .confirmed_balance_excluding_dust::<OrchardDomain>()
                 .await,
-            Some(1_605_000)
+            Some(1_605_001)
         );
     }
 }
