@@ -32,14 +32,14 @@ jobs:
     strategy:
       matrix:
         arch: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
-    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml
+    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@dev
     needs: create-cache-key
     with:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       arch: ${{ matrix.arch }}
 
   android-test:
-    uses: zingolabs/zingo-mobile/.github/workflows/android-test.yaml
+    uses: zingolabs/zingo-mobile/.github/workflows/android-test.yaml@dev
     needs: [ create-timestamp, android-build ]
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
@@ -50,7 +50,7 @@ jobs:
       matrix:
         abi: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
       fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/android-macos-integration-test.yaml
+    uses: zingolabs/zingo-mobile/.github/workflows/android-macos-integration-test.yaml@dev
     needs: [ android-test ]
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
@@ -58,13 +58,13 @@ jobs:
       abi: ${{ matrix.abi }}
 
   ios-build:
-    uses: zingolabs/zingo-mobile/.github/workflows/ios-build.yaml
+    uses: zingolabs/zingo-mobile/.github/workflows/ios-build.yaml@dev
     needs: create-cache-key
     with:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
        
   ios-integration-test:
-    uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml
+    uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml@dev
     needs: [ create-timestamp, ios-build ]
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
