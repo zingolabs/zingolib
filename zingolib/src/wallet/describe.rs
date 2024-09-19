@@ -155,7 +155,7 @@ impl LightWallet {
             Box::new(|note, transaction| {
                 transaction.status.is_confirmed()
                     && !note.pending_receipt()
-                    && note.value() >= MARGINAL_FEE.into_u64()
+                    && note.value() > MARGINAL_FEE.into_u64()
             });
         self.get_filtered_balance::<D>(filter_function).await
     }
@@ -352,7 +352,7 @@ mod tests {
                 OrchardNoteBuilder::default()
                     .note(
                         OrchardCryptoNoteBuilder::default()
-                            .value(orchard::value::NoteValue::from_raw(5_000))
+                            .value(orchard::value::NoteValue::from_raw(5_001))
                             .clone(),
                     )
                     .clone(),
@@ -397,7 +397,7 @@ mod tests {
             wallet
                 .confirmed_balance_excluding_dust::<OrchardDomain>()
                 .await,
-            Some(1_605_000)
+            Some(1_605_001)
         );
     }
 }
