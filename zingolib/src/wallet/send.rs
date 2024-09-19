@@ -1,6 +1,5 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
-use hdwallet::traits::Deserialize as _;
 use log::error;
 use zcash_client_backend::proposal::Proposal;
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -149,22 +148,6 @@ impl LightWallet {
             return Err(BuildTransactionError::ExchangeAddressesNotSupported);
         }
 
-        // The 'UnifiedSpendingKey' we create is not a 'proper' USK, in that the
-        // transparent key it contains is not the account spending key, but the
-        // externally-scoped derivative key. The goal is to fix this, but in the
-        // interim we use this special-case logic.
-        fn usk_to_tkey(
-            unified_spend_key: &UnifiedSpendingKey,
-            t_metadata: &zcash_client_backend::wallet::TransparentAddressMetadata,
-        ) -> secp256k1::SecretKey {
-            hdwallet::ExtendedPrivKey::deserialize(&unified_spend_key.transparent().to_bytes())
-                .expect("This a hack to do a type conversion, and will not fail")
-                .derive_private_key(t_metadata.address_index().index().into())
-                // This is unwrapped in librustzcash, so I'm not too worried about it
-                .expect("private key derivation failed")
-                .private_key
-        }
-
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self.transaction_context
                 .transaction_metadata_set
@@ -177,7 +160,6 @@ impl LightWallet {
             &unified_spend_key,
             zcash_client_backend::wallet::OvkPolicy::Sender,
             proposal,
-            Some(usk_to_tkey),
             Some(self.wallet_capability().first_sapling_address()),
         )?;
         Ok(())
