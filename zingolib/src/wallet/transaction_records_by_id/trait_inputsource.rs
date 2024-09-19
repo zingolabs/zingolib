@@ -175,7 +175,8 @@ impl InputSource for TransactionRecordsById {
             .collect::<Result<Vec<_>, _>>()
             .map_err(InputSourceError::InvalidValue)?;
         unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
-        let dust_spendable_index = unselected.partition_point(|(_id, value)| *value < MARGINAL_FEE);
+        let dust_spendable_index =
+            unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
         let _dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
         let mut selected = vec![];
         let mut index_of_unselected = 0;

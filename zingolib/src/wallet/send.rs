@@ -141,7 +141,7 @@ impl LightWallet {
             self.mnemonic().unwrap().0.to_seed("").as_slice(),
             zip32::AccountId::ZERO,
         )
-        .map_err(|e| BuildTransactionError::UnifiedSpendKey(e))?;
+        .map_err(BuildTransactionError::UnifiedSpendKey)?;
 
         // We don't support zip320 yet. Only one step.
         if proposal.steps().len() != 1 {

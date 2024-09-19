@@ -155,7 +155,7 @@ impl LightWallet {
             Box::new(|note, transaction| {
                 transaction.status.is_confirmed()
                     && !note.pending_receipt()
-                    && note.value() >= MARGINAL_FEE.into_u64()
+                    && note.value() > MARGINAL_FEE.into_u64()
             });
         self.get_filtered_balance::<D>(filter_function).await
     }
