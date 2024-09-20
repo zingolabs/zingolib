@@ -20,9 +20,13 @@ use super::unified::{Capability, ReceiverSelection, WalletCapability};
 use crate::wallet::traits::ReadableWriteable;
 
 #[derive(Debug)]
+/// Abstraction of how and where the Keys of this wallet
+/// are stored.
 pub enum Keystore {
+    /// In memory representation of the keystore
     InMemory(super::unified::WalletCapability),
     #[cfg(feature = "ledger-support")]
+    /// Keys reside on Ledger wallet
     Ledger(super::ledger::LedgerWalletCapability),
 }
 
@@ -50,7 +54,7 @@ impl Keystore {
             Keystore::Ledger(wc) => wc.get_ua_from_contained_transparent_receiver(receiver),
         }
     }
-
+    /// TODO: Add docs
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         match self {
             Keystore::InMemory(wc) => wc.addresses(),
@@ -77,7 +81,7 @@ impl Keystore {
             Keystore::Ledger(wc) => wc.ufvk(),
         }
     }
-
+    /// TODO: Add docs
     pub fn new_address(
         &self,
         desired_receivers: ReceiverSelection,
@@ -90,7 +94,7 @@ impl Keystore {
             Keystore::Ledger(wc) => wc.new_address(desired_receivers, config),
         }
     }
-
+    /// TODO: Add docs
     pub fn get_taddr_to_secretkey_map(
         &self,
         config: &ZingoConfig,
@@ -101,11 +105,11 @@ impl Keystore {
             Keystore::Ledger(wc) => wc.get_taddr_to_secretkey_map(config),
         }
     }
-
+    /// TODO: Add docs
     pub fn new_from_seed(config: &ZingoConfig, seed: &[u8; 64], position: u32) -> Self {
         WalletCapability::new_from_seed(config, seed, position).into()
     }
-
+    /// TODO: Add docs
     pub fn new_from_phrase(
         config: &ZingoConfig,
         seed_phrase: &Mnemonic,
@@ -119,6 +123,7 @@ impl Keystore {
         WalletCapability::new_from_usk(usk).map(Self::from)
     }
 
+    /// TODO: Add docs
     pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, String> {
         WalletCapability::new_from_ufvk(config, ufvk_encoded).map(Self::from)
     }
@@ -131,6 +136,7 @@ impl Keystore {
         }
     }
 
+    /// TODO: Add docs
     pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
         match self {
             Keystore::InMemory(wc) => wc.first_sapling_address(),
@@ -148,6 +154,7 @@ impl Keystore {
         }
     }
 
+    /// TODO: Add docs
     pub fn get_trees_witness_trees(&self) -> Option<crate::data::witness_trees::WitnessTrees> {
         if self.can_spend_from_all_pools() {
             Some(crate::data::witness_trees::WitnessTrees::default())
@@ -165,7 +172,7 @@ impl Keystore {
         }
     }
 
-    // Checks if there is spendable Orchard balance capability.
+    /// Checks if there is spendable Orchard balance capability.
     pub fn can_spend_orchard(&self) -> bool {
         match self {
             Keystore::InMemory(wc) => matches!(wc.orchard, Capability::Spend(_)),
@@ -174,7 +181,7 @@ impl Keystore {
         }
     }
 
-    // Checks if there is spendable Sapling balance capability.
+    /// Checks if there is spendable Sapling balance capability.
     pub fn can_spend_sapling(&self) -> bool {
         match self {
             Keystore::InMemory(wc) => matches!(wc.sapling, Capability::Spend(_)),
@@ -183,7 +190,7 @@ impl Keystore {
         }
     }
 
-    // Checks if there is capability to view Transparent balances.
+    /// Checks if there is capability to view Transparent balances.
     pub fn can_view_transparent(&self) -> bool {
         match self {
             Keystore::InMemory(wc) => wc.transparent.can_view(),
@@ -195,11 +202,12 @@ impl Keystore {
 
 impl Keystore {
     #[cfg(feature = "ledger-support")]
+    /// TODO: Add docs
     pub fn new_ledger() -> Result<Self, io::Error> {
         let lwc = LedgerWalletCapability::new()?;
         Ok(Self::Ledger(lwc))
     }
-
+    /// get the underlying WalletCapability
     pub fn wc(&self) -> Option<&WalletCapability> {
         match self {
             Self::InMemory(wc) => Some(wc),
@@ -209,12 +217,13 @@ impl Keystore {
     }
 
     #[cfg(feature = "ledger-support")]
+    /// TODO: Add docs
     pub fn ledger_wc(&self) -> Option<&LedgerWalletCapability> {
         let Self::Ledger(wc) = self else { return None };
         Some(wc)
     }
 
-    // Method to get the kind string for the transparent capability
+    /// Method to get the kind string for the transparent capability
     pub fn transparent_kind_str(&self) -> &str {
         match self {
             Keystore::InMemory(wc) => wc.transparent.kind_str(),
@@ -223,7 +232,7 @@ impl Keystore {
         }
     }
 
-    // Similarly for sapling and orchard capabilities
+    /// Similarly for sapling and orchard capabilities
     pub fn sapling_kind_str(&self) -> &str {
         match self {
             Keystore::InMemory(wc) => wc.sapling.kind_str(),
@@ -231,7 +240,7 @@ impl Keystore {
             Keystore::Ledger(wc) => wc.sapling.kind_str(),
         }
     }
-
+    /// TODO: Add docs
     pub fn orchard_kind_str(&self) -> &str {
         match self {
             Keystore::InMemory(wc) => wc.orchard.kind_str(),
@@ -240,6 +249,7 @@ impl Keystore {
         }
     }
 
+    /// TODO: Add docs
     pub fn transparent_capability(
         &self,
     ) -> &Capability<
@@ -253,6 +263,7 @@ impl Keystore {
         }
     }
 
+    /// TODO: Add docs
     pub fn transparent_child_addresses(&self) -> Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>> {
         match self {
             Self::InMemory(wc) => wc.transparent_child_addresses.clone(),

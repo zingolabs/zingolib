@@ -2,8 +2,7 @@
 use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
-use zcash_keys::encoding::AddressCodec;
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::collections::{HashMap, HashSet};
 use tokio::runtime::Runtime;
 
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
@@ -862,11 +861,11 @@ impl LightClient {
                         None
                     } else {
                         let created_block:u32 = transaction_record.status.get_height().into();
-                        let recipient = zcash_client_backend::address::Address::decode(&self.config.chain, &utxo.address);
-                        let taddr = match recipient {
-                        Some(zcash_client_backend::address::Address::Transparent(taddr)) => taddr,
-                            _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
-                        };
+                        // let recipient = zcash_client_backend::address::Address::decode(&self.config.chain, &utxo.address);
+                        // let taddr = match recipient {
+                        // Some(zcash_client_backend::address::Address::Transparent(taddr)) => taddr,
+                        //     _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
+                        // };
                         // let keystore = self.wallet.keystore.read().await;
                         //let address = keystore.clone().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain));
                         // TODO: This should actually decode to a UA but it's not possible inside a sync context.
