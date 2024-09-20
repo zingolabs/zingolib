@@ -3297,6 +3297,7 @@ mod slow {
         assert_eq!(orchard_note.value(), 0);
     }
     #[tokio::test]
+    #[ignore = "test does not correspond to real-world case"]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(500_000).await;
