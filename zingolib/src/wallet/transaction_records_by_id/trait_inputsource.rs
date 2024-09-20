@@ -4,16 +4,20 @@ use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_client_backend::{
     data_api::{InputSource, SpendableNotes},
-    wallet::ReceivedNote,
+    wallet::{ReceivedNote, WalletTransparentOutput},
     ShieldedProtocol,
 };
-use zcash_primitives::transaction::{
-    components::amount::NonNegativeAmount, fees::zip317::MARGINAL_FEE, TxId,
+use zcash_primitives::{
+    legacy::Script,
+    transaction::{
+        components::{amount::NonNegativeAmount, TxOut},
+        fees::zip317::MARGINAL_FEE,
+        TxId,
+    },
 };
 
-use crate::wallet::transaction_records_by_id::TransactionRecordsById;
+use crate::wallet::{notes::OutputInterface, transaction_records_by_id::TransactionRecordsById};
 
-// error type
 use std::fmt::Debug;
 use thiserror::Error;
 
@@ -171,7 +175,8 @@ impl InputSource for TransactionRecordsById {
             .collect::<Result<Vec<_>, _>>()
             .map_err(InputSourceError::InvalidValue)?;
         unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
-        let dust_spendable_index = unselected.partition_point(|(_id, value)| *value < MARGINAL_FEE);
+        let dust_spendable_index =
+            unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
         let _dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
         let mut selected = vec![];
         let mut index_of_unselected = 0;
@@ -280,6 +285,42 @@ impl InputSource for TransactionRecordsById {
         _outpoint: &zcash_primitives::transaction::components::OutPoint,
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         unimplemented!()
+    }
+
+    fn get_spendable_transparent_outputs(
+        &self,
+        _address: &zcash_primitives::legacy::TransparentAddress,
+        target_height: zcash_primitives::consensus::BlockHeight,
+        _min_confirmations: u32,
+    ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
+        // TODO: rewrite to include addresses and min confirmations
+        let transparent_outputs: Vec<WalletTransparentOutput> = self
+            .values()
+            .filter(|tx| {
+                tx.status
+                    .get_confirmed_height()
+                    .map_or(false, |height| height <= target_height)
+            })
+            .flat_map(|tx| {
+                tx.transparent_outputs().iter().filter_map(|output| {
+                    if output.spending_tx_status().is_none() {
+                        WalletTransparentOutput::from_parts(
+                            output.to_outpoint(),
+                            TxOut {
+                                value: NonNegativeAmount::from_u64(output.value())
+                                    .expect("value should be in valid range of zatoshis"),
+                                script_pubkey: Script(output.script.clone()),
+                            },
+                            Some(tx.status.get_height()),
+                        )
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        Ok(transparent_outputs)
     }
 }
 

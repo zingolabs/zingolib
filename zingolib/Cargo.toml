@@ -50,7 +50,6 @@ ff = { workspace = true }
 futures = { workspace = true }
 getset = { workspace = true }
 group = { workspace = true }
-hdwallet = { workspace = true }
 hex = { workspace = true }
 http.workspace = true
 indoc = { workspace = true }
