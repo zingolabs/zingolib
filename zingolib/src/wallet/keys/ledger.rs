@@ -85,18 +85,20 @@ impl From<LedgerError> for std::io::Error {
 }
 
 pub struct LedgerWalletCapability {
+    /// TODO: Add docs
     app: ZcashApp<TransportNativeHID>,
-
+    /// TODO: Add docs
     pub transparent: Capability<
         super::extended_transparent::ExtendedPubKey,
         super::extended_transparent::ExtendedPrivKey,
     >,
+    /// TODO: Add docs
     pub sapling: Capability<
         sapling_crypto::zip32::DiversifiableFullViewingKey,
         sapling_crypto::zip32::ExtendedSpendingKey,
     >,
-    // Even though ledger application does not support orchard protocol
-    // we keep this field just for "compatibility" but always set to Capability::None
+    /// Even though ledger application does not support orchard protocol
+    /// we keep this field just for "compatibility" but always set to Capability::None
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
     // transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
@@ -169,7 +171,7 @@ impl LedgerWalletCapability {
 
         Ok(app)
     }
-
+    /// TODO: Add docs
     pub fn new() -> Result<Self, LedgerError> {
         let app = Self::connect_ledger()?;
         let ledger_id = futures::executor::block_on(Self::get_id(&app))?;
@@ -221,7 +223,7 @@ impl LedgerWalletCapability {
     pub(crate) fn ufvk(&self) -> Result<Ufvk, zcash_address::unified::ParseError> {
         unimplemented!()
     }
-
+    /// TODO: Add docs
     pub fn new_address(
         &self,
         desired_receivers: ReceiverSelection,
@@ -294,7 +296,7 @@ impl LedgerWalletCapability {
 
         todo!("Do the same for shielded address, sapling");
     }
-
+    /// TODO: Add docs
     pub fn t_derivation_path(coin_type: u32, index: u32) -> [KeyIndex; 5] {
         [
             KeyIndex::hardened_from_normalize_index(44).expect("unreachable"),
@@ -391,7 +393,7 @@ impl LedgerWalletCapability {
         BIP44Path::from_slice(path.as_slice()).map_err(|_| LedgerError::InvalidPathLength(5))
     }
 
-    // TODO: Incompatible with our ledger-application as secrets never leave the device
+    /// TODO: Incompatible with our ledger-application as secrets never leave the device
     pub fn get_taddr_to_secretkey_map(
         &self,
         _config: &ZingoConfig,
@@ -400,7 +402,7 @@ impl LedgerWalletCapability {
         // so this method does not makes sense.
         unimplemented!()
     }
-    /// 
+    /// TODO: Add docs
     pub(crate) fn get_all_taddrs(&self, config: &ZingoConfig) -> HashSet<String> {
         let Ok(taddrs) = self.transparent_addrs.read() else {
             return HashSet::new();
@@ -425,7 +427,7 @@ impl LedgerWalletCapability {
             .collect::<HashSet<String>>()
         
     }
-
+    /// TODO: Add docs
     pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
         let Ok(saddrs) = self.shielded_addrs.try_read() else {
             unreachable!()
@@ -461,7 +463,7 @@ impl LedgerWalletCapability {
         true
     }
 
-    //TODO: NAME?????!!
+    ///TODO: NAME?????!!
     pub fn get_trees_witness_trees(&self) -> Option<WitnessTrees> {
         if self.can_spend_from_all_pools() {
             Some(WitnessTrees::default())
