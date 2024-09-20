@@ -302,7 +302,7 @@ impl LedgerWalletCapability {
         let mut sapling: Option<PaymentAddress> = None;
 
         if desired_receivers.sapling {
-            let z_addr = futures::executor::block_on(self.add_zaddr(&""))?;
+            let z_addr = futures::executor::block_on(self.add_zaddr(&"", config))?;
             sapling = Some(z_addr);
         }
 
@@ -485,7 +485,7 @@ impl LedgerWalletCapability {
     }
 
     /// Create a new shielded address with path +1 from the latest one
-    pub async fn add_zaddr(&mut self, optional_path: &str) -> Result<PaymentAddress, String> {
+    pub async fn add_zaddr(&mut self, optional_path: &str, config: &ZingoConfig) -> Result<PaymentAddress, String> {
         let path = match optional_path {
             "" => {
                 //find the highest path we have
@@ -507,7 +507,7 @@ impl LedgerWalletCapability {
                     }).unwrap_or_else(||[
                         // FIXME: Figure out how to not hardcode this
                         ChildIndex::Hardened(32),
-                        ChildIndex::Hardened(133),
+                        ChildIndex::Hardened(config.get_coin_type()),
                         ChildIndex::Hardened(0),
                     ])
             },

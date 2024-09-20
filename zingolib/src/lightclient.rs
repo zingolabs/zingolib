@@ -505,6 +505,7 @@ impl LightClient {
     /// Create a new address, deriving it from the seed.
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface
+        #[cfg(feature = "ledger-support")]
         if self.config.use_ledger && addr_type.contains('o') {
             return Err("Orchard not supported".to_string())
         }
@@ -515,10 +516,10 @@ impl LightClient {
             transparent: addr_type.contains('t'),
         };
 
-        let mut new_address = self
+        let new_address = self
             .wallet
             .keystore
-            .read()
+            .write()
             .await
             .new_address(
                 desired_receivers, 

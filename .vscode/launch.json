@@ -14,6 +14,18 @@
             "cwd": "${fileDirname}",
             "environment": [],
             "console": "externalTerminal"
+        },
+        {
+            "name": "(OSX) Launch",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/zingo-cli",
+            "args": [
+                "--data-dir",
+                "~/tmp/ledger",
+                "--ledger"
+            ],
+            "cwd": "${workspaceRoot}",
         }
     ]
 }
