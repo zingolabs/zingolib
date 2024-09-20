@@ -214,7 +214,7 @@ impl ZingoConfigBuilder {
     #[cfg(feature = "ledger-support")]
     /// set to true to use a ledger hardware wallet
     pub fn set_use_ledger(&mut self, ledger: bool) -> &mut Self {
-        self.set_use_ledger(ledger);
+        self.use_ledger = ledger;
         self
     }
 

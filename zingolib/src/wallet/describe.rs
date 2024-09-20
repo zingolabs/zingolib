@@ -105,7 +105,7 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         let keystore = self.keystore.read().await;
-        
+
         let Keystore::InMemory(ref wc) = *keystore else {
             todo!("Do this for ledger too")
         };
@@ -202,19 +202,22 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &crate::config::ChainType,
         note: &D::WalletNote,
-        keystore: Arc<Keystore>,
+        keystore: Arc<RwLock<Keystore>>,
     ) -> String
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::wc_to_fvk(keystore.as_ref()).expect("to get fvk from wc")
-        .diversified_address(*note.diversifier())
-        .and_then(|address| {
-            D::ua_from_contained_receiver(keystore.as_ref(), &address)
-                .map(|ua| ua.encode(network))
+        Runtime::new().unwrap().block_on(async move {
+            let keystore = keystore.read().await;
+            D::wc_to_fvk(&keystore).expect("to get fvk from wc")
+                .diversified_address(*note.diversifier())
+                .and_then(|address| {
+                    D::ua_from_contained_receiver(&keystore, &address)
+                    .map(|ua| ua.encode(network))
         })
         .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
+        })
     }
 
     /// TODO: Add Doc Comment Here!
@@ -316,12 +319,12 @@ impl LightWallet {
     pub fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
         Runtime::new().unwrap().block_on(async {
             self.keystore
-            .read()
-            .await
-            .transparent_child_addresses()
-            .iter()
-            .map(|(_index, sk)| *sk)
-            .collect::<Vec<_>>()    
+                .read()
+                .await
+                .transparent_child_addresses()
+                .iter()
+                .map(|(_index, sk)| *sk)
+                .collect::<Vec<_>>()
         })
     }
 }

@@ -40,7 +40,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
-    wc: Arc<Keystore>,
+    wc: Arc<RwLock<Keystore>>,
     transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     config: Arc<ZingoConfig>,
 }
@@ -48,7 +48,7 @@ pub struct TrialDecryptions {
 impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
-        wc: Arc<Keystore>,
+        wc: Arc<RwLock<Keystore>>,
         transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
     ) -> Self {
         Self {
@@ -80,19 +80,19 @@ impl TrialDecryptions {
 
         // Create a new channel where we'll receive the blocks
         let (transmitter, mut receiver) = unbounded_channel::<CompactBlock>();
-
-        let wc = self.wc.clone();
         let transaction_metadata_set = self.transaction_metadata_set.clone();
-
+        let wc = self.wc.clone();
         let config = self.config.clone();
         let management_thread_handle = tokio::spawn(async move {
+            
+            let keystore = &*wc.read().await;
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let sapling_ivk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&*wc)
+            let sapling_ivk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(keystore)
                 .ok()
                 .map(|key| key.derive_ivk());
-            let orchard_ivk = orchard::keys::FullViewingKey::try_from(&*wc)
+            let orchard_ivk = orchard::keys::FullViewingKey::try_from(keystore)
                 .ok()
                 .map(|key| key.derive_ivk());
 
@@ -103,7 +103,7 @@ impl TrialDecryptions {
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
                 config,
                 cbs,
-                wc,
+                wc.clone(),
                 bsync_data,
                 sapling_ivk,
                 orchard_ivk,
@@ -130,7 +130,7 @@ impl TrialDecryptions {
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
-        wc: Arc<Keystore>,
+        wc: Arc<RwLock<Keystore>>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: Option<Ivk<SaplingDomain, External>>,
         orchard_ivk: Option<Ivk<OrchardDomain, External>>,
@@ -242,15 +242,18 @@ impl TrialDecryptions {
             r.map_err(|e| e.to_string())??;
         }
         let mut txmds_writelock = transaction_metadata_set.write().await;
+
+        let keystore = &*wc.read().await;
+
         update_witnesses::<SaplingDomain>(
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
-            &wc,
+            keystore,
         )?;
         update_witnesses::<OrchardDomain>(
             orchard_notes_to_mark_position,
             &mut txmds_writelock,
-            &wc,
+            keystore,
         )?;
 
         // Return a nothing-value
@@ -265,7 +268,7 @@ impl TrialDecryptions {
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
         config: &crate::config::ZingoConfig,
-        wc: &Arc<Keystore>,
+        wc: &Arc<RwLock<Keystore>>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
         detected_transaction_id_sender: &UnboundedSender<(
@@ -313,9 +316,10 @@ impl TrialDecryptions {
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let timestamp = compact_block.time;
                     let config = config.clone();
-
+                    
                     workers.push(tokio::spawn(async move {
-                        let Ok(fvk) = D::wc_to_fvk(&wc) else {
+                        let keystore = wc.read().await;
+                        let Ok(fvk) = D::wc_to_fvk(&keystore) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };
@@ -427,7 +431,7 @@ fn update_witnesses<D>(
         BlockHeight,
     )>,
     txmds_writelock: &mut TxMapAndMaybeTrees,
-    wc: &Arc<Keystore>,
+    wc: &Keystore,
 ) -> ZingoLibResult<()>
 where
     D: DomainWalletExt,

@@ -2,6 +2,7 @@
 use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
+use zcash_keys::encoding::AddressCodec;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use tokio::runtime::Runtime;
 
@@ -764,8 +765,7 @@ impl LightClient {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut keystore = self.wallet.keystore.read().await;
-        let mut arc_keystore = Arc::new(*keystore);
+        
         // Collect Sapling notes
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
@@ -773,7 +773,7 @@ impl LightClient {
                     if !all_notes && note_metadata.spending_tx_status().is_some() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, arc_keystore.clone());
+                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, self.wallet.keystore.clone());
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -811,15 +811,14 @@ impl LightClient {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
-        let keystore = self.wallet.keystore.read().await;
-        let arc_keystore = Arc::new(*keystore);
+        
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
                 transaction_metadata.orchard_notes.iter().filter_map(move |note_metadata|
                     if !all_notes && note_metadata.is_spent_confirmed() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, arc_keystore);
+                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, self.wallet.keystore.clone());
                         let spendable = transaction_metadata.status.is_confirmed_after_or_at(&anchor_height) && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
@@ -855,7 +854,7 @@ impl LightClient {
         let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_transparent_note: Vec<JsonValue> = vec![];
         let mut spent_transparent_notes: Vec<JsonValue> = vec![];
-
+        
         self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_record)| {
                 transaction_record.transparent_outputs.iter().filter_map(move |utxo|
@@ -868,7 +867,10 @@ impl LightClient {
                         Some(zcash_client_backend::address::Address::Transparent(taddr)) => taddr,
                             _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
                         };
-
+                        // let keystore = self.wallet.keystore.read().await;
+                        //let address = keystore.clone().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain));
+                        // TODO: This should actually decode to a UA but it's not possible inside a sync context.
+                        let address = utxo.address.clone();
                         let spendable = transaction_record.status.is_confirmed() && utxo.spending_tx_status().is_none();
                         Some(object!{
                             "created_in_block"   => created_block,
@@ -876,7 +878,7 @@ impl LightClient {
                             "created_in_txid"    => format!("{}", transaction_id),
                             "value"              => utxo.value,
                             "scriptkey"          => hex::encode(utxo.script.clone()),
-                            "address"            => self.wallet.keystore().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
+                            "address"            => address,
                             "spendable"          => spendable,
                             "spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
                             "pending_spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),

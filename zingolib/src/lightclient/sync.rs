@@ -437,7 +437,7 @@ impl LightClient {
         // Local state necessary for a transaction fetch
         let transaction_context = TransactionContext::new(
             &self.config,
-            self.wallet.keystore,
+            self.wallet.keystore.clone(),
             self.wallet.transactions(),
         );
 
@@ -460,7 +460,7 @@ impl LightClient {
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(
             Arc::new(self.config.clone()),
-            self.wallet.keystore,
+            self.wallet.keystore.clone(),
             self.wallet.transactions(),
         );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
@@ -502,9 +502,10 @@ impl LightClient {
             });
         };
 
+        let wc = self.wallet.keystore.clone();
         // 1. Fetch the transparent txns only after reorgs are done.
         let taddr_transactions_handle = FetchTaddrTransactions::new(
-            self.wallet.keystore(),
+            wc.clone(),
             Arc::new(self.config.clone()),
         )
         .start(

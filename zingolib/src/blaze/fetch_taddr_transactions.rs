@@ -1,5 +1,6 @@
 use crate::wallet::keys::address_from_pubkeyhash;
 use crate::wallet::keys::keystore::Keystore;
+use tokio::sync::RwLock;
 use zcash_client_backend::proto::service::RawTransaction;
 
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::Transaction;
 
 pub struct FetchTaddrTransactions {
-    wc: Arc<Keystore>,
+    wc: Arc<RwLock<Keystore>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -27,7 +28,7 @@ pub type FetchTaddrRequest = (Vec<String>, u64, u64);
 pub type FetchTaddrResponse = Result<RawTransaction, String>;
 
 impl FetchTaddrTransactions {
-    pub fn new(wc: Arc<Keystore>, config: Arc<ZingoConfig>) -> Self {
+    pub fn new(wc: Arc<RwLock<Keystore>>, config: Arc<ZingoConfig>) -> Self {
         Self { wc, config }
     }
 
@@ -44,8 +45,10 @@ impl FetchTaddrTransactions {
     ) -> JoinHandle<Result<(), String>> {
         let wc = self.wc.clone();
         let config = self.config.clone();
-        tokio::spawn(async move {
+        tokio::spawn(async move {    
             let taddrs = wc
+                .read()
+                .await
                 .addresses()
                 .iter()
                 .filter_map(|ua| ua.transparent())

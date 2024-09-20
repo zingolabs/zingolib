@@ -3,48 +3,49 @@ use std::cmp;
 use crate::wallet::transaction_record::TransactionRecord;
 
 use super::*;
-use crate::wallet::notes::OutputInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::{
+    notes::{OutputInterface, ShieldedNoteInterface},
+    keys::keystore::Keystore
+};
 use zcash_note_encryption::Domain;
 
 impl LightClient {
-    fn add_nonchange_notes<'a, 'b, 'c>(
+    fn add_nonchange_notes<'a, 'b>(
         &'a self,
         transaction_metadata: &'b TransactionRecord,
-        unified_spend_auth: &'c crate::wallet::keys::keystore::Keystore,
+        unified_spend_auth: Arc<RwLock<Keystore>>,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
-        'c: 'b,
     {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, sapling_crypto::note_encryption::SaplingDomain>(
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, sapling_crypto::note_encryption::SaplingDomain>(
             transaction_metadata,
-            unified_spend_auth,
+            unified_spend_auth.clone(),
         )
         .chain(
-            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, orchard::note_encryption::OrchardDomain>(
+            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, orchard::note_encryption::OrchardDomain>(
                 transaction_metadata,
-                unified_spend_auth,
+                unified_spend_auth.clone(),
             ),
         )
     }
 
-    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
+    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, D>(
         &'a self,
         transaction_metadata: &'b TransactionRecord,
-        unified_spend_auth: &'c crate::wallet::keys::keystore::Keystore,
+        unified_spend_auth: Arc<RwLock<Keystore>>,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
-        'c: 'b,
         D: crate::wallet::traits::DomainWalletExt,
         D::WalletNote: 'b,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
+        let wc = unified_spend_auth.clone();
+        D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(move |(i, nd)| {
                     let block_height: u32 = transaction_metadata.status.get_height().into();
-                    let address = LightWallet::note_address::<D>(&self.config.chain, nd, Arc::new(*unified_spend_auth));
+                    let address = LightWallet::note_address::<D>(&self.config.chain, nd, wc.clone());
                     object! {
                         "block_height" => block_height,
                         "pending"      => !transaction_metadata.status.is_confirmed(),
@@ -114,9 +115,7 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     #[allow(deprecated)]
     pub async fn do_list_transactions(&self) -> JsonValue {
-        // Create a list of TransactionItems from wallet transactions
-        let keystore = self.wallet.keystore.read().await;
-
+        // Create a list of TransactionItems from wallet transactions    
         let mut consumer_ui_notes = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -135,7 +134,7 @@ impl LightClient {
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &keystore));
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, self.wallet.keystore.clone()));
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point
