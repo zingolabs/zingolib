@@ -505,13 +505,17 @@ impl LightClient {
     /// Create a new address, deriving it from the seed.
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface
+        if self.config.use_ledger && addr_type.contains('o') {
+            return Err("Orchard not supported".to_string())
+        }
+
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
             orchard: addr_type.contains('o'),
             transparent: addr_type.contains('t'),
         };
 
-        let new_address = self
+        let mut new_address = self
             .wallet
             .keystore
             .read()

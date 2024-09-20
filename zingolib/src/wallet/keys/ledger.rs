@@ -1,3 +1,6 @@
+use hdwallet::rand_core::le;
+use jubjub::Fr;
+use ledger_zcash::zcash::primitives::zip32::ChildIndex;
 use ripemd160::Ripemd160;
 use sha2::{Digest, Sha256};
 use zcash_primitives::consensus::NetworkConstants;
@@ -235,7 +238,7 @@ impl LedgerWalletCapability {
     }
     /// TODO: Add docs
     pub fn new_address(
-        &self,
+        &mut self,
         desired_receivers: ReceiverSelection,
         config: &ZingoConfig,
     ) -> Result<UnifiedAddress, String> {
@@ -247,15 +250,19 @@ impl LedgerWalletCapability {
         }
 
         let previous_num_addresses = self.addresses.len();
-
-        if desired_receivers.transparent {
-            let count = self
+        let mut transparent: Option<TransparentAddress> = None;
+        let count = self
                 .transparent_addrs
                 .read()
                 .map_err(|e| format!("Error: {e}"))?
                 .len();
-
-            let path = Self::t_derivation_path(config.get_coin_type(), count as _);
+        let path = Self::t_derivation_path(config.get_coin_type(), count as _);
+        if desired_receivers.transparent {
+            // let count = self
+            //     .transparent_addrs
+            //     .read()
+            //     .map_err(|e| format!("Error: {e}"))?
+            //     .len();
 
             let t_pubkey = futures::executor::block_on(self.get_t_pubkey(&path))
                 .map_err(|e| format!("Error: {e}"))?;
@@ -270,7 +277,7 @@ impl LedgerWalletCapability {
             // other than implementing it ourselves.
             #[allow(deprecated)]
             let t_addrs = zcash_primitives::legacy::keys::pubkey_to_address(&t_pubkey);
-            let ua = UnifiedAddress::from_receivers(None, None, Some(t_addrs));
+            transparent = Some(t_addrs);
 
             if self
                 .addresses_write_lock
@@ -278,23 +285,11 @@ impl LedgerWalletCapability {
             {
                 return Err("addresses_write_lock collision!".to_string());
             }
-            let ua = match ua {
-                Some(address) => address,
-                None => {
-                    self.addresses_write_lock
-                        .swap(false, atomic::Ordering::Release);
-                    return Err(
-                        "Invalid receivers requested! At least one of sapling or transparent required, orchard is not supported"
-                            .to_string(),
-                    );
-                }
-            };
-
+            
             // TODO: Do we want to keep to separate lists for transparent address and keys?
             // what is appending in one fails whereas the other succeded?
-            self.addresses.push(ua.clone());
+            self.transparent_child_addresses.push((count, t_addrs.clone()));
 
-            assert_eq!(self.addresses.len(), previous_num_addresses + 1);
             self.addresses_write_lock
                 .swap(false, atomic::Ordering::Release);
 
@@ -304,7 +299,31 @@ impl LedgerWalletCapability {
                 .map_err(|e| format!("Error: {e}"))?;
         }
 
-        todo!("Do the same for shielded address, sapling");
+        let mut sapling: Option<PaymentAddress> = None;
+
+        if desired_receivers.sapling {
+            let z_addr = futures::executor::block_on(self.add_zaddr(&""))?;
+            sapling = Some(z_addr);
+        }
+
+        
+        self.addresses_write_lock
+                    .swap(false, atomic::Ordering::Release);
+        let ua = match UnifiedAddress::from_receivers(None, sapling, transparent) {
+            Some(address) => address,
+            None => {
+                return Err(
+                    "Invalid receivers requested! At least one of sapling or transparent required, orchard is not supported"
+                        .to_string(),
+                );
+            }
+        };
+
+        self.addresses.push(ua.clone());
+        assert_eq!(self.addresses.len(), previous_num_addresses + 1);
+
+        Ok(ua)
+        
     }
     /// TODO: Add docs
     pub fn t_derivation_path(coin_type: u32, index: u32) -> [KeyIndex; 5] {
@@ -465,12 +484,142 @@ impl LedgerWalletCapability {
             .and_then(|(ivk, d, _)| ivk.to_payment_address(*d))
     }
 
+    /// Create a new shielded address with path +1 from the latest one
+    pub async fn add_zaddr(&mut self, optional_path: &str) -> Result<PaymentAddress, String> {
+        let path = match optional_path {
+            "" => {
+                //find the highest path we have
+
+                    self
+                    .shielded_addrs
+                    .get_mut()
+                    .map_err(|e| e.to_string())?
+                    
+                    .keys()
+                    .last()
+                    .cloned()
+                    .map(|path| {
+                        [
+                            ChildIndex::from_index(path[0]),
+                            ChildIndex::from_index(path[1]),
+                            ChildIndex::from_index(path[2] + 1),
+                        ]
+                    }).unwrap_or_else(||[
+                        // FIXME: Figure out how to not hardcode this
+                        ChildIndex::Hardened(32),
+                        ChildIndex::Hardened(133),
+                        ChildIndex::Hardened(0),
+                    ])
+            },
+            val => {
+                match Self::convert_path_to_num(val, 3) {
+                    Ok(addr) =>
+                        [
+                            addr.get(0).cloned().unwrap(),
+                            addr.get(1).cloned().unwrap(),
+                            addr.get(2).cloned().unwrap()
+                        ],
+                    Err(e) => {
+                            return Err(e.to_string())
+                        }
+                }
+            }
+        };
+
+        let addr = self.get_z_payment_address(&path)
+            .await;
+        match addr {
+            Ok(sapling_address) => Ok(sapling_address),
+            Err(ledger_error) => Err(ledger_error.to_string())
+        }
+
+        
+    }
+
+    async fn get_z_payment_address(&self, path: &[ChildIndex]) -> Result<PaymentAddress, LedgerError> {
+        if path.len() != 3 {
+            return Err(LedgerError::InvalidPathLength(3));
+        }
+
+        let path = {
+            let elements = path
+                .iter()
+                .map(|ci| match ci {
+                    ChildIndex::NonHardened(i) => *i,
+                    ChildIndex::Hardened(i) => *i + (1 << 31),
+                })
+                .enumerate();
+
+            let mut array = [0; 3];
+            for (i, e) in elements {
+                array[i] = e;
+            }
+
+            array
+        };
+
+        match self.payment_address_from_path(&path) {
+            Some(key) => Ok(key),
+            None => {
+                let fr = self.app.get_ivk(path[2]).await.unwrap();
+                // FIXME: figure out what the hell is going on with these types
+                let ivk = SaplingIvk(Fr::from_bytes(&fr).unwrap());
+
+                let div = self.get_default_div(path[2]).await?;
+
+                let ovk = self.app.get_ovk(path[2]).await.map(|ovk| OutgoingViewingKey(ovk))?;
+
+                let addr = ivk
+                    .to_payment_address(div)
+                    .expect("guaranteed valid diversifier should get a payment address");
+
+                let mut addresses = self.shielded_addrs.write()
+                    .map_err(|_| LedgerAppError::Unknown(0))?;
+                addresses.insert(path, (ivk, div, ovk));
+                Ok(addr)
+            }
+        }
+    }
+    
+
     /// Returns a selection of pools where the wallet can spend funds.
     pub fn can_spend_from_all_pools(&self) -> bool {
         // TODO: as a ledger application, we can either view or spend
         // as our keys lives there.
         // self.sapling.can_spend() && self.transparent.can_spend()
         true
+    }
+
+    /// Retrieve the defualt diversifier from a given device and path
+    ///
+    /// The defualt diversifier is the first valid diversifier starting
+    /// from index 0
+    async fn get_default_div_from(app: &ZcashApp<TransportNativeHID>, idx: u32) -> Result<Diversifier, LedgerError> {
+        let mut index = DiversifierIndex::new();
+
+        loop {
+            let divs = app.get_div_list(idx, index.as_bytes()).await?;
+            let divs: &[[u8; 11]] = bytemuck::cast_slice(&divs);
+
+            //find the first div that is not all 0s
+            // all 0s is when it's an invalid diversifier
+            for div in divs {
+                if div != &[0; 11] {
+                    return Ok(Diversifier(*div));
+                }
+
+                //increment the index for each diversifier returned
+                index.increment().map_err(|_| LedgerError::DiversifierIndexOverflow)?;
+            }
+        }
+    }
+
+    /// Retrieve the default diversifier for a given path
+    ///
+    /// The default diversifier is the first valid diversifier starting from
+    /// index 0
+    pub async fn get_default_div(&self, idx: u32) -> Result<Diversifier, LedgerError> {
+        Self::get_default_div_from(&self.app, idx).await
     }
 
     ///TODO: NAME?????!!
@@ -525,6 +674,56 @@ impl LedgerWalletCapability {
                     .map_err(|_| LedgerError::DiversifierIndexOverflow)?;
             }
         }
+    }
+
+    fn convert_path_to_num(path_str: &str, child_index_len: usize) -> Result<Vec<ChildIndex>, &'static str> {
+        let path_parts: Vec<&str> = path_str.split('/').collect();
+        let mut path = Vec::new();
+    
+        if path_parts.len() != child_index_len{
+            return Err("invalid path");
+        }
+    
+        for part in path_parts {
+            let value = if part.ends_with('\'') {
+                0x80000000 | part.trim_end_matches('\'').parse::<u32>().unwrap()
+            } else {
+                part.parse::<u32>().unwrap()
+            };
+            path.push(ChildIndex::from_index(value));
+        }
+    
+        Ok(path)
+    }
+
+
+    fn convert_path_to_str(path_num: Vec<ChildIndex>) -> Result<String, &'static str> {
+        let mut path = Vec::new();
+
+        for part in path_num.into_iter() {
+            let (value, is_hardened) = match part {
+                ChildIndex::NonHardened(num) => (num, false),
+                ChildIndex::Hardened(num) => (num, true)
+            };
+
+            let mut value: String = value.to_string();
+            if is_hardened {
+            value.push('\'');
+            }
+
+            path.push(value);
+        }
+
+        Ok(path.join("/"))
+    }
+
+    fn convert_path_slice_to_string(path_slice: [u32; 5]) -> String{
+        let mut path_vec = Vec::new();
+        for i in 0..path_slice.len() {
+            path_vec.push( ChildIndex::from_index(path_slice[i]));
+        }
+
+        Self::convert_path_to_str(path_vec).unwrap()
     }
 }
 

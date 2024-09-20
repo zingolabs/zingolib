@@ -69,6 +69,8 @@ pub fn load_clientconfig(
     data_dir: Option<PathBuf>,
     chain: ChainType,
     monitor_mempool: bool,
+    #[cfg(feature = "ledger-support")]
+    ledger: bool,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
     format!(
@@ -94,7 +96,7 @@ pub fn load_clientconfig(
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         accept_server_txids: false,
         #[cfg(feature = "ledger-support")]
-        use_ledger: false,
+        use_ledger: ledger,
     };
 
     Ok(config)

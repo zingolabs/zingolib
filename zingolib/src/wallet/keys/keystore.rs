@@ -83,7 +83,7 @@ impl Keystore {
     }
     /// TODO: Add docs
     pub fn new_address(
-        &self,
+        &mut self,
         desired_receivers: ReceiverSelection,
         #[cfg(feature = "ledger-support")]
         config: &ZingoConfig,

@@ -849,6 +849,8 @@ pub mod scenarios {
                     Some(conf_path),
                     crate::config::ChainType::Regtest(regtest_network),
                     true,
+                    #[cfg(feature = "ledger-support")]
+                    false,
                 )
                 .unwrap()
             }

@@ -17,6 +17,8 @@ impl LightWallet {
             None,
             crate::config::ChainType::Regtest(crate::config::RegtestNetwork::all_upgrades_active()),
             true,
+            #[cfg(feature = "ledger-support")]
+            false,
         )
         .unwrap();
         Self::read_internal(data, &config)

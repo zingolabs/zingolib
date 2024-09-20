@@ -343,7 +343,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
 
         let clean_regtest_data = !matches.get_flag("no-clean");
         #[cfg(feature = "ledger-support")]
-        let ledger = !matches.get_flag("ledger");
+        let ledger = matches.get_flag("ledger");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
@@ -431,6 +431,7 @@ pub fn startup(
         Some(data_dir),
         filled_template.chaintype,
         true,
+        filled_template.ledger,
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
