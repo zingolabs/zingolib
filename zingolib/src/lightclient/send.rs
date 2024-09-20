@@ -370,7 +370,6 @@ pub mod send_with_proposal {
             ))
             .await;
             let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
-            let _ = lc.do_sync(true).await;
 
             lc.quick_shield()
                 .await
