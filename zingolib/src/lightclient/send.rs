@@ -361,7 +361,7 @@ pub mod send_with_proposal {
         }
 
         #[tokio::test]
-        async fn testnet_shield_diversified() {
+        async fn testnet_shield_multi_account() {
             std::env::set_var("RUST_BACKTRACE", "1");
             let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
                 ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
