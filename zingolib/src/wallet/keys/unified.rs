@@ -12,11 +12,14 @@ use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
+use zcash_primitives::legacy::keys::{IncomingViewingKey, NonHardenedChildIndex};
 
 use crate::config::{ChainType, ZingoConfig};
+use crate::wallet::error::KeyError;
 use secp256k1::SecretKey;
-use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
+use zcash_address::unified::{Encoding, Typecode, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::{CompactSize, Vector};
@@ -25,10 +28,7 @@ use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
-use super::{
-    extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
-    get_zaddr_from_bip39seed, ToBase58Check,
-};
+use super::{extended_transparent::ExtendedPrivKey, ToBase58Check};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug)]
@@ -72,8 +72,8 @@ impl<V, S> Capability<V, S> {
 pub struct WalletCapability {
     /// TODO: Add Doc Comment Here!
     pub transparent: Capability<
-        super::extended_transparent::ExtendedPubKey,
-        super::extended_transparent::ExtendedPrivKey,
+        zcash_primitives::legacy::keys::AccountPubKey,
+        zcash_primitives::legacy::keys::AccountPrivKey,
     >,
     /// TODO: Add Doc Comment Here!
     pub sapling: Capability<
@@ -185,26 +185,6 @@ impl WalletCapability {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn ufvk(&self) -> Result<Ufvk, std::string::String> {
-        use zcash_address::unified::Fvk as UfvkComponent;
-        let o_fvk =
-            UfvkComponent::Orchard(orchard::keys::FullViewingKey::try_from(self)?.to_bytes());
-        let s_fvk = UfvkComponent::Sapling(
-            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?.to_bytes(),
-        );
-        let mut t_fvk_bytes = [0u8; 65];
-        let possible_transparent_key: Result<ExtendedPubKey, String> = self.try_into();
-        if let Ok(t_ext_pk) = possible_transparent_key {
-            t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
-            t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
-            let t_fvk = UfvkComponent::P2pkh(t_fvk_bytes);
-            Ufvk::try_from_items(vec![o_fvk, s_fvk, t_fvk]).map_err(|e| e.to_string())
-        } else {
-            Ufvk::try_from_items(vec![o_fvk, s_fvk]).map_err(|e| e.to_string())
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
     pub fn new_address(
         &self,
         desired_receivers: ReceiverSelection,
@@ -228,7 +208,7 @@ impl WalletCapability {
                 Err(e) => {
                     self.addresses_write_lock
                         .swap(false, atomic::Ordering::Release);
-                    return Err(e);
+                    return Err(e.to_string());
                 }
             };
             Some(fvk.address_at(self.addresses.len(), orchard::keys::Scope::External))
@@ -261,41 +241,20 @@ impl WalletCapability {
         };
 
         let transparent_receiver = if desired_receivers.transparent {
-            let child_index = KeyIndex::from_index(self.addresses.len() as u32);
-            let child_pk = match &self.transparent {
-                Capability::Spend(ext_sk) => {
-                    let secp = secp256k1::Secp256k1::new();
-                    Some(
-                        match ext_sk.derive_private_key(child_index) {
-                            Err(e) => {
-                                self.addresses_write_lock
-                                    .swap(false, atomic::Ordering::Release);
-                                return Err(format!(
-                                    "Transparent private key derivation failed: {e}"
-                                ));
-                            }
-                            Ok(res) => res.private_key,
-                        }
-                        .public_key(&secp),
-                    )
+            let child_index = NonHardenedChildIndex::from_index(self.addresses.len() as u32)
+                .expect("hardened bit should not be set for non-hardened child indexes");
+            let external_pubkey = match &self.transparent {
+                Capability::Spend(private_key) => {
+                    private_key.to_account_pubkey().derive_external_ivk().ok()
                 }
-                Capability::View(ext_pk) => Some(match ext_pk.derive_public_key(child_index) {
-                    Err(e) => {
-                        self.addresses_write_lock
-                            .swap(false, atomic::Ordering::Release);
-                        return Err(format!("Transparent public key derivation failed: {e}"));
-                    }
-                    Ok(res) => res.public_key,
-                }),
+                Capability::View(public_key) => public_key.derive_external_ivk().ok(),
                 Capability::None => None,
             };
-            if let Some(pk) = child_pk {
-                self.transparent_child_addresses.push((
-                    self.addresses.len(),
-                    #[allow(deprecated)]
-                    zcash_primitives::legacy::keys::pubkey_to_address(&pk),
-                ));
-                Some(pk)
+            if let Some(pk) = external_pubkey {
+                let t_addr = pk.derive_address(child_index).unwrap();
+                self.transparent_child_addresses
+                    .push((self.addresses.len(), t_addr));
+                Some(t_addr)
             } else {
                 None
             }
@@ -307,11 +266,7 @@ impl WalletCapability {
             orchard_receiver,
             sapling_receiver,
             #[allow(deprecated)]
-            transparent_receiver
-                .as_ref()
-                // This is deprecated. Not sure what the alternative is,
-                // other than implementing it ourselves.
-                .map(zcash_primitives::legacy::keys::pubkey_to_address),
+            transparent_receiver,
         );
         let ua = match ua {
             Some(address) => address,
@@ -335,11 +290,11 @@ impl WalletCapability {
     pub fn get_taddr_to_secretkey_map(
         &self,
         chain: &ChainType,
-    ) -> Result<HashMap<String, secp256k1::SecretKey>, String> {
+    ) -> Result<HashMap<String, secp256k1::SecretKey>, KeyError> {
         if let Capability::Spend(transparent_sk) = &self.transparent {
             self.transparent_child_addresses()
                 .iter()
-                .map(|(i, taddr)| -> Result<_, String> {
+                .map(|(i, taddr)| -> Result<_, KeyError> {
                     let hash = match taddr {
                         TransparentAddress::PublicKeyHash(hash) => hash,
                         TransparentAddress::ScriptHash(hash) => hash,
@@ -347,37 +302,38 @@ impl WalletCapability {
                     Ok((
                         hash.to_base58check(&chain.b58_pubkey_address_prefix(), &[]),
                         transparent_sk
-                            .derive_private_key(KeyIndex::Normal(*i as u32))
-                            .map_err(|e| e.to_string())?
-                            .private_key,
+                            .derive_external_secret_key(
+                                NonHardenedChildIndex::from_index(*i as u32)
+                                    .ok_or(KeyError::InvalidNonHardenedChildIndex)?,
+                            )
+                            .map_err(|_| KeyError::KeyDerivationError)?,
                     ))
                 })
                 .collect::<Result<_, _>>()
         } else {
-            Err("Wallet is no capable to spend transparent funds".to_string())
+            Err(KeyError::NoSpendCapability)
         }
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn new_from_seed(config: &ZingoConfig, seed: &[u8; 64], position: u32) -> Self {
-        let (sapling_key, _, _) = get_zaddr_from_bip39seed(config, seed, position);
-        let transparent_parent_key =
-            super::extended_transparent::ExtendedPrivKey::get_ext_taddr_from_bip39seed(
-                config, seed, position,
-            );
-
-        let orchard_key = orchard::keys::SpendingKey::from_zip32_seed(
+    pub fn new_from_seed(
+        config: &ZingoConfig,
+        seed: &[u8; 64],
+        position: u32,
+    ) -> Result<Self, KeyError> {
+        let usk = UnifiedSpendingKey::from_seed(
+            &config.chain,
             seed,
-            config.chain.coin_type(),
-            AccountId::try_from(position).unwrap(),
+            AccountId::try_from(position).map_err(KeyError::InvalidAccountId)?,
         )
-        .unwrap();
-        Self {
-            orchard: Capability::Spend(orchard_key),
-            sapling: Capability::Spend(sapling_key),
-            transparent: Capability::Spend(transparent_parent_key),
+        .map_err(|_| KeyError::KeyDerivationError)?;
+
+        Ok(Self {
+            orchard: Capability::Spend(usk.orchard().clone()),
+            sapling: Capability::Spend(usk.sapling().clone()),
+            transparent: Capability::Spend(usk.transparent().clone()),
             ..Default::default()
-        }
+        })
     }
 
     /// TODO: Add Doc Comment Here!
@@ -385,80 +341,50 @@ impl WalletCapability {
         config: &ZingoConfig,
         seed_phrase: &Mnemonic,
         position: u32,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, KeyError> {
         // The seed bytes is the raw entropy. To pass it to HD wallet generation,
         // we need to get the 64 byte bip39 entropy
         let bip39_seed = seed_phrase.to_seed("");
-        Ok(Self::new_from_seed(config, &bip39_seed, position))
+        Self::new_from_seed(config, &bip39_seed, position)
     }
 
     /// Creates a new `WalletCapability` from a unified spending key.
-    pub fn new_from_usk(usk: &[u8]) -> Result<Self, String> {
+    pub fn new_from_usk(usk: &[u8]) -> Result<Self, KeyError> {
         // Decode unified spending key
         let usk = UnifiedSpendingKey::from_bytes(Era::Orchard, usk)
-            .map_err(|_| "Error decoding unified spending key.")?;
-
-        // Workaround https://github.com/zcash/librustzcash/issues/929 by serializing and deserializing the transparent key.
-        let transparent_bytes = usk.transparent().to_bytes();
-        let transparent_ext_key = transparent_key_from_bytes(transparent_bytes.as_slice())
-            .map_err(|e| format!("Error processing transparent key: {}", e))?;
+            .map_err(|_| KeyError::KeyDecodingError)?;
 
         Ok(Self {
-            orchard: Capability::Spend(usk.orchard().to_owned()),
-            sapling: Capability::Spend(usk.sapling().to_owned()),
-            transparent: Capability::Spend(transparent_ext_key),
+            orchard: Capability::Spend(usk.orchard().clone()),
+            sapling: Capability::Spend(usk.sapling().clone()),
+            transparent: Capability::Spend(usk.transparent().clone()),
             ..Default::default()
         })
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, String> {
+    pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, KeyError> {
         // Decode UFVK
         if ufvk_encoded.starts_with(config.chain.hrp_sapling_extended_full_viewing_key()) {
-            return Err("Viewing keys must be imported in the unified format".to_string());
+            return Err(KeyError::InvalidFormat);
         }
-        let (network, ufvk) = Ufvk::decode(&ufvk_encoded)
-            .map_err(|e| format!("Error decoding unified full viewing key: {}", e))?;
+        let (network, ufvk) =
+            Ufvk::decode(&ufvk_encoded).map_err(|_| KeyError::KeyDecodingError)?;
         if network != config.chain.network_type() {
-            return Err("Given UFVK is not valid for current chain".to_string());
+            return Err(KeyError::NetworkMismatch);
         }
+        let ufvk = UnifiedFullViewingKey::parse(&ufvk).unwrap();
 
-        // Initialize an instance with no capabilities.
-        let mut wc = WalletCapability::default();
-        for fvk in ufvk.items() {
-            use zcash_address::unified::Fvk as UfvkComponent;
-            match fvk {
-                UfvkComponent::Orchard(key_bytes) => {
-                    wc.orchard = Capability::View(
-                        orchard::keys::FullViewingKey::from_bytes(&key_bytes)
-                            .ok_or("Orchard FVK deserialization failed")?,
-                    );
-                }
-                UfvkComponent::Sapling(key_bytes) => {
-                    wc.sapling = Capability::View(
-                        sapling_crypto::zip32::DiversifiableFullViewingKey::read(
-                            &key_bytes[..],
-                            (),
-                        )
-                        .map_err(|e| e.to_string())?,
-                    );
-                }
-                UfvkComponent::P2pkh(key_bytes) => {
-                    wc.transparent = Capability::View(ExtendedPubKey {
-                        chain_code: key_bytes[0..32].to_vec(),
-                        public_key: secp256k1::PublicKey::from_slice(&key_bytes[32..65])
-                            .map_err(|e| e.to_string())?,
-                    });
-                }
-                UfvkComponent::Unknown { typecode, data: _ } => {
-                    log::info!(
-                        "Unknown receiver of type {} found in Unified Viewing Key",
-                        typecode
-                    );
-                }
-            }
-        }
-        Ok(wc)
+        Ok(Self {
+            orchard: Capability::View(ufvk.orchard().ok_or(KeyError::MissingViewingKey)?.clone()),
+            sapling: Capability::View(ufvk.sapling().ok_or(KeyError::MissingViewingKey)?.clone()),
+            transparent: Capability::View(
+                ufvk.transparent()
+                    .ok_or(KeyError::MissingViewingKey)?
+                    .clone(),
+            ),
+            ..Default::default()
+        })
     }
 
     pub(crate) fn get_all_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
@@ -673,74 +599,68 @@ where
     __scope: PhantomData<Scope>,
 }
 
-impl TryFrom<&WalletCapability> for super::extended_transparent::ExtendedPrivKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+impl TryFrom<&WalletCapability> for zcash_primitives::legacy::keys::AccountPrivKey {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, Self::Error> {
         match &wc.transparent {
             Capability::Spend(sk) => Ok(sk.clone()),
-            _ => Err("The wallet is not capable of spending transparent funds".to_string()),
+            _ => Err(KeyError::NoSpendCapability),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for sapling_crypto::zip32::ExtendedSpendingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, KeyError> {
         match &wc.sapling {
             Capability::Spend(sk) => Ok(sk.clone()),
-            _ => Err("The wallet is not capable of spending Sapling funds".to_string()),
+            _ => Err(KeyError::NoSpendCapability),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::SpendingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, KeyError> {
         match &wc.orchard {
             Capability::Spend(sk) => Ok(*sk),
-            _ => Err("The wallet is not capable of spending Orchard funds".to_string()),
+            _ => Err(KeyError::NoSpendCapability),
         }
     }
 }
 
-impl TryFrom<&WalletCapability> for super::extended_transparent::ExtendedPubKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+impl TryFrom<&WalletCapability> for zcash_primitives::legacy::keys::AccountPubKey {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, Self::Error> {
         match &wc.transparent {
-            Capability::Spend(ext_sk) => Ok(ExtendedPubKey::from(ext_sk)),
-            Capability::View(ext_pk) => Ok(ext_pk.clone()),
-            Capability::None => {
-                Err("The wallet is not capable of viewing transparent funds".to_string())
-            }
+            Capability::Spend(priv_key) => Ok(priv_key.to_account_pubkey()),
+            Capability::View(pub_key) => Ok(pub_key.clone()),
+            Capability::None => Err(KeyError::NoViewCapability),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::FullViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, KeyError> {
         match &wc.orchard {
             Capability::Spend(sk) => Ok(orchard::keys::FullViewingKey::from(sk)),
             Capability::View(fvk) => Ok(fvk.clone()),
-            Capability::None => {
-                Err("The wallet is not capable of viewing Orchard funds".to_string())
-            }
+            Capability::None => Err(KeyError::NoViewCapability),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for sapling_crypto::zip32::DiversifiableFullViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, KeyError> {
         match &wc.sapling {
             Capability::Spend(sk) => {
                 let dfvk = sk.to_diversifiable_full_viewing_key();
                 Ok(dfvk)
             }
             Capability::View(fvk) => Ok(fvk.clone()),
-            Capability::None => {
-                Err("The wallet is not capable of viewing Sapling funds".to_string())
-            }
+            Capability::None => Err(KeyError::NoViewCapability),
         }
     }
 }
@@ -790,16 +710,16 @@ impl Fvk<SaplingDomain> for sapling_crypto::zip32::DiversifiableFullViewingKey {
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::OutgoingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, KeyError> {
         let fvk: orchard::keys::FullViewingKey = wc.try_into()?;
         Ok(fvk.to_ovk(orchard::keys::Scope::External))
     }
 }
 
 impl TryFrom<&WalletCapability> for sapling_crypto::keys::OutgoingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = KeyError;
+    fn try_from(wc: &WalletCapability) -> Result<Self, KeyError> {
         let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey = wc.try_into()?;
         Ok(fvk.fvk().ovk)
     }
@@ -846,38 +766,4 @@ impl TryFrom<&WalletCapability> for UnifiedSpendingKey {
             )),
         }
     }
-}
-
-#[cfg(test)]
-pub async fn get_transparent_secretkey_pubkey_taddr(
-    lightclient: &crate::lightclient::LightClient,
-) -> (
-    Option<secp256k1::SecretKey>,
-    Option<secp256k1::PublicKey>,
-    Option<String>,
-) {
-    use super::address_from_pubkeyhash;
-
-    let wc = lightclient.wallet.wallet_capability();
-    // 2. Get an incoming transaction to a t address
-    let (sk, pk) = match &wc.transparent {
-        Capability::None => (None, None),
-        Capability::View(ext_pk) => {
-            let child_ext_pk = ext_pk.derive_public_key(KeyIndex::Normal(0)).ok();
-            (None, child_ext_pk.map(|x| x.public_key))
-        }
-        Capability::Spend(master_sk) => {
-            let secp = secp256k1::Secp256k1::new();
-            let extsk = master_sk
-                .derive_private_key(KeyIndex::Normal(wc.transparent_child_addresses[0].0 as u32))
-                .unwrap();
-            let pk = extsk.private_key.public_key(&secp);
-            #[allow(deprecated)]
-            (Some(extsk.private_key), Some(pk))
-        }
-    };
-    let taddr = wc.addresses()[0]
-        .transparent()
-        .map(|taddr| address_from_pubkeyhash(&lightclient.config, *taddr));
-    (sk, pk, taddr)
 }
