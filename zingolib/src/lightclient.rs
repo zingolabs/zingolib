@@ -425,7 +425,7 @@ pub mod propose;
 use tokio::runtime::Runtime;
 // other functions
 impl LightClient {
-
+    /// TODO: Add Doc Comment Here!
     pub fn do_wallet_kind_sync(&self) -> String {
         Runtime::new().unwrap().block_on(async move {
              self.do_wallet_kind().await 
@@ -433,8 +433,10 @@ impl LightClient {
         )
     }
 
+    /// TODO: Add Doc Comment Here!
     pub async fn do_wallet_kind(&self) -> String {
         match *self.wallet.keystore.read().await {
+            #[cfg(feature = "ledger-support")]
             Keystore::Ledger(_) => "ledger",
             Keystore::InMemory(_) => "memory"
         }

@@ -1,7 +1,6 @@
 use ripemd160::Ripemd160;
 use sha2::{Digest, Sha256};
-use zcash_keys::encoding::AddressCodec;
-use zcash_primitives::consensus::{self, NetworkConstants, Parameters};
+use zcash_primitives::consensus::NetworkConstants;
 use std::collections::BTreeMap;
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::{Arc, RwLock};
@@ -45,24 +44,32 @@ use crate::wallet::traits::ReadableWriteable;
 use super::unified::{Capability, ReceiverSelection};
 
 #[derive(Debug, thiserror::Error)]
+/// Ledger Errors
 pub enum LedgerError {
     #[error("Error: unable to create keystore")]
+    /// TODO: Add docs
     InitializationError(#[from] LedgerHIDError),
 
     #[error("Error: error from inner builder: {}", .0)]
+    /// TODO: Add docs
     Builder(#[from] BuilderError),
     #[error("Error: error when communicating with ledger: {}", .0)]
+    /// TODO: Add docs
     Ledger(#[from] LedgerAppError<<TransportNativeHID as Exchange>::Error>),
 
     #[error("Error: the provided derivation path length was invalid, expected {} elements", .0)]
+    /// TODO: Add docs
     InvalidPathLength(usize),
     #[error("Error: unable to parse public key returned from ledger")]
+    /// TODO: Add docs
     InvalidPublicKey,
 
     #[error("Error: attempted to overflow diversifier index")]
+    /// TODO: Add docs
     DiversifierIndexOverflow,
 
     #[error("Error: requested key was not found in keystore")]
+    /// TODO: Add docs
     KeyNotFound,
 }
 
@@ -83,7 +90,7 @@ impl From<LedgerError> for std::io::Error {
         std::io::Error::new(kind, err)
     }
 }
-
+/// Wallet Capability trait of a Ledger Device
 pub struct LedgerWalletCapability {
     /// TODO: Add docs
     app: ZcashApp<TransportNativeHID>,
@@ -192,6 +199,9 @@ impl LedgerWalletCapability {
         })
     }
 
+    // TODO: (Pacu) this is commented because the describe.rs file
+    // uses this in a non async context and we have to figure out 
+    // how to better refactor that.
     pub(crate) fn get_ua_from_contained_transparent_receiver(
         &self,
         receiver: &TransparentAddress,
@@ -202,9 +212,9 @@ impl LedgerWalletCapability {
             .cloned()
     }
 
-    // TODO: in our ledger-app integration we do keep a list of paths
-    // not pub/priv keys so it is necessary to figure out how to compute
-    // unified addresses from that list.
+    /// TODO: in our ledger-app integration we do keep a list of paths
+    /// not pub/priv keys so it is necessary to figure out how to compute
+    /// unified addresses from that list.
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }

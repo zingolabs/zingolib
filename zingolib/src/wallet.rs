@@ -385,6 +385,7 @@ impl LightWallet {
                 )?;
                 (wc, None)
             },
+            #[cfg(feature = "ledger-support")]
             WalletBase::Ledger => {
                 let ledger = Keystore::new_ledger()
                 .map_err(
@@ -492,6 +493,12 @@ impl LightWallet {
     }
 }
 
+impl LightWallet {
+    /// TODO: make this only available for tests
+    pub fn keystore(&self) -> Arc<RwLock<Keystore>> {
+        self.keystore.clone()
+    }
+}
 #[cfg(test)]
 mod tests {
     use incrementalmerkletree::frontier::CommitmentTree;
