@@ -60,6 +60,8 @@ pub enum ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion {
     V27,
     /// wallet was last saved in this serialization version
     V28,
+    /// wallet was last saved at this commit
+    G2f3830058,
 }
 /// /
 #[non_exhaustive]
@@ -128,6 +130,14 @@ impl LightWallet {
             )) => {
                 LightWallet::unsafe_from_buffer_testnet(include_bytes!(
                     "examples/testnet/cbbhrwiilgbrababsshsmtpr/v28/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::G2f3830058,
+            )) => {
+                LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                    "examples/testnet/cbbhrwiilgbrababsshsmtpr/G2f3830058/zingo-wallet.dat"
                 ))
                 .await
             }
