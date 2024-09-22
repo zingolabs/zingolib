@@ -43,7 +43,12 @@ where
         .await
         .unwrap();
 
-    let send_height = environment.get_chain_height() + 1;
+    let send_height = sender
+        .wallet
+        .get_target_height_and_anchor_offset()
+        .await
+        .expect("sender has a target height")
+        .0;
 
     // digesting the calculated transaction
     // this step happens after transaction is recorded locally, but before learning anything about whether the server accepted it
