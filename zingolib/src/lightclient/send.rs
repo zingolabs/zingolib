@@ -347,31 +347,42 @@ pub mod send_with_proposal {
             // TODO: match on specific error
         }
 
-        #[tokio::test]
-        async fn testnet_sync() {
+        async fn sync_example_wallet(wallet_case: ExampleWalletNetwork) -> LightClient {
             std::env::set_var("RUST_BACKTRACE", "1");
-            let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
+            let wallet = LightWallet::load_example_wallet(wallet_case).await;
+            let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+            let _ = lc.do_sync(true).await;
+            lc
+        }
+
+        #[tokio::test]
+        async fn testnet_sync_mskmgdbhotbpetcjwcspgopp_latest() {
+            sync_example_wallet(ExampleWalletNetwork::Testnet(
                 ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
                 ),
             ))
             .await;
-            let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
-            let _ = lc.do_sync(true).await;
+        }
+        #[tokio::test]
+        async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
+            sync_example_wallet(ExampleWalletNetwork::Testnet(
+                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(crate::wallet::disk::testing::examples::ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::G2f3830058)            ))
+            .await;
         }
 
         #[tokio::test]
         async fn testnet_shield_multi_account() {
             std::env::set_var("RUST_BACKTRACE", "1");
-            let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
+            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
                 ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
                 ),
             ))
             .await;
-            let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
 
-            lc.quick_shield()
+            client
+                .quick_shield()
                 .await
                 .expect("shield all transparent funds");
         }
