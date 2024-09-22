@@ -3,6 +3,7 @@ use zcash_address::unified::Encoding;
 
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
+use crate::wallet::disk::testing::assert_wallet_capability_matches_seed;
 
 use super::super::LightWallet;
 
@@ -107,52 +108,9 @@ async fn loaded_wallet_assert(
     expected_balance: u64,
     expected_num_addresses: usize,
 ) {
-    let expected_mnemonic = (
-        Mnemonic::<bip0039::English>::from_phrase(expected_seed_phrase).unwrap(),
-        0,
-    );
+    assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
 
-    let expected_wc = crate::wallet::keys::unified::WalletCapability::new_from_phrase(
-        &wallet.transaction_context.config,
-        &expected_mnemonic.0,
-        expected_mnemonic.1,
-    )
-    .unwrap();
     let wc = wallet.wallet_capability();
-
-    // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
-    // so we have to compare each component instead
-
-    // Compare Orchard
-    let crate::wallet::keys::unified::Capability::Spend(orchard_sk) = &wc.orchard else {
-        panic!("Expected Orchard Spending Key");
-    };
-    assert_eq!(
-        orchard_sk.to_bytes(),
-        orchard::keys::SpendingKey::try_from(&expected_wc)
-            .unwrap()
-            .to_bytes()
-    );
-
-    // Compare Sapling
-    let crate::wallet::keys::unified::Capability::Spend(sapling_sk) = &wc.sapling else {
-        panic!("Expected Sapling Spending Key");
-    };
-    assert_eq!(
-        sapling_sk,
-        &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
-    );
-
-    // Compare transparent
-    let crate::wallet::keys::unified::Capability::Spend(transparent_sk) = &wc.transparent else {
-        panic!("Expected transparent extended private key");
-    };
-    assert_eq!(
-        transparent_sk,
-        &crate::wallet::keys::extended_transparent::ExtendedPrivKey::try_from(&expected_wc)
-            .unwrap()
-    );
-
     assert_eq!(wc.addresses().len(), expected_num_addresses);
     for addr in wc.addresses().iter() {
         assert!(addr.orchard().is_some());
