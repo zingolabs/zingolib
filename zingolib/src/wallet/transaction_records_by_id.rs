@@ -15,6 +15,7 @@ use crate::wallet::{
 use std::collections::HashMap;
 
 use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::constants::SPENDING_KEY_GENERATOR;
 use sapling_crypto::note_encryption::SaplingDomain;
 
 use zcash_client_backend::wallet::NoteId;
@@ -273,25 +274,25 @@ impl TransactionRecordsById {
     }
 
     /// Updates notes spent in spending transaction to the given spend status
-    ///
-    /// Panics if spending transaction doesn't exist in wallet data, intended to be called after `scan_full_tx`
     pub(crate) fn update_note_spend_statuses(
         &mut self,
         spending_txid: TxId,
         spend_status: Option<(TxId, ConfirmationStatus)>,
     ) {
-        let spending_tx = self
-            .get(&spending_txid)
-            .expect("transaction must exist in wallet");
-        let orchard_nullifiers = spending_tx.spent_orchard_nullifiers.clone();
-        let sapling_nullifiers = spending_tx.spent_sapling_nullifiers.clone();
+        if let Some(spending_tx) = self.get(&spending_txid) {
+            let orchard_nullifiers = spending_tx.spent_orchard_nullifiers.clone();
+            let sapling_nullifiers = spending_tx.spent_sapling_nullifiers.clone();
 
-        orchard_nullifiers
-            .iter()
-            .for_each(|nf| self.update_orchard_note_spend_status(nf, spend_status));
-        sapling_nullifiers
-            .iter()
-            .for_each(|nf| self.update_sapling_note_spend_status(nf, spend_status));
+            orchard_nullifiers
+                .iter()
+                .for_each(|nf| self.update_orchard_note_spend_status(nf, spend_status));
+            sapling_nullifiers
+                .iter()
+                .for_each(|nf| self.update_sapling_note_spend_status(nf, spend_status));
+        } else {
+            eprintln!("missing spending tx")
+            // return Err("missing spending tx");
+        }
     }
 
     fn find_sapling_spend(&self, nullifier: &sapling_crypto::Nullifier) -> Option<&SaplingNote> {
