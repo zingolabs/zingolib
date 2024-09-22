@@ -15,7 +15,6 @@ use crate::wallet::{
 use std::collections::HashMap;
 
 use orchard::note_encryption::OrchardDomain;
-use sapling_crypto::constants::SPENDING_KEY_GENERATOR;
 use sapling_crypto::note_encryption::SaplingDomain;
 
 use zcash_client_backend::wallet::NoteId;
