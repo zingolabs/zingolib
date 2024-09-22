@@ -320,6 +320,9 @@ pub mod send_with_proposal {
     mod tests {
         use crate::{
             lightclient::LightClient,
+            testutils::chain_generics::{
+                conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
+            },
             wallet::{
                 disk::testing::examples::{
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion, ExampleTestnetWalletSeed,
@@ -381,10 +384,13 @@ pub mod send_with_proposal {
             ))
             .await;
 
-            client
-                .quick_shield()
-                .await
-                .expect("shield all transparent funds");
+            with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
+                .await;
+
+            // client
+            //     .quick_shield()
+            //     .await
+            //     .expect("shield all transparent funds");
         }
     }
 }
