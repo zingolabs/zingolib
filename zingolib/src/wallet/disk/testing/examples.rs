@@ -1,3 +1,5 @@
+use crate::lightclient::LightClient;
+
 use super::super::LightWallet;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
@@ -87,12 +89,12 @@ pub enum ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion {
     V26,
 }
 
-impl LightWallet {
+impl ExampleWalletNetwork {
     /// loads test wallets
     /// this function can be improved by a macro. even better would be to derive directly from the enum.
     /// loads any one of the test wallets included in the examples
-    pub async fn load_example_wallet(case: ExampleWalletNetwork) -> Self {
-        match case {
+    pub async fn load_example_wallet(&self) -> LightWallet {
+        match self {
             ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
                 ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
             )) => {
@@ -173,6 +175,26 @@ impl LightWallet {
                 ))
                 .await
             }
+        }
+    }
+    /// picks the seed (or ufvk) string associated with an example wallet
+    pub async fn example_wallet_base(&self) -> String {
+        match self {
+            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
+                _,
+            )) => "".to_string(),
+            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
+                _,
+            )) => "".to_string(),
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                _,
+            )) => "".to_string(),
+            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                _,
+            )) => "".to_string(),
+            ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
+                _,
+            )) => "".to_string(),
         }
     }
 }
