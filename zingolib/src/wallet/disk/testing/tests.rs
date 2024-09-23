@@ -3,18 +3,16 @@ use zcash_address::unified::Encoding;
 
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
-use crate::wallet::disk::testing::assert_wallet_capability_matches_seed;
-use crate::wallet::disk::testing::examples::ExampleAADAALACAADAALACAADAALACVersion;
-use crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion;
-use crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR;
 
 use super::super::LightWallet;
+use super::assert_wallet_capability_matches_seed;
 
 use super::examples::ExampleWalletNetwork;
 use super::examples::ExampleWalletNetwork::Mainnet;
 use super::examples::ExampleWalletNetwork::Regtest;
 use super::examples::ExampleWalletNetwork::Testnet;
 
+use super::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR;
 use super::examples::ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP;
 use super::examples::ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA;
 use super::examples::ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC;
@@ -23,7 +21,9 @@ use super::examples::ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR;
 use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
 
 use super::examples::ExampleAAAAAAAAAAAAAAAAAAAAAAAAVersion;
+use super::examples::ExampleAADAALACAADAALACAADAALACVersion;
 use super::examples::ExampleCBBHRWIILGBRABABSSHSMTPRVersion;
+use super::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion;
 use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTVersion;
 use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion;
 use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion;
