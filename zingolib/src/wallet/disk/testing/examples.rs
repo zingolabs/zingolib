@@ -254,48 +254,48 @@ impl ExampleWalletNetwork {
             PoolType::Transparent => match self {
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
                     _,
-                )) => crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                )) => "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i".to_string(),
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
                     _,
-                )) => crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
+                )) => "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
                     _,
-                )) => "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string(),
+                )) => "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1".to_string(),
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                     _,
-                )) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                )) => "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     _,
-                )) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
+                )) => "tmEVmDAnveCakZkvV4a6FT1TfYApTv937E7".to_string(),
                 ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
                     _,
-                )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
+                )) => "t1P8tQtYFLR7TWsqtauc71RGQdqqwfFBbb4".to_string(),
                 ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
                     _,
-                )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
+                )) => "t1XnsupYhvhSDSFJ4nzZ2kADhLMR22wg35y".to_string(),
             },
             PoolType::Shielded(ShieldedProtocol::Sapling) => match self {
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
                     _,
-                )) => crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                )) => "zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6".to_string(),
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
                     _,
-                )) => crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
+                )) => "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
                     _,
-                )) => "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string(),
+                )) => "zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw".to_string(),
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                     _,
-                )) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                )) => "ztestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxu60uhj".to_string(),
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     _,
-                )) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
+                )) => "ztestsapling1h8l5mzlwhmqmd9x7ehquayqckzg6jwa6955f3w9mnkn5p5yfhqy04yz6yjrqfcztxx05xlh3prq".to_string(),
                 ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
                     _,
-                )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
+                )) => "zs1kgdrzfe6xuq3tg64vnezp3duyp43u7wcpgduqcpwz9wsnfqm4cecafu9qkmpsjtqxzf27n34z9k".to_string(),
                 ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
                     _,
-                )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
+                )) => "zs1zgffhwsnh7efu4auv8ql9egteangyferp28rv8r7hmu76u0ee8mthcpflx575emx2zygqcuedzn".to_string(),
             },
             PoolType::Shielded(ShieldedProtocol::Orchard) => match self {
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
