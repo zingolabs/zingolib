@@ -223,7 +223,7 @@ impl ExampleWalletNetwork {
         }
     }
     /// picks the seed (or ufvk) string associated with an example wallet
-    pub async fn example_wallet_base(&self) -> String {
+    pub fn example_wallet_base(&self) -> String {
         match self {
             ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
                 _,
@@ -249,7 +249,7 @@ impl ExampleWalletNetwork {
         }
     }
     /// picks the first receiver associated with an example wallet
-    pub async fn example_wallet_base_address(&self, pool: PoolType) -> String {
+    pub fn example_wallet_address(&self, pool: PoolType) -> String {
         match pool {
             PoolType::Transparent => match self {
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
