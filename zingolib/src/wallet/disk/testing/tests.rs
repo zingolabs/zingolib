@@ -4,6 +4,7 @@ use zcash_address::unified::Encoding;
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::wallet::disk::testing::assert_wallet_capability_matches_seed;
+use crate::wallet::disk::testing::examples::ExampleAADAALACAADAALACAADAALACWalletVersion;
 
 use super::super::LightWallet;
 
@@ -14,6 +15,7 @@ use super::examples::ExampleWalletNetwork::Testnet;
 
 use super::examples::ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP;
 use super::examples::ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA;
+use super::examples::ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC;
 use super::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT;
 use super::examples::ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR;
 use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
@@ -46,12 +48,20 @@ async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
     .await;
 }
 #[tokio::test]
-async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac() {
-    todo!();
+async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_and_sapl() {
+    Regtest(AADAALACAADAALACAADAALAC(
+        ExampleAADAALACAADAALACAADAALACWalletVersion::OrchAndSapl,
+    ))
+    .load_example_wallet_with_seed_verification()
+    .await;
 }
 #[tokio::test]
-async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v26() {
-    todo!();
+async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_only() {
+    Regtest(AADAALACAADAALACAADAALAC(
+        ExampleAADAALACAADAALACAADAALACWalletVersion::OrchOnly,
+    ))
+    .load_example_wallet_with_seed_verification()
+    .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {

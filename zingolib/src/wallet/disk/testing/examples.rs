@@ -71,6 +71,8 @@ pub enum ExampleRegtestWalletSeed {
     HMVASMUVWMSSVICHCARBPOCT(ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion),
     /// this is a regtest wallet originally called v26/sap_only
     AAAAAAAAAAAAAAAAAAAAAAAA(ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion),
+    /// another regtest wallet
+    AADAALACAADAALACAADAALAC(ExampleAADAALACAADAALACAADAALACWalletVersion),
 }
 /// /
 #[non_exhaustive]
@@ -85,6 +87,15 @@ pub enum ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion {
 pub enum ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion {
     /// wallet was last saved in this serialization version
     V26,
+}
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleAADAALACAADAALACAADAALACWalletVersion {
+    /// existing receivers?
+    OrchAndSapl,
+    /// existing receivers?
+    OrchOnly,
 }
 
 impl ExampleWalletNetwork {
@@ -106,6 +117,22 @@ impl ExampleWalletNetwork {
             )) => {
                 LightWallet::unsafe_from_buffer_regtest(include_bytes!(
                     "examples/regtest/aaaaaaaaaaaaaaaaaaaaaaaa/v26/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
+                ExampleAADAALACAADAALACAADAALACWalletVersion::OrchAndSapl,
+            )) => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "examples/regtest/aadaalacaadaalacaadaalac/orch_and_sapl/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
+                ExampleAADAALACAADAALACAADAALACWalletVersion::OrchOnly,
+            )) => {
+                LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                    "examples/regtest/aadaalacaadaalacaadaalac/orch_only/zingo-wallet.dat"
                 ))
                 .await
             }
@@ -180,19 +207,22 @@ impl ExampleWalletNetwork {
         match self {
             ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
                 _,
-            )) => "".to_string(),
+            )) => crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
                 _,
-            )) => "".to_string(),
+            )) => crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
+            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
+                _,
+            )) => "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string(),
             ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                 _,
-            )) => "".to_string(),
+            )) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
             ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                 _,
-            )) => "".to_string(),
+            )) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
             ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
                 _,
-            )) => "".to_string(),
+            )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
         }
     }
 }
