@@ -16,7 +16,6 @@ pub use incrementalmerkletree;
 use std::cmp;
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::{Path, PathBuf};
 use std::string::String;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
