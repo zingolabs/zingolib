@@ -83,7 +83,7 @@ jobs:
 
       - name: Run tests
         run: |
-          echo "full" >> $RUST_BACKTRACE
+          echo "full" >> RUST_BACKTRACE
           cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
             --workspace-remap ./ --partition count:${{ matrix.partition }}/8 ${{ env.NEXTEST-FLAGS }}
 
