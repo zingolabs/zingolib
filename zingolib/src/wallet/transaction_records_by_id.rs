@@ -280,18 +280,17 @@ impl TransactionRecordsById {
         spending_txid: TxId,
         spend_status: Option<(TxId, ConfirmationStatus)>,
     ) {
-        let spending_tx = self
-            .get(&spending_txid)
-            .expect("transaction must exist in wallet");
-        let orchard_nullifiers = spending_tx.spent_orchard_nullifiers.clone();
-        let sapling_nullifiers = spending_tx.spent_sapling_nullifiers.clone();
+        if let Some(spending_tx) = self.get(&spending_txid) {
+            let orchard_nullifiers = spending_tx.spent_orchard_nullifiers.clone();
+            let sapling_nullifiers = spending_tx.spent_sapling_nullifiers.clone();
 
-        orchard_nullifiers
-            .iter()
-            .for_each(|nf| self.update_orchard_note_spend_status(nf, spend_status));
-        sapling_nullifiers
-            .iter()
-            .for_each(|nf| self.update_sapling_note_spend_status(nf, spend_status));
+            orchard_nullifiers
+                .iter()
+                .for_each(|nf| self.update_orchard_note_spend_status(nf, spend_status));
+            sapling_nullifiers
+                .iter()
+                .for_each(|nf| self.update_sapling_note_spend_status(nf, spend_status));
+        }
     }
 
     fn find_sapling_spend(&self, nullifier: &sapling_crypto::Nullifier) -> Option<&SaplingNote> {
