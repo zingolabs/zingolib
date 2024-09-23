@@ -355,6 +355,7 @@ pub mod send_with_proposal {
             lc
         }
 
+        /// this is a live sync test. its execution time scales linearly since last updated
         #[tokio::test]
         async fn testnet_sync_mskmgdbhotbpetcjwcspgopp_latest() {
             sync_example_wallet(ExampleWalletNetwork::Testnet(
@@ -364,6 +365,7 @@ pub mod send_with_proposal {
             ))
             .await;
         }
+        /// this is a live sync test. its execution time scales linearly since last updated
         #[tokio::test]
         async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
             sync_example_wallet(ExampleWalletNetwork::Testnet(
