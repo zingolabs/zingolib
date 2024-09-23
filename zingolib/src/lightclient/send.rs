@@ -324,9 +324,9 @@ pub mod send_with_proposal {
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
             wallet::disk::testing::examples::{
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion, ExampleTestnetWalletSeed,
-                    ExampleWalletNetwork,
-                },
+                ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion, ExampleTestnetWalletSeed,
+                ExampleWalletNetwork,
+            },
         };
 
         #[tokio::test]

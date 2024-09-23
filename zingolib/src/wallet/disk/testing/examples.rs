@@ -1,4 +1,3 @@
-
 use super::super::LightWallet;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
