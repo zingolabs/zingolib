@@ -324,7 +324,7 @@ pub mod send_with_proposal {
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
             wallet::disk::testing::examples::{
-                ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion, ExampleTestnetWalletSeed,
+                ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion, ExampleTestnetWalletSeed,
                 ExampleWalletNetwork,
             },
         };
@@ -360,7 +360,7 @@ pub mod send_with_proposal {
         async fn testnet_sync_mskmgdbhotbpetcjwcspgopp_latest() {
             sync_example_wallet(ExampleWalletNetwork::Testnet(
                 ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
                 ),
             ))
             .await;
@@ -369,7 +369,7 @@ pub mod send_with_proposal {
         #[tokio::test]
         async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
             sync_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(crate::wallet::disk::testing::examples::ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::G2f3830058)            ))
+                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(crate::wallet::disk::testing::examples::ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058)            ))
             .await;
         }
 
@@ -378,7 +378,7 @@ pub mod send_with_proposal {
             std::env::set_var("RUST_BACKTRACE", "1");
             let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
                 ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
                 ),
             ))
             .await;

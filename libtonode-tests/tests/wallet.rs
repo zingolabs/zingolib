@@ -75,7 +75,7 @@ mod load_wallet {
 
         let wallet = examples::ExampleWalletNetwork::Regtest(
             examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
-                examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
+                examples::ExampleHMVASMUVWMSSVICHCARBPOCTVersion::V27,
             ),
         )
         .load_example_wallet()
