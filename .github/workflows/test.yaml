@@ -78,8 +78,12 @@ jobs:
         with:
           name: nextest-archive
 
+      - run: cat Cargo.lock
+      - run: cargo nextest --version
+
       - name: Run tests
         run: |
-          RUST_BACKTRACE=full cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
+          echo "full" >> $RUST_BACKTRACE
+          cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
             --workspace-remap ./ --partition count:${{ matrix.partition }}/8 ${{ env.NEXTEST-FLAGS }}
 
