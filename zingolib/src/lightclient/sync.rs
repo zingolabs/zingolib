@@ -674,8 +674,9 @@ pub mod test {
             conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
         },
         wallet::disk::testing::examples::{
-            ExampleHHCCLALTPCCKCSSLPCNETBLRVersion, ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion,
-            ExampleMainnetWalletSeed, ExampleTestnetWalletSeed, ExampleWalletNetwork,
+            ExampleCBBHRWIILGBRABABSSHSMTPRVersion, ExampleHHCCLALTPCCKCSSLPCNETBLRVersion,
+            ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion, ExampleMainnetWalletSeed,
+            ExampleTestnetWalletSeed, ExampleWalletNetwork,
         },
     };
 
@@ -701,8 +702,11 @@ pub mod test {
     #[tokio::test]
     async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
         sync_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(crate::wallet::disk::testing::examples::ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058)            ))
-            .await;
+            ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
+            ),
+        ))
+        .await;
     }
     /// this is a live sync test. its execution time scales linearly since last updated
     #[tokio::test]
