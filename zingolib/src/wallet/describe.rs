@@ -1,9 +1,11 @@
 //! Wallet-State reporters as LightWallet methods.
+use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 
+use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
@@ -304,11 +306,39 @@ impl LightWallet {
     }
 
     /// gets the basic receiver for the wallet. this is the only receiver implemented as 2024-09-22
-    pub fn get_base_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
+    pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
         for possible_ua in self.wallet_capability().addresses().iter() {
             return Ok(possible_ua.clone());
         }
         Err(())
+    }
+
+    /// gets the basic receiver for the wallet. this is the only receiver implemented as 2024-09-22
+    pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
+        let ua = self.get_first_ua()?;
+        match pool {
+            PoolType::Transparent => ua
+                .transparent()
+                .map(|taddr| {
+                    super::keys::address_from_pubkeyhash(&self.transaction_context.config, *taddr)
+                })
+                .ok_or(()),
+            PoolType::Shielded(ShieldedProtocol::Sapling) => ua
+                .sapling()
+                .map(|z_addr| {
+                    zcash_keys::encoding::encode_payment_address(
+                        self.transaction_context
+                            .config
+                            .chain
+                            .hrp_sapling_payment_address(),
+                        z_addr,
+                    )
+                })
+                .ok_or(()),
+            PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                Ok(ua.encode(&self.transaction_context.config.chain))
+            }
+        }
     }
 }
 
