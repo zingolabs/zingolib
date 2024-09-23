@@ -670,9 +670,6 @@ impl LightClient {
 pub mod test {
     use crate::{
         lightclient::LightClient,
-        testutils::chain_generics::{
-            conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
-        },
         wallet::disk::testing::examples::{
             ExampleCBBHRWIILGBRABABSSHSMTPRVersion, ExampleHHCCLALTPCCKCSSLPCNETBLRVersion,
             ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion, ExampleMainnetWalletSeed,
