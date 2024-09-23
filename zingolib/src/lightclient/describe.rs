@@ -5,9 +5,9 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::{HashMap, HashSet};
 use tokio::runtime::Runtime;
 
-use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkConstants},
+    consensus::BlockHeight,
     memo::Memo,
 };
 
@@ -27,7 +27,6 @@ use crate::{
             },
             OutgoingTxData,
         },
-        keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, Output, OutputInterface},
         transaction_record::{SendType, TransactionKind},
         LightWallet,
