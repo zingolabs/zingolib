@@ -5,8 +5,11 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use std::collections::{HashMap, HashSet};
 use tokio::runtime::Runtime;
 
-use zcash_client_backend::{PoolType, ShieldedProtocol};
-use zcash_primitives::{consensus::BlockHeight, memo::Memo};
+use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
+use zcash_primitives::{
+    consensus::{BlockHeight, NetworkConstants},
+    memo::Memo,
+};
 
 use crate::config::margin_fee;
 
@@ -24,6 +27,7 @@ use crate::{
             },
             OutgoingTxData,
         },
+        keys::address_from_pubkeyhash,
         notes::{query::OutputQuery, Output, OutputInterface},
         transaction_record::{SendType, TransactionKind},
         LightWallet,
@@ -54,30 +58,19 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for unified_address in self.wallet.wallet_capability().addresses().iter() {
-            if let Ok(encoded_ua) = self.wallet.encode_ua_as_pool(
-                unified_address,
-                PoolType::Shielded(ShieldedProtocol::Orchard),
-            ) {
-                if let Ok(transparent_address) = self
-                    .wallet
-                    .encode_ua_as_pool(unified_address, PoolType::Transparent)
-                {
-                    if let Ok(sapling_address) = self.wallet.encode_ua_as_pool(
-                        unified_address,
-                        PoolType::Shielded(ShieldedProtocol::Sapling),
-                    ) {
-                        objectified_addresses.push(object! {
-                        "address" => encoded_ua,
-                        "receivers" => object!(
-                            "transparent" => transparent_address,
-                            "sapling" => sapling_address,
-                            "orchard_exists" => unified_address.orchard().is_some(),
-                            )
-                        })
-                    }
-                }
-            }
+        for address in self.wallet.wallet_capability().addresses().iter() {
+            let encoded_ua = address.encode(&self.config.chain);
+            let transparent = address
+                .transparent()
+                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr));
+            objectified_addresses.push(object! {
+        "address" => encoded_ua,
+        "receivers" => object!(
+            "transparent" => transparent,
+            "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
+            "orchard_exists" => address.orchard().is_some(),
+            )
+        })
         }
         JsonValue::Array(objectified_addresses)
     }
