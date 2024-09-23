@@ -325,26 +325,6 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Re
 }
 
 /// TODO: Add Doc Comment Here!
-pub fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
-    match nym {
-        "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
-            let one_sapling_wallet = format!(
-                "{}/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
-                paths::get_cargo_manifest_dir().to_string_lossy()
-            );
-            let wallet_path = Path::new(&one_sapling_wallet);
-            let wallet_dir = wallet_path.parent().unwrap();
-            Ok((
-                one_sapling_wallet.clone(),
-                wallet_path.to_path_buf(),
-                wallet_dir.to_path_buf(),
-            ))
-        }
-        _ => Err(format!("nym {nym} not a valid wallet directory")),
-    }
-}
-
-/// TODO: Add Doc Comment Here!
 pub struct RecordingReader<Reader> {
     from: Reader,
     read_lengths: Vec<usize>,
