@@ -323,13 +323,10 @@ pub mod send_with_proposal {
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
-            wallet::{
-                disk::testing::examples::{
+            wallet::disk::testing::examples::{
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion, ExampleTestnetWalletSeed,
                     ExampleWalletNetwork,
                 },
-                LightWallet,
-            },
         };
 
         #[tokio::test]
