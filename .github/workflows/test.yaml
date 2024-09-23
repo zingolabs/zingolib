@@ -30,6 +30,7 @@ jobs:
         with:
           tool: cargo-nextest
           version: 0.9.78
+          fallback: none
 
       - name: Install protoc
         run: sudo apt-get install protobuf-compiler
