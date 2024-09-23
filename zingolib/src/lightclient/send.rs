@@ -319,13 +319,13 @@ pub mod send_with_proposal {
     #[cfg(all(test, feature = "testvectors"))]
     mod tests {
         use crate::{
-            lightclient::LightClient,
+            lightclient::{sync::test::sync_example_wallet, LightClient},
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
             wallet::disk::testing::examples::{
-                ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion, ExampleTestnetWalletSeed,
-                ExampleWalletNetwork,
+                ExampleCBBHRWIILGBRABABSSHSMTPRVersion, ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion,
+                ExampleTestnetWalletSeed, ExampleWalletNetwork,
             },
         };
 
@@ -348,13 +348,28 @@ pub mod send_with_proposal {
         }
 
         #[tokio::test]
-        async fn testnet_shield_multi_account() {
+        async fn testnet_mskmgdbhotbpetcjwcspgopp_shield_multi_account() {
             std::env::set_var("RUST_BACKTRACE", "1");
             let client = crate::lightclient::sync::test::sync_example_wallet(
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
                 )),
             )
+            .await;
+
+            with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
+                .await;
+        }
+
+        #[tokio::test]
+        /// this is a live sync test. its execution time scales linearly since last updated
+        async fn testnet_cbbhrwiilgbrababsshsmtpr_shield_hot() {
+            std::env::set_var("RUST_BACKTRACE", "1");
+            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
+                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
+                ),
+            ))
             .await;
 
             with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
