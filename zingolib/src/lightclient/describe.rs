@@ -6,10 +6,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::runtime::Runtime;
 
 use zcash_client_backend::{PoolType, ShieldedProtocol};
-use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::Memo,
-};
+use zcash_primitives::{consensus::BlockHeight, memo::Memo};
 
 use crate::config::margin_fee;
 
