@@ -349,7 +349,7 @@ pub mod send_with_proposal {
             // TODO: match on specific error
         }
 
-        #[ignore = "live testnet"]
+        #[ignore = "live testnet: testnet relies on NU6"]
         #[tokio::test]
         /// this is a live sync test. its execution time scales linearly since last updated
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
@@ -367,7 +367,7 @@ pub mod send_with_proposal {
                 .await;
         }
 
-        #[ignore = "live testnet"]
+        #[ignore = "live testnet: testnet relies on NU6"]
         #[tokio::test]
         /// this is a live sync test. its execution time scales linearly since last updated
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
@@ -394,7 +394,7 @@ pub mod send_with_proposal {
             .await;
         }
 
-        #[ignore = "live testnet"]
+        #[ignore = "live testnet: testnet relies on NU6"]
         #[tokio::test]
         /// this is a live sync test. its execution time scales linearly since last updated
         async fn testnet_cbbhrwiilgbrababsshsmtpr_shield_hot() {

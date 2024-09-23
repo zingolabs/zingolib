@@ -38,6 +38,8 @@ pub enum ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion {
 pub enum ExampleHHCCLALTPCCKCSSLPCNETBLRVersion {
     /// wallet was last saved in this serialization version
     Gf0aaf9347,
+    /// this wallet was funded with 0.01 fr fr fr
+    G80b5594ac,
 }
 /// /
 #[non_exhaustive]
@@ -217,6 +219,14 @@ impl ExampleWalletNetwork {
             )) => {
                 LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
                     "examples/mainnet/hhcclaltpcckcsslpcnetblr/gf0aaf9347/zingo-wallet.dat"
+                ))
+                .await
+            }
+            ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac,
+            )) => {
+                LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
+                    "examples/mainnet/hhcclaltpcckcsslpcnetblr/g80b5594ac/zingo-wallet.dat"
                 ))
                 .await
             }
