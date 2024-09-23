@@ -301,37 +301,19 @@ mod chain_generics {
         .await;
     }
     #[tokio::test]
-    async fn simpool_no_fund_1_000_to_transparent() {
-        fixtures::to_pool_unfunded_error::<LibtonodeEnvironment>(Transparent, 1_000).await;
+    async fn simpool_no_fund_1_000_000_to_transparent() {
+        fixtures::to_pool_unfunded_error::<LibtonodeEnvironment>(Transparent, 1_000_000).await;
     }
     #[tokio::test]
-    async fn simpool_no_fund_1_000_to_sapling() {
-        fixtures::to_pool_unfunded_error::<LibtonodeEnvironment>(Shielded(Sapling), 1_000).await;
+    async fn simpool_no_fund_1_000_000_to_sapling() {
+        fixtures::to_pool_unfunded_error::<LibtonodeEnvironment>(Shielded(Sapling), 1_000_000)
+            .await;
     }
     #[tokio::test]
-    async fn simpool_no_fund_1_000_to_orchard() {
-        fixtures::to_pool_unfunded_error::<LibtonodeEnvironment>(Shielded(Orchard), 1_000).await;
+    async fn simpool_no_fund_1_000_000_to_orchard() {
+        fixtures::to_pool_unfunded_error::<LibtonodeEnvironment>(Shielded(Orchard), 1_000_000)
+            .await;
     }
-    // #[tokio::test]
-    // async fn simpool_change_50_000_sapling_to_sapling() {
-    //     fixtures::shpool_to_pool::<LibtonodeEnvironment>(Sapling, Shielded(Sapling), 50_000).await;
-    // }
-    // #[tokio::test]
-    // async fn simpool_change_50_000_sapling_to_orchard() {
-    //     fixtures::shpool_to_pool::<LibtonodeEnvironment>(Sapling, Shielded(Orchard), 50_000).await;
-    // }
-    // #[tokio::test]
-    // async fn simpool_change_50_000_orchard_to_transparent() {
-    //     fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Transparent, 50_000).await;
-    // }
-    // #[tokio::test]
-    // async fn simpool_change_50_000_orchard_to_sapling() {
-    //     fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Shielded(Sapling), 50_000).await;
-    // }
-    // #[tokio::test]
-    // async fn simpool_change_50_000_orchard_to_orchard() {
-    //     fixtures::shpool_to_pool::<LibtonodeEnvironment>(Orchard, Shielded(Orchard), 50_000).await;
-    // }
     mod conduct_chain {
         use zcash_client_backend::PoolType;
 

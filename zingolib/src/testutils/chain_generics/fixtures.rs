@@ -606,6 +606,16 @@ where
 
     let ref_secondary: Arc<LightClient> = Arc::new(secondary);
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+
+    ref_secondary.do_sync(false).await.unwrap();
+
+    let mut expected_fee = fee_tables::one_to_one(Orchard, pool, true);
+
+    // why?
+    if pool == Shielded(Sapling) {
+        expected_fee -= 10_000
+    }
+
     assert_eq!(
         from_inputs::propose(
             &ref_secondary,
@@ -624,7 +634,8 @@ where
         .to_string(),
         format!(
             "Insufficient balance (have {}, need {} including fee)",
-            0, try_amount
+            0,
+            try_amount + expected_fee
         )
     );
 }
