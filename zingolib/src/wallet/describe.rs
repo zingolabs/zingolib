@@ -302,6 +302,14 @@ impl LightWallet {
             .map(|(_index, sk)| *sk)
             .collect::<Vec<_>>()
     }
+
+    /// gets the basic receiver for the wallet. this is the only receiver implemented as 2024-09-22
+    pub fn get_base_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
+        for possible_ua in self.wallet_capability().addresses().iter() {
+            return Ok(possible_ua.clone());
+        }
+        Err(())
+    }
 }
 
 #[cfg(test)]
