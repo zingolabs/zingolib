@@ -7,6 +7,7 @@ use crate::wallet::disk::testing::assert_wallet_capability_matches_seed;
 
 use super::super::LightWallet;
 
+use super::examples::ExampleWalletNetwork;
 use super::examples::ExampleWalletNetwork::Mainnet;
 use super::examples::ExampleWalletNetwork::Regtest;
 use super::examples::ExampleWalletNetwork::Testnet;
@@ -25,27 +26,25 @@ use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion;
 
 // moving toward completeness: each of these tests should assert everything known about the LightWallet without network.
 
+async fn verify_example_wallet_seed(case: ExampleWalletNetwork) -> LightWallet {
+    let wallet = case.load_example_wallet().await;
+    assert_wallet_capability_matches_seed(&wallet, case.example_wallet_base().await).await;
+    wallet
+}
+
 #[tokio::test]
 async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
-    let _wallet = LightWallet::load_example_wallet(Regtest(HMVASMUVWMSSVICHCARBPOCT(
+    verify_example_wallet_seed(Regtest(HMVASMUVWMSSVICHCARBPOCT(
         ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
     )))
     .await;
 }
-#[ignore = "test fails because ZFZ panics in regtest"]
+
 #[tokio::test]
 async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
-    let wallet = LightWallet::load_example_wallet(Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
-        ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion::V26,
+    let wallet = verify_example_wallet_seed(Regtest(HMVASMUVWMSSVICHCARBPOCT(
+        ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
     )))
-    .await;
-
-    loaded_wallet_assert(
-        wallet,
-        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
-        10342837,
-        3,
-    )
     .await;
 }
 
