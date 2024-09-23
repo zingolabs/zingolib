@@ -347,12 +347,11 @@ pub mod send_with_proposal {
             // TODO: match on specific error
         }
 
-        #[ignore]
         #[tokio::test]
-        async fn sync_testnet() {
+        async fn testnet_sync() {
             let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
                 ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b,
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
                 ),
             ))
             .await;
