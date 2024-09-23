@@ -133,7 +133,13 @@ where
 {
     let proposal = client.propose_shield().await.unwrap();
 
-    let send_height = environment.get_chain_height() + 1;
+    let send_height = client
+        .wallet
+        .get_target_height_and_anchor_offset()
+        .await
+        .expect("sender has a target height")
+        .0;
+
     let txids = client
         .complete_and_broadcast_stored_proposal()
         .await
