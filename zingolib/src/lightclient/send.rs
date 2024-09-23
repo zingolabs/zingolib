@@ -352,7 +352,7 @@ pub mod send_with_proposal {
 
         async fn sync_example_wallet(wallet_case: ExampleWalletNetwork) -> LightClient {
             std::env::set_var("RUST_BACKTRACE", "1");
-            let wallet = LightWallet::load_example_wallet(wallet_case).await;
+            let wallet = wallet_case.load_example_wallet().await;
             let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
             let _ = lc.do_sync(true).await;
             lc

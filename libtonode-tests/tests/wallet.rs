@@ -74,11 +74,12 @@ mod load_wallet {
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
 
-        let wallet = LightWallet::load_example_wallet(examples::ExampleWalletNetwork::Regtest(
+        let wallet = examples::ExampleWalletNetwork::Regtest(
             examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
                 examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
             ),
-        ))
+        )
+        .load_example_wallet()
         .await;
 
         // let wallet = zingolib::testutils::load_wallet(
