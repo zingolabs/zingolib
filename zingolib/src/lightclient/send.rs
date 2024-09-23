@@ -350,6 +350,9 @@ pub mod send_with_proposal {
         }
 
         #[tokio::test]
+        /// this is a live sync test. its execution time scales linearly since last updated
+        /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
+        /// this wallet contains archaic diversified addresses, which may clog the new send engine.
         async fn testnet_mskmgdbhotbpetcjwcspgopp_shield_multi_account() {
             std::env::set_var("RUST_BACKTRACE", "1");
             let client = crate::lightclient::sync::test::sync_example_wallet(
