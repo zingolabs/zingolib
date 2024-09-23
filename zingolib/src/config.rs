@@ -259,11 +259,7 @@ impl ZingoConfig {
     /// create a ZingoConfig that helps a LightClient connect to a server.
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
-            .set_lightwalletd_uri(
-                ("https://zcash.mysideoftheweb.com:19067")
-                    .parse::<http::Uri>()
-                    .unwrap(),
-            )
+            .set_lightwalletd_uri(("https://zec.rocks:443").parse::<http::Uri>().unwrap())
             .create()
     }
 
