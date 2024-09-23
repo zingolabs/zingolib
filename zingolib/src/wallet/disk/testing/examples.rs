@@ -1,3 +1,6 @@
+use zcash_client_backend::PoolType;
+use zcash_client_backend::ShieldedProtocol;
+
 use super::super::LightWallet;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
@@ -243,6 +246,80 @@ impl ExampleWalletNetwork {
             ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
                 _,
             )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
+        }
+    }
+    /// picks the first receiver associated with an example wallet
+    pub async fn example_wallet_base_address(&self, pool: PoolType) -> String {
+        match pool {
+            PoolType::Transparent => match self {
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
+                    _,
+                )) => crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
+                    _,
+                )) => crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
+                    _,
+                )) => "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string(),
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    _,
+                )) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                    _,
+                )) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
+                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
+                    _,
+                )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
+                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                    _,
+                )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
+            },
+            PoolType::Shielded(ShieldedProtocol::Sapling) => match self {
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
+                    _,
+                )) => crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
+                    _,
+                )) => crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
+                    _,
+                )) => "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string(),
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    _,
+                )) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                    _,
+                )) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
+                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
+                    _,
+                )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
+                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                    _,
+                )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
+            },
+            PoolType::Shielded(ShieldedProtocol::Orchard) => match self {
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
+                    _,
+                )) => crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
+                    _,
+                )) => crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
+                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
+                    _,
+                )) => "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string(),
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    _,
+                )) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                    _,
+                )) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
+                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
+                    _,
+                )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
+                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                    _,
+                )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
+            },
         }
     }
 }
