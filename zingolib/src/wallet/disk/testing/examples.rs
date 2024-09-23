@@ -1,4 +1,3 @@
-use crate::lightclient::LightClient;
 
 use super::super::LightWallet;
 

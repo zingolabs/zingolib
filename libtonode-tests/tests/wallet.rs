@@ -18,7 +18,7 @@ mod load_wallet {
     use zingolib::utils;
     use zingolib::wallet::disk::testing::examples;
     use zingolib::wallet::propose::ProposeSendError::Proposal;
-    use zingolib::wallet::LightWallet;
+    
 
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
