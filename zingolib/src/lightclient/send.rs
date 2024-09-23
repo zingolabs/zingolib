@@ -347,49 +347,18 @@ pub mod send_with_proposal {
             // TODO: match on specific error
         }
 
-        async fn sync_example_wallet(wallet_case: ExampleWalletNetwork) -> LightClient {
-            std::env::set_var("RUST_BACKTRACE", "1");
-            let wallet = wallet_case.load_example_wallet().await;
-            let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
-            let _ = lc.do_sync(true).await;
-            lc
-        }
-
-        /// this is a live sync test. its execution time scales linearly since last updated
-        #[tokio::test]
-        async fn testnet_sync_mskmgdbhotbpetcjwcspgopp_latest() {
-            sync_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
-                ),
-            ))
-            .await;
-        }
-        /// this is a live sync test. its execution time scales linearly since last updated
-        #[tokio::test]
-        async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
-            sync_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(crate::wallet::disk::testing::examples::ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058)            ))
-            .await;
-        }
-
         #[tokio::test]
         async fn testnet_shield_multi_account() {
             std::env::set_var("RUST_BACKTRACE", "1");
-            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+            let client = crate::lightclient::sync::test::sync_example_wallet(
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
-                ),
-            ))
+                )),
+            )
             .await;
 
             with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
                 .await;
-
-            // client
-            //     .quick_shield()
-            //     .await
-            //     .expect("shield all transparent funds");
         }
     }
 }
