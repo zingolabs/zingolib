@@ -541,8 +541,8 @@ where
     );
 }
 
-/// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
-pub async fn shpool_to_pool_insufficient<CC>(
+/// the simplest test that sends from a specific shielded pool to another specific pool. error variant.
+pub async fn shpool_to_pool_insufficient_error<CC>(
     shpool: ShieldedProtocol,
     pool: PoolType,
     underflow_amount: u64,
@@ -566,19 +566,8 @@ pub async fn shpool_to_pool_insufficient<CC>(
 
     let tertiary = environment.create_client().await;
 
-    let ref_primary: Arc<LightClient> = Arc::new(primary);
     let ref_secondary: Arc<LightClient> = Arc::new(secondary);
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
-
-    // mempool monitor
-    let check_mempool = !cfg!(feature = "ci");
-    if check_mempool {
-        for lightclient in [&ref_primary, &ref_secondary, &ref_tertiary] {
-            LightClient::start_mempool_monitor(lightclient.clone());
-            dbg!("mm started");
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    }
 
     let tertiary_fund = 100_000;
     assert_eq!(
@@ -601,6 +590,41 @@ pub async fn shpool_to_pool_insufficient<CC>(
             "Insufficient balance (have {}, need {} including fee)",
             secondary_fund,
             tertiary_fund + expected_fee
+        )
+    );
+}
+
+/// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
+pub async fn to_pool_unfunded_error<CC>(pool: PoolType, try_amount: u64)
+where
+    CC: ConductChain,
+{
+    let mut environment = CC::setup().await;
+
+    let secondary = environment.create_client().await;
+    let tertiary = environment.create_client().await;
+
+    let ref_secondary: Arc<LightClient> = Arc::new(secondary);
+    let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+    assert_eq!(
+        from_inputs::propose(
+            &ref_secondary,
+            vec![(
+                ref_tertiary
+                    .wallet
+                    .get_first_address(pool)
+                    .unwrap()
+                    .as_str(),
+                try_amount,
+                None,
+            )],
+        )
+        .await
+        .unwrap_err()
+        .to_string(),
+        format!(
+            "Insufficient balance (have {}, need {} including fee)",
+            0, try_amount
         )
     );
 }
