@@ -59,8 +59,6 @@ pub enum KeyError {
     NoViewCapability,
     #[error("Outside range of non-hardened child indexes")]
     InvalidNonHardenedChildIndex,
-    #[error("Unified full viewing key is missing a viewing key")]
-    MissingViewingKey,
     #[error("Decoded unified full viewing key does not match current network")]
     NetworkMismatch,
     #[error("Viewing keys must be imported in the unified format")]

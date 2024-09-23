@@ -3,7 +3,9 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use error::KeyError;
 use getset::{Getters, MutGetters};
+use zcash_keys::keys::UnifiedFullViewingKey;
 #[cfg(feature = "sync")]
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
@@ -11,8 +13,6 @@ use zcash_primitives::memo::Memo;
 use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
-
-use sapling_crypto::zip32::DiversifiableFullViewingKey;
 
 #[cfg(feature = "sync")]
 use zingo_sync::{
@@ -35,7 +35,6 @@ use crate::config::ZingoConfig;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 
-use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
 
 use self::{
@@ -268,10 +267,18 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?
-            .derive_ivk::<keys::unified::External>();
+        let ufvk: UnifiedFullViewingKey =
+            match self.wallet_capability().unified_key_store().try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return Err(e.to_string()),
+            };
+        let sapling_ivk = if let Some(ivk) = ufvk.sapling() {
+            ivk.to_external_ivk().prepare()
+        } else {
+            return Err(KeyError::NoViewCapability.to_string());
+        };
 
-        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.ivk) {
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
             return Ok(msg);
         }
@@ -373,7 +380,7 @@ impl LightWallet {
                 format!("could not create initial address: {e}"),
             ));
         };
-        let transaction_metadata_set = if wc.can_spend_from_all_pools() {
+        let transaction_metadata_set = if wc.unified_key_store().is_spending_key() {
             Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
             )))

@@ -53,6 +53,8 @@ use zcash_primitives::{
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use super::keys::unified::UnifiedKeyStore;
+
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
 pub trait ToBytes<const N: usize> {
     /// TODO: Add Doc Comment Here!
@@ -469,11 +471,11 @@ pub trait DomainWalletExt:
     type Fvk: Clone
         + Send
         + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
-        + for<'a> TryFrom<&'a WalletCapability>
+        + for<'a> TryFrom<&'a UnifiedKeyStore>
         + super::keys::unified::Fvk<Self>;
 
     /// TODO: Add Doc Comment Here!
-    type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
+    type SpendingKey: for<'a> TryFrom<&'a UnifiedKeyStore> + Clone;
     /// TODO: Add Doc Comment Here!
     type CompactOutput: CompactOutput<Self>;
     /// TODO: Add Doc Comment Here!
@@ -541,10 +543,7 @@ pub trait DomainWalletExt:
     ) -> Option<&'a UnifiedAddress>;
 
     /// TODO: Add Doc Comment Here!
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
-
-    /// TODO: Add Doc Comment Here!
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
+    fn unified_key_store_to_fvk(unified_key_store: &UnifiedKeyStore) -> Result<Self::Fvk, String>;
 }
 
 impl DomainWalletExt for SaplingDomain {
@@ -606,12 +605,8 @@ impl DomainWalletExt for SaplingDomain {
             .find(|ua| ua.sapling() == Some(receiver))
     }
 
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
-        Self::Fvk::try_from(wc)
-    }
-
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
-        Self::SpendingKey::try_from(wc)
+    fn unified_key_store_to_fvk(unified_key_store: &UnifiedKeyStore) -> Result<Self::Fvk, String> {
+        Self::Fvk::try_from(unified_key_store).map_err(|e| e.to_string())
     }
 }
 
@@ -674,12 +669,8 @@ impl DomainWalletExt for OrchardDomain {
             .find(|unified_address| unified_address.orchard() == Some(receiver))
     }
 
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
-        Self::Fvk::try_from(wc)
-    }
-
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
-        Self::SpendingKey::try_from(wc)
+    fn unified_key_store_to_fvk(unified_key_store: &UnifiedKeyStore) -> Result<Self::Fvk, String> {
+        Self::Fvk::try_from(unified_key_store).map_err(|e| e.to_string())
     }
 }
 
@@ -991,13 +982,15 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
         Ok(
-            <SaplingDomain as DomainWalletExt>::wc_to_fvk(wallet_capability)
-                .expect("to get an fvk from a wc")
-                .fvk()
-                .vk
-                .to_payment_address(diversifier)
-                .unwrap()
-                .create_note(sapling_crypto::value::NoteValue::from_raw(value), rseed),
+            <SaplingDomain as DomainWalletExt>::unified_key_store_to_fvk(
+                wallet_capability.unified_key_store(),
+            )
+            .expect("to get an fvk from the unified key store")
+            .fvk()
+            .vk
+            .to_payment_address(diversifier)
+            .unwrap()
+            .create_note(sapling_crypto::value::NoteValue::from_raw(value), rseed),
         )
     }
 
@@ -1034,8 +1027,10 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
             "Nullifier not for note",
         ))?;
 
-        let fvk = <OrchardDomain as DomainWalletExt>::wc_to_fvk(wallet_capability)
-            .expect("to get an fvk from a wc");
+        let fvk = <OrchardDomain as DomainWalletExt>::unified_key_store_to_fvk(
+            wallet_capability.unified_key_store(),
+        )
+        .expect("to get an fvk from the unified key store");
         Option::from(orchard::note::Note::from_parts(
             fvk.address(diversifier, orchard::keys::Scope::External),
             orchard::value::NoteValue::from_raw(value),

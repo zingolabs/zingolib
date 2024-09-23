@@ -22,13 +22,15 @@ use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::traits::Diversifiable as _;
 
 use crate::wallet::error::BalanceError;
-use crate::wallet::keys::unified::{Capability, WalletCapability};
+use crate::wallet::keys::unified::WalletCapability;
 use crate::wallet::notes::TransparentOutput;
 use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
 
 use crate::wallet::LightWallet;
 use crate::wallet::{data::BlockData, tx_map::TxMap};
+
+use super::keys::unified::UnifiedKeyStore;
 
 impl LightWallet {
     /// returns Some seed phrase for the wallet.
@@ -53,17 +55,21 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
     {
         // For the moment we encode lack of view capability as None
-        match D::SHIELDED_PROTOCOL {
-            ShieldedProtocol::Sapling => {
-                if !self.wallet_capability().sapling.can_view() {
-                    return None;
+        match self.wallet_capability().unified_key_store() {
+            UnifiedKeyStore::Spend(_) => (),
+            UnifiedKeyStore::View(ufvk) => match D::SHIELDED_PROTOCOL {
+                ShieldedProtocol::Sapling => {
+                    if ufvk.sapling().is_none() {
+                        return None;
+                    }
                 }
-            }
-            ShieldedProtocol::Orchard => {
-                if !self.wallet_capability().orchard.can_view() {
-                    return None;
+                ShieldedProtocol::Orchard => {
+                    if ufvk.orchard().is_none() {
+                        return None;
+                    }
                 }
-            }
+            },
+            UnifiedKeyStore::None => return None,
         }
         Some(
             self.transaction_context
@@ -98,7 +104,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        if let Capability::Spend(_) = self.wallet_capability().orchard {
+        if let UnifiedKeyStore::Spend(_) = self.wallet_capability().unified_key_store() {
             self.confirmed_balance::<D>().await
         } else {
             None
@@ -106,18 +112,23 @@ impl LightWallet {
     }
     /// Sums the transparent balance (unspent)
     pub async fn get_transparent_balance(&self) -> Option<u64> {
-        if self.wallet_capability().transparent.can_view() {
-            Some(
-                self.get_utxos()
-                    .await
-                    .iter()
-                    .filter(|transparent_output| transparent_output.is_unspent())
-                    .map(|utxo| utxo.value)
-                    .sum::<u64>(),
-            )
-        } else {
-            None
+        match self.wallet_capability().unified_key_store() {
+            UnifiedKeyStore::Spend(_) => (),
+            UnifiedKeyStore::View(ufvk) => {
+                if ufvk.transparent().is_none() {
+                    return None;
+                }
+            }
+            UnifiedKeyStore::None => return None,
         }
+        Some(
+            self.get_utxos()
+                .await
+                .iter()
+                .filter(|transparent_output| transparent_output.is_unspent())
+                .map(|utxo| utxo.value)
+                .sum::<u64>(),
+        )
     }
 
     /// On chain balance
@@ -190,7 +201,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::wc_to_fvk(wallet_capability).expect("to get fvk from wc")
+        D::unified_key_store_to_fvk(wallet_capability.unified_key_store()).expect("to get fvk from the unified key store")
         .diversified_address(*note.diversifier())
         .and_then(|address| {
             D::ua_from_contained_receiver(wallet_capability, &address)
