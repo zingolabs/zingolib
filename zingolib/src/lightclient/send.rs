@@ -318,6 +318,8 @@ pub mod send_with_proposal {
 
     #[cfg(all(test, feature = "testvectors"))]
     mod tests {
+        use zcash_client_backend::PoolType;
+
         use crate::{
             lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
@@ -359,6 +361,32 @@ pub mod send_with_proposal {
 
             with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
                 .await;
+        }
+
+        #[tokio::test]
+        /// this is a live sync test. its execution time scales linearly since last updated
+        /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
+        async fn testnet_cbbhrwiilgbrababsshsmtpr_send_to_self_orchard_hot() {
+            std::env::set_var("RUST_BACKTRACE", "1");
+            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
+                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
+                ),
+            ))
+            .await;
+
+            with_assertions::propose_send_bump_sync_all_recipients(
+                &mut LiveChain::setup().await,
+                &client,
+                vec![(
+                    &client,
+                    PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard),
+                    10_000,
+                    None,
+                )],
+                false,
+            )
+            .await;
         }
 
         #[tokio::test]
