@@ -25,10 +25,10 @@ jobs:
         with:
           toolchain: 1.81
 
-      - name: Install nextest
+      - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest
+          tool: cargo-nextest
           version: 0.9.78
 
       - name: Install protoc
