@@ -319,7 +319,7 @@ pub mod send_with_proposal {
     #[cfg(all(test, feature = "testvectors"))]
     mod tests {
         use crate::{
-            lightclient::{sync::test::sync_example_wallet, LightClient},
+            lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
