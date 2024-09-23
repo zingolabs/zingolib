@@ -137,6 +137,7 @@ impl LightWallet {
                 .map_err(BuildTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
         let unified_spend_key = UnifiedSpendingKey::try_from(self.wallet_capability().as_ref())
             .map_err(BuildTransactionError::UnifiedSpendKey)?;
 
