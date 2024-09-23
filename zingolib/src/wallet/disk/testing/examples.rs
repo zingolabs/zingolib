@@ -22,7 +22,7 @@ pub enum ExampleWalletNetwork {
 pub enum ExampleMainnetWalletSeed {
     /// this is a mainnet wallet originally called missing_data_test
     VTFCORFBCBPCTCFUPMEGMWBP(ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion),
-    /// empty mainnet wallet
+    /// new mainnet wallet
     HHCCLALTPCCKCSSLPCNETBLR(ExampleHHCCLALTPCCKCSSLPCNETBLRVersion),
 }
 /// /
@@ -38,7 +38,7 @@ pub enum ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion {
 pub enum ExampleHHCCLALTPCCKCSSLPCNETBLRVersion {
     /// wallet was last saved in this serialization version
     Gf0aaf9347,
-    /// this wallet was funded with 0.01 fr fr fr
+    /// this wallet was funded with 0.01 sapling fr fr fr
     G80b5594ac,
 }
 /// /
