@@ -4,7 +4,7 @@ use zcash_address::unified::Encoding;
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::wallet::disk::testing::assert_wallet_capability_matches_seed;
-use crate::wallet::disk::testing::examples::ExampleAADAALACAADAALACAADAALACWalletVersion;
+use crate::wallet::disk::testing::examples::ExampleAADAALACAADAALACAADAALACVersion;
 use crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion;
 use crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR;
 
@@ -22,11 +22,11 @@ use super::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT;
 use super::examples::ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR;
 use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
 
-use super::examples::ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion;
-use super::examples::ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion;
-use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion;
-use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion;
-use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion;
+use super::examples::ExampleAAAAAAAAAAAAAAAAAAAAAAAAVersion;
+use super::examples::ExampleCBBHRWIILGBRABABSSHSMTPRVersion;
+use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTVersion;
+use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion;
+use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion;
 
 // moving toward completeness: each of these tests should assert everything known about the LightWallet without network.
 
@@ -42,7 +42,7 @@ impl ExampleWalletNetwork {
 #[tokio::test]
 async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
     Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
-        ExampleAAAAAAAAAAAAAAAAAAAAAAAAWalletVersion::V26,
+        ExampleAAAAAAAAAAAAAAAAAAAAAAAAVersion::V26,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -50,7 +50,7 @@ async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
 #[tokio::test]
 async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_and_sapl() {
     Regtest(AADAALACAADAALACAADAALAC(
-        ExampleAADAALACAADAALACAADAALACWalletVersion::OrchAndSapl,
+        ExampleAADAALACAADAALACAADAALACVersion::OrchAndSapl,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -58,7 +58,7 @@ async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_and_sapl() 
 #[tokio::test]
 async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_only() {
     Regtest(AADAALACAADAALACAADAALAC(
-        ExampleAADAALACAADAALACAADAALACWalletVersion::OrchOnly,
+        ExampleAADAALACAADAALACAADAALACVersion::OrchOnly,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -66,7 +66,7 @@ async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_only() {
 #[tokio::test]
 async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
     Regtest(HMVASMUVWMSSVICHCARBPOCT(
-        ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
+        ExampleHMVASMUVWMSSVICHCARBPOCTVersion::V27,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -75,7 +75,7 @@ async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     let wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V26,
+        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V26,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -93,7 +93,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
     let wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V27,
+        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V27,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -109,7 +109,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
     Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
+        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V28,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -117,7 +117,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_g2f3830058() {
     Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::G2f3830058,
+        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -125,7 +125,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_g2f3830058() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
     Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
-        ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b,
+        ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Gab72a38b,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -133,7 +133,7 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
     Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
-        ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::G93738061a,
+        ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::G93738061a,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -141,7 +141,7 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_ga74fed621() {
     Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
-        ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Ga74fed621,
+        ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -149,7 +149,7 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_ga74fed621() {
 #[tokio::test]
 async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
     Mainnet(VTFCORFBCBPCTCFUPMEGMWBP(
-        ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion::V28,
+        ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion::V28,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
@@ -217,7 +217,7 @@ async fn reload_wallet_from_buffer() {
     use crate::wallet::WalletCapability;
 
     let mid_wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRWalletVersion::V28,
+        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V28,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
