@@ -356,12 +356,13 @@ pub mod send_with_proposal {
         /// this wallet contains archaic diversified addresses, which may clog the new send engine.
         async fn testnet_mskmgdbhotbpetcjwcspgopp_shield_multi_account() {
             std::env::set_var("RUST_BACKTRACE", "1");
-            let client = crate::lightclient::sync::test::sync_example_wallet(
+
+            let case =
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
-                )),
-            )
-            .await;
+                ));
+
+            let client = sync_example_wallet(case).await;
 
             with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
                 .await;
@@ -373,12 +374,13 @@ pub mod send_with_proposal {
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
         async fn testnet_cbbhrwiilgbrababsshsmtpr_send_to_self_orchard_hot() {
             std::env::set_var("RUST_BACKTRACE", "1");
-            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+
+            let case =
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                     ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
-                ),
-            ))
-            .await;
+                ));
+
+            let client = sync_example_wallet(case).await;
 
             with_assertions::propose_send_bump_sync_all_recipients(
                 &mut LiveChain::setup().await,
@@ -399,12 +401,13 @@ pub mod send_with_proposal {
         /// this is a live sync test. its execution time scales linearly since last updated
         async fn testnet_cbbhrwiilgbrababsshsmtpr_shield_hot() {
             std::env::set_var("RUST_BACKTRACE", "1");
-            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+
+            let case =
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                     ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
-                ),
-            ))
-            .await;
+                ));
+
+            let client = sync_example_wallet(case).await;
 
             with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
                 .await;
