@@ -305,14 +305,17 @@ impl LightWallet {
             .collect::<Vec<_>>()
     }
 
+    #[allow(clippy::result_unit_err)]
     /// gets a UnifiedAddress, the first the wallet. this is the only receiver implemented as 2024-09-22
     pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-        for possible_ua in self.wallet_capability().addresses().iter() {
-            return Ok(possible_ua.clone());
+        if let Some(possible_ua) = self.wallet_capability().addresses().iter().next() {
+            Ok(possible_ua.clone())
+        } else {
+            Err(())
         }
-        Err(())
     }
 
+    #[allow(clippy::result_unit_err)]
     /// UnifiedAddress type is not a string. to process it into a string requires chain date.
     pub fn encode_ua_as_pool(
         &self,
@@ -344,6 +347,7 @@ impl LightWallet {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     /// gets a string address for the wallet, based on pooltype
     pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
         let ua = self.get_first_ua()?;
