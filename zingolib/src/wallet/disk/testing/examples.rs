@@ -19,6 +19,8 @@ pub enum ExampleWalletNetwork {
 pub enum ExampleMainnetWalletSeed {
     /// this is a mainnet wallet originally called missing_data_test
     VTFCORFBCBPCTCFUPMEGMWBP(ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion),
+    /// empty mainnet wallet
+    HHCCLALTPCCKCSSLPCNETBLR(ExampleHHCCLALTPCCKCSSLPCNETBLRVersion),
 }
 /// /
 #[non_exhaustive]
@@ -26,6 +28,13 @@ pub enum ExampleMainnetWalletSeed {
 pub enum ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion {
     /// wallet was last saved in this serialization version
     V28,
+}
+/// /
+#[non_exhaustive]
+#[derive(Clone)]
+pub enum ExampleHHCCLALTPCCKCSSLPCNETBLRVersion {
+    /// wallet was last saved in this serialization version
+    Gf0aaf9347,
 }
 /// /
 #[non_exhaustive]
@@ -200,6 +209,14 @@ impl ExampleWalletNetwork {
                 ))
                 .await
             }
+            ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Gf0aaf9347,
+            )) => {
+                LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
+                    "examples/mainnet/hhcclaltpcckcsslpcnetblr/gf0aaf9347/zingo-wallet.dat"
+                ))
+                .await
+            }
         }
     }
     /// picks the seed (or ufvk) string associated with an example wallet
@@ -223,6 +240,9 @@ impl ExampleWalletNetwork {
             ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
                 _,
             )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
+            ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                _,
+            )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
         }
     }
 }

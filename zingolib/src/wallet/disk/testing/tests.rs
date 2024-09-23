@@ -5,6 +5,8 @@ use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::wallet::disk::testing::assert_wallet_capability_matches_seed;
 use crate::wallet::disk::testing::examples::ExampleAADAALACAADAALACAADAALACWalletVersion;
+use crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion;
+use crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR;
 
 use super::super::LightWallet;
 
@@ -27,8 +29,6 @@ use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion;
 use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion;
 
 // moving toward completeness: each of these tests should assert everything known about the LightWallet without network.
-
-// todo: new mainnet
 
 impl ExampleWalletNetwork {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
@@ -150,6 +150,14 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_ga74fed621() {
 async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
     Mainnet(VTFCORFBCBPCTCFUPMEGMWBP(
         ExampleVTFCORFBCBPCTCFUPMEGMWBPWalletVersion::V28,
+    ))
+    .load_example_wallet_with_seed_verification()
+    .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_mainnet_hhcclaltpcckcsslpcnetblr_gf0aaf9347() {
+    Mainnet(HHCCLALTPCCKCSSLPCNETBLR(
+        ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Gf0aaf9347,
     ))
     .load_example_wallet_with_seed_verification()
     .await;
