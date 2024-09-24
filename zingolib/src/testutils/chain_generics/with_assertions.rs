@@ -38,17 +38,17 @@ where
 
     let proposal = from_inputs::propose(sender, raw_receivers).await.unwrap();
 
-    let txids = sender
-        .complete_and_broadcast_stored_proposal()
-        .await
-        .unwrap();
-
     let send_height = sender
         .wallet
         .get_target_height_and_anchor_offset()
         .await
         .expect("sender has a target height")
         .0;
+
+    let txids = sender
+        .complete_and_broadcast_stored_proposal()
+        .await
+        .unwrap();
 
     // digesting the calculated transaction
     // this step happens after transaction is recorded locally, but before learning anything about whether the server accepted it
