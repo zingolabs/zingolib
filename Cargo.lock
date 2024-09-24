@@ -4271,6 +4271,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "prost",
+ "rustls",
  "rustls-pemfile 1.0.4",
  "thiserror",
  "tokio-rustls",
