@@ -13,6 +13,7 @@ android_logger = "0.11"
 log = "0.4"
 uniffi = { workspace = true, features = [ "cli" ] }
 tokio = { workspace = true }
+rustls = { workspace = true }
 
 [build-dependencies]
 uniffi_build = { version = "0.27", features = [ "builtin-bindgen" ] }

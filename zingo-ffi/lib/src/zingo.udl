@@ -40,4 +40,5 @@ namespace zingo {
   string get_zennies_for_zingo_donation_address();
   string get_transaction_summaries();
   string get_value_transfers();
+  string set_crypto_default_provider_to_ring();
 };
