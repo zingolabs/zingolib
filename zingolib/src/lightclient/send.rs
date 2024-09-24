@@ -318,14 +318,16 @@ pub mod send_with_proposal {
 
     #[cfg(all(test, feature = "testvectors"))]
     mod tests {
+        use zcash_client_backend::PoolType;
+
         use crate::{
-            lightclient::LightClient,
-            wallet::{
-                disk::testing::examples::{
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion, ExampleTestnetWalletSeed,
-                    ExampleWalletNetwork,
-                },
-                LightWallet,
+            lightclient::sync::test::sync_example_wallet,
+            testutils::chain_generics::{
+                conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
+            },
+            wallet::disk::testing::examples::{
+                ExampleCBBHRWIILGBRABABSSHSMTPRVersion, ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion,
+                ExampleTestnetWalletSeed, ExampleWalletNetwork,
             },
         };
 
@@ -347,17 +349,65 @@ pub mod send_with_proposal {
             // TODO: match on specific error
         }
 
-        #[ignore]
+        #[ignore = "live testnet"]
         #[tokio::test]
-        async fn sync_testnet() {
-            let wallet = LightWallet::load_example_wallet(ExampleWalletNetwork::Testnet(
-                ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    ExampleMSKMGDBHOTBPETCJWCSPGOPPWalletVersion::Gab72a38b,
+        /// this is a live sync test. its execution time scales linearly since last updated
+        /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
+        /// this wallet contains archaic diversified addresses, which may clog the new send engine.
+        async fn testnet_mskmgdbhotbpetcjwcspgopp_shield_multi_account() {
+            std::env::set_var("RUST_BACKTRACE", "1");
+            let client = crate::lightclient::sync::test::sync_example_wallet(
+                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                    ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
+                )),
+            )
+            .await;
+
+            with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
+                .await;
+        }
+
+        #[ignore = "live testnet"]
+        #[tokio::test]
+        /// this is a live sync test. its execution time scales linearly since last updated
+        /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
+        async fn testnet_cbbhrwiilgbrababsshsmtpr_send_to_self_orchard_hot() {
+            std::env::set_var("RUST_BACKTRACE", "1");
+            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
+                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
                 ),
             ))
             .await;
-            let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
-            let _ = lc.do_sync(true).await;
+
+            with_assertions::propose_send_bump_sync_all_recipients(
+                &mut LiveChain::setup().await,
+                &client,
+                vec![(
+                    &client,
+                    PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard),
+                    10_000,
+                    None,
+                )],
+                false,
+            )
+            .await;
+        }
+
+        #[ignore = "live testnet"]
+        #[tokio::test]
+        /// this is a live sync test. its execution time scales linearly since last updated
+        async fn testnet_cbbhrwiilgbrababsshsmtpr_shield_hot() {
+            std::env::set_var("RUST_BACKTRACE", "1");
+            let client = sync_example_wallet(ExampleWalletNetwork::Testnet(
+                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
+                ),
+            ))
+            .await;
+
+            with_assertions::propose_shield_bump_sync(&mut LiveChain::setup().await, &client, true)
+                .await;
         }
     }
 }
