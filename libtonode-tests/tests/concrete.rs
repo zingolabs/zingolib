@@ -3466,7 +3466,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         for i in 1..4 {
-            let _ = faucet.do_sync(false).await;
+            faucet.do_sync(false).await.unwrap();
             from_inputs::quick_send(
                 &faucet,
                 vec![(&get_base_address_macro!(recipient, "sapling"), 10_100, None)],
@@ -3476,7 +3476,7 @@ mod slow {
             let chainwait: u32 = 6;
             let amount: u64 = u64::from(chainwait * i);
             zingolib::testutils::increase_server_height(&regtest_manager, chainwait).await;
-            let _ = recipient.do_sync(false).await;
+            recipient.do_sync(false).await.unwrap();
             from_inputs::quick_send(
                 &recipient,
                 vec![(&get_base_address_macro!(recipient, "unified"), amount, None)],
