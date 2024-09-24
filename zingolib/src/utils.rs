@@ -3,6 +3,7 @@
 pub mod conversion;
 pub mod error;
 
+#[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         #[doc = "Set the $name field of the builder."]
@@ -12,7 +13,7 @@ macro_rules! build_method {
         }
     };
 }
-#[cfg(test)] // temporary test gate as no production builders use this macros yet
+#[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_method_push {
     ($name:ident, $localtype:ty) => {
         #[doc = "Push a $ty to the builder."]
@@ -22,7 +23,7 @@ macro_rules! build_method_push {
         }
     };
 }
-#[cfg(test)] // temporary test gate as no production builders use this macros yet
+#[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_push_list {
     ($name:ident, $builder:ident, $struct:ident) => {
         for i in &$builder.$name {
@@ -31,10 +32,11 @@ macro_rules! build_push_list {
     };
 }
 
+#[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method_push;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_push_list;
 
 /// this mod exists to allow the use statement without cluttering the parent mod

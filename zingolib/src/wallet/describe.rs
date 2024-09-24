@@ -304,61 +304,14 @@ impl LightWallet {
             .map(|(_index, sk)| *sk)
             .collect::<Vec<_>>()
     }
-
-    #[allow(clippy::result_unit_err)]
-    /// gets a UnifiedAddress, the first the wallet. this is the only receiver implemented as 2024-09-22
-    pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-        if let Some(possible_ua) = self.wallet_capability().addresses().iter().next() {
-            Ok(possible_ua.clone())
-        } else {
-            Err(())
-        }
-    }
-
-    #[allow(clippy::result_unit_err)]
-    /// UnifiedAddress type is not a string. to process it into a string requires chain date.
-    pub fn encode_ua_as_pool(
-        &self,
-        ua: &zcash_keys::address::UnifiedAddress,
-        pool: PoolType,
-    ) -> Result<String, ()> {
-        match pool {
-            PoolType::Transparent => ua
-                .transparent()
-                .map(|taddr| {
-                    super::keys::address_from_pubkeyhash(&self.transaction_context.config, *taddr)
-                })
-                .ok_or(()),
-            PoolType::Shielded(ShieldedProtocol::Sapling) => ua
-                .sapling()
-                .map(|z_addr| {
-                    zcash_keys::encoding::encode_payment_address(
-                        self.transaction_context
-                            .config
-                            .chain
-                            .hrp_sapling_payment_address(),
-                        z_addr,
-                    )
-                })
-                .ok_or(()),
-            PoolType::Shielded(ShieldedProtocol::Orchard) => {
-                Ok(ua.encode(&self.transaction_context.config.chain))
-            }
-        }
-    }
-
-    #[allow(clippy::result_unit_err)]
-    /// gets a string address for the wallet, based on pooltype
-    pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
-        let ua = self.get_first_ua()?;
-        self.encode_ua_as_pool(&ua, pool)
-    }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any(test, feature = "test-elevation"))]
+mod test {
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
+    use zcash_primitives::consensus::NetworkConstants as _;
 
     use crate::config::ZingoConfigBuilder;
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -374,6 +327,61 @@ mod tests {
             LightWallet, WalletBase,
         },
     };
+
+    // these functions are totally good, and a better pattern for address lookup. maybe they can be gated in.
+    impl LightWallet {
+        #[allow(clippy::result_unit_err)]
+        /// gets a UnifiedAddress, the first the wallet. this is the only receiver implemented as 2024-09-22
+        pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
+            if let Some(possible_ua) = self.wallet_capability().addresses().iter().next() {
+                Ok(possible_ua.clone())
+            } else {
+                Err(())
+            }
+        }
+
+        #[allow(clippy::result_unit_err)]
+        /// UnifiedAddress type is not a string. to process it into a string requires chain date.
+        pub fn encode_ua_as_pool(
+            &self,
+            ua: &zcash_keys::address::UnifiedAddress,
+            pool: PoolType,
+        ) -> Result<String, ()> {
+            match pool {
+                PoolType::Transparent => ua
+                    .transparent()
+                    .map(|taddr| {
+                        crate::wallet::keys::address_from_pubkeyhash(
+                            &self.transaction_context.config,
+                            *taddr,
+                        )
+                    })
+                    .ok_or(()),
+                PoolType::Shielded(ShieldedProtocol::Sapling) => ua
+                    .sapling()
+                    .map(|z_addr| {
+                        zcash_keys::encoding::encode_payment_address(
+                            self.transaction_context
+                                .config
+                                .chain
+                                .hrp_sapling_payment_address(),
+                            z_addr,
+                        )
+                    })
+                    .ok_or(()),
+                PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                    Ok(ua.encode(&self.transaction_context.config.chain))
+                }
+            }
+        }
+
+        #[allow(clippy::result_unit_err)]
+        /// gets a string address for the wallet, based on pooltype
+        pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
+            let ua = self.get_first_ua()?;
+            self.encode_ua_as_pool(&ua, pool)
+        }
+    }
 
     #[tokio::test]
     async fn confirmed_balance_excluding_dust() {
