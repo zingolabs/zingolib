@@ -1,11 +1,9 @@
 //! Wallet-State reporters as LightWallet methods.
-use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 
-use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
@@ -308,27 +306,15 @@ impl LightWallet {
 
 #[cfg(any(test, feature = "test-elevation"))]
 mod test {
-    use orchard::note_encryption::OrchardDomain;
-    use sapling_crypto::note_encryption::SaplingDomain;
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
+
+    use zcash_client_backend::PoolType;
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::consensus::NetworkConstants as _;
 
-    use crate::config::ZingoConfigBuilder;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use crate::wallet::LightWallet;
 
-    use crate::{
-        mocks::{orchard_note::OrchardCryptoNoteBuilder, SaplingCryptoNoteBuilder},
-        wallet::{
-            notes::{
-                orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-                transparent::mocks::TransparentOutputBuilder,
-            },
-            transaction_record::mocks::TransactionRecordBuilder,
-            LightWallet, WalletBase,
-        },
-    };
-
-    // these functions are totally good, and a better pattern for address lookup. maybe they can be gated in.
+    // these functions are tested gold and a better pattern for address lookup.
+    // maybe later they can be gated in.
     impl LightWallet {
         #[allow(clippy::result_unit_err)]
         /// gets a UnifiedAddress, the first the wallet. this is the only receiver implemented as 2024-09-22
@@ -382,6 +368,30 @@ mod test {
             self.encode_ua_as_pool(&ua, pool)
         }
     }
+
+    #[cfg(test)]
+    use orchard::note_encryption::OrchardDomain;
+    #[cfg(test)]
+    use sapling_crypto::note_encryption::SaplingDomain;
+    #[cfg(test)]
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    #[cfg(test)]
+    use crate::config::ZingoConfigBuilder;
+    #[cfg(test)]
+    use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+    #[cfg(test)]
+    use crate::mocks::SaplingCryptoNoteBuilder;
+    #[cfg(test)]
+    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+    #[cfg(test)]
+    use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
+    #[cfg(test)]
+    use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
+    #[cfg(test)]
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
+    #[cfg(test)]
+    use crate::wallet::WalletBase;
 
     #[tokio::test]
     async fn confirmed_balance_excluding_dust() {
