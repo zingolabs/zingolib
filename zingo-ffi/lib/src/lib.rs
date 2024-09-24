@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::{commands, lightclient::LightClient, wallet::WalletBase};
 use rustls::crypto::ring::default_provider;
+use rustls::crypto::CryptoProvider;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -299,8 +300,17 @@ pub fn get_value_transfers() -> String {
 }
 
 pub fn set_crypto_default_provider_to_ring() -> String {
-    match default_provider().install_default().map_err(|_| "Error: Failed to install crypto provider".to_string()) {
-        Ok(_) => "true".to_string(),
-        Err(e) => e,
+    let resp: String;
+    {
+        if CryptoProvider::get_default().is_none() {
+            resp = match default_provider().install_default().map_err(|_| "Error: Failed to install crypto provider".to_string()) {
+                Ok(_) => "true".to_string(),
+                Err(e) => e,
+            };
+        } else {
+            resp = "true".to_string();
+        };
     }
+
+    resp
 }
