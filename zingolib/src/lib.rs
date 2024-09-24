@@ -17,7 +17,7 @@ pub mod lightclient;
 pub mod utils;
 pub mod wallet;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub(crate) mod mocks;
 #[cfg(any(test, feature = "test-elevation"))]
 pub mod testutils;

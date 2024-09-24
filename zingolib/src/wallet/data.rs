@@ -1988,7 +1988,7 @@ fn read_write_empty_sapling_tree() {
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub(crate) mod mocks {
     use zcash_primitives::memo::Memo;
 
