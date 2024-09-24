@@ -37,7 +37,6 @@ pub mod receivers {
     }
     impl From<Receiver> for Payment {
         fn from(receiver: Receiver) -> Self {
-            // FIXME: handle without_memo cases and remove unwrap
             Payment::new(
                 receiver.recipient_address,
                 receiver.amount,
@@ -46,7 +45,7 @@ pub mod receivers {
                 None,
                 vec![],
             )
-            .unwrap()
+            .expect("memo compatability checked in 'parse_send_args'")
         }
     }
 
