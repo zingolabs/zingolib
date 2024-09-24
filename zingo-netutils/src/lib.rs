@@ -85,6 +85,11 @@ impl GrpcConnector {
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
+            // install default crypto provider (ring)
+            if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
+                eprintln!("Error installing crypto provider: {:?}", e)
+            };
+
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
             let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();

@@ -18,7 +18,6 @@ mod load_wallet {
     use zingolib::utils;
     use zingolib::wallet::disk::testing::examples;
     use zingolib::wallet::propose::ProposeSendError::Proposal;
-    use zingolib::wallet::LightWallet;
 
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
@@ -74,11 +73,12 @@ mod load_wallet {
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
 
-        let wallet = LightWallet::load_example_wallet(examples::ExampleWalletNetwork::Regtest(
+        let wallet = examples::ExampleWalletNetwork::Regtest(
             examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
-                examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
+                examples::ExampleHMVASMUVWMSSVICHCARBPOCTVersion::V27,
             ),
-        ))
+        )
+        .load_example_wallet()
         .await;
 
         // let wallet = zingolib::testutils::load_wallet(
