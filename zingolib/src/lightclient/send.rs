@@ -370,6 +370,7 @@ pub mod send_with_proposal {
         #[tokio::test]
         /// this is a live sync test. its execution time scales linearly since last updated
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
+        /// note: live send waits 2 minutes for confirmation. expect 3min runtime
         async fn testnet_cbbhrwiilgbrababsshsmtpr_send_to_self_orchard_hot() {
             let case =
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
@@ -412,7 +413,7 @@ pub mod send_with_proposal {
         /// this is a live sync test. its execution time scales linearly since last updated
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
         /// note: live send waits 2 minutes for confirmation. expect 3min runtime
-        #[ignore = "dont automatically run hot tests!"]
+        #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
         async fn mainnet_hhcclaltpcckcsslpcnetblr_send_to_self_orchard_hot() {
             let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac));
 
