@@ -261,7 +261,9 @@ impl Drop for DarksideHandler {
             .is_err()
         {
             // if regular kill doesn't work, kill it harder
-            let _ = self.lightwalletd_handle.kill();
+            self.lightwalletd_handle
+                .kill()
+                .expect("command couldn't be killed");
         }
     }
 }
