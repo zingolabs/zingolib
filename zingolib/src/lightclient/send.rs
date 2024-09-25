@@ -355,8 +355,6 @@ pub mod send_with_proposal {
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
         /// this wallet contains archaic diversified addresses, which may clog the new send engine.
         async fn testnet_mskmgdbhotbpetcjwcspgopp_shield_multi_account() {
-            std::env::set_var("RUST_BACKTRACE", "1");
-
             let case =
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
@@ -373,8 +371,6 @@ pub mod send_with_proposal {
         /// this is a live sync test. its execution time scales linearly since last updated
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
         async fn testnet_cbbhrwiilgbrababsshsmtpr_send_to_self_orchard_hot() {
-            std::env::set_var("RUST_BACKTRACE", "1");
-
             let case =
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                     ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
@@ -399,9 +395,8 @@ pub mod send_with_proposal {
         #[ignore = "live testnet: testnet relies on NU6"]
         #[tokio::test]
         /// this is a live sync test. its execution time scales linearly since last updated
+        /// note: live send waits 2 minutes for confirmation. expect 3min runtime
         async fn testnet_cbbhrwiilgbrababsshsmtpr_shield_hot() {
-            std::env::set_var("RUST_BACKTRACE", "1");
-
             let case =
                 ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
                     ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
@@ -416,12 +411,24 @@ pub mod send_with_proposal {
         #[tokio::test]
         /// this is a live sync test. its execution time scales linearly since last updated
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
+        /// note: live send waits 2 minutes for confirmation. expect 3min runtime
+        #[ignore = "dont automatically run hot tests!"]
         async fn mainnet_hhcclaltpcckcsslpcnetblr_send_to_self_orchard_hot() {
-            std::env::set_var("RUST_BACKTRACE", "1");
-
             let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac));
 
             let client = sync_example_wallet(case).await;
+
+            println!(
+                "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
+                client
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .transaction_records_by_id
+                    .len()
+            );
 
             with_assertions::propose_send_bump_sync_all_recipients(
                 &mut LiveChain::setup().await,
