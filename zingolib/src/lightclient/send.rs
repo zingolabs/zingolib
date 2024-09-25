@@ -317,7 +317,7 @@ pub mod send_with_proposal {
     }
 
     #[cfg(all(test, feature = "testvectors"))]
-    mod tests {
+    mod test {
         use zcash_client_backend::PoolType;
 
         use crate::{
@@ -416,6 +416,7 @@ pub mod send_with_proposal {
         #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
         async fn mainnet_hhcclaltpcckcsslpcnetblr_send_to_self_orchard_hot() {
             let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac));
+            let target_pool = zcash_client_backend::ShieldedProtocol::Orchard;
 
             let client = sync_example_wallet(case).await;
 
@@ -434,12 +435,7 @@ pub mod send_with_proposal {
             with_assertions::propose_send_bump_sync_all_recipients(
                 &mut LiveChain::setup().await,
                 &client,
-                vec![(
-                    &client,
-                    PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard),
-                    10_000,
-                    None,
-                )],
+                vec![(&client, PoolType::Shielded(target_pool), 10_000, None)],
                 false,
             )
             .await;
