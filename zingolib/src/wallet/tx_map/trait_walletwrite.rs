@@ -52,30 +52,56 @@ impl WalletWrite for TxMap {
         unimplemented!()
     }
 
-    fn store_sent_tx(
+    fn store_transactions_to_be_sent(
         &mut self,
-        sent_tx: &zcash_client_backend::data_api::SentTransaction<Self::AccountId>,
+        transactions: &[zcash_client_backend::data_api::SentTransaction<Self::AccountId>],
     ) -> Result<(), Self::Error> {
-        let tx = sent_tx.tx();
+        for tx in transactions {
+            let tx = tx.tx();
+            let mut raw_tx = vec![];
+            tx.write(&mut raw_tx)
+                .map_err(TxMapTraitError::TransactionWrite)?;
 
-        let mut raw_tx = vec![];
-        tx.write(&mut raw_tx)
-            .map_err(TxMapTraitError::TransactionWrite)?;
-
-        match self.spending_data {
-            None => Err(TxMapTraitError::NoSpendCapability),
-            Some(ref mut spending_data) => {
+            if let Some(spending_data) = self.spending_data_mut() {
                 spending_data
                     .cached_raw_transactions_mut()
                     .insert(tx.txid(), raw_tx);
-                Ok(())
+            } else {
+                return Err(TxMapTraitError::NoSpendCapability);
             }
         }
+        Ok(())
     }
 
     fn truncate_to_height(
         &mut self,
         _block_height: zcash_primitives::consensus::BlockHeight,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn import_account_hd(
+        &mut self,
+        _seed: &secrecy::SecretVec<u8>,
+        _account_index: zip32::AccountId,
+        _birthday: &zcash_client_backend::data_api::AccountBirthday,
+    ) -> Result<(Self::Account, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
+        unimplemented!()
+    }
+
+    fn import_account_ufvk(
+        &mut self,
+        _unified_key: &zcash_keys::keys::UnifiedFullViewingKey,
+        _birthday: &zcash_client_backend::data_api::AccountBirthday,
+        _purpose: zcash_client_backend::data_api::AccountPurpose,
+    ) -> Result<Self::Account, Self::Error> {
+        unimplemented!()
+    }
+
+    fn set_transaction_status(
+        &mut self,
+        _txid: zcash_primitives::transaction::TxId,
+        _status: zcash_client_backend::data_api::TransactionStatus,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }

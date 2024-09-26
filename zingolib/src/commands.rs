@@ -12,7 +12,7 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_client_backend::address::Address;
+use zcash_keys::address::Address;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
@@ -212,7 +212,6 @@ impl Command for ParseAddressCommand {
                         crate::config::ChainType::Testnet => "test",
                         crate::config::ChainType::Regtest(_) => "regtest",
                     };
-
                     match recipient_address {
                         Address::Sapling(_) => object! {
                             "status" => "success",
@@ -242,6 +241,7 @@ impl Command for ParseAddressCommand {
                                 "receivers_available" => receivers_available,
                             }
                         }
+                        Address::Tex(_) => todo!(),
                     }
                 }),
                 4,
@@ -623,16 +623,15 @@ impl Command for SpendableBalanceCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo) =
-            match parse_spendable_balance_args(args, &lightclient.config.chain) {
-                Ok(address_and_zennies) => address_and_zennies,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
-                        e
-                    );
-                }
-            };
+        let (address, zennies_for_zingo) = match parse_spendable_balance_args(args) {
+            Ok(address_and_zennies) => address_and_zennies,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    e
+                );
+            }
+        };
         RT.block_on(async move {
             match lightclient
                 .get_spendable_shielded_balance(address, zennies_for_zingo)
@@ -836,7 +835,7 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
@@ -900,16 +899,15 @@ impl Command for SendAllCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo, memo) =
-            match utils::parse_send_all_args(args, &lightclient.config().chain) {
-                Ok(parse_results) => parse_results,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help sendall' for correct usage and examples.",
-                        e
-                    )
-                }
-            };
+        let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
+            Ok(parse_results) => parse_results,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help sendall' for correct usage and examples.",
+                    e
+                )
+            }
+        };
         RT.block_on(async move {
             match lightclient
                 .propose_send_all(address, zennies_for_zingo, memo)
@@ -961,7 +959,7 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
