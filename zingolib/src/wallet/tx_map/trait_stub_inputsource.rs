@@ -52,14 +52,14 @@ impl InputSource for TxMap {
         unimplemented!()
     }
 
-    fn get_unspent_transparent_outputs(
+    fn get_spendable_transparent_outputs(
         &self,
-        address: &zcash_primitives::legacy::TransparentAddress,
-        max_height: zcash_primitives::consensus::BlockHeight,
-        exclude: &[zcash_primitives::transaction::components::OutPoint],
+        _address: &zcash_primitives::legacy::TransparentAddress,
+        target_height: zcash_primitives::consensus::BlockHeight,
+        _min_confirmations: u32,
     ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         self.transaction_records_by_id
-            .get_unspent_transparent_outputs(address, max_height, exclude)
+            .get_spendable_transparent_outputs(_address, target_height, _min_confirmations)
             .map_err(TxMapTraitError::InputSource)
     }
 }
