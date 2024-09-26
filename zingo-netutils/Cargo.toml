@@ -12,7 +12,7 @@ hyper-rustls.workspace = true
 hyper-util.workspace = true
 hyper.workspace = true
 prost.workspace = true
-rustls-pemfile = { workspace = true }
+rustls-pemfile.workspace = true
 thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true

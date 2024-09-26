@@ -10,7 +10,7 @@ use std::{marker::PhantomData, sync::Arc};
 use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use getset::Getters;
+use getset::{Getters, Setters};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_keys::keys::UnifiedFullViewingKey;
@@ -29,7 +29,8 @@ use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
-use super::{extended_transparent::ExtendedPrivKey, ToBase58Check};
+use super::legacy::Capability;
+use super::{legacy::extended_transparent::ExtendedPrivKey, ToBase58Check};
 
 #[derive(Debug)]
 pub enum UnifiedKeyStore {
@@ -110,9 +111,9 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
 }
 
 /// TODO: Add Doc Comment Here!
-#[derive(Debug, Getters)]
+#[derive(Debug, Getters, Setters)]
 pub struct WalletCapability {
-    #[getset(get = "pub")]
+    #[getset(get = "pub", set = "pub(crate)")]
     unified_key_store: UnifiedKeyStore,
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
     addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
@@ -492,69 +493,76 @@ fn transparent_key_from_bytes(bytes: &[u8]) -> Result<ExtendedPrivKey, std::io::
     })
 }
 
-impl<V, S> ReadableWriteable<()> for Capability<V, S>
-where
-    V: ReadableWriteable<()>,
-    S: ReadableWriteable<()>,
-{
-    const VERSION: u8 = 1;
-    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
-        let _version = Self::get_version(&mut reader)?;
-        let capability_type = reader.read_u8()?;
-        Ok(match capability_type {
-            0 => Capability::None,
-            1 => Capability::View(V::read(&mut reader, ())?),
-            2 => Capability::Spend(S::read(&mut reader, ())?),
-            x => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Unknown wallet Capability type: {}", x),
-                ))
-            }
-        })
-    }
+impl ReadableWriteable<ChainType> for WalletCapability {
+    const VERSION: u8 = 3;
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        writer.write_u8(Self::VERSION)?;
-        match self {
-            Capability::None => writer.write_u8(0),
-            Capability::View(vk) => {
-                writer.write_u8(1)?;
-                vk.write(&mut writer)
-            }
-            Capability::Spend(sk) => {
-                writer.write_u8(2)?;
-                sk.write(&mut writer)
-            }
-        }
-    }
-}
-
-impl ReadableWriteable<()> for WalletCapability {
-    const VERSION: u8 = 2;
-
-    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
+    fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
-                let orchard = orchard::keys::SpendingKey::read(&mut reader, ())?;
-                let sapling = sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
-                let transparent =
-                    super::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
+                // keys must be read to increment the cursor correctly but USK is derived later from seed
+                // due to missing BIP0032 transparent extended private key data
+                orchard::keys::SpendingKey::read(&mut reader, ())?;
+                sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
+                super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
                 Self {
-                    orchard: Capability::Spend(orchard),
-                    sapling: Capability::Spend(sapling),
-                    transparent: Capability::Spend(transparent),
+                    unified_key_store: UnifiedKeyStore::None,
                     ..Default::default()
                 }
             }
-            2 => Self {
-                orchard: Capability::read(&mut reader, ())?,
-                sapling: Capability::read(&mut reader, ())?,
-                transparent: Capability::read(&mut reader, ())?,
-                ..Default::default()
-            },
+            2 => {
+                let orchard_capability = Capability::<
+                    orchard::keys::FullViewingKey,
+                    orchard::keys::SpendingKey,
+                >::read(&mut reader, ())?;
+                let sapling_capability = Capability::<
+                    sapling_crypto::zip32::DiversifiableFullViewingKey,
+                    sapling_crypto::zip32::ExtendedSpendingKey,
+                >::read(&mut reader, ())?;
+                let transparent_capability = Capability::<
+                    super::legacy::extended_transparent::ExtendedPubKey,
+                    super::legacy::extended_transparent::ExtendedPrivKey,
+                >::read(&mut reader, ())?;
+
+                // if this wallet was created from a UFVK, create the UFVK from FVKs.
+                // otherwise, set unified key store to None.
+                //
+                // USK is derived later from seed due to missing BIP0032 transparent extended private key data
+                // this missing data is not required for UFVKs
+                let orchard_fvk = match orchard_capability {
+                    Capability::View(fvk) => Some(fvk),
+                    _ => None,
+                };
+                let sapling_fvk = match sapling_capability {
+                    Capability::View(fvk) => Some(fvk),
+                    _ => None,
+                };
+                let transparent_fvk = match transparent_capability {
+                    Capability::View(fvk) => Some(fvk),
+                    _ => None,
+                };
+                let unified_key_store = if orchard_fvk.is_some()
+                    || sapling_fvk.is_some()
+                    || transparent_fvk.is_some()
+                {
+                    let ufvk = super::legacy::legacy_fvks_to_ufvk(
+                        orchard_fvk,
+                        sapling_fvk,
+                        transparent_fvk,
+                        &input,
+                    )
+                    .unwrap();
+                    UnifiedKeyStore::View(ufvk)
+                } else {
+                    UnifiedKeyStore::None
+                };
+                Self {
+                    unified_key_store,
+                    ..Default::default()
+                }
+            }
+            3 => UnifiedKeyStore::read,
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,

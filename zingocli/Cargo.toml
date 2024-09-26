@@ -13,3 +13,5 @@ json = { workspace = true }
 log = { workspace = true }
 rustyline = { workspace = true }
 shellwords = { workspace = true }
+
+rustls.workspace = true

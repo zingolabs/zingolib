@@ -665,3 +665,57 @@ impl LightClient {
         response
     }
 }
+
+#[cfg(all(test, feature = "testvectors"))]
+pub mod test {
+    use crate::{
+        lightclient::LightClient,
+        wallet::disk::testing::examples::{
+            ExampleCBBHRWIILGBRABABSSHSMTPRVersion, ExampleHHCCLALTPCCKCSSLPCNETBLRVersion,
+            ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion, ExampleMainnetWalletSeed,
+            ExampleTestnetWalletSeed, ExampleWalletNetwork,
+        },
+    };
+
+    pub(crate) async fn sync_example_wallet(wallet_case: ExampleWalletNetwork) -> LightClient {
+        std::env::set_var("RUST_BACKTRACE", "1");
+        let wallet = wallet_case.load_example_wallet().await;
+        let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+        lc.do_sync(true).await.unwrap();
+        lc
+    }
+
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    #[tokio::test]
+    async fn testnet_sync_mskmgdbhotbpetcjwcspgopp_latest() {
+        sync_example_wallet(ExampleWalletNetwork::Testnet(
+            ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
+            ),
+        ))
+        .await;
+    }
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    #[tokio::test]
+    async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
+        sync_example_wallet(ExampleWalletNetwork::Testnet(
+            ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
+            ),
+        ))
+        .await;
+    }
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[tokio::test]
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    async fn mainnet_sync_hhcclaltpcckcsslpcnetblr_latest() {
+        sync_example_wallet(ExampleWalletNetwork::Mainnet(
+            ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Gf0aaf9347,
+            ),
+        ))
+        .await;
+    }
+}

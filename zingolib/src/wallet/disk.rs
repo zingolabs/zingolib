@@ -2,6 +2,8 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use log::{error, info};
+use zcash_keys::keys::UnifiedSpendingKey;
+use zip32::AccountId;
 
 use std::{
     io::{self, Error, ErrorKind, Read, Write},
@@ -19,13 +21,13 @@ use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
 
-use crate::config::ZingoConfig;
+use crate::{config::ZingoConfig, wallet::keys::unified::UnifiedKeyStore};
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
 use crate::wallet::{utils, SendProgress};
 
-use super::keys::unified::{Capability, WalletCapability};
+use super::keys::unified::WalletCapability;
 
 use super::LightWallet;
 use super::{
@@ -123,23 +125,7 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let wallet_capability = WalletCapability::read(&mut reader, ())?;
-        info!("Keys in this wallet:");
-        match &wallet_capability.orchard {
-            Capability::None => (),
-            Capability::View(_) => info!("  - Orchard Full Viewing Key"),
-            Capability::Spend(_) => info!("  - Orchard Spending Key"),
-        };
-        match &wallet_capability.sapling {
-            Capability::None => (),
-            Capability::View(_) => info!("  - Sapling Extended Full Viewing Key"),
-            Capability::Spend(_) => info!("  - Sapling Extended Spending Key"),
-        };
-        match &wallet_capability.transparent {
-            Capability::None => (),
-            Capability::View(_) => info!("  - transparent extended public key"),
-            Capability::Spend(_) => info!("  - transparent extended private key"),
-        };
+        let mut wallet_capability = WalletCapability::read(&mut reader, ())?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         if external_version <= 14 {
@@ -200,20 +186,6 @@ impl LightWallet {
             WalletZecPriceInfo::read(&mut reader)?
         };
 
-        // this initialization combines two types of data
-        let transaction_context = TransactionContext::new(
-            // Config data could be used differently based on the circumstances
-            // hardcoded?
-            // entered at init by user?
-            // stored on disk in a separate location and connected by a descendant library (such as zingo-mobile)?
-            config,
-            // Saveable Arc data
-            //   - Arcs allow access between threads.
-            //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
-            Arc::new(wallet_capability),
-            Arc::new(RwLock::new(transactions)),
-        );
-
         let _orchard_anchor_height_pairs = if external_version == 25 {
             Vector::read(&mut reader, |r| {
                 let mut anchor_bytes = [0; 32];
@@ -244,6 +216,63 @@ impl LightWallet {
         } else {
             None
         };
+
+        // Derive unified spending key from seed if it exists.
+        //
+        // UnifiedSpendingKey is initially set to None variant except when loading unified full viewing key where the mnemonic is not available.
+        // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
+        if matches!(wallet_capability.unified_key_store(), UnifiedKeyStore::None)
+            && mnemonic.is_some()
+        {
+            wallet_capability.set_unified_key_store(UnifiedKeyStore::Spend(
+                UnifiedSpendingKey::from_seed(
+                    &config.chain,
+                    &mnemonic
+                        .as_ref()
+                        .expect("mnemonic should not be None in this scope")
+                        .0
+                        .clone()
+                        .to_seed(""),
+                    AccountId::ZERO,
+                )
+                .unwrap(),
+            ));
+        }
+
+        info!("Keys in this wallet:");
+        match wallet_capability.unified_key_store() {
+            UnifiedKeyStore::Spend(_) => {
+                info!("  - orchard spending key");
+                info!("  - sapling extended spending key");
+                info!("  - transparent extended private key");
+            }
+            UnifiedKeyStore::View(ufvk) => {
+                if ufvk.orchard().is_some() {
+                    info!("  - orchard full viewing key");
+                }
+                if ufvk.sapling().is_some() {
+                    info!("  - sapling diversifiable full viewing key");
+                }
+                if ufvk.transparent().is_some() {
+                    info!("  - transparent extended public key");
+                }
+            }
+            UnifiedKeyStore::None => info!("  - no keys found"),
+        }
+
+        // this initialization combines two types of data
+        let transaction_context = TransactionContext::new(
+            // Config data could be used differently based on the circumstances
+            // hardcoded?
+            // entered at init by user?
+            // stored on disk in a separate location and connected by a descendant library (such as zingo-mobile)?
+            config,
+            // Saveable Arc data
+            //   - Arcs allow access between threads.
+            //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
+            Arc::new(wallet_capability),
+            Arc::new(RwLock::new(transactions)),
+        );
 
         let lw = Self {
             blocks: Arc::new(RwLock::new(blocks)),
