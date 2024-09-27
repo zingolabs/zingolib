@@ -78,7 +78,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
         }
     }
 }
-impl ReadableWriteable<(), ()> for UnifiedSpendingKey {
+impl ReadableWriteable for UnifiedSpendingKey {
     const VERSION: u8 = 0;
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
@@ -228,7 +228,7 @@ pub struct ReceiverSelection {
     pub transparent: bool,
 }
 
-impl ReadableWriteable<(), ()> for ReceiverSelection {
+impl ReadableWriteable for ReceiverSelection {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {

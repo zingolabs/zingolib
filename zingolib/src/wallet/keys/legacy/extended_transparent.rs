@@ -152,7 +152,7 @@ impl ExtendedPrivKey {
     }
 }
 
-impl ReadableWriteable<(), ()> for SecretKey {
+impl ReadableWriteable for SecretKey {
     const VERSION: u8 = 0; // not applicable
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         let mut secret_key_bytes = [0; 32];
@@ -166,7 +166,7 @@ impl ReadableWriteable<(), ()> for SecretKey {
     }
 }
 
-impl ReadableWriteable<(), ()> for ExtendedPrivKey {
+impl ReadableWriteable for ExtendedPrivKey {
     const VERSION: u8 = 1;
 
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
@@ -225,7 +225,7 @@ impl ExtendedPubKey {
     }
 }
 
-impl ReadableWriteable<(), ()> for PublicKey {
+impl ReadableWriteable for PublicKey {
     const VERSION: u8 = 0; // not applicable
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         let mut public_key_bytes = [0; 33];
@@ -239,7 +239,7 @@ impl ReadableWriteable<(), ()> for PublicKey {
     }
 }
 
-impl ReadableWriteable<(), ()> for ExtendedPubKey {
+impl ReadableWriteable for ExtendedPubKey {
     const VERSION: u8 = 1;
 
     fn read<R: std::io::Read>(mut reader: R, _input: ()) -> std::io::Result<Self> {

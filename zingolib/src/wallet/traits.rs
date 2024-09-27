@@ -880,7 +880,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
 }
 
 /// TODO: Add Doc Comment Here!
-pub trait ReadableWriteable<ReadInput, WriteInput>: Sized {
+pub trait ReadableWriteable<ReadInput = (), WriteInput = ()>: Sized {
     /// TODO: Add Doc Comment Here!
     const VERSION: u8;
 
@@ -907,7 +907,7 @@ pub trait ReadableWriteable<ReadInput, WriteInput>: Sized {
     }
 }
 
-impl ReadableWriteable<(), ()> for orchard::keys::SpendingKey {
+impl ReadableWriteable for orchard::keys::SpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
@@ -927,7 +927,7 @@ impl ReadableWriteable<(), ()> for orchard::keys::SpendingKey {
     }
 }
 
-impl ReadableWriteable<(), ()> for sapling_crypto::zip32::ExtendedSpendingKey {
+impl ReadableWriteable for sapling_crypto::zip32::ExtendedSpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _input: ()) -> io::Result<Self> {
@@ -939,7 +939,7 @@ impl ReadableWriteable<(), ()> for sapling_crypto::zip32::ExtendedSpendingKey {
     }
 }
 
-impl ReadableWriteable<(), ()> for sapling_crypto::zip32::DiversifiableFullViewingKey {
+impl ReadableWriteable for sapling_crypto::zip32::DiversifiableFullViewingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
@@ -958,7 +958,7 @@ impl ReadableWriteable<(), ()> for sapling_crypto::zip32::DiversifiableFullViewi
     }
 }
 
-impl ReadableWriteable<(), ()> for orchard::keys::FullViewingKey {
+impl ReadableWriteable for orchard::keys::FullViewingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _input: ()) -> io::Result<Self> {
@@ -970,9 +970,7 @@ impl ReadableWriteable<(), ()> for orchard::keys::FullViewingKey {
     }
 }
 
-impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability), ()>
-    for sapling_crypto::Note
-{
+impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sapling_crypto::Note {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
@@ -1004,9 +1002,7 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability), ()>
     }
 }
 
-impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability), ()>
-    for orchard::note::Note
-{
+impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
@@ -1054,18 +1050,15 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability), ()>
 }
 
 impl<T>
-    ReadableWriteable<
-        (
-            &WalletCapability,
-            Option<
-                &mut Vec<(
-                    IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
-                    BlockHeight,
-                )>,
-            >,
-        ),
-        (),
-    > for T
+    ReadableWriteable<(
+        &WalletCapability,
+        Option<
+            &mut Vec<(
+                IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
+                BlockHeight,
+            )>,
+        >,
+    )> for T
 where
     T: ShieldedNoteInterface,
 {
