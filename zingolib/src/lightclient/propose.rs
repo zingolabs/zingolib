@@ -188,4 +188,7 @@ mod shielding {
             )]
         );
     }
+
+    #[tokio::test]
+    async fn propose_send_to_tex() {}
 }
