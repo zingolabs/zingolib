@@ -1,5 +1,4 @@
 use bip0039::Mnemonic;
-use zcash_address::unified::Encoding;
 
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;

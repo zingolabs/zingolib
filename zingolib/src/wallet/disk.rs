@@ -54,7 +54,9 @@ impl LightWallet {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write all the keys
-        self.transaction_context.key.write(&mut writer)?;
+        self.transaction_context
+            .key
+            .write(&mut writer, self.transaction_context.config.chain)?;
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
@@ -125,7 +127,7 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let mut wallet_capability = WalletCapability::read(&mut reader, ())?;
+        let mut wallet_capability = WalletCapability::read(&mut reader, config.chain)?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         if external_version <= 14 {

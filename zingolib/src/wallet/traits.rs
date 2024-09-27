@@ -880,15 +880,15 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
 }
 
 /// TODO: Add Doc Comment Here!
-pub trait ReadableWriteable<Input>: Sized {
+pub trait ReadableWriteable<ReadInput, WriteInput>: Sized {
     /// TODO: Add Doc Comment Here!
     const VERSION: u8;
 
     /// TODO: Add Doc Comment Here!
-    fn read<R: Read>(reader: R, input: Input) -> io::Result<Self>;
+    fn read<R: Read>(reader: R, input: ReadInput) -> io::Result<Self>;
 
     /// TODO: Add Doc Comment Here!
-    fn write<W: Write>(&self, writer: W) -> io::Result<()>;
+    fn write<W: Write>(&self, writer: W, input: WriteInput) -> io::Result<()>;
 
     /// TODO: Add Doc Comment Here!
     fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
@@ -907,10 +907,10 @@ pub trait ReadableWriteable<Input>: Sized {
     }
 }
 
-impl ReadableWriteable<()> for orchard::keys::SpendingKey {
+impl ReadableWriteable<(), ()> for orchard::keys::SpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
-    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let mut data = [0u8; 32];
         reader.read_exact(&mut data)?;
 
@@ -922,27 +922,27 @@ impl ReadableWriteable<()> for orchard::keys::SpendingKey {
         })
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         writer.write_all(self.to_bytes())
     }
 }
 
-impl ReadableWriteable<()> for sapling_crypto::zip32::ExtendedSpendingKey {
+impl ReadableWriteable<(), ()> for sapling_crypto::zip32::ExtendedSpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
-    fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
+    fn read<R: Read>(reader: R, _input: ()) -> io::Result<Self> {
         Self::read(reader)
     }
 
-    fn write<W: Write>(&self, writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, writer: W, _input: ()) -> io::Result<()> {
         self.write(writer)
     }
 }
 
-impl ReadableWriteable<()> for sapling_crypto::zip32::DiversifiableFullViewingKey {
+impl ReadableWriteable<(), ()> for sapling_crypto::zip32::DiversifiableFullViewingKey {
     const VERSION: u8 = 0; //Not applicable
 
-    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let mut fvk_bytes = [0u8; 128];
         reader.read_exact(&mut fvk_bytes)?;
         sapling_crypto::zip32::DiversifiableFullViewingKey::from_bytes(&fvk_bytes).ok_or(
@@ -953,24 +953,26 @@ impl ReadableWriteable<()> for sapling_crypto::zip32::DiversifiableFullViewingKe
         )
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         writer.write_all(&self.to_bytes())
     }
 }
 
-impl ReadableWriteable<()> for orchard::keys::FullViewingKey {
+impl ReadableWriteable<(), ()> for orchard::keys::FullViewingKey {
     const VERSION: u8 = 0; //Not applicable
 
-    fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
+    fn read<R: Read>(reader: R, _input: ()) -> io::Result<Self> {
         Self::read(reader)
     }
 
-    fn write<W: Write>(&self, writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, writer: W, _input: ()) -> io::Result<()> {
         self.write(writer)
     }
 }
 
-impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sapling_crypto::Note {
+impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability), ()>
+    for sapling_crypto::Note
+{
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
@@ -994,7 +996,7 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
         )
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
         super::data::write_sapling_rseed(&mut writer, self.rseed())?;
@@ -1002,7 +1004,9 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
     }
 }
 
-impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
+impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability), ()>
+    for orchard::note::Note
+{
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
@@ -1040,7 +1044,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
         writer.write_all(&self.rho().to_bytes())?;
@@ -1050,15 +1054,18 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
 }
 
 impl<T>
-    ReadableWriteable<(
-        &WalletCapability,
-        Option<
-            &mut Vec<(
-                IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
-                BlockHeight,
-            )>,
-        >,
-    )> for T
+    ReadableWriteable<
+        (
+            &WalletCapability,
+            Option<
+                &mut Vec<(
+                    IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+            >,
+        ),
+        (),
+    > for T
 where
     T: ShieldedNoteInterface,
 {
@@ -1087,8 +1094,10 @@ where
         reader.read_exact(&mut diversifier_bytes)?;
         let diversifier = T::Diversifier::from_bytes(diversifier_bytes);
 
-        let note =
-            <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
+        let note = <T::Note as ReadableWriteable<_, _>>::read(
+            &mut reader,
+            (diversifier, wallet_capability),
+        )?;
 
         let witnessed_position = if external_version >= 4 {
             Position::from(reader.read_u64::<LittleEndian>()?)
@@ -1183,13 +1192,13 @@ where
         ))
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         // Write a version number first, so we can later upgrade this if needed.
         writer.write_u8(Self::VERSION)?;
 
         writer.write_all(&self.diversifier().to_bytes())?;
 
-        self.note().write(&mut writer)?;
+        self.note().write(&mut writer, ())?;
         writer.write_u64::<LittleEndian>(u64::from(self.witnessed_position().ok_or(
             io::Error::new(
                 io::ErrorKind::InvalidData,

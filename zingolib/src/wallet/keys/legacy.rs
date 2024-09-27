@@ -1,13 +1,9 @@
 use std::io::{self, Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use bytes::LittleEndian;
-use zcash_address::unified::Typecode;
-use zcash_encoding::CompactSize;
-use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
-use zcash_primitives::legacy::keys::AccountPrivKey;
+use zcash_keys::keys::UnifiedFullViewingKey;
 
-use crate::wallet::{traits::ReadableWriteable, LightWallet};
+use crate::wallet::traits::ReadableWriteable;
 
 pub mod extended_transparent;
 
@@ -23,10 +19,10 @@ pub enum Capability<ViewingKeyType, SpendKeyType> {
     Spend(SpendKeyType),
 }
 
-impl<V, S> ReadableWriteable<()> for Capability<V, S>
+impl<V, S> ReadableWriteable<(), ()> for Capability<V, S>
 where
-    V: ReadableWriteable<()>,
-    S: ReadableWriteable<()>,
+    V: ReadableWriteable<(), ()>,
+    S: ReadableWriteable<(), ()>,
 {
     const VERSION: u8 = 1;
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
@@ -45,17 +41,17 @@ where
         })
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         match self {
             Capability::None => writer.write_u8(0),
             Capability::View(vk) => {
                 writer.write_u8(1)?;
-                vk.write(&mut writer)
+                vk.write(&mut writer, ())
             }
             Capability::Spend(sk) => {
                 writer.write_u8(2)?;
-                sk.write(&mut writer)
+                sk.write(&mut writer, ())
             }
         }
     }
@@ -85,5 +81,5 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_primitives::consensus::Parameters>(
 
     let ufvk = zcash_address::unified::Ufvk::try_from_items(fvks).map_err(|e| e.to_string())?;
 
-    UnifiedFullViewingKey::decode(parameterss, &ufvk.encode(&parameterss.network_type()))
+    UnifiedFullViewingKey::decode(parameters, &ufvk.encode(&parameters.network_type()))
 }

@@ -19,18 +19,17 @@ use zcash_primitives::legacy::keys::{IncomingViewingKey, NonHardenedChildIndex};
 
 use crate::config::{ChainType, ZingoConfig};
 use crate::wallet::error::KeyError;
-use secp256k1::SecretKey;
 use zcash_address::unified::{Encoding, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
-use zcash_encoding::Vector;
+use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
 use super::legacy::Capability;
-use super::{legacy::extended_transparent::ExtendedPrivKey, ToBase58Check};
+use super::ToBase58Check;
 
 #[derive(Debug)]
 pub enum UnifiedKeyStore {
@@ -42,6 +41,85 @@ pub enum UnifiedKeyStore {
 impl UnifiedKeyStore {
     pub fn is_spending_key(&self) -> bool {
         matches!(self, UnifiedKeyStore::Spend(_))
+    }
+}
+
+impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
+    const VERSION: u8 = 0;
+
+    fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
+        let key_type = reader.read_u8()?;
+        Ok(match key_type {
+            0 => UnifiedKeyStore::Spend(UnifiedSpendingKey::read(reader, ())?),
+            1 => UnifiedKeyStore::View(UnifiedFullViewingKey::read(reader, input)?),
+            2 => UnifiedKeyStore::None,
+            x => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Unknown key type: {}", x),
+                ))
+            }
+        })
+    }
+
+    fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        match self {
+            UnifiedKeyStore::Spend(usk) => {
+                writer.write_u8(0)?;
+                usk.write(&mut writer, ())
+            }
+            UnifiedKeyStore::View(ufvk) => {
+                writer.write_u8(1)?;
+                ufvk.write(&mut writer, input)
+            }
+            UnifiedKeyStore::None => writer.write_u8(2),
+        }
+    }
+}
+impl ReadableWriteable<(), ()> for UnifiedSpendingKey {
+    const VERSION: u8 = 0;
+
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
+        let len = CompactSize::read(&mut reader)?;
+        let mut usk = vec![0u8; len as usize];
+        reader.read_exact(&mut usk);
+
+        UnifiedSpendingKey::from_bytes(Era::Orchard, &usk)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "USK bytes are invalid"))
+    }
+
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
+        let usk_bytes = self.to_bytes(Era::Orchard);
+        CompactSize::write(&mut writer, usk_bytes.len());
+        writer.write_all(&usk_bytes)?;
+        Ok(())
+    }
+}
+impl ReadableWriteable<ChainType, ChainType> for UnifiedFullViewingKey {
+    const VERSION: u8 = 0;
+
+    fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
+        let len = CompactSize::read(&mut reader)?;
+        let mut ufvk = vec![0u8; len as usize];
+        reader.read_exact(&mut ufvk);
+        let ufvk_encoded = std::str::from_utf8(&ufvk)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+
+        UnifiedFullViewingKey::decode(&input, ufvk_encoded).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("UFVK decoding error: {}", e),
+            )
+        })
+    }
+
+    fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
+        let ufvk_bytes = self.encode(&input).as_bytes().to_vec();
+        CompactSize::write(&mut writer, ufvk_bytes.len());
+        writer.write_all(&ufvk_bytes)?;
+        Ok(())
     }
 }
 
@@ -150,10 +228,10 @@ pub struct ReceiverSelection {
     pub transparent: bool,
 }
 
-impl ReadableWriteable<()> for ReceiverSelection {
+impl ReadableWriteable<(), ()> for ReceiverSelection {
     const VERSION: u8 = 1;
 
-    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let receivers = reader.read_u8()?;
         Ok(Self {
@@ -163,7 +241,7 @@ impl ReadableWriteable<()> for ReceiverSelection {
         })
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         let mut receivers = 0;
         if self.orchard {
@@ -188,7 +266,7 @@ fn read_write_receiver_selections() {
     {
         let mut receivers_selected_bytes = [0; 2];
         receivers_selected
-            .write(receivers_selected_bytes.as_mut_slice())
+            .write(receivers_selected_bytes.as_mut_slice(), ())
             .unwrap();
         assert_eq!(i as u8, receivers_selected_bytes[1]);
     }
@@ -221,8 +299,8 @@ impl WalletCapability {
     ) -> Result<UnifiedAddress, String> {
         if let UnifiedKeyStore::View(ufvk) = self.unified_key_store() {
             if (desired_receivers.transparent & ufvk.transparent().is_none())
-                | (desired_receivers.sapling & ufvk.sapling().is_none())
-                | (desired_receivers.orchard & ufvk.orchard().is_none())
+                || (desired_receivers.sapling & ufvk.sapling().is_none())
+                || (desired_receivers.orchard & ufvk.orchard().is_none())
             {
                 return Err("The wallet is not capable of producing desired receivers.".to_string());
             }
@@ -307,7 +385,6 @@ impl WalletCapability {
         let ua = UnifiedAddress::from_receivers(
             orchard_receiver,
             sapling_receiver,
-            #[allow(deprecated)]
             transparent_receiver,
         );
         let ua = match ua {
@@ -329,6 +406,7 @@ impl WalletCapability {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "not used in zingolib codebase")]
     pub fn get_taddr_to_secretkey_map(
         &self,
         chain: &ChainType,
@@ -479,21 +557,7 @@ impl WalletCapability {
     }
 }
 
-/// Reads a transparent ExtendedPrivKey from a buffer that has a 32 byte private key and 32 byte chain code.
-fn transparent_key_from_bytes(bytes: &[u8]) -> Result<ExtendedPrivKey, std::io::Error> {
-    let mut reader = std::io::Cursor::new(bytes);
-
-    let private_key = SecretKey::read(&mut reader, ())?;
-    let mut chain_code = [0; 32];
-    reader.read_exact(&mut chain_code)?;
-
-    Ok(ExtendedPrivKey {
-        chain_code: chain_code.to_vec(),
-        private_key,
-    })
-}
-
-impl ReadableWriteable<ChainType> for WalletCapability {
+impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
     const VERSION: u8 = 3;
 
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
@@ -562,7 +626,10 @@ impl ReadableWriteable<ChainType> for WalletCapability {
                     ..Default::default()
                 }
             }
-            3 => UnifiedKeyStore::read,
+            3 => Self {
+                unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
+                ..Default::default()
+            },
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -578,11 +645,9 @@ impl ReadableWriteable<ChainType> for WalletCapability {
         Ok(wc)
     }
 
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        self.orchard.write(&mut writer)?;
-        self.sapling.write(&mut writer)?;
-        self.transparent.write(&mut writer)?;
+        self.unified_key_store().write(&mut writer, input)?;
         Vector::write(
             &mut writer,
             &self.addresses.iter().collect::<Vec<_>>(),
@@ -592,7 +657,7 @@ impl ReadableWriteable<ChainType> for WalletCapability {
                     sapling: address.sapling().is_some(),
                     transparent: address.transparent().is_some(),
                 }
-                .write(w)
+                .write(w, ())
             },
         )
     }
