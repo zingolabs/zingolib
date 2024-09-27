@@ -1,13 +1,16 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
+use zcash_address::ZcashAddress;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
+use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
+use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
+use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
-use crate::config::ChainType;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
@@ -15,20 +18,21 @@ use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
 
-fn append_zingo_zenny_receiver(receivers: &mut Vec<Receiver>) {
-    let dev_donation_receiver = Receiver::new(
-        crate::utils::conversion::address_from_str(
-            ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
-            &ChainType::Mainnet,
-        )
-        .expect("Hard coded str"),
-        NonNegativeAmount::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
-        None,
-    );
-    receivers.push(dev_donation_receiver);
-}
-
 impl LightClient {
+    fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
+        let zfz_address = match self.config().chain {
+            ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
+            ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+            ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        };
+        let dev_donation_receiver = Receiver::new(
+            crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
+            NonNegativeAmount::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
+            None,
+        );
+        receivers.push(dev_donation_receiver);
+    }
+
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
     async fn store_proposal(&self, proposal: ZingoProposal) {
@@ -49,7 +53,7 @@ impl LightClient {
     /// Creates and stores a proposal for sending all shielded funds to a given address.
     pub async fn propose_send_all(
         &self,
-        address: zcash_keys::address::Address,
+        address: ZcashAddress,
         zennies_for_zingo: bool,
         memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
@@ -61,7 +65,7 @@ impl LightClient {
         }
         let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
         if zennies_for_zingo {
-            append_zingo_zenny_receiver(&mut receivers);
+            self.append_zingo_zenny_receiver(&mut receivers);
         }
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
@@ -83,7 +87,7 @@ impl LightClient {
     // TODO: move spendable balance and create proposal to wallet layer
     pub async fn get_spendable_shielded_balance(
         &self,
-        address: zcash_keys::address::Address,
+        address: ZcashAddress,
         zennies_for_zingo: bool,
     ) -> Result<NonNegativeAmount, ProposeSendError> {
         let confirmed_shielded_balance = self
@@ -96,7 +100,7 @@ impl LightClient {
             None,
         )];
         if zennies_for_zingo {
-            append_zingo_zenny_receiver(&mut receivers);
+            self.append_zingo_zenny_receiver(&mut receivers);
         }
         let request = transaction_request_from_receivers(receivers)?;
         let failing_proposal = self.wallet.create_send_proposal(request).await;

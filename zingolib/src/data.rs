@@ -4,10 +4,10 @@ pub mod witness_trees;
 
 /// transforming data related to the destination of a send.
 pub mod receivers {
+    use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::Payment;
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_client_backend::zip321::Zip321Error;
-    use zcash_keys::address;
     use zcash_primitives::memo::MemoBytes;
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
@@ -17,14 +17,14 @@ pub mod receivers {
     /// The superficial representation of the the consumer's intended receiver
     #[derive(Clone, Debug, PartialEq)]
     pub struct Receiver {
-        pub(crate) recipient_address: address::Address,
+        pub(crate) recipient_address: ZcashAddress,
         pub(crate) amount: NonNegativeAmount,
         pub(crate) memo: Option<MemoBytes>,
     }
     impl Receiver {
         /// Create a new Receiver
         pub fn new(
-            recipient_address: address::Address,
+            recipient_address: ZcashAddress,
             amount: NonNegativeAmount,
             memo: Option<MemoBytes>,
         ) -> Self {
@@ -37,14 +37,15 @@ pub mod receivers {
     }
     impl From<Receiver> for Payment {
         fn from(receiver: Receiver) -> Self {
-            Self {
-                recipient_address: receiver.recipient_address,
-                amount: receiver.amount,
-                memo: receiver.memo,
-                label: None,
-                message: None,
-                other_params: vec![],
-            }
+            Payment::new(
+                receiver.recipient_address,
+                receiver.amount,
+                receiver.memo,
+                None,
+                None,
+                vec![],
+            )
+            .expect("memo compatability checked in 'parse_send_args'")
         }
     }
 
