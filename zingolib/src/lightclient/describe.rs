@@ -56,6 +56,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    // todo use helpers
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.wallet_capability().addresses().iter() {

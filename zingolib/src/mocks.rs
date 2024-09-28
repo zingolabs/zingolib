@@ -2,9 +2,6 @@
 
 //! Tools to facilitate mocks for structs of external crates and general mocking utilities for testing
 
-#[cfg(feature = "test-elevation")]
-pub use proposal::ProposalBuilder;
-
 pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
 fn zaddr_from_seed(
@@ -65,7 +62,7 @@ pub fn random_zaddr() -> (
 }
 
 pub mod nullifier {
-    //! Module for mocking nullifiers from [`sapling_crypto::note::Nullifier`] and [`orchard::note::Nullifier`]
+    //! Module for mocking nullifiers from [`sapling_crypto::Nullifier`] and [`orchard::note::Nullifier`]
 
     use crate::utils::build_method;
 

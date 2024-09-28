@@ -304,25 +304,94 @@ impl LightWallet {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use orchard::note_encryption::OrchardDomain;
-    use sapling_crypto::note_encryption::SaplingDomain;
+#[cfg(any(test, feature = "test-elevation"))]
+mod test {
 
-    use crate::config::ZingoConfigBuilder;
+    use zcash_client_backend::PoolType;
+    use zcash_client_backend::ShieldedProtocol;
+    use zcash_primitives::consensus::NetworkConstants as _;
+
+    use crate::wallet::LightWallet;
+
+    // these functions are tested gold and a better pattern for address lookup.
+    // maybe later they can be gated in.
+    impl LightWallet {
+        #[allow(clippy::result_unit_err)]
+        /// gets a UnifiedAddress, the first the wallet. this is the only receiver implemented as 2024-09-22
+        pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
+            if let Some(possible_ua) = self.wallet_capability().addresses().iter().next() {
+                Ok(possible_ua.clone())
+            } else {
+                Err(())
+            }
+        }
+
+        #[allow(clippy::result_unit_err)]
+        /// UnifiedAddress type is not a string. to process it into a string requires chain date.
+        pub fn encode_ua_as_pool(
+            &self,
+            ua: &zcash_keys::address::UnifiedAddress,
+            pool: PoolType,
+        ) -> Result<String, ()> {
+            match pool {
+                PoolType::Transparent => ua
+                    .transparent()
+                    .map(|taddr| {
+                        crate::wallet::keys::address_from_pubkeyhash(
+                            &self.transaction_context.config,
+                            *taddr,
+                        )
+                    })
+                    .ok_or(()),
+                PoolType::Shielded(ShieldedProtocol::Sapling) => ua
+                    .sapling()
+                    .map(|z_addr| {
+                        zcash_keys::encoding::encode_payment_address(
+                            self.transaction_context
+                                .config
+                                .chain
+                                .hrp_sapling_payment_address(),
+                            z_addr,
+                        )
+                    })
+                    .ok_or(()),
+                PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                    Ok(ua.encode(&self.transaction_context.config.chain))
+                }
+            }
+        }
+
+        #[allow(clippy::result_unit_err)]
+        /// gets a string address for the wallet, based on pooltype
+        pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
+            let ua = self.get_first_ua()?;
+            self.encode_ua_as_pool(&ua, pool)
+        }
+    }
+
+    #[cfg(test)]
+    use orchard::note_encryption::OrchardDomain;
+    #[cfg(test)]
+    use sapling_crypto::note_encryption::SaplingDomain;
+    #[cfg(test)]
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use crate::{
-        mocks::{orchard_note::OrchardCryptoNoteBuilder, SaplingCryptoNoteBuilder},
-        wallet::{
-            notes::{
-                orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-                transparent::mocks::TransparentOutputBuilder,
-            },
-            transaction_record::mocks::TransactionRecordBuilder,
-            LightWallet, WalletBase,
-        },
-    };
+    #[cfg(test)]
+    use crate::config::ZingoConfigBuilder;
+    #[cfg(test)]
+    use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+    #[cfg(test)]
+    use crate::mocks::SaplingCryptoNoteBuilder;
+    #[cfg(test)]
+    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+    #[cfg(test)]
+    use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
+    #[cfg(test)]
+    use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
+    #[cfg(test)]
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
+    #[cfg(test)]
+    use crate::wallet::WalletBase;
 
     #[tokio::test]
     async fn confirmed_balance_excluding_dust() {
