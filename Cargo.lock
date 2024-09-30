@@ -1676,6 +1676,7 @@ dependencies = [
  "json",
  "log",
  "orchard",
+ "proptest",
  "sapling-crypto",
  "serde_json",
  "shardtree",
@@ -4036,6 +4037,7 @@ dependencies = [
  "bech32",
  "bs58",
  "f4jumble",
+ "proptest",
  "zcash_encoding",
  "zcash_protocol",
 ]

@@ -113,7 +113,11 @@ fn check_view_capability_bounds(
 mod fast {
 
     use bip0039::Mnemonic;
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
+    use zcash_address::ZcashAddress;
+    use zcash_client_backend::{
+        zip321::{Payment, TransactionRequest},
+        PoolType, ShieldedProtocol,
+    };
     use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
@@ -157,6 +161,21 @@ mod fast {
             .iter()
             .any(|vt| vt.kind() == ValueTransferKind::Sent
                 && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+    }
+
+    #[tokio::test]
+    async fn propose_send_to_tex() {
+        let payments = vec![Payment::without_memo(
+            send_all::arb_tex_addr(),
+            NonNegativeAmount::from_u64(100_000).unwrap(),
+        )];
+        let transaction_request = TransactionRequest::new(payments).unwrap();
+
+        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
+            scenarios::orchard_funded_recipient(5_000_000).await;
+
+        let proposal = recipient.propose_send(transaction_request).await.unwrap();
+        dbg!(proposal);
     }
 
     #[tokio::test]
@@ -3935,6 +3954,12 @@ async fn audit_anyp_outputs() {
     assert_eq!(lapo.len(), 1);
 }
 mod send_all {
+    use proptest::{
+        strategy::{Strategy, ValueTree},
+        test_runner::TestRunner,
+    };
+    use zcash_address::{AddressKind, ZcashAddress};
+
     use super::*;
     #[tokio::test]
     async fn toggle_zennies_for_zingo() {
@@ -4093,5 +4118,14 @@ mod send_all {
             proposal_error,
             Err(ProposeSendError::ZeroValueSendAll)
         ))
+    }
+    pub(crate) fn arb_tex_addr() -> ZcashAddress {
+        let mut runner = TestRunner::default();
+        let strat = Strategy::prop_filter(
+            zcash_address::testing::arb_address(zcash_address::Network::Regtest),
+            "tex addrs only",
+            |addr| matches!(addr.kind(), AddressKind::Tex(_)),
+        );
+        strat.new_tree(&mut runner).unwrap().current()
     }
 }
