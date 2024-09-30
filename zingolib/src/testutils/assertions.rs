@@ -46,6 +46,8 @@ pub enum ProposalToTransactionRecordComparisonError {
 ///    this currently fails for any broadcast but not confirmed transaction: it seems like
 ///    get_transaction_fee does not recognize pending spends returns the total fee for the
 ///    transfer
+/// if any of these checks fail, rather than panic immediately, this function will include an error enum in its output. make sure to expect this.
+
 pub async fn assertively_lookup_fee<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
