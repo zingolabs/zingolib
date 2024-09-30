@@ -260,47 +260,14 @@ impl WalletCapability {
             None
         };
 
-        let transparent_receiver = if desired_receivers.transparent {
-            let child_index = KeyIndex::from_index(self.addresses.len() as u32);
-            let child_pk = match &self.transparent {
-                Capability::Spend(ext_sk) => {
-                    let secp = secp256k1::Secp256k1::new();
-                    Some(
-                        match ext_sk.derive_private_key(child_index) {
-                            Err(e) => {
-                                self.addresses_write_lock
-                                    .swap(false, atomic::Ordering::Release);
-                                return Err(format!(
-                                    "Transparent private key derivation failed: {e}"
-                                ));
-                            }
-                            Ok(res) => res.private_key,
-                        }
-                        .public_key(&secp),
-                    )
-                }
-                Capability::View(ext_pk) => Some(match ext_pk.derive_public_key(child_index) {
-                    Err(e) => {
-                        self.addresses_write_lock
-                            .swap(false, atomic::Ordering::Release);
-                        return Err(format!("Transparent public key derivation failed: {e}"));
-                    }
-                    Ok(res) => res.public_key,
-                }),
-                Capability::None => None,
-            };
-            if let Some(pk) = child_pk {
-                self.transparent_child_addresses.push((
-                    self.addresses.len(),
-                    #[allow(deprecated)]
-                    zcash_primitives::legacy::keys::pubkey_to_address(&pk),
-                ));
-                Some(pk)
-            } else {
-                None
+        let transparent_receiver = match self.generate_transparent_receiver(desired_receivers) {
+            Ok(Some(transparent_receiver)) => Some(transparent_receiver),
+            Ok(None) => None,
+            Err(e) => {
+                self.addresses_write_lock
+                    .swap(false, atomic::Ordering::Release);
+                return Err(e);
             }
-        } else {
-            None
         };
 
         let ua = UnifiedAddress::from_receivers(
@@ -329,6 +296,55 @@ impl WalletCapability {
         self.addresses_write_lock
             .swap(false, atomic::Ordering::Release);
         Ok(ua)
+    }
+
+    /// Generates a transparent receiver if the wallet is capable of it.
+    ///
+    /// If the wallet is not capable of generating a transparent receiver,
+    /// `None` is returned.
+    pub fn generate_transparent_receiver(
+        &self,
+        desired_receivers: ReceiverSelection,
+    ) -> Result<Option<secp256k1::PublicKey>, String> {
+        if !desired_receivers.transparent {
+            return Ok(None);
+        }
+        let child_index = KeyIndex::from_index(self.addresses.len() as u32);
+        let child_pk = match &self.transparent {
+            Capability::Spend(ext_sk) => {
+                let secp = secp256k1::Secp256k1::new();
+                Some(
+                    match ext_sk.derive_private_key(child_index) {
+                        Err(e) => {
+                            self.addresses_write_lock
+                                .swap(false, atomic::Ordering::Release);
+                            return Err(format!("Transparent private key derivation failed: {e}"));
+                        }
+                        Ok(res) => res.private_key,
+                    }
+                    .public_key(&secp),
+                )
+            }
+            Capability::View(ext_pk) => Some(match ext_pk.derive_public_key(child_index) {
+                Err(e) => {
+                    self.addresses_write_lock
+                        .swap(false, atomic::Ordering::Release);
+                    return Err(format!("Transparent public key derivation failed: {e}"));
+                }
+                Ok(res) => res.public_key,
+            }),
+            Capability::None => None,
+        };
+        if let Some(pk) = child_pk {
+            self.transparent_child_addresses.push((
+                self.addresses.len(),
+                #[allow(deprecated)]
+                zcash_primitives::legacy::keys::pubkey_to_address(&pk),
+            ));
+            Ok(Some(pk))
+        } else {
+            Ok(None)
+        }
     }
 
     /// TODO: Add Doc Comment Here!
