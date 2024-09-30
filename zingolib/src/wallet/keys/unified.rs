@@ -31,14 +31,19 @@ use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 use super::legacy::Capability;
 use super::ToBase58Check;
 
+/// In-memory store for wallet spending or viewing keys
 #[derive(Debug)]
 pub enum UnifiedKeyStore {
+    /// Wallet with spend capability
     Spend(UnifiedSpendingKey),
+    /// Wallet with view capability
     View(UnifiedFullViewingKey),
+    /// Wallet with no keys
     None,
 }
 
 impl UnifiedKeyStore {
+    /// Returns true if [`UnifiedKeyStore`] is of `Spend` variant
     pub fn is_spending_key(&self) -> bool {
         matches!(self, UnifiedKeyStore::Spend(_))
     }
@@ -84,7 +89,7 @@ impl ReadableWriteable for UnifiedSpendingKey {
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let len = CompactSize::read(&mut reader)?;
         let mut usk = vec![0u8; len as usize];
-        reader.read_exact(&mut usk);
+        reader.read_exact(&mut usk)?;
 
         UnifiedSpendingKey::from_bytes(Era::Orchard, &usk)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "USK bytes are invalid"))
@@ -92,7 +97,7 @@ impl ReadableWriteable for UnifiedSpendingKey {
 
     fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         let usk_bytes = self.to_bytes(Era::Orchard);
-        CompactSize::write(&mut writer, usk_bytes.len());
+        CompactSize::write(&mut writer, usk_bytes.len())?;
         writer.write_all(&usk_bytes)?;
         Ok(())
     }
@@ -103,7 +108,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedFullViewingKey {
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let len = CompactSize::read(&mut reader)?;
         let mut ufvk = vec![0u8; len as usize];
-        reader.read_exact(&mut ufvk);
+        reader.read_exact(&mut ufvk)?;
         let ufvk_encoded = std::str::from_utf8(&ufvk)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
@@ -117,7 +122,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedFullViewingKey {
 
     fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
         let ufvk_bytes = self.encode(&input).as_bytes().to_vec();
-        CompactSize::write(&mut writer, ufvk_bytes.len());
+        CompactSize::write(&mut writer, ufvk_bytes.len())?;
         writer.write_all(&ufvk_bytes)?;
         Ok(())
     }
@@ -191,6 +196,7 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Getters, Setters)]
 pub struct WalletCapability {
+    /// Unified key store
     #[getset(get = "pub", set = "pub(crate)")]
     unified_key_store: UnifiedKeyStore,
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,

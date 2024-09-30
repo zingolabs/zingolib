@@ -1,3 +1,5 @@
+//! Module for legacy code associated with wallet keys required for backward-compatility with old wallet versions
+
 use std::io::{self, Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
