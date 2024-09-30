@@ -117,6 +117,7 @@ impl ExampleWalletNetwork {
     /// loads test wallets
     /// this function can be improved by a macro. even better would be to derive directly from the enum.
     /// loads any one of the test wallets included in the examples
+    /// todo: load directories dynamically.
     pub async fn load_example_wallet(&self) -> LightWallet {
         match self {
             ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
