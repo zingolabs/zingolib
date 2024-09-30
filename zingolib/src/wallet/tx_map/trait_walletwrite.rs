@@ -105,4 +105,18 @@ impl WalletWrite for TxMap {
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
+
+    fn reserve_next_n_ephemeral_addresses(
+        &mut self,
+        _account_id: Self::AccountId,
+        n: usize,
+    ) -> Result<
+        Vec<(
+            zcash_primitives::legacy::TransparentAddress,
+            zcash_client_backend::wallet::TransparentAddressMetadata,
+        )>,
+        Self::Error,
+    > {
+        todo!()
+    }
 }

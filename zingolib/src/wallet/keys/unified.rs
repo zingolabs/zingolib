@@ -17,8 +17,8 @@ use zcash_primitives::consensus::{BranchId, NetworkConstants, Parameters};
 use crate::config::{ChainType, ZingoConfig};
 use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Typecode, Ufvk};
-use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
+use zcash_client_backend::{address::UnifiedAddress, wallet::TransparentAddressMetadata};
 use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
@@ -84,6 +84,8 @@ pub struct WalletCapability {
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    transparent_child_ephemeral_addresses:
+        Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
@@ -96,6 +98,7 @@ impl Default for WalletCapability {
             sapling: Capability::None,
             transparent: Capability::None,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
+            transparent_child_ephemeral_addresses: Arc::new(AppendOnlyVec::new()),
             addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
         }
@@ -202,6 +205,40 @@ impl WalletCapability {
         } else {
             Ufvk::try_from_items(vec![o_fvk, s_fvk]).map_err(|e| e.to_string())
         }
+    }
+
+    pub fn new_ephemeral_address(
+        &self,
+    ) -> (
+        zcash_primitives::legacy::TransparentAddress,
+        zcash_client_backend::wallet::TransparentAddressMetadata,
+    ) {
+        let child_index = KeyIndex::from_index(self.addresses.len() as u32);
+        let child_pk = match &self.transparent {
+            Capability::Spend(ext_sk) => {
+                let secp = secp256k1::Secp256k1::new();
+                Some(
+                    match ext_sk.derive_private_key(child_index) {
+                        Err(e) => {
+                            self.addresses_write_lock
+                                .swap(false, atomic::Ordering::Release);
+                            return Err(format!("Transparent private key derivation failed: {e}"));
+                        }
+                        Ok(res) => res.private_key,
+                    }
+                    .public_key(&secp),
+                )
+            }
+            Capability::View(ext_pk) => Some(match ext_pk.derive_public_key(child_index) {
+                Err(e) => {
+                    self.addresses_write_lock
+                        .swap(false, atomic::Ordering::Release);
+                    return Err(format!("Transparent public key derivation failed: {e}"));
+                }
+                Ok(res) => res.public_key,
+            }),
+            Capability::None => None,
+        };
     }
 
     /// TODO: Add Doc Comment Here!

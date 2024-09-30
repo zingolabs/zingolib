@@ -175,7 +175,10 @@ mod fast {
             scenarios::orchard_funded_recipient(5_000_000).await;
 
         let proposal = recipient.propose_send(transaction_request).await.unwrap();
-        dbg!(proposal);
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

@@ -3,6 +3,7 @@
 use log::error;
 use zcash_client_backend::proposal::Proposal;
 use zcash_keys::keys::UnifiedSpendingKey;
+use zcash_proofs::prover::LocalTxProver;
 
 use std::cmp;
 use std::ops::DerefMut as _;
@@ -143,11 +144,22 @@ impl LightWallet {
         )
         .map_err(BuildTransactionError::UnifiedSpendKey)?;
 
-        // We don't support zip320 yet. Only one step.
-        if proposal.steps().len() != 1 {
-            return Err(BuildTransactionError::ExchangeAddressesNotSupported);
+        match proposal.steps().len() {
+            1 => {
+                self.create_transaction_helper(sapling_prover, unified_spend_key, proposal)
+                    .await
+            }
+            2 /*TODO: check that this is actually tex*/ => self.create_transaction_helper(sapling_prover, unified_spend_key, proposal).await,
+            _ => panic!("TODO: error handle"),
         }
+    }
 
+    async fn create_transaction_helper<NoteRef>(
+        &self,
+        sapling_prover: LocalTxProver,
+        unified_spend_key: UnifiedSpendingKey,
+        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+    ) -> Result<(), BuildTransactionError> {
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self.transaction_context
                 .transaction_metadata_set
