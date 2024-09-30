@@ -576,7 +576,7 @@ pub enum SendType {
     SendToSelf,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;

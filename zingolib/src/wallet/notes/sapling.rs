@@ -210,7 +210,7 @@ impl ShieldedNoteInterface for SaplingNote {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub mod mocks {
     //! Mock version of the struct for testing
     use incrementalmerkletree::Position;
