@@ -414,8 +414,8 @@ pub mod send_with_proposal {
         /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
         /// note: live send waits 2 minutes for confirmation. expect 3min runtime
         #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-        async fn mainnet_hhcclaltpcckcsslpcnetblr_send_to_self_orchard_hot() {
-            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac));
+        async fn mainnet_latest_send_to_self_orchard_hot() {
+            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Latest));
             let target_pool = PoolType::Shielded(ShieldedProtocol::Orchard);
 
             let client = sync_example_wallet(case).await;
@@ -446,7 +446,7 @@ pub mod send_with_proposal {
         /// note: live send waits 2 minutes for confirmation. expect 3min runtime
         #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
         async fn mainnet_hhcclaltpcckcsslpcnetblr_send_to_self_sapling_hot() {
-            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac));
+            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Latest));
             let target_pool = PoolType::Shielded(ShieldedProtocol::Sapling);
 
             let client = sync_example_wallet(case).await;
@@ -477,7 +477,7 @@ pub mod send_with_proposal {
         /// note: live send waits 2 minutes for confirmation. expect 3min runtime
         #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
         async fn mainnet_hhcclaltpcckcsslpcnetblr_send_to_self_transparent_hot() {
-            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac));
+            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Latest));
             let target_pool = PoolType::Transparent;
 
             let client = sync_example_wallet(case).await;
@@ -508,8 +508,7 @@ pub mod send_with_proposal {
         /// note: live send waits 2 minutes for confirmation. expect 3min runtime
         #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
         async fn mainnet_hhcclaltpcckcsslpcnetblr_shield_hot() {
-            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac));
-
+            let case = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Latest));
             let client = sync_example_wallet(case).await;
 
             println!(

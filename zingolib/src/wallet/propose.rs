@@ -174,7 +174,7 @@ mod test {
     #[ignore = "for some reason this is does not work without network, even though it should be possible"]
     #[tokio::test]
     async fn example_mainnet_hhcclaltpcckcsslpcnetblr_80b5594ac_propose_100_000_to_self() {
-        let wallet = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac)).load_example_wallet().await;
+        let wallet = ExampleWalletNetwork::Mainnet(crate::wallet::disk::testing::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(crate::wallet::disk::testing::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Latest)).load_example_wallet().await;
 
         let pool = PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard);
         let self_address = wallet.get_first_address(pool).unwrap();

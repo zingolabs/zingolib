@@ -39,7 +39,8 @@ pub enum ExampleHHCCLALTPCCKCSSLPCNETBLRVersion {
     /// wallet was last saved in this serialization version
     Gf0aaf9347,
     /// this wallet was funded with 0.01 sapling fr fr fr
-    G80b5594ac,
+    /// latest version of the wallet, with most up-to-date witness tree. git can tell more about when it was saved.
+    Latest,
 }
 /// /
 #[non_exhaustive]
@@ -223,10 +224,10 @@ impl ExampleWalletNetwork {
                 .await
             }
             ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
-                ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::G80b5594ac,
+                ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Latest,
             )) => {
                 LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
-                    "examples/mainnet/hhcclaltpcckcsslpcnetblr/g80b5594ac/zingo-wallet.dat"
+                    "examples/mainnet/hhcclaltpcckcsslpcnetblr/latest/zingo-wallet.dat"
                 ))
                 .await
             }
