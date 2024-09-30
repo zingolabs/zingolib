@@ -157,7 +157,7 @@ impl Command for WalletKindCommand {
                         "orchard" => ufvk.orchard().is_some(),
                     }
                     .pretty(4),
-                    UnifiedKeyStore::None => object! {
+                    UnifiedKeyStore::Empty => object! {
                         "kind" => "No keys found",
                         "transparent" => false,
                         "sapling" => false,

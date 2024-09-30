@@ -317,7 +317,7 @@ impl TrialDecryptions {
                     let config = config.clone();
 
                     workers.push(tokio::spawn(async move {
-                        let Ok(fvk) = D::unified_key_store_to_fvk(&wc.unified_key_store()) else {
+                        let Ok(fvk) = D::unified_key_store_to_fvk(wc.unified_key_store()) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };

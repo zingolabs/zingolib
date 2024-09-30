@@ -59,17 +59,13 @@ impl LightWallet {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => match D::SHIELDED_PROTOCOL {
                 ShieldedProtocol::Sapling => {
-                    if ufvk.sapling().is_none() {
-                        return None;
-                    }
+                    ufvk.sapling()?;
                 }
                 ShieldedProtocol::Orchard => {
-                    if ufvk.orchard().is_none() {
-                        return None;
-                    }
+                    ufvk.orchard()?;
                 }
             },
-            UnifiedKeyStore::None => return None,
+            UnifiedKeyStore::Empty => return None,
         }
         Some(
             self.transaction_context
@@ -115,11 +111,9 @@ impl LightWallet {
         match self.wallet_capability().unified_key_store() {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => {
-                if ufvk.transparent().is_none() {
-                    return None;
-                }
+                ufvk.transparent()?;
             }
-            UnifiedKeyStore::None => return None,
+            UnifiedKeyStore::Empty => return None,
         }
         Some(
             self.get_utxos()

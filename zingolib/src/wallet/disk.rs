@@ -223,22 +223,18 @@ impl LightWallet {
         //
         // UnifiedSpendingKey is initially set to None variant except when loading unified full viewing key where the mnemonic is not available.
         // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
-        if matches!(wallet_capability.unified_key_store(), UnifiedKeyStore::None)
-            && mnemonic.is_some()
-        {
-            wallet_capability.set_unified_key_store(UnifiedKeyStore::Spend(
+        if let (true, Some(mnemonic)) = (
+            wallet_capability.unified_key_store().is_empty(),
+            mnemonic.as_ref(),
+        ) {
+            wallet_capability.set_unified_key_store(UnifiedKeyStore::Spend(Box::new(
                 UnifiedSpendingKey::from_seed(
                     &config.chain,
-                    &mnemonic
-                        .as_ref()
-                        .expect("mnemonic should not be None in this scope")
-                        .0
-                        .clone()
-                        .to_seed(""),
+                    &mnemonic.0.to_seed(""),
                     AccountId::ZERO,
                 )
                 .unwrap(),
-            ));
+            )));
         }
 
         info!("Keys in this wallet:");
@@ -259,7 +255,7 @@ impl LightWallet {
                     info!("  - transparent extended public key");
                 }
             }
-            UnifiedKeyStore::None => info!("  - no keys found"),
+            UnifiedKeyStore::Empty => info!("  - no keys found"),
         }
 
         // this initialization combines two types of data

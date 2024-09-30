@@ -35,17 +35,22 @@ use super::ToBase58Check;
 #[derive(Debug)]
 pub enum UnifiedKeyStore {
     /// Wallet with spend capability
-    Spend(UnifiedSpendingKey),
+    Spend(Box<UnifiedSpendingKey>),
     /// Wallet with view capability
-    View(UnifiedFullViewingKey),
+    View(Box<UnifiedFullViewingKey>),
     /// Wallet with no keys
-    None,
+    Empty,
 }
 
 impl UnifiedKeyStore {
     /// Returns true if [`UnifiedKeyStore`] is of `Spend` variant
     pub fn is_spending_key(&self) -> bool {
         matches!(self, UnifiedKeyStore::Spend(_))
+    }
+
+    /// Returns true if [`UnifiedKeyStore`] is of `Spend` variant
+    pub fn is_empty(&self) -> bool {
+        matches!(self, UnifiedKeyStore::Empty)
     }
 }
 
@@ -56,9 +61,9 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
         let _version = Self::get_version(&mut reader)?;
         let key_type = reader.read_u8()?;
         Ok(match key_type {
-            0 => UnifiedKeyStore::Spend(UnifiedSpendingKey::read(reader, ())?),
-            1 => UnifiedKeyStore::View(UnifiedFullViewingKey::read(reader, input)?),
-            2 => UnifiedKeyStore::None,
+            0 => UnifiedKeyStore::Spend(Box::new(UnifiedSpendingKey::read(reader, ())?)),
+            1 => UnifiedKeyStore::View(Box::new(UnifiedFullViewingKey::read(reader, input)?)),
+            2 => UnifiedKeyStore::Empty,
             x => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -79,7 +84,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
                 writer.write_u8(1)?;
                 ufvk.write(&mut writer, input)
             }
-            UnifiedKeyStore::None => writer.write_u8(2),
+            UnifiedKeyStore::Empty => writer.write_u8(2),
         }
     }
 }
@@ -132,7 +137,7 @@ impl TryFrom<&UnifiedKeyStore> for UnifiedSpendingKey {
     type Error = KeyError;
     fn try_from(unified_key_store: &UnifiedKeyStore) -> Result<Self, Self::Error> {
         match unified_key_store {
-            UnifiedKeyStore::Spend(usk) => Ok(usk.clone()),
+            UnifiedKeyStore::Spend(usk) => Ok(*usk.clone()),
             _ => Err(KeyError::NoSpendCapability),
         }
     }
@@ -141,7 +146,7 @@ impl TryFrom<&UnifiedKeyStore> for orchard::keys::SpendingKey {
     type Error = KeyError;
     fn try_from(unified_key_store: &UnifiedKeyStore) -> Result<Self, Self::Error> {
         let usk = UnifiedSpendingKey::try_from(unified_key_store)?;
-        Ok(usk.orchard().clone())
+        Ok(*usk.orchard())
     }
 }
 impl TryFrom<&UnifiedKeyStore> for sapling_crypto::zip32::ExtendedSpendingKey {
@@ -164,8 +169,8 @@ impl TryFrom<&UnifiedKeyStore> for UnifiedFullViewingKey {
     fn try_from(unified_key_store: &UnifiedKeyStore) -> Result<Self, Self::Error> {
         match unified_key_store {
             UnifiedKeyStore::Spend(usk) => Ok(usk.to_unified_full_viewing_key()),
-            UnifiedKeyStore::View(ufvk) => Ok(ufvk.clone()),
-            UnifiedKeyStore::None => Err(KeyError::NoViewCapability),
+            UnifiedKeyStore::View(ufvk) => Ok(*ufvk.clone()),
+            UnifiedKeyStore::Empty => Err(KeyError::NoViewCapability),
         }
     }
 }
@@ -208,7 +213,7 @@ pub struct WalletCapability {
 impl Default for WalletCapability {
     fn default() -> Self {
         Self {
-            unified_key_store: UnifiedKeyStore::None,
+            unified_key_store: UnifiedKeyStore::Empty,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
             addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
@@ -374,7 +379,7 @@ impl WalletCapability {
                     )
                     .derive_external_ivk()
                     .ok(),
-                UnifiedKeyStore::None => None,
+                UnifiedKeyStore::Empty => None,
             };
             if let Some(pk) = external_pubkey {
                 let t_addr = pk.derive_address(child_index).unwrap();
@@ -455,7 +460,7 @@ impl WalletCapability {
         .map_err(|_| KeyError::KeyDerivationError)?;
 
         Ok(Self {
-            unified_key_store: UnifiedKeyStore::Spend(usk),
+            unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
             ..Default::default()
         })
     }
@@ -479,7 +484,7 @@ impl WalletCapability {
             .map_err(|_| KeyError::KeyDecodingError)?;
 
         Ok(Self {
-            unified_key_store: UnifiedKeyStore::Spend(usk),
+            unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
             ..Default::default()
         })
     }
@@ -498,7 +503,7 @@ impl WalletCapability {
         let ufvk = UnifiedFullViewingKey::parse(&ufvk).map_err(|_| KeyError::KeyDecodingError)?;
 
         Ok(Self {
-            unified_key_store: UnifiedKeyStore::View(ufvk),
+            unified_key_store: UnifiedKeyStore::View(Box::new(ufvk)),
             ..Default::default()
         })
     }
@@ -554,7 +559,7 @@ impl WalletCapability {
                 sapling: ufvk.sapling().is_some(),
                 transparent: ufvk.transparent().is_some(),
             },
-            UnifiedKeyStore::None => ReceiverSelection {
+            UnifiedKeyStore::Empty => ReceiverSelection {
                 orchard: false,
                 sapling: false,
                 transparent: false,
@@ -577,7 +582,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
                 super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
                 Self {
-                    unified_key_store: UnifiedKeyStore::None,
+                    unified_key_store: UnifiedKeyStore::Empty,
                     ..Default::default()
                 }
             }
@@ -623,9 +628,9 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                         &input,
                     )
                     .unwrap();
-                    UnifiedKeyStore::View(ufvk)
+                    UnifiedKeyStore::View(Box::new(ufvk))
                 } else {
-                    UnifiedKeyStore::None
+                    UnifiedKeyStore::Empty
                 };
                 Self {
                     unified_key_store,
