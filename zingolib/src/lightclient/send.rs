@@ -466,7 +466,7 @@ pub mod send_with_proposal {
             with_assertions::propose_send_bump_sync_all_recipients(
                 &mut LiveChain::setup().await,
                 &client,
-                vec![(&client, target_pool, 10_000, None)],
+                vec![(&client, target_pool, 400_000, None)],
                 false,
             )
             .await;
@@ -497,7 +497,7 @@ pub mod send_with_proposal {
             with_assertions::propose_send_bump_sync_all_recipients(
                 &mut LiveChain::setup().await,
                 &client,
-                vec![(&client, target_pool, 10_000, None)],
+                vec![(&client, target_pool, 100_000, None)],
                 false,
             )
             .await;
