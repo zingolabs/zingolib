@@ -4,7 +4,7 @@ use crate::lightclient::LightClient;
 use zcash_client_backend::PoolType;
 
 use crate::testutils::{
-    assertions::{assert_recipient_total_lte_to_proposal_total, assert_record_fee_and_status},
+    assertions::{assert_recipient_total_lte_to_proposal_total, assertively_lookup_fee},
     chain_generics::conduct_chain::ConductChain,
     lightclient::{from_inputs, get_base_address},
 };
@@ -38,11 +38,6 @@ where
 
     let proposal = from_inputs::propose(sender, raw_receivers).await.unwrap();
 
-    let txids = sender
-        .complete_and_broadcast_stored_proposal()
-        .await
-        .unwrap();
-
     let send_height = sender
         .wallet
         .get_target_height_and_anchor_offset()
@@ -50,15 +45,24 @@ where
         .expect("sender has a target height")
         .0;
 
+    let txids = sender
+        .complete_and_broadcast_stored_proposal()
+        .await
+        .unwrap();
+
     // digesting the calculated transaction
     // this step happens after transaction is recorded locally, but before learning anything about whether the server accepted it
-    let recorded_fee = assert_record_fee_and_status(
+    let recorded_fee = *assertively_lookup_fee(
         sender,
         &proposal,
         &txids,
         ConfirmationStatus::Transmitted(send_height.into()),
     )
-    .await;
+    .await
+    .first()
+    .expect("one transaction proposed")
+    .as_ref()
+    .expect("record is ok");
 
     let send_ua_id = sender.do_addresses().await[0]["address"].clone();
 
@@ -70,13 +74,17 @@ where
         // to listen
         tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 
-        assert_record_fee_and_status(
+        assertively_lookup_fee(
             sender,
             &proposal,
             &txids,
             ConfirmationStatus::Mempool(send_height.into()),
         )
-        .await;
+        .await
+        .first()
+        .expect("one transaction proposed")
+        .as_ref()
+        .expect("record is ok");
 
         // TODO: distribute receivers
         for (recipient, _, _, _) in sends.clone() {
@@ -103,13 +111,18 @@ where
     environment.bump_chain().await;
     // chain scan shows the same
     sender.do_sync(false).await.unwrap();
-    assert_record_fee_and_status(
+    assertively_lookup_fee(
         sender,
         &proposal,
         &txids,
         ConfirmationStatus::Confirmed((send_height).into()),
     )
-    .await;
+    .await
+    .first()
+    .expect("one transaction proposed")
+    .as_ref()
+    .expect("record is ok");
+
     for (recipient, _, _, _) in sends {
         if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
             recipient.do_sync(false).await.unwrap();
@@ -146,36 +159,48 @@ where
         .unwrap();
 
     // digesting the calculated transaction
-    let recorded_fee = assert_record_fee_and_status(
+    let recorded_fee = *assertively_lookup_fee(
         client,
         &proposal,
         &txids,
         ConfirmationStatus::Transmitted(send_height.into()),
     )
-    .await;
+    .await
+    .first()
+    .expect("one transaction proposed")
+    .as_ref()
+    .expect("record is ok");
 
     if test_mempool {
         // mempool scan shows the same
         client.do_sync(false).await.unwrap();
-        assert_record_fee_and_status(
+        assertively_lookup_fee(
             client,
             &proposal,
             &txids,
             ConfirmationStatus::Mempool(send_height.into()),
         )
-        .await;
+        .await
+        .first()
+        .expect("one transaction proposed")
+        .as_ref()
+        .expect("record is ok");
     }
 
     environment.bump_chain().await;
     // chain scan shows the same
     client.do_sync(false).await.unwrap();
-    assert_record_fee_and_status(
+    assertively_lookup_fee(
         client,
         &proposal,
         &txids,
         ConfirmationStatus::Confirmed(send_height.into()),
     )
-    .await;
+    .await
+    .first()
+    .expect("one transaction proposed")
+    .as_ref()
+    .expect("record is ok");
 
     recorded_fee
 }

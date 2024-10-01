@@ -65,6 +65,7 @@ prost = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 ring = { workspace = true }
+rustls.workspace = true
 rust-embed = { workspace = true, features = ["debug-embed"] }
 sapling-crypto.workspace = true
 secp256k1 = { workspace = true }
