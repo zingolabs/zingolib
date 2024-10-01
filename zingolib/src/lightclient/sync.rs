@@ -681,11 +681,12 @@ pub mod test {
         std::env::set_var("RUST_BACKTRACE", "1");
         let wallet = wallet_case.load_example_wallet().await;
         let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
-        let _ = lc.do_sync(true).await;
+        lc.do_sync(true).await.unwrap();
         lc
     }
 
     /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
     #[tokio::test]
     async fn testnet_sync_mskmgdbhotbpetcjwcspgopp_latest() {
         sync_example_wallet(ExampleWalletNetwork::Testnet(
@@ -696,6 +697,7 @@ pub mod test {
         .await;
     }
     /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
     #[tokio::test]
     async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
         sync_example_wallet(ExampleWalletNetwork::Testnet(
@@ -707,6 +709,7 @@ pub mod test {
     }
     /// this is a live sync test. its execution time scales linearly since last updated
     #[tokio::test]
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
     async fn mainnet_sync_hhcclaltpcckcsslpcnetblr_latest() {
         sync_example_wallet(ExampleWalletNetwork::Mainnet(
             ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(

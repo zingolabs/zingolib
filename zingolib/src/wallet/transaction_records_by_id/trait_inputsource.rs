@@ -16,12 +16,8 @@ use zcash_primitives::{
     },
 };
 
-use crate::wallet::{
-    notes::{query::OutputSpendStatusQuery, OutputInterface},
-    transaction_records_by_id::TransactionRecordsById,
-};
+use crate::wallet::{notes::OutputInterface, transaction_records_by_id::TransactionRecordsById};
 
-// error type
 use std::fmt::Debug;
 use thiserror::Error;
 
@@ -179,7 +175,8 @@ impl InputSource for TransactionRecordsById {
             .collect::<Result<Vec<_>, _>>()
             .map_err(InputSourceError::InvalidValue)?;
         unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
-        let dust_spendable_index = unselected.partition_point(|(_id, value)| *value < MARGINAL_FEE);
+        let dust_spendable_index =
+            unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
         let _dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
         let mut selected = vec![];
         let mut index_of_unselected = 0;
@@ -289,77 +286,56 @@ impl InputSource for TransactionRecordsById {
     ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
         unimplemented!()
     }
-    /// Returns a list of unspent transparent UTXOs that appear in the chain at heights up to and
-    /// including `max_height`.
-    /// IMPL: Implemented and tested. address is unused, we select all outputs available to the wallet.
-    /// IMPL: _address skipped because Zingo uses 1 account.
-    fn get_unspent_transparent_outputs(
-        &self,
-        // I don't understand what this argument is for. Is the Trait's intent to only shield
-        // utxos from one address at a time? Is this needed?
-        _address: &zcash_primitives::legacy::TransparentAddress,
-        max_height: zcash_primitives::consensus::BlockHeight,
-        exclude: &[zcash_primitives::transaction::components::OutPoint],
-    ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
-        self.values()
-            .filter_map(|transaction_record| {
-                transaction_record
-                    .status
-                    .get_confirmed_height()
-                    .map(|height| (transaction_record, height))
-                    .filter(|(_, height)| height <= &max_height)
-            })
-            .flat_map(|(transaction_record, confirmed_height)| {
-                transaction_record
-                    .transparent_outputs
-                    .iter()
-                    .filter(|output| {
-                        exclude
-                            .iter()
-                            .all(|excluded| excluded != &output.to_outpoint())
-                    })
-                    .filter(|output| {
-                        output.spend_status_query(OutputSpendStatusQuery::only_unspent())
-                    })
-                    .filter_map(move |output| {
-                        let value = match NonNegativeAmount::from_u64(output.value)
-                            .map_err(InputSourceError::InvalidValue)
-                        {
-                            Ok(v) => v,
-                            Err(e) => return Some(Err(e)),
-                        };
 
-                        let script_pubkey = Script(output.script.clone());
-                        Ok(WalletTransparentOutput::from_parts(
+    fn get_spendable_transparent_outputs(
+        &self,
+        _address: &zcash_primitives::legacy::TransparentAddress,
+        target_height: zcash_primitives::consensus::BlockHeight,
+        _min_confirmations: u32,
+    ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
+        // TODO: rewrite to include addresses and min confirmations
+        let transparent_outputs: Vec<WalletTransparentOutput> = self
+            .values()
+            .filter(|tx| {
+                tx.status
+                    .get_confirmed_height()
+                    .map_or(false, |height| height <= target_height)
+            })
+            .flat_map(|tx| {
+                tx.transparent_outputs().iter().filter_map(|output| {
+                    if output.spending_tx_status().is_none() {
+                        WalletTransparentOutput::from_parts(
                             output.to_outpoint(),
                             TxOut {
-                                value,
-                                script_pubkey,
+                                value: NonNegativeAmount::from_u64(output.value())
+                                    .expect("value should be in valid range of zatoshis"),
+                                script_pubkey: Script(output.script.clone()),
                             },
-                            confirmed_height,
-                        ))
-                        .transpose()
-                    })
+                            Some(tx.status.get_height()),
+                        )
+                    } else {
+                        None
+                    }
+                })
             })
-            .collect()
+            .collect();
+
+        Ok(transparent_outputs)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use proptest::{prop_assert_eq, proptest};
-    use zcash_client_backend::{data_api::InputSource as _, ShieldedProtocol};
+    use zcash_client_backend::ShieldedProtocol;
     use zcash_primitives::{
-        consensus::BlockHeight, legacy::TransparentAddress,
-        transaction::components::amount::NonNegativeAmount,
+        consensus::BlockHeight, transaction::components::amount::NonNegativeAmount,
     };
     use zip32::AccountId;
 
     use crate::wallet::{
         notes::orchard::mocks::OrchardNoteBuilder,
-        transaction_record::mocks::{
-            nine_note_transaction_record_default, TransactionRecordBuilder,
-        },
+        transaction_record::mocks::TransactionRecordBuilder,
         transaction_records_by_id::TransactionRecordsById,
     };
 
@@ -437,52 +413,5 @@ mod tests {
 
             prop_assert_eq!(spendable_notes.sapling().len() + spendable_notes.orchard().len(), expected_len);
         }
-    }
-
-    #[test]
-    fn get_unspent_transparent_outputs() {
-        let mut transaction_records_by_id = TransactionRecordsById::new();
-        transaction_records_by_id.insert_transaction_record(nine_note_transaction_record_default());
-
-        let transparent_output = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .transparent_outputs
-            .first()
-            .unwrap();
-        let record_height = transaction_records_by_id
-            .0
-            .values()
-            .next()
-            .unwrap()
-            .status
-            .get_confirmed_height();
-
-        let selected_outputs = transaction_records_by_id
-            .get_unspent_transparent_outputs(
-                &TransparentAddress::ScriptHash([0; 20]),
-                BlockHeight::from_u32(10),
-                &[],
-            )
-            .unwrap();
-        assert_eq!(selected_outputs.len(), 1);
-        assert_eq!(
-            selected_outputs.first().unwrap().outpoint(),
-            &transparent_output.to_outpoint()
-        );
-        assert_eq!(
-            selected_outputs.first().unwrap().txout().value.into_u64(),
-            transparent_output.value
-        );
-        assert_eq!(
-            selected_outputs.first().unwrap().txout().script_pubkey.0,
-            transparent_output.script
-        );
-        assert_eq!(
-            Some(selected_outputs.first().unwrap().height()),
-            record_height
-        )
     }
 }
