@@ -313,11 +313,13 @@ mod test {
 
     use crate::wallet::LightWallet;
 
-    // these functions are tested gold and a better pattern for address lookup.
-    // maybe later they can be gated in.
+    /// these functions have clearer typing than
+    /// the production functions using json that could be upgraded soon
     impl LightWallet {
         #[allow(clippy::result_unit_err)]
-        /// gets a UnifiedAddress, the first the wallet. this is the only receiver implemented as 2024-09-22
+        /// gets a UnifiedAddress, the first of the wallet.
+        /// zingolib includes derivations of further addresses. however, these are broken
+        /// ZingoMobile uses one address.
         pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
             Ok(self
                 .wallet_capability()

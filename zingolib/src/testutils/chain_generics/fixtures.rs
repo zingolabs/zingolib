@@ -611,11 +611,6 @@ where
 
     let mut expected_fee = fee_tables::one_to_one(Some(Orchard), pool, true);
 
-    // why?
-    if pool == Shielded(Sapling) {
-        expected_fee -= 10_000
-    }
-
     assert_eq!(
         from_inputs::propose(
             &ref_secondary,
