@@ -2,6 +2,7 @@ use bip0039::Mnemonic;
 
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
+use crate::wallet::keys::unified::UnifiedKeyStore;
 
 use super::super::LightWallet;
 use super::assert_wallet_capability_matches_seed;
@@ -210,8 +211,6 @@ async fn reload_wallet_from_buffer() {
     use zcash_primitives::consensus::Parameters;
 
     use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use crate::wallet::disk::Capability;
-    use crate::wallet::keys::extended_transparent::ExtendedPrivKey;
     use crate::wallet::WalletBase;
     use crate::wallet::WalletCapability;
 
@@ -245,9 +244,10 @@ async fn reload_wallet_from_buffer() {
     .unwrap();
     let wc = wallet.wallet_capability();
 
-    let Capability::Spend(orchard_sk) = &wc.orchard else {
-        panic!("Expected Orchard Spending Key");
+    let UnifiedKeyStore::Spend(usk) = wc.unified_key_store() else {
+        panic!("should be spending key!")
     };
+
     assert_eq!(
         orchard_sk.to_bytes(),
         orchard::keys::SpendingKey::try_from(&expected_wc)

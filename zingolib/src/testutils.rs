@@ -9,6 +9,7 @@ use crate::wallet::data::summaries::{
     OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
     TransactionSummaryInterface as _, TransparentCoinSummary,
 };
+use crate::wallet::keys::unified::{UnifiedKeyStore, WalletCapability};
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
@@ -20,7 +21,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
-use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_address::unified::Fvk;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -44,19 +45,31 @@ pub mod paths;
 pub mod regtest;
 
 /// TODO: Add Doc Comment Here!
-pub async fn build_fvk_client(
-    ufvk: UnifiedFullViewingKey,
-    zingoconfig: &ZingoConfig,
-) -> LightClient {
-    LightClient::create_unconnected(
-        zingoconfig,
-        WalletBase::Ufvk(ufvk.encode(&zingoconfig.chain)),
-        0,
-    )
-    .await
-    .unwrap()
+pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
+    let UnifiedKeyStore::Spend(usk) = wallet_capability.unified_key_store() else {
+        panic!("should be spending key!")
+    };
+    let o_fvk = Fvk::Orchard(orchard::keys::FullViewingKey::from(usk.orchard()).to_bytes());
+    let s_fvk = Fvk::Sapling(usk.sapling().to_diversifiable_full_viewing_key().to_bytes());
+    let mut t_fvk_bytes = [0u8; 65];
+    t_fvk_bytes.copy_from_slice(&usk.transparent().to_account_pubkey().serialize());
+    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    [o_fvk, s_fvk, t_fvk]
 }
 
+/// TODO: Add Doc Comment Here!
+pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> LightClient {
+    let ufvk = zcash_address::unified::Encoding::encode(
+        &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
+            fvks.iter().copied().cloned().collect(),
+        )
+        .unwrap(),
+        &zcash_address::Network::Regtest,
+    );
+    LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0)
+        .await
+        .unwrap()
+}
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
     Ok(client
