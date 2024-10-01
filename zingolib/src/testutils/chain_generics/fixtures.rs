@@ -513,7 +513,7 @@ where
     .await;
 
     let tertiary = environment.create_client().await;
-    let expected_fee = fee_tables::one_to_one(shpool, pool, true);
+    let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
 
     let ref_primary: Arc<LightClient> = Arc::new(primary);
     let ref_secondary: Arc<LightClient> = Arc::new(secondary);
@@ -554,7 +554,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
     let primary = environment.fund_client_orchard(1_000_000).await;
     let secondary = environment.create_client().await;
 
-    let expected_fee = fee_tables::one_to_one(shpool, pool, true);
+    let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
     let secondary_fund = 100_000 + expected_fee - underflow_amount;
     with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
@@ -609,7 +609,7 @@ where
 
     ref_secondary.do_sync(false).await.unwrap();
 
-    let mut expected_fee = fee_tables::one_to_one(Orchard, pool, true);
+    let mut expected_fee = fee_tables::one_to_one(Some(Orchard), pool, true);
 
     // why?
     if pool == Shielded(Sapling) {

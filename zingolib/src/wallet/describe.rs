@@ -319,11 +319,13 @@ mod test {
         #[allow(clippy::result_unit_err)]
         /// gets a UnifiedAddress, the first the wallet. this is the only receiver implemented as 2024-09-22
         pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-            if let Some(possible_ua) = self.wallet_capability().addresses().iter().next() {
-                Ok(possible_ua.clone())
-            } else {
-                Err(())
-            }
+            Ok(self
+                .wallet_capability()
+                .addresses()
+                .iter()
+                .next()
+                .ok_or(())?
+                .clone())
         }
 
         #[allow(clippy::result_unit_err)]
