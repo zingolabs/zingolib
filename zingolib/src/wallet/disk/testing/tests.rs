@@ -36,11 +36,9 @@ impl ExampleWalletNetwork {
     async fn load_example_wallet_with_verification(&self) -> LightWallet {
         let wallet = self.load_example_wallet().await;
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
-        for pool in vec![
-            PoolType::Transparent,
+        for pool in [PoolType::Transparent,
             PoolType::Shielded(ShieldedProtocol::Sapling),
-            PoolType::Shielded(ShieldedProtocol::Orchard),
-        ] {
+            PoolType::Shielded(ShieldedProtocol::Orchard)] {
             assert_eq!(
                 wallet
                     .get_first_address(pool)
