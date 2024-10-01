@@ -180,11 +180,8 @@ mod test {
         let self_address = wallet.get_first_address(pool).unwrap();
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];
-        let request = transaction_request_from_send_inputs(
-            &wallet.transaction_context.config.chain,
-            receivers,
-        )
-        .expect("actually all of this logic oughta be internal to propose");
+        let request = transaction_request_from_send_inputs(receivers)
+            .expect("actually all of this logic oughta be internal to propose");
 
         wallet
             .create_send_proposal(request)

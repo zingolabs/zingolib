@@ -198,7 +198,7 @@ async fn loaded_wallet_assert(
     let balance = client.do_balance().await;
     assert_eq!(balance.orchard_balance, Some(expected_balance));
     if expected_balance > 0 {
-        let _ = crate::testutils::lightclient::from_inputs::quick_send(
+        crate::testutils::lightclient::from_inputs::quick_send(
             &client,
             vec![(
                 &crate::get_base_address_macro!(client, "sapling"),
@@ -208,8 +208,8 @@ async fn loaded_wallet_assert(
         )
         .await
         .unwrap();
-        let _ = client.do_sync(true).await.unwrap();
-        let _ = crate::testutils::lightclient::from_inputs::quick_send(
+        client.do_sync(true).await.unwrap();
+        crate::testutils::lightclient::from_inputs::quick_send(
             &client,
             vec![(
                 &crate::get_base_address_macro!(client, "transparent"),

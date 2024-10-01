@@ -43,21 +43,20 @@ pub mod from_inputs {
         quick_sender: &crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
-        let request =
-            transaction_request_from_send_inputs(&quick_sender.config.chain, raw_receivers)
-                .expect("should be able to create a transaction request as receivers are valid.");
+        // TOdo fix expect
+        let request = transaction_request_from_send_inputs(raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender.quick_send(request).await
     }
 
     /// Panics if the address, amount or memo conversion fails.
     pub fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-        chain: &crate::config::ChainType,
     ) -> crate::data::receivers::Receivers {
         raw_receivers
             .into_iter()
             .map(|(address, amount, memo)| {
-                let recipient_address = crate::utils::conversion::address_from_str(address, chain)
+                let recipient_address = crate::utils::conversion::address_from_str(address)
                     .expect("should be a valid address");
                 let amount = crate::utils::conversion::zatoshis_from_u64(amount)
                     .expect("should be inside the range of valid zatoshis");
@@ -73,13 +72,12 @@ pub mod from_inputs {
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
     pub fn transaction_request_from_send_inputs(
-        chain: &crate::config::ChainType,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
         zcash_client_backend::zip321::TransactionRequest,
         zcash_client_backend::zip321::Zip321Error,
     > {
-        let receivers = receivers_from_send_inputs(raw_receivers, chain);
+        let receivers = receivers_from_send_inputs(raw_receivers);
         crate::data::receivers::transaction_request_from_receivers(receivers)
     }
 
@@ -91,7 +89,8 @@ pub mod from_inputs {
         crate::data::proposal::ProportionalFeeProposal,
         crate::wallet::propose::ProposeSendError,
     > {
-        let request = transaction_request_from_send_inputs(&proposer.config.chain, raw_receivers)
+        // TOdo fix expect
+        let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request).await
     }
