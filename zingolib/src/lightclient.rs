@@ -269,6 +269,10 @@ pub mod instantiation {
 
         /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
         pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
+            // install default crypto provider (ring)
+            if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
+                eprintln!("Error installing crypto provider: {:?}", e)
+            };
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
             let config = wallet.transaction_context.config.clone();

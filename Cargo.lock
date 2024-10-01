@@ -4345,6 +4345,7 @@ dependencies = [
  "reqwest",
  "ring 0.17.8",
  "rust-embed",
+ "rustls",
  "sapling-crypto",
  "secp256k1",
  "secrecy",
