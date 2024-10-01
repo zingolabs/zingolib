@@ -39,6 +39,7 @@ pub enum ProposalToTransactionRecordComparisonError {
         u64,
     ),
 }
+
 /// currently checks:
 /// 1. len of txids == num steps
 /// 2. the txid is stored in the records_by_ids database
@@ -48,7 +49,6 @@ pub enum ProposalToTransactionRecordComparisonError {
 ///    transfer
 ///
 /// if any of these checks fail, rather than panic immediately, this function will include an error enum in its output. make sure to expect this.
-
 pub async fn assertively_lookup_fee<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
