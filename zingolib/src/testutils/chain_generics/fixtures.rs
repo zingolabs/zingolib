@@ -609,7 +609,7 @@ where
 
     ref_secondary.do_sync(false).await.unwrap();
 
-    let mut expected_fee = fee_tables::one_to_one(Some(Orchard), pool, true);
+    let expected_fee = fee_tables::one_to_one(Some(Orchard), pool, true);
 
     assert_eq!(
         from_inputs::propose(

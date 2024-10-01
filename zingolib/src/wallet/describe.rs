@@ -318,7 +318,7 @@ mod test {
     impl LightWallet {
         #[allow(clippy::result_unit_err)]
         /// gets a UnifiedAddress, the first of the wallet.
-        /// zingolib includes derivations of further addresses. however, these are broken
+        /// zingolib includes derivations of further addresses.
         /// ZingoMobile uses one address.
         pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
             Ok(self
