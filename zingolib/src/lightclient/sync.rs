@@ -682,6 +682,7 @@ pub mod test {
         let wallet = wallet_case.load_example_wallet().await;
         let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
         lc.do_sync(true).await.unwrap();
+        println!("{:?}", lc.do_balance().await);
         lc
     }
 
