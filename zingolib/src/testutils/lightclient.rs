@@ -43,6 +43,7 @@ pub mod from_inputs {
         quick_sender: &crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
+        // TOdo fix expect
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender.quick_send(request).await
@@ -88,6 +89,7 @@ pub mod from_inputs {
         crate::data::proposal::ProportionalFeeProposal,
         crate::wallet::propose::ProposeSendError,
     > {
+        // TOdo fix expect
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request).await

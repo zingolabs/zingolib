@@ -8,6 +8,37 @@ use zcash_primitives::transaction::TxId;
 use crate::{lightclient::LightClient, wallet::notes::query::OutputQuery};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+fn compare_fee_and_status(
+    recorded_status: ConfirmationStatus,
+    expected_status: ConfirmationStatus,
+    recorded_fee_result: &Result<u64, crate::wallet::error::FeeError>,
+    proposed_fee: u64,
+) -> Result<u64, ()> {
+    if recorded_status == expected_status {
+        if let Ok(recorded_fee) = recorded_fee_result {
+            if *recorded_fee == proposed_fee {
+                return Ok(*recorded_fee);
+            }
+        }
+    }
+    Err(())
+}
+
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, thiserror::Error)]
+pub enum ProposalToTransactionRecordComparisonError {
+    #[error("TxId missing from broadcast.")]
+    MissingFromBroadcast,
+    #[error("Could not look up TransactionRecord.")]
+    MissingRecord,
+    #[error("Mismatch: Recorded status: {0:?} ; Expected status: {1:?} ; Recorded fee: {2:?} ; Expected fee: {3:?}")]
+    Mismatch(
+        ConfirmationStatus,
+        ConfirmationStatus,
+        Result<u64, crate::wallet::error::FeeError>,
+        u64,
+    ),
+}
 /// currently checks:
 /// 1. len of txids == num steps
 /// 2. the txid is stored in the records_by_ids database
@@ -15,12 +46,15 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 ///    this currently fails for any broadcast but not confirmed transaction: it seems like
 ///    get_transaction_fee does not recognize pending spends returns the total fee for the
 ///    transfer
-pub async fn assert_record_fee_and_status<NoteId>(
+///
+/// if any of these checks fail, rather than panic immediately, this function will include an error enum in its output. make sure to expect this.
+
+pub async fn assertively_lookup_fee<NoteId>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
     txids: &NonEmpty<TxId>,
     expected_status: ConfirmationStatus,
-) -> u64 {
+) -> Vec<Result<u64, ProposalToTransactionRecordComparisonError>> {
     let records = &client
         .wallet
         .transaction_context
@@ -29,27 +63,36 @@ pub async fn assert_record_fee_and_status<NoteId>(
         .await
         .transaction_records_by_id;
 
-    assert_eq!(proposal.steps().len(), txids.len());
-    let mut total_fee = 0;
-    for (i, step) in proposal.steps().iter().enumerate() {
-        let record = records.get(&txids[i]).unwrap_or_else(|| {
-            panic!(
-                "sender must recognize txid.\nExpected {}\nRecognised: {:?}",
-                txids[i],
-                records.0.values().collect::<Vec<_>>()
-            )
+    let mut step_results = vec![];
+    for (step_number, step) in proposal.steps().iter().enumerate() {
+        step_results.push({
+            if let Some(txid) = txids.get(step_number) {
+                if let Some(record) = records.get(txid) {
+                    let recorded_fee_result = records.calculate_transaction_fee(record);
+                    let proposed_fee = step.balance().fee_required().into_u64();
+                    compare_fee_and_status(
+                        record.status,
+                        expected_status,
+                        &recorded_fee_result,
+                        proposed_fee,
+                    )
+                    .map_err(|_| {
+                        ProposalToTransactionRecordComparisonError::Mismatch(
+                            record.status,
+                            expected_status,
+                            recorded_fee_result,
+                            proposed_fee,
+                        )
+                    })
+                } else {
+                    Err(ProposalToTransactionRecordComparisonError::MissingRecord)
+                }
+            } else {
+                Err(ProposalToTransactionRecordComparisonError::MissingFromBroadcast)
+            }
         });
-        // does this record match this step?
-        // we can check that it has the expected status
-        assert_eq!(record.status, expected_status);
-        // may fail in uncertain ways if used on a transaction we dont have an OutgoingViewingKey for
-        let recorded_fee = records.calculate_transaction_fee(record).unwrap();
-
-        assert_eq!(recorded_fee, step.balance().fee_required().into_u64());
-
-        total_fee += recorded_fee;
     }
-    total_fee
+    step_results
 }
 
 /// currently only checks if the received total matches
