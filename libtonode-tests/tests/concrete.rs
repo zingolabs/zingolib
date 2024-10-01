@@ -134,11 +134,7 @@ mod fast {
 
         recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(&recipient, "unified"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(&recipient, "unified")).unwrap(),
                 true,
                 None,
             )
@@ -594,11 +590,11 @@ mod fast {
     }
 }
 mod slow {
+    use bip0039::Mnemonic;
     use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::{
         consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
-        zip339::Mnemonic,
     };
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::testutils::{
@@ -2979,13 +2975,6 @@ mod slow {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
                 ProposeSendError::Proposal(insufficient) => match insufficient {
-                    zcash_client_backend::data_api::error::Error::DataSource(_) => panic!(),
-                    zcash_client_backend::data_api::error::Error::CommitmentTree(_) => panic!(),
-                    zcash_client_backend::data_api::error::Error::NoteSelection(_) => panic!(),
-                    zcash_client_backend::data_api::error::Error::Proposal(_) => panic!(),
-                    zcash_client_backend::data_api::error::Error::ProposalNotSupported => panic!(),
-                    zcash_client_backend::data_api::error::Error::KeyNotRecognized => panic!(),
-                    zcash_client_backend::data_api::error::Error::BalanceError(_) => panic!(),
                     zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
                         required,
@@ -2993,20 +2982,7 @@ mod slow {
                         assert_eq!(available, NonNegativeAmount::from_u64(20_000).unwrap());
                         assert_eq!(required, NonNegativeAmount::from_u64(25_001).unwrap());
                     }
-                    zcash_client_backend::data_api::error::Error::ScanRequired => panic!(),
-                    zcash_client_backend::data_api::error::Error::Builder(_) => panic!(),
-                    zcash_client_backend::data_api::error::Error::MemoForbidden => panic!(),
-                    zcash_client_backend::data_api::error::Error::UnsupportedChangeType(_) => {
-                        panic!()
-                    }
-                    zcash_client_backend::data_api::error::Error::NoSupportedReceivers(_) => {
-                        panic!()
-                    }
-                    zcash_client_backend::data_api::error::Error::NoSpendingKey(_) => panic!(),
-                    zcash_client_backend::data_api::error::Error::NoteMismatch(_) => panic!(),
-                    zcash_client_backend::data_api::error::Error::AddressNotRecognized(_) => {
-                        panic!()
-                    }
+                    _ => panic!(),
                 },
                 ProposeSendError::TransactionRequestFailed(_) => panic!(),
                 ProposeSendError::ZeroValueSendAll => panic!(),
@@ -3466,7 +3442,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         for i in 1..4 {
-            let _ = faucet.do_sync(false).await;
+            faucet.do_sync(false).await.unwrap();
             from_inputs::quick_send(
                 &faucet,
                 vec![(&get_base_address_macro!(recipient, "sapling"), 10_100, None)],
@@ -3476,7 +3452,7 @@ mod slow {
             let chainwait: u32 = 6;
             let amount: u64 = u64::from(chainwait * i);
             zingolib::testutils::increase_server_height(&regtest_manager, chainwait).await;
-            let _ = recipient.do_sync(false).await;
+            recipient.do_sync(false).await.unwrap();
             from_inputs::quick_send(
                 &recipient,
                 vec![(&get_base_address_macro!(recipient, "unified"), amount, None)],
@@ -3981,11 +3957,8 @@ mod send_all {
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        let external_uaddress = address_from_str(
-            &get_base_address_macro!(faucet, "unified"),
-            &faucet.config().chain,
-        )
-        .unwrap();
+        let external_uaddress =
+            address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap();
         let expected_balance =
             NonNegativeAmount::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
         assert_eq!(
@@ -4045,11 +4018,7 @@ mod send_all {
 
         recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "sapling"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
             )
@@ -4087,11 +4056,7 @@ mod send_all {
 
         let proposal_error = recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "sapling"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
             )
@@ -4118,11 +4083,7 @@ mod send_all {
 
         let proposal_error = recipient
             .propose_send_all(
-                address_from_str(
-                    &get_base_address_macro!(faucet, "unified"),
-                    &recipient.config().chain,
-                )
-                .unwrap(),
+                address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap(),
                 false,
                 None,
             )

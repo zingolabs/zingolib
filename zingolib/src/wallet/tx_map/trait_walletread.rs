@@ -153,7 +153,7 @@ impl WalletRead for TxMap {
     }
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        unimplemented!()
+        Ok(vec![(AccountId::ZERO)])
     }
     fn get_account(
         &self,
@@ -324,6 +324,12 @@ impl WalletRead for TxMap {
         Self::Error,
     > {
         Ok(std::collections::HashMap::new())
+    }
+
+    fn transaction_data_requests(
+        &self,
+    ) -> Result<Vec<zcash_client_backend::data_api::TransactionDataRequest>, Self::Error> {
+        unimplemented!()
     }
 }
 
