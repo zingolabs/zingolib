@@ -28,7 +28,7 @@ use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
-use super::legacy::Capability;
+use super::legacy::{legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
 
 /// In-memory store for wallet spending or viewing keys
@@ -576,17 +576,20 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
-                // keys must be read to increment the cursor correctly but USK is derived later from seed
+                // TODO: finish comment
                 // due to missing BIP0032 transparent extended private key data
-                orchard::keys::SpendingKey::read(&mut reader, ())?;
-                sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
-                super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
+                let orchard_sk = orchard::keys::SpendingKey::read(&mut reader, ())?;
+                let sapling_sk = sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
+                let transparent_sk =
+                    super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
+                let usk = legacy_sks_to_usk(orchard_sk, sapling_sk, transparent_sk).unwrap();
                 Self {
-                    unified_key_store: UnifiedKeyStore::Empty,
+                    unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
                     ..Default::default()
                 }
             }
             2 => {
+                // TODO: implement temp usk
                 let orchard_capability = Capability::<
                     orchard::keys::FullViewingKey,
                     orchard::keys::SpendingKey,
