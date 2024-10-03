@@ -3,7 +3,10 @@
 use std::io::{self, Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use zcash_keys::keys::UnifiedFullViewingKey;
+use bytes::LittleEndian;
+use zcash_address::unified::Typecode;
+use zcash_encoding::CompactSize;
+use zcash_keys::keys::{Era, UnifiedFullViewingKey, UnifiedSpendingKey};
 
 use crate::wallet::traits::ReadableWriteable;
 
@@ -84,4 +87,58 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_primitives::consensus::Parameters>(
     let ufvk = zcash_address::unified::Ufvk::try_from_items(fvks).map_err(|e| e.to_string())?;
 
     UnifiedFullViewingKey::decode(parameters, &ufvk.encode(&parameters.network_type()))
+}
+
+pub(crate) fn legacy_sks_to_usk(
+    orchard_key: orchard::keys::SpendingKey,
+    sapling_key: sapling_crypto::zip32::ExtendedSpendingKey,
+    transparent_key: extended_transparent::ExtendedPrivKey,
+) -> Result<UnifiedSpendingKey, std::string::String> {
+    let mut usk_bytes = vec![];
+
+    // hard-coded Orchard Era ID due to `id()` being a private fn
+    usk_bytes.write_u32::<LittleEndian>(0xc2d6_d0b4).unwrap();
+
+    CompactSize::write(&mut usk_bytes, usize::try_from(Typecode::Orchard).unwrap()).unwrap();
+    let orchard_key_bytes = orchard_key.to_bytes();
+    CompactSize::write(&mut usk_bytes, orchard_key_bytes.len()).unwrap();
+    usk_bytes.write_all(orchard_key_bytes).unwrap();
+
+    CompactSize::write(&mut usk_bytes, usize::try_from(Typecode::Sapling).unwrap()).unwrap();
+    let sapling_key_bytes = sapling_key.to_bytes();
+    CompactSize::write(&mut usk_bytes, sapling_key_bytes.len()).unwrap();
+    usk_bytes.write_all(&sapling_key_bytes).unwrap();
+
+    // the following code performs the same operations for calling `to_bytes()` on an AccountPrivKey in LRZ
+    let prefix = bip32::Prefix::XPRV;
+    let mut chain_code = [0u8; 32];
+    chain_code.copy_from_slice(&transparent_key.chain_code);
+    let attrs = bip32::ExtendedKeyAttrs {
+        depth: 4,
+        parent_fingerprint: [0xff, 0xff, 0xff, 0xff],
+        child_number: bip32::ChildNumber::new(0, true).expect("correct"),
+        chain_code,
+    };
+    // Add leading `0` byte
+    let mut key_bytes = [0u8; 33];
+    key_bytes[1..].copy_from_slice(transparent_key.private_key.as_ref());
+
+    let extended_key = bip32::ExtendedKey {
+        prefix,
+        attrs,
+        key_bytes,
+    };
+
+    let xprv_encoded = extended_key.to_string();
+    let account_tkey_bytes = bs58::decode(xprv_encoded)
+        .with_check(None)
+        .into_vec()
+        .expect("correct")
+        .split_off(bip32::Prefix::LENGTH);
+
+    CompactSize::write(&mut usk_bytes, usize::try_from(Typecode::P2pkh).unwrap()).unwrap();
+    CompactSize::write(&mut usk_bytes, account_tkey_bytes.len()).unwrap();
+    usk_bytes.write_all(&account_tkey_bytes).unwrap();
+
+    UnifiedSpendingKey::from_bytes(Era::Orchard, &usk_bytes).map_err(|e| e.to_string())
 }

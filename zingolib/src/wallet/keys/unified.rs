@@ -31,7 +31,7 @@ use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
-use super::legacy::Capability;
+use super::legacy::{legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
 
 /// In-memory store for wallet spending or viewing keys
@@ -349,7 +349,18 @@ impl WalletCapability {
             {
                 return Err("The wallet is not capable of producing desired receivers.".to_string());
             }
+        } else if let UnifiedKeyStore::Empty = self.unified_key_store() {
+            if desired_receivers.transparent
+                || desired_receivers.sapling
+                || desired_receivers.orchard
+            {
+                return Err(
+                    "No keys found. The wallet is not capable of producing desired receivers."
+                        .to_string(),
+                );
+            }
         }
+
         if self
             .addresses_write_lock
             .swap(true, atomic::Ordering::Acquire)
@@ -428,6 +439,9 @@ impl WalletCapability {
         Ok(ua)
     }
 
+    /// Only used for address generation during loading wallets pre v29
+    // TODO: legacy new address fn
+
     /// Generates a transparent receiver if the wallet is capable of it.
     ///
     /// If the wallet is not capable of generating a transparent receiver,
@@ -483,7 +497,7 @@ impl WalletCapability {
             _ => Err(bip32::Error::Bip39),
         }? as u32)
         .expect("hardened bit should not be set for non-hardened child indexes");
-        let external_pubkey = match self.unified_key_store() {
+        let transparent_receiver = match self.unified_key_store() {
             UnifiedKeyStore::Spend(usk) => {
                 address_for_scope(&usk.transparent().to_account_pubkey(), scope, child_index)
                     .map(Option::Some)
@@ -494,11 +508,8 @@ impl WalletCapability {
                 .transpose(),
             UnifiedKeyStore::Empty => Ok(None),
         }?;
-        if let Some(t_addr) = external_pubkey {
-            Ok(Some(t_addr))
-        } else {
-            Ok(None)
-        }
+
+        Ok(transparent_receiver)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -661,13 +672,17 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
-                // keys must be read to increment the cursor correctly but USK is derived later from seed
+                // Create a temporary USK for address generation to load old wallets
                 // due to missing BIP0032 transparent extended private key data
-                orchard::keys::SpendingKey::read(&mut reader, ())?;
-                sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
-                super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
+                //
+                // USK is re-derived later from seed due to missing BIP0032 transparent extended private key data
+                let orchard_sk = orchard::keys::SpendingKey::read(&mut reader, ())?;
+                let sapling_sk = sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
+                let transparent_sk =
+                    super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
+                let usk = legacy_sks_to_usk(orchard_sk, sapling_sk, transparent_sk).unwrap();
                 Self {
-                    unified_key_store: UnifiedKeyStore::Empty,
+                    unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
                     ..Default::default()
                 }
             }
@@ -685,36 +700,44 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                     super::legacy::extended_transparent::ExtendedPrivKey,
                 >::read(&mut reader, ())?;
 
-                // if this wallet was created from a UFVK, create the UFVK from FVKs.
-                // otherwise, set unified key store to None.
-                //
-                // USK is derived later from seed due to missing BIP0032 transparent extended private key data
-                // this missing data is not required for UFVKs
-                let orchard_fvk = match orchard_capability {
+                let orchard_fvk = match &orchard_capability {
                     Capability::View(fvk) => Some(fvk),
                     _ => None,
                 };
-                let sapling_fvk = match sapling_capability {
+                let sapling_fvk = match &sapling_capability {
                     Capability::View(fvk) => Some(fvk),
                     _ => None,
                 };
-                let transparent_fvk = match transparent_capability {
+                let transparent_fvk = match &transparent_capability {
                     Capability::View(fvk) => Some(fvk),
                     _ => None,
                 };
+
                 let unified_key_store = if orchard_fvk.is_some()
                     || sapling_fvk.is_some()
                     || transparent_fvk.is_some()
                 {
+                    // In the case of loading from viewing keys:
+                    // Create the UFVK from FVKs.
                     let ufvk = super::legacy::legacy_fvks_to_ufvk(
-                        orchard_fvk,
-                        sapling_fvk,
-                        transparent_fvk,
+                        orchard_fvk.cloned(),
+                        sapling_fvk.cloned(),
+                        transparent_fvk.cloned(),
                         &input,
                     )
                     .unwrap();
                     UnifiedKeyStore::View(Box::new(ufvk))
+                } else if matches!(orchard_capability.clone(), Capability::Spend(_)) {
+                    UnifiedKeyStore::Empty
                 } else {
+                    // In the case of loading spending keys:
+                    // Create a temporary USK for address generation to load old wallets
+                    // due to missing BIP0032 transparent extended private key data
+                    //
+                    // USK is re-derived later from seed due to missing BIP0032 transparent extended private key data
+                    // this missing data is not required for UFVKs
+                    // TODO: implement temp usk
+
                     UnifiedKeyStore::Empty
                 };
                 Self {

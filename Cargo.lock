@@ -4444,6 +4444,7 @@ dependencies = [
  "bip0039",
  "bip32",
  "bls12_381",
+ "bs58",
  "build_utils",
  "byteorder",
  "bytes 0.4.12",

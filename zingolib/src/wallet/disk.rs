@@ -45,7 +45,7 @@ impl LightWallet {
     ///     We introduce `Capability` type represent different capability types in v27.
     ///     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
     pub const fn serialized_version() -> u64 {
-        28
+        29
     }
 
     /// TODO: Add Doc Comment Here!
@@ -219,22 +219,27 @@ impl LightWallet {
             None
         };
 
-        // Derive unified spending key from seed if it exists.
+        // Derive unified spending key from seed and overide temporary USK if wallet is pre v29.
         //
-        // UnifiedSpendingKey is initially set to None variant except when loading unified full viewing key where the mnemonic is not available.
+        // UnifiedSpendingKey is initially incomplete for old wallet versions.
         // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
-        if let (true, Some(mnemonic)) = (
-            wallet_capability.unified_key_store().is_empty(),
-            mnemonic.as_ref(),
-        ) {
-            wallet_capability.set_unified_key_store(UnifiedKeyStore::Spend(Box::new(
-                UnifiedSpendingKey::from_seed(
-                    &config.chain,
-                    &mnemonic.0.to_seed(""),
-                    AccountId::ZERO,
-                )
-                .unwrap(),
-            )));
+        // There is also the issue that the legacy transparent private key is derived an extra level to the external scope.
+        if external_version < 29 {
+            if let Some(mnemonic) = mnemonic.as_ref() {
+                wallet_capability.set_unified_key_store(UnifiedKeyStore::Spend(Box::new(
+                    UnifiedSpendingKey::from_seed(
+                        &config.chain,
+                        &mnemonic.0.to_seed(""),
+                        AccountId::ZERO,
+                    )
+                    .unwrap(),
+                )));
+            } else if let UnifiedKeyStore::Spend(_) = wallet_capability.unified_key_store() {
+                return Err(io::Error::new(
+                    ErrorKind::Other,
+                    "loading from legacy spending keys with no seed phrase to recover",
+                ));
+            }
         }
 
         info!("Keys in this wallet:");
