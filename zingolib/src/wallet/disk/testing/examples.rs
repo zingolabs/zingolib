@@ -231,27 +231,33 @@ impl ExampleWalletNetwork {
     /// picks the seed (or ufvk) string associated with an example wallet
     pub fn example_wallet_base(&self) -> String {
         match self {
-            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
-                _,
-            )) => crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
-                _,
-            )) => crate::testvectors::seeds::ABANDON_ART_SEED.to_string(),
-            ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
-                _,
-            )) => "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string(),
-            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
-                _,
-            )) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
-            ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                _,
-            )) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
-            ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
-                _,
-            )) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
-            ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
-                _,
-            )) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string(),
+            ExampleWalletNetwork::Regtest(example_regt_seed) => match example_regt_seed {
+                ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(_) => {
+                    crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()
+                },
+                ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(_) => {
+                    crate::testvectors::seeds::ABANDON_ART_SEED.to_string()
+                },
+                ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(_) => {
+                    "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string()
+                }
+            },
+            ExampleWalletNetwork::Testnet(example_testnet_seed) => match example_testnet_seed {
+                ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                    _,
+                ) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                    _,
+                ) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string()
+            },
+            ExampleWalletNetwork::Mainnet(example_mainnet_seed) => match example_mainnet_seed {
+                ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
+                     _,
+                ) => "village target fun course orange release female brain cruise birth pet copy trouble common fitness unfold panther man enjoy genuine merry write bulb pledge".to_string(),
+                ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                     _,
+                ) => "hotel humor crunch crack language awkward lunar term priority critic cushion keep coin sketch soap laugh pretty cement noodle enjoy trip bicycle list return".to_string()
+            }
         }
     }
     /// picks the first receiver associated with an example wallet
