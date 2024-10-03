@@ -294,27 +294,35 @@ impl ExampleWalletNetwork {
                 }
             },
             PoolType::Shielded(ShieldedProtocol::Orchard) => match self {
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
-                    _,
-                )) => "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8".to_string(),
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
-                    _,
-                )) => "uregtest1zkuzfv5m3yhv2j4fmvq5rjurkxenxyq8r7h4daun2zkznrjaa8ra8asgdm8wwgwjvlwwrxx7347r8w0ee6dqyw4rufw4wg9djwcr6frzkezmdw6dud3wsm99eany5r8wgsctlxquu009nzd6hsme2tcsk0v3sgjvxa70er7h27z5epr67p5q767s2z5gt88paru56mxpm6pwz0cu35m".to_string(),
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
-                    _,
-                )) => "uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh".to_string(),
-                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
-                    _,
-                )) => "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string(),
-                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    _,
-                )) => "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww".to_string(),
-                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
-                    _,
-                )) => "u1n5zgv8c9px4hfmq7cr9f9t0av6q9nj5dwca9w0z9jxegut65gxs2y4qnx7ppng6k2hyt0asyycqrywalzyasxu2302xt4spfqnkh25nevr3h9exc3clh9tfpr5hyhc9dwee50l0cxm7ajun5xs9ycqhlw8rd39jql8z5zlv9hw4q8azcgpv04dez5547geuvyh8pfzezpw52cg2qknm".to_string(),
-                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
-                    _,
-                )) => "u14lrpa0myuh5ax8dtyaj64jddk8m80nk2wgd3sjlu7g3ejwxs3qkfj5hntakjte8ena3qnk40ht0ats5ad0lcwhjtn9hak6733fdf33fhkl7umgqy2vtcfmhmca9pjdlrsz68euuw06swnl9uzzpadmvztd50xen4ruw738t995x7mhdcx3mjv7eh5hntgtvhtv6vgp9l885eqg6xpm8".to_string(),
+                ExampleWalletNetwork::Regtest(example_regt_seed) => match example_regt_seed {
+                    ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(_) => {
+                        "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8".to_string()
+                    },
+                    ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(_) => {
+                        "uregtest1zkuzfv5m3yhv2j4fmvq5rjurkxenxyq8r7h4daun2zkznrjaa8ra8asgdm8wwgwjvlwwrxx7347r8w0ee6dqyw4rufw4wg9djwcr6frzkezmdw6dud3wsm99eany5r8wgsctlxquu009nzd6hsme2tcsk0v3sgjvxa70er7h27z5epr67p5q767s2z5gt88paru56mxpm6pwz0cu35m".to_string()
+                    },
+                    ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(_) => {
+                        "uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh".to_string()
+                    },
+                },
+                ExampleWalletNetwork::Testnet(example_test_seed) => match example_test_seed {
+                    ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(_) => {
+                        "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()
+                    },
+                
+                    ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(_) => {
+                        "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww".to_string()
+                    },
+                
+                },
+                ExampleWalletNetwork::Mainnet(example_test_seed) => match example_test_seed {
+                    ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(_) => {
+                        "u1n5zgv8c9px4hfmq7cr9f9t0av6q9nj5dwca9w0z9jxegut65gxs2y4qnx7ppng6k2hyt0asyycqrywalzyasxu2302xt4spfqnkh25nevr3h9exc3clh9tfpr5hyhc9dwee50l0cxm7ajun5xs9ycqhlw8rd39jql8z5zlv9hw4q8azcgpv04dez5547geuvyh8pfzezpw52cg2qknm".to_string()
+                    },
+                    ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(_) => {
+                        "u14lrpa0myuh5ax8dtyaj64jddk8m80nk2wgd3sjlu7g3ejwxs3qkfj5hntakjte8ena3qnk40ht0ats5ad0lcwhjtn9hak6733fdf33fhkl7umgqy2vtcfmhmca9pjdlrsz68euuw06swnl9uzzpadmvztd50xen4ruw738t995x7mhdcx3mjv7eh5hntgtvhtv6vgp9l885eqg6xpm8".to_string()
+                    },
+                },
             },
         }
     }
