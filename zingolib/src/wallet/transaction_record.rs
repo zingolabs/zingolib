@@ -517,8 +517,8 @@ impl TransactionRecord {
 
         writer.write_all(self.txid.as_ref())?;
 
-        zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
-        zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w, ()))?;
+        zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w, ()))?;
         zcash_encoding::Vector::write(&mut writer, &self.transparent_outputs, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {

@@ -2,6 +2,7 @@
 //! upgrade-or-replace
 
 use crate::data::proposal;
+use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -13,7 +14,7 @@ use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
-use zcash_primitives::consensus::Parameters;
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
@@ -134,16 +135,36 @@ impl Command for WalletKindCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             if lightclient.do_seed_phrase().await.is_ok() {
-                object! {"kind" => "Seeded"}.pretty(4)
-            } else {
-                let capability = lightclient.wallet.wallet_capability();
-                object! {
-                    "kind" => "Loaded from key",
-                    "transparent" => capability.transparent.kind_str(),
-                    "sapling" => capability.sapling.kind_str(),
-                    "orchard" => capability.orchard.kind_str(),
+                object! {"kind" => "Loaded from seed phrase",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
                 }
                 .pretty(4)
+            } else {
+                match lightclient.wallet.wallet_capability().unified_key_store() {
+                    UnifiedKeyStore::Spend(_) => object! {
+                        "kind" => "Loaded from unified spending key",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::View(ufvk) => object! {
+                        "kind" => "Loaded from unified full viewing key",
+                        "transparent" => ufvk.transparent().is_some(),
+                        "sapling" => ufvk.sapling().is_some(),
+                        "orchard" => ufvk.orchard().is_some(),
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::Empty => object! {
+                        "kind" => "No keys found",
+                        "transparent" => false,
+                        "sapling" => false,
+                        "orchard" => false,
+                    }
+                    .pretty(4),
+                }
             }
         })
     }
@@ -690,18 +711,20 @@ impl Command for ExportUfvkCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let ufvk_res = lightclient.wallet.transaction_context.key.ufvk();
-        match ufvk_res {
-            Ok(ufvk) => {
-                use zcash_address::unified::Encoding as _;
-                object! {
-                    "ufvk" => ufvk.encode(&lightclient.config().chain.network_type()),
-                    "birthday" => RT.block_on(lightclient.wallet.get_birthday())
-                }
-                .pretty(2)
-            }
-            Err(e) => format!("Error: {e}"),
+        let ufvk: UnifiedFullViewingKey = match lightclient
+            .wallet
+            .wallet_capability()
+            .unified_key_store()
+            .try_into()
+        {
+            Ok(ufvk) => ufvk,
+            Err(e) => return e.to_string(),
+        };
+        object! {
+            "ufvk" => ufvk.encode(&lightclient.config().chain),
+            "birthday" => RT.block_on(lightclient.wallet.get_birthday())
         }
+        .pretty(2)
     }
 }
 

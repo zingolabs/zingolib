@@ -101,7 +101,7 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     /// TODO: Add Doc Comment Here!
     type Note: PartialEq
-        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
+        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability), ()>
         + Clone;
     /// TODO: Add Doc Comment Here!
     type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;

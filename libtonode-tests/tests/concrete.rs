@@ -15,6 +15,7 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{build_fvk_client, increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::data::summaries::TransactionSummaryInterface;
+use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::propose::ProposeSendError;
 use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
 
@@ -69,15 +70,18 @@ fn check_view_capability_bounds(
     sent_t_value: Option<u64>,
     notes: &JsonValue,
 ) {
+    let UnifiedKeyStore::View(ufvk) = watch_wc.unified_key_store() else {
+        panic!("should be viewing key!")
+    };
     //Orchard
     if !fvks.contains(&ovk) {
-        assert!(!watch_wc.orchard.can_view());
+        assert!(ufvk.orchard().is_none());
         assert_eq!(balance.orchard_balance, None);
         assert_eq!(balance.verified_orchard_balance, None);
         assert_eq!(balance.unverified_orchard_balance, None);
         assert_eq!(notes["unspent_orchard_notes"].members().count(), 0);
     } else {
-        assert!(watch_wc.orchard.can_view());
+        assert!(ufvk.orchard().is_some());
         assert_eq!(balance.orchard_balance, sent_o_value);
         assert_eq!(balance.verified_orchard_balance, sent_o_value);
         assert_eq!(balance.unverified_orchard_balance, Some(0));
@@ -87,24 +91,24 @@ fn check_view_capability_bounds(
     }
     //Sapling
     if !fvks.contains(&svk) {
-        assert!(!watch_wc.sapling.can_view());
+        assert!(ufvk.sapling().is_none());
         assert_eq!(balance.sapling_balance, None);
         assert_eq!(balance.verified_sapling_balance, None);
         assert_eq!(balance.unverified_sapling_balance, None);
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
     } else {
-        assert!(watch_wc.sapling.can_view());
+        assert!(ufvk.sapling().is_some());
         assert_eq!(balance.sapling_balance, sent_s_value);
         assert_eq!(balance.verified_sapling_balance, sent_s_value);
         assert_eq!(balance.unverified_sapling_balance, Some(0));
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
     }
     if !fvks.contains(&tvk) {
-        assert!(!watch_wc.transparent.can_view());
+        assert!(ufvk.transparent().is_none());
         assert_eq!(balance.transparent_balance, None);
         assert_eq!(notes["utxos"].members().count(), 0);
     } else {
-        assert!(watch_wc.transparent.can_view());
+        assert!(ufvk.transparent().is_some());
         assert_eq!(balance.transparent_balance, sent_t_value);
         assert_eq!(notes["utxos"].members().count(), 1);
     }

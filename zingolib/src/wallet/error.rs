@@ -41,3 +41,34 @@ pub enum BalanceError {
     #[error("conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
 }
+
+/// Errors associated with balance key derivation
+#[derive(Debug, Error)]
+pub enum KeyError {
+    /// Invalid account ID
+    #[error("Account ID should be at most 31 bits")]
+    InvalidAccountId(#[from] zip32::TryFromIntError),
+    /// Key derivation failed
+    // TODO: add std::Error to zcash_keys::keys::DerivationError in LRZ fork and add thiserror #[from] macro
+    #[error("Key derivation failed")]
+    KeyDerivationError,
+    /// Key decoding failed
+    // TODO: add std::Error to zcash_keys::keys::DecodingError in LRZ fork and add thiserror #[from] macro
+    #[error("Key decoding failed")]
+    KeyDecodingError,
+    /// No spend capability
+    #[error("No spend capability")]
+    NoSpendCapability,
+    /// No view capability
+    #[error("No view capability")]
+    NoViewCapability,
+    /// Invalid non-hardened child indexes
+    #[error("Outside range of non-hardened child indexes")]
+    InvalidNonHardenedChildIndex,
+    /// Network mismatch
+    #[error("Decoded unified full viewing key does not match current network")]
+    NetworkMismatch,
+    /// Invalid format
+    #[error("Viewing keys must be imported in the unified format")]
+    InvalidFormat,
+}
