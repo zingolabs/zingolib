@@ -692,9 +692,12 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
 
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
+        let legacy_key: bool;
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
+                legacy_key = true;
+
                 // Create a temporary USK for address generation to load old wallets
                 // due to missing BIP0032 transparent extended private key data
                 //
@@ -703,13 +706,15 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 let sapling_sk = sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
                 let transparent_sk =
                     super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
-                let usk = legacy_sks_to_usk(orchard_sk, sapling_sk, transparent_sk).unwrap();
+                let usk = legacy_sks_to_usk(&orchard_sk, &sapling_sk, &transparent_sk).unwrap();
                 Self {
                     unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
                     ..Default::default()
                 }
             }
             2 => {
+                legacy_key = true;
+
                 let orchard_capability = Capability::<
                     orchard::keys::FullViewingKey,
                     orchard::keys::SpendingKey,
@@ -743,35 +748,65 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                     // In the case of loading from viewing keys:
                     // Create the UFVK from FVKs.
                     let ufvk = super::legacy::legacy_fvks_to_ufvk(
-                        orchard_fvk.cloned(),
-                        sapling_fvk.cloned(),
-                        transparent_fvk.cloned(),
+                        orchard_fvk,
+                        sapling_fvk,
+                        transparent_fvk,
                         &input,
                     )
                     .unwrap();
                     UnifiedKeyStore::View(Box::new(ufvk))
                 } else if matches!(orchard_capability.clone(), Capability::Spend(_)) {
-                    UnifiedKeyStore::Empty
-                } else {
                     // In the case of loading spending keys:
                     // Create a temporary USK for address generation to load old wallets
                     // due to missing BIP0032 transparent extended private key data
                     //
                     // USK is re-derived later from seed due to missing BIP0032 transparent extended private key data
                     // this missing data is not required for UFVKs
-                    // TODO: implement temp usk
+                    let orchard_sk = match &orchard_capability {
+                        Capability::Spend(sk) => sk,
+                        _ => return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Orchard spending key not found. Wallet should have full spend capability!"
+                                .to_string(),
+                        )),
+                    };
+                    let sapling_sk = match &sapling_capability {
+                        Capability::Spend(sk) => sk,
+                        _ => return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Sapling spending key not found. Wallet should have full spend capability!"
+                                .to_string(),
+                        )),
+                    };
+                    let transparent_sk = match &transparent_capability {
+                        Capability::Spend(sk) => sk,
+                        _ => return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Transparent spending key not found. Wallet should have full spend capability!"
+                                .to_string(),
+                        )),
+                    };
 
+                    let usk = legacy_sks_to_usk(orchard_sk, sapling_sk, transparent_sk).unwrap();
+
+                    UnifiedKeyStore::Spend(Box::new(usk))
+                } else {
                     UnifiedKeyStore::Empty
                 };
+
                 Self {
                     unified_key_store,
                     ..Default::default()
                 }
             }
-            3 => Self {
-                unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
-                ..Default::default()
-            },
+            3 => {
+                legacy_key = false;
+
+                Self {
+                    unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
+                    ..Default::default()
+                }
+            }
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -782,7 +817,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         let receiver_selections = Vector::read(reader, |r| ReceiverSelection::read(r, ()))?;
         // TODO: generate with legacy keys for v1 and v2
         for rs in receiver_selections {
-            wc.new_address(rs, false)
+            wc.new_address(rs, legacy_key)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
         Ok(wc)
