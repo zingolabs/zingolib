@@ -1,4 +1,4 @@
-//! TODO: Add Mod Discription Here!
+//! TODO: Add Mod Description Here!
 use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
@@ -67,7 +67,13 @@ impl<V, S> Capability<V, S> {
     }
 }
 
-/// TODO: Add Doc Comment Here!
+/// Interface to cryptographic capabilities that the library requires for
+/// various operations.
+/// It is created either from a BIP39 mnemonic phrase:
+///  <https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki>
+///  OR
+/// Loaded from a [`zcash_keys::keys::UnifiedSpendingKey`], or a [`zcash_keys::keys::UnifiedFullViewingKey`].
+/// In addition to fundamental spending and viewing keys, the type caches generated addresses.
 #[derive(Debug)]
 pub struct WalletCapability {
     /// TODO: Add Doc Comment Here!
@@ -83,10 +89,13 @@ pub struct WalletCapability {
     /// TODO: Add Doc Comment Here!
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
+    /// Cache of transparent addresses that the user has created.
+    /// Receipts to a single address are correlated on chain.
+    /// TODO:  Is there any reason to have this field, apart from the
+    /// unified_addresses field?
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
-    addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
-    // Not all diversifier indexes produce valid sapling addresses.
-    // Because of this, the index isn't necessarily equal to addresses.len()
+    /// Cache of unified_addresses
+    unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     addresses_write_lock: AtomicBool,
 }
 impl Default for WalletCapability {
@@ -96,7 +105,7 @@ impl Default for WalletCapability {
             sapling: Capability::None,
             transparent: Capability::None,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
-            addresses: AppendOnlyVec::new(),
+            unified_addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
         }
     }
@@ -169,14 +178,14 @@ impl WalletCapability {
         &self,
         receiver: &TransparentAddress,
     ) -> Option<UnifiedAddress> {
-        self.addresses
+        self.unified_addresses
             .iter()
             .find(|ua| ua.transparent() == Some(receiver))
             .cloned()
     }
     /// TODO: Add Doc Comment Here!
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
-        &self.addresses
+        &self.unified_addresses
     }
 
     /// TODO: Add Doc Comment Here!
@@ -221,7 +230,7 @@ impl WalletCapability {
         {
             return Err("addresses_write_lock collision!".to_string());
         }
-        let previous_num_addresses = self.addresses.len();
+        let previous_num_addresses = self.unified_addresses.len();
         let orchard_receiver = if desired_receivers.orchard {
             let fvk: orchard::keys::FullViewingKey = match self.try_into() {
                 Ok(viewkey) => viewkey,
@@ -231,7 +240,7 @@ impl WalletCapability {
                     return Err(e);
                 }
             };
-            Some(fvk.address_at(self.addresses.len(), orchard::keys::Scope::External))
+            Some(fvk.address_at(self.unified_addresses.len(), orchard::keys::Scope::External))
         } else {
             None
         };
@@ -250,7 +259,11 @@ impl WalletCapability {
                 sapling_diversifier_index
                     .increment()
                     .expect("diversifier index overflow");
-                if count == self.addresses.len() {
+                // Not all sapling_diversifier_indexes produce valid
+                // sapling addresses.
+                // Because of this self.unified_addresses.len()
+                // will be <= sapling_diversifier_index
+                if count == self.unified_addresses.len() {
                     break;
                 }
                 count += 1;
@@ -291,8 +304,8 @@ impl WalletCapability {
                 );
             }
         };
-        self.addresses.push(ua.clone());
-        assert_eq!(self.addresses.len(), previous_num_addresses + 1);
+        self.unified_addresses.push(ua.clone());
+        assert_eq!(self.unified_addresses.len(), previous_num_addresses + 1);
         self.addresses_write_lock
             .swap(false, atomic::Ordering::Release);
         Ok(ua)
@@ -309,7 +322,7 @@ impl WalletCapability {
         if !desired_receivers.transparent {
             return Ok(None);
         }
-        let child_index = KeyIndex::from_index(self.addresses.len() as u32);
+        let child_index = KeyIndex::from_index(self.unified_addresses.len() as u32);
         let child_pk = match &self.transparent {
             Capability::Spend(ext_sk) => {
                 let secp = secp256k1::Secp256k1::new();
@@ -337,7 +350,7 @@ impl WalletCapability {
         };
         if let Some(pk) = child_pk {
             self.transparent_child_addresses.push((
-                self.addresses.len(),
+                self.unified_addresses.len(),
                 #[allow(deprecated)]
                 zcash_primitives::legacy::keys::pubkey_to_address(&pk),
             ));
@@ -478,7 +491,7 @@ impl WalletCapability {
     }
 
     pub(crate) fn get_all_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
-        self.addresses
+        self.unified_addresses
             .iter()
             .filter_map(|address| {
                 address.transparent().and_then(|transparent_receiver| {
@@ -629,7 +642,7 @@ impl ReadableWriteable<()> for WalletCapability {
         self.transparent.write(&mut writer)?;
         Vector::write(
             &mut writer,
-            &self.addresses.iter().collect::<Vec<_>>(),
+            &self.unified_addresses.iter().collect::<Vec<_>>(),
             |w, address| {
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
