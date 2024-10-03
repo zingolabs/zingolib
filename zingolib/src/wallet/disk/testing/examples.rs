@@ -264,27 +264,19 @@ impl ExampleWalletNetwork {
     pub fn example_wallet_address(&self, pool: PoolType) -> String {
         match pool {
             PoolType::Transparent => match self {
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
-                    _,
-                )) => "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i".to_string(),
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
-                    _,
-                )) => "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
-                    _,
-                )) => "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1".to_string(),
-                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
-                    _,
-                )) => "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
-                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    _,
-                )) => "tmEVmDAnveCakZkvV4a6FT1TfYApTv937E7".to_string(),
-                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
-                    _,
-                )) => "t1P8tQtYFLR7TWsqtauc71RGQdqqwfFBbb4".to_string(),
-                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
-                    _,
-                )) => "t1XnsupYhvhSDSFJ4nzZ2kADhLMR22wg35y".to_string(),
+                ExampleWalletNetwork::Regtest(example_regt_seed) => match example_regt_seed {
+                    ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(_) => {"tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i".to_string()},
+                    ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(_) => {"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string()},
+                    ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(_) => {"tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1".to_string()},
+                },
+                ExampleWalletNetwork::Testnet(example_test_seed) => match example_test_seed {
+                    ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(_) => {"tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string()},
+                    ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(_) => {"tmEVmDAnveCakZkvV4a6FT1TfYApTv937E7".to_string()},
+                },
+                ExampleWalletNetwork::Mainnet(example_mainn_seed) => match example_mainn_seed {
+                    ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(_) => {"t1P8tQtYFLR7TWsqtauc71RGQdqqwfFBbb4".to_string()},
+                    ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(_) => {"t1XnsupYhvhSDSFJ4nzZ2kADhLMR22wg35y".to_string()},
+                }
             },
             PoolType::Shielded(ShieldedProtocol::Sapling) => match self {
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
