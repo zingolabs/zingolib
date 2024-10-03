@@ -230,6 +230,7 @@ impl ExampleWalletNetwork {
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     pub fn example_wallet_base(&self) -> String {
+        // this matches the network type and then the wallet seed
         match self {
             ExampleWalletNetwork::Regtest(example_regt_seed) => match example_regt_seed {
                 ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(_) => {
@@ -248,7 +249,8 @@ impl ExampleWalletNetwork {
                 ) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
                 ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
                     _,
-                ) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string()
+                ) => "mobile shuffle keen mother globe desk bless:w
+                         hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string()
             },
             ExampleWalletNetwork::Mainnet(example_mainnet_seed) => match example_mainnet_seed {
                 ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
