@@ -315,7 +315,18 @@ impl WalletCapability {
             {
                 return Err("The wallet is not capable of producing desired receivers.".to_string());
             }
+        } else if let UnifiedKeyStore::Empty = self.unified_key_store() {
+            if desired_receivers.transparent
+                || desired_receivers.sapling
+                || desired_receivers.orchard
+            {
+                return Err(
+                    "No keys found. The wallet is not capable of producing desired receivers."
+                        .to_string(),
+                );
+            }
         }
+
         if self
             .addresses_write_lock
             .swap(true, atomic::Ordering::Acquire)
@@ -372,6 +383,130 @@ impl WalletCapability {
                     .to_account_pubkey()
                     .derive_external_ivk()
                     .ok(),
+                UnifiedKeyStore::View(ufvk) => ufvk
+                    .transparent()
+                    .expect(
+                        "should have been checked to be Some if transparent is a desired receiver",
+                    )
+                    .derive_external_ivk()
+                    .ok(),
+                UnifiedKeyStore::Empty => None,
+            };
+            if let Some(pk) = external_pubkey {
+                let t_addr = pk.derive_address(child_index).unwrap();
+                self.transparent_child_addresses
+                    .push((self.addresses.len(), t_addr));
+                Some(t_addr)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let ua = UnifiedAddress::from_receivers(
+            orchard_receiver,
+            sapling_receiver,
+            transparent_receiver,
+        );
+        let ua = match ua {
+            Some(address) => address,
+            None => {
+                self.addresses_write_lock
+                    .swap(false, atomic::Ordering::Release);
+                return Err(
+                    "Invalid receivers requested! At least one of sapling or orchard required"
+                        .to_string(),
+                );
+            }
+        };
+        self.addresses.push(ua.clone());
+        assert_eq!(self.addresses.len(), previous_num_addresses + 1);
+        self.addresses_write_lock
+            .swap(false, atomic::Ordering::Release);
+        Ok(ua)
+    }
+
+    /// Only used for address generation during loading wallets pre v29
+    pub(crate) fn legacy_new_address(
+        &self,
+        desired_receivers: ReceiverSelection,
+    ) -> Result<UnifiedAddress, String> {
+        if let UnifiedKeyStore::View(ufvk) = self.unified_key_store() {
+            if (desired_receivers.transparent & ufvk.transparent().is_none())
+                || (desired_receivers.sapling & ufvk.sapling().is_none())
+                || (desired_receivers.orchard & ufvk.orchard().is_none())
+            {
+                return Err("The wallet is not capable of producing desired receivers.".to_string());
+            }
+        } else if let UnifiedKeyStore::Empty = self.unified_key_store() {
+            if desired_receivers.transparent
+                || desired_receivers.sapling
+                || desired_receivers.orchard
+            {
+                return Err(
+                    "No keys found. The wallet is not capable of producing desired receivers."
+                        .to_string(),
+                );
+            }
+        }
+
+        if self
+            .addresses_write_lock
+            .swap(true, atomic::Ordering::Acquire)
+        {
+            return Err("addresses_write_lock collision!".to_string());
+        }
+        let previous_num_addresses = self.addresses.len();
+        let orchard_receiver = if desired_receivers.orchard {
+            let fvk: orchard::keys::FullViewingKey = match self.unified_key_store().try_into() {
+                Ok(viewkey) => viewkey,
+                Err(e) => {
+                    self.addresses_write_lock
+                        .swap(false, atomic::Ordering::Release);
+                    return Err(e.to_string());
+                }
+            };
+            Some(fvk.address_at(self.addresses.len(), orchard::keys::Scope::External))
+        } else {
+            None
+        };
+
+        // produce a Sapling address to increment Sapling diversifier index
+        let sapling_receiver = if desired_receivers.sapling {
+            let mut sapling_diversifier_index = DiversifierIndex::new();
+            let mut address;
+            let mut count = 0;
+            let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey = self
+                .unified_key_store()
+                .try_into()
+                .expect("to create an fvk");
+            loop {
+                (sapling_diversifier_index, address) = fvk
+                    .find_address(sapling_diversifier_index)
+                    .expect("Diversifier index overflow");
+                sapling_diversifier_index
+                    .increment()
+                    .expect("diversifier index overflow");
+                if count == self.addresses.len() {
+                    break;
+                }
+                count += 1;
+            }
+            Some(address)
+        } else {
+            None
+        };
+
+        let transparent_receiver = if desired_receivers.transparent {
+            let child_index = NonHardenedChildIndex::from_index(self.addresses.len() as u32)
+                .expect("hardened bit should not be set for non-hardened child indexes");
+            let external_pubkey = match self.unified_key_store() {
+                UnifiedKeyStore::Spend(usk) => usk
+                    .transparent()
+                    .to_account_pubkey().ext
+                    // .derive_external_ivk()
+                    // .ok(),
                 UnifiedKeyStore::View(ufvk) => ufvk
                     .transparent()
                     .expect(
@@ -576,8 +711,10 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
-                // TODO: finish comment
+                // Create a temporary USK for address generation to load old wallets
                 // due to missing BIP0032 transparent extended private key data
+                //
+                // USK is re-derived later from seed due to missing BIP0032 transparent extended private key data
                 let orchard_sk = orchard::keys::SpendingKey::read(&mut reader, ())?;
                 let sapling_sk = sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
                 let transparent_sk =
@@ -589,7 +726,6 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 }
             }
             2 => {
-                // TODO: implement temp usk
                 let orchard_capability = Capability::<
                     orchard::keys::FullViewingKey,
                     orchard::keys::SpendingKey,
@@ -603,36 +739,44 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                     super::legacy::extended_transparent::ExtendedPrivKey,
                 >::read(&mut reader, ())?;
 
-                // if this wallet was created from a UFVK, create the UFVK from FVKs.
-                // otherwise, set unified key store to None.
-                //
-                // USK is derived later from seed due to missing BIP0032 transparent extended private key data
-                // this missing data is not required for UFVKs
-                let orchard_fvk = match orchard_capability {
+                let orchard_fvk = match &orchard_capability {
                     Capability::View(fvk) => Some(fvk),
                     _ => None,
                 };
-                let sapling_fvk = match sapling_capability {
+                let sapling_fvk = match &sapling_capability {
                     Capability::View(fvk) => Some(fvk),
                     _ => None,
                 };
-                let transparent_fvk = match transparent_capability {
+                let transparent_fvk = match &transparent_capability {
                     Capability::View(fvk) => Some(fvk),
                     _ => None,
                 };
+
                 let unified_key_store = if orchard_fvk.is_some()
                     || sapling_fvk.is_some()
                     || transparent_fvk.is_some()
                 {
+                    // In the case of loading from viewing keys:
+                    // Create the UFVK from FVKs.
                     let ufvk = super::legacy::legacy_fvks_to_ufvk(
-                        orchard_fvk,
-                        sapling_fvk,
-                        transparent_fvk,
+                        orchard_fvk.cloned(),
+                        sapling_fvk.cloned(),
+                        transparent_fvk.cloned(),
                         &input,
                     )
                     .unwrap();
                     UnifiedKeyStore::View(Box::new(ufvk))
+                } else if matches!(orchard_capability.clone(), Capability::Spend(_)) {
+                    UnifiedKeyStore::Empty
                 } else {
+                    // In the case of loading spending keys:
+                    // Create a temporary USK for address generation to load old wallets
+                    // due to missing BIP0032 transparent extended private key data
+                    //
+                    // USK is re-derived later from seed due to missing BIP0032 transparent extended private key data
+                    // this missing data is not required for UFVKs
+                    // TODO: implement temp usk
+
                     UnifiedKeyStore::Empty
                 };
                 Self {
