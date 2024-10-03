@@ -31,7 +31,7 @@ use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
-use super::legacy::{legacy_sks_to_usk, Capability};
+use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
 
 /// In-memory store for wallet spending or viewing keys
@@ -327,6 +327,7 @@ impl WalletCapability {
                 transparent: true,
             },
             TransparentKeyScope::EPHEMERAL,
+            false,
         )
         .map_err(|e| e.to_string())?;
         Ok(self
@@ -337,10 +338,13 @@ impl WalletCapability {
             .clone())
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Generates a unified address from the given desired receivers
+    ///
+    /// See [`crate::wallet::WalletCapability::generate_transparent_receiver`] for information on using `legacy_key`
     pub fn new_address(
         &self,
         desired_receivers: ReceiverSelection,
+        legacy_key: bool,
     ) -> Result<UnifiedAddress, String> {
         if let UnifiedKeyStore::View(ufvk) = self.unified_key_store() {
             if (desired_receivers.transparent & ufvk.transparent().is_none())
@@ -409,7 +413,11 @@ impl WalletCapability {
         };
 
         let transparent_receiver = match self
-            .generate_transparent_receiver(desired_receivers, TransparentKeyScope::EXTERNAL)
+            .generate_transparent_receiver(
+                desired_receivers,
+                TransparentKeyScope::EXTERNAL,
+                legacy_key,
+            )
             .map_err(|e| e.to_string())?
         {
             Some(transparent_receiver) => Some(transparent_receiver),
@@ -439,9 +447,6 @@ impl WalletCapability {
         Ok(ua)
     }
 
-    /// Only used for address generation during loading wallets pre v29
-    // TODO: legacy new address fn
-
     /// Generates a transparent receiver if the wallet is capable of it.
     ///
     /// If the wallet is not capable of generating a transparent receiver,
@@ -450,26 +455,43 @@ impl WalletCapability {
         &self,
         desired_receivers: ReceiverSelection,
         scope: TransparentKeyScope,
-    ) -> Result<Option<TransparentAddress>, bip32::Error> {
+        // this should only be `true` when generating transparent addresses while loading from legacy keys (pre wallet version 29)
+        // legacy keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
+        legacy_key: bool,
+    ) -> Result<Option<TransparentAddress>, String> {
         let address_for_scope = |pub_key: &AccountPubKey,
                                  scope: TransparentKeyScope,
                                  child_index: NonHardenedChildIndex|
-         -> Result<TransparentAddress, bip32::Error> {
+         -> Result<TransparentAddress, String> {
             match scope {
                 TransparentKeyScope::EXTERNAL => {
-                    let t_addr = pub_key.derive_external_ivk()?.derive_address(child_index)?;
+                    let t_addr = if legacy_key {
+                        generate_transparent_address_from_legacy_key(pub_key, child_index)?
+                    } else {
+                        pub_key
+                            .derive_external_ivk()
+                            .map_err(|e| e.to_string())?
+                            .derive_address(child_index)
+                            .map_err(|e| e.to_string())?
+                    };
                     self.transparent_child_addresses
                         .push((self.addresses.len(), t_addr));
                     Ok(t_addr)
                 }
                 TransparentKeyScope::INTERNAL => {
                     //TODO: remember transparent internal change addresses
-                    Ok(pub_key.derive_internal_ivk()?.derive_address(child_index)?)
+                    Ok(pub_key
+                        .derive_internal_ivk()
+                        .map_err(|e| e.to_string())?
+                        .derive_address(child_index)
+                        .map_err(|e| e.to_string())?)
                 }
                 TransparentKeyScope::EPHEMERAL => {
                     let t_addr = pub_key
-                        .derive_ephemeral_ivk()?
-                        .derive_ephemeral_address(child_index)?;
+                        .derive_ephemeral_ivk()
+                        .map_err(|e| e.to_string())?
+                        .derive_ephemeral_address(child_index)
+                        .map_err(|e| e.to_string())?;
                     self.transparent_child_ephemeral_addresses.push((
                         t_addr,
                         TransparentAddressMetadata::new(
@@ -482,20 +504,25 @@ impl WalletCapability {
                     ));
                     Ok(t_addr)
                 }
-                _ => Err(bip32::Error::Bip39),
+                _ => Err(bip32::Error::Bip39.to_string()),
             }
         };
         if !desired_receivers.transparent {
             return Ok(None);
         }
-        let child_index = NonHardenedChildIndex::from_index(match scope {
-            TransparentKeyScope::EXTERNAL => Ok(self.addresses.len()),
-            TransparentKeyScope::INTERNAL => {
-                todo!("transparent change addresses")
+        let child_index = NonHardenedChildIndex::from_index(
+            match scope {
+                TransparentKeyScope::EXTERNAL => Ok(self.addresses.len()),
+                TransparentKeyScope::INTERNAL => {
+                    todo!("transparent change addresses")
+                }
+                TransparentKeyScope::EPHEMERAL => {
+                    Ok(self.transparent_child_ephemeral_addresses.len())
+                }
+                _ => Err(bip32::Error::Bip39),
             }
-            TransparentKeyScope::EPHEMERAL => Ok(self.transparent_child_ephemeral_addresses.len()),
-            _ => Err(bip32::Error::Bip39),
-        }? as u32)
+            .map_err(|e| e.to_string())? as u32,
+        )
         .expect("hardened bit should not be set for non-hardened child indexes");
         let transparent_receiver = match self.unified_key_store() {
             UnifiedKeyStore::Spend(usk) => {
@@ -757,8 +784,9 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
         };
         let receiver_selections = Vector::read(reader, |r| ReceiverSelection::read(r, ()))?;
+        // TODO: generate with legacy keys for v1 and v2
         for rs in receiver_selections {
-            wc.new_address(rs)
+            wc.new_address(rs, false)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
         Ok(wc)

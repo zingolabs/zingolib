@@ -374,7 +374,7 @@ impl LightWallet {
             }
         };
 
-        if let Err(e) = wc.new_address(wc.can_view()) {
+        if let Err(e) = wc.new_address(wc.can_view(), false) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("could not create initial address: {e}"),

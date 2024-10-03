@@ -2,11 +2,16 @@
 
 use std::io::{self, Read, Write};
 
+use bip32::ExtendedPublicKey;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::LittleEndian;
 use zcash_address::unified::Typecode;
 use zcash_encoding::CompactSize;
 use zcash_keys::keys::{Era, UnifiedFullViewingKey, UnifiedSpendingKey};
+use zcash_primitives::legacy::{
+    keys::{AccountPubKey, NonHardenedChildIndex},
+    TransparentAddress,
+};
 
 use crate::wallet::traits::ReadableWriteable;
 
@@ -141,4 +146,40 @@ pub(crate) fn legacy_sks_to_usk(
     usk_bytes.write_all(&account_tkey_bytes).unwrap();
 
     UnifiedSpendingKey::from_bytes(Era::Orchard, &usk_bytes).map_err(|e| e.to_string())
+}
+
+/// Generates a transparent address from legacy key
+///
+/// Legacy key is a key used ONLY during wallet load for wallet versions <29
+/// This legacy key is already derived to the external scope so should only derive a child at the `address_index`
+/// and use this child to derive the transparent address
+#[allow(deprecated)]
+pub(crate) fn generate_transparent_address_from_legacy_key(
+    external_pubkey: &AccountPubKey,
+    address_index: NonHardenedChildIndex,
+) -> Result<TransparentAddress, String> {
+    let external_pubkey_bytes = external_pubkey.serialize();
+
+    let mut chain_code = [0u8; 32];
+    chain_code.copy_from_slice(&external_pubkey_bytes[..32]);
+    let public_key = secp256k1::PublicKey::from_slice(&external_pubkey_bytes[32..])
+        .map_err(|e| e.to_string())?;
+
+    let extended_pubkey = ExtendedPublicKey::new(
+        public_key,
+        bip32::ExtendedKeyAttrs {
+            depth: 4,
+            parent_fingerprint: [0xff, 0xff, 0xff, 0xff],
+            child_number: bip32::ChildNumber::new(0, true).expect("correct"),
+            chain_code,
+        },
+    );
+
+    // address generation copied from IncomingViewingKey::derive_address in LRZ
+    let child_key = extended_pubkey
+        .derive_child(address_index.into())
+        .map_err(|e| e.to_string())?;
+    Ok(zcash_primitives::legacy::keys::pubkey_to_address(
+        child_key.public_key(),
+    ))
 }
