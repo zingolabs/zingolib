@@ -13,7 +13,7 @@ use zcash_primitives::legacy::{
     TransparentAddress,
 };
 
-use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::{error::KeyError, traits::ReadableWriteable};
 
 pub mod extended_transparent;
 
@@ -72,7 +72,7 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_primitives::consensus::Parameters>(
     sapling_fvk: Option<&sapling_crypto::zip32::DiversifiableFullViewingKey>,
     transparent_fvk: Option<&extended_transparent::ExtendedPubKey>,
     parameters: &P,
-) -> Result<UnifiedFullViewingKey, std::string::String> {
+) -> Result<UnifiedFullViewingKey, KeyError> {
     use zcash_address::unified::Encoding;
 
     let mut fvks = Vec::new();
@@ -89,30 +89,37 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_primitives::consensus::Parameters>(
         fvks.push(zcash_address::unified::Fvk::P2pkh(fvk_bytes));
     }
 
-    let ufvk = zcash_address::unified::Ufvk::try_from_items(fvks).map_err(|e| e.to_string())?;
+    let ufvk = zcash_address::unified::Ufvk::try_from_items(fvks)?;
 
     UnifiedFullViewingKey::decode(parameters, &ufvk.encode(&parameters.network_type()))
+        .map_err(|_| KeyError::KeyDecodingError)
 }
 
 pub(crate) fn legacy_sks_to_usk(
     orchard_key: &orchard::keys::SpendingKey,
     sapling_key: &sapling_crypto::zip32::ExtendedSpendingKey,
     transparent_key: &extended_transparent::ExtendedPrivKey,
-) -> Result<UnifiedSpendingKey, std::string::String> {
+) -> Result<UnifiedSpendingKey, KeyError> {
     let mut usk_bytes = vec![];
 
     // hard-coded Orchard Era ID due to `id()` being a private fn
-    usk_bytes.write_u32::<LittleEndian>(0xc2d6_d0b4).unwrap();
+    usk_bytes.write_u32::<LittleEndian>(0xc2d6_d0b4)?;
 
-    CompactSize::write(&mut usk_bytes, usize::try_from(Typecode::Orchard).unwrap()).unwrap();
+    CompactSize::write(
+        &mut usk_bytes,
+        usize::try_from(Typecode::Orchard).expect("typecode to usize should not fail"),
+    )?;
     let orchard_key_bytes = orchard_key.to_bytes();
-    CompactSize::write(&mut usk_bytes, orchard_key_bytes.len()).unwrap();
-    usk_bytes.write_all(orchard_key_bytes).unwrap();
+    CompactSize::write(&mut usk_bytes, orchard_key_bytes.len())?;
+    usk_bytes.write_all(orchard_key_bytes)?;
 
-    CompactSize::write(&mut usk_bytes, usize::try_from(Typecode::Sapling).unwrap()).unwrap();
+    CompactSize::write(
+        &mut usk_bytes,
+        usize::try_from(Typecode::Sapling).expect("typecode to usize should not fail"),
+    )?;
     let sapling_key_bytes = sapling_key.to_bytes();
-    CompactSize::write(&mut usk_bytes, sapling_key_bytes.len()).unwrap();
-    usk_bytes.write_all(&sapling_key_bytes).unwrap();
+    CompactSize::write(&mut usk_bytes, sapling_key_bytes.len())?;
+    usk_bytes.write_all(&sapling_key_bytes)?;
 
     // the following code performs the same operations for calling `to_bytes()` on an AccountPrivKey in LRZ
     let prefix = bip32::Prefix::XPRV;
@@ -141,11 +148,14 @@ pub(crate) fn legacy_sks_to_usk(
         .expect("correct")
         .split_off(bip32::Prefix::LENGTH);
 
-    CompactSize::write(&mut usk_bytes, usize::try_from(Typecode::P2pkh).unwrap()).unwrap();
-    CompactSize::write(&mut usk_bytes, account_tkey_bytes.len()).unwrap();
-    usk_bytes.write_all(&account_tkey_bytes).unwrap();
+    CompactSize::write(
+        &mut usk_bytes,
+        usize::try_from(Typecode::P2pkh).expect("typecode to usize should not fail"),
+    )?;
+    CompactSize::write(&mut usk_bytes, account_tkey_bytes.len())?;
+    usk_bytes.write_all(&account_tkey_bytes)?;
 
-    UnifiedSpendingKey::from_bytes(Era::Orchard, &usk_bytes).map_err(|e| e.to_string())
+    UnifiedSpendingKey::from_bytes(Era::Orchard, &usk_bytes).map_err(|_| KeyError::KeyDecodingError)
 }
 
 /// Generates a transparent address from legacy key

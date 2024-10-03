@@ -45,6 +45,9 @@ pub enum BalanceError {
 /// Errors associated with balance key derivation
 #[derive(Debug, Error)]
 pub enum KeyError {
+    /// Error asociated with standard IO
+    #[error("{0}")]
+    IoError(#[from] std::io::Error),
     /// Invalid account ID
     #[error("Account ID should be at most 31 bits")]
     InvalidAccountId(#[from] zip32::TryFromIntError),
@@ -56,6 +59,9 @@ pub enum KeyError {
     // TODO: add std::Error to zcash_keys::keys::DecodingError in LRZ fork and add thiserror #[from] macro
     #[error("Key decoding failed")]
     KeyDecodingError,
+    /// Key parsing failed
+    #[error("Key parsing failed. {0}")]
+    KeyParseError(#[from] zcash_address::unified::ParseError),
     /// No spend capability
     #[error("No spend capability")]
     NoSpendCapability,

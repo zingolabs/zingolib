@@ -706,7 +706,8 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 let sapling_sk = sapling_crypto::zip32::ExtendedSpendingKey::read(&mut reader)?;
                 let transparent_sk =
                     super::legacy::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
-                let usk = legacy_sks_to_usk(&orchard_sk, &sapling_sk, &transparent_sk).unwrap();
+                let usk = legacy_sks_to_usk(&orchard_sk, &sapling_sk, &transparent_sk)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
                 Self {
                     unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
                     ..Default::default()
@@ -753,7 +754,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                         transparent_fvk,
                         &input,
                     )
-                    .unwrap();
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
                     UnifiedKeyStore::View(Box::new(ufvk))
                 } else if matches!(orchard_capability.clone(), Capability::Spend(_)) {
                     // In the case of loading spending keys:
@@ -787,7 +788,8 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                         )),
                     };
 
-                    let usk = legacy_sks_to_usk(orchard_sk, sapling_sk, transparent_sk).unwrap();
+                    let usk = legacy_sks_to_usk(orchard_sk, sapling_sk, transparent_sk)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                     UnifiedKeyStore::Spend(Box::new(usk))
                 } else {
@@ -815,7 +817,6 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
         };
         let receiver_selections = Vector::read(reader, |r| ReceiverSelection::read(r, ()))?;
-        // TODO: generate with legacy keys for v1 and v2
         for rs in receiver_selections {
             wc.new_address(rs, legacy_key)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
