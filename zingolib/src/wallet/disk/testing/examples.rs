@@ -279,27 +279,19 @@ impl ExampleWalletNetwork {
                 }
             },
             PoolType::Shielded(ShieldedProtocol::Sapling) => match self {
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
-                    _,
-                )) => "zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6".to_string(),
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(
-                    _,
-                )) => "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
-                ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(
-                    _,
-                )) => "zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw".to_string(),
-                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
-                    _,
-                )) => "ztestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxu60uhj".to_string(),
-                ExampleWalletNetwork::Testnet(ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
-                    _,
-                )) => "ztestsapling1h8l5mzlwhmqmd9x7ehquayqckzg6jwa6955f3w9mnkn5p5yfhqy04yz6yjrqfcztxx05xlh3prq".to_string(),
-                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(
-                    _,
-                )) => "zs1kgdrzfe6xuq3tg64vnezp3duyp43u7wcpgduqcpwz9wsnfqm4cecafu9qkmpsjtqxzf27n34z9k".to_string(),
-                ExampleWalletNetwork::Mainnet(ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
-                    _,
-                )) => "zs1zgffhwsnh7efu4auv8ql9egteangyferp28rv8r7hmu76u0ee8mthcpflx575emx2zygqcuedzn".to_string(),
+                ExampleWalletNetwork::Regtest(example_regt_seed) => match example_regt_seed {
+                    ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(_) => {"zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6".to_string()},
+                    ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA(_) => {"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string()},
+                    ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC(_) => {"zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw".to_string()},
+                },
+                ExampleWalletNetwork::Testnet(example_test_seed) => match example_test_seed {
+                    ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(_) => {"ztestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxu60uhj".to_string()},
+                    ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(_) => {"ztestsapling1h8l5mzlwhmqmd9x7ehquayqckzg6jwa6955f3w9mnkn5p5yfhqy04yz6yjrqfcztxx05xlh3prq".to_string()},
+                }
+                ExampleWalletNetwork::Mainnet(example_test_seed) => match example_test_seed {
+                    ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(_) => {"zs1kgdrzfe6xuq3tg64vnezp3duyp43u7wcpgduqcpwz9wsnfqm4cecafu9qkmpsjtqxzf27n34z9k".to_string()},
+                    ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(_) => {"zs1zgffhwsnh7efu4auv8ql9egteangyferp28rv8r7hmu76u0ee8mthcpflx575emx2zygqcuedzn".to_string()},
+                }
             },
             PoolType::Shielded(ShieldedProtocol::Orchard) => match self {
                 ExampleWalletNetwork::Regtest(ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
