@@ -309,11 +309,11 @@ impl ExampleWalletNetwork {
                     ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(_) => {
                         "utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05".to_string()
                     },
-                
+
                     ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(_) => {
                         "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww".to_string()
                     },
-                
+
                 },
                 ExampleWalletNetwork::Mainnet(example_test_seed) => match example_test_seed {
                     ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP(_) => {
