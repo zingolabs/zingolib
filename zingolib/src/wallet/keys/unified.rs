@@ -13,15 +13,18 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use getset::{Getters, Setters};
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
+use zcash_address::unified::{Encoding as _, Ufvk};
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::{NetworkConstants, Parameters};
-use zcash_primitives::legacy::keys::{IncomingViewingKey, NonHardenedChildIndex};
+use zcash_primitives::legacy::keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex};
+use zcash_primitives::{
+    consensus::{NetworkConstants, Parameters},
+    legacy::keys::TransparentKeyScope,
+};
 
 use crate::config::{ChainType, ZingoConfig};
 use crate::wallet::error::KeyError;
-use zcash_address::unified::{Encoding, Ufvk};
-use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
+use zcash_client_backend::{address::UnifiedAddress, wallet::TransparentAddressMetadata};
 use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::zip32::AccountId;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
@@ -205,6 +208,8 @@ pub struct WalletCapability {
     #[getset(get = "pub", set = "pub(crate)")]
     unified_key_store: UnifiedKeyStore,
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    transparent_child_ephemeral_addresses:
+        Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
@@ -215,6 +220,7 @@ impl Default for WalletCapability {
         Self {
             unified_key_store: UnifiedKeyStore::Empty,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
+            transparent_child_ephemeral_addresses: Arc::new(AppendOnlyVec::new()),
             addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
         }
@@ -303,6 +309,34 @@ impl WalletCapability {
         &self.transparent_child_addresses
     }
 
+    /// Generate a new ephemeral transparent address,
+    /// for use in a send to a TEX address.
+    pub fn new_ephemeral_address(
+        &self,
+    ) -> Result<
+        (
+            zcash_primitives::legacy::TransparentAddress,
+            zcash_client_backend::wallet::TransparentAddressMetadata,
+        ),
+        String,
+    > {
+        self.generate_transparent_receiver(
+            ReceiverSelection {
+                orchard: false,
+                sapling: false,
+                transparent: true,
+            },
+            TransparentKeyScope::EPHEMERAL,
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(self
+            .transparent_child_ephemeral_addresses
+            .iter()
+            .last()
+            .expect("we just generated an address, this is known to be non-empty")
+            .clone())
+    }
+
     /// TODO: Add Doc Comment Here!
     pub fn new_address(
         &self,
@@ -374,34 +408,12 @@ impl WalletCapability {
             None
         };
 
-        let transparent_receiver = if desired_receivers.transparent {
-            let child_index = NonHardenedChildIndex::from_index(self.addresses.len() as u32)
-                .expect("hardened bit should not be set for non-hardened child indexes");
-            let external_pubkey = match self.unified_key_store() {
-                UnifiedKeyStore::Spend(usk) => usk
-                    .transparent()
-                    .to_account_pubkey()
-                    .derive_external_ivk()
-                    .ok(),
-                UnifiedKeyStore::View(ufvk) => ufvk
-                    .transparent()
-                    .expect(
-                        "should have been checked to be Some if transparent is a desired receiver",
-                    )
-                    .derive_external_ivk()
-                    .ok(),
-                UnifiedKeyStore::Empty => None,
-            };
-            if let Some(pk) = external_pubkey {
-                let t_addr = pk.derive_address(child_index).unwrap();
-                self.transparent_child_addresses
-                    .push((self.addresses.len(), t_addr));
-                Some(t_addr)
-            } else {
-                None
-            }
-        } else {
-            None
+        let transparent_receiver = match self
+            .generate_transparent_receiver(desired_receivers, TransparentKeyScope::EXTERNAL)
+            .map_err(|e| e.to_string())?
+        {
+            Some(transparent_receiver) => Some(transparent_receiver),
+            None => None,
         };
 
         let ua = UnifiedAddress::from_receivers(
@@ -428,127 +440,76 @@ impl WalletCapability {
     }
 
     /// Only used for address generation during loading wallets pre v29
-    pub(crate) fn legacy_new_address(
+    // TODO: legacy new address fn
+
+    /// Generates a transparent receiver if the wallet is capable of it.
+    ///
+    /// If the wallet is not capable of generating a transparent receiver,
+    /// `None` is returned.
+    pub fn generate_transparent_receiver(
         &self,
         desired_receivers: ReceiverSelection,
-    ) -> Result<UnifiedAddress, String> {
-        if let UnifiedKeyStore::View(ufvk) = self.unified_key_store() {
-            if (desired_receivers.transparent & ufvk.transparent().is_none())
-                || (desired_receivers.sapling & ufvk.sapling().is_none())
-                || (desired_receivers.orchard & ufvk.orchard().is_none())
-            {
-                return Err("The wallet is not capable of producing desired receivers.".to_string());
-            }
-        } else if let UnifiedKeyStore::Empty = self.unified_key_store() {
-            if desired_receivers.transparent
-                || desired_receivers.sapling
-                || desired_receivers.orchard
-            {
-                return Err(
-                    "No keys found. The wallet is not capable of producing desired receivers."
-                        .to_string(),
-                );
-            }
-        }
-
-        if self
-            .addresses_write_lock
-            .swap(true, atomic::Ordering::Acquire)
-        {
-            return Err("addresses_write_lock collision!".to_string());
-        }
-        let previous_num_addresses = self.addresses.len();
-        let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = match self.unified_key_store().try_into() {
-                Ok(viewkey) => viewkey,
-                Err(e) => {
-                    self.addresses_write_lock
-                        .swap(false, atomic::Ordering::Release);
-                    return Err(e.to_string());
+        scope: TransparentKeyScope,
+    ) -> Result<Option<TransparentAddress>, bip32::Error> {
+        let address_for_scope = |pub_key: &AccountPubKey,
+                                 scope: TransparentKeyScope,
+                                 child_index: NonHardenedChildIndex|
+         -> Result<TransparentAddress, bip32::Error> {
+            match scope {
+                TransparentKeyScope::EXTERNAL => {
+                    let t_addr = pub_key.derive_external_ivk()?.derive_address(child_index)?;
+                    self.transparent_child_addresses
+                        .push((self.addresses.len(), t_addr));
+                    Ok(t_addr)
                 }
-            };
-            Some(fvk.address_at(self.addresses.len(), orchard::keys::Scope::External))
-        } else {
-            None
-        };
-
-        // produce a Sapling address to increment Sapling diversifier index
-        let sapling_receiver = if desired_receivers.sapling {
-            let mut sapling_diversifier_index = DiversifierIndex::new();
-            let mut address;
-            let mut count = 0;
-            let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey = self
-                .unified_key_store()
-                .try_into()
-                .expect("to create an fvk");
-            loop {
-                (sapling_diversifier_index, address) = fvk
-                    .find_address(sapling_diversifier_index)
-                    .expect("Diversifier index overflow");
-                sapling_diversifier_index
-                    .increment()
-                    .expect("diversifier index overflow");
-                if count == self.addresses.len() {
-                    break;
+                TransparentKeyScope::INTERNAL => {
+                    //TODO: remember transparent internal change addresses
+                    Ok(pub_key.derive_internal_ivk()?.derive_address(child_index)?)
                 }
-                count += 1;
+                TransparentKeyScope::EPHEMERAL => {
+                    let t_addr = pub_key
+                        .derive_ephemeral_ivk()?
+                        .derive_ephemeral_address(child_index)?;
+                    self.transparent_child_ephemeral_addresses.push((
+                        t_addr,
+                        TransparentAddressMetadata::new(
+                            TransparentKeyScope::EPHEMERAL,
+                            NonHardenedChildIndex::from_index(
+                                self.transparent_child_ephemeral_addresses.len() as u32,
+                            )
+                            .expect("ephemeral index overflow"),
+                        ),
+                    ));
+                    Ok(t_addr)
+                }
+                _ => Err(bip32::Error::Bip39),
             }
-            Some(address)
-        } else {
-            None
         };
+        if !desired_receivers.transparent {
+            return Ok(None);
+        }
+        let child_index = NonHardenedChildIndex::from_index(match scope {
+            TransparentKeyScope::EXTERNAL => Ok(self.addresses.len()),
+            TransparentKeyScope::INTERNAL => {
+                todo!("transparent change addresses")
+            }
+            TransparentKeyScope::EPHEMERAL => Ok(self.transparent_child_ephemeral_addresses.len()),
+            _ => Err(bip32::Error::Bip39),
+        }? as u32)
+        .expect("hardened bit should not be set for non-hardened child indexes");
+        let transparent_receiver = match self.unified_key_store() {
+            UnifiedKeyStore::Spend(usk) => {
+                address_for_scope(&usk.transparent().to_account_pubkey(), scope, child_index)
+                    .map(Option::Some)
+            }
+            UnifiedKeyStore::View(ufvk) => ufvk
+                .transparent()
+                .map(|pub_key| address_for_scope(pub_key, scope, child_index))
+                .transpose(),
+            UnifiedKeyStore::Empty => Ok(None),
+        }?;
 
-        let transparent_receiver = if desired_receivers.transparent {
-            let child_index = NonHardenedChildIndex::from_index(self.addresses.len() as u32)
-                .expect("hardened bit should not be set for non-hardened child indexes");
-            let external_pubkey = match self.unified_key_store() {
-                UnifiedKeyStore::Spend(usk) => usk
-                    .transparent()
-                    .to_account_pubkey().ext
-                    // .derive_external_ivk()
-                    // .ok(),
-                UnifiedKeyStore::View(ufvk) => ufvk
-                    .transparent()
-                    .expect(
-                        "should have been checked to be Some if transparent is a desired receiver",
-                    )
-                    .derive_external_ivk()
-                    .ok(),
-                UnifiedKeyStore::Empty => None,
-            };
-            if let Some(pk) = external_pubkey {
-                let t_addr = pk.derive_address(child_index).unwrap();
-                self.transparent_child_addresses
-                    .push((self.addresses.len(), t_addr));
-                Some(t_addr)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let ua = UnifiedAddress::from_receivers(
-            orchard_receiver,
-            sapling_receiver,
-            transparent_receiver,
-        );
-        let ua = match ua {
-            Some(address) => address,
-            None => {
-                self.addresses_write_lock
-                    .swap(false, atomic::Ordering::Release);
-                return Err(
-                    "Invalid receivers requested! At least one of sapling or orchard required"
-                        .to_string(),
-                );
-            }
-        };
-        self.addresses.push(ua.clone());
-        assert_eq!(self.addresses.len(), previous_num_addresses + 1);
-        self.addresses_write_lock
-            .swap(false, atomic::Ordering::Release);
-        Ok(ua)
+        Ok(transparent_receiver)
     }
 
     /// TODO: Add Doc Comment Here!
