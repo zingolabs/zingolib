@@ -1,7 +1,9 @@
 use bip0039::Mnemonic;
+
+use zcash_client_backend::PoolType;
+use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::keys::Era;
 
-use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 
@@ -33,9 +35,21 @@ use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion;
 
 impl ExampleWalletNetwork {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
-    async fn load_example_wallet_with_seed_verification(&self) -> LightWallet {
+    async fn load_example_wallet_with_verification(&self) -> LightWallet {
         let wallet = self.load_example_wallet().await;
-        assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base().await).await;
+        assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
+        for pool in [
+            PoolType::Transparent,
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+        ] {
+            assert_eq!(
+                wallet
+                    .get_first_address(pool)
+                    .expect("can find the first address"),
+                self.example_wallet_address(pool)
+            );
+        }
         wallet
     }
 }
@@ -45,7 +59,7 @@ async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
     Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
         ExampleAAAAAAAAAAAAAAAAAAAAAAAAVersion::V26,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -53,7 +67,7 @@ async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_and_sapl() 
     Regtest(AADAALACAADAALACAADAALAC(
         ExampleAADAALACAADAALACAADAALACVersion::OrchAndSapl,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -61,7 +75,7 @@ async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_only() {
     Regtest(AADAALACAADAALACAADAALAC(
         ExampleAADAALACAADAALACAADAALACVersion::OrchOnly,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -69,7 +83,7 @@ async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
     Regtest(HMVASMUVWMSSVICHCARBPOCT(
         ExampleHMVASMUVWMSSVICHCARBPOCTVersion::V27,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 /// unlike other, more basic tests, this test also checks number of addresses and balance
@@ -78,7 +92,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     let wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V26,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 
     loaded_wallet_assert(
@@ -96,7 +110,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
     let wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V27,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 
     loaded_wallet_assert(
@@ -112,7 +126,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
     Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V28,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -120,7 +134,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_g2f3830058() {
     Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -128,7 +142,7 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
     Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
         ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Gab72a38b,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -136,7 +150,7 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
     Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
         ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::G93738061a,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -144,7 +158,7 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_ga74fed621() {
     Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
         ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -152,7 +166,7 @@ async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
     Mainnet(VTFCORFBCBPCTCFUPMEGMWBP(
         ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion::V28,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
@@ -160,7 +174,7 @@ async fn verify_example_wallet_mainnet_hhcclaltpcckcsslpcnetblr_gf0aaf9347() {
     Mainnet(HHCCLALTPCCKCSSLPCNETBLR(
         ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Gf0aaf9347,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 }
 
@@ -188,7 +202,11 @@ async fn loaded_wallet_assert(
     if expected_balance > 0 {
         crate::testutils::lightclient::from_inputs::quick_send(
             &client,
-            vec![(&get_base_address_macro!(client, "sapling"), 11011, None)],
+            vec![(
+                &crate::get_base_address_macro!(client, "sapling"),
+                11011,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -216,7 +234,7 @@ async fn reload_wallet_from_buffer() {
     let mid_wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
         ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V28,
     ))
-    .load_example_wallet_with_seed_verification()
+    .load_example_wallet_with_verification()
     .await;
 
     let mid_client = LightClient::create_from_wallet_async(mid_wallet)

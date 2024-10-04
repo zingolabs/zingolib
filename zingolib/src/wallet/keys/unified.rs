@@ -1,4 +1,5 @@
 //! TODO: Add Mod Discription Here!
+
 use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
@@ -11,24 +12,24 @@ use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use getset::{Getters, Setters};
+
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_address::unified::{Encoding as _, Ufvk};
+use zcash_client_backend::address::UnifiedAddress;
+use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
+use zcash_client_backend::wallet::TransparentAddressMetadata;
+use zcash_encoding::{CompactSize, Vector};
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::legacy::keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex};
-use zcash_primitives::{
-    consensus::{NetworkConstants, Parameters},
-    legacy::keys::TransparentKeyScope,
+use zcash_primitives::consensus::{NetworkConstants, Parameters};
+use zcash_primitives::legacy::{
+    keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope},
+    TransparentAddress,
 };
+use zcash_primitives::zip32::{AccountId, DiversifierIndex};
 
 use crate::config::{ChainType, ZingoConfig};
 use crate::wallet::error::KeyError;
-use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
-use zcash_client_backend::{address::UnifiedAddress, wallet::TransparentAddressMetadata};
-use zcash_encoding::{CompactSize, Vector};
-use zcash_primitives::zip32::AccountId;
-use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
-
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
