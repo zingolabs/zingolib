@@ -68,11 +68,10 @@ impl<V, S> Capability<V, S> {
 }
 
 /// Interface to cryptographic capabilities that the library requires for
-/// various operations.
-/// It is created either from a BIP39 mnemonic phrase:
-///  <https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki>
-///  OR
-/// Loaded from a [`zcash_keys::keys::UnifiedSpendingKey`], or a [`zcash_keys::keys::UnifiedFullViewingKey`].
+/// various operations. <br>
+/// It is created either from a [BIP39 mnemonic phrase](<https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki>), <br>
+/// loaded from a [`zcash_keys::keys::UnifiedSpendingKey`] <br>
+/// or a [`zcash_keys::keys::UnifiedFullViewingKey`]. <br><br>
 /// In addition to fundamental spending and viewing keys, the type caches generated addresses.
 #[derive(Debug)]
 pub struct WalletCapability {
