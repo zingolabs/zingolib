@@ -1,5 +1,7 @@
 //! currently only implementing one method of WalletWrite
 
+use std::iter;
+
 use zcash_client_backend::data_api::WalletWrite;
 
 use super::{TxMap, TxMapTraitError};
@@ -117,6 +119,6 @@ impl WalletWrite for TxMap {
         )>,
         Self::Error,
     > {
-        todo!()
+        iter::repeat_with(|| (self.transparent_child_ephemeral_addresses))
     }
 }

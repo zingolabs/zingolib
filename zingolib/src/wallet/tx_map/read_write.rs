@@ -70,6 +70,9 @@ impl TxMap {
             transaction_records_by_id: map,
             spending_data: witness_trees.map(SpendingData::new),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            transparent_child_ephemeral_addresses: wallet_capability
+                .transparent_child_ephemeral_addresses()
+                .clone(),
         })
     }
 
@@ -137,6 +140,9 @@ impl TxMap {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
             spending_data: witness_trees.map(SpendingData::new),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            transparent_child_ephemeral_addresses: wallet_capability
+                .transparent_child_ephemeral_addresses()
+                .clone(),
         })
     }
 

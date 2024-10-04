@@ -13,6 +13,7 @@ use getset::{Getters, MutGetters};
 use spending_data::SpendingData;
 use std::{fmt::Debug, sync::Arc};
 use thiserror::Error;
+use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_primitives::legacy::TransparentAddress;
 
 /// HashMap of all transactions in a wallet, keyed by txid.
@@ -26,6 +27,8 @@ pub struct TxMap {
     spending_data: Option<SpendingData>,
     pub(crate) transparent_child_addresses:
         Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    pub(crate) transparent_child_ephemeral_addresses:
+        Arc<append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
 }
 
 pub mod get;
@@ -39,22 +42,30 @@ impl TxMap {
         transparent_child_addresses: Arc<
             append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
         >,
+        transparent_child_ephemeral_addresses: Arc<
+            append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>,
+        >,
     ) -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             spending_data: Some(SpendingData::new(WitnessTrees::default())),
             transparent_child_addresses,
+            transparent_child_ephemeral_addresses,
         }
     }
     pub(crate) fn new_treeless(
         transparent_child_addresses: Arc<
             append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
         >,
+        transparent_child_ephemeral_addresses: Arc<
+            append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>,
+        >,
     ) -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             spending_data: None,
             transparent_child_addresses,
+            transparent_child_ephemeral_addresses,
         }
     }
     /// TODO: Doc-comment!
@@ -82,6 +93,7 @@ impl TxMap {
             transaction_records_by_id: TransactionRecordsById::new(),
             spending_data: Some(SpendingData::new(WitnessTrees::default())),
             transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
+            transparent_child_ephemeral_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
         }
     }
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
@@ -90,6 +102,7 @@ impl TxMap {
             transaction_records_by_id: TransactionRecordsById::new(),
             spending_data: None,
             transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
+            transparent_child_ephemeral_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
         }
     }
 }

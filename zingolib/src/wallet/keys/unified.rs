@@ -308,6 +308,12 @@ impl WalletCapability {
     pub fn transparent_child_addresses(&self) -> &Arc<AppendOnlyVec<(usize, TransparentAddress)>> {
         &self.transparent_child_addresses
     }
+    /// TODO: Add Doc Comment Here!
+    pub fn transparent_child_ephemeral_addresses(
+        &self,
+    ) -> &Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>> {
+        &self.transparent_child_ephemeral_addresses
+    }
 
     /// Generate a new ephemeral transparent address,
     /// for use in a send to a TEX address.

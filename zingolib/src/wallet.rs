@@ -383,10 +383,12 @@ impl LightWallet {
         let transaction_metadata_set = if wc.unified_key_store().is_spending_key() {
             Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
+                wc.transparent_child_ephemeral_addresses().clone(),
             )))
         } else {
             Arc::new(RwLock::new(TxMap::new_treeless(
                 wc.transparent_child_addresses().clone(),
+                wc.transparent_child_ephemeral_addresses().clone(),
             )))
         };
         let transaction_context =
