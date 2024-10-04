@@ -413,13 +413,19 @@ impl WalletCapability {
             None
         };
 
-        let transparent_receiver = self
-            .generate_transparent_receiver(
-                desired_receivers,
-                TransparentKeyScope::EXTERNAL,
-                legacy_key,
-            )
-            .map_err(|e| e.to_string())?;
+        let transparent_receiver = match self.generate_transparent_receiver(
+            desired_receivers,
+            TransparentKeyScope::EXTERNAL,
+            legacy_key,
+        ) {
+            Ok(Some(transparent_receiver)) => Some(transparent_receiver),
+            Ok(None) => None,
+            Err(e) => {
+                self.addresses_write_lock
+                    .swap(false, atomic::Ordering::Release);
+                return Err(e);
+            }
+        };
 
         let ua = UnifiedAddress::from_receivers(
             orchard_receiver,
