@@ -35,6 +35,10 @@ use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
 
+pub(crate) const KEY_TYPE_EMPTY: u8 = 0;
+pub(crate) const KEY_TYPE_VIEW: u8 = 1;
+pub(crate) const KEY_TYPE_SPEND: u8 = 2;
+
 /// In-memory store for wallet spending or viewing keys
 #[derive(Debug)]
 pub enum UnifiedKeyStore {
@@ -60,14 +64,17 @@ impl UnifiedKeyStore {
 
 impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
     const VERSION: u8 = 0;
-
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let key_type = reader.read_u8()?;
         Ok(match key_type {
-            0 => UnifiedKeyStore::Spend(Box::new(UnifiedSpendingKey::read(reader, ())?)),
-            1 => UnifiedKeyStore::View(Box::new(UnifiedFullViewingKey::read(reader, input)?)),
-            2 => UnifiedKeyStore::Empty,
+            KEY_TYPE_SPEND => {
+                UnifiedKeyStore::Spend(Box::new(UnifiedSpendingKey::read(reader, ())?))
+            }
+            KEY_TYPE_VIEW => {
+                UnifiedKeyStore::View(Box::new(UnifiedFullViewingKey::read(reader, input)?))
+            }
+            KEY_TYPE_EMPTY => UnifiedKeyStore::Empty,
             x => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -81,14 +88,14 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
         writer.write_u8(Self::VERSION)?;
         match self {
             UnifiedKeyStore::Spend(usk) => {
-                writer.write_u8(0)?;
+                writer.write_u8(KEY_TYPE_SPEND)?;
                 usk.write(&mut writer, ())
             }
             UnifiedKeyStore::View(ufvk) => {
-                writer.write_u8(1)?;
+                writer.write_u8(KEY_TYPE_VIEW)?;
                 ufvk.write(&mut writer, input)
             }
-            UnifiedKeyStore::Empty => writer.write_u8(2),
+            UnifiedKeyStore::Empty => writer.write_u8(KEY_TYPE_EMPTY),
         }
     }
 }
@@ -209,6 +216,7 @@ pub struct WalletCapability {
     #[getset(get = "pub", set = "pub(crate)")]
     unified_key_store: UnifiedKeyStore,
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    // TODO: read/write for ephmereral addresses
     transparent_child_ephemeral_addresses:
         Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
@@ -321,16 +329,17 @@ impl WalletCapability {
         ),
         String,
     > {
+        let transparent_fvk: AccountPubKey = self
+            .unified_key_store()
+            .try_into()
+            .map_err(|e: KeyError| e.to_string())?;
+
         self.generate_transparent_receiver(
-            ReceiverSelection {
-                orchard: false,
-                sapling: false,
-                transparent: true,
-            },
+            &transparent_fvk,
             TransparentKeyScope::EPHEMERAL,
             false,
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
+
         Ok(self
             .transparent_child_ephemeral_addresses
             .iter()
@@ -347,25 +356,6 @@ impl WalletCapability {
         desired_receivers: ReceiverSelection,
         legacy_key: bool,
     ) -> Result<UnifiedAddress, String> {
-        if let UnifiedKeyStore::View(ufvk) = self.unified_key_store() {
-            if (desired_receivers.transparent & ufvk.transparent().is_none())
-                || (desired_receivers.sapling & ufvk.sapling().is_none())
-                || (desired_receivers.orchard & ufvk.orchard().is_none())
-            {
-                return Err("The wallet is not capable of producing desired receivers.".to_string());
-            }
-        } else if let UnifiedKeyStore::Empty = self.unified_key_store() {
-            if desired_receivers.transparent
-                || desired_receivers.sapling
-                || desired_receivers.orchard
-            {
-                return Err(
-                    "No keys found. The wallet is not capable of producing desired receivers."
-                        .to_string(),
-                );
-            }
-        }
-
         if self
             .addresses_write_lock
             .swap(true, atomic::Ordering::Acquire)
@@ -373,6 +363,7 @@ impl WalletCapability {
             return Err("addresses_write_lock collision!".to_string());
         }
         let previous_num_addresses = self.addresses.len();
+
         let orchard_receiver = if desired_receivers.orchard {
             let fvk: orchard::keys::FullViewingKey = match self.unified_key_store().try_into() {
                 Ok(viewkey) => viewkey,
@@ -392,17 +383,22 @@ impl WalletCapability {
             let mut sapling_diversifier_index = DiversifierIndex::new();
             let mut address;
             let mut count = 0;
-            let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey = self
-                .unified_key_store()
-                .try_into()
-                .expect("to create an fvk");
+            let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey =
+                match self.unified_key_store().try_into() {
+                    Ok(viewkey) => viewkey,
+                    Err(e) => {
+                        self.addresses_write_lock
+                            .swap(false, atomic::Ordering::Release);
+                        return Err(e.to_string());
+                    }
+                };
             loop {
                 (sapling_diversifier_index, address) = fvk
                     .find_address(sapling_diversifier_index)
                     .expect("Diversifier index overflow");
                 sapling_diversifier_index
                     .increment()
-                    .expect("diversifier index overflow");
+                    .expect("Diversifier index overflow");
                 if count == self.addresses.len() {
                     break;
                 }
@@ -413,18 +409,30 @@ impl WalletCapability {
             None
         };
 
-        let transparent_receiver = match self.generate_transparent_receiver(
-            desired_receivers,
-            TransparentKeyScope::EXTERNAL,
-            legacy_key,
-        ) {
-            Ok(Some(transparent_receiver)) => Some(transparent_receiver),
-            Ok(None) => None,
-            Err(e) => {
-                self.addresses_write_lock
-                    .swap(false, atomic::Ordering::Release);
-                return Err(e);
+        let transparent_receiver = if desired_receivers.transparent {
+            let transparent_fvk: AccountPubKey = match self.unified_key_store().try_into() {
+                Ok(viewkey) => viewkey,
+                Err(e) => {
+                    self.addresses_write_lock
+                        .swap(false, atomic::Ordering::Release);
+                    return Err(e.to_string());
+                }
+            };
+
+            match self.generate_transparent_receiver(
+                &transparent_fvk,
+                TransparentKeyScope::EXTERNAL,
+                legacy_key,
+            ) {
+                Ok(t_addr) => Some(t_addr),
+                Err(e) => {
+                    self.addresses_write_lock
+                        .swap(false, atomic::Ordering::Release);
+                    return Err(e.to_string());
+                }
             }
+        } else {
+            None
         };
 
         let ua = UnifiedAddress::from_receivers(
@@ -450,28 +458,25 @@ impl WalletCapability {
         Ok(ua)
     }
 
-    /// Generates a transparent receiver if the wallet is capable of it.
-    ///
-    /// If the wallet is not capable of generating a transparent receiver,
-    /// `None` is returned.
+    /// Generates a transparent receiver for the specified scope.
     pub fn generate_transparent_receiver(
         &self,
-        desired_receivers: ReceiverSelection,
+        transparent_fvk: &AccountPubKey,
         scope: TransparentKeyScope,
         // this should only be `true` when generating transparent addresses while loading from legacy keys (pre wallet version 29)
-        // legacy keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
+        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
         legacy_key: bool,
-    ) -> Result<Option<TransparentAddress>, String> {
-        let address_for_scope = |pub_key: &AccountPubKey,
+    ) -> Result<TransparentAddress, String> {
+        let address_for_scope = |transparent_fvk: &AccountPubKey,
                                  scope: TransparentKeyScope,
                                  child_index: NonHardenedChildIndex|
          -> Result<TransparentAddress, String> {
             match scope {
                 TransparentKeyScope::EXTERNAL => {
                     let t_addr = if legacy_key {
-                        generate_transparent_address_from_legacy_key(pub_key, child_index)?
+                        generate_transparent_address_from_legacy_key(transparent_fvk, child_index)?
                     } else {
-                        pub_key
+                        transparent_fvk
                             .derive_external_ivk()
                             .map_err(|e| e.to_string())?
                             .derive_address(child_index)
@@ -483,14 +488,14 @@ impl WalletCapability {
                 }
                 TransparentKeyScope::INTERNAL => {
                     //TODO: remember transparent internal change addresses
-                    Ok(pub_key
+                    Ok(transparent_fvk
                         .derive_internal_ivk()
                         .map_err(|e| e.to_string())?
                         .derive_address(child_index)
                         .map_err(|e| e.to_string())?)
                 }
                 TransparentKeyScope::EPHEMERAL => {
-                    let t_addr = pub_key
+                    let t_addr = transparent_fvk
                         .derive_ephemeral_ivk()
                         .map_err(|e| e.to_string())?
                         .derive_ephemeral_address(child_index)
@@ -499,10 +504,7 @@ impl WalletCapability {
                         t_addr,
                         TransparentAddressMetadata::new(
                             TransparentKeyScope::EPHEMERAL,
-                            NonHardenedChildIndex::from_index(
-                                self.transparent_child_ephemeral_addresses.len() as u32,
-                            )
-                            .expect("ephemeral index overflow"),
+                            child_index,
                         ),
                     ));
                     Ok(t_addr)
@@ -510,9 +512,7 @@ impl WalletCapability {
                 _ => Err(bip32::Error::Bip39.to_string()),
             }
         };
-        if !desired_receivers.transparent {
-            return Ok(None);
-        }
+
         let child_index = NonHardenedChildIndex::from_index(
             match scope {
                 TransparentKeyScope::EXTERNAL => Ok(self.addresses.len()),
@@ -527,17 +527,8 @@ impl WalletCapability {
             .map_err(|e| e.to_string())? as u32,
         )
         .expect("hardened bit should not be set for non-hardened child indexes");
-        let transparent_receiver = match self.unified_key_store() {
-            UnifiedKeyStore::Spend(usk) => {
-                address_for_scope(&usk.transparent().to_account_pubkey(), scope, child_index)
-                    .map(Option::Some)
-            }
-            UnifiedKeyStore::View(ufvk) => ufvk
-                .transparent()
-                .map(|pub_key| address_for_scope(pub_key, scope, child_index))
-                .transpose(),
-            UnifiedKeyStore::Empty => Ok(None),
-        }?;
+
+        let transparent_receiver = address_for_scope(transparent_fvk, scope, child_index)?;
 
         Ok(transparent_receiver)
     }
@@ -763,8 +754,10 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                     )
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
                     UnifiedKeyStore::View(Box::new(ufvk))
-                } else if matches!(orchard_capability.clone(), Capability::Spend(_)) {
+                } else if matches!(sapling_capability.clone(), Capability::Spend(_)) {
                     // In the case of loading spending keys:
+                    // Only sapling is checked for spend capability due to only supporting a full set of spend keys
+                    //
                     // Create a temporary USK for address generation to load old wallets
                     // due to missing BIP0032 transparent extended private key data
                     //

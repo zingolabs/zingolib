@@ -62,9 +62,9 @@ fn check_view_capability_bounds(
     balance: &PoolBalances,
     watch_wc: &WalletCapability,
     fvks: &[&Fvk],
-    ovk: &Fvk,
-    svk: &Fvk,
-    tvk: &Fvk,
+    orchard_fvk: &Fvk,
+    sapling_fvk: &Fvk,
+    transparent_fvk: &Fvk,
     sent_o_value: Option<u64>,
     sent_s_value: Option<u64>,
     sent_t_value: Option<u64>,
@@ -74,7 +74,7 @@ fn check_view_capability_bounds(
         panic!("should be viewing key!")
     };
     //Orchard
-    if !fvks.contains(&ovk) {
+    if !fvks.contains(&orchard_fvk) {
         assert!(ufvk.orchard().is_none());
         assert_eq!(balance.orchard_balance, None);
         assert_eq!(balance.verified_orchard_balance, None);
@@ -90,7 +90,7 @@ fn check_view_capability_bounds(
         assert!((1..=2).contains(&orchard_notes_count));
     }
     //Sapling
-    if !fvks.contains(&svk) {
+    if !fvks.contains(&sapling_fvk) {
         assert!(ufvk.sapling().is_none());
         assert_eq!(balance.sapling_balance, None);
         assert_eq!(balance.verified_sapling_balance, None);
@@ -103,7 +103,7 @@ fn check_view_capability_bounds(
         assert_eq!(balance.unverified_sapling_balance, Some(0));
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
     }
-    if !fvks.contains(&tvk) {
+    if !fvks.contains(&transparent_fvk) {
         assert!(ufvk.transparent().is_none());
         assert_eq!(balance.transparent_balance, None);
         assert_eq!(notes["utxos"].members().count(), 0);

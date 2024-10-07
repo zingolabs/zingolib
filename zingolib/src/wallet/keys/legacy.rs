@@ -15,6 +15,8 @@ use zcash_primitives::legacy::{
 
 use crate::wallet::{error::KeyError, traits::ReadableWriteable};
 
+use super::unified::{KEY_TYPE_EMPTY, KEY_TYPE_SPEND, KEY_TYPE_VIEW};
+
 pub mod extended_transparent;
 
 /// TODO: Add Doc Comment Here!
@@ -39,9 +41,9 @@ where
         let _version = Self::get_version(&mut reader)?;
         let capability_type = reader.read_u8()?;
         Ok(match capability_type {
-            0 => Capability::None,
-            1 => Capability::View(V::read(&mut reader, ())?),
-            2 => Capability::Spend(S::read(&mut reader, ())?),
+            KEY_TYPE_EMPTY => Capability::None,
+            KEY_TYPE_VIEW => Capability::View(V::read(&mut reader, ())?),
+            KEY_TYPE_SPEND => Capability::Spend(S::read(&mut reader, ())?),
             x => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -54,13 +56,13 @@ where
     fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         match self {
-            Capability::None => writer.write_u8(0),
+            Capability::None => writer.write_u8(KEY_TYPE_EMPTY),
             Capability::View(vk) => {
-                writer.write_u8(1)?;
+                writer.write_u8(KEY_TYPE_VIEW)?;
                 vk.write(&mut writer, ())
             }
             Capability::Spend(sk) => {
-                writer.write_u8(2)?;
+                writer.write_u8(KEY_TYPE_SPEND)?;
                 sk.write(&mut writer, ())
             }
         }
@@ -180,7 +182,8 @@ pub(crate) fn generate_transparent_address_from_legacy_key(
         bip32::ExtendedKeyAttrs {
             depth: 4,
             parent_fingerprint: [0xff, 0xff, 0xff, 0xff],
-            child_number: bip32::ChildNumber::new(0, true).expect("correct"),
+            child_number: bip32::ChildNumber::new(0, true)
+                .expect("hard-coded index of 0 is not larger than the hardened bit"),
             chain_code,
         },
     );
