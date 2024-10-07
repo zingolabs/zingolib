@@ -13,7 +13,7 @@ use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
 };
 
-pub mod extended_transparent;
+pub mod legacy;
 pub mod unified;
 
 /// Sha256(Sha256(value))
