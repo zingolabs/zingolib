@@ -1,9 +1,11 @@
 use bip0039::Mnemonic;
-use zcash_address::unified::Encoding;
+
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
+use zcash_keys::keys::Era;
 
 use crate::lightclient::LightClient;
+use crate::wallet::keys::unified::UnifiedKeyStore;
 
 use super::super::LightWallet;
 use super::assert_wallet_capability_matches_seed;
@@ -36,7 +38,7 @@ impl ExampleWalletNetwork {
     async fn load_example_wallet_with_verification(&self) -> LightWallet {
         let wallet = self.load_example_wallet().await;
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
-        for pool in vec![
+        for pool in [
             PoolType::Transparent,
             PoolType::Shielded(ShieldedProtocol::Sapling),
             PoolType::Shielded(ShieldedProtocol::Orchard),
@@ -225,11 +227,7 @@ async fn loaded_wallet_assert(
 // todo: proptest enum
 #[tokio::test]
 async fn reload_wallet_from_buffer() {
-    use zcash_primitives::consensus::Parameters;
-
     use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use crate::wallet::disk::Capability;
-    use crate::wallet::keys::extended_transparent::ExtendedPrivKey;
     use crate::wallet::WalletBase;
     use crate::wallet::WalletCapability;
 
@@ -263,30 +261,22 @@ async fn reload_wallet_from_buffer() {
     .unwrap();
     let wc = wallet.wallet_capability();
 
-    let Capability::Spend(orchard_sk) = &wc.orchard else {
-        panic!("Expected Orchard Spending Key");
+    let UnifiedKeyStore::Spend(usk) = wc.unified_key_store() else {
+        panic!("should be spending key!")
     };
-    assert_eq!(
-        orchard_sk.to_bytes(),
-        orchard::keys::SpendingKey::try_from(&expected_wc)
-            .unwrap()
-            .to_bytes()
-    );
+    let UnifiedKeyStore::Spend(expected_usk) = expected_wc.unified_key_store() else {
+        panic!("should be spending key!")
+    };
 
-    let Capability::Spend(sapling_sk) = &wc.sapling else {
-        panic!("Expected Sapling Spending Key");
-    };
     assert_eq!(
-        sapling_sk,
-        &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
+        usk.to_bytes(Era::Orchard),
+        expected_usk.to_bytes(Era::Orchard)
     );
-
-    let Capability::Spend(transparent_sk) = &wc.transparent else {
-        panic!("Expected transparent extended private key");
-    };
+    assert_eq!(usk.orchard().to_bytes(), expected_usk.orchard().to_bytes());
+    assert_eq!(usk.sapling().to_bytes(), expected_usk.sapling().to_bytes());
     assert_eq!(
-        transparent_sk,
-        &ExtendedPrivKey::try_from(&expected_wc).unwrap()
+        usk.transparent().to_bytes(),
+        expected_usk.transparent().to_bytes()
     );
 
     assert_eq!(wc.addresses().len(), 3);
@@ -296,8 +286,8 @@ async fn reload_wallet_from_buffer() {
         assert!(addr.transparent().is_some());
     }
 
-    let ufvk = wc.ufvk().unwrap();
-    let ufvk_string = ufvk.encode(&wallet.transaction_context.config.chain.network_type());
+    let ufvk = usk.to_unified_full_viewing_key();
+    let ufvk_string = ufvk.encode(&wallet.transaction_context.config.chain);
     let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
     let view_wallet = LightWallet::new(
         wallet.transaction_context.config.clone(),
@@ -306,9 +296,11 @@ async fn reload_wallet_from_buffer() {
     )
     .unwrap();
     let v_wc = view_wallet.wallet_capability();
-    let vv = v_wc.ufvk().unwrap();
-    let vv_string = vv.encode(&wallet.transaction_context.config.chain.network_type());
-    assert_eq!(ufvk_string, vv_string);
+    let UnifiedKeyStore::View(v_ufvk) = v_wc.unified_key_store() else {
+        panic!("should be viewing key!");
+    };
+    let v_ufvk_string = v_ufvk.encode(&wallet.transaction_context.config.chain);
+    assert_eq!(ufvk_string, v_ufvk_string);
 
     let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
     let balance = client.do_balance().await;

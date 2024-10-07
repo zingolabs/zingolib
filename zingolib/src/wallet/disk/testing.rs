@@ -2,6 +2,9 @@
 //! do not compile test-elevation feature for production.
 
 use bip0039::Mnemonic;
+use zcash_keys::keys::{Era, UnifiedSpendingKey};
+
+use crate::wallet::keys::unified::UnifiedKeyStore;
 
 use super::LightWallet;
 
@@ -77,37 +80,15 @@ pub async fn assert_wallet_capability_matches_seed(
     .unwrap();
     let wc = wallet.wallet_capability();
 
-    // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
-    // so we have to compare each component instead
-
-    // Compare Orchard
-    let crate::wallet::keys::unified::Capability::Spend(orchard_sk) = &wc.orchard else {
-        panic!("Expected Orchard Spending Key");
+    // Compare USK
+    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store() else {
+        panic!("Expected Unified Spending Key");
     };
     assert_eq!(
-        orchard_sk.to_bytes(),
-        orchard::keys::SpendingKey::try_from(&expected_wc)
+        usk.to_bytes(Era::Orchard),
+        UnifiedSpendingKey::try_from(expected_wc.unified_key_store())
             .unwrap()
-            .to_bytes()
-    );
-
-    // Compare Sapling
-    let crate::wallet::keys::unified::Capability::Spend(sapling_sk) = &wc.sapling else {
-        panic!("Expected Sapling Spending Key");
-    };
-    assert_eq!(
-        sapling_sk,
-        &zcash_client_backend::keys::sapling::ExtendedSpendingKey::try_from(&expected_wc).unwrap()
-    );
-
-    // Compare transparent
-    let crate::wallet::keys::unified::Capability::Spend(transparent_sk) = &wc.transparent else {
-        panic!("Expected transparent extended private key");
-    };
-    assert_eq!(
-        transparent_sk,
-        &crate::wallet::keys::extended_transparent::ExtendedPrivKey::try_from(&expected_wc)
-            .unwrap()
+            .to_bytes(Era::Orchard)
     );
 }
 

@@ -21,7 +21,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
-use zcash_address::unified::{Fvk, Ufvk};
+use zcash_address::unified::Fvk;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -46,31 +46,27 @@ pub mod regtest;
 
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
-    let o_fvk = Fvk::Orchard(
-        orchard::keys::FullViewingKey::try_from(wallet_capability)
-            .unwrap()
-            .to_bytes(),
-    );
-    let s_fvk = Fvk::Sapling(
-        zcash_client_backend::keys::sapling::DiversifiableFullViewingKey::try_from(
-            wallet_capability,
-        )
-        .unwrap()
-        .to_bytes(),
-    );
-    let mut t_fvk_bytes = [0u8; 65];
-    let t_ext_pk: crate::wallet::keys::extended_transparent::ExtendedPubKey =
-        (wallet_capability).try_into().unwrap();
-    t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
-    t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
-    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
-    [o_fvk, s_fvk, t_fvk]
+    let orchard_vk: orchard::keys::FullViewingKey =
+        wallet_capability.unified_key_store().try_into().unwrap();
+    let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
+        wallet_capability.unified_key_store().try_into().unwrap();
+    let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
+        wallet_capability.unified_key_store().try_into().unwrap();
+
+    let mut transparent_vk_bytes = [0u8; 65];
+    transparent_vk_bytes.copy_from_slice(&transparent_vk.serialize());
+
+    [
+        Fvk::Orchard(orchard_vk.to_bytes()),
+        Fvk::Sapling(sapling_vk.to_bytes()),
+        Fvk::P2pkh(transparent_vk_bytes),
+    ]
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
-        &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
+        &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
             fvks.iter().copied().cloned().collect(),
         )
         .unwrap(),
@@ -80,14 +76,6 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
         .await
         .unwrap()
 }
-
-/// Converts a Lightclient with spending capability to a Lightclient with only viewing capability
-pub async fn sk_client_to_fvk_client(client: &LightClient) -> LightClient {
-    let [o_fvk, s_fvk, t_fvk] =
-        build_fvks_from_wallet_capability(&client.wallet.wallet_capability().clone());
-    build_fvk_client(&[&o_fvk, &s_fvk, &t_fvk], client.config()).await
-}
-
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
     Ok(client
