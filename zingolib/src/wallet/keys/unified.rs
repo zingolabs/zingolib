@@ -1,4 +1,4 @@
-//! TODO: Add Mod Discription Here!
+//! TODO: Add Mod Description Here!
 
 use std::sync::atomic;
 use std::{
@@ -209,19 +209,27 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
     }
 }
 
-/// TODO: Add Doc Comment Here!
+/// Interface to cryptographic capabilities that the library requires for
+/// various operations. <br>
+/// It is created either from a [BIP39 mnemonic phrase](<https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki>), <br>
+/// loaded from a [`zcash_keys::keys::UnifiedSpendingKey`] <br>
+/// or a [`zcash_keys::keys::UnifiedFullViewingKey`]. <br><br>
+/// In addition to fundamental spending and viewing keys, the type caches generated addresses.
 #[derive(Debug, Getters, Setters)]
 pub struct WalletCapability {
     /// Unified key store
     #[getset(get = "pub", set = "pub(crate)")]
     unified_key_store: UnifiedKeyStore,
+    /// Cache of transparent addresses that the user has created.
+    /// Receipts to a single address are correlated on chain.
+    /// TODO:  Is there any reason to have this field, apart from the
+    /// unified_addresses field?
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
     // TODO: read/write for ephmereral addresses
     transparent_child_ephemeral_addresses:
         Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
-    addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
-    // Not all diversifier indexes produce valid sapling addresses.
-    // Because of this, the index isn't necessarily equal to addresses.len()
+    /// Cache of unified_addresses
+    unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     addresses_write_lock: AtomicBool,
 }
 impl Default for WalletCapability {
@@ -230,7 +238,7 @@ impl Default for WalletCapability {
             unified_key_store: UnifiedKeyStore::Empty,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
             transparent_child_ephemeral_addresses: Arc::new(AppendOnlyVec::new()),
-            addresses: AppendOnlyVec::new(),
+            unified_addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
         }
     }
@@ -303,14 +311,14 @@ impl WalletCapability {
         &self,
         receiver: &TransparentAddress,
     ) -> Option<UnifiedAddress> {
-        self.addresses
+        self.unified_addresses
             .iter()
             .find(|ua| ua.transparent() == Some(receiver))
             .cloned()
     }
     /// TODO: Add Doc Comment Here!
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
-        &self.addresses
+        &self.unified_addresses
     }
 
     /// TODO: Add Doc Comment Here!
@@ -362,8 +370,8 @@ impl WalletCapability {
         {
             return Err("addresses_write_lock collision!".to_string());
         }
-        let previous_num_addresses = self.addresses.len();
 
+        let previous_num_addresses = self.unified_addresses.len();
         let orchard_receiver = if desired_receivers.orchard {
             let fvk: orchard::keys::FullViewingKey = match self.unified_key_store().try_into() {
                 Ok(viewkey) => viewkey,
@@ -373,7 +381,7 @@ impl WalletCapability {
                     return Err(e.to_string());
                 }
             };
-            Some(fvk.address_at(self.addresses.len(), orchard::keys::Scope::External))
+            Some(fvk.address_at(self.unified_addresses.len(), orchard::keys::Scope::External))
         } else {
             None
         };
@@ -399,7 +407,11 @@ impl WalletCapability {
                 sapling_diversifier_index
                     .increment()
                     .expect("Diversifier index overflow");
-                if count == self.addresses.len() {
+                // Not all sapling_diversifier_indexes produce valid
+                // sapling addresses.
+                // Because of this self.unified_addresses.len()
+                // will be <= sapling_diversifier_index
+                if count == self.unified_addresses.len() {
                     break;
                 }
                 count += 1;
@@ -451,8 +463,8 @@ impl WalletCapability {
                 );
             }
         };
-        self.addresses.push(ua.clone());
-        assert_eq!(self.addresses.len(), previous_num_addresses + 1);
+        self.unified_addresses.push(ua.clone());
+        assert_eq!(self.unified_addresses.len(), previous_num_addresses + 1);
         self.addresses_write_lock
             .swap(false, atomic::Ordering::Release);
         Ok(ua)
@@ -483,7 +495,7 @@ impl WalletCapability {
                             .map_err(|e| e.to_string())?
                     };
                     self.transparent_child_addresses
-                        .push((self.addresses.len(), t_addr));
+                        .push((self.unified_addresses.len(), t_addr));
                     Ok(t_addr)
                 }
                 TransparentKeyScope::INTERNAL => {
@@ -515,7 +527,7 @@ impl WalletCapability {
 
         let child_index = NonHardenedChildIndex::from_index(
             match scope {
-                TransparentKeyScope::EXTERNAL => Ok(self.addresses.len()),
+                TransparentKeyScope::EXTERNAL => Ok(self.unified_addresses.len()),
                 TransparentKeyScope::INTERNAL => {
                     todo!("transparent change addresses")
                 }
@@ -626,7 +638,7 @@ impl WalletCapability {
     }
 
     pub(crate) fn get_all_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
-        self.addresses
+        self.unified_addresses
             .iter()
             .filter_map(|address| {
                 address.transparent().and_then(|transparent_receiver| {
@@ -829,7 +841,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         self.unified_key_store().write(&mut writer, input)?;
         Vector::write(
             &mut writer,
-            &self.addresses.iter().collect::<Vec<_>>(),
+            &self.unified_addresses.iter().collect::<Vec<_>>(),
             |w, address| {
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
