@@ -36,8 +36,8 @@ zcash_proofs = { workspace = true }
 zip32.workspace = true
 
 bip0039.workspace = true
-bip32 = { version = "0.5", default-features = false, features = ["secp256k1-ffi"] }
-bs58 = { version = "0.5", features = ["check"] }
+bip32 = { workspace = true, features = ["secp256k1-ffi"] }
+bs58 = { workspace = true, features = ["check"] }
 
 append-only-vec = { workspace = true }
 base58 = { workspace = true }
