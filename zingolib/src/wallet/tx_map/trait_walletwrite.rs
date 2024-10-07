@@ -119,6 +119,7 @@ impl WalletWrite for TxMap {
         )>,
         Self::Error,
     > {
-        iter::repeat_with(|| (self.transparent_child_ephemeral_addresses))
+        //     iter::repeat_with(|| (self.transparent_child_ephemeral_addresses))
+        todo!()
     }
 }

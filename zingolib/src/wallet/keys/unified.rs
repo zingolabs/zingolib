@@ -315,34 +315,6 @@ impl WalletCapability {
         &self.transparent_child_ephemeral_addresses
     }
 
-    /// Generate a new ephemeral transparent address,
-    /// for use in a send to a TEX address.
-    pub fn new_ephemeral_address(
-        &self,
-    ) -> Result<
-        (
-            zcash_primitives::legacy::TransparentAddress,
-            zcash_client_backend::wallet::TransparentAddressMetadata,
-        ),
-        String,
-    > {
-        self.generate_transparent_receiver(
-            ReceiverSelection {
-                orchard: false,
-                sapling: false,
-                transparent: true,
-            },
-            TransparentKeyScope::EPHEMERAL,
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(self
-            .transparent_child_ephemeral_addresses
-            .iter()
-            .last()
-            .expect("we just generated an address, this is known to be non-empty")
-            .clone())
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn new_address(
         &self,
@@ -415,7 +387,7 @@ impl WalletCapability {
         };
 
         let transparent_receiver = match self
-            .generate_transparent_receiver(desired_receivers, TransparentKeyScope::EXTERNAL)
+            .generate_transparent_receiver(desired_receivers)
             .map_err(|e| e.to_string())?
         {
             Some(transparent_receiver) => Some(transparent_receiver),
@@ -455,62 +427,28 @@ impl WalletCapability {
     pub fn generate_transparent_receiver(
         &self,
         desired_receivers: ReceiverSelection,
-        scope: TransparentKeyScope,
     ) -> Result<Option<TransparentAddress>, bip32::Error> {
-        let address_for_scope = |pub_key: &AccountPubKey,
-                                 scope: TransparentKeyScope,
-                                 child_index: NonHardenedChildIndex|
+        let derive_address = |pub_key: &AccountPubKey,
+                              child_index: NonHardenedChildIndex|
          -> Result<TransparentAddress, bip32::Error> {
-            match scope {
-                TransparentKeyScope::EXTERNAL => {
-                    let t_addr = pub_key.derive_external_ivk()?.derive_address(child_index)?;
-                    self.transparent_child_addresses
-                        .push((self.addresses.len(), t_addr));
-                    Ok(t_addr)
-                }
-                TransparentKeyScope::INTERNAL => {
-                    //TODO: remember transparent internal change addresses
-                    Ok(pub_key.derive_internal_ivk()?.derive_address(child_index)?)
-                }
-                TransparentKeyScope::EPHEMERAL => {
-                    let t_addr = pub_key
-                        .derive_ephemeral_ivk()?
-                        .derive_ephemeral_address(child_index)?;
-                    self.transparent_child_ephemeral_addresses.push((
-                        t_addr,
-                        TransparentAddressMetadata::new(
-                            TransparentKeyScope::EPHEMERAL,
-                            NonHardenedChildIndex::from_index(
-                                self.transparent_child_ephemeral_addresses.len() as u32,
-                            )
-                            .expect("ephemeral index overflow"),
-                        ),
-                    ));
-                    Ok(t_addr)
-                }
-                _ => Err(bip32::Error::Bip39),
-            }
+            let t_addr = pub_key.derive_external_ivk()?.derive_address(child_index)?;
+            self.transparent_child_addresses
+                .push((self.addresses.len(), t_addr));
+            Ok(t_addr)
         };
         if !desired_receivers.transparent {
             return Ok(None);
         }
-        let child_index = NonHardenedChildIndex::from_index(match scope {
-            TransparentKeyScope::EXTERNAL => Ok(self.addresses.len()),
-            TransparentKeyScope::INTERNAL => {
-                todo!("transparent change addresses")
-            }
-            TransparentKeyScope::EPHEMERAL => Ok(self.transparent_child_ephemeral_addresses.len()),
-            _ => Err(bip32::Error::Bip39),
-        }? as u32)
-        .expect("hardened bit should not be set for non-hardened child indexes");
+        let child_index = NonHardenedChildIndex::from_index(self.addresses.len() as u32)
+            .expect("hardened bit should not be set for non-hardened child indexes");
         let transparent_receiver = match self.unified_key_store() {
             UnifiedKeyStore::Spend(usk) => {
-                address_for_scope(&usk.transparent().to_account_pubkey(), scope, child_index)
+                derive_address(&usk.transparent().to_account_pubkey(), child_index)
                     .map(Option::Some)
             }
             UnifiedKeyStore::View(ufvk) => ufvk
                 .transparent()
-                .map(|pub_key| address_for_scope(pub_key, scope, child_index))
+                .map(|pub_key| derive_address(pub_key, child_index))
                 .transpose(),
             UnifiedKeyStore::Empty => Ok(None),
         }?;
@@ -667,6 +605,12 @@ impl WalletCapability {
                 transparent: false,
             },
         }
+    }
+
+    pub(crate) fn ephemeral_ivk(
+        &self,
+    ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, bip32::Error> {
+        AccountPubKey::try_from(self.unified_key_store())?.derive_ephemeral_ivk()
     }
 }
 

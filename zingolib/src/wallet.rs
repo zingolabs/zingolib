@@ -384,11 +384,11 @@ impl LightWallet {
             Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
                 wc.transparent_child_ephemeral_addresses().clone(),
+                wc.ephemeral_ivk(),
             )))
         } else {
             Arc::new(RwLock::new(TxMap::new_treeless(
                 wc.transparent_child_addresses().clone(),
-                wc.transparent_child_ephemeral_addresses().clone(),
             )))
         };
         let transaction_context =
