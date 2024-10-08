@@ -474,7 +474,7 @@ impl LightClient {
         let new_address = self
             .wallet
             .wallet_capability()
-            .new_address(desired_receivers)?;
+            .new_address(desired_receivers, false)?;
 
         // self.save_internal_rust().await?;
 

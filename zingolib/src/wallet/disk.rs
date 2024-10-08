@@ -37,13 +37,10 @@ use super::{
 };
 
 impl LightWallet {
-    /// Changes in version 27:
-    ///   - The wallet does not have to have a mnemonic.
-    ///     Absence of mnemonic is represented by an empty byte vector in v27.
-    ///     v26 serialized wallet is always loaded with `Some(mnemonic)`.
-    ///   - The wallet capabilities can be restricted from spending to view-only or none.
-    ///     We introduce `Capability` type represent different capability types in v27.
-    ///     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
+    /// Changes in version 29:
+    /// - Replaced `Capability` with `UnifiedKeyStore`
+    /// - Implemented read/write for `UnifiedSpendingKey`
+    /// - Implemented read/write for `UnifiedFullViewingKey`
     pub const fn serialized_version() -> u64 {
         29
     }
@@ -232,7 +229,15 @@ impl LightWallet {
                         &mnemonic.0.to_seed(""),
                         AccountId::ZERO,
                     )
-                    .unwrap(),
+                    .map_err(|e| {
+                        Error::new(
+                            ErrorKind::InvalidData,
+                            format!(
+                                "Failed to derive unified spending key from stored seed bytes. {}",
+                                e
+                            ),
+                        )
+                    })?,
                 )));
             } else if let UnifiedKeyStore::Spend(_) = wallet_capability.unified_key_store() {
                 return Err(io::Error::new(

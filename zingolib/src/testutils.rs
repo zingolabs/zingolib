@@ -9,7 +9,7 @@ use crate::wallet::data::summaries::{
     OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
     TransactionSummaryInterface as _, TransparentCoinSummary,
 };
-use crate::wallet::keys::unified::{UnifiedKeyStore, WalletCapability};
+use crate::wallet::keys::unified::WalletCapability;
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
@@ -46,15 +46,21 @@ pub mod regtest;
 
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
-    let UnifiedKeyStore::Spend(usk) = wallet_capability.unified_key_store() else {
-        panic!("should be spending key!")
-    };
-    let o_fvk = Fvk::Orchard(orchard::keys::FullViewingKey::from(usk.orchard()).to_bytes());
-    let s_fvk = Fvk::Sapling(usk.sapling().to_diversifiable_full_viewing_key().to_bytes());
-    let mut t_fvk_bytes = [0u8; 65];
-    t_fvk_bytes.copy_from_slice(&usk.transparent().to_account_pubkey().serialize());
-    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
-    [o_fvk, s_fvk, t_fvk]
+    let orchard_vk: orchard::keys::FullViewingKey =
+        wallet_capability.unified_key_store().try_into().unwrap();
+    let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
+        wallet_capability.unified_key_store().try_into().unwrap();
+    let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
+        wallet_capability.unified_key_store().try_into().unwrap();
+
+    let mut transparent_vk_bytes = [0u8; 65];
+    transparent_vk_bytes.copy_from_slice(&transparent_vk.serialize());
+
+    [
+        Fvk::Orchard(orchard_vk.to_bytes()),
+        Fvk::Sapling(sapling_vk.to_bytes()),
+        Fvk::P2pkh(transparent_vk_bytes),
+    ]
 }
 
 /// TODO: Add Doc Comment Here!

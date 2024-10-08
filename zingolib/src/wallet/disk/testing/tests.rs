@@ -1,5 +1,6 @@
 use bip0039::Mnemonic;
 use zcash_address::unified::Encoding;
+
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::keys::Era;
@@ -38,7 +39,7 @@ impl ExampleWalletNetwork {
     async fn load_example_wallet_with_verification(&self) -> LightWallet {
         let wallet = self.load_example_wallet().await;
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
-        for pool in vec![
+        for pool in [
             PoolType::Transparent,
             PoolType::Shielded(ShieldedProtocol::Sapling),
             PoolType::Shielded(ShieldedProtocol::Orchard),
