@@ -15,7 +15,7 @@ use std::{fmt::Debug, sync::Arc};
 use thiserror::Error;
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_primitives::legacy::{
-    keys::{self, AccountPubKey, EphemeralIvk},
+    keys::{self, EphemeralIvk},
     TransparentAddress,
 };
 
@@ -165,6 +165,8 @@ pub enum TxMapTraitError {
     InputSource(InputSourceError),
     #[error("{0:?}")]
     TransactionWrite(std::io::Error),
+    #[error("{0}")]
+    TexSendError(String),
 }
 
 pub mod trait_stub_inputsource;

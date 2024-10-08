@@ -1,5 +1,4 @@
 use bip0039::Mnemonic;
-use zcash_address::unified::Encoding;
 
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;

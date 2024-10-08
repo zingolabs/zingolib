@@ -23,7 +23,7 @@ use zcash_encoding::{CompactSize, Vector};
 use zcash_keys::keys::{DerivationError, UnifiedFullViewingKey};
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::legacy::{
-    keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope},
+    keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex},
     TransparentAddress,
 };
 use zcash_primitives::zip32::{AccountId, DiversifierIndex};

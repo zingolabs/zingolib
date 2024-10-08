@@ -117,7 +117,6 @@ fn check_view_capability_bounds(
 mod fast {
 
     use bip0039::Mnemonic;
-    use zcash_address::ZcashAddress;
     use zcash_client_backend::{
         zip321::{Payment, TransactionRequest},
         PoolType, ShieldedProtocol,
