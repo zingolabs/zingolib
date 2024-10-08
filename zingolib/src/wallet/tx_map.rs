@@ -136,7 +136,7 @@ impl TxMap {
             transaction_records_by_id: TransactionRecordsById::new(),
             spending_data: Some(SpendingData::new(
                 WitnessTrees::default(),
-                AccountPubKey::deserialize(&[0; 65])
+                keys::AccountPubKey::deserialize(&[0; 65])
                     .unwrap()
                     .derive_ephemeral_ivk()
                     .unwrap(),
