@@ -51,6 +51,10 @@ impl TransactionContext {
             )
             .map(|_| ())
     }
+
+    fn handle_receipt_to_ephemeral_taddr(&self) {
+        todo!()
+    }
 }
 
 /// These functions are responsible for receiving a full Transaction and storing it, with a few major caveats.
@@ -82,7 +86,7 @@ mod decrypt_transaction {
     };
     use orchard::note_encryption::OrchardDomain;
     use sapling_crypto::note_encryption::SaplingDomain;
-    use std::{collections::HashSet, convert::TryInto};
+    use std::convert::TryInto;
 
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::{try_output_recovery_with_ovk, Domain};
@@ -107,7 +111,7 @@ mod decrypt_transaction {
             let mut txid_indexed_zingo_memos = Vec::new();
 
             // Collect our t-addresses for easy checking
-            let taddrs_set = self.key.get_all_taddrs(&self.config.chain);
+            let taddrs_set = self.key.get_external_taddrs(&self.config.chain);
 
             let mut outgoing_metadatas = vec![];
 
@@ -118,7 +122,6 @@ mod decrypt_transaction {
                 block_time,
                 &mut outgoing_metadatas,
                 &mut txid_indexed_zingo_memos,
-                &taddrs_set,
             )
             .await;
 
@@ -182,17 +185,11 @@ mod decrypt_transaction {
             block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
-            taddrs_set: &HashSet<String>,
         ) {
             //todo: investigate scanning all bundles simultaneously
 
-            self.decrypt_transaction_to_record_transparent(
-                transaction,
-                status,
-                block_time,
-                taddrs_set,
-            )
-            .await;
+            self.decrypt_transaction_to_record_transparent(transaction, status, block_time)
+                .await;
             self.decrypt_transaction_to_record_sapling(
                 transaction,
                 status,
@@ -216,10 +213,9 @@ mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: Option<u32>,
-            taddrs_set: &HashSet<String>,
         ) {
             // Scan all transparent outputs to see if we received any money
-            self.account_for_transparent_receipts(transaction, status, block_time, taddrs_set)
+            self.account_for_transparent_receipts(transaction, status, block_time)
                 .await;
             // Scan transparent spends
             self.account_for_transparent_spending(transaction, status, block_time)
@@ -230,9 +226,11 @@ mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: Option<u32>,
-            taddrs_set: &HashSet<String>,
         ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
+                // Collect our t-addresses for easy checking
+                let taddrs_set = self.key.get_external_taddrs(&self.config.chain);
+                let ephemeral_taddrs = self.key.get_ephemeral_taddrs(&self.config.chain);
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
                         let output_taddr = address_from_pubkeyhash(&self.config, taddr);
@@ -250,6 +248,9 @@ mod decrypt_transaction {
                                     vout,
                                     n as u32,
                                 );
+                        }
+                        if ephemeral_taddrs.contains(&output_taddr) {
+                            self.handle_receipt_to_ephemeral_taddr()
                         }
                     }
                 }

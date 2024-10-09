@@ -20,7 +20,10 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
-use zcash_keys::keys::{DerivationError, UnifiedFullViewingKey};
+use zcash_keys::{
+    encoding::AddressCodec,
+    keys::{DerivationError, UnifiedFullViewingKey},
+};
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::legacy::{
     keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex},
@@ -556,7 +559,7 @@ impl WalletCapability {
         })
     }
 
-    pub(crate) fn get_all_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
+    pub(crate) fn get_external_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.unified_addresses
             .iter()
             .filter_map(|address| {
@@ -574,6 +577,13 @@ impl WalletCapability {
                     }
                 })
             })
+            .collect()
+    }
+
+    pub(crate) fn get_ephemeral_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
+        self.transparent_child_ephemeral_addresses
+            .iter()
+            .map(|(transparent_address, _metadata)| transparent_address.encode(chain))
             .collect()
     }
 
