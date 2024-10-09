@@ -203,6 +203,7 @@ pub fn launch_lightwalletd(
     lightwalletd_child
 }
 
+#[cfg(not(feature = "zaino-test"))]
 fn write_zcash_conf(location: &PathBuf) {
     // This is the only data we need to supply *to* the zcashd, the other files are created by zcashd and lightwalletd
     use std::io::Write;
