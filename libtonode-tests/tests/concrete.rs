@@ -116,7 +116,9 @@ fn check_view_capability_bounds(
 
 mod fast {
 
+    use bech32::{Bech32m, Hrp};
     use bip0039::Mnemonic;
+    use zcash_address::{AddressKind, ZcashAddress};
     use zcash_client_backend::{
         zip321::{Payment, TransactionRequest},
         PoolType, ShieldedProtocol,
@@ -168,18 +170,33 @@ mod fast {
 
     #[tokio::test]
     async fn propose_send_to_tex() {
-        let tex_addr = send_all::arb_tex_addr();
+        let (ref regtest_manager, _cph, ref faucet, sender, _txid) =
+            scenarios::orchard_funded_recipient(5_000_000).await;
+
+        let taddr = ZcashAddress::try_from_encoded(
+            &faucet
+                .wallet
+                .get_first_address(PoolType::Transparent)
+                .unwrap(),
+        )
+        .unwrap();
+
+        let AddressKind::P2pkh(taddr_bytes) = taddr.kind() else {
+            panic!()
+        };
+        let tex_string =
+            bech32::encode::<Bech32m>(Hrp::parse_unchecked("tex"), taddr_bytes).unwrap();
+
+        let tex_addr = ZcashAddress::try_from_encoded(&tex_string).unwrap();
+
         let payment = vec![Payment::without_memo(
             tex_addr.clone(),
             NonNegativeAmount::from_u64(100_000).unwrap(),
         )];
+
         let transaction_request = TransactionRequest::new(payment).unwrap();
 
-        let (_regtest_manager, _cph, _faucet, sender, _txid) =
-            scenarios::orchard_funded_recipient(5_000_000).await;
-
-        let proposal = sender.propose_send(transaction_request).await.unwrap();
-        dbg!(proposal);
+        let _proposal = sender.propose_send(transaction_request).await.unwrap();
         sender
             .complete_and_broadcast_stored_proposal()
             .await
@@ -190,6 +207,11 @@ mod fast {
             summaries.0[1].outgoing_tx_data()[0].recipient_address,
             tex_addr.encode()
         );*/
+        increase_height_and_wait_for_client(regtest_manager, faucet, 1)
+            .await
+            .unwrap();
+
+        println!("{}", faucet.transaction_summaries_json_string().await);
     }
 
     #[tokio::test]
@@ -3968,11 +3990,6 @@ async fn audit_anyp_outputs() {
     assert_eq!(lapo.len(), 1);
 }
 mod send_all {
-    use proptest::{
-        strategy::{Strategy, ValueTree},
-        test_runner::TestRunner,
-    };
-    use zcash_address::{AddressKind, ZcashAddress};
 
     use super::*;
     #[tokio::test]
@@ -4132,14 +4149,5 @@ mod send_all {
             proposal_error,
             Err(ProposeSendError::ZeroValueSendAll)
         ))
-    }
-    pub(crate) fn arb_tex_addr() -> ZcashAddress {
-        let mut runner = TestRunner::default();
-        let tex_strat = Strategy::prop_filter(
-            zcash_address::testing::arb_address(zcash_address::Network::Regtest),
-            "tex addrs only",
-            |addr| matches!(addr.kind(), AddressKind::Tex(_)),
-        );
-        tex_strat.new_tree(&mut runner).unwrap().current()
     }
 }
