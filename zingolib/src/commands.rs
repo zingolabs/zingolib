@@ -262,7 +262,13 @@ impl Command for ParseAddressCommand {
                                 "receivers_available" => receivers_available,
                             }
                         }
-                        Address::Tex(_) => todo!(),
+                        Address::Tex(_) => {
+                            object! {
+                                "status" => "success",
+                                "chain_name" => chain_name_string,
+                                "address_kind" => "tex",
+                            }
+                        }
                     }
                 }),
                 4,
