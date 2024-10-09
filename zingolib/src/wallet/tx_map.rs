@@ -28,8 +28,10 @@ pub struct TxMap {
     pub transaction_records_by_id: TransactionRecordsById,
     #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     spending_data: Option<SpendingData>,
+    // as below
     pub(crate) transparent_child_addresses:
         Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    // TODO: rename (ephemeral_transparent_addresses?)
     pub(crate) transparent_child_ephemeral_addresses:
         Arc<append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
 }
