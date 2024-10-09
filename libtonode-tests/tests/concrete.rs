@@ -168,21 +168,28 @@ mod fast {
 
     #[tokio::test]
     async fn propose_send_to_tex() {
+        let tex_addr = send_all::arb_tex_addr();
         let payment = vec![Payment::without_memo(
-            send_all::arb_tex_addr(),
+            tex_addr.clone(),
             NonNegativeAmount::from_u64(100_000).unwrap(),
         )];
         let transaction_request = TransactionRequest::new(payment).unwrap();
 
-        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
+        let (_regtest_manager, _cph, _faucet, sender, _txid) =
             scenarios::orchard_funded_recipient(5_000_000).await;
 
-        let proposal = recipient.propose_send(transaction_request).await.unwrap();
+        let proposal = sender.propose_send(transaction_request).await.unwrap();
         dbg!(proposal);
-        recipient
+        sender
             .complete_and_broadcast_stored_proposal()
             .await
             .unwrap();
+        let _summaries = sender.transaction_summaries().await;
+        // This fails, as we don't scan sends to tex correctly yet
+        /*assert_eq!(
+            summaries.0[1].outgoing_tx_data()[0].recipient_address,
+            tex_addr.encode()
+        );*/
     }
 
     #[tokio::test]
