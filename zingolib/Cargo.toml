@@ -16,6 +16,7 @@ testvectors = []
 tempfile = ["dep:tempfile"]
 default = ["sync"]
 sync = ['dep:zingo-sync']
+zaino-test = ['test-elevation']
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
