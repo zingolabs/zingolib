@@ -4128,11 +4128,11 @@ mod send_all {
     }
     pub(crate) fn arb_tex_addr() -> ZcashAddress {
         let mut runner = TestRunner::default();
-        let strat = Strategy::prop_filter(
+        let tex_strat = Strategy::prop_filter(
             zcash_address::testing::arb_address(zcash_address::Network::Regtest),
             "tex addrs only",
             |addr| matches!(addr.kind(), AddressKind::Tex(_)),
         );
-        strat.new_tree(&mut runner).unwrap().current()
+        tex_strat.new_tree(&mut runner).unwrap().current()
     }
 }
