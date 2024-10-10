@@ -134,11 +134,20 @@ impl TxMap {
 impl TxMap {
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
     pub(crate) fn new_with_witness_trees_address_free() -> TxMap {
+        // The first 32 bytes are a BIP32/44 chain code, the subsequent 33 bytes are a pubkey
+        // https://github.com/zancas/zcash-test-vectors/blob/db9c9b9519a32859a46bbbc60368e8741fe629c4/test-vectors/rust/zip_0316.rs#L10
+        let extended_pubkey: [u8; 65] = [
+            0x5d, 0x7a, 0x8f, 0x73, 0x9a, 0x2d, 0x9e, 0x94, 0x5b, 0x0c, 0xe1, 0x52, 0xa8, 0x04,
+            0x9e, 0x29, 0x4c, 0x4d, 0x6e, 0x66, 0xb1, 0x64, 0x93, 0x9d, 0xaf, 0xfa, 0x2e, 0xf6,
+            0xee, 0x69, 0x21, 0x48, 0x02, 0x16, 0x88, 0x4f, 0x1d, 0xbc, 0x92, 0x90, 0x89, 0xa4,
+            0x17, 0x6e, 0x84, 0x0b, 0xb5, 0x81, 0xc8, 0x0e, 0x16, 0xe9, 0xb1, 0xab, 0xd6, 0x54,
+            0xe6, 0x2c, 0x8b, 0x0b, 0x95, 0x70, 0x20, 0xb7, 0x48,
+        ];
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
             spending_data: Some(SpendingData::new(
                 WitnessTrees::default(),
-                keys::AccountPubKey::deserialize(&[0; 65])
+                keys::AccountPubKey::deserialize(&extended_pubkey)
                     .unwrap()
                     .derive_ephemeral_ivk()
                     .unwrap(),
