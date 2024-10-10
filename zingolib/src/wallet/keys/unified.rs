@@ -559,6 +559,9 @@ impl WalletCapability {
         })
     }
 
+    /// external here refers to HD keys:
+    /// <https://zips.z.cash/zip-0032>
+    /// where external and internal were inherited from the BIP44 conventions
     pub(crate) fn get_external_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.unified_addresses
             .iter()
