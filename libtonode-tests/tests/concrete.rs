@@ -196,17 +196,18 @@ mod fast {
 
         let transaction_request = TransactionRequest::new(payment).unwrap();
 
-        let _proposal = sender.propose_send(transaction_request).await.unwrap();
+        let proposal = sender.propose_send(transaction_request).await.unwrap();
+        assert_eq!(proposal.steps().len(), 2usize);
         sender
             .complete_and_broadcast_stored_proposal()
             .await
             .unwrap();
-        let _summaries = sender.transaction_summaries().await;
+        let summaries = sender.transaction_summaries().await;
         // This fails, as we don't scan sends to tex correctly yet
-        /*assert_eq!(
+        assert_eq!(
             summaries.0[1].outgoing_tx_data()[0].recipient_address,
             tex_addr.encode()
-        );*/
+        );
         increase_height_and_wait_for_client(regtest_manager, faucet, 1)
             .await
             .unwrap();
