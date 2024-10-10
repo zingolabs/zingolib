@@ -185,7 +185,7 @@ mod fast {
             panic!()
         };
         let tex_string =
-            bech32::encode::<Bech32m>(Hrp::parse_unchecked("tex"), taddr_bytes).unwrap();
+            bech32::encode::<Bech32m>(Hrp::parse_unchecked("texregtest"), taddr_bytes).unwrap();
 
         let tex_addr = ZcashAddress::try_from_encoded(&tex_string).unwrap();
 
