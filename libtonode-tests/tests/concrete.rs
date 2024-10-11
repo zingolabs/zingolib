@@ -202,10 +202,10 @@ mod fast {
             .complete_and_broadcast_stored_proposal()
             .await
             .unwrap();
-        let summaries = sender.transaction_summaries().await;
+        let val_tranfers = dbg!(sender.value_transfers().await);
         // This fails, as we don't scan sends to tex correctly yet
         assert_eq!(
-            summaries.0[1].outgoing_tx_data()[0].recipient_address,
+            val_tranfers.0[1].recipient_address().unwrap(),
             tex_addr.encode()
         );
         increase_height_and_wait_for_client(regtest_manager, faucet, 1)
