@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
@@ -52,8 +53,17 @@ impl TransactionContext {
             .map(|_| ())
     }
 
-    fn handle_receipt_to_ephemeral_taddr(&self) {
-        todo!()
+    fn handle_receipt_to_ephemeral_taddr(
+        &self,
+        transaction: &zcash_primitives::transaction::Transaction,
+        status: ConfirmationStatus,
+    ) {
+        match status {
+            ConfirmationStatus::Calculated(block_height) => todo!(),
+            ConfirmationStatus::Transmitted(block_height) => todo!(),
+            ConfirmationStatus::Mempool(block_height) => todo!(),
+            ConfirmationStatus::Confirmed(block_height) => todo!(),
+        }
     }
 }
 
@@ -250,7 +260,7 @@ mod decrypt_transaction {
                                 );
                         }
                         if ephemeral_taddrs.contains(&output_taddr) {
-                            self.handle_receipt_to_ephemeral_taddr()
+                            self.handle_receipt_to_ephemeral_taddr(transaction, status);
                         }
                     }
                 }
