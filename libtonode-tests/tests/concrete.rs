@@ -173,19 +173,20 @@ mod fast {
         let (ref regtest_manager, _cph, ref faucet, sender, _txid) =
             scenarios::orchard_funded_recipient(5_000_000).await;
 
-        let taddr = ZcashAddress::try_from_encoded(
-            &faucet
-                .wallet
-                .get_first_address(PoolType::Transparent)
-                .unwrap(),
-        )
-        .unwrap();
+        let transparent_string = &faucet
+            .wallet
+            .get_first_address(PoolType::Transparent)
+            .unwrap();
+        let taddr = ZcashAddress::try_from_encoded(transparent_string).unwrap();
+        dbg!(&taddr.encode());
 
         let AddressKind::P2pkh(taddr_bytes) = taddr.kind() else {
             panic!()
         };
         let tex_string =
-            bech32::encode::<Bech32m>(Hrp::parse_unchecked("texregtest"), taddr_bytes).unwrap();
+            dbg!(
+                bech32::encode::<Bech32m>(Hrp::parse_unchecked("texregtest"), taddr_bytes).unwrap()
+            );
 
         let tex_addr = ZcashAddress::try_from_encoded(&tex_string).unwrap();
 

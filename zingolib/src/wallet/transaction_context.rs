@@ -53,13 +53,28 @@ impl TransactionContext {
             .map(|_| ())
     }
 
-    fn handle_receipt_to_ephemeral_taddr(
+    async fn handle_receipt_to_ephemeral_taddr(
         &self,
         transaction: &zcash_primitives::transaction::Transaction,
         status: ConfirmationStatus,
+        output_taddr: String,
+        block_time: Option<u32>,
+        vout: &zcash_primitives::transaction::components::TxOut,
+        n: usize,
     ) {
+        let mut tmds = self.transaction_metadata_set.write().await;
+        let trbid = &mut tmds.transaction_records_by_id;
         match status {
-            ConfirmationStatus::Calculated(block_height) => todo!(),
+            ConfirmationStatus::Calculated(block_height) => {
+                trbid.add_new_taddr_output(
+                    transaction.txid(),
+                    output_taddr.clone(),
+                    status,
+                    block_time,
+                    vout,
+                    n as u32,
+                );
+            }
             ConfirmationStatus::Transmitted(block_height) => todo!(),
             ConfirmationStatus::Mempool(block_height) => todo!(),
             ConfirmationStatus::Confirmed(block_height) => todo!(),
@@ -260,7 +275,14 @@ mod decrypt_transaction {
                                 );
                         }
                         if ephemeral_taddrs.contains(&output_taddr) {
-                            self.handle_receipt_to_ephemeral_taddr(transaction, status);
+                            self.handle_receipt_to_ephemeral_taddr(
+                                transaction,
+                                status,
+                                output_taddr,
+                                block_time,
+                                vout,
+                                n,
+                            );
                         }
                     }
                 }
