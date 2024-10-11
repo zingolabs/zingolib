@@ -53,7 +53,8 @@ impl TransactionContext {
             .map(|_| ())
     }
 
-    async fn handle_receipt_to_ephemeral_taddr(
+    ///
+    async fn record_ephem_taddr_receipt(
         &self,
         transaction: &zcash_primitives::transaction::Transaction,
         status: ConfirmationStatus,
@@ -246,6 +247,9 @@ mod decrypt_transaction {
             self.account_for_transparent_spending(transaction, status, block_time)
                 .await;
         }
+        /// New value has been detected for one of the wallet's transparent
+        /// keys.  This method accounts for this by updating the relevant
+        /// receiving TransactionRecord in the TransactionRecordsById database.
         async fn account_for_transparent_receipts(
             &self,
             transaction: &Transaction,
@@ -275,7 +279,7 @@ mod decrypt_transaction {
                                 );
                         }
                         if ephemeral_taddrs.contains(&output_taddr) {
-                            self.handle_receipt_to_ephemeral_taddr(
+                            self.record_ephem_taddr_receipt(
                                 transaction,
                                 status,
                                 output_taddr,
