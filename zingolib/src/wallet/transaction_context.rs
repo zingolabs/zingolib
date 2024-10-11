@@ -53,7 +53,10 @@ impl TransactionContext {
             .map(|_| ())
     }
 
-    ///
+    /// A receipt of funds has been detected at a ZIP320 "ephemeral" return
+    /// address for a Transparent-Source-Only encoded "TEX" address.
+    /// This method records that receipt in therelevant receiving
+    /// TransactionRecord in the TransactionRecordsById database.
     async fn record_ephem_taddr_receipt(
         &self,
         transaction: &zcash_primitives::transaction::Transaction,
