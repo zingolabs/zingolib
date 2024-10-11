@@ -762,30 +762,49 @@ pub mod summaries {
     /// Variants of within transaction outputs grouped by receiver
     /// non_exhaustive to permit expanding to include an
     /// Deshield variant fo sending to transparent
-    #[non_exhaustive]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
         /// The recipient is different than this creator
-        Sent,
-        /// The recipient is the creator and this is a shield transaction
-        Shield,
-        /// The recipient is the creator and the transaction has no recipients that are not the creator
-        SendToSelf,
-        /// The recipient is the creator and is receiving at least 1 note with a TEXT memo
-        MemoToSelf,
+        Sent(SentValueTransfer),
         /// The wallet capability is receiving funds in a transaction
         /// that was created by a different capability
         Received,
+    }
+    /// There are 2 kinds of sent value to-other and to-self
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum SentValueTransfer {
+        /// Transaction is sending funds to recipient other than the creator
+        Send,
+        /// The recipient is the creator and the transaction has no recipients that are not the creator
+        SendToSelf(SelfSendValueTransfer),
+    }
+    /// There are 4 kinds of self sends (so far)
+    #[non_exhaustive]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum SelfSendValueTransfer {
+        /// Explicit memo-less value sent to self
+        Basic,
+        /// The recipient is the creator and this is a shield transaction
+        Shield,
+        /// The recipient is the creator and is receiving at least 1 note with a TEXT memo
+        MemoToSelf,
+        /// The recipient is an ephemeral 320 address
+        Ephemeral320,
     }
 
     impl std::fmt::Display for ValueTransferKind {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             match self {
-                ValueTransferKind::Sent => write!(f, "sent"),
-                ValueTransferKind::Shield => write!(f, "shield"),
-                ValueTransferKind::SendToSelf => write!(f, "send-to-self"),
-                ValueTransferKind::MemoToSelf => write!(f, "memo-to-self"),
                 ValueTransferKind::Received => write!(f, "received"),
+                ValueTransferKind::Sent(sent) => match sent {
+                    SentValueTransfer::Send => write!(f, "sent"),
+                    SentValueTransfer::SendToSelf(selfsend) => match selfsend {
+                        SelfSendValueTransfer::Basic => write!(f, "basic"),
+                        SelfSendValueTransfer::Shield => write!(f, "shield"),
+                        SelfSendValueTransfer::MemoToSelf => write!(f, "memo-to-self"),
+                        SelfSendValueTransfer::Ephemeral320 => write!(f, "ephemeral-320-tex"),
+                    },
+                },
             }
         }
     }

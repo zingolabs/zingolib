@@ -1,6 +1,7 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
 use log::error;
+use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_proofs::prover::LocalTxProver;
@@ -109,8 +110,8 @@ pub enum BuildTransactionError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("Sending to exchange addresses is not supported yet!")]
-    ExchangeAddressesNotSupported,
+    #[error("Only tex multistep transactions are supported!")]
+    NonTexMultiStep,
 }
 
 impl LightWallet {
@@ -149,8 +150,19 @@ impl LightWallet {
                 self.create_transaction_helper(sapling_prover, unified_spend_key, proposal)
                     .await
             }
-            2 /*TODO: check that this is actually tex*/ => self.create_transaction_helper(sapling_prover, unified_spend_key, proposal).await,
-            _ => panic!("TODO: error handle"),
+            2 if proposal.steps()[1]
+                .transaction_request()
+                .payments()
+                .values()
+                .any(|payment| {
+                    matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
+                }) =>
+            {
+                self.create_transaction_helper(sapling_prover, unified_spend_key, proposal)
+                    .await
+            }
+
+            _ => Err(BuildTransactionError::NonTexMultiStep),
         }
     }
 

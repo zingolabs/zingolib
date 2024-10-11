@@ -148,6 +148,15 @@ pub mod send_with_proposal {
             }
             drop(tx_map);
             let mut txids = vec![];
+            let transactions_to_record = match transactions_to_record.as_slice() {
+                [] => Err(RecordCachedTransactionsError::Cache(
+                    TransactionCacheError::NoCachedTx,
+                )),
+                [transaction] => Ok([transaction]),
+                [t1, t2] => todo!("sort"),
+                _ => todo!("Error handle more than two transactions in proposal"),
+            }?
+            .to_vec();
             for transaction in transactions_to_record {
                 self.wallet
                     .transaction_context

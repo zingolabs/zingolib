@@ -11,7 +11,10 @@ use zcash_primitives::{
     memo::Memo,
 };
 
-use crate::config::margin_fee;
+use crate::{
+    config::margin_fee,
+    wallet::data::summaries::{SelfSendValueTransfer, SentValueTransfer},
+};
 
 use super::{AccountBackupInfo, LightClient, PoolBalances, UserBalances};
 use crate::{
@@ -324,7 +327,7 @@ impl LightClient {
                         .blockheight(transaction_summary.blockheight())
                         .transaction_fee(transaction_summary.fee())
                         .zec_price(transaction_summary.zec_price())
-                        .kind(ValueTransferKind::Sent)
+                        .kind(ValueTransferKind::Sent(SentValueTransfer::Send))
                         .value(value)
                         .recipient_address(Some(address.clone()))
                         .pool_received(None)
@@ -367,7 +370,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::MemoToSelf)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::MemoToSelf,
+                                )))
                                 .value(0)
                                 .recipient_address(None)
                                 .pool_received(None)
@@ -395,7 +400,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::Shield)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::Shield,
+                                )))
                                 .value(value)
                                 .recipient_address(None)
                                 .pool_received(Some(
@@ -422,7 +429,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::Shield)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::Shield,
+                                )))
                                 .value(value)
                                 .recipient_address(None)
                                 .pool_received(Some(
@@ -459,7 +468,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::MemoToSelf)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::MemoToSelf,
+                                )))
                                 .value(0)
                                 .recipient_address(None)
                                 .pool_received(None)
@@ -476,7 +487,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::SendToSelf)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::Basic,
+                                )))
                                 .value(0)
                                 .recipient_address(None)
                                 .pool_received(None)
@@ -702,7 +715,7 @@ impl LightClient {
         let value_transfers = self.value_transfers().await.0;
         let mut memobytes_by_address = HashMap::new();
         for value_transfer in value_transfers {
-            if let ValueTransferKind::Sent = value_transfer.kind() {
+            if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
                 let address = value_transfer
                     .recipient_address()
                     .expect("sent value transfer should always have a recipient_address")
@@ -960,7 +973,7 @@ impl LightClient {
         let value_transfers = self.value_transfers().await.0;
         let mut amount_by_address = HashMap::new();
         for value_transfer in value_transfers {
-            if let ValueTransferKind::Sent = value_transfer.kind() {
+            if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
                 let address = value_transfer
                     .recipient_address()
                     .expect("sent value transfer should always have a recipient_address")
