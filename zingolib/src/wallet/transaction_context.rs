@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
@@ -51,38 +50,6 @@ impl TransactionContext {
                 &[],
             )
             .map(|_| ())
-    }
-
-    /// A receipt of funds has been detected at a ZIP320 "ephemeral" return
-    /// address for a Transparent-Source-Only encoded "TEX" address.
-    /// This method records that receipt in therelevant receiving
-    /// TransactionRecord in the TransactionRecordsById database.
-    async fn record_ephem_taddr_receipt(
-        &self,
-        transaction: &zcash_primitives::transaction::Transaction,
-        status: ConfirmationStatus,
-        output_taddr: String,
-        block_time: Option<u32>,
-        vout: &zcash_primitives::transaction::components::TxOut,
-        n: usize,
-    ) {
-        let mut tmds = self.transaction_metadata_set.write().await;
-        let trbid = &mut tmds.transaction_records_by_id;
-        match status {
-            ConfirmationStatus::Calculated(block_height) => {
-                trbid.add_new_taddr_output(
-                    transaction.txid(),
-                    output_taddr.clone(),
-                    status,
-                    block_time,
-                    vout,
-                    n as u32,
-                );
-            }
-            ConfirmationStatus::Transmitted(block_height) => todo!(),
-            ConfirmationStatus::Mempool(block_height) => todo!(),
-            ConfirmationStatus::Confirmed(block_height) => todo!(),
-        }
     }
 }
 
@@ -250,6 +217,33 @@ mod decrypt_transaction {
             self.account_for_transparent_spending(transaction, status, block_time)
                 .await;
         }
+
+        /// A receipt of funds has been detected at a ZIP320 "ephemeral" return
+        /// address for a Transparent-Source-Only encoded "TEX" address.
+        /// This method records that receipt in therelevant receiving
+        /// TransactionRecord in the TransactionRecordsById database.
+        async fn record_taddr_receipt(
+            &self,
+            transaction: &zcash_primitives::transaction::Transaction,
+            status: ConfirmationStatus,
+            output_taddr: String,
+            block_time: Option<u32>,
+            vout: &zcash_primitives::transaction::components::TxOut,
+            n: usize,
+        ) {
+            self.transaction_metadata_set
+                .write()
+                .await
+                .transaction_records_by_id
+                .add_new_taddr_output(
+                    transaction.txid(),
+                    output_taddr.clone(),
+                    status,
+                    block_time,
+                    vout,
+                    n as u32,
+                );
+        }
         /// New value has been detected for one of the wallet's transparent
         /// keys.  This method accounts for this by updating the relevant
         /// receiving TransactionRecord in the TransactionRecordsById database.
@@ -266,30 +260,18 @@ mod decrypt_transaction {
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
                         let output_taddr = address_from_pubkeyhash(&self.config, taddr);
-                        if taddrs_set.contains(&output_taddr) {
-                            // This is our address. Add this as an output to the txid
-                            self.transaction_metadata_set
-                                .write()
-                                .await
-                                .transaction_records_by_id
-                                .add_new_taddr_output(
-                                    transaction.txid(),
-                                    output_taddr.clone(),
-                                    status,
-                                    block_time,
-                                    vout,
-                                    n as u32,
-                                );
-                        }
-                        if ephemeral_taddrs.contains(&output_taddr) {
-                            self.record_ephem_taddr_receipt(
+                        if taddrs_set.contains(&output_taddr)
+                            || ephemeral_taddrs.contains(&output_taddr)
+                        {
+                            self.record_taddr_receipt(
                                 transaction,
                                 status,
                                 output_taddr,
                                 block_time,
                                 vout,
                                 n,
-                            );
+                            )
+                            .await;
                         }
                     }
                 }
