@@ -11,7 +11,7 @@ pub enum ConfirmationStatus {
 
     /// The transaction has been sent to the zcash blockchain. It could be in the mempool, but if
     /// it's known to be, it will be Mempool instead,
-    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    /// The BlockHeight is 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
     Transmitted(BlockHeight),
 
     /// The transaction is known to be or have been in the mempool.
@@ -21,6 +21,10 @@ pub enum ConfirmationStatus {
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
     Confirmed(BlockHeight),
+
+    /// The transaction has expired without reaching the mempool.
+    /// Probably evicted by a rogue validator.
+    Evicted(BlockHeight),
 }
 
 impl ConfirmationStatus {
@@ -186,6 +190,7 @@ impl ConfirmationStatus {
             Self::Mempool(self_height) => *self_height,
             Self::Transmitted(self_height) => *self_height,
             Self::Confirmed(self_height) => *self_height,
+            Self::Evicted(self_height) => *self_height,
         }
     }
 }
@@ -204,6 +209,9 @@ impl std::fmt::Display for ConfirmationStatus {
             }
             Self::Confirmed(_) => {
                 write!(f, "confirmed")
+            }
+            Self::Evicted(_) => {
+                write!(f, "evicted")
             }
         }
     }
