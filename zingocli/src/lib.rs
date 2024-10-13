@@ -37,15 +37,16 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("chain")
                 .long("chain").short('c')
                 .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
-            .arg(Arg::new("from")
-                .short('f')
-                .short_alias('s')
-                .long("from")
-                .alias("seed")
-                .alias("viewing-key")
-                .value_name("from")
+            .arg(Arg::new("seed")
+                .short('s')
+                .long("seed")
+                .value_name("SEED")
                 .value_parser(parse_seed)
-                .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
+                .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists"))
+            .arg(Arg::new("viewkey`")
+                .long("viewkey")
+                .value_name("UFVK")
+                .help("Create a new wallet with the given encoded unified full viewing key. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
@@ -295,7 +296,17 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let from = matches.get_one::<String>("from");
+        let seed = matches.get_one::<String>("seed");
+        let viewkey = matches.get_one::<String>("viewkey");
+        let from = if seed.is_some() && viewkey.is_some() {
+            return Err("Cannot load a wallet from both seed phrase and viewkey!".to_string());
+        } else if seed.is_some() {
+            seed
+        } else if viewkey.is_some() {
+            viewkey
+        } else {
+            None
+        };
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
