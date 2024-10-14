@@ -11,7 +11,7 @@ use std::{marker::PhantomData, sync::Arc};
 use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use bytes::BigEndian;
+use bytes::LittleEndian;
 use getset::{Getters, Setters};
 
 use orchard::note_encryption::OrchardDomain;
@@ -829,7 +829,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             4 => {
                 legacy_key = false;
-                ephemeral_addresses_len = reader.read_u32::<BigEndian>()?;
+                ephemeral_addresses_len = reader.read_u32::<LittleEndian>()?;
 
                 Self {
                     unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
@@ -859,7 +859,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
 
     fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        writer.write_u32::<BigEndian>(self.transparent_child_ephemeral_addresses.len() as u32)?;
+        writer.write_u32::<LittleEndian>(self.transparent_child_ephemeral_addresses.len() as u32)?;
         self.unified_key_store().write(&mut writer, input)?;
         Vector::write(
             &mut writer,
