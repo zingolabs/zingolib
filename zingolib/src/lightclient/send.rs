@@ -117,8 +117,15 @@ pub mod send_with_proposal {
     }
 
     impl LightClient {
-        /// When a transaction is created, it is added to a cache. This step records all cached transactions into TransactionRecord s.
-        /// overwrites confirmation status to Calculated (not broadcast) so only call this if
+        /// When a transactions are created, they are added to "spending_data".
+        /// This step records all cached transactions into TransactionRecord s.
+        /// This overwrites confirmation status to Calculated (not broadcast)
+        /// so only call this if TODO?!?!?!
+        ///
+        /// With the introduction of multistep transacations to support ZIP320
+        /// we begin ordering transactions in the "spending_data" cache such
+        /// that any output that's used to fund a subsequent transaction is
+        /// added prior to that fund-requiring transaction.
         async fn record_created_transactions(
             &self,
         ) -> Result<Vec<TxId>, RecordCachedTransactionsError> {
