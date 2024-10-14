@@ -126,6 +126,9 @@ pub mod send_with_proposal {
         /// we begin ordering transactions in the "spending_data" cache such
         /// that any output that's used to fund a subsequent transaction is
         /// added prior to that fund-requiring transaction.
+        /// After some consideration we don't see why the spending_data should
+        /// be stored out-of-order with respect to earlier transactions funding
+        /// later ones in the cache, so we implement an in order cache.
         async fn record_created_transactions(
             &self,
         ) -> Result<Vec<TxId>, RecordCachedTransactionsError> {

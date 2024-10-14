@@ -14,7 +14,7 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::memo::MemoBytes;
 
-use zingo_memo::create_wallet_internal_memo_version_0;
+use zingo_memo::create_wallet_internal_memo_version_1;
 
 use super::LightWallet;
 
@@ -191,19 +191,31 @@ impl LightWallet {
 }
 
 // TODO: move to a more suitable place
-pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest) -> MemoBytes {
-    let recipient_uas = request
-        .payments()
-        .values()
-        .flat_map(|payment| {
-            payment
-                .recipient_address()
-                .kind()
-                .get_unified_address()
-                .and_then(|ua| ua.try_into().ok())
-        })
-        .collect::<Vec<UnifiedAddress>>();
-    let uas_bytes = match create_wallet_internal_memo_version_0(recipient_uas.as_slice()) {
+pub(crate) fn change_memo_from_transaction_request(
+    request: &TransactionRequest,
+    mut num_ephemeral_addresses: u32,
+) -> MemoBytes {
+    let mut recipient_uas = Vec::new();
+    let mut ephemeral_address_indexes = Vec::new();
+    for payment in request.payments().values() {
+        match payment.recipient_address().kind() {
+            AddressKind::Unified(ua) => {
+                if let Ok(ua) = UnifiedAddress::try_from(ua.clone()) {
+                    recipient_uas.push(ua);
+                }
+            }
+            AddressKind::Tex(_) => {
+                ephemeral_address_indexes.push(num_ephemeral_addresses);
+
+                num_ephemeral_addresses += 1;
+            }
+            _ => (),
+        }
+    }
+    let uas_bytes = match create_wallet_internal_memo_version_1(
+        recipient_uas.as_slice(),
+        ephemeral_address_indexes.as_slice(),
+    ) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!(

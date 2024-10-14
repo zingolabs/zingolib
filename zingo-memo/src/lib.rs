@@ -11,10 +11,13 @@ use zcash_address::unified::{Address, Container, Encoding, Receiver};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
 
-/// A parsed memo. Currently there is only one version of this protocol,
-/// which is a list of UAs. The main use-case for this is to record the
-/// UAs sent from, as the blockchain only records the pool-specific receiver
-/// corresponding to the key we sent with.
+/// A parsed memo.
+/// The main use-case for this is to record the UAs sent from, as the blockchain only
+/// records the pool-specific receiver corresponding to the key we sent with.
+/// We also record the index of any ephemeral addresses sent to. On rescan, this tells us:
+/// * this transaction is the first step of a multistep proposal that is sending
+///     to a TEX address in the second step
+/// * what ephemeral address we need to derive in order to sync the second step
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ParsedMemo {
@@ -23,12 +26,20 @@ pub enum ParsedMemo {
         /// The list of unified addresses
         uas: Vec<UnifiedAddress>,
     },
+    /// the memo including unified addresses and ephemeral indexes
+    Version1 {
+        /// the list of unified addresses
+        uas: Vec<UnifiedAddress>,
+        /// The ephemeral address indexes
+        ephemeral_address_indexes: Vec<u32>,
+    },
 }
 
 /// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
 /// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
+#[deprecated(note = "prefer version 1")]
 pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, 0usize)?;
@@ -47,12 +58,48 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
     }
 }
 
+/// Packs a list of UAs and/or ephemeral address indexes. into a memo.
+/// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
+/// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
+/// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
+/// Ephemeral address indexes are CompactSize encoded, so for most use cases will only be
+/// one byte.
+pub fn create_wallet_internal_memo_version_1(
+    uas: &[UnifiedAddress],
+    ephemeral_address_indexes: &[u32],
+) -> io::Result<[u8; 511]> {
+    let mut memo_bytes_vec = Vec::new();
+    CompactSize::write(&mut memo_bytes_vec, 1usize)?;
+    Vector::write(&mut memo_bytes_vec, uas, |w, ua| {
+        write_unified_address_to_raw_encoding(ua, w)
+    })?;
+    Vector::write(
+        &mut memo_bytes_vec,
+        ephemeral_address_indexes,
+        |w, ea_index| CompactSize::write(w, *ea_index as usize),
+    )?;
+    let mut memo_bytes = [0u8; 511];
+    if memo_bytes_vec.len() > 511 {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Too many addresses to fit in memo field",
+        ))
+    } else {
+        memo_bytes[..memo_bytes_vec.len()].copy_from_slice(memo_bytes_vec.as_slice());
+        Ok(memo_bytes)
+    }
+}
+
 /// Attempts to parse the 511 bytes of a version_0 zingo memo
 pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {
             uas: Vector::read(&mut reader, |r| read_unified_address_from_raw_encoding(r))?,
+        }),
+        1 => Ok(ParsedMemo::Version1 {
+            uas: Vector::read(&mut reader, |r| read_unified_address_from_raw_encoding(r))?,
+            ephemeral_address_indexes: Vector::read(&mut reader, |r| CompactSize::read_t(r))?,
         }),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
