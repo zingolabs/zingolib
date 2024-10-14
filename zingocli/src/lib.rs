@@ -40,12 +40,13 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
-                .value_name("SEED")
+                .value_name("SEED PHRASE")
                 .value_parser(parse_seed)
                 .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists"))
-            .arg(Arg::new("viewkey`")
+            .arg(Arg::new("viewkey")
                 .long("viewkey")
                 .value_name("UFVK")
+                .value_parser(parse_ufvk)
                 .help("Create a new wallet with the given encoded unified full viewing key. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")
@@ -89,6 +90,19 @@ fn parse_seed(s: &str) -> Result<String, String> {
             Ok(s)
         } else {
             Err(format!("Expected 24 words, but received: {}.", count))
+        }
+    } else {
+        Err("Unexpected failure to parse String!!".to_string())
+    }
+}
+/// Parse encoded UFVK to String and check for whitespaces
+fn parse_ufvk(s: &str) -> Result<String, String> {
+    if let Ok(s) = s.parse::<String>() {
+        let count = s.split_whitespace().count();
+        if count == 1 {
+            Ok(s)
+        } else {
+            Err(format!("Encoded UFVK should not contain whitespace!"))
         }
     } else {
         Err("Unexpected failure to parse String!!".to_string())
@@ -283,6 +297,7 @@ fn short_circuit_on_help(params: Vec<String>) {
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
+
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
