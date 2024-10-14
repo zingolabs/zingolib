@@ -26,7 +26,7 @@ impl LightClient {
 
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
-    use std::convert::Infallible;
+    use std::{cmp::Ordering, convert::Infallible};
 
     use nonempty::NonEmpty;
 
@@ -50,6 +50,8 @@ pub mod send_with_proposal {
         NoSpendCapability,
         #[error("No Tx in cached!")]
         NoCachedTx,
+        #[error("Multistep transaction with non-tex steps")]
+        InvalidMultiStep,
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -148,15 +150,32 @@ pub mod send_with_proposal {
             }
             drop(tx_map);
             let mut txids = vec![];
-            let transactions_to_record = match transactions_to_record.as_slice() {
-                [] => Err(RecordCachedTransactionsError::Cache(
-                    TransactionCacheError::NoCachedTx,
-                )),
-                [transaction] => Ok([transaction]),
-                [t1, t2] => todo!("sort"),
-                _ => todo!("Error handle more than two transactions in proposal"),
-            }?
-            .to_vec();
+            transactions_to_record.sort_by(|t1, t2| {
+                match (t1.transparent_bundle(), t2.transparent_bundle()) {
+                    (Some(bundle1), Some(bundle2)) => {
+                        if bundle1
+                            .vin
+                            .iter()
+                            .any(|txin| txin.prevout.hash() == t2.txid().as_ref())
+                        {
+                            Ordering::Greater
+                        } else if {
+                            bundle2
+                                .vin
+                                .iter()
+                                .any(|txin| txin.prevout.hash() == t1.txid().as_ref())
+                        } {
+                            Ordering::Less
+                        } else {
+                            // There's no try_sort method on
+                            // Vec. TODO: turn this into an error somehow
+                            Ordering::Equal
+                        }
+                    }
+                    // As above
+                    _ => Ordering::Equal,
+                }
+            });
             for transaction in transactions_to_record {
                 self.wallet
                     .transaction_context
