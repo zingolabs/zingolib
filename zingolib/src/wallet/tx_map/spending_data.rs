@@ -1,7 +1,5 @@
 //! the subsection of TxMap that only applies to spending wallets
 
-use std::collections::HashMap;
-
 use getset::{Getters, MutGetters};
 
 use zcash_primitives::{legacy::keys::EphemeralIvk, transaction::TxId};
@@ -14,7 +12,7 @@ pub(crate) struct SpendingData {
     #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     witness_trees: WitnessTrees,
     #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
-    cached_raw_transactions: HashMap<TxId, Vec<u8>>,
+    cached_raw_transactions: Vec<(TxId, Vec<u8>)>,
     #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     transparent_ephemeral_ivk: EphemeralIvk,
 }
@@ -23,7 +21,7 @@ impl SpendingData {
     pub fn new(witness_trees: WitnessTrees, transparent_ephemeral_ivk: EphemeralIvk) -> Self {
         SpendingData {
             witness_trees,
-            cached_raw_transactions: HashMap::new(),
+            cached_raw_transactions: Vec::new(),
             transparent_ephemeral_ivk,
         }
     }

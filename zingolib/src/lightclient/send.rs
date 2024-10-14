@@ -26,7 +26,7 @@ impl LightClient {
 
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
-    use std::{cmp::Ordering, convert::Infallible};
+    use std::convert::Infallible;
 
     use nonempty::NonEmpty;
 
@@ -134,9 +134,9 @@ pub mod send_with_proposal {
                 .map_err(RecordCachedTransactionsError::Height)?;
             let mut transactions_to_record = vec![];
             if let Some(spending_data) = tx_map.spending_data_mut() {
-                for raw_tx in spending_data.cached_raw_transactions().values() {
+                for (_txid, raw_tx) in spending_data.cached_raw_transactions().iter() {
                     transactions_to_record.push(Transaction::read(
-                        &raw_tx[..],
+                        raw_tx.as_slice(),
                         zcash_primitives::consensus::BranchId::for_height(
                             &self.wallet.transaction_context.config.chain,
                             current_height + 1,
@@ -150,32 +150,6 @@ pub mod send_with_proposal {
             }
             drop(tx_map);
             let mut txids = vec![];
-            transactions_to_record.sort_by(|t1, t2| {
-                match (t1.transparent_bundle(), t2.transparent_bundle()) {
-                    (Some(bundle1), Some(bundle2)) => {
-                        if bundle1
-                            .vin
-                            .iter()
-                            .any(|txin| txin.prevout.hash() == t2.txid().as_ref())
-                        {
-                            Ordering::Greater
-                        } else if {
-                            bundle2
-                                .vin
-                                .iter()
-                                .any(|txin| txin.prevout.hash() == t1.txid().as_ref())
-                        } {
-                            Ordering::Less
-                        } else {
-                            // There's no try_sort method on
-                            // Vec. TODO: turn this into an error somehow
-                            Ordering::Equal
-                        }
-                    }
-                    // As above
-                    _ => Ordering::Equal,
-                }
-            });
             for transaction in transactions_to_record {
                 self.wallet
                     .transaction_context

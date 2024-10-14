@@ -67,7 +67,7 @@ impl WalletWrite for TxMap {
             if let Some(spending_data) = self.spending_data_mut() {
                 spending_data
                     .cached_raw_transactions_mut()
-                    .insert(tx.txid(), raw_tx);
+                    .push((tx.txid(), raw_tx));
             } else {
                 return Err(TxMapTraitError::NoSpendCapability);
             }
