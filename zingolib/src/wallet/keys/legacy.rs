@@ -69,6 +69,8 @@ where
     }
 }
 
+/// Converts a set of full viewing keys to a [`zcash_keys::keys::UnifiedFullViewingKey`].
+/// The transparent viewing key is of the zingolib legacy type [`extended_transparent::ExtendPubKey`].
 pub(crate) fn legacy_fvks_to_ufvk<P: zcash_primitives::consensus::Parameters>(
     orchard_fvk: Option<&orchard::keys::FullViewingKey>,
     sapling_fvk: Option<&sapling_crypto::zip32::DiversifiableFullViewingKey>,
@@ -97,6 +99,8 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_primitives::consensus::Parameters>(
         .map_err(|_| KeyError::KeyDecodingError)
 }
 
+/// Converts a set of spending keys to a [`zcash_keys::keys::UnifiedSpendingKey`].
+/// The transparent spending key is of the zingolib legacy type [`extended_transparent::ExtendPrivKey`].
 pub(crate) fn legacy_sks_to_usk(
     orchard_key: &orchard::keys::SpendingKey,
     sapling_key: &sapling_crypto::zip32::ExtendedSpendingKey,

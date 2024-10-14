@@ -747,24 +747,15 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                     Capability::View(fvk) => Some(fvk),
                     _ => None,
                 };
-                let transparent_fvk = match &transparent_capability {
-                    Capability::View(fvk) => Some(fvk),
-                    _ => None,
-                };
 
-                let unified_key_store = if orchard_fvk.is_some()
-                    || sapling_fvk.is_some()
-                    || transparent_fvk.is_some()
-                {
+                let unified_key_store = if orchard_fvk.is_some() || sapling_fvk.is_some() {
                     // In the case of loading from viewing keys:
                     // Create the UFVK from FVKs.
-                    let ufvk = super::legacy::legacy_fvks_to_ufvk(
-                        orchard_fvk,
-                        sapling_fvk,
-                        transparent_fvk,
-                        &input,
-                    )
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                    let ufvk =
+                        super::legacy::legacy_fvks_to_ufvk(orchard_fvk, sapling_fvk, None, &input)
+                            .map_err(|e| {
+                                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+                            })?;
                     UnifiedKeyStore::View(Box::new(ufvk))
                 } else if matches!(sapling_capability.clone(), Capability::Spend(_)) {
                     // In the case of loading spending keys:
