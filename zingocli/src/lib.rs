@@ -102,7 +102,7 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
         if count == 1 {
             Ok(s)
         } else {
-            Err(format!("Encoded UFVK should not contain whitespace!"))
+            Err("Encoded UFVK should not contain whitespace!".to_string())
         }
     } else {
         Err("Unexpected failure to parse String!!".to_string())
