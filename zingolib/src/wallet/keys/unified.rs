@@ -11,6 +11,7 @@ use std::{marker::PhantomData, sync::Arc};
 use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use bytes::LittleEndian;
 use getset::{Getters, Setters};
 
 use orchard::note_encryption::OrchardDomain;
@@ -698,15 +699,18 @@ impl WalletCapability {
 }
 
 impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
-    const VERSION: u8 = 3;
+    const VERSION: u8 = 4;
 
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
         let legacy_key: bool;
+        let ephemeral_addresses_len: u32;
+
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
                 legacy_key = true;
+                ephemeral_addresses_len = 0;
 
                 // Create a temporary USK for address generation to load old wallets
                 // due to missing BIP0032 transparent extended private key data
@@ -725,6 +729,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             2 => {
                 legacy_key = true;
+                ephemeral_addresses_len = 0;
 
                 let orchard_capability = Capability::<
                     orchard::keys::FullViewingKey,
@@ -815,6 +820,16 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             3 => {
                 legacy_key = false;
+                ephemeral_addresses_len = 0;
+
+                Self {
+                    unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
+                    ..Default::default()
+                }
+            }
+            4 => {
+                legacy_key = false;
+                ephemeral_addresses_len = reader.read_u32::<LittleEndian>()?;
 
                 Self {
                     unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
@@ -828,16 +843,23 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 ))
             }
         };
-        let receiver_selections = Vector::read(reader, |r| ReceiverSelection::read(r, ()))?;
+        let receiver_selections = Vector::read(&mut reader, |r| ReceiverSelection::read(r, ()))?;
         for rs in receiver_selections {
             wc.new_address(rs, legacy_key)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
+
+        for _ in 0..ephemeral_addresses_len {
+            wc.new_ephemeral_address()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        }
+
         Ok(wc)
     }
 
     fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
+        writer.write_u32::<LittleEndian>(self.transparent_child_ephemeral_addresses.len() as u32)?;
         self.unified_key_store().write(&mut writer, input)?;
         Vector::write(
             &mut writer,

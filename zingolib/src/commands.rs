@@ -227,50 +227,57 @@ impl Command for ParseAddressCommand {
                 ]
                 .iter()
                 .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
-                .map(|(recipient_address, chain_name)| {
-                    let chain_name_string = match chain_name {
-                        crate::config::ChainType::Mainnet => "main",
-                        crate::config::ChainType::Testnet => "test",
-                        crate::config::ChainType::Regtest(_) => "regtest",
-                    };
-                    match recipient_address {
-                        Address::Sapling(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "sapling",
-                        },
-                        Address::Transparent(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "transparent",
-                        },
-                        Address::Unified(ua) => {
-                            let mut receivers_available = vec![];
-                            if ua.orchard().is_some() {
-                                receivers_available.push("orchard")
-                            }
-                            if ua.sapling().is_some() {
-                                receivers_available.push("sapling")
-                            }
-                            if ua.transparent().is_some() {
-                                receivers_available.push("transparent")
-                            }
-                            object! {
+                .map_or(
+                    object! {
+                        "status" => "Invalid address",
+                        "chain_name" => json::JsonValue::Null,
+                        "address_kind" => json::JsonValue::Null,
+                    },
+                    |(recipient_address, chain_name)| {
+                        let chain_name_string = match chain_name {
+                            crate::config::ChainType::Mainnet => "main",
+                            crate::config::ChainType::Testnet => "test",
+                            crate::config::ChainType::Regtest(_) => "regtest",
+                        };
+                        match recipient_address {
+                            Address::Sapling(_) => object! {
                                 "status" => "success",
                                 "chain_name" => chain_name_string,
-                                "address_kind" => "unified",
-                                "receivers_available" => receivers_available,
-                            }
-                        }
-                        Address::Tex(_) => {
-                            object! {
+                                "address_kind" => "sapling",
+                            },
+                            Address::Transparent(_) => object! {
                                 "status" => "success",
                                 "chain_name" => chain_name_string,
-                                "address_kind" => "tex",
+                                "address_kind" => "transparent",
+                            },
+                            Address::Unified(ua) => {
+                                let mut receivers_available = vec![];
+                                if ua.orchard().is_some() {
+                                    receivers_available.push("orchard")
+                                }
+                                if ua.sapling().is_some() {
+                                    receivers_available.push("sapling")
+                                }
+                                if ua.transparent().is_some() {
+                                    receivers_available.push("transparent")
+                                }
+                                object! {
+                                    "status" => "success",
+                                    "chain_name" => chain_name_string,
+                                    "address_kind" => "unified",
+                                    "receivers_available" => receivers_available,
+                                }
+                            }
+                            Address::Tex(_) => {
+                                object! {
+                                    "status" => "success",
+                                    "chain_name" => chain_name_string,
+                                    "address_kind" => "tex",
+                                }
                             }
                         }
-                    }
-                }),
+                    },
+                ),
                 4,
             ),
             _ => self.help().to_string(),
