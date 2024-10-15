@@ -627,14 +627,24 @@ impl WalletCapability {
             },
         }
     }
+}
+mod ephemeral {
+    use zcash_keys::keys::DerivationError;
+    use zcash_primitives::legacy::keys::AccountPubKey;
 
-    pub(crate) fn ephemeral_ivk(
-        &self,
-    ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
-        AccountPubKey::try_from(self.unified_key_store())?
-            .derive_ephemeral_ivk()
-            .map_err(DerivationError::Transparent)
-            .map_err(KeyError::KeyDerivationError)
+    use crate::wallet::error::KeyError;
+
+    use super::WalletCapability;
+
+    impl WalletCapability {
+        pub(crate) fn ephemeral_ivk(
+            &self,
+        ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
+            AccountPubKey::try_from(self.unified_key_store())?
+                .derive_ephemeral_ivk()
+                .map_err(DerivationError::Transparent)
+                .map_err(KeyError::KeyDerivationError)
+        }
     }
 }
 
