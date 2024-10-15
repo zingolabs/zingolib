@@ -616,6 +616,7 @@ mod decrypt_transaction {
 
         #[derive(Debug)]
         pub(crate) enum InvalidMemoError {
+            #[allow(dead_code)]
             InvalidEphemeralIndex(KeyError),
         }
         impl TransactionContext {
