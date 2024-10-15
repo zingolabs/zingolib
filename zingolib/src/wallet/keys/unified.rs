@@ -881,6 +881,9 @@ mod ephemeral {
 
     use super::WalletCapability;
 
+    #[derive(thiserror::Error, Debug)]
+    pub(crate) enum EphemeralDerivationError {}
+
     impl WalletCapability {
         pub(crate) fn ephemeral_ivk(
             &self,
@@ -889,6 +892,12 @@ mod ephemeral {
                 .derive_ephemeral_ivk()
                 .map_err(DerivationError::Transparent)
                 .map_err(KeyError::KeyDerivationError)
+        }
+        pub(crate) fn ephemeral_address(
+            &self,
+            ephemeral_address_index: u32,
+        ) -> Result<TransparentAddress, EphemeralDerivationError> {
+            todo!()
         }
         /// TODO: Add Doc Comment Here!
         pub fn transparent_child_ephemeral_addresses(
