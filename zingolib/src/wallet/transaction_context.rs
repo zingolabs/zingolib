@@ -640,6 +640,13 @@ mod decrypt_transaction {
                         })
                 }
             }
+            async fn handle_texes(
+                &self,
+                ephermal_address_indexes: Vec<u32>,
+                transaction: &mut TransactionRecord,
+            ) {
+                for index in ephermal_address_indexes {}
+            }
 
             pub(super) async fn update_outgoing_txdatas_with_uas(
                 &self,
@@ -655,8 +662,13 @@ mod decrypt_transaction {
                     {
                         match parsed_zingo_memo {
                             ParsedMemo::Version0 { uas } => self.handle_uas(uas, transaction).await,
-                            ParsedMemo::Version1 { uas, .. } => {
-                                self.handle_uas(uas, transaction).await
+                            ParsedMemo::Version1 {
+                                uas,
+                                ephemeral_address_indexes,
+                            } => {
+                                self.handle_uas(uas, transaction).await;
+                                self.handle_texes(ephemeral_address_indexes, transaction)
+                                    .await;
                             }
                             other_memo_version => {
                                 log::error!(
