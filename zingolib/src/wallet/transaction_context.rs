@@ -604,7 +604,7 @@ mod decrypt_transaction {
     }
     mod zingo_memos {
         use zcash_keys::address::UnifiedAddress;
-        use zcash_primitives::{legacy::keys::NonHardenedChildIndex, transaction::TxId};
+        use zcash_primitives::transaction::TxId;
         use zingo_memo::ParsedMemo;
 
         use crate::wallet::{
@@ -645,18 +645,8 @@ mod decrypt_transaction {
                 ephemeral_address_indexes: Vec<u32>,
                 transaction: &mut TransactionRecord,
             ) {
-                if let Ok(eph_ivk) = self.key.ephemeral_ivk() {
-                    for address_index in ephemeral_address_indexes {
-                        if let Some(address_index) =
-                            NonHardenedChildIndex::from_index(address_index)
-                        {
-                            if let Ok(ephemeral_address) =
-                                eph_ivk.derive_ephemeral_address(address_index)
-                            {
-                                todo!();
-                            }
-                        }
-                    }
+                for ephemeral_address_index in ephemeral_address_indexes {
+                    self.key.ephemeral_address(ephemeral_address_index);
                 }
             }
 

@@ -875,14 +875,14 @@ mod ephemeral {
     use append_only_vec::AppendOnlyVec;
     use zcash_client_backend::wallet::TransparentAddressMetadata;
     use zcash_keys::keys::DerivationError;
-    use zcash_primitives::legacy::{keys::AccountPubKey, TransparentAddress};
+    use zcash_primitives::legacy::{
+        keys::{AccountPubKey, NonHardenedChildIndex},
+        TransparentAddress,
+    };
 
     use crate::wallet::error::KeyError;
 
     use super::WalletCapability;
-
-    #[derive(thiserror::Error, Debug)]
-    pub(crate) enum EphemeralDerivationError {}
 
     impl WalletCapability {
         pub(crate) fn ephemeral_ivk(
@@ -896,8 +896,14 @@ mod ephemeral {
         pub(crate) fn ephemeral_address(
             &self,
             ephemeral_address_index: u32,
-        ) -> Result<TransparentAddress, EphemeralDerivationError> {
-            todo!()
+        ) -> Result<TransparentAddress, KeyError> {
+            let eph_ivk = self.ephemeral_ivk()?;
+            let address_index = NonHardenedChildIndex::from_index(ephemeral_address_index)
+                .ok_or(KeyError::InvalidNonHardenedChildIndex)?;
+            eph_ivk
+                .derive_ephemeral_address(address_index)
+                .map_err(DerivationError::Transparent)
+                .map_err(KeyError::KeyDerivationError)
         }
         /// TODO: Add Doc Comment Here!
         pub fn transparent_child_ephemeral_addresses(
