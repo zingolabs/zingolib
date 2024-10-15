@@ -344,59 +344,6 @@ mod decrypt_transaction {
             }
         }
 
-        async fn handle_uas(&self, uas: Vec<UnifiedAddress>, txid: TxId) {
-            for ua in uas {
-                if let Some(transaction) = self
-                    .transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .get_mut(&txid)
-                {
-                    if !transaction.outgoing_tx_data.is_empty() {
-                        let outgoing_potential_receivers = [
-                            ua.orchard()
-                                .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
-                            ua.sapling()
-                                .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
-                            ua.transparent()
-                                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
-                            Some(ua.encode(&self.config.chain)),
-                        ];
-                        transaction
-                            .outgoing_tx_data
-                            .iter_mut()
-                            .filter(|out_meta| {
-                                outgoing_potential_receivers
-                                    .contains(&Some(out_meta.recipient_address.clone()))
-                            })
-                            .for_each(|out_metadata| {
-                                out_metadata.recipient_ua = Some(ua.encode(&self.config.chain))
-                            })
-                    }
-                }
-            }
-        }
-
-        async fn update_outgoing_txdatas_with_uas(
-            &self,
-            txid_indexed_zingo_memos: Vec<(ParsedMemo, TxId)>,
-        ) {
-            for (parsed_zingo_memo, txid) in txid_indexed_zingo_memos {
-                match parsed_zingo_memo {
-                    ParsedMemo::Version0 { uas } => self.handle_uas(uas, txid).await,
-                    ParsedMemo::Version1 { uas, .. } => self.handle_uas(uas, txid).await,
-                    other_memo_version => {
-                        log::error!(
-                            "Wallet internal memo is from a future version of the protocol\n\
-                        Please ensure that your software is up-to-date.\n\
-                        Memo: {other_memo_version:?}"
-                        )
-                    }
-                }
-            }
-        }
-
         #[allow(clippy::too_many_arguments)]
         async fn decrypt_transaction_to_record_sapling(
             &self,
@@ -652,6 +599,71 @@ mod decrypt_transaction {
                         None => None,
                     },
                 );
+            }
+        }
+    }
+    mod zingo_memos {
+        use zcash_keys::address::UnifiedAddress;
+        use zcash_primitives::transaction::TxId;
+        use zingo_memo::ParsedMemo;
+
+        use crate::wallet::{
+            keys::address_from_pubkeyhash, traits::Recipient as _,
+            transaction_context::TransactionContext,
+        };
+
+        impl TransactionContext {
+            async fn handle_uas(&self, uas: Vec<UnifiedAddress>, txid: TxId) {
+                for ua in uas {
+                    if let Some(transaction) = self
+                        .transaction_metadata_set
+                        .write()
+                        .await
+                        .transaction_records_by_id
+                        .get_mut(&txid)
+                    {
+                        if !transaction.outgoing_tx_data.is_empty() {
+                            let outgoing_potential_receivers = [
+                                ua.orchard()
+                                    .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
+                                ua.sapling()
+                                    .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
+                                ua.transparent()
+                                    .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
+                                Some(ua.encode(&self.config.chain)),
+                            ];
+                            transaction
+                                .outgoing_tx_data
+                                .iter_mut()
+                                .filter(|out_meta| {
+                                    outgoing_potential_receivers
+                                        .contains(&Some(out_meta.recipient_address.clone()))
+                                })
+                                .for_each(|out_metadata| {
+                                    out_metadata.recipient_ua = Some(ua.encode(&self.config.chain))
+                                })
+                        }
+                    }
+                }
+            }
+
+            pub(super) async fn update_outgoing_txdatas_with_uas(
+                &self,
+                txid_indexed_zingo_memos: Vec<(ParsedMemo, TxId)>,
+            ) {
+                for (parsed_zingo_memo, txid) in txid_indexed_zingo_memos {
+                    match parsed_zingo_memo {
+                        ParsedMemo::Version0 { uas } => self.handle_uas(uas, txid).await,
+                        ParsedMemo::Version1 { uas, .. } => self.handle_uas(uas, txid).await,
+                        other_memo_version => {
+                            log::error!(
+                                "Wallet internal memo is from a future version of the protocol\n\
+                        Please ensure that your software is up-to-date.\n\
+                        Memo: {other_memo_version:?}"
+                            )
+                        }
+                    }
+                }
             }
         }
     }
