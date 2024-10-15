@@ -609,39 +609,35 @@ mod decrypt_transaction {
 
         use crate::wallet::{
             keys::address_from_pubkeyhash, traits::Recipient as _,
-            transaction_context::TransactionContext,
+            transaction_context::TransactionContext, transaction_record::TransactionRecord,
         };
 
         impl TransactionContext {
-            async fn handle_uas(&self, uas: Vec<UnifiedAddress>, txid: TxId) {
-                if let Some(transaction) = self
-                    .transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .get_mut(&txid)
-                {
-                    for ua in uas {
-                        let outgoing_potential_receivers = [
-                            ua.orchard()
-                                .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
-                            ua.sapling()
-                                .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
-                            ua.transparent()
-                                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
-                            Some(ua.encode(&self.config.chain)),
-                        ];
-                        transaction
-                            .outgoing_tx_data
-                            .iter_mut()
-                            .filter(|out_meta| {
-                                outgoing_potential_receivers
-                                    .contains(&Some(out_meta.recipient_address.clone()))
-                            })
-                            .for_each(|out_metadata| {
-                                out_metadata.recipient_ua = Some(ua.encode(&self.config.chain))
-                            })
-                    }
+            async fn handle_uas(
+                &self,
+                uas: Vec<UnifiedAddress>,
+                transaction: &mut TransactionRecord,
+            ) {
+                for ua in uas {
+                    let outgoing_potential_receivers = [
+                        ua.orchard()
+                            .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
+                        ua.sapling()
+                            .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
+                        ua.transparent()
+                            .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
+                        Some(ua.encode(&self.config.chain)),
+                    ];
+                    transaction
+                        .outgoing_tx_data
+                        .iter_mut()
+                        .filter(|out_meta| {
+                            outgoing_potential_receivers
+                                .contains(&Some(out_meta.recipient_address.clone()))
+                        })
+                        .for_each(|out_metadata| {
+                            out_metadata.recipient_ua = Some(ua.encode(&self.config.chain))
+                        })
                 }
             }
 
@@ -650,15 +646,25 @@ mod decrypt_transaction {
                 txid_indexed_zingo_memos: Vec<(ParsedMemo, TxId)>,
             ) {
                 for (parsed_zingo_memo, txid) in txid_indexed_zingo_memos {
-                    match parsed_zingo_memo {
-                        ParsedMemo::Version0 { uas } => self.handle_uas(uas, txid).await,
-                        ParsedMemo::Version1 { uas, .. } => self.handle_uas(uas, txid).await,
-                        other_memo_version => {
-                            log::error!(
+                    if let Some(transaction) = self
+                        .transaction_metadata_set
+                        .write()
+                        .await
+                        .transaction_records_by_id
+                        .get_mut(&txid)
+                    {
+                        match parsed_zingo_memo {
+                            ParsedMemo::Version0 { uas } => self.handle_uas(uas, transaction).await,
+                            ParsedMemo::Version1 { uas, .. } => {
+                                self.handle_uas(uas, transaction).await
+                            }
+                            other_memo_version => {
+                                log::error!(
                                 "Wallet internal memo is from a future version of the protocol\n\
                         Please ensure that your software is up-to-date.\n\
                         Memo: {other_memo_version:?}"
                             )
+                            }
                         }
                     }
                 }
