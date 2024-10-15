@@ -328,13 +328,6 @@ impl WalletCapability {
     pub fn transparent_child_addresses(&self) -> &Arc<AppendOnlyVec<(usize, TransparentAddress)>> {
         &self.transparent_child_addresses
     }
-    /// TODO: Add Doc Comment Here!
-    pub fn transparent_child_ephemeral_addresses(
-        &self,
-    ) -> &Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>> {
-        &self.transparent_child_ephemeral_addresses
-    }
-
     /// Generates a unified address from the given desired receivers
     ///
     /// See [`crate::wallet::WalletCapability::generate_transparent_receiver`] for information on using `legacy_key`
@@ -628,25 +621,6 @@ impl WalletCapability {
         }
     }
 }
-mod ephemeral {
-    use zcash_keys::keys::DerivationError;
-    use zcash_primitives::legacy::keys::AccountPubKey;
-
-    use crate::wallet::error::KeyError;
-
-    use super::WalletCapability;
-
-    impl WalletCapability {
-        pub(crate) fn ephemeral_ivk(
-            &self,
-        ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
-            AccountPubKey::try_from(self.unified_key_store())?
-                .derive_ephemeral_ivk()
-                .map_err(DerivationError::Transparent)
-                .map_err(KeyError::KeyDerivationError)
-        }
-    }
-}
 
 impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
     const VERSION: u8 = 3;
@@ -892,6 +866,35 @@ impl Fvk<SaplingDomain> for sapling_crypto::zip32::DiversifiableFullViewingKey {
         Ovk {
             ovk: self.to_ovk(S::scope()),
             __scope: PhantomData,
+        }
+    }
+}
+mod ephemeral {
+    use std::sync::Arc;
+
+    use append_only_vec::AppendOnlyVec;
+    use zcash_client_backend::wallet::TransparentAddressMetadata;
+    use zcash_keys::keys::DerivationError;
+    use zcash_primitives::legacy::{keys::AccountPubKey, TransparentAddress};
+
+    use crate::wallet::error::KeyError;
+
+    use super::WalletCapability;
+
+    impl WalletCapability {
+        pub(crate) fn ephemeral_ivk(
+            &self,
+        ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
+            AccountPubKey::try_from(self.unified_key_store())?
+                .derive_ephemeral_ivk()
+                .map_err(DerivationError::Transparent)
+                .map_err(KeyError::KeyDerivationError)
+        }
+        /// TODO: Add Doc Comment Here!
+        pub fn transparent_child_ephemeral_addresses(
+            &self,
+        ) -> &Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>> {
+            &self.transparent_child_ephemeral_addresses
         }
     }
 }
