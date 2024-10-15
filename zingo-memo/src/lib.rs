@@ -12,8 +12,8 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
 
 /// A parsed memo.
-/// The main use-case for this is to record the UAs sent from, as the blockchain only
-/// records the pool-specific receiver corresponding to the key we sent with.
+/// The main use-case for this is to record the UAs that a foreign recipient provided,
+/// as the blockchain only records the pool-specific receiver corresponding to the key we sent with.
 /// We also record the index of any ephemeral addresses sent to. On rescan, this tells us:
 /// * this transaction is the first step of a multistep proposal that is sending
 ///     to a TEX address in the second step
