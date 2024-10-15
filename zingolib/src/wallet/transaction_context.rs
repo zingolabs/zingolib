@@ -614,35 +614,33 @@ mod decrypt_transaction {
 
         impl TransactionContext {
             async fn handle_uas(&self, uas: Vec<UnifiedAddress>, txid: TxId) {
-                for ua in uas {
-                    if let Some(transaction) = self
-                        .transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .get_mut(&txid)
-                    {
-                        if !transaction.outgoing_tx_data.is_empty() {
-                            let outgoing_potential_receivers = [
-                                ua.orchard()
-                                    .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
-                                ua.sapling()
-                                    .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
-                                ua.transparent()
-                                    .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
-                                Some(ua.encode(&self.config.chain)),
-                            ];
-                            transaction
-                                .outgoing_tx_data
-                                .iter_mut()
-                                .filter(|out_meta| {
-                                    outgoing_potential_receivers
-                                        .contains(&Some(out_meta.recipient_address.clone()))
-                                })
-                                .for_each(|out_metadata| {
-                                    out_metadata.recipient_ua = Some(ua.encode(&self.config.chain))
-                                })
-                        }
+                if let Some(transaction) = self
+                    .transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id
+                    .get_mut(&txid)
+                {
+                    for ua in uas {
+                        let outgoing_potential_receivers = [
+                            ua.orchard()
+                                .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
+                            ua.sapling()
+                                .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
+                            ua.transparent()
+                                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
+                            Some(ua.encode(&self.config.chain)),
+                        ];
+                        transaction
+                            .outgoing_tx_data
+                            .iter_mut()
+                            .filter(|out_meta| {
+                                outgoing_potential_receivers
+                                    .contains(&Some(out_meta.recipient_address.clone()))
+                            })
+                            .for_each(|out_metadata| {
+                                out_metadata.recipient_ua = Some(ua.encode(&self.config.chain))
+                            })
                     }
                 }
             }
