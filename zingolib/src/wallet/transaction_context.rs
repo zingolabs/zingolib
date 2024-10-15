@@ -605,8 +605,15 @@ mod decrypt_transaction {
         }
     }
     mod zingo_memos {
+        use zcash_client_backend::wallet::TransparentAddressMetadata;
         use zcash_keys::address::UnifiedAddress;
-        use zcash_primitives::transaction::TxId;
+        use zcash_primitives::{
+            legacy::{
+                keys::{NonHardenedChildIndex, TransparentKeyScope},
+                TransparentAddress,
+            },
+            transaction::TxId,
+        };
         use zingo_memo::ParsedMemo;
 
         use crate::wallet::{
@@ -653,9 +660,31 @@ mod decrypt_transaction {
                 transaction: &mut TransactionRecord,
             ) -> Result<(), InvalidMemoError> {
                 for ephemeral_address_index in ephemeral_address_indexes {
-                    self.key
+                    let ephemeral_address = self
+                        .key
                         .ephemeral_address(ephemeral_address_index)
                         .map_err(InvalidMemoError::InvalidEphemeralIndex)?;
+                    let current_keys = &mut self.key.transparent_child_ephemeral_addresses();
+                    let total_keys = current_keys.len();
+                    if (ephemeral_address_index as usize) < total_keys {
+                        if current_keys[ephemeral_address_index as usize].0 != ephemeral_address {
+                            panic!("Something is badly broken.  It should not be possible to populate this structure with an incorrect key.")
+                        } else {
+                            // The emphemeral key is in the structure at its appropriate location.
+                            return Ok(());
+                        }
+                    } else {
+                        // The detected key is derived from a higher index than any previously stored key.
+                        //  * generate the keys to fill in the "gap".
+                        if let Some(nhci) =
+                            NonHardenedChildIndex::from_index(ephemeral_address_index)
+                        {
+                            let tam = TransparentAddressMetadata::new(
+                                TransparentKeyScope::EPHEMERAL,
+                                nhci,
+                            );
+                        }
+                    }
                 }
                 Ok(())
             }
