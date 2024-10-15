@@ -37,12 +37,10 @@ use super::{
 };
 
 impl LightWallet {
-    /// Changes in version 29:
-    /// - Replaced `Capability` with `UnifiedKeyStore`
-    /// - Implemented read/write for `UnifiedSpendingKey`
-    /// - Implemented read/write for `UnifiedFullViewingKey`
+    /// Changes in version 30:
+    /// - New WalletCapability version (v4) which implements read/write for ephemeral addresses
     pub const fn serialized_version() -> u64 {
-        29
+        30
     }
 
     /// TODO: Add Doc Comment Here!
