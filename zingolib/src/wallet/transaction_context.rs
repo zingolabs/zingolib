@@ -676,13 +676,13 @@ mod decrypt_transaction {
                     } else {
                         // The detected key is derived from a higher index than any previously stored key.
                         //  * generate the keys to fill in the "gap".
-                        if let Some(nhci) =
-                            NonHardenedChildIndex::from_index(ephemeral_address_index)
-                        {
-                            let tam = TransparentAddressMetadata::new(
-                                TransparentKeyScope::EPHEMERAL,
-                                nhci,
-                            );
+                        for i in total_keys as u32..ephemeral_address_index {
+                            if let Some(nhci) = NonHardenedChildIndex::from_index(i) {
+                                let tam = TransparentAddressMetadata::new(
+                                    TransparentKeyScope::EPHEMERAL,
+                                    nhci,
+                                );
+                            }
                         }
                     }
                 }
