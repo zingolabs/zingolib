@@ -657,7 +657,6 @@ mod decrypt_transaction {
             async fn handle_texes(
                 &self,
                 ephemeral_address_indexes: Vec<u32>,
-                transaction: &mut TransactionRecord,
             ) -> Result<(), InvalidMemoError> {
                 for ephemeral_address_index in ephemeral_address_indexes {
                     let ephemeral_address = self
@@ -708,8 +707,7 @@ mod decrypt_transaction {
                                 ephemeral_address_indexes,
                             } => {
                                 self.handle_uas(uas, transaction).await;
-                                self.handle_texes(ephemeral_address_indexes, transaction)
-                                    .await?;
+                                self.handle_texes(ephemeral_address_indexes).await?;
                             }
                             other_memo_version => {
                                 log::error!(
