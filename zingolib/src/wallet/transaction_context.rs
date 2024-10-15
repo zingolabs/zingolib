@@ -96,6 +96,7 @@ mod decrypt_transaction {
     use super::TransactionContext;
 
     impl TransactionContext {
+        /// TODO:  Extend error handling up from memo read
         pub(crate) async fn scan_full_tx(
             &self,
             transaction: &Transaction,
@@ -162,7 +163,8 @@ mod decrypt_transaction {
             }
 
             self.update_outgoing_txdatas_with_uas(txid_indexed_zingo_memos)
-                .await;
+                .await
+                .expect("Zingo Memo data has been successfully applied without error.");
 
             // Update price if available
             if price.is_some() {
@@ -608,10 +610,14 @@ mod decrypt_transaction {
         use zingo_memo::ParsedMemo;
 
         use crate::wallet::{
-            keys::address_from_pubkeyhash, traits::Recipient as _,
+            error::KeyError, keys::address_from_pubkeyhash, traits::Recipient as _,
             transaction_context::TransactionContext, transaction_record::TransactionRecord,
         };
 
+        #[derive(Debug)]
+        pub(crate) enum InvalidMemoError {
+            InvalidEphemeralIndex(KeyError),
+        }
         impl TransactionContext {
             async fn handle_uas(
                 &self,
@@ -644,16 +650,19 @@ mod decrypt_transaction {
                 &self,
                 ephemeral_address_indexes: Vec<u32>,
                 transaction: &mut TransactionRecord,
-            ) {
+            ) -> Result<(), InvalidMemoError> {
                 for ephemeral_address_index in ephemeral_address_indexes {
-                    self.key.ephemeral_address(ephemeral_address_index);
+                    self.key
+                        .ephemeral_address(ephemeral_address_index)
+                        .map_err(InvalidMemoError::InvalidEphemeralIndex)?;
                 }
+                Ok(())
             }
 
             pub(super) async fn update_outgoing_txdatas_with_uas(
                 &self,
                 txid_indexed_zingo_memos: Vec<(ParsedMemo, TxId)>,
-            ) {
+            ) -> Result<(), InvalidMemoError> {
                 for (parsed_zingo_memo, txid) in txid_indexed_zingo_memos {
                     if let Some(transaction) = self
                         .transaction_metadata_set
@@ -670,7 +679,7 @@ mod decrypt_transaction {
                             } => {
                                 self.handle_uas(uas, transaction).await;
                                 self.handle_texes(ephemeral_address_indexes, transaction)
-                                    .await;
+                                    .await?;
                             }
                             other_memo_version => {
                                 log::error!(
@@ -682,6 +691,7 @@ mod decrypt_transaction {
                         }
                     }
                 }
+                Ok(())
             }
         }
     }
