@@ -11,12 +11,14 @@ use prost::Message;
 
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
+use zcash_client_backend::{
+    proto::compact_formats::CompactBlock, wallet::TransparentAddressMetadata,
+};
 
 use zcash_encoding::{Optional, Vector};
 
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
+use zcash_primitives::{legacy::TransparentAddress, memo::MemoBytes};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 pub use crate::wallet::transaction_record::TransactionRecord; // TODO: is this necessary? can we import this directly where its used?
@@ -2005,6 +2007,30 @@ fn read_write_empty_sapling_tree() {
         CommitmentTree::<sapling_crypto::Node, 32>::empty(),
         read_commitment_tree(&mut buffer.as_slice()).unwrap()
     )
+}
+
+/// Generate a new ephemeral transparent address,
+/// for use in a send to a TEX address.
+pub fn new_persistant_ephemeral_address(
+    transparent_child_ephemeral_addresses: &append_only_vec::AppendOnlyVec<(
+        TransparentAddress,
+        TransparentAddressMetadata,
+    )>,
+
+    transparent_ephemeral_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
+) -> Result<
+    (
+        zcash_primitives::legacy::TransparentAddress,
+        zcash_client_backend::wallet::TransparentAddressMetadata,
+    ),
+    super::error::KeyError,
+> {
+    let (ephemeral_address, metadata) = super::keys::unified::WalletCapability::ephemeral_address(
+        transparent_ephemeral_ivk,
+        transparent_child_ephemeral_addresses.len() as u32,
+    )?;
+    transparent_child_ephemeral_addresses.push((ephemeral_address, metadata.clone()));
+    Ok((ephemeral_address, metadata))
 }
 
 #[cfg(any(test, feature = "test-elevation"))]

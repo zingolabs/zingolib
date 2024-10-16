@@ -115,8 +115,6 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
-
-    use bech32::{Bech32m, Hrp};
     use bip0039::Mnemonic;
     use zcash_address::{AddressKind, ZcashAddress};
     use zcash_client_backend::{
@@ -187,7 +185,8 @@ mod fast {
                 panic!()
             };
             let tex_string =
-                bech32::encode::<Bech32m>(Hrp::parse_unchecked("texregtest"), taddr_bytes).unwrap();
+                utils::interpret_taddr_as_tex_addr(*taddr_bytes, &client.config().chain);
+            //            let tex_string = utils::interpret_taddr_as_tex_addr(*taddr_bytes);
 
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
@@ -3446,7 +3445,7 @@ mod slow {
 
         // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
         // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
-        recipient.wallet.blocks.write().await.drain(0..20);
+        recipient.wallet.last_100_blocks.write().await.drain(0..20);
         assert_eq!(recipient.wallet.last_synced_height().await, 5);
 
         // 6. Do a sync again

@@ -9,7 +9,7 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::wallet::{keys::unified::WalletCapability, tx_map::TxMap};
 
-/// TODO: Add Doc Comment Here!
+/// All the data you need to propose, build, and sign a transaction.
 #[derive(Clone)]
 pub struct TransactionContext {
     /// TODO: Add Doc Comment Here!
@@ -60,15 +60,18 @@ impl TransactionContext {
 ///    * read memos
 ///    * discover outgoing transaction
 ///    * (mark change / scan for internal change)
-///  additional information and processing are required some of the steps in scan_full_tx are similar to or
+///
+///  Additional information and processing are required some of the steps in scan_full_tx are similar to or
 ///  repeat steps in trial_ddso however, scan_full_tx is more limited than trial_ddso:
 ///    * scan_full_tx has no access to a transmitter. So it is incapable of **sending a request on a transmitter for another task to fetch a witnessed position**.
-/// unlike a viewkey wallet, a spendkey wallet MUST pass reread the block to find a witnessed position to pass to add_new_note. scan_full_tx cannot do this.
+///
+/// Unlike a viewkey wallet, a spendkey wallet MUST pass reread the block to find a witnessed position to pass to add_new_note. scan_full_tx cannot do this.
 /// thus, scan_full_tx is incomplete and skips some steps on the assumption that they will be covered elsewhere. Notably, add_note is not called inside scan_full_tx.
 /// (A viewkey wallet, on the other hand, doesnt need witness and could maybe get away with only calling scan_full_tx)
 mod decrypt_transaction {
     use crate::{
         error::{ZingoLibError, ZingoLibResult},
+        utils::interpret_taddr_as_tex_addr,
         wallet::{
             self,
             data::OutgoingTxData,
@@ -76,7 +79,7 @@ mod decrypt_transaction {
                 address_from_pubkeyhash,
                 unified::{External, Fvk, Ivk},
             },
-            notes::ShieldedNoteInterface,
+            notes::{ShieldedNoteInterface, TransparentOutput},
             traits::{
                 self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
                 ShieldedOutputExt as _, Spend as _, ToBytes as _,
@@ -91,8 +94,12 @@ mod decrypt_transaction {
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::{try_output_recovery_with_ovk, Domain};
     use zcash_primitives::{
+        legacy::TransparentAddress,
         memo::{Memo, MemoBytes},
-        transaction::{Transaction, TxId},
+        transaction::{
+            components::{transparent::Authorized, TxIn},
+            Transaction, TxId,
+        },
     };
     use zingo_memo::{parse_zingo_memo, ParsedMemo};
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -111,10 +118,8 @@ mod decrypt_transaction {
             // Set up data structures to record scan results
             let mut txid_indexed_zingo_memos = Vec::new();
 
-            // Collect our t-addresses for easy checking
-            let taddrs_set = self.key.get_external_taddrs(&self.config.chain);
-
             let mut outgoing_metadatas = vec![];
+            let mut sent_to_tex = false;
 
             // Execute scanning operations
             self.decrypt_transaction_to_record(
@@ -123,40 +128,13 @@ mod decrypt_transaction {
                 block_time,
                 &mut outgoing_metadatas,
                 &mut txid_indexed_zingo_memos,
+                &mut sent_to_tex,
             )
             .await;
 
             // Post process scan results
-            {
-                let tx_map = self.transaction_metadata_set.write().await;
-                if let Some(transaction_record) =
-                    tx_map.transaction_records_by_id.get(&transaction.txid())
-                {
-                    // `transaction_kind` uses outgoing_tx_data to determine the SendType but not to distinguish Sent(_) from Received
-                    // therefore, its safe to use it here to establish whether the transaction was created by this capacility or not.
-                    if let TransactionKind::Sent(_) = tx_map
-                        .transaction_records_by_id
-                        .transaction_kind(transaction_record, &self.config.chain)
-                    {
-                        if let Some(t_bundle) = transaction.transparent_bundle() {
-                            for vout in &t_bundle.vout {
-                                if let Some(taddr) = vout.recipient_address().map(|raw_taddr| {
-                                    address_from_pubkeyhash(&self.config, raw_taddr)
-                                }) {
-                                    if !taddrs_set.contains(&taddr) {
-                                        outgoing_metadatas.push(OutgoingTxData {
-                                            recipient_address: taddr,
-                                            value: u64::from(vout.value),
-                                            memo: Memo::Empty,
-                                            recipient_ua: None,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            self.post_process_scan_results(transaction, &mut outgoing_metadatas, sent_to_tex)
+                .await;
 
             if !outgoing_metadatas.is_empty() {
                 self.transaction_metadata_set
@@ -166,7 +144,7 @@ mod decrypt_transaction {
                     .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
             }
 
-            self.update_outgoing_txdatas_with_uas(txid_indexed_zingo_memos)
+            self.update_from_zingomemos(txid_indexed_zingo_memos)
                 .await
                 .expect("Zingo Memo data has been successfully applied without error.");
 
@@ -179,6 +157,7 @@ mod decrypt_transaction {
                     .set_price(&transaction.txid(), price);
             }
         }
+
         #[allow(clippy::too_many_arguments)]
         async fn decrypt_transaction_to_record(
             &self,
@@ -187,11 +166,17 @@ mod decrypt_transaction {
             block_time: Option<u32>,
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
+            sent_to_tex: &mut bool,
         ) {
             //todo: investigate scanning all bundles simultaneously
 
-            self.decrypt_transaction_to_record_transparent(transaction, status, block_time)
-                .await;
+            self.decrypt_transaction_to_record_transparent(
+                transaction,
+                status,
+                block_time,
+                sent_to_tex,
+            )
+            .await;
             self.decrypt_transaction_to_record_sapling(
                 transaction,
                 status,
@@ -215,12 +200,13 @@ mod decrypt_transaction {
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: Option<u32>,
+            sent_to_tex: &mut bool,
         ) {
             // Scan all transparent outputs to see if we received any money
             self.account_for_transparent_receipts(transaction, status, block_time)
                 .await;
             // Scan transparent spends
-            self.account_for_transparent_spending(transaction, status, block_time)
+            self.account_for_transparent_spending(transaction, status, block_time, sent_to_tex)
                 .await;
         }
 
@@ -261,14 +247,11 @@ mod decrypt_transaction {
         ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 // Collect our t-addresses for easy checking
-                let taddrs_set = self.key.get_external_taddrs(&self.config.chain);
-                let ephemeral_taddrs = self.key.get_ephemeral_taddrs(&self.config.chain);
+                let taddrs_set = self.key.get_taddrs(&self.config.chain);
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
                         let output_taddr = address_from_pubkeyhash(&self.config, taddr);
-                        if taddrs_set.contains(&output_taddr)
-                            || ephemeral_taddrs.contains(&output_taddr)
-                        {
+                        if taddrs_set.contains(&output_taddr) {
                             self.record_taddr_receipt(
                                 transaction,
                                 status,
@@ -283,43 +266,76 @@ mod decrypt_transaction {
                 }
             }
         }
+        async fn get_spent_utxo(
+            &self,
+            vin: &TxIn<Authorized>,
+        ) -> Option<(TransparentOutput, TxId, u64)> {
+            let current_transaction_records_by_id = &self
+                .transaction_metadata_set
+                .read()
+                .await
+                .transaction_records_by_id;
+            let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
+            let prev_n = vin.prevout.n() as u64;
+            if let Some(prev_tx_record) =
+                current_transaction_records_by_id.get(&prev_transaction_id)
+            {
+                // One of the tx outputs is a match
+                prev_tx_record
+                    .transparent_outputs
+                    .iter()
+                    .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
+                    .map(|spent_utxo| (spent_utxo.clone(), prev_transaction_id, prev_n))
+            } else {
+                None
+            }
+        }
+        // Za has ds-integration with the name "ephermal" address.
+        fn identify_rejection_address(&self, spent_utxo: TransparentOutput) -> Option<String> {
+            if self
+                .key
+                .get_ephemeral_taddrs(&self.config.chain)
+                .contains(&spent_utxo.address)
+            {
+                Some(spent_utxo.address)
+            } else {
+                None
+            }
+        }
         async fn account_for_transparent_spending(
             &self,
             transaction: &Transaction,
             status: ConfirmationStatus,
             block_time: Option<u32>,
+            sent_to_tex: &mut bool,
         ) {
             // Scan all the inputs to see if we spent any transparent funds in this tx
-            let mut total_transparent_value_spent = 0;
             let mut spent_utxos = vec![];
+            let mut total_transparent_value_spent = 0;
 
             {
-                let current_transaction_records_by_id = &self
-                    .transaction_metadata_set
-                    .read()
-                    .await
-                    .transaction_records_by_id;
+                // We are the authors of the 320 transactions (that we care about), therefore
+                // we have the transaction that encumbered the (misanmed) "ephemeral" taddr
+                // with funds.
+                // We backtrack from the vins of every transaction to check for "ephemeral" addresses
+                // (from zingomemo), to determine if a given vin is the source of funds for a "tex"
+                // address.  That is, we know the ephemeral taddrs, we simply need to check if they are
+                // the receiver in a given transaction.  If the are then, their spend identifies a tex.
                 if let Some(t_bundle) = transaction.transparent_bundle() {
                     for vin in t_bundle.vin.iter() {
-                        // Find the prev txid that was spent
-                        let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
-                        let prev_n = vin.prevout.n() as u64;
-
-                        if let Some(wtx) =
-                            current_transaction_records_by_id.get(&prev_transaction_id)
+                        if let Some((spent_utxo, prev_transaction_id, prev_n)) =
+                            self.get_spent_utxo(vin).await
                         {
-                            // One of the tx outputs is a match
-                            if let Some(spent_utxo) = wtx
-                                .transparent_outputs
-                                .iter()
-                                .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
+                            total_transparent_value_spent += spent_utxo.value;
+                            spent_utxos.push((
+                                prev_transaction_id,
+                                prev_n as u32,
+                                transaction.txid(),
+                            ));
+                            if let Some(_rejection_address) =
+                                self.identify_rejection_address(spent_utxo)
                             {
-                                total_transparent_value_spent += spent_utxo.value;
-                                spent_utxos.push((
-                                    prev_transaction_id,
-                                    prev_n as u32,
-                                    transaction.txid(),
-                                ));
+                                *sent_to_tex = true;
                             }
                         }
                     }
@@ -429,7 +445,7 @@ mod decrypt_transaction {
                     .await
                     .transaction_records_by_id;
 
-                let transaction_record = tx_map.create_modify_get_transaction_metadata(
+                let transaction_record = tx_map.create_modify_get_transaction_record(
                     &transaction.txid(),
                     status,
                     block_time,
@@ -607,17 +623,59 @@ mod decrypt_transaction {
                 );
             }
         }
+
+        async fn post_process_scan_results(
+            &self,
+            transaction: &Transaction,
+            outgoing_metadatas: &mut Vec<OutgoingTxData>,
+            sent_to_tex: bool,
+        ) {
+            // TODO: Account for ephemeral_taddresses
+            // Collect our t-addresses for easy checking
+            let taddrs_set = self.key.get_taddrs(&self.config.chain);
+            let tx_map = self.transaction_metadata_set.write().await;
+            if let Some(transaction_record) =
+                tx_map.transaction_records_by_id.get(&transaction.txid())
+            {
+                // `transaction_kind` uses outgoing_tx_data to determine the SendType but not to distinguish Sent(_) from Received
+                // therefore, its safe to use it here to establish whether the transaction was created by this capacility or not.
+                if let TransactionKind::Sent(_) = tx_map
+                    .transaction_records_by_id
+                    .transaction_kind(transaction_record, &self.config.chain)
+                {
+                    if let Some(t_bundle) = transaction.transparent_bundle() {
+                        for vout in &t_bundle.vout {
+                            if let Some(taddr) = vout.recipient_address().map(|raw_taddr| {
+                                match sent_to_tex {
+                                    false => address_from_pubkeyhash(&self.config, raw_taddr),
+                                    true=> match raw_taddr{
+                                        TransparentAddress::PublicKeyHash(taddr_bytes) => interpret_taddr_as_tex_addr(taddr_bytes, &self.config.chain),
+                                        TransparentAddress::ScriptHash(_taddr_bytes) => {
+                                            // tex addresses are P2PKH only. If this is a script hash, then we were wrong about
+                                            // it being a tex.
+                                            todo!("This happens if someone mislabels in a zingomemo, or zingolib logic an address as \"ephemeral\".");},
+                                    },
+                                }
+                            }) {
+                                if !taddrs_set.contains(&taddr) {
+                                    outgoing_metadatas.push(OutgoingTxData {
+                                        recipient_address: taddr,
+                                        value: u64::from(vout.value),
+                                        memo: Memo::Empty,
+                                        recipient_ua: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     mod zingo_memos {
-        use zcash_client_backend::wallet::TransparentAddressMetadata;
+
         use zcash_keys::address::UnifiedAddress;
-        use zcash_primitives::{
-            legacy::{
-                keys::{NonHardenedChildIndex, TransparentKeyScope},
-                TransparentAddress,
-            },
-            transaction::TxId,
-        };
+        use zcash_primitives::transaction::TxId;
         use zingo_memo::ParsedMemo;
 
         use crate::wallet::{
@@ -660,40 +718,37 @@ mod decrypt_transaction {
             }
             async fn handle_texes(
                 &self,
-                ephemeral_address_indexes: Vec<u32>,
+                zingo_memo_stored_indices: Vec<u32>,
             ) -> Result<(), InvalidMemoError> {
-                for ephemeral_address_index in ephemeral_address_indexes {
-                    let ephemeral_address = self
-                        .key
-                        .ephemeral_address(ephemeral_address_index)
-                        .map_err(InvalidMemoError::InvalidEphemeralIndex)?;
-                    let current_keys = &mut self.key.transparent_child_ephemeral_addresses();
-                    let total_keys = current_keys.len();
+                // Get list of ephemeral keys already registered to the capability.
+                // TODO:  This doesn't currently handle out-of-order sync where
+                // the ephemeral address is discovered (from the memo) **after** the
+                // corresponding TEX address has been "passed".
+                let current_keys = self.key.transparent_child_ephemeral_addresses();
+                let total_keys = current_keys.len();
+                for ephemeral_address_index in zingo_memo_stored_indices {
                     if (ephemeral_address_index as usize) < total_keys {
-                        if current_keys[ephemeral_address_index as usize].0 != ephemeral_address {
-                            panic!("Something is badly broken.  It should not be possible to populate this structure with an incorrect key.")
-                        } else {
-                            // The emphemeral key is in the structure at its appropriate location.
-                            return Ok(());
-                        }
+                        // The emphemeral key is in the structure at its appropriate location.
+                        return Ok(());
                     } else {
                         // The detected key is derived from a higher index than any previously stored key.
                         //  * generate the keys to fill in the "gap".
-                        for i in total_keys as u32..ephemeral_address_index {
-                            if let Some(nhci) = NonHardenedChildIndex::from_index(i) {
-                                let tam = TransparentAddressMetadata::new(
-                                    TransparentKeyScope::EPHEMERAL,
-                                    nhci,
-                                );
-                                current_keys.push((ephemeral_address, tam));
-                            }
+                        for _index in (total_keys as u32)..=ephemeral_address_index {
+                            crate::wallet::data::new_persistant_ephemeral_address(
+                                current_keys,
+                                &self
+                                    .key
+                                    .ephemeral_ivk()
+                                    .map_err(InvalidMemoError::InvalidEphemeralIndex)?,
+                            )
+                            .map_err(InvalidMemoError::InvalidEphemeralIndex)?;
                         }
                     }
                 }
                 Ok(())
             }
 
-            pub(super) async fn update_outgoing_txdatas_with_uas(
+            pub(super) async fn update_from_zingomemos(
                 &self,
                 txid_indexed_zingo_memos: Vec<(ParsedMemo, TxId)>,
             ) -> Result<(), InvalidMemoError> {

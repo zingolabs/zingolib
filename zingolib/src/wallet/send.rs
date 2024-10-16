@@ -3,7 +3,6 @@
 use log::error;
 use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
-use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_proofs::prover::LocalTxProver;
 
 use std::cmp;
@@ -51,7 +50,7 @@ impl LightWallet {
     /// select anchors, based on the current synchronised block chain.
     pub(crate) async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
         let range = {
-            let blocks = self.blocks.read().await;
+            let blocks = self.last_100_blocks.read().await;
             (
                 blocks.last().map(|block| block.height as u32),
                 blocks.first().map(|block| block.height as u32),
@@ -141,7 +140,7 @@ impl LightWallet {
 
         match proposal.steps().len() {
             1 => {
-                self.create_transaction_helper(sapling_prover, unified_spend_key, proposal)
+                self.create_transaction_helper(sapling_prover, proposal)
                     .await
             }
             2 if proposal.steps()[1]
@@ -152,7 +151,7 @@ impl LightWallet {
                     matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
                 }) =>
             {
-                self.create_transaction_helper(sapling_prover, unified_spend_key, proposal)
+                self.create_transaction_helper(sapling_prover, proposal)
                     .await
             }
 
@@ -163,7 +162,6 @@ impl LightWallet {
     async fn create_transaction_helper<NoteRef>(
         &self,
         sapling_prover: LocalTxProver,
-        unified_spend_key: UnifiedSpendingKey,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
     ) -> Result<(), BuildTransactionError> {
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
