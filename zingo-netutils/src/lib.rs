@@ -95,7 +95,7 @@ impl GrpcConnector {
             if uri.scheme_str() == Some("https") {
                 let mut root_store = RootCertStore::empty();
                 //webpki uses a different struct for TrustAnchor
-                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|anchor_ref| {
+                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor_ref| {
                     TrustAnchor {
                         subject: Der::from_slice(anchor_ref.subject),
                         subject_public_key_info: Der::from_slice(anchor_ref.spki),
