@@ -681,6 +681,7 @@ mod decrypt_transaction {
                                     TransparentKeyScope::EPHEMERAL,
                                     nhci,
                                 );
+                                current_keys.push((ephemeral_address, tam));
                             }
                         }
                     }
