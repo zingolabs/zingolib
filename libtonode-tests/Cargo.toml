@@ -18,7 +18,7 @@ bip0039.workspace = true
 zcash_primitives = { workspace = true }
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }
-zcash_address = { workspace = true }
+zcash_address = { workspace = true, features = ["test-dependencies"] }
 zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
 
@@ -31,3 +31,5 @@ serde_json = { workspace = true }
 http.workspace = true
 tempfile.workspace = true
 tracing-subscriber.workspace = true
+proptest.workspace = true
+bech32 = "0.11.0"

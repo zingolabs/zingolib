@@ -169,13 +169,12 @@ pub(crate) fn legacy_sks_to_usk(
 pub(crate) fn generate_transparent_address_from_legacy_key(
     external_pubkey: &AccountPubKey,
     address_index: NonHardenedChildIndex,
-) -> Result<TransparentAddress, String> {
+) -> Result<TransparentAddress, bip32::Error> {
     let external_pubkey_bytes = external_pubkey.serialize();
 
     let mut chain_code = [0u8; 32];
     chain_code.copy_from_slice(&external_pubkey_bytes[..32]);
-    let public_key = secp256k1::PublicKey::from_slice(&external_pubkey_bytes[32..])
-        .map_err(|e| e.to_string())?;
+    let public_key = secp256k1::PublicKey::from_slice(&external_pubkey_bytes[32..])?;
 
     let extended_pubkey = ExtendedPublicKey::new(
         public_key,
@@ -189,9 +188,7 @@ pub(crate) fn generate_transparent_address_from_legacy_key(
     );
 
     // address generation copied from IncomingViewingKey::derive_address in LRZ
-    let child_key = extended_pubkey
-        .derive_child(address_index.into())
-        .map_err(|e| e.to_string())?;
+    let child_key = extended_pubkey.derive_child(address_index.into())?;
     Ok(zcash_primitives::legacy::keys::pubkey_to_address(
         child_key.public_key(),
     ))

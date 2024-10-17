@@ -331,6 +331,24 @@ impl WalletRead for TxMap {
     ) -> Result<Vec<zcash_client_backend::data_api::TransactionDataRequest>, Self::Error> {
         unimplemented!()
     }
+
+    fn get_known_ephemeral_addresses(
+        &self,
+        _account: Self::AccountId,
+        _index_range: Option<std::ops::Range<u32>>,
+    ) -> Result<
+        Vec<(
+            zcash_primitives::legacy::TransparentAddress,
+            TransparentAddressMetadata,
+        )>,
+        Self::Error,
+    > {
+        Ok(self
+            .transparent_child_ephemeral_addresses
+            .iter()
+            .cloned()
+            .collect())
+    }
 }
 
 #[cfg(test)]

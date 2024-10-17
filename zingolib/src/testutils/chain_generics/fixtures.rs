@@ -11,6 +11,8 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use crate::lightclient::LightClient;
+use crate::wallet::data::summaries::SelfSendValueTransfer;
+use crate::wallet::data::summaries::SentValueTransfer;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
 use crate::wallet::notes::{query::OutputPoolQuery, OutputInterface};
 use crate::wallet::{data::summaries::ValueTransferKind, notes::query::OutputQuery};
@@ -62,11 +64,13 @@ where
     );
     assert_eq!(
         sender.value_transfers().await.0[1].kind(),
-        ValueTransferKind::Sent
+        ValueTransferKind::Sent(SentValueTransfer::Send)
     );
     assert_eq!(
         sender.value_transfers().await.0[2].kind(),
-        ValueTransferKind::MemoToSelf
+        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+            SelfSendValueTransfer::MemoToSelf
+        ))
     );
     assert_eq!(recipient.value_transfers().await.0.len(), 1);
     assert_eq!(
@@ -84,14 +88,14 @@ where
     assert_eq!(sender.value_transfers().await.0.len(), 4);
     assert_eq!(
         sender.value_transfers().await.0[3].kind(),
-        ValueTransferKind::SendToSelf
+        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Basic))
     );
 
     with_assertions::propose_shield_bump_sync(&mut environment, &sender, false).await;
     assert_eq!(sender.value_transfers().await.0.len(), 5);
     assert_eq!(
         sender.value_transfers().await.0[4].kind(),
-        ValueTransferKind::Shield
+        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Shield))
     );
 }
 /// runs a send-to-receiver and receives it in a chain-generic context

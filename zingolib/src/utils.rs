@@ -38,6 +38,7 @@ pub(crate) use build_method;
 pub(crate) use build_method_push;
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_push_list;
+use zcash_primitives::consensus::NetworkConstants;
 
 /// this mod exists to allow the use statement without cluttering the parent mod
 pub mod txid {
@@ -71,4 +72,16 @@ pub mod txid {
             }
         }
     }
+}
+
+/// Take a P2PKH taddr and interpret it as a tex addr
+pub fn interpret_taddr_as_tex_addr(
+    taddr_bytes: [u8; 20],
+    p: &impl zcash_primitives::consensus::Parameters,
+) -> String {
+    bech32::encode::<bech32::Bech32m>(
+        bech32::Hrp::parse_unchecked(p.network_type().hrp_tex_address()),
+        &taddr_bytes,
+    )
+    .unwrap()
 }

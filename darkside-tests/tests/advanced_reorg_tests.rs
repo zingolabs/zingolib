@@ -12,12 +12,12 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingolib::config::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::{
     lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
 };
 use zingolib::wallet::data::summaries::ValueTransferKind;
+use zingolib::{config::RegtestNetwork, wallet::data::summaries::SentValueTransfer};
 
 #[ignore]
 #[tokio::test]
@@ -605,7 +605,7 @@ async fn reorg_changes_outgoing_tx_height() {
             .await
             .iter()
             .find_map(|v| match v.kind() {
-                ValueTransferKind::Sent => {
+                ValueTransferKind::Sent(SentValueTransfer::Send) => {
                     if let Some(addr) = v.recipient_address() {
                         if addr == recipient_string && v.value() == 100_000 {
                             Some(v.blockheight())
@@ -831,29 +831,25 @@ async fn reorg_expires_outgoing_tx_height() {
 
     println!("{:?}", light_client.value_transfers().await);
 
-    assert_eq!(
-        light_client
-            .value_transfers()
-            .await
-            .iter()
-            .find_map(|v| match v.kind() {
-                ValueTransferKind::Sent => {
-                    if let Some(addr) = v.recipient_address() {
-                        if addr == recipient_string && v.value() == 100_000 {
-                            Some(v.blockheight())
-                        } else {
-                            None
-                        }
+    let send_height = light_client
+        .value_transfers()
+        .await
+        .iter()
+        .find_map(|v| match v.kind() {
+            ValueTransferKind::Sent(SentValueTransfer::Send) => {
+                if let Some(addr) = v.recipient_address() {
+                    if addr == recipient_string && v.value() == 100_000 {
+                        Some(v.blockheight())
                     } else {
                         None
                     }
-                }
-                _ => {
+                } else {
                     None
                 }
-            }),
-        Some(BlockHeight::from(sent_tx_height as u32))
-    );
+            }
+            _ => None,
+        });
+    assert_eq!(send_height, Some(BlockHeight::from(sent_tx_height as u32)));
 
     //
     // Create reorg
@@ -1024,7 +1020,7 @@ async fn reorg_changes_outgoing_tx_index() {
             .await
             .iter()
             .find_map(|v| match v.kind() {
-                ValueTransferKind::Sent => {
+                ValueTransferKind::Sent(SentValueTransfer::Send) => {
                     if let Some(addr) = v.recipient_address() {
                         if addr == recipient_string && v.value() == 100_000 {
                             Some(v.blockheight())

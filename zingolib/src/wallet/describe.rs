@@ -229,7 +229,7 @@ impl LightWallet {
 
     /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
     pub async fn get_blocks(&self) -> Vec<BlockData> {
-        self.blocks.read().await.iter().cloned().collect()
+        self.last_100_blocks.read().await.iter().cloned().collect()
     }
 
     /// Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
@@ -275,7 +275,7 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     pub async fn last_synced_hash(&self) -> String {
-        self.blocks
+        self.last_100_blocks
             .read()
             .await
             .first()
@@ -286,7 +286,7 @@ impl LightWallet {
     /// TODO: How do we know that 'sapling_activation_height - 1' is only returned
     /// when it should be?  When should it be?
     pub async fn last_synced_height(&self) -> u64 {
-        self.blocks
+        self.last_100_blocks
             .read()
             .await
             .first()
