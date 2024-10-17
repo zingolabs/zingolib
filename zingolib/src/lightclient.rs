@@ -128,6 +128,25 @@ pub struct PoolBalances {
     /// TODO: Add Doc Comment Here!
     pub transparent_balance: Option<u64>,
 }
+fn format_option_zatoshis(ioz: &Option<u64>) -> String {
+    ioz.map(|in_num| in_num.to_string())
+        .unwrap_or("null".to_string())
+}
+impl std::fmt::Display for PoolBalances {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[
+    sapling_balance: {}
+    verified_sapling_balance: {}
+    unverified_sapling_balance: {}
+        ]",
+            format_option_zatoshis(&self.sapling_balance),
+            format_option_zatoshis(&self.verified_sapling_balance),
+            format_option_zatoshis(&self.unverified_sapling_balance),
+        )
+    }
+}
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, PartialEq, Serialize)]
