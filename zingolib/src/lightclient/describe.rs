@@ -2,7 +2,10 @@
 use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
-use std::collections::{HashMap, HashSet};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+};
 use tokio::runtime::Runtime;
 
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
@@ -13,7 +16,9 @@ use zcash_primitives::{
 
 use crate::{
     config::margin_fee,
-    wallet::data::summaries::{SelfSendValueTransfer, SentValueTransfer},
+    wallet::data::summaries::{
+        SelfSendValueTransfer, SentValueTransfer, TransactionSummaryInterface,
+    },
 };
 
 use super::{AccountBackupInfo, LightClient, PoolBalances, UserBalances};
@@ -25,8 +30,8 @@ use crate::{
             summaries::{
                 basic_transaction_summary_parts, DetailedTransactionSummaries,
                 DetailedTransactionSummaryBuilder, TransactionSummaries, TransactionSummary,
-                TransactionSummaryBuilder, TransactionSummaryInterface as _, ValueTransfer,
-                ValueTransferBuilder, ValueTransferKind, ValueTransfers,
+                TransactionSummaryBuilder, ValueTransfer, ValueTransferBuilder, ValueTransferKind,
+                ValueTransfers,
             },
             OutgoingTxData,
         },
@@ -626,7 +631,23 @@ impl LightClient {
                     .expect("all fields should be populated")
             })
             .collect::<Vec<_>>();
-        transaction_summaries.sort_by_key(|tx| tx.blockheight());
+        transaction_summaries.sort_by(|sum1, sum2| {
+            match sum1.blockheight().cmp(&sum2.blockheight()) {
+                Ordering::Equal => {
+                    let starts_with_tex = |summary: &TransactionSummary| {
+                        summary.outgoing_tx_data().iter().any(|outgoing_txdata| {
+                            outgoing_txdata.recipient_address.starts_with("tex")
+                        })
+                    };
+                    match (starts_with_tex(sum1), starts_with_tex(sum2)) {
+                        (true, false) => Ordering::Greater,
+                        (false, true) => Ordering::Less,
+                        (false, false) | (true, true) => Ordering::Equal,
+                    }
+                }
+                otherwise => otherwise,
+            }
+        });
 
         TransactionSummaries::new(transaction_summaries)
     }
