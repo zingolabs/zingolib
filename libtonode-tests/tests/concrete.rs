@@ -115,14 +115,21 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
-
     use bip0039::Mnemonic;
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+    use zcash_address::{AddressKind, ZcashAddress};
+    use zcash_client_backend::{
+        zip321::{Payment, TransactionRequest},
+        PoolType, ShieldedProtocol,
+    };
+    use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingolib::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
-    use zingolib::testutils::lightclient::from_inputs;
     use zingolib::wallet::notes::OutputInterface as _;
+    use zingolib::{
+        config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS, wallet::data::summaries::SentValueTransfer,
+    };
+    use zingolib::{
+        testutils::lightclient::from_inputs, wallet::data::summaries::SelfSendValueTransfer,
+    };
 
     use zingolib::{
         utils::conversion::txid_from_hex_encoded_str, wallet::data::summaries::ValueTransferKind,
@@ -154,13 +161,82 @@ mod fast {
 
         dbg!(value_transfers);
 
-        assert!(value_transfers
-            .iter()
-            .any(|vt| vt.kind() == ValueTransferKind::SendToSelf));
-        assert!(value_transfers
-            .iter()
-            .any(|vt| vt.kind() == ValueTransferKind::Sent
-                && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+        assert!(value_transfers.iter().any(|vt| vt.kind()
+            == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                SelfSendValueTransfer::Basic
+            ))));
+        assert!(value_transfers.iter().any(|vt| vt.kind()
+            == ValueTransferKind::Sent(SentValueTransfer::Send)
+            && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+    }
+
+    pub mod tex {
+        use super::*;
+        fn first_taddr_to_tex(client: &LightClient) -> ZcashAddress {
+            let taddr = ZcashAddress::try_from_encoded(
+                &client
+                    .wallet
+                    .get_first_address(PoolType::Transparent)
+                    .unwrap(),
+            )
+            .unwrap();
+
+            let AddressKind::P2pkh(taddr_bytes) = taddr.kind() else {
+                panic!()
+            };
+            let tex_string =
+                utils::interpret_taddr_as_tex_addr(*taddr_bytes, &client.config().chain);
+            //            let tex_string = utils::interpret_taddr_as_tex_addr(*taddr_bytes);
+
+            ZcashAddress::try_from_encoded(&tex_string).unwrap()
+        }
+        #[tokio::test]
+        async fn send_to_tex() {
+            let (ref _regtest_manager, _cph, ref faucet, sender, _txid) =
+                scenarios::orchard_funded_recipient(5_000_000).await;
+
+            let tex_addr_from_first = first_taddr_to_tex(&faucet);
+            let payment = vec![Payment::without_memo(
+                tex_addr_from_first.clone(),
+                NonNegativeAmount::from_u64(100_000).unwrap(),
+            )];
+
+            let transaction_request = TransactionRequest::new(payment).unwrap();
+
+            let proposal = sender.propose_send(transaction_request).await.unwrap();
+            assert_eq!(proposal.steps().len(), 2usize);
+            let sent_txids_according_to_broadcast = sender
+                .complete_and_broadcast_stored_proposal()
+                .await
+                .unwrap();
+            let txids = sender
+                .wallet
+                .transactions()
+                .read()
+                .await
+                .transaction_records_by_id
+                .keys()
+                .cloned()
+                .collect::<Vec<TxId>>();
+            dbg!(&txids);
+            dbg!(sent_txids_according_to_broadcast);
+            assert_eq!(
+                sender
+                    .wallet
+                    .transactions()
+                    .read()
+                    .await
+                    .transaction_records_by_id
+                    .len(),
+                3usize
+            );
+            let val_tranfers = dbg!(sender.value_transfers().await);
+            // This fails, as we don't scan sends to tex correctly yet
+            assert_eq!(
+                val_tranfers.0[2].recipient_address().unwrap(),
+                tex_addr_from_first.encode()
+            );
+        }
     }
 
     #[tokio::test]
@@ -3369,7 +3445,7 @@ mod slow {
 
         // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
         // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
-        recipient.wallet.blocks.write().await.drain(0..20);
+        recipient.wallet.last_100_blocks.write().await.drain(0..20);
         assert_eq!(recipient.wallet.last_synced_height().await, 5);
 
         // 6. Do a sync again
@@ -3939,6 +4015,7 @@ async fn audit_anyp_outputs() {
     assert_eq!(lapo.len(), 1);
 }
 mod send_all {
+
     use super::*;
     #[tokio::test]
     async fn toggle_zennies_for_zingo() {

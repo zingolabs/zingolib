@@ -556,7 +556,7 @@ impl TransactionRecordsById {
             }
         });
     }
-    pub(crate) fn create_modify_get_transaction_metadata(
+    pub(crate) fn create_modify_get_transaction_record(
         &mut self,
         txid: &TxId,
         status: ConfirmationStatus,
@@ -602,7 +602,7 @@ impl TransactionRecordsById {
         total_transparent_value_spent: u64,
     ) {
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+            self.create_modify_get_transaction_record(&txid, status, timestamp);
 
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
     }
@@ -652,7 +652,7 @@ impl TransactionRecordsById {
     ) {
         // Read or create the current TxId
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+            self.create_modify_get_transaction_record(&txid, status, timestamp);
 
         // Add this UTXO if it doesn't already exist
         if transaction_metadata
@@ -691,7 +691,7 @@ impl TransactionRecordsById {
         position: incrementalmerkletree::Position,
     ) {
         let transaction_metadata =
-            self.create_modify_get_transaction_metadata(&txid, status, timestamp);
+            self.create_modify_get_transaction_record(&txid, status, timestamp);
 
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),

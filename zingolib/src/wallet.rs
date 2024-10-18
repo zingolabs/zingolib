@@ -199,7 +199,7 @@ pub struct LightWallet {
     mnemonic: Option<(Mnemonic, u32)>,
 
     /// The last 100 blocks, used if something gets re-orged
-    pub blocks: Arc<RwLock<Vec<BlockData>>>,
+    pub last_100_blocks: Arc<RwLock<Vec<BlockData>>>,
 
     /// Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>,
@@ -257,7 +257,7 @@ impl LightWallet {
     /// After this, the wallet's initial state will need to be set
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
-        self.blocks.write().await.clear();
+        self.last_100_blocks.write().await.clear();
         self.transaction_context
             .transaction_metadata_set
             .write()
@@ -383,6 +383,13 @@ impl LightWallet {
         let transaction_metadata_set = if wc.unified_key_store().is_spending_key() {
             Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
+                wc.transparent_child_ephemeral_addresses().clone(),
+                wc.ephemeral_ivk().map_err(|e| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Error with transparent key: {e}"),
+                    )
+                })?,
             )))
         } else {
             Arc::new(RwLock::new(TxMap::new_treeless(
@@ -392,7 +399,7 @@ impl LightWallet {
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {
-            blocks: Arc::new(RwLock::new(vec![])),
+            last_100_blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: AtomicU64::new(height),
@@ -413,7 +420,7 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
-        let mut blocks = self.blocks.write().await;
+        let mut blocks = self.last_100_blocks.write().await;
         blocks.clear();
         blocks.extend_from_slice(&new_blocks[..]);
     }
@@ -425,7 +432,7 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
-        let mut blocks = self.blocks.write().await;
+        let mut blocks = self.last_100_blocks.write().await;
         if !blocks.is_empty() {
             return false;
         }

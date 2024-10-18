@@ -1,5 +1,7 @@
 //! currently only implementing one method of WalletWrite
 
+use std::iter;
+
 use zcash_client_backend::data_api::WalletWrite;
 
 use super::{TxMap, TxMapTraitError};
@@ -65,7 +67,7 @@ impl WalletWrite for TxMap {
             if let Some(spending_data) = self.spending_data_mut() {
                 spending_data
                     .cached_raw_transactions_mut()
-                    .insert(tx.txid(), raw_tx);
+                    .push((tx.txid(), raw_tx));
             } else {
                 return Err(TxMapTraitError::NoSpendCapability);
             }
@@ -104,5 +106,33 @@ impl WalletWrite for TxMap {
         _status: zcash_client_backend::data_api::TransactionStatus,
     ) -> Result<(), Self::Error> {
         unimplemented!()
+    }
+
+    fn reserve_next_n_ephemeral_addresses(
+        &mut self,
+        _account_id: Self::AccountId,
+        n: usize,
+    ) -> Result<
+        Vec<(
+            zcash_primitives::legacy::TransparentAddress,
+            zcash_client_backend::wallet::TransparentAddressMetadata,
+        )>,
+        Self::Error,
+    > {
+        self.spending_data()
+            .as_ref()
+            .map(|spending_data| {
+                iter::repeat_with(|| {
+                    crate::wallet::data::new_persistent_ephemeral_address(
+                        &self.transparent_child_ephemeral_addresses,
+                        spending_data.transparent_ephemeral_ivk(),
+                    )
+                    .map_err(TxMapTraitError::TexSendError)
+                })
+                .take(n)
+                .collect::<Result<_, _>>()
+            })
+            .transpose()?
+            .ok_or(TxMapTraitError::NoSpendCapability)
     }
 }

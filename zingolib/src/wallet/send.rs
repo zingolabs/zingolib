@@ -1,7 +1,9 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
 use log::error;
+use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
+use zcash_proofs::prover::LocalTxProver;
 
 use std::cmp;
 use std::ops::DerefMut as _;
@@ -11,7 +13,7 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::memo::MemoBytes;
 
-use zingo_memo::create_wallet_internal_memo_version_0;
+use zingo_memo::create_wallet_internal_memo_version_1;
 
 use super::LightWallet;
 
@@ -48,7 +50,7 @@ impl LightWallet {
     /// select anchors, based on the current synchronised block chain.
     pub(crate) async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
         let range = {
-            let blocks = self.blocks.read().await;
+            let blocks = self.last_100_blocks.read().await;
             (
                 blocks.last().map(|block| block.height as u32),
                 blocks.first().map(|block| block.height as u32),
@@ -107,8 +109,8 @@ pub enum BuildTransactionError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("Sending to exchange addresses is not supported yet!")]
-    ExchangeAddressesNotSupported,
+    #[error("Only tex multistep transactions are supported!")]
+    NonTexMultiStep,
 }
 
 impl LightWallet {
@@ -136,11 +138,32 @@ impl LightWallet {
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-        // We don't support zip320 yet. Only one step.
-        if proposal.steps().len() != 1 {
-            return Err(BuildTransactionError::ExchangeAddressesNotSupported);
-        }
+        match proposal.steps().len() {
+            1 => {
+                self.create_transaction_helper(sapling_prover, proposal)
+                    .await
+            }
+            2 if proposal.steps()[1]
+                .transaction_request()
+                .payments()
+                .values()
+                .any(|payment| {
+                    matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
+                }) =>
+            {
+                self.create_transaction_helper(sapling_prover, proposal)
+                    .await
+            }
 
+            _ => Err(BuildTransactionError::NonTexMultiStep),
+        }
+    }
+
+    async fn create_transaction_helper<NoteRef>(
+        &self,
+        sapling_prover: LocalTxProver,
+        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+    ) -> Result<(), BuildTransactionError> {
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self.transaction_context
                 .transaction_metadata_set
@@ -164,19 +187,31 @@ impl LightWallet {
 }
 
 // TODO: move to a more suitable place
-pub(crate) fn change_memo_from_transaction_request(request: &TransactionRequest) -> MemoBytes {
-    let recipient_uas = request
-        .payments()
-        .values()
-        .flat_map(|payment| {
-            payment
-                .recipient_address()
-                .kind()
-                .get_unified_address()
-                .and_then(|ua| ua.try_into().ok())
-        })
-        .collect::<Vec<UnifiedAddress>>();
-    let uas_bytes = match create_wallet_internal_memo_version_0(recipient_uas.as_slice()) {
+pub(crate) fn change_memo_from_transaction_request(
+    request: &TransactionRequest,
+    mut num_ephemeral_addresses: u32,
+) -> MemoBytes {
+    let mut recipient_uas = Vec::new();
+    let mut ephemeral_address_indexes = Vec::new();
+    for payment in request.payments().values() {
+        match payment.recipient_address().kind() {
+            AddressKind::Unified(ua) => {
+                if let Ok(ua) = UnifiedAddress::try_from(ua.clone()) {
+                    recipient_uas.push(ua);
+                }
+            }
+            AddressKind::Tex(_) => {
+                ephemeral_address_indexes.push(num_ephemeral_addresses);
+
+                num_ephemeral_addresses += 1;
+            }
+            _ => (),
+        }
+    }
+    let uas_bytes = match create_wallet_internal_memo_version_1(
+        recipient_uas.as_slice(),
+        ephemeral_address_indexes.as_slice(),
+    ) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!(

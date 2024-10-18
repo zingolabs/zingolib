@@ -49,6 +49,11 @@ impl FetchTaddrTransactions {
                 .addresses()
                 .iter()
                 .filter_map(|ua| ua.transparent())
+                .chain(
+                    wc.transparent_child_ephemeral_addresses()
+                        .iter()
+                        .map(|(taddr, _metadata)| taddr),
+                )
                 .map(|taddr| address_from_pubkeyhash(&config, *taddr))
                 .collect::<Vec<_>>();
 
