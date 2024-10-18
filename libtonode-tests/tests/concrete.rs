@@ -191,7 +191,7 @@ mod fast {
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
         #[tokio::test]
-        async fn propose_send_to_tex() {
+        async fn send_to_tex() {
             let (ref _regtest_manager, _cph, ref faucet, sender, _txid) =
                 scenarios::orchard_funded_recipient(5_000_000).await;
 
