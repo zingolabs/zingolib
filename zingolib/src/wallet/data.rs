@@ -1994,21 +1994,6 @@ impl WalletZecPriceInfo {
     }
 }
 
-#[test]
-fn read_write_empty_sapling_tree() {
-    let mut buffer = Vec::new();
-
-    write_commitment_tree(
-        &CommitmentTree::<sapling_crypto::Node, 32>::empty(),
-        &mut buffer,
-    )
-    .unwrap();
-    assert_eq!(
-        CommitmentTree::<sapling_crypto::Node, 32>::empty(),
-        read_commitment_tree(&mut buffer.as_slice()).unwrap()
-    )
-}
-
 /// Generate a new ephemeral transparent address,
 /// for use in a send to a TEX address.
 pub fn new_persistant_ephemeral_address(
@@ -2031,6 +2016,21 @@ pub fn new_persistant_ephemeral_address(
     )?;
     transparent_child_ephemeral_addresses.push((ephemeral_address, metadata.clone()));
     Ok((ephemeral_address, metadata))
+}
+
+#[test]
+fn read_write_empty_sapling_tree() {
+    let mut buffer = Vec::new();
+
+    write_commitment_tree(
+        &CommitmentTree::<sapling_crypto::Node, 32>::empty(),
+        &mut buffer,
+    )
+    .unwrap();
+    assert_eq!(
+        CommitmentTree::<sapling_crypto::Node, 32>::empty(),
+        read_commitment_tree(&mut buffer.as_slice()).unwrap()
+    )
 }
 
 #[cfg(any(test, feature = "test-elevation"))]
