@@ -36,7 +36,7 @@ use crate::wallet::error::KeyError;
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 use crate::{
     config::{ChainType, ZingoConfig},
-    wallet::data::new_persistant_ephemeral_address,
+    wallet::data::new_persistent_ephemeral_address,
 };
 
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
@@ -788,7 +788,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         }
 
         for _ in 0..ephemeral_addresses_len {
-            new_persistant_ephemeral_address(
+            new_persistent_ephemeral_address(
                 &wc.transparent_child_ephemeral_addresses,
                 &wc.ephemeral_ivk()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,

@@ -733,7 +733,7 @@ mod decrypt_transaction {
                         // The detected key is derived from a higher index than any previously stored key.
                         //  * generate the keys to fill in the "gap".
                         for _index in (total_keys as u32)..=ephemeral_address_index {
-                            crate::wallet::data::new_persistant_ephemeral_address(
+                            crate::wallet::data::new_persistent_ephemeral_address(
                                 current_keys,
                                 &self
                                     .key

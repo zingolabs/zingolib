@@ -1996,7 +1996,7 @@ impl WalletZecPriceInfo {
 
 /// Generate a new ephemeral transparent address,
 /// for use in a send to a TEX address.
-pub fn new_persistant_ephemeral_address(
+pub fn new_persistent_ephemeral_address(
     transparent_child_ephemeral_addresses: &append_only_vec::AppendOnlyVec<(
         TransparentAddress,
         TransparentAddressMetadata,

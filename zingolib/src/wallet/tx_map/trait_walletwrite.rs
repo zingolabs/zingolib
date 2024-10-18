@@ -123,7 +123,7 @@ impl WalletWrite for TxMap {
             .as_ref()
             .map(|spending_data| {
                 iter::repeat_with(|| {
-                    crate::wallet::data::new_persistant_ephemeral_address(
+                    crate::wallet::data::new_persistent_ephemeral_address(
                         &self.transparent_child_ephemeral_addresses,
                         spending_data.transparent_ephemeral_ivk(),
                     )
