@@ -133,17 +133,25 @@ fn format_option_zatoshis(ioz: &Option<u64>) -> String {
         if ioz_num == 0 {
             "0".to_string()
         } else {
-            let ioz_string = format!("{:0>8}", ioz_num);
-            let digits = ioz_string.as_bytes();
-            let mut ioz_string = digits
-                .rchunks(3)
-                .rev()
-                .map(std::str::from_utf8)
-                .collect::<Result<Vec<&str>, _>>()
-                .unwrap()
-                .join("_");
-            ioz_string.insert(ioz_string.len() - 10, '.');
-            ioz_string
+            let mut digits = vec![];
+            let mut remainder = ioz_num;
+            while remainder != 0 {
+                digits.push(remainder % 10);
+                remainder /= 10;
+            }
+            let mut backwards = "".to_string();
+            for (i, digit) in digits.iter().enumerate() {
+                if i % 8 == 4 {
+                    backwards.push('_');
+                }
+                if let Some(ch) = char::from_digit(*digit as u32, 10) {
+                    backwards.push(ch);
+                }
+                if i == 7 {
+                    backwards.push('.');
+                }
+            }
+            backwards.chars().rev().collect::<String>()
         }
     })
     .unwrap_or("null".to_string())
