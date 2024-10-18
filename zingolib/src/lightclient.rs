@@ -131,17 +131,19 @@ pub struct PoolBalances {
 fn format_option_zatoshis(ioz: &Option<u64>) -> String {
     ioz.map(|ioz_num| {
         if ioz_num == 0 {
-            return "0".to_string();
+            "0".to_string()
         } else {
             let ioz_string = format!("{:0>8}", ioz_num);
             let digits = ioz_string.as_bytes();
-            digits
+            let mut ioz_string = digits
                 .rchunks(3)
                 .rev()
                 .map(std::str::from_utf8)
                 .collect::<Result<Vec<&str>, _>>()
                 .unwrap()
-                .join("_")
+                .join("_");
+            ioz_string.insert(ioz_string.len() - 8, ':');
+            ioz_string
         }
     })
     .unwrap_or("null".to_string())
