@@ -43,14 +43,20 @@ where
         .await
         .unwrap();
 
-    let send_height = environment.get_chain_height() + 1;
+    let send_height = sender
+        .wallet
+        .get_target_height_and_anchor_offset()
+        .await
+        .expect("sender has a target height")
+        .0;
 
     // digesting the calculated transaction
+    // this step happens after transaction is recorded locally, but before learning anything about whether the server accepted it
     let recorded_fee = assert_record_fee_and_status(
         sender,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(send_height.into()),
+        ConfirmationStatus::Transmitted(send_height.into()),
     )
     .await;
 
@@ -59,11 +65,16 @@ where
     if test_mempool {
         // mempool scan shows the same
         sender.do_sync(false).await.unwrap();
+
+        // let the mempool monitor get a chance
+        // to listen
+        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+
         assert_record_fee_and_status(
             sender,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(send_height.into()),
+            ConfirmationStatus::Mempool(send_height.into()),
         )
         .await;
 
@@ -71,13 +82,20 @@ where
         for (recipient, _, _, _) in sends.clone() {
             if send_ua_id != recipient.do_addresses().await[0]["address"].clone() {
                 recipient.do_sync(false).await.unwrap();
-                assert_record_fee_and_status(
-                    recipient,
-                    &proposal,
-                    &txids,
-                    ConfirmationStatus::Pending(send_height.into()),
-                )
-                .await;
+                let records = &recipient
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .transaction_records_by_id;
+                for txid in &txids {
+                    let record = records.get(txid).expect("recipient must recognize txid");
+                    assert_eq!(
+                        record.status,
+                        ConfirmationStatus::Mempool(send_height.into()),
+                    )
+                }
             }
         }
     }
@@ -115,7 +133,13 @@ where
 {
     let proposal = client.propose_shield().await.unwrap();
 
-    let send_height = environment.get_chain_height() + 1;
+    let send_height = client
+        .wallet
+        .get_target_height_and_anchor_offset()
+        .await
+        .expect("sender has a target height")
+        .0;
+
     let txids = client
         .complete_and_broadcast_stored_proposal()
         .await
@@ -126,7 +150,7 @@ where
         client,
         &proposal,
         &txids,
-        ConfirmationStatus::Pending(send_height.into()),
+        ConfirmationStatus::Transmitted(send_height.into()),
     )
     .await;
 
@@ -137,7 +161,7 @@ where
             client,
             &proposal,
             &txids,
-            ConfirmationStatus::Pending(send_height.into()),
+            ConfirmationStatus::Mempool(send_height.into()),
         )
         .await;
     }

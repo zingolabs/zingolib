@@ -7,7 +7,7 @@ use crate::config::ZingoConfig;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{keys::unified::WalletCapability, tx_map_and_maybe_trees::TxMapAndMaybeTrees};
+use crate::wallet::{keys::unified::WalletCapability, tx_map::TxMap};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
@@ -17,7 +17,7 @@ pub struct TransactionContext {
     /// TODO: Add Doc Comment Here!
     pub(crate) key: Arc<WalletCapability>,
     /// TODO: Add Doc Comment Here!
-    pub transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+    pub transaction_metadata_set: Arc<RwLock<TxMap>>,
 }
 
 impl TransactionContext {
@@ -25,7 +25,7 @@ impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
     ) -> Self {
         Self {
             config: config.clone(),
@@ -414,6 +414,8 @@ mod decrypt_transaction {
             .await;
         }
 
+        /// account here is a verb meaning record note data
+        /// and perform some other appropriate actions
         async fn account_for_shielded_receipts<D>(
             &self,
             ivk: Ivk<D, External>,
@@ -446,32 +448,26 @@ mod decrypt_transaction {
                 let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
                 // if status is pending add the whole pending note
                 // otherwise, just update the output index
-                if let Some(height) = status.get_pending_height() {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .add_pending_note::<D>(
-                            transaction.txid(),
-                            height,
-                            block_time,
-                            note.clone(),
-                            to,
-                            output_index,
-                        );
+
+                let tx_map = &mut self
+                    .transaction_metadata_set
+                    .write()
+                    .await
+                    .transaction_records_by_id;
+
+                let transaction_record = tx_map.create_modify_get_transaction_metadata(
+                    &transaction.txid(),
+                    status,
+                    block_time,
+                );
+
+                if !status.is_confirmed() {
+                    transaction_record.add_pending_note::<D>(note.clone(), to, output_index);
                 } else {
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .transaction_records_by_id
-                        .update_output_index::<D>(
-                            transaction.txid(),
-                            status,
-                            block_time,
-                            note.clone(),
-                            output_index,
-                        )
+                    let _note_does_not_exist_result =
+                        transaction_record.update_output_index::<D>(note.clone(), output_index);
                 }
+
                 let memo = memo_bytes
                     .clone()
                     .try_into()
@@ -488,11 +484,7 @@ mod decrypt_transaction {
                         }
                     }
                 }
-                self.transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
+                tx_map.add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
             }
         }
         /// Transactions contain per-protocol "bundles" of components.
@@ -522,8 +514,8 @@ mod decrypt_transaction {
                     })
                     .collect::<Vec<_>>();
 
-            let Ok(fvk) = D::wc_to_fvk(&self.key) else {
-                // skip scanning if wallet has not viewing capability
+            let Ok(fvk) = D::unified_key_store_to_fvk(self.key.unified_key_store()) else {
+                // skip scanning if wallet has no viewing capability
                 return;
             };
             let (ivk, ovk) = (fvk.derive_ivk::<External>(), fvk.derive_ovk::<External>());
@@ -539,7 +531,7 @@ mod decrypt_transaction {
             .await;
             // Check if any of the nullifiers generated in this transaction are ours. We only need this for pending transactions,
             // because for transactions in the block, we will check the nullifiers from the blockdata
-            if status.is_pending() {
+            if !status.is_confirmed() {
                 let unspent_nullifiers = self
                     .transaction_metadata_set
                     .read()

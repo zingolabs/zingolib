@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 chain_generic_tests = []
+ci = ["zingolib/ci"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -13,6 +14,7 @@ zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-sync = { path = "../zingo-sync" }
 
+bip0039.workspace = true
 zcash_primitives = { workspace = true }
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }

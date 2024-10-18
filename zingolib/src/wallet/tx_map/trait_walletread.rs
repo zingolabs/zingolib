@@ -1,8 +1,8 @@
-//! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
+//! in this mod, we implement an LRZ type on the TxMap
 
 use crate::wallet::notes::{query::OutputSpendStatusQuery, Output, OutputInterface};
 
-use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
+use super::{TxMap, TxMapTraitError};
 use secrecy::SecretVec;
 use shardtree::store::ShardStore;
 use zcash_client_backend::{
@@ -54,8 +54,8 @@ fn has_unspent_shielded_outputs(
 /// some of these functions, initially those required for calculate_transaction, will be implemented
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
 /// except those doc-comments starting with IMPL:
-impl WalletRead for TxMapAndMaybeTrees {
-    type Error = TxMapAndMaybeTreesTraitError;
+impl WalletRead for TxMap {
+    type Error = TxMapTraitError;
     type AccountId = AccountId;
     type Account = ZingoAccount;
 
@@ -87,7 +87,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         )>,
         Self::Error,
     > {
-        match self.witness_trees.as_ref() {
+        match self.witness_trees() {
             Some(trees) => {
                 let opt_max_downloaded_height =
                     match trees.witness_tree_orchard.store().max_checkpoint_id() {
@@ -108,7 +108,7 @@ impl WalletRead for TxMapAndMaybeTrees {
                         )
                     }))
             }
-            None => Err(TxMapAndMaybeTreesTraitError::NoSpendCapability),
+            None => Err(TxMapTraitError::NoSpendCapability),
         }
     }
 
@@ -153,7 +153,7 @@ impl WalletRead for TxMapAndMaybeTrees {
     }
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        unimplemented!()
+        Ok(vec![(AccountId::ZERO)])
     }
     fn get_account(
         &self,
@@ -203,7 +203,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         self.witness_trees()
-            .ok_or(TxMapAndMaybeTreesTraitError::NoSpendCapability)?
+            .ok_or(TxMapTraitError::NoSpendCapability)?
             .witness_tree_orchard
             .store()
             .max_checkpoint_id()
@@ -325,6 +325,12 @@ impl WalletRead for TxMapAndMaybeTrees {
     > {
         Ok(std::collections::HashMap::new())
     }
+
+    fn transaction_data_requests(
+        &self,
+    ) -> Result<Vec<zcash_client_backend::data_api::TransactionDataRequest>, Self::Error> {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
@@ -335,7 +341,7 @@ mod tests {
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
-    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
+    use zingo_status::confirmation_status::ConfirmationStatus::Mempool;
 
     use crate::{
         mocks::default_txid,
@@ -348,17 +354,17 @@ mod tests {
         },
     };
 
-    use super::TxMapAndMaybeTrees;
-    use super::TxMapAndMaybeTreesTraitError;
+    use super::TxMap;
+    use super::TxMapTraitError;
 
     #[test]
     fn get_target_and_anchor_heights() {
-        let mut transaction_records_and_maybe_trees =
-            TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+        let mut transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
         transaction_records_and_maybe_trees
-            .witness_trees
+            .spending_data
             .as_mut()
             .unwrap()
+            .witness_trees_mut()
             .add_checkpoint(8421.into());
 
         assert_eq!(
@@ -372,8 +378,7 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights_none() {
-        let transaction_records_and_maybe_trees =
-            TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+        let transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
         assert_eq!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
@@ -384,20 +389,20 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights_err() {
-        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_treeless_address_free();
-        assert_eq!(
+        let transaction_records_and_maybe_trees = TxMap::new_treeless_address_free();
+        assert!(matches!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
                 .err()
                 .unwrap(),
-            TxMapAndMaybeTreesTraitError::NoSpendCapability
-        );
+            TxMapTraitError::NoSpendCapability
+        ));
     }
 
     proptest! {
         #[test]
         fn get_min_unspent_height(sapling_height: u32, orchard_height: u32) {
-            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+            let mut transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
 
             // these first three outputs will not trigger min_unspent_note
             transaction_records_and_maybe_trees
@@ -409,7 +414,7 @@ mod tests {
                         .build(),
                 );
             let spend = Some((default_txid(), Confirmed(112358.into())));
-            let pending_spend = Some((default_txid(), Pending(112357.into())));
+            let mempool_spend = Some((default_txid(), Mempool(112357.into())));
             transaction_records_and_maybe_trees
                 .transaction_records_by_id
                 .insert_transaction_record(
@@ -423,7 +428,7 @@ mod tests {
                 .transaction_records_by_id
                 .insert_transaction_record(
                     TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().spending_tx_status(pending_spend).clone())
+                        .orchard_notes(OrchardNoteBuilder::default().spending_tx_status(mempool_spend).clone())
                         .status(Confirmed(3000000.into()))
                         .randomize_txid()
                         .build(),
@@ -454,7 +459,7 @@ mod tests {
 
         #[test]
         fn get_tx_height(tx_height: u32) {
-            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+            let mut transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
 
             let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into()))
             .build();

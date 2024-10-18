@@ -259,11 +259,7 @@ impl ZingoConfig {
     /// create a ZingoConfig that helps a LightClient connect to a server.
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
-            .set_lightwalletd_uri(
-                ("https://zcash.mysideoftheweb.com:19067")
-                    .parse::<http::Uri>()
-                    .unwrap(),
-            )
+            .set_lightwalletd_uri(("https://zec.rocks:443").parse::<http::Uri>().unwrap())
             .create()
     }
 
@@ -459,7 +455,7 @@ impl ZingoConfig {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let mut backup_file_path = self.get_zingo_wallet_dir().into_path_buf();
-        backup_file_path.push(&format!(
+        backup_file_path.push(format!(
             "zingo-wallet.backup.{}.dat",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -665,6 +661,7 @@ impl RegtestNetwork {
                 self.activation_heights
                     .get_activation_height(NetworkUpgrade::Nu5),
             ),
+            NetworkUpgrade::Nu6 => None,
         }
     }
 }
@@ -709,6 +706,7 @@ impl ActivationHeights {
             NetworkUpgrade::Heartwood => self.heartwood,
             NetworkUpgrade::Canopy => self.canopy,
             NetworkUpgrade::Nu5 => self.orchard,
+            NetworkUpgrade::Nu6 => todo!(),
         }
     }
 }

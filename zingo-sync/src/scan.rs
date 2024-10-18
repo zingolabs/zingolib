@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
-use incrementalmerkletree::{Position, Retention};
+use incrementalmerkletree::{Marking, Position, Retention};
 use orchard::{
     note_encryption::{CompactAction, OrchardDomain},
     primitives::redpallas::{Signature, SpendAuth},
@@ -66,7 +66,7 @@ impl InitialScanData {
                     prev.sapling_commitment_tree_size(),
                     prev.orchard_commitment_tree_size(),
                 )
-            } else if let Some(chain_metadata) = first_block.chain_metadata.clone() {
+            } else if let Some(chain_metadata) = &first_block.chain_metadata {
                 // calculate initial tree size by subtracting number of outputs in block from the blocks final tree size
                 let sapling_output_count: u32 = first_block
                     .vtx
@@ -458,7 +458,11 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,
-                        is_marked,
+                        marking: if is_marked {
+                            Marking::Marked
+                        } else {
+                            Marking::None
+                        },
                     },
                     (true, false) => Retention::Marked,
                     (false, false) => Retention::Ephemeral,
@@ -502,7 +506,11 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,
-                        is_marked,
+                        marking: if is_marked {
+                            Marking::Marked
+                        } else {
+                            Marking::None
+                        },
                     },
                     (true, false) => Retention::Marked,
                     (false, false) => Retention::Ephemeral,

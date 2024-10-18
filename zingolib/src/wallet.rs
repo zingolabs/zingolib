@@ -3,19 +3,26 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use error::KeyError;
 use getset::{Getters, MutGetters};
-use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
+use zcash_keys::keys::UnifiedFullViewingKey;
+#[cfg(feature = "sync")]
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::memo::Memo;
 
 use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
-use sapling_crypto::zip32::DiversifiableFullViewingKey;
+#[cfg(feature = "sync")]
 use zingo_sync::{
     primitives::{NullifierMap, SyncState, WalletBlock, WalletTransaction},
     witness::ShardTrees,
 };
 
+use bip0039::Mnemonic;
+#[cfg(feature = "sync")]
+use std::collections::BTreeMap;
 use std::{
     cmp,
     collections::{BTreeMap, HashMap},
@@ -24,20 +31,18 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
 
 use crate::config::ZingoConfig;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 
-use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
 
 use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMap,
 };
 
 pub mod data;
@@ -49,7 +54,7 @@ pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub mod transaction_records_by_id;
-pub mod tx_map_and_maybe_trees;
+pub mod tx_map;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
@@ -268,10 +273,18 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?
-            .derive_ivk::<keys::unified::External>();
+        let ufvk: UnifiedFullViewingKey =
+            match self.wallet_capability().unified_key_store().try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return Err(e.to_string()),
+            };
+        let sapling_ivk = if let Some(ivk) = ufvk.sapling() {
+            ivk.to_external_ivk().prepare()
+        } else {
+            return Err(KeyError::NoViewCapability.to_string());
+        };
 
-        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.ivk) {
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
             return Ok(msg);
         }
@@ -322,7 +335,7 @@ impl LightWallet {
                 );
             }
             WalletBase::MnemonicPhraseAndIndex(phrase, position) => {
-                let mnemonic = Mnemonic::from_phrase(phrase)
+                let mnemonic = Mnemonic::<bip0039::English>::from_phrase(phrase)
                     .and_then(|m| Mnemonic::from_entropy(m.entropy()))
                     .map_err(|e| {
                         Error::new(
@@ -367,18 +380,18 @@ impl LightWallet {
             }
         };
 
-        if let Err(e) = wc.new_address(wc.can_view()) {
+        if let Err(e) = wc.new_address(wc.can_view(), false) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("could not create initial address: {e}"),
             ));
         };
-        let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees(
+        let transaction_metadata_set = if wc.unified_key_store().is_spending_key() {
+            Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
             )))
         } else {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless(
+            Arc::new(RwLock::new(TxMap::new_treeless(
                 wc.transparent_child_addresses().clone(),
             )))
         };

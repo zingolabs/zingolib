@@ -18,7 +18,6 @@ mod load_wallet {
     use zingolib::utils;
     use zingolib::wallet::disk::testing::examples;
     use zingolib::wallet::propose::ProposeSendError::Proposal;
-    use zingolib::wallet::LightWallet;
 
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
@@ -74,11 +73,12 @@ mod load_wallet {
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
 
-        let wallet = LightWallet::load_example_wallet(examples::ExampleWalletNetwork::Regtest(
+        let wallet = examples::ExampleWalletNetwork::Regtest(
             examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT(
-                examples::ExampleHMVASMUVWMSSVICHCARBPOCTWalletVersion::V27,
+                examples::ExampleHMVASMUVWMSSVICHCARBPOCTVersion::V27,
             ),
-        ))
+        )
+        .load_example_wallet()
         .await;
 
         // let wallet = zingolib::testutils::load_wallet(
@@ -185,7 +185,7 @@ mod load_wallet {
         )
         .await;
         if let Err(QuickSendError::ProposeSend(Proposal(
-                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
+                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map::TxMapTraitError::InputSource(
                     zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(output_error)
                 )),
             ))) = missing_output_index {
@@ -226,14 +226,14 @@ mod load_wallet {
         .unwrap()
         .first();
 
-        assert!(faucet
+        assert!(!faucet
             .transaction_summaries()
             .await
             .iter()
             .find(|transaction_summary| transaction_summary.txid() == pending_txid)
             .unwrap()
             .status()
-            .is_pending());
+            .is_confirmed());
 
         assert_eq!(
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),

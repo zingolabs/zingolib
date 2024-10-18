@@ -2,6 +2,7 @@
 //! upgrade-or-replace
 
 use crate::data::proposal;
+use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -12,8 +13,8 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_client_backend::address::Address;
-use zcash_primitives::consensus::Parameters;
+use zcash_keys::address::Address;
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
@@ -134,16 +135,36 @@ impl Command for WalletKindCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             if lightclient.do_seed_phrase().await.is_ok() {
-                object! {"kind" => "Seeded"}.pretty(4)
-            } else {
-                let capability = lightclient.wallet.wallet_capability();
-                object! {
-                    "kind" => "Loaded from key",
-                    "transparent" => capability.transparent.kind_str(),
-                    "sapling" => capability.sapling.kind_str(),
-                    "orchard" => capability.orchard.kind_str(),
+                object! {"kind" => "Loaded from seed phrase",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
                 }
                 .pretty(4)
+            } else {
+                match lightclient.wallet.wallet_capability().unified_key_store() {
+                    UnifiedKeyStore::Spend(_) => object! {
+                        "kind" => "Loaded from unified spending key",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::View(ufvk) => object! {
+                        "kind" => "Loaded from unified full viewing key",
+                        "transparent" => ufvk.transparent().is_some(),
+                        "sapling" => ufvk.sapling().is_some(),
+                        "orchard" => ufvk.orchard().is_some(),
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::Empty => object! {
+                        "kind" => "No keys found",
+                        "transparent" => false,
+                        "sapling" => false,
+                        "orchard" => false,
+                    }
+                    .pretty(4),
+                }
             }
         })
     }
@@ -206,44 +227,57 @@ impl Command for ParseAddressCommand {
                 ]
                 .iter()
                 .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
-                .map(|(recipient_address, chain_name)| {
-                    let chain_name_string = match chain_name {
-                        crate::config::ChainType::Mainnet => "main",
-                        crate::config::ChainType::Testnet => "test",
-                        crate::config::ChainType::Regtest(_) => "regtest",
-                    };
-
-                    match recipient_address {
-                        Address::Sapling(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "sapling",
-                        },
-                        Address::Transparent(_) => object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "transparent",
-                        },
-                        Address::Unified(ua) => {
-                            let mut receivers_available = vec![];
-                            if ua.orchard().is_some() {
-                                receivers_available.push("orchard")
-                            }
-                            if ua.sapling().is_some() {
-                                receivers_available.push("sapling")
-                            }
-                            if ua.transparent().is_some() {
-                                receivers_available.push("transparent")
-                            }
-                            object! {
+                .map_or(
+                    object! {
+                        "status" => "Invalid address",
+                        "chain_name" => json::JsonValue::Null,
+                        "address_kind" => json::JsonValue::Null,
+                    },
+                    |(recipient_address, chain_name)| {
+                        let chain_name_string = match chain_name {
+                            crate::config::ChainType::Mainnet => "main",
+                            crate::config::ChainType::Testnet => "test",
+                            crate::config::ChainType::Regtest(_) => "regtest",
+                        };
+                        match recipient_address {
+                            Address::Sapling(_) => object! {
                                 "status" => "success",
                                 "chain_name" => chain_name_string,
-                                "address_kind" => "unified",
-                                "receivers_available" => receivers_available,
+                                "address_kind" => "sapling",
+                            },
+                            Address::Transparent(_) => object! {
+                                "status" => "success",
+                                "chain_name" => chain_name_string,
+                                "address_kind" => "transparent",
+                            },
+                            Address::Unified(ua) => {
+                                let mut receivers_available = vec![];
+                                if ua.orchard().is_some() {
+                                    receivers_available.push("orchard")
+                                }
+                                if ua.sapling().is_some() {
+                                    receivers_available.push("sapling")
+                                }
+                                if ua.transparent().is_some() {
+                                    receivers_available.push("transparent")
+                                }
+                                object! {
+                                    "status" => "success",
+                                    "chain_name" => chain_name_string,
+                                    "address_kind" => "unified",
+                                    "receivers_available" => receivers_available,
+                                }
+                            }
+                            Address::Tex(_) => {
+                                object! {
+                                    "status" => "success",
+                                    "chain_name" => chain_name_string,
+                                    "address_kind" => "tex",
+                                }
                             }
                         }
-                    }
-                }),
+                    },
+                ),
                 4,
             ),
             _ => self.help().to_string(),
@@ -623,16 +657,15 @@ impl Command for SpendableBalanceCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo) =
-            match parse_spendable_balance_args(args, &lightclient.config.chain) {
-                Ok(address_and_zennies) => address_and_zennies,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
-                        e
-                    );
-                }
-            };
+        let (address, zennies_for_zingo) = match parse_spendable_balance_args(args) {
+            Ok(address_and_zennies) => address_and_zennies,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    e
+                );
+            }
+        };
         RT.block_on(async move {
             match lightclient
                 .get_spendable_shielded_balance(address, zennies_for_zingo)
@@ -691,18 +724,20 @@ impl Command for ExportUfvkCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let ufvk_res = lightclient.wallet.transaction_context.key.ufvk();
-        match ufvk_res {
-            Ok(ufvk) => {
-                use zcash_address::unified::Encoding as _;
-                object! {
-                    "ufvk" => ufvk.encode(&lightclient.config().chain.network_type()),
-                    "birthday" => RT.block_on(lightclient.wallet.get_birthday())
-                }
-                .pretty(2)
-            }
-            Err(e) => format!("Error: {e}"),
+        let ufvk: UnifiedFullViewingKey = match lightclient
+            .wallet
+            .wallet_capability()
+            .unified_key_store()
+            .try_into()
+        {
+            Ok(ufvk) => ufvk,
+            Err(e) => return e.to_string(),
+        };
+        object! {
+            "ufvk" => ufvk.encode(&lightclient.config().chain),
+            "birthday" => RT.block_on(lightclient.wallet.get_birthday())
         }
+        .pretty(2)
     }
 }
 
@@ -836,7 +871,7 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
@@ -900,16 +935,15 @@ impl Command for SendAllCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let (address, zennies_for_zingo, memo) =
-            match utils::parse_send_all_args(args, &lightclient.config().chain) {
-                Ok(parse_results) => parse_results,
-                Err(e) => {
-                    return format!(
-                        "Error: {}\nTry 'help sendall' for correct usage and examples.",
-                        e
-                    )
-                }
-            };
+        let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
+            Ok(parse_results) => parse_results,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help sendall' for correct usage and examples.",
+                    e
+                )
+            }
+        };
         RT.block_on(async move {
             match lightclient
                 .propose_send_all(address, zennies_for_zingo, memo)
@@ -961,7 +995,7 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        let receivers = match utils::parse_send_args(args, &lightclient.config().chain) {
+        let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(

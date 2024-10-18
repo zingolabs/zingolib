@@ -15,6 +15,7 @@ use zcash_client_backend::{
 };
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
+use crate::wallet::traits::Recipient as _;
 use crate::{
     error::ZingoLibError,
     wallet::{
@@ -72,6 +73,8 @@ pub struct TransactionRecord {
     pub price: Option<f64>,
 }
 
+// much data assignment of this struct is done through the pub fields as of january 2024. Todo: should have private fields and public methods.
+
 // set
 impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
@@ -110,7 +113,56 @@ impl TransactionRecord {
             }
         }
     }
-    // much data assignment of this struct is done through the pub fields as of january 2024. Todo: should have private fields and public methods.
+
+    /// adds a note. however, does not fully commit to adding a note, because this note isnt chained into block
+    pub(crate) fn add_pending_note<D: DomainWalletExt>(
+        &mut self,
+        note: D::Note,
+        to: D::Recipient,
+        output_index: usize,
+    ) {
+        match D::WalletNote::get_record_outputs(self)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            None => {
+                let nd = D::WalletNote::from_parts(
+                    to.diversifier(),
+                    note,
+                    None,
+                    None,
+                    None,
+                    None,
+                    // if this is change, we'll mark it later in check_notes_mark_change
+                    false,
+                    false,
+                    Some(output_index as u32),
+                );
+
+                D::WalletNote::transaction_metadata_notes_mut(self).push(nd);
+            }
+            Some(_) => {}
+        }
+    }
+
+    /// returns Err(()) if note does not exist
+    pub(crate) fn update_output_index<D: DomainWalletExt>(
+        &mut self,
+        note: D::Note,
+        output_index: usize,
+    ) -> Result<(), ()> {
+        if let Some(n) = D::WalletNote::transaction_metadata_notes_mut(self)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
+            if n.output_index().is_none() {
+                *n.output_index_mut() = Some(output_index as u32)
+            }
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 //get
 impl TransactionRecord {
@@ -465,8 +517,8 @@ impl TransactionRecord {
 
         writer.write_all(self.txid.as_ref())?;
 
-        zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
-        zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
+        zcash_encoding::Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w, ()))?;
+        zcash_encoding::Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w, ()))?;
         zcash_encoding::Vector::write(&mut writer, &self.transparent_outputs, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
@@ -524,14 +576,14 @@ pub enum SendType {
     SendToSelf,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::transaction::TxId;
 
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
-    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
+    use zingo_status::confirmation_status::ConfirmationStatus::Mempool;
 
     use crate::{
         mocks::{
@@ -665,7 +717,7 @@ pub mod mocks {
         orchard_semi_spent: u64,
     ) -> TransactionRecord {
         let spend = Some((random_txid(), Confirmed(112358.into())));
-        let pending_spend = Some((random_txid(), Pending(853211.into())));
+        let pending_spend = Some((random_txid(), Mempool(853211.into())));
 
         TransactionRecordBuilder::default()
             .transparent_outputs(

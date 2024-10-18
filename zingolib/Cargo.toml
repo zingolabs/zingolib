@@ -7,22 +7,22 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+ci = []
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 darkside_tests = []
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 testvectors = []
 tempfile = ["dep:tempfile"]
-sync = [ "dep:zingo-sync" ]
+default = ["sync"]
+sync = ['dep:zingo-sync']
+zaino-test = ['test-elevation']
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-sync = { path = "../zingo-sync", optional = true }
-
-prost = { workspace = true }
-tonic = { workspace = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
@@ -36,50 +36,53 @@ zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 zip32.workspace = true
 
-append-only-vec = { workspace = true }
+bip0039.workspace = true
+bip32 = { workspace = true, features = ["secp256k1-ffi"] }
+bs58 = { workspace = true, features = ["check"] }
 
-log = { workspace = true }
-http.workspace = true
-base64 = { workspace = true }
-bytes = { workspace = true }
-rand = { workspace = true }
-serde_json = { workspace = true }
-tokio =  { workspace = true, features = ["full"] }
-reqwest = { workspace = true, features = ["json"] }
-futures = { workspace = true }
-hex = { workspace = true }
-ring = { workspace = true }
-json = { workspace = true }
-lazy_static = { workspace = true }
-secp256k1 = { workspace = true }
-ripemd160 = { workspace = true }
-sha2 = { workspace = true }
+append-only-vec = { workspace = true }
 base58 = { workspace = true }
-byteorder = { workspace = true }
-ff = { workspace = true }
-jubjub = { workspace = true }
+base64 = { workspace = true }
 bls12_381 = { workspace = true }
-group = { workspace = true }
-rust-embed = { workspace = true, features = ["debug-embed"] }
-subtle = { workspace = true }
-nonempty.workspace = true
-tracing-subscriber = { workspace = true }
-indoc = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-sapling-crypto.workspace = true
-secrecy = { workspace = true }
-getset = { workspace = true }
-test-case = { workspace = true }
-proptest = { workspace = true }
-thiserror = { workspace = true }
-hdwallet = { workspace = true }
+byteorder = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
+dirs.workspace = true
 enum_dispatch = { workspace = true }
+ff = { workspace = true }
+futures = { workspace = true }
+getset = { workspace = true }
+group = { workspace = true }
+hex = { workspace = true }
+http.workspace = true
+indoc = { workspace = true }
+json = { workspace = true }
+jubjub = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
+log4rs.workspace = true
+nonempty.workspace = true
 portpicker = { workspace = true, optional = true }
+proptest = { workspace = true }
+prost = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+ring = { workspace = true }
+rust-embed = { workspace = true, features = ["debug-embed"] }
+sapling-crypto.workspace = true
+secp256k1 = { workspace = true }
+secrecy = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
 tempdir = {workspace = true, optional = true }
 tempfile = {workspace = true, optional = true }
-dirs.workspace = true
-log4rs.workspace = true
+test-case = { workspace = true }
+thiserror = { workspace = true }
+tokio =  { workspace = true, features = ["full"] }
+tonic = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 portpicker = { workspace = true }

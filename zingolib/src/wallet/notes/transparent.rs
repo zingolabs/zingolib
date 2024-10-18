@@ -213,7 +213,7 @@ impl TransparentOutput {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-elevation"))]
 pub mod mocks {
     //! Mock version of the struct for testing
     use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
