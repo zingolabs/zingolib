@@ -25,7 +25,7 @@ use bip0039::Mnemonic;
 use std::collections::BTreeMap;
 use std::{
     cmp,
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
@@ -226,7 +226,7 @@ pub struct LightWallet {
     /// Wallet transactions
     #[cfg(feature = "sync")]
     #[getset(get = "pub", get_mut = "pub")]
-    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
 
     /// Nullifier map
     #[cfg(feature = "sync")]
