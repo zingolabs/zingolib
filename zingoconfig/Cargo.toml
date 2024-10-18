@@ -5,11 +5,14 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+test-elevation = []
+
 [dependencies]
 zcash_primitives.workspace = true
 http.workspace = true
 
-log4rs = { workspace = true }
-log = { workspace = true }
 dirs = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
 tempdir.workspace = true

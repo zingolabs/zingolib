@@ -1,8 +1,8 @@
 //! TODO: Add Mod Description Here!
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
+use crate::config::{ChainType, ZingoConfig};
 use base58::ToBase58;
-use ripemd160::Digest;
 use sapling_crypto::{
     zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
     PaymentAddress,
@@ -12,15 +12,14 @@ use zcash_client_backend::address;
 use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
 };
-use zingoconfig::{ChainType, ZingoConfig};
 
-pub mod extended_transparent;
+pub mod legacy;
 pub mod unified;
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
-    let h1 = Sha256::digest(payload);
-    let h2 = Sha256::digest(&h1);
+    let h1 = <Sha256 as sha2::Digest>::digest(payload);
+    let h2 = <Sha256 as sha2::Digest>::digest(h1.as_slice());
     h2.to_vec()
 }
 

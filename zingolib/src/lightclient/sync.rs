@@ -26,7 +26,7 @@ use zcash_primitives::{
     transaction::Transaction,
 };
 
-use zingoconfig::MAX_REORG;
+use crate::config::MAX_REORG;
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
@@ -191,24 +191,68 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
-                            let price = price.read().await.clone();
-                            //debug!("Mempool attempting to scan {}", tx.txid());
-                            let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
-                                rtransaction.height as u32,
+                            let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
+                                // The mempool transaction's height field is the height
+                                // it entered the mempool. Making it one above that height,
+                                // i.e. the target height, keeps this value consistant with
+                                // the transmitted height, which we record as the target height.
+                                rtransaction.height as u32 + 1,
                             ));
+                            let tms_readlock = transaction_metadata_set.read().await;
+                            let record = tms_readlock
+                                .transaction_records_by_id
+                                .get(&transaction.txid());
+                            match record {
+                                None => {
+                                    // We only need this for the record, and we can't hold it
+                                    // for the later scan_full_tx call, as it needs write access.
+                                    drop(tms_readlock);
+                                    let price = price.read().await.clone();
+                                    //debug!("Mempool attempting to scan {}", tx.txid());
 
-                            TransactionContext::new(
-                                &config,
-                                key.clone(),
-                                transaction_metadata_set.clone(),
-                            )
-                            .scan_full_tx(
-                                &transaction,
-                                status,
-                                Some(now() as u32),
-                                get_price(now(), &price),
-                            )
-                            .await;
+                                    TransactionContext::new(
+                                        &config,
+                                        key.clone(),
+                                        transaction_metadata_set.clone(),
+                                    )
+                                    .scan_full_tx(
+                                        &transaction,
+                                        status,
+                                        Some(now() as u32),
+                                        get_price(now(), &price),
+                                    )
+                                    .await;
+                                    transaction_metadata_set
+                                        .write()
+                                        .await
+                                        .transaction_records_by_id
+                                        .update_note_spend_statuses(
+                                            transaction.txid(),
+                                            Some((transaction.txid(), status)),
+                                        );
+                                }
+                                Some(r) => {
+                                    if matches!(r.status, ConfirmationStatus::Transmitted(_)) {
+                                        // In this case, we need write access, to change the status
+                                        // from Transmitted to Mempool
+                                        drop(tms_readlock);
+                                        let mut tms_writelock =
+                                            transaction_metadata_set.write().await;
+                                        tms_writelock
+                                            .transaction_records_by_id
+                                            .get_mut(&transaction.txid())
+                                            .expect("None case has already been handled")
+                                            .status = status;
+                                        tms_writelock
+                                            .transaction_records_by_id
+                                            .update_note_spend_statuses(
+                                                transaction.txid(),
+                                                Some((transaction.txid(), status)),
+                                            );
+                                        drop(tms_writelock);
+                                    }
+                                }
+                            }
                         }
                     }
                 });
@@ -288,7 +332,7 @@ impl LightClient {
             // to trigger a sync, which will then reorg the remaining blocks
             BlockManagementData::invalidate_block(
                 last_synced_height,
-                self.wallet.blocks.clone(),
+                self.wallet.last_100_blocks.clone(),
                 self.wallet
                     .transaction_context
                     .transaction_metadata_set
@@ -303,7 +347,7 @@ impl LightClient {
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let batch = cmp::min(latest_blockid.height, prev + zingoconfig::BATCH_SIZE);
+            let batch = cmp::min(latest_blockid.height, prev + crate::config::BATCH_SIZE);
             prev = batch;
             latest_block_batches.push(batch);
         }
@@ -327,7 +371,7 @@ impl LightClient {
                 println!("sync hit error {}. Rolling back", err);
                 BlockManagementData::invalidate_block(
                     self.wallet.last_synced_height().await,
-                    self.wallet.blocks.clone(),
+                    self.wallet.last_100_blocks.clone(),
                     self.wallet
                         .transaction_context
                         .transaction_metadata_set
@@ -510,7 +554,7 @@ impl LightClient {
 
         // 3. Targetted rescan to update transactions with missing information
         let targetted_rescan_handle = crate::blaze::targetted_rescan::start(
-            self.wallet.blocks.clone(),
+            self.wallet.last_100_blocks.clone(),
             transaction_context,
             full_transaction_fetcher_transmitter,
         )
@@ -619,5 +663,59 @@ impl LightClient {
         debug!("Rescan finished");
 
         response
+    }
+}
+
+#[cfg(all(test, feature = "testvectors"))]
+pub mod test {
+    use crate::{
+        lightclient::LightClient,
+        wallet::disk::testing::examples::{
+            ExampleCBBHRWIILGBRABABSSHSMTPRVersion, ExampleHHCCLALTPCCKCSSLPCNETBLRVersion,
+            ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion, ExampleMainnetWalletSeed,
+            ExampleTestnetWalletSeed, ExampleWalletNetwork,
+        },
+    };
+
+    pub(crate) async fn sync_example_wallet(wallet_case: ExampleWalletNetwork) -> LightClient {
+        std::env::set_var("RUST_BACKTRACE", "1");
+        let wallet = wallet_case.load_example_wallet().await;
+        let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+        lc.do_sync(true).await.unwrap();
+        lc
+    }
+
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    #[tokio::test]
+    async fn testnet_sync_mskmgdbhotbpetcjwcspgopp_latest() {
+        sync_example_wallet(ExampleWalletNetwork::Testnet(
+            ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP(
+                ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
+            ),
+        ))
+        .await;
+    }
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    #[tokio::test]
+    async fn testnet_sync_cbbhrwiilgbrababsshsmtpr_latest() {
+        sync_example_wallet(ExampleWalletNetwork::Testnet(
+            ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR(
+                ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
+            ),
+        ))
+        .await;
+    }
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[tokio::test]
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    async fn mainnet_sync_hhcclaltpcckcsslpcnetblr_latest() {
+        sync_example_wallet(ExampleWalletNetwork::Mainnet(
+            ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR(
+                ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Gf0aaf9347,
+            ),
+        ))
+        .await;
     }
 }

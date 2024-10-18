@@ -5,13 +5,14 @@
 
 use crate::error::ZingoLibResult;
 
+use crate::config::ZingoConfig;
 use crate::wallet::keys::unified::{External, Fvk as _, Ivk};
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::PoolNullifier,
     keys::unified::WalletCapability,
     traits::{CompactOutput as _, DomainWalletExt, FromCommitment, Recipient},
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMap,
     utils::txid_from_slice,
     MemoDownloadOption,
 };
@@ -35,13 +36,12 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingoconfig::ZingoConfig;
 
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,
-    transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+    transaction_metadata_set: Arc<RwLock<TxMap>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -49,7 +49,7 @@ impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
         wc: Arc<WalletCapability>,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
     ) -> Self {
         Self {
             config,
@@ -89,10 +89,12 @@ impl TrialDecryptions {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let sapling_ivk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&*wc)
-                .ok()
-                .map(|key| key.derive_ivk());
-            let orchard_ivk = orchard::keys::FullViewingKey::try_from(&*wc)
+            let sapling_ivk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(
+                wc.unified_key_store(),
+            )
+            .ok()
+            .map(|key| key.derive_ivk());
+            let orchard_ivk = orchard::keys::FullViewingKey::try_from(wc.unified_key_store())
                 .ok()
                 .map(|key| key.derive_ivk());
 
@@ -134,7 +136,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: Option<Ivk<SaplingDomain, External>>,
         orchard_ivk: Option<Ivk<OrchardDomain, External>>,
-        transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: Arc<RwLock<TxMap>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -264,10 +266,10 @@ impl TrialDecryptions {
         compact_block: &CompactBlock,
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
-        config: &zingoconfig::ZingoConfig,
+        config: &crate::config::ZingoConfig,
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
-        transaction_metadata_set: &Arc<RwLock<TxMapAndMaybeTrees>>,
+        transaction_metadata_set: &Arc<RwLock<TxMap>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -301,6 +303,7 @@ impl TrialDecryptions {
             .collect::<Vec<_>>();
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
+
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
             let (output_num, witnessed) =
                 if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
@@ -314,14 +317,13 @@ impl TrialDecryptions {
                     let config = config.clone();
 
                     workers.push(tokio::spawn(async move {
-                        let Ok(fvk) = D::wc_to_fvk(&wc) else {
+                        let Ok(fvk) = D::unified_key_store_to_fvk(wc.unified_key_store()) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };
 
                         //TODO: Wrong. We don't have fvk import, all our keys are spending
                         let have_spending_key = true;
-                        let uri = bsync_data.read().await.uri().clone();
 
                         // Get the witness for the note
                         let witness = bsync_data
@@ -329,7 +331,7 @@ impl TrialDecryptions {
                             .await
                             .block_data
                             .get_note_witness::<D>(
-                                uri,
+                                config.get_lightwalletd_uri(),
                                 height,
                                 transaction_num,
                                 i,
@@ -426,7 +428,7 @@ fn update_witnesses<D>(
         )>,
         BlockHeight,
     )>,
-    txmds_writelock: &mut TxMapAndMaybeTrees,
+    txmds_writelock: &mut TxMap,
     wc: &Arc<WalletCapability>,
 ) -> ZingoLibResult<()>
 where
@@ -450,7 +452,7 @@ where
                         transaction_id,
                         Some(output_index),
                         position + i as u64,
-                        &D::wc_to_fvk(wc).unwrap(),
+                        &D::unified_key_store_to_fvk(wc.unified_key_store()).unwrap(),
                     )?;
                 }
                 nodes_retention.push((node, retention));

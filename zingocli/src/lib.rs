@@ -11,8 +11,8 @@ use std::sync::Arc;
 use log::{error, info};
 
 use clap::{self, Arg};
-use zingo_testutils::regtest;
-use zingoconfig::ChainType;
+use zingolib::config::ChainType;
+use zingolib::testutils::regtest;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -37,15 +37,17 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("chain")
                 .long("chain").short('c')
                 .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
-            .arg(Arg::new("from")
-                .short('f')
-                .short_alias('s')
-                .long("from")
-                .alias("seed")
-                .alias("viewing-key")
-                .value_name("from")
+            .arg(Arg::new("seed")
+                .short('s')
+                .long("seed")
+                .value_name("SEED PHRASE")
                 .value_parser(parse_seed)
-                .help("Create a new wallet with the given key. Can be a 24-word seed phrase or a viewkey. Will fail if wallet already exists"))
+                .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists"))
+            .arg(Arg::new("viewkey")
+                .long("viewkey")
+                .value_name("UFVK")
+                .value_parser(parse_ufvk)
+                .help("Create a new wallet with the given encoded unified full viewing key. Will fail if wallet already exists"))
             .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
@@ -56,7 +58,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
-                .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER))
+                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -88,6 +90,19 @@ fn parse_seed(s: &str) -> Result<String, String> {
             Ok(s)
         } else {
             Err(format!("Expected 24 words, but received: {}.", count))
+        }
+    } else {
+        Err("Unexpected failure to parse String!!".to_string())
+    }
+}
+/// Parse encoded UFVK to String and check for whitespaces
+fn parse_ufvk(s: &str) -> Result<String, String> {
+    if let Ok(s) = s.parse::<String>() {
+        let count = s.split_whitespace().count();
+        if count == 1 {
+            Ok(s)
+        } else {
+            Err("Encoded UFVK should not contain whitespace!".to_string())
         }
     } else {
         Err("Unexpected failure to parse String!!".to_string())
@@ -276,12 +291,13 @@ fn short_circuit_on_help(params: Vec<String>) {
 ///  * behave correctly as a function of each parameter that may have been passed
 ///      * add details of above here
 ///  * handle parameters as efficiently as possible.
-///      * If a ShortCircuitCommand
-///    is specified, then the system should execute only logic necessary to support that command,
-///    in other words "help" the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
+///      * If a ShortCircuitCommand is specified, then the system should execute
+///        only logic necessary to support that command, in other words "help"
+///        the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
+
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
@@ -295,7 +311,17 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let from = matches.get_one::<String>("from");
+        let seed = matches.get_one::<String>("seed");
+        let viewkey = matches.get_one::<String>("viewkey");
+        let from = if seed.is_some() && viewkey.is_some() {
+            return Err("Cannot load a wallet from both seed phrase and viewkey!".to_string());
+        } else if seed.is_some() {
+            seed
+        } else if viewkey.is_some() {
+            viewkey
+        } else {
+            None
+        };
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
@@ -328,7 +354,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
-            zingo_testutils::paths::get_regtest_dir()
+            zingolib::testutils::paths::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
         };
@@ -348,16 +374,18 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             None
         };
-        let server = zingoconfig::construct_lightwalletd_uri(server);
+        let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
+                "regtest" => {
+                    ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
+                }
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active())
+            ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
         } else {
             ChainType::Mainnet
         };
@@ -403,7 +431,7 @@ pub fn startup(
     } else {
         filled_template.data_dir.clone()
     };
-    let config = zingoconfig::load_clientconfig(
+    let config = zingolib::config::load_clientconfig(
         filled_template.server.clone(),
         Some(data_dir),
         filled_template.chaintype,
