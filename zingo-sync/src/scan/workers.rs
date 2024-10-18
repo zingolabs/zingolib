@@ -74,7 +74,7 @@ where
 
     pub(crate) fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
         if let Some(worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
-            worker.add_scan_task(scan_task);
+            worker.add_scan_task(scan_task).unwrap();
         } else {
             panic!("no idle workers!")
         }
@@ -94,8 +94,10 @@ impl WorkerHandle {
         self.is_scanning.load(atomic::Ordering::Acquire)
     }
 
-    fn add_scan_task(&self, scan_task: ScanTask) {
+    fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
         self.scan_task_sender.send(scan_task).unwrap();
+
+        Ok(())
     }
 }
 
