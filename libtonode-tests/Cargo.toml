@@ -5,19 +5,20 @@ edition = "2021"
 
 [features]
 chain_generic_tests = []
+ci = ["zingolib/ci"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { path = "../zingolib", features = ["deprecations"] }
+zingolib = { path = "../zingolib", features = ["deprecations", "test-elevation", "sync"] }
 zingo-status = { path = "../zingo-status" }
-zingo-testutils = { path = "../zingo-testutils" }
-zingo-testvectors = { path = "../zingo-testvectors" }
-zingoconfig = { path = "../zingoconfig" }
+zingo-netutils = { path = "../zingo-netutils" }
+zingo-sync = { path = "../zingo-sync" }
 
+bip0039.workspace = true
 zcash_primitives = { workspace = true }
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }
-zcash_address = { workspace = true }
+zcash_address = { workspace = true, features = ["test-dependencies"] }
 zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
 
@@ -28,3 +29,7 @@ hex = { workspace = true }
 itertools = { workspace = true }
 serde_json = { workspace = true }
 http.workspace = true
+tempfile.workspace = true
+tracing-subscriber.workspace = true
+proptest.workspace = true
+bech32 = "0.11.0"

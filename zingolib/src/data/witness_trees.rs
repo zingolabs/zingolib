@@ -19,7 +19,7 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::merkle_tree::HashSer;
 
-use zingoconfig::MAX_REORG;
+use crate::config::MAX_REORG;
 
 /// TODO: Add Doc Comment Here!
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;

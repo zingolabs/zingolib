@@ -2,38 +2,45 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use log::{error, info};
+use zcash_keys::keys::UnifiedSpendingKey;
+use zip32::AccountId;
 
 use std::{
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
 };
+
+#[cfg(feature = "sync")]
+use std::collections::BTreeMap;
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
+
+use bip0039::Mnemonic;
 
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
 
-use zingoconfig::ZingoConfig;
+use crate::{config::ZingoConfig, wallet::keys::unified::UnifiedKeyStore};
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
 use crate::wallet::{utils, SendProgress};
 
-use super::keys::unified::{Capability, WalletCapability};
+use super::keys::unified::WalletCapability;
 
 use super::LightWallet;
 use super::{
     data::{BlockData, WalletZecPriceInfo},
     transaction_context::TransactionContext,
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMap,
 };
 
 impl LightWallet {
-    /// TODO: Add Doc Comment Here!
+    /// Changes in version 30:
+    /// - New WalletCapability version (v4) which implements read/write for ephemeral addresses
     pub const fn serialized_version() -> u64 {
-        28
+        30
     }
 
     /// TODO: Add Doc Comment Here!
@@ -42,9 +49,13 @@ impl LightWallet {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write all the keys
-        self.transaction_context.key.write(&mut writer)?;
+        self.transaction_context
+            .key
+            .write(&mut writer, self.transaction_context.config.chain)?;
 
-        Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
+        Vector::write(&mut writer, &self.last_100_blocks.read().await, |w, b| {
+            b.write(w)
+        })?;
 
         self.transaction_context
             .transaction_metadata_set
@@ -113,23 +124,7 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let wallet_capability = WalletCapability::read(&mut reader, ())?;
-        info!("Keys in this wallet:");
-        match &wallet_capability.orchard {
-            Capability::None => (),
-            Capability::View(_) => info!("  - Orchard Full Viewing Key"),
-            Capability::Spend(_) => info!("  - Orchard Spending Key"),
-        };
-        match &wallet_capability.sapling {
-            Capability::None => (),
-            Capability::View(_) => info!("  - Sapling Extended Full Viewing Key"),
-            Capability::Spend(_) => info!("  - Sapling Extended Spending Key"),
-        };
-        match &wallet_capability.transparent {
-            Capability::None => (),
-            Capability::View(_) => info!("  - transparent extended public key"),
-            Capability::Spend(_) => info!("  - transparent extended private key"),
-        };
+        let mut wallet_capability = WalletCapability::read(&mut reader, config.chain)?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         if external_version <= 14 {
@@ -139,9 +134,9 @@ impl LightWallet {
         }
 
         let transactions = if external_version <= 14 {
-            TxMapAndMaybeTrees::read_old(&mut reader, &wallet_capability)
+            TxMap::read_old(&mut reader, &wallet_capability)
         } else {
-            TxMapAndMaybeTrees::read(&mut reader, &wallet_capability)
+            TxMap::read(&mut reader, &wallet_capability)
         }?;
 
         let chain_name = utils::read_string(&mut reader)?;
@@ -190,12 +185,6 @@ impl LightWallet {
             WalletZecPriceInfo::read(&mut reader)?
         };
 
-        let transaction_context = TransactionContext::new(
-            config,
-            Arc::new(wallet_capability),
-            Arc::new(RwLock::new(transactions)),
-        );
-
         let _orchard_anchor_height_pairs = if external_version == 25 {
             Vector::read(&mut reader, |r| {
                 let mut anchor_bytes = [0; 32];
@@ -227,8 +216,74 @@ impl LightWallet {
             None
         };
 
+        // Derive unified spending key from seed and overide temporary USK if wallet is pre v29.
+        //
+        // UnifiedSpendingKey is initially incomplete for old wallet versions.
+        // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
+        // There is also the issue that the legacy transparent private key is derived an extra level to the external scope.
+        if external_version < 29 {
+            if let Some(mnemonic) = mnemonic.as_ref() {
+                wallet_capability.set_unified_key_store(UnifiedKeyStore::Spend(Box::new(
+                    UnifiedSpendingKey::from_seed(
+                        &config.chain,
+                        &mnemonic.0.to_seed(""),
+                        AccountId::ZERO,
+                    )
+                    .map_err(|e| {
+                        Error::new(
+                            ErrorKind::InvalidData,
+                            format!(
+                                "Failed to derive unified spending key from stored seed bytes. {}",
+                                e
+                            ),
+                        )
+                    })?,
+                )));
+            } else if let UnifiedKeyStore::Spend(_) = wallet_capability.unified_key_store() {
+                return Err(io::Error::new(
+                    ErrorKind::Other,
+                    "loading from legacy spending keys with no seed phrase to recover",
+                ));
+            }
+        }
+
+        info!("Keys in this wallet:");
+        match wallet_capability.unified_key_store() {
+            UnifiedKeyStore::Spend(_) => {
+                info!("  - orchard spending key");
+                info!("  - sapling extended spending key");
+                info!("  - transparent extended private key");
+            }
+            UnifiedKeyStore::View(ufvk) => {
+                if ufvk.orchard().is_some() {
+                    info!("  - orchard full viewing key");
+                }
+                if ufvk.sapling().is_some() {
+                    info!("  - sapling diversifiable full viewing key");
+                }
+                if ufvk.transparent().is_some() {
+                    info!("  - transparent extended public key");
+                }
+            }
+            UnifiedKeyStore::Empty => info!("  - no keys found"),
+        }
+
+        // this initialization combines two types of data
+        let transaction_context = TransactionContext::new(
+            // Config data could be used differently based on the circumstances
+            // hardcoded?
+            // entered at init by user?
+            // stored on disk in a separate location and connected by a descendant library (such as zingo-mobile)?
+            config,
+            // Saveable Arc data
+            //   - Arcs allow access between threads.
+            //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
+            Arc::new(wallet_capability),
+            Arc::new(RwLock::new(transactions)),
+        );
+
         let lw = Self {
-            blocks: Arc::new(RwLock::new(blocks)),
+            last_100_blocks: Arc::new(RwLock::new(blocks)),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
@@ -236,8 +291,19 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
+            #[cfg(feature = "sync")]
+            wallet_blocks: BTreeMap::new(),
+            #[cfg(feature = "sync")]
+            nullifier_map: zingo_sync::primitives::NullifierMap::new(),
+            #[cfg(feature = "sync")]
+            shard_trees: zingo_sync::witness::ShardTrees::new(),
+            #[cfg(feature = "sync")]
+            sync_state: zingo_sync::primitives::SyncState::new(),
         };
 
         Ok(lw)
     }
 }
+
+#[cfg(any(test, feature = "test-elevation"))]
+pub mod testing;

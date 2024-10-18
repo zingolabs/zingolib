@@ -2,7 +2,6 @@
 
 //! Tools to facilitate mocks for structs of external crates and general mocking utilities for testing
 
-pub use proposal::{ProposalBuilder, StepBuilder};
 pub use sapling_crypto_note::SaplingCryptoNoteBuilder;
 
 fn zaddr_from_seed(
@@ -63,7 +62,7 @@ pub fn random_zaddr() -> (
 }
 
 pub mod nullifier {
-    //! Module for mocking nullifiers from [`sapling_crypto::note::Nullifier`] and [`orchard::note::Nullifier`]
+    //! Module for mocking nullifiers from [`sapling_crypto::Nullifier`] and [`orchard::note::Nullifier`]
 
     use crate::utils::build_method;
 
@@ -348,19 +347,18 @@ pub mod proposal {
     use sapling_crypto::value::NoteValue;
 
     use sapling_crypto::Rseed;
+    use zcash_address::ZcashAddress;
     use zcash_client_backend::fees::TransactionBalance;
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
     use zcash_client_backend::zip321::{Payment, TransactionRequest};
     use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_keys::address::Address;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{
         components::amount::NonNegativeAmount, fees::zip317::FeeRule,
     };
 
     use zcash_client_backend::wallet::NoteId;
-    use zingoconfig::{ChainType, RegtestNetwork};
 
     use crate::utils::conversion::address_from_str;
     use crate::utils::{build_method, build_method_push};
@@ -570,7 +568,7 @@ pub mod proposal {
     /// let payment = PaymentBuilder::default().build();
     /// ````
     pub struct PaymentBuilder {
-        recipient_address: Option<Address>,
+        recipient_address: Option<ZcashAddress>,
         amount: Option<NonNegativeAmount>,
     }
 
@@ -583,7 +581,7 @@ pub mod proposal {
             }
         }
 
-        build_method!(recipient_address, Address);
+        build_method!(recipient_address, ZcashAddress);
         build_method!(amount, NonNegativeAmount);
 
         /// Builds after all fields have been set.
@@ -601,11 +599,7 @@ pub mod proposal {
             let mut builder = Self::new();
             builder
                 .recipient_address(
-                    address_from_str(
-                        zingo_testvectors::REG_O_ADDR_FROM_ABANDONART,
-                        &ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
-                    )
-                    .unwrap(),
+                    address_from_str(crate::testvectors::REG_O_ADDR_FROM_ABANDONART).unwrap(),
                 )
                 .amount(NonNegativeAmount::from_u64(100_000).unwrap());
             builder

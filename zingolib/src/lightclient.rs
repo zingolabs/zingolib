@@ -12,7 +12,7 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use zingoconfig::ZingoConfig;
+use crate::config::ZingoConfig;
 
 use crate::{
     blaze::syncdata::BlazeSyncData,
@@ -217,7 +217,7 @@ pub struct UserBalances {
     pub incoming_dust: u64,
 }
 
-/// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
+/// The LightClient connects one LightWallet to one lightwalletd server via gRPC.
 ///  1. initialization of stored state
 ///      * from seed
 ///      * from keys
@@ -226,6 +226,8 @@ pub struct UserBalances {
 ///  2. synchronization of the client with the state of the blockchain via a gRPC server
 ///      *
 pub struct LightClient {
+    // / the LightClient connects to one server.
+    // pub(crate) server_uri: Arc<RwLock<Uri>>,
     pub(crate) config: ZingoConfig,
     /// TODO: Add Doc Comment Here!
     pub wallet: LightWallet,
@@ -242,7 +244,7 @@ pub struct LightClient {
     save_buffer: ZingoSaveBuffer,
 }
 
-///  This is the omnibus interface to the library, we are currently in the process of refining this typez broad definition!
+/// all the wonderfully intertwined ways to conjure a LightClient
 pub mod instantiation {
     use log::debug;
     use std::{
@@ -254,7 +256,7 @@ pub mod instantiation {
         sync::{Mutex, RwLock},
     };
 
-    use zingoconfig::ZingoConfig;
+    use crate::config::ZingoConfig;
 
     use super::{LightClient, ZingoSaveBuffer};
     use crate::{
@@ -266,18 +268,16 @@ pub mod instantiation {
         // toDo rework ZingoConfig.
 
         /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
-        pub async fn create_from_wallet_async(
-            wallet: LightWallet,
-            config: ZingoConfig,
-        ) -> io::Result<Self> {
+        pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
+            let config = wallet.transaction_context.config.clone();
             Ok(LightClient {
                 wallet,
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new())),
                 interrupt_sync: Arc::new(RwLock::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
@@ -319,10 +319,11 @@ pub mod instantiation {
                 ));
                 }
             }
-            let lightclient = LightClient::create_from_wallet_async(
-                LightWallet::new(config.clone(), wallet_base, birthday)?,
+            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
                 config.clone(),
-            )
+                wallet_base,
+                birthday,
+            )?)
             .await?;
 
             lightclient.set_wallet_initial_state(birthday).await;
@@ -342,10 +343,11 @@ pub mod instantiation {
             wallet_base: WalletBase,
             height: u64,
         ) -> io::Result<Self> {
-            let lightclient = LightClient::create_from_wallet_async(
-                LightWallet::new(config.clone(), wallet_base, height)?,
+            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
                 config.clone(),
-            )
+                wallet_base,
+                height,
+            )?)
             .await?;
             Ok(lightclient)
         }
@@ -472,7 +474,7 @@ impl LightClient {
         let new_address = self
             .wallet
             .wallet_capability()
-            .new_address(desired_receivers)?;
+            .new_address(desired_receivers, false)?;
 
         // self.save_internal_rust().await?;
 
@@ -512,7 +514,7 @@ impl LightClient {
         }
     }
 
-    /// TODO!! This function sorts notes into
+    /// This function sorts notes into
     /// unspent
     /// spend_is_pending
     /// spend_is_confirmed
@@ -633,9 +635,9 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{ChainType, RegtestNetwork, ZingoConfig};
+    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use tokio::runtime::Runtime;
-    use zingo_testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
