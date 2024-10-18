@@ -119,8 +119,8 @@ pub mod send_with_proposal {
     impl LightClient {
         /// When a transactions are created, they are added to "spending_data".
         /// This step records all cached transactions into TransactionRecord s.
-        /// This overwrites confirmation status to Calculated (not broadcast)
-        /// so only call this if TODO?!?!?!
+        /// This overwrites confirmation status to Calculated (not Broadcast)
+        /// so only call this immediately after creating the transaction
         ///
         /// With the introduction of multistep transacations to support ZIP320
         /// we begin ordering transactions in the "spending_data" cache such
