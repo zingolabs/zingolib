@@ -89,6 +89,24 @@ impl TxMap {
         self.witness_trees_mut().map(WitnessTrees::clear);
     }
 }
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, Error)]
+pub enum TxMapTraitError {
+    #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
+    NoSpendCapability,
+    #[error("{0:?}")]
+    InputSource(InputSourceError),
+    #[error("{0:?}")]
+    TransactionWrite(std::io::Error),
+    #[error("{0}")]
+    TexSendError(KeyError),
+}
+
+pub mod trait_stub_inputsource;
+pub mod trait_stub_walletcommitmenttrees;
+pub mod trait_walletread;
+pub mod trait_walletwrite;
+
 #[cfg(test)]
 impl TxMap {
     /// For any unit tests that don't require a WalletCapability, where the addresses come from
@@ -125,21 +143,3 @@ impl TxMap {
         }
     }
 }
-
-#[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
-pub enum TxMapTraitError {
-    #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
-    NoSpendCapability,
-    #[error("{0:?}")]
-    InputSource(InputSourceError),
-    #[error("{0:?}")]
-    TransactionWrite(std::io::Error),
-    #[error("{0}")]
-    TexSendError(KeyError),
-}
-
-pub mod trait_stub_inputsource;
-pub mod trait_stub_walletcommitmenttrees;
-pub mod trait_walletread;
-pub mod trait_walletwrite;
