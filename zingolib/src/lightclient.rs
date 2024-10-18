@@ -129,8 +129,18 @@ pub struct PoolBalances {
     pub transparent_balance: Option<u64>,
 }
 fn format_option_zatoshis(ioz: &Option<u64>) -> String {
-    ioz.map(|in_num| in_num.to_string())
-        .unwrap_or("null".to_string())
+    ioz.map(|ioz_num| {
+        let ioz_string = ioz_num.to_string();
+        let digits = ioz_string.as_bytes();
+        digits
+            .rchunks(3)
+            .rev()
+            .map(std::str::from_utf8)
+            .collect::<Result<Vec<&str>, _>>()
+            .unwrap()
+            .join(",")
+    })
+    .unwrap_or("null".to_string())
 }
 impl std::fmt::Display for PoolBalances {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
