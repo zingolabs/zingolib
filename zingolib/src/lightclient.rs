@@ -142,7 +142,7 @@ fn format_option_zatoshis(ioz: &Option<u64>) -> String {
                 .collect::<Result<Vec<&str>, _>>()
                 .unwrap()
                 .join("_");
-            ioz_string.insert(ioz_string.len() - 8, ':');
+            ioz_string.insert(ioz_string.len() - 10, '.');
             ioz_string
         }
     })
