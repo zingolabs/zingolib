@@ -27,9 +27,6 @@ use crate::config::{
     ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
 };
 use zcash_primitives::transaction::TxId;
-use zingoconfig::{
-    ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-};
 
 pub mod trait_inputsource;
 
