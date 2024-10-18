@@ -398,9 +398,12 @@ impl WalletCapability {
             None
         };
 
-        let transparent_receiver = self
-            .generate_transparent_receiver(legacy_key)
-            .map_err(|e| e.to_string())?;
+        let transparent_receiver = if desired_receivers.transparent {
+            self.generate_transparent_receiver(legacy_key)
+                .map_err(|e| e.to_string())?
+        } else {
+            None
+        };
 
         let ua = UnifiedAddress::from_receivers(
             orchard_receiver,
