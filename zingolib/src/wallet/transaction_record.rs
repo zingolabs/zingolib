@@ -121,27 +121,24 @@ impl TransactionRecord {
         to: D::Recipient,
         output_index: usize,
     ) {
-        match D::WalletNote::get_record_outputs(self)
+        if !D::WalletNote::get_record_outputs(self)
             .iter_mut()
-            .find(|n| n.note() == &note)
+            .any(|n| n.note() == &note)
         {
-            None => {
-                let nd = D::WalletNote::from_parts(
-                    to.diversifier(),
-                    note,
-                    None,
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    false,
-                    Some(output_index as u32),
-                );
+            let nd = D::WalletNote::from_parts(
+                to.diversifier(),
+                note,
+                None,
+                None,
+                None,
+                None,
+                // if this is change, we'll mark it later in check_notes_mark_change
+                false,
+                false,
+                Some(output_index as u32),
+            );
 
-                D::WalletNote::transaction_metadata_notes_mut(self).push(nd);
-            }
-            Some(_) => {}
+            D::WalletNote::transaction_metadata_notes_mut(self).push(nd);
         }
     }
 
