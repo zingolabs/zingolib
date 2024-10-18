@@ -210,9 +210,7 @@ mod decrypt_transaction {
                 .await;
         }
 
-        /// A receipt of funds has been detected at a ZIP320 "ephemeral" return
-        /// address for a Transparent-Source-Only encoded "TEX" address.
-        /// This method records that receipt in therelevant receiving
+        /// This method records that receipt in the relevant receiving
         /// TransactionRecord in the TransactionRecordsById database.
         async fn record_taddr_receipt(
             &self,
@@ -247,6 +245,7 @@ mod decrypt_transaction {
         ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 // Collect our t-addresses for easy checking
+                // the get_taddres method includes epehemeral 320 taddrs
                 let taddrs_set = self.key.get_taddrs(&self.config.chain);
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
