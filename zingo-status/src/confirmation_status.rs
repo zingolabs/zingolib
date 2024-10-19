@@ -9,8 +9,7 @@ pub enum ConfirmationStatus {
     /// the transaction has been calculated but not yet broadcast to the chain.
     Calculated(BlockHeight),
 
-    /// The transaction has been sent to the zcash blockchain. It could be in the mempool, but if
-    /// it's known to be, it will be Mempool instead,
+    /// The transaction has been sent to the zcash blockchain. It could be in the mempool.
     /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
     Transmitted(BlockHeight),
 

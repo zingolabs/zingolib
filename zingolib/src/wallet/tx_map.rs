@@ -5,15 +5,17 @@
 
 use crate::{
     data::witness_trees::WitnessTrees,
-    wallet::transaction_records_by_id::{
-        trait_inputsource::InputSourceError, TransactionRecordsById,
+    wallet::{
+        error::KeyError,
+        transaction_records_by_id::{trait_inputsource::InputSourceError, TransactionRecordsById},
     },
 };
 use getset::{Getters, MutGetters};
 use spending_data::SpendingData;
 use std::{fmt::Debug, sync::Arc};
 use thiserror::Error;
-use zcash_primitives::legacy::TransparentAddress;
+use zcash_client_backend::wallet::TransparentAddressMetadata;
+use zcash_primitives::legacy::{keys::EphemeralIvk, TransparentAddress};
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
@@ -24,8 +26,12 @@ pub struct TxMap {
     pub transaction_records_by_id: TransactionRecordsById,
     #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     spending_data: Option<SpendingData>,
+    // as below
     pub(crate) transparent_child_addresses:
         Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    // TODO: rename (ephemeral_transparent_addresses?)
+    pub(crate) transparent_child_ephemeral_addresses:
+        Arc<append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
 }
 
 pub mod get;
@@ -39,11 +45,19 @@ impl TxMap {
         transparent_child_addresses: Arc<
             append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
         >,
+        transparent_child_ephemeral_addresses: Arc<
+            append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>,
+        >,
+        transparent_ephemeral_ivk: EphemeralIvk,
     ) -> TxMap {
         Self {
             transaction_records_by_id: TransactionRecordsById::new(),
-            spending_data: Some(SpendingData::new(WitnessTrees::default())),
+            spending_data: Some(SpendingData::new(
+                WitnessTrees::default(),
+                transparent_ephemeral_ivk,
+            )),
             transparent_child_addresses,
+            transparent_child_ephemeral_addresses,
         }
     }
     pub(crate) fn new_treeless(
@@ -55,6 +69,7 @@ impl TxMap {
             transaction_records_by_id: TransactionRecordsById::new(),
             spending_data: None,
             transparent_child_addresses,
+            transparent_child_ephemeral_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
         }
     }
     /// TODO: Doc-comment!
@@ -74,26 +89,6 @@ impl TxMap {
         self.witness_trees_mut().map(WitnessTrees::clear);
     }
 }
-#[cfg(test)]
-impl TxMap {
-    /// For any unit tests that don't require a WalletCapability, where the addresses come from
-    pub(crate) fn new_with_witness_trees_address_free() -> TxMap {
-        Self {
-            transaction_records_by_id: TransactionRecordsById::new(),
-            spending_data: Some(SpendingData::new(WitnessTrees::default())),
-            transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
-        }
-    }
-    /// For any unit tests that don't require a WalletCapability, where the addresses come from
-    pub(crate) fn new_treeless_address_free() -> TxMap {
-        Self {
-            transaction_records_by_id: TransactionRecordsById::new(),
-            spending_data: None,
-            transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
-        }
-    }
-}
-
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, Error)]
 pub enum TxMapTraitError {
@@ -103,9 +98,48 @@ pub enum TxMapTraitError {
     InputSource(InputSourceError),
     #[error("{0:?}")]
     TransactionWrite(std::io::Error),
+    #[error("{0}")]
+    TexSendError(KeyError),
 }
 
 pub mod trait_stub_inputsource;
 pub mod trait_stub_walletcommitmenttrees;
 pub mod trait_walletread;
 pub mod trait_walletwrite;
+
+#[cfg(test)]
+impl TxMap {
+    /// For any unit tests that don't require a WalletCapability, where the addresses come from
+    pub(crate) fn new_with_witness_trees_address_free() -> TxMap {
+        // The first 32 bytes are a BIP32/44 chain code, the subsequent 33 bytes are a pubkey
+        // https://github.com/zancas/zcash-test-vectors/blob/db9c9b9519a32859a46bbbc60368e8741fe629c4/test-vectors/rust/zip_0316.rs#L10
+        const EXTENDED_PUBKEY: [u8; 65] = [
+            0x5d, 0x7a, 0x8f, 0x73, 0x9a, 0x2d, 0x9e, 0x94, 0x5b, 0x0c, 0xe1, 0x52, 0xa8, 0x04,
+            0x9e, 0x29, 0x4c, 0x4d, 0x6e, 0x66, 0xb1, 0x64, 0x93, 0x9d, 0xaf, 0xfa, 0x2e, 0xf6,
+            0xee, 0x69, 0x21, 0x48, 0x02, 0x16, 0x88, 0x4f, 0x1d, 0xbc, 0x92, 0x90, 0x89, 0xa4,
+            0x17, 0x6e, 0x84, 0x0b, 0xb5, 0x81, 0xc8, 0x0e, 0x16, 0xe9, 0xb1, 0xab, 0xd6, 0x54,
+            0xe6, 0x2c, 0x8b, 0x0b, 0x95, 0x70, 0x20, 0xb7, 0x48,
+        ];
+        Self {
+            transaction_records_by_id: TransactionRecordsById::new(),
+            spending_data: Some(SpendingData::new(
+                WitnessTrees::default(),
+                zcash_primitives::legacy::keys::AccountPubKey::deserialize(&EXTENDED_PUBKEY)
+                    .unwrap()
+                    .derive_ephemeral_ivk()
+                    .unwrap(),
+            )),
+            transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
+            transparent_child_ephemeral_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
+        }
+    }
+    /// For any unit tests that don't require a WalletCapability, where the addresses come from
+    pub(crate) fn new_treeless_address_free() -> TxMap {
+        Self {
+            transaction_records_by_id: TransactionRecordsById::new(),
+            spending_data: None,
+            transparent_child_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
+            transparent_child_ephemeral_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
+        }
+    }
+}

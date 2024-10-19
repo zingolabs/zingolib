@@ -54,7 +54,9 @@ impl LightWallet {
             .key
             .write(&mut writer, self.transaction_context.config.chain)?;
 
-        Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
+        Vector::write(&mut writer, &self.last_100_blocks.read().await, |w, b| {
+            b.write(w)
+        })?;
 
         self.transaction_context
             .transaction_metadata_set
@@ -95,9 +97,8 @@ impl LightWallet {
         };
         Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
 
-        match &self.mnemonic {
-            Some(m) => writer.write_u32::<LittleEndian>(m.1)?,
-            None => (),
+        if let Some(m) = &self.mnemonic {
+            writer.write_u32::<LittleEndian>(m.1)?;
         }
 
         Ok(())
@@ -282,7 +283,7 @@ impl LightWallet {
         );
 
         let lw = Self {
-            blocks: Arc::new(RwLock::new(blocks)),
+            last_100_blocks: Arc::new(RwLock::new(blocks)),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
