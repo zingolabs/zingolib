@@ -84,28 +84,30 @@ fn parse_uri(s: &str) -> Result<http::Uri, String> {
 /// currently this is just a whitespace delimited string of 24 words.  I am
 /// poking around to use the actual BIP39 parser (presumably from librustzcash).
 fn parse_seed(s: &str) -> Result<String, String> {
-    if let Ok(s) = s.parse::<String>() {
-        let count = s.split_whitespace().count();
-        if count == 24 {
-            Ok(s)
-        } else {
-            Err(format!("Expected 24 words, but received: {}.", count))
+    match s.parse::<String>() {
+        Ok(s) => {
+            let count = s.split_whitespace().count();
+            if count == 24 {
+                Ok(s)
+            } else {
+                Err(format!("Expected 24 words, but received: {}.", count))
+            }
         }
-    } else {
-        Err("Unexpected failure to parse String!!".to_string())
+        Err(_) => Err("Unexpected failure to parse String!!".to_string()),
     }
 }
 /// Parse encoded UFVK to String and check for whitespaces
 fn parse_ufvk(s: &str) -> Result<String, String> {
-    if let Ok(s) = s.parse::<String>() {
-        let count = s.split_whitespace().count();
-        if count == 1 {
-            Ok(s)
-        } else {
-            Err("Encoded UFVK should not contain whitespace!".to_string())
+    match s.parse::<String>() {
+        Ok(s) => {
+            let count = s.split_whitespace().count();
+            if count == 1 {
+                Ok(s)
+            } else {
+                Err("Encoded UFVK should not contain whitespace!".to_string())
+            }
         }
-    } else {
-        Err("Unexpected failure to parse String!!".to_string())
+        Err(_) => Err("Unexpected failure to parse String!!".to_string()),
     }
 }
 #[cfg(target_os = "linux")]

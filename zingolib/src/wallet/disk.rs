@@ -96,9 +96,8 @@ impl LightWallet {
         };
         Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
 
-        match &self.mnemonic {
-            Some(m) => writer.write_u32::<LittleEndian>(m.1)?,
-            None => (),
+        if let Some(m) = &self.mnemonic {
+            writer.write_u32::<LittleEndian>(m.1)?;
         }
 
         Ok(())
