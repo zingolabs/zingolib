@@ -131,9 +131,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.89"
+version = "1.0.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6"
+checksum = "37bf3594c4c988a53154954629820791dde498571819ae4ca50ca811e060cc95"
 
 [[package]]
 name = "append-only-vec"
@@ -379,6 +379,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
 
 [[package]]
+name = "bech32"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
+
+[[package]]
 name = "bellman"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -604,7 +610,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#913c16c84b72022002f2a22ea9bc1ddc975e694f"
+source = "git+https://github.com/zingolabs/zingolib?tag=1.8.0#5e319f40803b30d7215c0998d5add4abe6e66375"
 
 [[package]]
 name = "bumpalo"
@@ -901,7 +907,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#913c16c84b72022002f2a22ea9bc1ddc975e694f"
+source = "git+https://github.com/zingolabs/zingolib?tag=1.8.0#5e319f40803b30d7215c0998d5add4abe6e66375"
 dependencies = [
  "futures-util",
  "hex",
@@ -1826,9 +1832,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.159"
+version = "0.2.161"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "561d97a539a36e26a9a5fad1ea11a3039a67714694aaa379433e580854bc3dc5"
+checksum = "8e9489c2807c139ffd9c1794f4af0ebe86a828db53ecdc7fea2111d0fed085d1"
 
 [[package]]
 name = "libloading"
@@ -2118,9 +2124,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
-version = "0.10.67"
+version = "0.10.68"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b8cefcf97f41316955f9294cd61f639bdcfa9f2f230faac6cb896aa8ab64704"
+checksum = "6174bc48f102d208783c2c84bf931bb75927a617866870de8a4ea85597f871f5"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -2459,7 +2465,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c1318b19085f08681016926435853bbf7858f9c082d0999b80550ff5d9abe15"
 dependencies = [
  "bytes 1.7.2",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.13.0",
  "log",
  "multimap",
@@ -3106,9 +3112,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.128"
+version = "1.0.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ff5456707a1de34e7e37f2a6fd3d3f808c318259cbd01ab6377795054b483d8"
+checksum = "610f75ff4a8e3cb29b85da56eabdd1bff5b06739059a4b8e2967fef32e5d9944"
 dependencies = [
  "itoa",
  "memchr",
@@ -4411,7 +4417,7 @@ name = "zcash_address"
 version = "0.4.0"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.11.2_plus_zingolabs_changes-1-g7ad60b5d5-2-g121371a08#121371a089f076a5ee2737809c792d905f5a4b3a"
 dependencies = [
- "bech32",
+ "bech32 0.9.1",
  "bs58",
  "f4jumble",
  "zcash_encoding",
@@ -4424,7 +4430,7 @@ version = "0.13.0"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.11.2_plus_zingolabs_changes-1-g7ad60b5d5-2-g121371a08#121371a089f076a5ee2737809c792d905f5a4b3a"
 dependencies = [
  "base64 0.21.7",
- "bech32",
+ "bech32 0.9.1",
  "bip32",
  "bls12_381",
  "bs58",
@@ -4476,7 +4482,7 @@ name = "zcash_keys"
 version = "0.3.0"
 source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.11.2_plus_zingolabs_changes-1-g7ad60b5d5-2-g121371a08#121371a089f076a5ee2737809c792d905f5a4b3a"
 dependencies = [
- "bech32",
+ "bech32 0.9.1",
  "bip32",
  "blake2b_simd",
  "bls12_381",
@@ -4650,7 +4656,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#913c16c84b72022002f2a22ea9bc1ddc975e694f"
+source = "git+https://github.com/zingolabs/zingolib?tag=1.8.0#5e319f40803b30d7215c0998d5add4abe6e66375"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4662,7 +4668,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#913c16c84b72022002f2a22ea9bc1ddc975e694f"
+source = "git+https://github.com/zingolabs/zingolib?tag=1.8.0#5e319f40803b30d7215c0998d5add4abe6e66375"
 dependencies = [
  "http",
  "http-body",
@@ -4683,7 +4689,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#913c16c84b72022002f2a22ea9bc1ddc975e694f"
+source = "git+https://github.com/zingolabs/zingolib?tag=1.8.0#5e319f40803b30d7215c0998d5add4abe6e66375"
 dependencies = [
  "zcash_primitives",
 ]
@@ -4691,7 +4697,7 @@ dependencies = [
 [[package]]
 name = "zingo-sync"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#913c16c84b72022002f2a22ea9bc1ddc975e694f"
+source = "git+https://github.com/zingolabs/zingolib?tag=1.8.0#5e319f40803b30d7215c0998d5add4abe6e66375"
 dependencies = [
  "crossbeam-channel",
  "futures",
@@ -4715,11 +4721,12 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#913c16c84b72022002f2a22ea9bc1ddc975e694f"
+source = "git+https://github.com/zingolabs/zingolib?tag=1.8.0#5e319f40803b30d7215c0998d5add4abe6e66375"
 dependencies = [
  "append-only-vec",
  "base58",
  "base64 0.13.1",
+ "bech32 0.11.0",
  "bip0039",
  "bip32",
  "bls12_381",
