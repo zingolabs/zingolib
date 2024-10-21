@@ -332,7 +332,7 @@ impl LightClient {
             // to trigger a sync, which will then reorg the remaining blocks
             BlockManagementData::invalidate_block(
                 last_synced_height,
-                self.wallet.blocks.clone(),
+                self.wallet.last_100_blocks.clone(),
                 self.wallet
                     .transaction_context
                     .transaction_metadata_set
@@ -371,7 +371,7 @@ impl LightClient {
                 println!("sync hit error {}. Rolling back", err);
                 BlockManagementData::invalidate_block(
                     self.wallet.last_synced_height().await,
-                    self.wallet.blocks.clone(),
+                    self.wallet.last_100_blocks.clone(),
                     self.wallet
                         .transaction_context
                         .transaction_metadata_set
@@ -554,7 +554,7 @@ impl LightClient {
 
         // 3. Targetted rescan to update transactions with missing information
         let targetted_rescan_handle = crate::blaze::targetted_rescan::start(
-            self.wallet.blocks.clone(),
+            self.wallet.last_100_blocks.clone(),
             transaction_context,
             full_transaction_fetcher_transmitter,
         )

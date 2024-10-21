@@ -68,8 +68,13 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: map,
-            spending_data: witness_trees.map(SpendingData::new),
+            spending_data: witness_trees
+                .zip(wallet_capability.ephemeral_ivk().ok())
+                .map(|(trees, key)| SpendingData::new(trees, key)),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            transparent_child_ephemeral_addresses: wallet_capability
+                .transparent_child_ephemeral_addresses()
+                .clone(),
         })
     }
 
@@ -135,8 +140,13 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
-            spending_data: witness_trees.map(SpendingData::new),
+            spending_data: witness_trees
+                .zip(wallet_capability.ephemeral_ivk().ok())
+                .map(|(trees, key)| SpendingData::new(trees, key)),
             transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            transparent_child_ephemeral_addresses: wallet_capability
+                .transparent_child_ephemeral_addresses()
+                .clone(),
         })
     }
 
