@@ -165,12 +165,12 @@ impl std::fmt::Display for PoolBalances {
     verified_sapling_balance: {}
     spendable_sapling_balance: {}
     unverified_sapling_balance: {}
-    
+
     orchard_balance: {}
     verified_orchard_balance: {}
     spendable_orchard_balance: {}
     unverified_orchard_balance: {}
-    
+
     transparent_balance: {}
 ]",
             format_option_zatoshis(&self.sapling_balance),
