@@ -1,6 +1,7 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
 use thiserror::Error;
+use zcash_keys::keys::DerivationError;
 
 use crate::wallet::data::OutgoingTxData;
 
@@ -54,7 +55,7 @@ pub enum KeyError {
     /// Key derivation failed
     // TODO: add std::Error to zcash_keys::keys::DerivationError in LRZ fork and add thiserror #[from] macro
     #[error("Key derivation failed")]
-    KeyDerivationError,
+    KeyDerivationError(DerivationError),
     /// Key decoding failed
     // TODO: add std::Error to zcash_keys::keys::DecodingError in LRZ fork and add thiserror #[from] macro
     #[error("Key decoding failed")]

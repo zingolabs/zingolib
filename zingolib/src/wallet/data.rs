@@ -11,12 +11,14 @@ use prost::Message;
 
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
+use zcash_client_backend::{
+    proto::compact_formats::CompactBlock, wallet::TransparentAddressMetadata,
+};
 
 use zcash_encoding::{Optional, Vector};
 
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
+use zcash_primitives::{legacy::TransparentAddress, memo::MemoBytes};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
 pub use crate::wallet::transaction_record::TransactionRecord; // TODO: is this necessary? can we import this directly where its used?
@@ -762,30 +764,49 @@ pub mod summaries {
     /// Variants of within transaction outputs grouped by receiver
     /// non_exhaustive to permit expanding to include an
     /// Deshield variant fo sending to transparent
-    #[non_exhaustive]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
         /// The recipient is different than this creator
-        Sent,
-        /// The recipient is the creator and this is a shield transaction
-        Shield,
-        /// The recipient is the creator and the transaction has no recipients that are not the creator
-        SendToSelf,
-        /// The recipient is the creator and is receiving at least 1 note with a TEXT memo
-        MemoToSelf,
+        Sent(SentValueTransfer),
         /// The wallet capability is receiving funds in a transaction
         /// that was created by a different capability
         Received,
+    }
+    /// There are 2 kinds of sent value to-other and to-self
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum SentValueTransfer {
+        /// Transaction is sending funds to recipient other than the creator
+        Send,
+        /// The recipient is the creator and the transaction has no recipients that are not the creator
+        SendToSelf(SelfSendValueTransfer),
+    }
+    /// There are 4 kinds of self sends (so far)
+    #[non_exhaustive]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum SelfSendValueTransfer {
+        /// Explicit memo-less value sent to self
+        Basic,
+        /// The recipient is the creator and this is a shield transaction
+        Shield,
+        /// The recipient is the creator and is receiving at least 1 note with a TEXT memo
+        MemoToSelf,
+        /// The recipient is an ephemeral 320 address
+        Ephemeral320,
     }
 
     impl std::fmt::Display for ValueTransferKind {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             match self {
-                ValueTransferKind::Sent => write!(f, "sent"),
-                ValueTransferKind::Shield => write!(f, "shield"),
-                ValueTransferKind::SendToSelf => write!(f, "send-to-self"),
-                ValueTransferKind::MemoToSelf => write!(f, "memo-to-self"),
                 ValueTransferKind::Received => write!(f, "received"),
+                ValueTransferKind::Sent(sent) => match sent {
+                    SentValueTransfer::Send => write!(f, "sent"),
+                    SentValueTransfer::SendToSelf(selfsend) => match selfsend {
+                        SelfSendValueTransfer::Basic => write!(f, "basic"),
+                        SelfSendValueTransfer::Shield => write!(f, "shield"),
+                        SelfSendValueTransfer::MemoToSelf => write!(f, "memo-to-self"),
+                        SelfSendValueTransfer::Ephemeral320 => write!(f, "ephemeral-320-tex"),
+                    },
+                },
             }
         }
     }
@@ -1971,6 +1992,30 @@ impl WalletZecPriceInfo {
 
         Ok(())
     }
+}
+
+/// Generate a new ephemeral transparent address,
+/// for use in a send to a TEX address.
+pub fn new_persistent_ephemeral_address(
+    transparent_child_ephemeral_addresses: &append_only_vec::AppendOnlyVec<(
+        TransparentAddress,
+        TransparentAddressMetadata,
+    )>,
+
+    transparent_ephemeral_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
+) -> Result<
+    (
+        zcash_primitives::legacy::TransparentAddress,
+        zcash_client_backend::wallet::TransparentAddressMetadata,
+    ),
+    super::error::KeyError,
+> {
+    let (ephemeral_address, metadata) = super::keys::unified::WalletCapability::ephemeral_address(
+        transparent_ephemeral_ivk,
+        transparent_child_ephemeral_addresses.len() as u32,
+    )?;
+    transparent_child_ephemeral_addresses.push((ephemeral_address, metadata.clone()));
+    Ok((ephemeral_address, metadata))
 }
 
 #[test]

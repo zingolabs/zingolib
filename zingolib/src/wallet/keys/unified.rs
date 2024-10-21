@@ -21,17 +21,23 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
-use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_keys::{
+    encoding::AddressCodec,
+    keys::{DerivationError, UnifiedFullViewingKey},
+};
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::legacy::{
-    keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex, TransparentKeyScope},
+    keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex},
     TransparentAddress,
 };
 use zcash_primitives::zip32::{AccountId, DiversifierIndex};
 
-use crate::config::{ChainType, ZingoConfig};
 use crate::wallet::error::KeyError;
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
+use crate::{
+    config::{ChainType, ZingoConfig},
+    wallet::data::new_persistent_ephemeral_address,
+};
 
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
@@ -227,6 +233,7 @@ pub struct WalletCapability {
     /// unified_addresses field?
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
     // TODO: read/write for ephmereral addresses
+    // TODO: Remove this field and exclusively use the TxMap field instead
     transparent_child_ephemeral_addresses:
         Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     /// Cache of unified_addresses
@@ -326,37 +333,6 @@ impl WalletCapability {
     pub fn transparent_child_addresses(&self) -> &Arc<AppendOnlyVec<(usize, TransparentAddress)>> {
         &self.transparent_child_addresses
     }
-
-    /// Generate a new ephemeral transparent address,
-    /// for use in a send to a TEX address.
-    pub fn new_ephemeral_address(
-        &self,
-    ) -> Result<
-        (
-            zcash_primitives::legacy::TransparentAddress,
-            zcash_client_backend::wallet::TransparentAddressMetadata,
-        ),
-        String,
-    > {
-        let transparent_fvk: AccountPubKey = self
-            .unified_key_store()
-            .try_into()
-            .map_err(|e: KeyError| e.to_string())?;
-
-        self.generate_transparent_receiver(
-            &transparent_fvk,
-            TransparentKeyScope::EPHEMERAL,
-            false,
-        )?;
-
-        Ok(self
-            .transparent_child_ephemeral_addresses
-            .iter()
-            .last()
-            .expect("we just generated an address, this is known to be non-empty")
-            .clone())
-    }
-
     /// Generates a unified address from the given desired receivers
     ///
     /// See [`crate::wallet::WalletCapability::generate_transparent_receiver`] for information on using `legacy_key`
@@ -423,27 +399,8 @@ impl WalletCapability {
         };
 
         let transparent_receiver = if desired_receivers.transparent {
-            let transparent_fvk: AccountPubKey = match self.unified_key_store().try_into() {
-                Ok(viewkey) => viewkey,
-                Err(e) => {
-                    self.addresses_write_lock
-                        .swap(false, atomic::Ordering::Release);
-                    return Err(e.to_string());
-                }
-            };
-
-            match self.generate_transparent_receiver(
-                &transparent_fvk,
-                TransparentKeyScope::EXTERNAL,
-                legacy_key,
-            ) {
-                Ok(t_addr) => Some(t_addr),
-                Err(e) => {
-                    self.addresses_write_lock
-                        .swap(false, atomic::Ordering::Release);
-                    return Err(e.to_string());
-                }
-            }
+            self.generate_transparent_receiver(legacy_key)
+                .map_err(|e| e.to_string())?
         } else {
             None
         };
@@ -474,74 +431,38 @@ impl WalletCapability {
     /// Generates a transparent receiver for the specified scope.
     pub fn generate_transparent_receiver(
         &self,
-        transparent_fvk: &AccountPubKey,
-        scope: TransparentKeyScope,
         // this should only be `true` when generating transparent addresses while loading from legacy keys (pre wallet version 29)
         // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
         legacy_key: bool,
-    ) -> Result<TransparentAddress, String> {
-        let address_for_scope = |transparent_fvk: &AccountPubKey,
-                                 scope: TransparentKeyScope,
-                                 child_index: NonHardenedChildIndex|
-         -> Result<TransparentAddress, String> {
-            match scope {
-                TransparentKeyScope::EXTERNAL => {
-                    let t_addr = if legacy_key {
-                        generate_transparent_address_from_legacy_key(transparent_fvk, child_index)?
-                    } else {
-                        transparent_fvk
-                            .derive_external_ivk()
-                            .map_err(|e| e.to_string())?
-                            .derive_address(child_index)
-                            .map_err(|e| e.to_string())?
-                    };
-                    self.transparent_child_addresses
-                        .push((self.unified_addresses.len(), t_addr));
-                    Ok(t_addr)
-                }
-                TransparentKeyScope::INTERNAL => {
-                    //TODO: remember transparent internal change addresses
-                    Ok(transparent_fvk
-                        .derive_internal_ivk()
-                        .map_err(|e| e.to_string())?
-                        .derive_address(child_index)
-                        .map_err(|e| e.to_string())?)
-                }
-                TransparentKeyScope::EPHEMERAL => {
-                    let t_addr = transparent_fvk
-                        .derive_ephemeral_ivk()
-                        .map_err(|e| e.to_string())?
-                        .derive_ephemeral_address(child_index)
-                        .map_err(|e| e.to_string())?;
-                    self.transparent_child_ephemeral_addresses.push((
-                        t_addr,
-                        TransparentAddressMetadata::new(
-                            TransparentKeyScope::EPHEMERAL,
-                            child_index,
-                        ),
-                    ));
-                    Ok(t_addr)
-                }
-                _ => Err(bip32::Error::Bip39.to_string()),
-            }
+    ) -> Result<Option<TransparentAddress>, bip32::Error> {
+        let derive_address = |transparent_fvk: &AccountPubKey,
+                              child_index: NonHardenedChildIndex|
+         -> Result<TransparentAddress, bip32::Error> {
+            let t_addr = if legacy_key {
+                generate_transparent_address_from_legacy_key(transparent_fvk, child_index)?
+            } else {
+                transparent_fvk
+                    .derive_external_ivk()?
+                    .derive_address(child_index)?
+            };
+
+            self.transparent_child_addresses
+                .push((self.addresses().len(), t_addr));
+            Ok(t_addr)
         };
-
-        let child_index = NonHardenedChildIndex::from_index(
-            match scope {
-                TransparentKeyScope::EXTERNAL => Ok(self.unified_addresses.len()),
-                TransparentKeyScope::INTERNAL => {
-                    todo!("transparent change addresses")
-                }
-                TransparentKeyScope::EPHEMERAL => {
-                    Ok(self.transparent_child_ephemeral_addresses.len())
-                }
-                _ => Err(bip32::Error::Bip39),
+        let child_index = NonHardenedChildIndex::from_index(self.addresses().len() as u32)
+            .expect("hardened bit should not be set for non-hardened child indexes");
+        let transparent_receiver = match self.unified_key_store() {
+            UnifiedKeyStore::Spend(usk) => {
+                derive_address(&usk.transparent().to_account_pubkey(), child_index)
+                    .map(Option::Some)
             }
-            .map_err(|e| e.to_string())? as u32,
-        )
-        .expect("hardened bit should not be set for non-hardened child indexes");
-
-        let transparent_receiver = address_for_scope(transparent_fvk, scope, child_index)?;
+            UnifiedKeyStore::View(ufvk) => ufvk
+                .transparent()
+                .map(|pub_key| derive_address(pub_key, child_index))
+                .transpose(),
+            UnifiedKeyStore::Empty => Ok(None),
+        }?;
 
         Ok(transparent_receiver)
     }
@@ -567,7 +488,8 @@ impl WalletCapability {
                                 NonHardenedChildIndex::from_index(*i as u32)
                                     .ok_or(KeyError::InvalidNonHardenedChildIndex)?,
                             )
-                            .map_err(|_| KeyError::KeyDerivationError)?,
+                            .map_err(DerivationError::Transparent)
+                            .map_err(KeyError::KeyDerivationError)?,
                     ))
                 })
                 .collect::<Result<_, _>>()
@@ -587,7 +509,7 @@ impl WalletCapability {
             seed,
             AccountId::try_from(position).map_err(KeyError::InvalidAccountId)?,
         )
-        .map_err(|_| KeyError::KeyDerivationError)?;
+        .map_err(KeyError::KeyDerivationError)?;
 
         Ok(Self {
             unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
@@ -638,7 +560,10 @@ impl WalletCapability {
         })
     }
 
-    pub(crate) fn get_all_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
+    /// external here refers to HD keys:
+    /// <https://zips.z.cash/zip-0032>
+    /// where external and internal were inherited from the BIP44 conventions
+    fn get_external_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.unified_addresses
             .iter()
             .filter_map(|address| {
@@ -659,6 +584,19 @@ impl WalletCapability {
             .collect()
     }
 
+    pub(crate) fn get_ephemeral_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
+        self.transparent_child_ephemeral_addresses
+            .iter()
+            .map(|(transparent_address, _metadata)| transparent_address.encode(chain))
+            .collect()
+    }
+
+    pub(crate) fn get_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
+        self.get_external_taddrs(chain)
+            .union(&self.get_ephemeral_taddrs(chain))
+            .cloned()
+            .collect()
+    }
     /// TODO: Add Doc Comment Here!
     pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
         // This index is dangerous, but all ways to instantiate a UnifiedSpendAuthority
@@ -850,8 +788,12 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         }
 
         for _ in 0..ephemeral_addresses_len {
-            wc.new_ephemeral_address()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            new_persistent_ephemeral_address(
+                &wc.transparent_child_ephemeral_addresses,
+                &wc.ephemeral_ivk()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+            )
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
 
         Ok(wc)
@@ -963,6 +905,52 @@ impl Fvk<SaplingDomain> for sapling_crypto::zip32::DiversifiableFullViewingKey {
         Ovk {
             ovk: self.to_ovk(S::scope()),
             __scope: PhantomData,
+        }
+    }
+}
+mod ephemeral {
+    use std::sync::Arc;
+
+    use append_only_vec::AppendOnlyVec;
+    use zcash_client_backend::wallet::TransparentAddressMetadata;
+    use zcash_keys::keys::DerivationError;
+    use zcash_primitives::legacy::{
+        keys::{AccountPubKey, NonHardenedChildIndex, TransparentKeyScope},
+        TransparentAddress,
+    };
+
+    use crate::wallet::error::KeyError;
+
+    use super::WalletCapability;
+
+    impl WalletCapability {
+        pub(crate) fn ephemeral_ivk(
+            &self,
+        ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
+            AccountPubKey::try_from(self.unified_key_store())?
+                .derive_ephemeral_ivk()
+                .map_err(DerivationError::Transparent)
+                .map_err(KeyError::KeyDerivationError)
+        }
+        pub(crate) fn ephemeral_address(
+            ephemeral_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
+            ephemeral_address_index: u32,
+        ) -> Result<(TransparentAddress, TransparentAddressMetadata), KeyError> {
+            let address_index = NonHardenedChildIndex::from_index(ephemeral_address_index)
+                .ok_or(KeyError::InvalidNonHardenedChildIndex)?;
+            Ok((
+                ephemeral_ivk
+                    .derive_ephemeral_address(address_index)
+                    .map_err(DerivationError::Transparent)
+                    .map_err(KeyError::KeyDerivationError)?,
+                TransparentAddressMetadata::new(TransparentKeyScope::EPHEMERAL, address_index),
+            ))
+        }
+        /// TODO: Add Doc Comment Here!
+        pub fn transparent_child_ephemeral_addresses(
+            &self,
+        ) -> &Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>> {
+            &self.transparent_child_ephemeral_addresses
         }
     }
 }
