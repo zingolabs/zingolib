@@ -293,7 +293,7 @@ mod decrypt_transaction {
         fn identify_rejection_address(&self, spent_utxo: TransparentOutput) -> Option<String> {
             if self
                 .key
-                .get_ephemeral_taddrs(&self.config.chain)
+                .get_rejection_address_set(&self.config.chain)
                 .contains(&spent_utxo.address)
             {
                 Some(spent_utxo.address)
@@ -314,11 +314,10 @@ mod decrypt_transaction {
 
             {
                 // We are the authors of the 320 transactions (that we care about), therefore
-                // we have the transaction that encumbered the (misanmed) "ephemeral" taddr
-                // with funds.
-                // We backtrack from the vins of every transaction to check for "ephemeral" addresses
+                // we have the transaction that encumbered the rejection address with funds.
+                // We backtrack from the vins of every transaction to check for rejection addresses
                 // (from zingomemo), to determine if a given vin is the source of funds for a "tex"
-                // address.  That is, we know the ephemeral taddrs, we simply need to check if they are
+                // address.  That is, we know the rejection addresses, we simply need to check if they are
                 // the receiver in a given transaction.  If the are then, their spend identifies a tex.
                 if let Some(t_bundle) = transaction.transparent_bundle() {
                     for vin in t_bundle.vin.iter() {
@@ -629,7 +628,7 @@ mod decrypt_transaction {
             outgoing_metadatas: &mut Vec<OutgoingTxData>,
             sent_to_tex: bool,
         ) {
-            // TODO: Account for ephemeral_taddresses
+            // TODO: Account for rejection addresses
             // Collect our t-addresses for easy checking
             let taddrs_set = self.key.get_taddrs(&self.config.chain);
             let tx_map = self.transaction_metadata_set.write().await;
@@ -652,7 +651,7 @@ mod decrypt_transaction {
                                         TransparentAddress::ScriptHash(_taddr_bytes) => {
                                             // tex addresses are P2PKH only. If this is a script hash, then we were wrong about
                                             // it being a tex.
-                                            todo!("This happens if someone mislabels in a zingomemo, or zingolib logic an address as \"ephemeral\".");},
+                                            todo!("This happens if someone mislabels in a zingomemo, or zingolib logic an address as \"rejection\".");},
                                     },
                                 }
                             }) {
@@ -685,7 +684,7 @@ mod decrypt_transaction {
         #[derive(Debug)]
         pub(crate) enum InvalidMemoError {
             #[allow(dead_code)]
-            InvalidEphemeralIndex(KeyError),
+            Invalidrejection(KeyError),
         }
         impl TransactionContext {
             async fn handle_uas(
@@ -719,28 +718,28 @@ mod decrypt_transaction {
                 &self,
                 zingo_memo_stored_indices: Vec<u32>,
             ) -> Result<(), InvalidMemoError> {
-                // Get list of ephemeral keys already registered to the capability.
+                // Get list of rejection keys already registered to the capability.
                 // TODO:  This doesn't currently handle out-of-order sync where
-                // the ephemeral address is discovered (from the memo) **after** the
+                // the rejection is discovered (from the memo) **after** the
                 // corresponding TEX address has been "passed".
-                let current_keys = self.key.transparent_child_ephemeral_addresses();
+                let current_keys = self.key.get_rejection_addresses();
                 let total_keys = current_keys.len();
-                for ephemeral_address_index in zingo_memo_stored_indices {
-                    if (ephemeral_address_index as usize) < total_keys {
+                for rejection in zingo_memo_stored_indices {
+                    if (rejection as usize) < total_keys {
                         // The emphemeral key is in the structure at its appropriate location.
                         return Ok(());
                     } else {
                         // The detected key is derived from a higher index than any previously stored key.
                         //  * generate the keys to fill in the "gap".
-                        for _index in (total_keys as u32)..=ephemeral_address_index {
-                            crate::wallet::data::new_persistent_ephemeral_address(
+                        for _index in (total_keys as u32)..=rejection {
+                            crate::wallet::data::new_rejection_address(
                                 current_keys,
                                 &self
                                     .key
-                                    .ephemeral_ivk()
-                                    .map_err(InvalidMemoError::InvalidEphemeralIndex)?,
+                                    .rejection_ivk()
+                                    .map_err(InvalidMemoError::Invalidrejection)?,
                             )
-                            .map_err(InvalidMemoError::InvalidEphemeralIndex)?;
+                            .map_err(InvalidMemoError::Invalidrejection)?;
                         }
                     }
                 }
@@ -763,10 +762,10 @@ mod decrypt_transaction {
                             ParsedMemo::Version0 { uas } => self.handle_uas(uas, transaction).await,
                             ParsedMemo::Version1 {
                                 uas,
-                                ephemeral_address_indexes,
+                                rejection_address_indexes,
                             } => {
                                 self.handle_uas(uas, transaction).await;
-                                self.handle_texes(ephemeral_address_indexes).await?;
+                                self.handle_texes(rejection_address_indexes).await?;
                             }
                             other_memo_version => {
                                 log::error!(

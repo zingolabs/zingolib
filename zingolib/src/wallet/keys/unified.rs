@@ -21,10 +21,7 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
-use zcash_keys::{
-    encoding::AddressCodec,
-    keys::{DerivationError, UnifiedFullViewingKey},
-};
+use zcash_keys::keys::{DerivationError, UnifiedFullViewingKey};
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::legacy::{
     keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex},
@@ -36,7 +33,7 @@ use crate::wallet::error::KeyError;
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 use crate::{
     config::{ChainType, ZingoConfig},
-    wallet::data::new_persistent_ephemeral_address,
+    wallet::data::new_rejection_address,
 };
 
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
@@ -234,8 +231,7 @@ pub struct WalletCapability {
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
     // TODO: read/write for ephmereral addresses
     // TODO: Remove this field and exclusively use the TxMap field instead
-    transparent_child_ephemeral_addresses:
-        Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
+    rejection_addresses: Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     /// Cache of unified_addresses
     unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     addresses_write_lock: AtomicBool,
@@ -245,7 +241,7 @@ impl Default for WalletCapability {
         Self {
             unified_key_store: UnifiedKeyStore::Empty,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
-            transparent_child_ephemeral_addresses: Arc::new(AppendOnlyVec::new()),
+            rejection_addresses: Arc::new(AppendOnlyVec::new()),
             unified_addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
         }
@@ -584,16 +580,9 @@ impl WalletCapability {
             .collect()
     }
 
-    pub(crate) fn get_ephemeral_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
-        self.transparent_child_ephemeral_addresses
-            .iter()
-            .map(|(transparent_address, _metadata)| transparent_address.encode(chain))
-            .collect()
-    }
-
     pub(crate) fn get_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.get_external_taddrs(chain)
-            .union(&self.get_ephemeral_taddrs(chain))
+            .union(&self.get_rejection_address_set(chain))
             .cloned()
             .collect()
     }
@@ -642,13 +631,13 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
         let legacy_key: bool;
-        let ephemeral_addresses_len: u32;
+        let length_of_rejection_addresses: u32;
 
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
                 legacy_key = true;
-                ephemeral_addresses_len = 0;
+                length_of_rejection_addresses = 0;
 
                 // Create a temporary USK for address generation to load old wallets
                 // due to missing BIP0032 transparent extended private key data
@@ -667,7 +656,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             2 => {
                 legacy_key = true;
-                ephemeral_addresses_len = 0;
+                length_of_rejection_addresses = 0;
 
                 let orchard_capability = Capability::<
                     orchard::keys::FullViewingKey,
@@ -758,7 +747,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             3 => {
                 legacy_key = false;
-                ephemeral_addresses_len = 0;
+                length_of_rejection_addresses = 0;
 
                 Self {
                     unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
@@ -767,7 +756,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             4 => {
                 legacy_key = false;
-                ephemeral_addresses_len = reader.read_u32::<LittleEndian>()?;
+                length_of_rejection_addresses = reader.read_u32::<LittleEndian>()?;
 
                 Self {
                     unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
@@ -787,10 +776,10 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
 
-        for _ in 0..ephemeral_addresses_len {
-            new_persistent_ephemeral_address(
-                &wc.transparent_child_ephemeral_addresses,
-                &wc.ephemeral_ivk()
+        for _ in 0..length_of_rejection_addresses {
+            new_rejection_address(
+                &wc.rejection_addresses,
+                &wc.rejection_ivk()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
             )
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -801,7 +790,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
 
     fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        writer.write_u32::<LittleEndian>(self.transparent_child_ephemeral_addresses.len() as u32)?;
+        writer.write_u32::<LittleEndian>(self.rejection_addresses.len() as u32)?;
         self.unified_key_store().write(&mut writer, input)?;
         Vector::write(
             &mut writer,
@@ -908,12 +897,12 @@ impl Fvk<SaplingDomain> for sapling_crypto::zip32::DiversifiableFullViewingKey {
         }
     }
 }
-mod ephemeral {
-    use std::sync::Arc;
+mod rejection {
+    use std::{collections::HashSet, sync::Arc};
 
     use append_only_vec::AppendOnlyVec;
     use zcash_client_backend::wallet::TransparentAddressMetadata;
-    use zcash_keys::keys::DerivationError;
+    use zcash_keys::{encoding::AddressCodec, keys::DerivationError};
     use zcash_primitives::legacy::{
         keys::{AccountPubKey, NonHardenedChildIndex, TransparentKeyScope},
         TransparentAddress,
@@ -924,7 +913,7 @@ mod ephemeral {
     use super::WalletCapability;
 
     impl WalletCapability {
-        pub(crate) fn ephemeral_ivk(
+        pub(crate) fn rejection_ivk(
             &self,
         ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
             AccountPubKey::try_from(self.unified_key_store())?
@@ -932,14 +921,14 @@ mod ephemeral {
                 .map_err(DerivationError::Transparent)
                 .map_err(KeyError::KeyDerivationError)
         }
-        pub(crate) fn ephemeral_address(
-            ephemeral_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
-            ephemeral_address_index: u32,
+        pub(crate) fn get_rejection_address_by_index(
+            rejection_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
+            rejection_address_index: u32,
         ) -> Result<(TransparentAddress, TransparentAddressMetadata), KeyError> {
-            let address_index = NonHardenedChildIndex::from_index(ephemeral_address_index)
+            let address_index = NonHardenedChildIndex::from_index(rejection_address_index)
                 .ok_or(KeyError::InvalidNonHardenedChildIndex)?;
             Ok((
-                ephemeral_ivk
+                rejection_ivk
                     .derive_ephemeral_address(address_index)
                     .map_err(DerivationError::Transparent)
                     .map_err(KeyError::KeyDerivationError)?,
@@ -947,10 +936,19 @@ mod ephemeral {
             ))
         }
         /// TODO: Add Doc Comment Here!
-        pub fn transparent_child_ephemeral_addresses(
+        pub fn get_rejection_addresses(
             &self,
         ) -> &Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>> {
-            &self.transparent_child_ephemeral_addresses
+            &self.rejection_addresses
+        }
+        pub(crate) fn get_rejection_address_set(
+            &self,
+            chain: &crate::config::ChainType,
+        ) -> HashSet<String> {
+            self.rejection_addresses
+                .iter()
+                .map(|(transparent_address, _metadata)| transparent_address.encode(chain))
+                .collect()
         }
     }
 }

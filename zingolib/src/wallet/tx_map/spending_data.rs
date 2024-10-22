@@ -14,15 +14,15 @@ pub(crate) struct SpendingData {
     #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
     cached_raw_transactions: Vec<(TxId, Vec<u8>)>,
     #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
-    transparent_ephemeral_ivk: EphemeralIvk,
+    rejection_ivk: EphemeralIvk,
 }
 
 impl SpendingData {
-    pub fn new(witness_trees: WitnessTrees, transparent_ephemeral_ivk: EphemeralIvk) -> Self {
+    pub fn new(witness_trees: WitnessTrees, rejection_ivk: EphemeralIvk) -> Self {
         SpendingData {
             witness_trees,
             cached_raw_transactions: Vec::new(),
-            transparent_ephemeral_ivk,
+            rejection_ivk,
         }
     }
 }
