@@ -790,8 +790,8 @@ pub mod summaries {
         Shield,
         /// The recipient is the creator and is receiving at least 1 note with a TEXT memo
         MemoToSelf,
-        /// The recipient is an ephemeral 320 address
-        Ephemeral320,
+        /// The recipient is an "ephemeral" 320 address
+        Rejection,
     }
 
     impl std::fmt::Display for ValueTransferKind {
@@ -804,7 +804,7 @@ pub mod summaries {
                         SelfSendValueTransfer::Basic => write!(f, "basic"),
                         SelfSendValueTransfer::Shield => write!(f, "shield"),
                         SelfSendValueTransfer::MemoToSelf => write!(f, "memo-to-self"),
-                        SelfSendValueTransfer::Ephemeral320 => write!(f, "ephemeral-320-tex"),
+                        SelfSendValueTransfer::Rejection => write!(f, "rejection"),
                     },
                 },
             }
@@ -1994,15 +1994,15 @@ impl WalletZecPriceInfo {
     }
 }
 
-/// Generate a new ephemeral transparent address,
+/// Generate a new rejection address,
 /// for use in a send to a TEX address.
-pub fn new_persistent_ephemeral_address(
-    transparent_child_ephemeral_addresses: &append_only_vec::AppendOnlyVec<(
+pub fn new_rejection_address(
+    rejection_addresses: &append_only_vec::AppendOnlyVec<(
         TransparentAddress,
         TransparentAddressMetadata,
     )>,
 
-    transparent_ephemeral_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
+    rejection_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
 ) -> Result<
     (
         zcash_primitives::legacy::TransparentAddress,
@@ -2010,12 +2010,13 @@ pub fn new_persistent_ephemeral_address(
     ),
     super::error::KeyError,
 > {
-    let (ephemeral_address, metadata) = super::keys::unified::WalletCapability::ephemeral_address(
-        transparent_ephemeral_ivk,
-        transparent_child_ephemeral_addresses.len() as u32,
-    )?;
-    transparent_child_ephemeral_addresses.push((ephemeral_address, metadata.clone()));
-    Ok((ephemeral_address, metadata))
+    let (rejection_address, metadata) =
+        super::keys::unified::WalletCapability::get_rejection_address_by_index(
+            rejection_ivk,
+            rejection_addresses.len() as u32,
+        )?;
+    rejection_addresses.push((rejection_address, metadata.clone()));
+    Ok((rejection_address, metadata))
 }
 
 #[test]

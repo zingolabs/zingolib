@@ -383,8 +383,8 @@ impl LightWallet {
         let transaction_metadata_set = if wc.unified_key_store().is_spending_key() {
             Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
-                wc.transparent_child_ephemeral_addresses().clone(),
-                wc.ephemeral_ivk().map_err(|e| {
+                wc.get_rejection_addresses().clone(),
+                wc.rejection_ivk().map_err(|e| {
                     Error::new(
                         ErrorKind::InvalidData,
                         format!("Error with transparent key: {e}"),
