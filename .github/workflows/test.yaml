@@ -30,7 +30,10 @@ jobs:
           version: 0.9.78
 
       - name: Install protoc
-        run: sudo apt-get install protobuf-compiler
+        run: |
+          if ! command -v protoc &> /dev/null; then
+             sudo apt-get install -y protobuf-compiler  
+          fi
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2

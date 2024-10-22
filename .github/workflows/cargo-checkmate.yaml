@@ -31,7 +31,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install protoc
-        run: sudo apt-get install protobuf-compiler
+        run: |
+          if ! command -v protoc &> /dev/null; then
+             sudo apt-get install -y protobuf-compiler  
+          fi
 
       - name: Run cargo checkmate
         run: cargo-checkmate run ${{ matrix.phase }}
