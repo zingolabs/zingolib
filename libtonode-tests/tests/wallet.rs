@@ -138,7 +138,9 @@ mod load_wallet {
             expected_pre_sync_transactions,
             recipient.do_list_transactions().await.pretty(2)
         );
-        recipient.do_sync(false).await.unwrap();
+        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 101)
+            .await
+            .unwrap();
         let expected_post_sync_transactions = r#"[
   {
     "block_height": 3,

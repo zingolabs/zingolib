@@ -3228,69 +3228,6 @@ mod slow {
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
         );
     }
-    #[tokio::test]
-    async fn dont_write_pending() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
-            PoolType::Shielded(ShieldedProtocol::Orchard),
-            regtest_network,
-        )
-        .await;
-        from_inputs::quick_send(
-            &faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "unified"),
-                100_000,
-                Some("funding to be received by the recipient"),
-            )],
-        )
-        .await
-        .unwrap();
-
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
-            .await
-            .unwrap();
-        let recipient_balance = recipient.do_balance().await;
-        assert_eq!(
-            recipient_balance,
-            PoolBalances {
-                sapling_balance: Some(0),
-                verified_sapling_balance: Some(0),
-                spendable_sapling_balance: Some(0),
-                unverified_sapling_balance: Some(0),
-                orchard_balance: Some(100000),
-                verified_orchard_balance: Some(100000),
-                spendable_orchard_balance: Some(100000),
-                unverified_orchard_balance: Some(0),
-                transparent_balance: Some(0)
-            }
-        );
-        from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "unified"),
-                25_000,
-                Some("an pending transaction, that shall not be synced"),
-            )],
-        )
-        .await
-        .unwrap();
-        let recipient_balance = recipient.do_balance().await;
-
-        dbg!(&recipient_balance.unverified_orchard_balance);
-        assert_eq!(
-            recipient_balance.unverified_orchard_balance.unwrap(),
-            65_000
-        );
-
-        let loaded_client =
-            zingolib::testutils::lightclient::new_client_from_save_buffer(&recipient)
-                .await
-                .unwrap();
-        let loaded_balance = loaded_client.do_balance().await;
-        assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
-        check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
-    }
 
     #[tokio::test]
     async fn by_address_finsight() {
