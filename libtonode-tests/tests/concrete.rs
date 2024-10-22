@@ -1084,10 +1084,10 @@ mod slow {
             scenarios::faucet_recipient_default().await;
 
         // 2. Get an incoming transaction to a t address
-        let taddr = get_base_address_macro!(recipient, "transparent");
+        let recipient_taddr = get_base_address_macro!(recipient, "transparent");
         let value = 100_000;
 
-        from_inputs::quick_send(&faucet, vec![(taddr.as_str(), value, None)])
+        from_inputs::quick_send(&faucet, vec![(recipient_taddr.as_str(), value, None)])
             .await
             .unwrap();
 
@@ -1099,7 +1099,10 @@ mod slow {
         // 3. Test the list
         let list = recipient.do_list_transactions().await;
         assert_eq!(list[0]["block_height"].as_u64().unwrap(), 4);
-        assert_eq!(list[0]["address"], taddr);
+        assert_eq!(
+            recipient.do_addresses().await[0]["receivers"]["transparent"].to_string(),
+            recipient_taddr
+        );
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
