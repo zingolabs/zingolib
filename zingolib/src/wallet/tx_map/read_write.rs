@@ -162,7 +162,7 @@ impl TxMap {
                 .transaction_records_by_id
                 .iter()
                 .collect::<Vec<(&TxId, &TransactionRecord)>>();
-            // Don't write down metadata for recieved transactions in the mempool, we'll rediscover
+            // Don't write down metadata for received transactions in the mempool, we'll rediscover
             // them on reload
             transaction_records.retain(|metadata| {
                 metadata.1.status.is_confirmed() || !metadata.1.outgoing_tx_data.is_empty()

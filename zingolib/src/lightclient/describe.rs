@@ -508,7 +508,7 @@ impl LightClient {
                     create_send_value_transfers(&mut value_transfers, tx);
                 }
                 TransactionKind::Received => {
-                    // create 1 received value tansfer for each pool recieved to
+                    // create 1 received value tansfer for each pool received to
                     if !tx.orchard_notes().is_empty() {
                         let value: u64 =
                             tx.orchard_notes().iter().map(|output| output.value()).sum();
