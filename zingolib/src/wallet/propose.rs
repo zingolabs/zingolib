@@ -95,12 +95,9 @@ impl LightWallet {
         &self,
         request: TransactionRequest,
     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
-        let num_ephemeral_addresses = self
-            .transaction_context
-            .key
-            .transparent_child_ephemeral_addresses()
-            .len() as u32;
-        let memo = change_memo_from_transaction_request(&request, num_ephemeral_addresses);
+        let number_of_rejection_addresses =
+            self.transaction_context.key.get_rejection_addresses().len() as u32;
+        let memo = change_memo_from_transaction_request(&request, number_of_rejection_addresses);
 
         let input_selector = build_default_giskit(Some(memo));
         let mut tmamt = self
