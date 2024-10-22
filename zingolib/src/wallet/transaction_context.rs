@@ -684,7 +684,7 @@ mod decrypt_transaction {
         #[derive(Debug)]
         pub(crate) enum InvalidMemoError {
             #[allow(dead_code)]
-            Invalidrejection(KeyError),
+            InvalidRejectionAddress(KeyError),
         }
         impl TransactionContext {
             async fn handle_uas(
@@ -737,9 +737,9 @@ mod decrypt_transaction {
                                 &self
                                     .key
                                     .rejection_ivk()
-                                    .map_err(InvalidMemoError::Invalidrejection)?,
+                                    .map_err(InvalidMemoError::InvalidRejectionAddress)?,
                             )
-                            .map_err(InvalidMemoError::Invalidrejection)?;
+                            .map_err(InvalidMemoError::InvalidRejectionAddress)?;
                         }
                     }
                 }
