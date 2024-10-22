@@ -1062,7 +1062,7 @@ impl<T>
 where
     T: ShieldedNoteInterface,
 {
-    const VERSION: u8 = 4;
+    const VERSION: u8 = 5;
 
     fn read<R: Read>(
         mut reader: R,
@@ -1092,30 +1092,36 @@ where
             (diversifier, wallet_capability),
         )?;
 
-        let witnessed_position = if external_version >= 4 {
-            Position::from(reader.read_u64::<LittleEndian>()?)
-        } else {
-            let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+        let witnessed_position = match external_version {
+            5.. => Optional::read(&mut reader, <R>::read_u64::<LittleEndian>)?.map(Position::from),
+            4 => Some(Position::from(reader.read_u64::<LittleEndian>()?)),
+            ..4 => {
+                let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
 
-            let top_height = reader.read_u64::<LittleEndian>()?;
-            let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
+                let top_height = reader.read_u64::<LittleEndian>()?;
+                let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
 
-            let pos = witnesses
-                .last()
-                .map(|w| w.witnessed_position())
-                .unwrap_or_else(|| Position::from(0));
-            for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
-                let height = BlockHeight::from(top_height as u32 - i as u32);
-                if let Some(&mut ref mut wits) = inc_wit_vec {
-                    wits.push((witness, height));
+                let pos = witnesses.last().map(|w| w.witnessed_position());
+                for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
+                    let height = BlockHeight::from(top_height as u32 - i as u32);
+                    if let Some(&mut ref mut wits) = inc_wit_vec {
+                        wits.push((witness, height));
+                    }
                 }
+                pos
             }
-            pos
         };
 
-        let mut nullifier = [0u8; 32];
-        reader.read_exact(&mut nullifier)?;
-        let nullifier = T::Nullifier::from_bytes(nullifier);
+        let read_nullifier = |r: &mut R| {
+            let mut nullifier = [0u8; 32];
+            r.read_exact(&mut nullifier)?;
+            Ok(T::Nullifier::from_bytes(nullifier))
+        };
+
+        let nullifier = match external_version {
+            ..5 => Some(read_nullifier(&mut reader)?),
+            5.. => Optional::read(&mut reader, read_nullifier)?,
+        };
 
         // Note that this is only the spent field, we ignore the pending_spent field.
         // The reason is that pending spents are only in memory, and we need to get the actual value of spent
@@ -1175,8 +1181,8 @@ where
         Ok(T::from_parts(
             diversifier,
             note,
-            Some(witnessed_position),
-            Some(nullifier),
+            witnessed_position,
+            nullifier,
             spend,
             memo,
             is_change,
@@ -1192,22 +1198,13 @@ where
         writer.write_all(&self.diversifier().to_bytes())?;
 
         self.note().write(&mut writer, ())?;
-        writer.write_u64::<LittleEndian>(u64::from(self.witnessed_position().ok_or(
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Tried to write note without knowing its the position of its value commitment",
-            ),
-        )?))?;
+        Optional::write(&mut writer, *self.witnessed_position(), |w, pos| {
+            w.write_u64::<LittleEndian>(u64::from(pos))
+        })?;
 
-        writer.write_all(
-            &self
-                .nullifier()
-                .ok_or(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Tried to write note with unknown nullifier",
-                ))?
-                .to_bytes(),
-        )?;
+        Optional::write(&mut writer, self.nullifier(), |w, null| {
+            w.write_all(&null.to_bytes())
+        })?;
 
         let confirmed_spend = self
             .spending_tx_status()
