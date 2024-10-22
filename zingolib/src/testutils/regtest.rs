@@ -283,10 +283,9 @@ impl RegtestManager {
         &self,
         num_blocks: u32,
     ) -> Result<std::process::Output, std::io::Error> {
-        dbg!(self
-            .get_cli_handle()
+        self.get_cli_handle()
             .args(["generate".to_string(), num_blocks.to_string()])
-            .output())
+            .output()
     }
 
     /// TODO: Add Doc Comment Here!
