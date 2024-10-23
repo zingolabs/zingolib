@@ -1123,19 +1123,22 @@ where
             ..5 => Some(read_nullifier(&mut reader)?),
         };
 
-        // Note that this is only the spent field, we ignore the pending_spent field.
-        // The reason is that pending spents are only in memory, and we need to get the actual value of spent
-        // from the blockchain anyway.
-        let spent = Optional::read(&mut reader, |r| {
+        let spend = Optional::read(&mut reader, |r| {
             let mut transaction_id_bytes = [0u8; 32];
             r.read_exact(&mut transaction_id_bytes)?;
-            let height = r.read_u32::<LittleEndian>()?;
-            Ok((TxId::from_bytes(transaction_id_bytes), height))
+            let status = match external_version {
+                5.. => ConfirmationStatus::read(r, ()),
+                ..5 => {
+                    let height = r.read_u32::<LittleEndian>()?;
+                    Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))
+                }
+            }?;
+            Ok((TxId::from_bytes(transaction_id_bytes), status))
         })?;
 
-        let spend =
-            spent.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
-
+        // Note that the spent field is now an enum, that contains what used to be
+        // a separate 'pending_spent' field. As they're mutually exclusive states,
+        // they are now stored in the same field.
         if external_version < 3 {
             let _pending_spent = {
                 Optional::read(&mut reader, |r| {
@@ -1206,17 +1209,12 @@ where
             w.write_all(&null.to_bytes())
         })?;
 
-        let confirmed_spend = self
-            .spending_tx_status()
-            .as_ref()
-            .and_then(|(txid, status)| status.get_confirmed_height().map(|height| (txid, height)));
-
         Optional::write(
             &mut writer,
-            confirmed_spend,
-            |w, (transaction_id, height)| {
+            self.spending_tx_status().as_ref(),
+            |w, &(transaction_id, status)| {
                 w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(height.into())
+                status.write(w, ())
             },
         )?;
 
@@ -1231,5 +1229,48 @@ where
         writer.write_u32::<LittleEndian>(self.output_index().unwrap_or(u32::MAX))?;
 
         Ok(())
+    }
+}
+
+impl ReadableWriteable for ConfirmationStatus {
+    const VERSION: u8 = 0;
+
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
+        let _external_version = Self::get_version(&mut reader);
+        let status = reader.read_u8()?;
+        let height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
+        match status {
+            0 => Ok(Self::Calculated(height)),
+            1 => Ok(Self::Transmitted(height)),
+            2 => Ok(Self::Mempool(height)),
+            3 => Ok(Self::Confirmed(height)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Bad confirmation status",
+            )),
+        }
+    }
+
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        let height = match self {
+            ConfirmationStatus::Calculated(h) => {
+                writer.write_u8(0)?;
+                h
+            }
+            ConfirmationStatus::Transmitted(h) => {
+                writer.write_u8(1)?;
+                h
+            }
+            ConfirmationStatus::Mempool(h) => {
+                writer.write_u8(2)?;
+                h
+            }
+            ConfirmationStatus::Confirmed(h) => {
+                writer.write_u8(3)?;
+                h
+            }
+        };
+        writer.write_u32::<LittleEndian>(u32::from(*height))
     }
 }
