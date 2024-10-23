@@ -1080,7 +1080,7 @@ where
 
         if external_version < 2 {
             let mut x = <T as ShieldedNoteInterface>::get_deprecated_serialized_view_key_buffer();
-            reader.read_exact(&mut x).expect("To not used this data.");
+            let _discarded_bytes = reader.read_exact(&mut x).expect("To not used this data.");
         }
 
         let mut diversifier_bytes = [0u8; 11];
@@ -1119,8 +1119,8 @@ where
         };
 
         let nullifier = match external_version {
-            ..5 => Some(read_nullifier(&mut reader)?),
             5.. => Optional::read(&mut reader, read_nullifier)?,
+            ..5 => Some(read_nullifier(&mut reader)?),
         };
 
         // Note that this is only the spent field, we ignore the pending_spent field.
