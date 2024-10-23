@@ -1079,8 +1079,11 @@ where
         let external_version = Self::get_version(&mut reader)?;
 
         if external_version < 2 {
-            let mut x = <T as ShieldedNoteInterface>::get_deprecated_serialized_view_key_buffer();
-            let _discarded_bytes = reader.read_exact(&mut x).expect("To not used this data.");
+            let mut discarded_bytes =
+                <T as ShieldedNoteInterface>::get_deprecated_serialized_view_key_buffer();
+            reader
+                .read_exact(&mut discarded_bytes)
+                .expect("To not used this data.");
         }
 
         let mut diversifier_bytes = [0u8; 11];
