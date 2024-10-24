@@ -240,21 +240,14 @@ pub mod mocks {
         have_spending_key: Option<bool>,
     }
 
-    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl SaplingNoteBuilder {
-        /// blank builder
+        /// A builder, for a 'blank' note.
+        /// Be aware that two notes generated with
+        /// this function will be identical if built
+        /// with no changes.
+        #[allow(dead_code)]
         pub fn new() -> Self {
-            SaplingNoteBuilder {
-                diversifier: None,
-                note: None,
-                witnessed_position: None,
-                output_index: None,
-                nullifier: None,
-                spending_tx_status: None,
-                memo: None,
-                is_change: None,
-                have_spending_key: None,
-            }
+            Self::default()
         }
 
         // Methods to set each field
@@ -297,7 +290,17 @@ pub mod mocks {
 
     impl Default for SaplingNoteBuilder {
         fn default() -> Self {
-            let mut builder = SaplingNoteBuilder::new();
+            let mut builder = SaplingNoteBuilder {
+                diversifier: None,
+                note: None,
+                witnessed_position: None,
+                output_index: None,
+                nullifier: None,
+                spending_tx_status: None,
+                memo: None,
+                is_change: None,
+                have_spending_key: None,
+            };
             builder
                 .diversifier(sapling_crypto::Diversifier([0; 11]))
                 .note(crate::mocks::SaplingCryptoNoteBuilder::default())
