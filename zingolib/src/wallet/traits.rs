@@ -1278,3 +1278,11 @@ impl ReadableWriteable for ConfirmationStatus {
         writer.write_u32::<LittleEndian>(u32::from(*height))
     }
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn fo() {
+        todo!()
+    }
+}
