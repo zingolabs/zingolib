@@ -31,7 +31,7 @@ pub enum ParsedMemo {
         /// the list of unified addresses
         uas: Vec<UnifiedAddress>,
         /// The ephemeral address indexes
-        ephemeral_address_indexes: Vec<u32>,
+        rejection_address_indexes: Vec<u32>,
     },
 }
 
@@ -99,7 +99,7 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
         }),
         1 => Ok(ParsedMemo::Version1 {
             uas: Vector::read(&mut reader, |r| read_unified_address_from_raw_encoding(r))?,
-            ephemeral_address_indexes: Vector::read(&mut reader, |r| CompactSize::read_t(r))?,
+            rejection_address_indexes: Vector::read(&mut reader, |r| CompactSize::read_t(r))?,
         }),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,

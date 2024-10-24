@@ -224,21 +224,14 @@ pub mod mocks {
         have_spending_key: Option<bool>,
     }
 
-    #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
     impl OrchardNoteBuilder {
-        /// blank builder
+        #[allow(dead_code)] //TODO:  fix this gross hack that I tossed in to silence the language-analyzer false positive
+        /// A builder, for a 'blank' note.
+        /// Be aware that two notes generated with
+        /// this function will be identical if built
+        /// with no changes.
         pub fn new() -> Self {
-            OrchardNoteBuilder {
-                diversifier: None,
-                note: None,
-                witnessed_position: None,
-                output_index: None,
-                nullifier: None,
-                spending_tx_status: None,
-                memo: None,
-                is_change: None,
-                have_spending_key: None,
-            }
+            Self::default()
         }
 
         // Methods to set each field
@@ -281,7 +274,17 @@ pub mod mocks {
 
     impl Default for OrchardNoteBuilder {
         fn default() -> Self {
-            let mut builder = OrchardNoteBuilder::new();
+            let mut builder = OrchardNoteBuilder {
+                diversifier: None,
+                note: None,
+                witnessed_position: None,
+                output_index: None,
+                nullifier: None,
+                spending_tx_status: None,
+                memo: None,
+                is_change: None,
+                have_spending_key: None,
+            };
             builder
                 .diversifier(Diversifier::from_bytes([0; 11]))
                 .note(OrchardCryptoNoteBuilder::default())

@@ -50,7 +50,7 @@ impl FetchTaddrTransactions {
                 .iter()
                 .filter_map(|ua| ua.transparent())
                 .chain(
-                    wc.transparent_child_ephemeral_addresses()
+                    wc.get_rejection_addresses()
                         .iter()
                         .map(|(taddr, _metadata)| taddr),
                 )

@@ -181,8 +181,8 @@ async fn sent_transaction_reorged_into_mempool() {
         .await
         .unwrap();
     let connector = DarksideConnector(server_id.clone());
-    connector.stage_blocks_create(4, 1, 0).await.unwrap();
-    connector.apply_staged(4).await.unwrap();
+    connector.stage_blocks_create(4, 102, 0).await.unwrap();
+    connector.apply_staged(105).await.unwrap();
     sleep(std::time::Duration::from_secs(1)).await;
 
     recipient.do_sync(false).await.unwrap();

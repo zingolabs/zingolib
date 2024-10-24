@@ -189,10 +189,10 @@ impl LightWallet {
 // TODO: move to a more suitable place
 pub(crate) fn change_memo_from_transaction_request(
     request: &TransactionRequest,
-    mut num_ephemeral_addresses: u32,
+    mut number_of_rejection_addresses: u32,
 ) -> MemoBytes {
     let mut recipient_uas = Vec::new();
-    let mut ephemeral_address_indexes = Vec::new();
+    let mut rejection_address_indexes = Vec::new();
     for payment in request.payments().values() {
         match payment.recipient_address().kind() {
             AddressKind::Unified(ua) => {
@@ -201,16 +201,16 @@ pub(crate) fn change_memo_from_transaction_request(
                 }
             }
             AddressKind::Tex(_) => {
-                ephemeral_address_indexes.push(num_ephemeral_addresses);
+                rejection_address_indexes.push(number_of_rejection_addresses);
 
-                num_ephemeral_addresses += 1;
+                number_of_rejection_addresses += 1;
             }
             _ => (),
         }
     }
     let uas_bytes = match create_wallet_internal_memo_version_1(
         recipient_uas.as_slice(),
-        ephemeral_address_indexes.as_slice(),
+        rejection_address_indexes.as_slice(),
     ) {
         Ok(bytes) => bytes,
         Err(e) => {

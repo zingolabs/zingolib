@@ -343,11 +343,7 @@ impl WalletRead for TxMap {
         )>,
         Self::Error,
     > {
-        Ok(self
-            .transparent_child_ephemeral_addresses
-            .iter()
-            .cloned()
-            .collect())
+        Ok(self.rejection_addresses.iter().cloned().collect())
     }
 }
 

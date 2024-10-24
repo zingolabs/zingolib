@@ -39,7 +39,7 @@ use super::{
 
 impl LightWallet {
     /// Changes in version 30:
-    /// - New WalletCapability version (v4) which implements read/write for ephemeral addresses
+    /// - New WalletCapability version (v4) which implements read/write for rejection addresses
     pub const fn serialized_version() -> u64 {
         30
     }
