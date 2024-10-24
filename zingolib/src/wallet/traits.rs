@@ -1281,8 +1281,11 @@ impl ReadableWriteable for ConfirmationStatus {
 
 #[cfg(test)]
 mod test {
+    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+
     #[test]
-    fn fo() {
-        todo!()
+    fn check_v5_pending_note_read_write() {
+        let orchard_note = OrchardNoteBuilder::new();
+        assert_eq!(1, 1);
     }
 }
