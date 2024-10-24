@@ -626,9 +626,7 @@ impl Command for BalanceCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
-        })
+        RT.block_on(async move { lightclient.do_balance().await.to_string() })
     }
 }
 
