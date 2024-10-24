@@ -106,14 +106,15 @@ impl<const N: usize> ToBytes<N> for [u8; N] {
 /// Exposes the out_ciphertext, domain, and value_commitment in addition to the
 /// required methods of ShieldedOutput
 pub trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> {
-    /// TODO: Add Doc Comment Here!
+    /// Sapling and Orchard currently, more protocols may be supported in the future
     fn domain(&self, height: BlockHeight, parameters: ChainType) -> D;
 
     /// A decryption key for `enc_ciphertext`.  `out_ciphertext` is _itself_  decryptable
     /// with the `OutgoingCipherKey` "`ock`".
     fn out_ciphertext(&self) -> [u8; 80];
 
-    /// TODO: Add Doc Comment Here!
+    /// This data is stored in an ordered structure, across which a commitment merkle tree
+    /// is built.
     fn value_commitment(&self) -> D::ValueCommitment;
 }
 
