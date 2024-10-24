@@ -4,24 +4,35 @@ use std::{
 };
 
 use incrementalmerkletree::{Marking, Position, Retention};
-use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
-use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
+use orchard::{
+    note_encryption::{CompactAction, OrchardDomain},
+    primitives::redpallas::{Signature, SpendAuth},
+    tree::MerkleHashOrchard,
+    Action,
+};
+use sapling_crypto::{
+    bundle::{GrothProofBytes, OutputDescription},
+    note_encryption::{CompactOutputDescription, SaplingDomain},
+    Node,
+};
 use tokio::sync::mpsc;
 use zcash_client_backend::{
     data_api::scanning::ScanRange,
     proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx},
 };
-use zcash_note_encryption::Domain;
+use zcash_note_encryption::{batch, BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    transaction::TxId,
+    transaction::{components::sapling::zip212_enforcement, Transaction, TxId},
 };
 
 use crate::{
     client::{self, get_compact_block_range, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, WalletBlock},
+    primitives::{
+        NullifierMap, OrchardNote, OutputId, SaplingNote, SyncNote, WalletBlock, WalletTransaction,
+    },
     witness::ShardTreeData,
 };
 
@@ -115,7 +126,7 @@ impl InitialScanData {
 struct ScanData {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    pub(crate) relevent_txids: HashSet<TxId>,
+    pub(crate) relevant_txids: HashSet<TxId>,
     pub(crate) decrypted_note_data: DecryptedNoteData,
     pub(crate) shard_tree_data: ShardTreeData,
 }
@@ -123,6 +134,7 @@ struct ScanData {
 pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
     pub(crate) shard_tree_data: ShardTreeData,
 }
 
@@ -146,8 +158,8 @@ impl Default for DecryptedNoteData {
     }
 }
 
-// scans a given range and returns all data relevent to the specified keys
-// `previous_wallet_block` is the block with height [scan_range.start - 1]
+// scans a given range and returns all data relevant to the specified keys
+// `previous_wallet_block` is the wallet block with height [scan_range.start - 1]
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
@@ -166,7 +178,7 @@ where
     .unwrap();
 
     let initial_scan_data = InitialScanData::new(
-        fetch_request_sender,
+        fetch_request_sender.clone(),
         parameters,
         compact_blocks
             .first()
@@ -182,21 +194,30 @@ where
     let ScanData {
         nullifiers,
         wallet_blocks,
-        relevent_txids: _,
-        decrypted_note_data: _,
+        relevant_txids,
+        decrypted_note_data,
         shard_tree_data,
     } = scan_data;
 
-    // TODO: scan transactions
+    let wallet_transactions = scan_transactions(
+        fetch_request_sender,
+        parameters,
+        scanning_keys,
+        relevant_txids,
+        decrypted_note_data,
+        &wallet_blocks,
+    )
+    .await
+    .unwrap();
 
     Ok(ScanResults {
         nullifiers,
         wallet_blocks,
+        wallet_transactions,
         shard_tree_data,
     })
 }
 
-#[allow(clippy::type_complexity)]
 fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
     parameters: &P,
@@ -212,7 +233,7 @@ where
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
-    let mut relevent_txids: HashSet<TxId> = HashSet::new();
+    let mut relevant_txids: HashSet<TxId> = HashSet::new();
     let mut decrypted_note_data = DecryptedNoteData::new();
     let mut shard_tree_data = ShardTreeData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
@@ -231,16 +252,16 @@ where
                 .orchard
                 .collect_results(block.hash(), transaction.txid());
 
-            // gather the txids of all transactions relevent to the wallet
+            // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
-                relevent_txids.insert(output_id.txid());
+                relevant_txids.insert(output_id.txid());
             });
             incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
-                relevent_txids.insert(output_id.txid());
+                relevant_txids.insert(output_id.txid());
             });
-            // TODO: add outgoing outputs to relevent txids
+            // TODO: add outgoing outputs to relevant txids
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
 
@@ -301,7 +322,7 @@ where
     Ok(ScanData {
         nullifiers,
         wallet_blocks,
-        relevent_txids,
+        relevant_txids,
         decrypted_note_data,
         shard_tree_data,
     })
@@ -530,5 +551,145 @@ fn collect_nullifiers(
                 .orchard_mut()
                 .insert(nullifier, (block_height, transaction.txid()));
         });
+    Ok(())
+}
+
+async fn scan_transactions<P>(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    parameters: &P,
+    scanning_keys: &ScanningKeys,
+    relevant_txids: HashSet<TxId>,
+    decrypted_note_data: DecryptedNoteData,
+    wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+) -> Result<HashMap<TxId, WalletTransaction>, ()>
+where
+    P: Parameters,
+{
+    let mut wallet_transactions = HashMap::with_capacity(relevant_txids.len());
+
+    for txid in relevant_txids {
+        let (transaction, block_height) =
+            client::get_transaction_and_block_height(fetch_request_sender.clone(), txid)
+                .await
+                .unwrap();
+
+        if transaction.txid() != txid {
+            panic!("transaction txid does not match txid requested!")
+        }
+
+        // wallet block must exist, otherwise the transaction will not have access to essential data such as the time it was mined
+        if let Some(wallet_block) = wallet_blocks.get(&block_height) {
+            if !wallet_block.txids().contains(&transaction.txid()) {
+                panic!("txid is not found in the wallet block at the transaction height!");
+            }
+        } else {
+            panic!("wallet block at transaction height not found!");
+        }
+
+        let wallet_transaction = scan_transaction(
+            parameters,
+            scanning_keys,
+            transaction,
+            block_height,
+            &decrypted_note_data,
+        )
+        .unwrap();
+        wallet_transactions.insert(txid, wallet_transaction);
+    }
+
+    Ok(wallet_transactions)
+}
+
+fn scan_transaction<P>(
+    parameters: &P,
+    scanning_keys: &ScanningKeys,
+    transaction: Transaction,
+    block_height: BlockHeight,
+    decrypted_note_data: &DecryptedNoteData,
+) -> Result<WalletTransaction, ()>
+where
+    P: Parameters,
+{
+    // TODO: price?
+    let zip212_enforcement = zip212_enforcement(parameters, block_height);
+    let mut sapling_notes: Vec<SaplingNote> = Vec::new();
+    let mut orchard_notes: Vec<OrchardNote> = Vec::new();
+
+    if let Some(bundle) = transaction.sapling_bundle() {
+        let sapling_keys: Vec<sapling_crypto::keys::PreparedIncomingViewingKey> = scanning_keys
+            .sapling()
+            .iter()
+            .map(|(_, key)| key.prepare())
+            .collect();
+        let sapling_outputs: Vec<(SaplingDomain, OutputDescription<GrothProofBytes>)> = bundle
+            .shielded_outputs()
+            .iter()
+            .map(|output| (SaplingDomain::new(zip212_enforcement), output.clone()))
+            .collect();
+
+        scan_notes::<SaplingDomain, OutputDescription<GrothProofBytes>, SaplingNote>(
+            &mut sapling_notes,
+            transaction.txid(),
+            &sapling_keys,
+            &sapling_outputs,
+            &decrypted_note_data.sapling_nullifiers_and_positions,
+        )
+        .unwrap();
+    }
+
+    if let Some(bundle) = transaction.orchard_bundle() {
+        let orchard_keys: Vec<orchard::keys::PreparedIncomingViewingKey> = scanning_keys
+            .orchard()
+            .iter()
+            .map(|(_, key)| key.prepare())
+            .collect();
+        let orchard_actions: Vec<(OrchardDomain, Action<Signature<SpendAuth>>)> = bundle
+            .actions()
+            .iter()
+            .map(|action| (OrchardDomain::for_action(action), action.clone()))
+            .collect();
+
+        scan_notes::<OrchardDomain, Action<Signature<SpendAuth>>, OrchardNote>(
+            &mut orchard_notes,
+            transaction.txid(),
+            &orchard_keys,
+            &orchard_actions,
+            &decrypted_note_data.orchard_nullifiers_and_positions,
+        )
+        .unwrap();
+    }
+
+    Ok(WalletTransaction::from_parts(
+        transaction.txid(),
+        block_height,
+        sapling_notes,
+        orchard_notes,
+    ))
+}
+
+fn scan_notes<D, Op, N>(
+    wallet_notes: &mut Vec<N::WalletNote>,
+    txid: TxId,
+    ivks: &[D::IncomingViewingKey],
+    outputs: &[(D, Op)],
+    nullifiers_and_positions: &HashMap<OutputId, (N::Nullifier, Position)>,
+) -> Result<(), ()>
+where
+    D: BatchDomain,
+    Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    N: SyncNote<ZcashNote = D::Note, Memo = D::Memo>,
+{
+    for (output_index, output) in batch::try_note_decryption(ivks, outputs)
+        .into_iter()
+        .enumerate()
+    {
+        if let Some(((note, _, memo), _)) = output {
+            let output_id = OutputId::from_parts(txid, output_index);
+            let (nullifier, position) = nullifiers_and_positions.get(&output_id).unwrap();
+            let wallet_note = N::from_parts(output_id, note, *nullifier, *position, memo);
+            wallet_notes.push(wallet_note);
+        }
+    }
+
     Ok(())
 }

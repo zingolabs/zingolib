@@ -8,10 +8,13 @@ use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
         compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
-        TreeState,
+        TreeState, TxFilter,
     },
 };
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::{
+    consensus::{BlockHeight, BranchId, Parameters},
+    transaction::{Transaction, TxId},
+};
 
 use crate::client::FetchRequest;
 
@@ -24,6 +27,7 @@ use crate::client::FetchRequest;
 pub async fn fetch(
     mut fetch_request_receiver: UnboundedReceiver<FetchRequest>,
     mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    parameters: impl Parameters,
 ) -> Result<(), ()> {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
 
@@ -37,7 +41,9 @@ pub async fn fetch(
         let fetch_request = select_fetch_request(&mut fetch_request_queue);
 
         if let Some(request) = fetch_request {
-            fetch_from_server(&mut client, request).await.unwrap();
+            fetch_from_server(&mut client, &parameters, request)
+                .await
+                .unwrap();
         }
     }
 }
@@ -91,23 +97,29 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 //
 async fn fetch_from_server(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    parameters: &impl Parameters,
     fetch_request: FetchRequest,
 ) -> Result<(), ()> {
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
             tracing::info!("Fetching chain tip.");
-            let block_id = get_latest_block(client).await;
+            let block_id = get_latest_block(client).await.unwrap();
             sender.send(block_id).unwrap();
         }
         FetchRequest::CompactBlockRange(sender, block_range) => {
             tracing::info!("Fetching compact blocks. {:?}", &block_range);
-            let compact_blocks = get_block_range(client, block_range).await;
+            let compact_blocks = get_block_range(client, block_range).await.unwrap();
             sender.send(compact_blocks).unwrap();
         }
         FetchRequest::TreeState(sender, block_height) => {
             tracing::info!("Fetching tree state. {:?}", &block_height);
-            let tree_state = get_tree_state(client, block_height).await;
+            let tree_state = get_tree_state(client, block_height).await.unwrap();
             sender.send(tree_state).unwrap();
+        }
+        FetchRequest::Transaction(sender, txid) => {
+            tracing::info!("Fetching transaction. {:?}", txid);
+            let transaction = get_transaction(client, parameters, txid).await.unwrap();
+            sender.send(transaction).unwrap();
         }
     }
 
@@ -116,15 +128,15 @@ async fn fetch_from_server(
 
 async fn get_latest_block(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-) -> BlockId {
+) -> Result<BlockId, ()> {
     let request = tonic::Request::new(ChainSpec {});
 
-    client.get_latest_block(request).await.unwrap().into_inner()
+    Ok(client.get_latest_block(request).await.unwrap().into_inner())
 }
 async fn get_block_range(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_range: Range<BlockHeight>,
-) -> Vec<CompactBlock> {
+) -> Result<Vec<CompactBlock>, ()> {
     let mut compact_blocks: Vec<CompactBlock> =
         Vec::with_capacity(u64::from(block_range.end - block_range.start) as usize);
 
@@ -144,16 +156,39 @@ async fn get_block_range(
         compact_blocks.push(compact_block);
     }
 
-    compact_blocks
+    Ok(compact_blocks)
 }
 async fn get_tree_state(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_height: BlockHeight,
-) -> TreeState {
+) -> Result<TreeState, ()> {
     let request = tonic::Request::new(BlockId {
         height: block_height.into(),
         hash: vec![],
     });
 
-    client.get_tree_state(request).await.unwrap().into_inner()
+    Ok(client.get_tree_state(request).await.unwrap().into_inner())
+}
+
+async fn get_transaction(
+    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    parameters: &impl Parameters,
+    txid: TxId,
+) -> Result<(Transaction, BlockHeight), ()> {
+    let request = tonic::Request::new(TxFilter {
+        block: None,
+        index: 0,
+        hash: txid.as_ref().to_vec(),
+    });
+
+    let raw_transaction = client.get_transaction(request).await.unwrap().into_inner();
+    let block_height = BlockHeight::from_u32(raw_transaction.height as u32);
+
+    let transaction = Transaction::read(
+        &raw_transaction.data[..],
+        BranchId::for_height(parameters, block_height),
+    )
+    .unwrap();
+
+    Ok((transaction, block_height))
 }

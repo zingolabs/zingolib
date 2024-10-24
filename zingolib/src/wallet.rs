@@ -16,7 +16,7 @@ use rand::Rng;
 
 #[cfg(feature = "sync")]
 use zingo_sync::{
-    primitives::{NullifierMap, SyncState, WalletBlock},
+    primitives::{NullifierMap, SyncState, WalletBlock, WalletTransaction},
     witness::ShardTrees,
 };
 
@@ -25,6 +25,7 @@ use bip0039::Mnemonic;
 use std::collections::BTreeMap;
 use std::{
     cmp,
+    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
@@ -222,6 +223,11 @@ pub struct LightWallet {
     #[getset(get = "pub", get_mut = "pub")]
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
 
+    /// Wallet transactions
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
+
     /// Nullifier map
     #[cfg(feature = "sync")]
     #[getset(get = "pub", get_mut = "pub")]
@@ -409,6 +415,8 @@ impl LightWallet {
             transaction_context,
             #[cfg(feature = "sync")]
             wallet_blocks: BTreeMap::new(),
+            #[cfg(feature = "sync")]
+            wallet_transactions: HashMap::new(),
             #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
             #[cfg(feature = "sync")]
