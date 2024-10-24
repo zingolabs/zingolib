@@ -154,16 +154,18 @@ impl TxMap {
         // The hashmap, write as a set of tuples. Store them sorted so that wallets are
         // deterministically saved
         {
-            let mut transaction_metadatas = self
+            let mut transaction_records = self
                 .transaction_records_by_id
                 .iter()
                 .collect::<Vec<(&TxId, &TransactionRecord)>>();
-            // Don't write down metadata for transactions in the mempool, we'll rediscover
-            // it on reload
-            transaction_metadatas.retain(|metadata| metadata.1.status.is_confirmed());
-            transaction_metadatas.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
+            // Don't write down metadata for received transactions in the mempool, we'll rediscover
+            // them on reload
+            transaction_records.retain(|(_txid, record)| {
+                record.status.is_confirmed() || record.is_outgoing_transaction()
+            });
+            transaction_records.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
-            Vector::write(&mut writer, &transaction_metadatas, |w, (k, v)| {
+            Vector::write(&mut writer, &transaction_records, |w, (k, v)| {
                 w.write_all(k.as_ref())?;
                 v.write(w)
             })?;

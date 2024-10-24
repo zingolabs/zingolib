@@ -10,7 +10,7 @@ use crate::testutils::{
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-/// sends to any combo of recipient clients checks that each recipient also recieved the expected balances
+/// sends to any combo of recipient clients checks that each recipient also received the expected balances
 /// test-only generic
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
