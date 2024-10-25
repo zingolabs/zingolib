@@ -13,7 +13,7 @@ env:
 jobs:
   build-test-artifacts:
     name: Build test artifacts
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
