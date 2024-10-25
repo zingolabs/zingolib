@@ -8,7 +8,7 @@ on:
 jobs:
   coverage:
     name: Coverage
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     env:
       RUSTFLAGS: -D warnings
     container:

@@ -13,7 +13,7 @@ env:
 jobs:
   build-test-artifacts:
     name: Build test artifacts
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
@@ -30,7 +30,10 @@ jobs:
           version: 0.9.78
 
       - name: Install protoc
-        run: sudo apt-get install protobuf-compiler
+        run: |
+          if ! command -v protoc &> /dev/null; then
+             sudo apt-get install -y protobuf-compiler
+          fi
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
@@ -46,7 +49,7 @@ jobs:
 
   run-tests:
     name: Run tests
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: github.event.pull_request.draft == false
     needs: build-test-artifacts
     env:
