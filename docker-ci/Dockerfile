@@ -24,6 +24,7 @@ RUN apt update \
     libtinfo5 \
     golang \
     ca-certificates \
+    glibc \
     && update-ca-certificates
 
 # Build lightwalletd
@@ -36,7 +37,6 @@ RUN git clone https://github.com/zcash/lightwalletd \
 RUN git clone https://github.com/zcash/zcash.git \
     && cd zcash/ \
     && git checkout v6.0.0 \
-    # && ./zcutil/fetch-params.sh \
     && ./zcutil/clean.sh \
     && ./zcutil/build.sh -j$(nproc)
 
@@ -46,7 +46,6 @@ FROM debian:bookworm-slim
 COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
 COPY --from=builder /usr/src/zcash/src/zcashd /usr/bin/
 COPY --from=builder /usr/src/zcash/src/zcash-cli /usr/bin/
-# COPY --from=builder /root/.zcash-params/ /root/.zcash-params/
 
 # Install dependencies and update ca certificates
 RUN apt update \
