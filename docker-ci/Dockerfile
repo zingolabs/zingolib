@@ -24,7 +24,7 @@ RUN apt update \
     libtinfo5 \
     golang \
     ca-certificates \
-    glibc \
+    libc6 \
     && update-ca-certificates
 
 # Build lightwalletd
