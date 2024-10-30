@@ -24,7 +24,6 @@ RUN apt update \
     libtinfo5 \
     golang \
     ca-certificates \
-    libc6 \
     && update-ca-certificates
 
 # Build lightwalletd
@@ -58,6 +57,7 @@ RUN apt update \
     libssl-dev \
     build-essential \
     protobuf-compiler \
+    libc6 \
     ca-certificates \
     && update-ca-certificates
 
