@@ -36,7 +36,6 @@ pub mod send_with_proposal {
 
     use zcash_primitives::transaction::{Transaction, TxId};
 
-    use thiserror::Error;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::lightclient::LightClient;
@@ -44,7 +43,7 @@ pub mod send_with_proposal {
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, Error)]
+    #[derive(Clone, Debug, thiserror::Error)]
     pub enum TransactionCacheError {
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
@@ -55,7 +54,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, Error)]
+    #[derive(Clone, Debug, thiserror::Error)]
     pub enum BroadcastCachedTransactionsError {
         #[error("Cant broadcast: {0:?}")]
         Cache(#[from] TransactionCacheError),
@@ -66,7 +65,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, Error)]
+    #[derive(Debug, thiserror::Error)]
     pub enum RecordCachedTransactionsError {
         #[error("Cant record: {0:?}")]
         Cache(#[from] TransactionCacheError),
@@ -77,7 +76,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, Error)]
+    #[derive(Debug, thiserror::Error)]
     pub enum CompleteAndBroadcastError {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
@@ -90,7 +89,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, Error)]
+    #[derive(Debug, thiserror::Error)]
     pub enum CompleteAndBroadcastStoredProposalError {
         #[error("No proposal. Call do_propose first.")]
         NoStoredProposal,
@@ -99,7 +98,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, Error)]
+    #[derive(Debug, thiserror::Error)]
     pub enum QuickSendError {
         #[error("propose send {0:?}")]
         ProposeSend(#[from] ProposeSendError),
@@ -108,7 +107,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, Error)]
+    #[derive(Debug, thiserror::Error)]
     pub enum QuickShieldError {
         #[error("propose shield {0:?}")]
         Propose(#[from] ProposeShieldError),

@@ -10,7 +10,6 @@ use client::client_from_connector;
 use http::{uri::PathAndQuery, Uri};
 use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::connect::HttpConnector;
-use thiserror::Error;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
@@ -26,7 +25,7 @@ pub type UnderlyingService = BoxCloneService<
 >;
 
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum GetClientError {
     #[error("bad uri: invalid scheme")]
     InvalidScheme,

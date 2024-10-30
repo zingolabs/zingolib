@@ -2,7 +2,6 @@
 
 use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut as _};
 
-use thiserror::Error;
 use zcash_client_backend::{
     data_api::wallet::input_selection::GreedyInputSelector,
     zip321::{TransactionRequest, Zip321Error},
@@ -42,7 +41,7 @@ fn build_default_giskit(memo: Option<MemoBytes>) -> GISKit {
 }
 
 /// Errors that can result from do_propose
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ProposeSendError {
     /// error in using trait to create spend proposal
     #[error("{0}")]
@@ -69,7 +68,7 @@ pub enum ProposeSendError {
 }
 
 /// Errors that can result from do_propose
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ProposeShieldError {
     /// error in parsed addresses
     #[error("{0}")]

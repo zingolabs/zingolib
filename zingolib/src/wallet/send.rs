@@ -89,9 +89,8 @@ impl LightWallet {
     }
 }
 
-use thiserror::Error;
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BuildTransactionError {
     #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
     NoSpendCapability,

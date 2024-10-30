@@ -13,7 +13,6 @@ use crate::{
 use getset::{Getters, MutGetters};
 use spending_data::SpendingData;
 use std::{fmt::Debug, sync::Arc};
-use thiserror::Error;
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_primitives::legacy::{keys::EphemeralIvk, TransparentAddress};
 
@@ -87,7 +86,7 @@ impl TxMap {
     }
 }
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum TxMapTraitError {
     #[error("No witness trees. This is viewkey watch, not a spendkey wallet.")]
     NoSpendCapability,

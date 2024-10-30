@@ -1,14 +1,12 @@
 //! Conversion specific utilities
 
-use thiserror::Error;
-
 use zcash_address::ZcashAddress;
 use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
 
 use super::error::ConversionError;
 
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum TxIdFromHexEncodedStrError {
     #[error("{0}")]
     Decode(hex::FromHexError),

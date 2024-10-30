@@ -252,10 +252,8 @@ impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
-    #[allow(deprecated)]
-    #[deprecated(note = "uses unstable deprecated is_change")]
     pub fn is_outgoing_transaction(&self) -> bool {
-        (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
+        (!self.outgoing_tx_data.is_empty()) || self.total_value_output_to_explicit_receivers() != 0
     }
 
     /// This means there's at least one note that adds funds

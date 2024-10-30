@@ -1048,7 +1048,7 @@ async fn reorg_changes_outgoing_tx_index() {
     //
 
     // stage empty blocks from height 205 to cause a Reorg
-    _ = connector.stage_blocks_create(sent_tx_height, 20, 1).await;
+    _ = connector.stage_blocks_create(sent_tx_height, 20, 102).await;
 
     _ = connector
         .stage_transactions_stream(
@@ -1060,7 +1060,7 @@ async fn reorg_changes_outgoing_tx_index() {
         )
         .await;
 
-    _ = connector.apply_staged(211).await;
+    _ = connector.apply_staged(312).await;
 
     let reorg_sync_result = light_client.do_sync(true).await;
 

@@ -19,13 +19,12 @@ use zcash_primitives::{
 use crate::wallet::{notes::OutputInterface, transaction_records_by_id::TransactionRecordsById};
 
 use std::fmt::Debug;
-use thiserror::Error;
 
 use zcash_client_backend::wallet::NoteId;
 use zcash_primitives::transaction::components::amount::BalanceError;
 
 /// Error type used by InputSource trait
-#[derive(Debug, PartialEq, Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum InputSourceError {
     /// No witness position found for note. Note cannot be spent.
     #[error("No witness position found for note. Note cannot be spent: {0:?}")]
