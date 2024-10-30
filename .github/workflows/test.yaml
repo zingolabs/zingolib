@@ -13,7 +13,9 @@ env:
 jobs:
   build-test-artifacts:
     name: Build test artifacts
-    runs-on: ubuntu-22.04
+    container:
+      image: zingodevops/ci-build:004
+    runs-on: self-hosted
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
@@ -29,9 +31,6 @@ jobs:
           tool: nextest
           version: 0.9.78
 
-      - name: Install protoc
-        run: sudo apt-get install protobuf-compiler
-
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
 
@@ -46,14 +45,13 @@ jobs:
 
   run-tests:
     name: Run tests
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: github.event.pull_request.draft == false
     needs: build-test-artifacts
     env:
       RUSTFLAGS: -D warnings
     container:
       image: zingodevops/ci-build:004
-      options: --security-opt seccomp=unconfined
     strategy:
       matrix:
         partition: [1, 2, 3, 4, 5, 6, 7, 8]

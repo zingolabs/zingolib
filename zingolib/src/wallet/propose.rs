@@ -161,3 +161,38 @@ impl LightWallet {
         Ok(proposed_shield)
     }
 }
+
+#[cfg(all(test, feature = "testvectors"))]
+mod test {
+    use zcash_client_backend::PoolType;
+
+    use crate::{
+        testutils::lightclient::from_inputs::transaction_request_from_send_inputs,
+        wallet::disk::testing::examples,
+    };
+
+    /// this test loads an example wallet with existing sapling finds
+    #[ignore = "for some reason this is does not work without network, even though it should be possible"]
+    #[tokio::test]
+    async fn example_mainnet_hhcclaltpcckcsslpcnetblr_80b5594ac_propose_100_000_to_self() {
+        let wallet = examples::NetworkSeedVersion::Mainnet(
+            examples::MainnetSeedVersion::HHCCLALTPCCKCSSLPCNETBLR(
+                examples::HHCCLALTPCCKCSSLPCNETBLRVersion::Latest,
+            ),
+        )
+        .load_example_wallet()
+        .await;
+
+        let pool = PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard);
+        let self_address = wallet.get_first_address(pool).unwrap();
+
+        let receivers = vec![(self_address.as_str(), 100_000, None)];
+        let request = transaction_request_from_send_inputs(receivers)
+            .expect("actually all of this logic oughta be internal to propose");
+
+        wallet
+            .create_send_proposal(request)
+            .await
+            .expect("can propose from existing data");
+    }
+}

@@ -30,15 +30,7 @@ impl LightWallet {
             .write()
             .await;
         if let Some(ref mut trees) = txmds_writelock.witness_trees_mut() {
-            trees
-                .witness_tree_sapling
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees
-                .witness_tree_orchard
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
+            trees.truncate_to_checkpoint(BlockHeight::from(last_synced_height as u32));
         }
     }
 

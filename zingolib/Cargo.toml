@@ -69,6 +69,7 @@ rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 ring = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
+rustls.workspace = true
 sapling-crypto.workspace = true
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }

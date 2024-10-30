@@ -195,7 +195,7 @@ mod fast {
             let (ref _regtest_manager, _cph, ref faucet, sender, _txid) =
                 scenarios::orchard_funded_recipient(5_000_000).await;
 
-            let tex_addr_from_first = first_taddr_to_tex(&faucet);
+            let tex_addr_from_first = first_taddr_to_tex(faucet);
             let payment = vec![Payment::without_memo(
                 tex_addr_from_first.clone(),
                 NonNegativeAmount::from_u64(100_000).unwrap(),

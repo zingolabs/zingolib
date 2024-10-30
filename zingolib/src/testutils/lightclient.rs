@@ -43,6 +43,7 @@ pub mod from_inputs {
         quick_sender: &crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
+        // TOdo fix expect
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender.quick_send(request).await
@@ -88,8 +89,25 @@ pub mod from_inputs {
         crate::data::proposal::ProportionalFeeProposal,
         crate::wallet::propose::ProposeSendError,
     > {
+        // TOdo fix expect
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request).await
     }
+}
+
+/// gets stati for a vec of txids
+pub async fn lookup_stati(
+    client: &LightClient,
+    txids: nonempty::NonEmpty<zcash_primitives::transaction::TxId>,
+) -> nonempty::NonEmpty<zingo_status::confirmation_status::ConfirmationStatus> {
+    let records = &client
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id;
+
+    txids.map(|txid| records[&txid].status)
 }

@@ -1329,13 +1329,13 @@ mod test {
         let mut note_builder = OrchardNoteBuilder::new();
         note_builder.note(
             OrchardCryptoNoteBuilder::non_random([0; 32])
-                .recipient(recipient.clone())
+                .recipient(recipient)
                 .clone(),
         );
         let unspent_orchard_note = note_builder.clone().build();
         note_builder.note(
             OrchardCryptoNoteBuilder::non_random([73; 32])
-                .recipient(recipient.clone())
+                .recipient(recipient)
                 .clone(),
         );
         let spent_orchard_note = note_builder
@@ -1347,7 +1347,7 @@ mod test {
             .build();
         note_builder.note(
             OrchardCryptoNoteBuilder::non_random([113; 32])
-                .recipient(recipient.clone())
+                .recipient(recipient)
                 .clone(),
         );
         let mempool_orchard_note = note_builder
