@@ -10,14 +10,14 @@ use android_logger::{Config, FilterBuilder};
 use log::Level;
 use tokio::runtime::Runtime;
 
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+use rustls::crypto::ring::default_provider;
+use rustls::crypto::CryptoProvider;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::{commands, lightclient::LightClient, wallet::WalletBase};
-use rustls::crypto::ring::default_provider;
-use rustls::crypto::CryptoProvider;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -29,7 +29,7 @@ lazy_static! {
 
 fn lock_client_return_seed(lightclient: LightClient) -> String {
     let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
+    let _ = LightClient::start_mempool_monitor(lc.clone());
 
     LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
@@ -70,15 +70,15 @@ pub fn init_logging() -> String {
     // this is only for Android
     #[cfg(target_os = "android")]
     android_logger::init_once(
-      Config::default().with_min_level(Level::Trace).with_filter(
-          FilterBuilder::new()
-              .parse("debug,hello::crate=zingolib")
-              .build(),
-      ),
+        Config::default().with_min_level(Level::Trace).with_filter(
+            FilterBuilder::new()
+                .parse("debug,hello::crate=zingolib")
+                .build(),
+        ),
     );
-  
+
     "OK".to_string()
-}  
+}
 
 pub fn init_new(
     server_uri: String,
@@ -175,7 +175,12 @@ pub fn init_from_b64(
     let decoded_bytes = match STANDARD.decode(&base64_data) {
         Ok(b) => b,
         Err(e) => {
-            return format!("Error: Decoding Base64: {}, Size: {}, Content: {}", e, base64_data.len(), base64_data);
+            return format!(
+                "Error: Decoding Base64: {}, Size: {}, Content: {}",
+                e,
+                base64_data.len(),
+                base64_data
+            );
         }
     };
 
@@ -268,9 +273,7 @@ pub fn get_transaction_summaries() -> String {
         };
 
         let rt = Runtime::new().unwrap();
-        resp = rt.block_on(async {
-            lightclient.transaction_summaries_json_string().await
-        });
+        resp = rt.block_on(async { lightclient.transaction_summaries_json_string().await });
     };
 
     resp
@@ -291,9 +294,7 @@ pub fn get_value_transfers() -> String {
         };
 
         let rt = Runtime::new().unwrap();
-        resp = rt.block_on(async {
-            lightclient.value_transfers_json_string().await
-        });
+        resp = rt.block_on(async { lightclient.value_transfers_json_string().await });
     };
 
     resp
@@ -303,7 +304,10 @@ pub fn set_crypto_default_provider_to_ring() -> String {
     let resp: String;
     {
         if CryptoProvider::get_default().is_none() {
-            resp = match default_provider().install_default().map_err(|_| "Error: Failed to install crypto provider".to_string()) {
+            resp = match default_provider()
+                .install_default()
+                .map_err(|_| "Error: Failed to install crypto provider".to_string())
+            {
                 Ok(_) => "true".to_string(),
                 Err(e) => e,
             };
