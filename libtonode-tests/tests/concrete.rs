@@ -2642,6 +2642,11 @@ mod slow {
                 zingolib::testutils::incrementalmerkletree::Retention::Marked,
             )
             .unwrap();
+        // This height doesn't matter, all we need is any arbitrary checkpoint ID
+        // as witness_at_checkpoint_depth requres a checkpoint to function now
+        server_orchard_shardtree
+            .checkpoint(BlockHeight::from_u32(0))
+            .unwrap();
         assert_eq!(
             wallet_trees
                 .witness_tree_orchard

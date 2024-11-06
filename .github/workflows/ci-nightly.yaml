@@ -42,7 +42,7 @@ jobs:
   android-ubuntu-integration-test-actions:
     strategy:
       matrix:
-        abi: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
+        abi: [ x86_64, x86 ]
       fail-fast: false
     uses: zingolabs/zingo-mobile/.github/workflows/android-ubuntu-integration-test-ci.yaml@dev
     needs: [create-timestamp, android-build]

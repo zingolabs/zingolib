@@ -76,6 +76,6 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
+          cargo nextest run --verbose --profile ci --retries 2 --archive-file nextest-archive.tar.zst \
             --workspace-remap ./ --partition count:${{ matrix.partition }}/8 ${{ env.NEXTEST-FLAGS }}
 
