@@ -445,10 +445,10 @@ impl TransactionRecord {
             0
         };
 
-        // Outgoing metadata was only added in version 2
-        let outgoing_metadata =
-            zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read(r))?;
-
+        let outgoing_metadata = match version {
+            ..24 => zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read_old(r))?,
+            24.. => zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read(r))?,
+        };
         let _full_tx_scanned = reader.read_u8()? > 0;
 
         let zec_price = if version <= 4 {
@@ -496,7 +496,7 @@ impl TransactionRecord {
 
     /// TODO: Add Doc Comment Here!
     pub fn serialized_version() -> u64 {
-        23
+        24
     }
 
     /// TODO: Add Doc Comment Here!

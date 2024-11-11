@@ -275,11 +275,12 @@ pub mod send_with_proposal {
             self.wallet
                 .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
                     |vec_txids| {
-                        vec_txids
-                            .iter()
-                            .map(|txid| "created txid: ".to_string() + &txid.to_string())
-                            .collect::<Vec<String>>()
-                            .join(" & ")
+                        serde_json::Value::Array(
+                            vec_txids
+                                .iter()
+                                .map(|txid| serde_json::Value::String(txid.to_string()))
+                                .collect::<Vec<serde_json::Value>>(),
+                        )
                     },
                 ))
                 .await;

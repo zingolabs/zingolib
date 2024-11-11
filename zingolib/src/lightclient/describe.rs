@@ -2,10 +2,7 @@
 use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::{cmp::Ordering, collections::HashMap};
 use tokio::runtime::Runtime;
 
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
@@ -282,7 +279,7 @@ impl LightClient {
             transaction_summary: &TransactionSummary,
         ) {
             let mut addresses =
-                HashSet::with_capacity(transaction_summary.outgoing_tx_data().len());
+                HashMap::with_capacity(transaction_summary.outgoing_tx_data().len());
             transaction_summary
                 .outgoing_tx_data()
                 .iter()
@@ -292,10 +289,12 @@ impl LightClient {
                     } else {
                         outgoing_tx_data.recipient_address.clone()
                     };
-                    // hash set is used to create unique list of addresses as duplicates are not inserted twice
-                    addresses.insert(address);
+                    // hash map is used to create unique list of addresses as duplicates are not inserted twice
+                    addresses.insert(address, outgoing_tx_data.output_index);
                 });
-            addresses.iter().for_each(|address| {
+            let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
+            addresses_vec.sort_by_key(|x| x.1);
+            addresses_vec.iter().for_each(|(address, _output_index)| {
                 let outgoing_data_to_address: Vec<OutgoingTxData> = transaction_summary
                     .outgoing_tx_data()
                     .iter()

@@ -454,7 +454,7 @@ impl LightWallet {
     }
 
     // Set the previous send's status as an error or success
-    pub(super) async fn set_send_result(&self, result: Result<String, String>) {
+    pub(super) async fn set_send_result(&self, result: Result<serde_json::Value, String>) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;

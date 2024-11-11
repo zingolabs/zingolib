@@ -28,8 +28,7 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest
-          version: 0.9.78
+          tool: nextest@0.9.78
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2

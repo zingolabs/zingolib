@@ -29,7 +29,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_result: Option<Result<String, String>>,
+    pub last_result: Option<Result<serde_json::Value, String>>,
 }
 
 impl SendProgress {

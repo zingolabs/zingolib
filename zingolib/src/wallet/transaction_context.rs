@@ -555,7 +555,7 @@ mod decrypt_transaction {
             //     1. There's more than one way to be "spent".
             //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
             //     <https://github.com/zingolabs/zingolib/issues/65>
-            for (_domain, output) in domain_tagged_outputs {
+            for (i, (_domain, output)) in domain_tagged_outputs.iter().enumerate() {
                 outgoing_metadatas.extend(
                     match try_output_recovery_with_ovk::<
                         D,
@@ -563,7 +563,7 @@ mod decrypt_transaction {
                     >(
                         &output.domain(status.get_height(), self.config.chain),
                         &ovk.ovk,
-                        &output,
+                        output,
                         &output.value_commitment(),
                         &output.out_ciphertext(),
                     ) {
@@ -611,6 +611,9 @@ mod decrypt_transaction {
                                             value: D::WalletNote::value_from_note(&note),
                                             memo,
                                             recipient_ua: None,
+                                            output_index: Some(
+                                                D::output_index_offset(transaction) + i as u64,
+                                            ),
                                         })
                                     }
                                 }
@@ -642,7 +645,7 @@ mod decrypt_transaction {
                     .transaction_kind(transaction_record, &self.config.chain)
                 {
                     if let Some(t_bundle) = transaction.transparent_bundle() {
-                        for vout in &t_bundle.vout {
+                        for (i, vout) in t_bundle.vout.iter().enumerate() {
                             if let Some(taddr) = vout.recipient_address().map(|raw_taddr| {
                                 match sent_to_tex {
                                     false => address_from_pubkeyhash(&self.config, raw_taddr),
@@ -661,6 +664,7 @@ mod decrypt_transaction {
                                         value: u64::from(vout.value),
                                         memo: Memo::Empty,
                                         recipient_ua: None,
+                                        output_index: Some(i as u64),
                                     });
                                 }
                             }

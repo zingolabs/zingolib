@@ -61,6 +61,8 @@ jobs:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
 
   ios-integration-test:
+    strategy:
+      fail-fast: false
     uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml@dev
     needs: [ create-timestamp, ios-build ]
     with:

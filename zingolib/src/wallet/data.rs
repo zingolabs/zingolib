@@ -15,7 +15,7 @@ use zcash_client_backend::{
     proto::compact_formats::CompactBlock, wallet::TransparentAddressMetadata,
 };
 
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::{legacy::TransparentAddress, memo::MemoBytes};
@@ -291,6 +291,8 @@ pub struct OutgoingTxData {
     /// What if it wasn't provided?  How does this relate to
     /// recipient_address?
     pub recipient_ua: Option<String>,
+    /// This output's index in its containing transaction
+    pub output_index: Option<u64>,
 }
 impl std::fmt::Display for OutgoingTxData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -343,8 +345,9 @@ impl PartialEq for OutgoingTxData {
     }
 }
 impl OutgoingTxData {
-    /// TODO: Add Doc Comment Here!
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    const VERSION: u64 = 0;
+    /// Before version 0, OutgoingTxData didn't have a version field
+    pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
         reader.read_exact(&mut address_bytes)?;
@@ -370,11 +373,47 @@ impl OutgoingTxData {
             value,
             memo,
             recipient_ua: None,
+            output_index: None,
+        })
+    }
+
+    /// Read an OutgoingTxData from its serialized
+    /// representation
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _external_version = CompactSize::read(&mut reader)?;
+        let address_len = reader.read_u64::<LittleEndian>()?;
+        let mut address_bytes = vec![0; address_len as usize];
+        reader.read_exact(&mut address_bytes)?;
+        let address = String::from_utf8(address_bytes).unwrap();
+
+        let value = reader.read_u64::<LittleEndian>()?;
+
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = match MemoBytes::from_bytes(&memo_bytes) {
+            Ok(mb) => match Memo::try_from(mb.clone()) {
+                Ok(m) => Ok(m),
+                Err(_) => Ok(Memo::Future(mb)),
+            },
+            Err(e) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Couldn't create memo: {}", e),
+            )),
+        }?;
+        let output_index = Optional::read(&mut reader, CompactSize::read)?;
+
+        Ok(OutgoingTxData {
+            recipient_address: address,
+            value,
+            memo,
+            recipient_ua: None,
+            output_index,
         })
     }
 
     /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        CompactSize::write(&mut writer, Self::VERSION as usize)?;
         // Strings are written as len + utf8
         match &self.recipient_ua {
             None => {
@@ -387,7 +426,10 @@ impl OutgoingTxData {
             }
         }
         writer.write_u64::<LittleEndian>(self.value)?;
-        writer.write_all(self.memo.encode().as_array())
+        writer.write_all(self.memo.encode().as_array())?;
+        Optional::write(&mut writer, self.output_index, |w, output_index| {
+            CompactSize::write(w, output_index as usize)
+        })
     }
 }
 
@@ -1819,7 +1861,7 @@ pub mod summaries {
         let fee = transaction_records
             .calculate_transaction_fee(transaction_record)
             .ok();
-        let orchard_notes = transaction_record
+        let mut orchard_notes = transaction_record
             .orchard_notes
             .iter()
             .map(|output| {
@@ -1839,7 +1881,7 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
-        let sapling_notes = transaction_record
+        let mut sapling_notes = transaction_record
             .sapling_notes
             .iter()
             .map(|output| {
@@ -1859,7 +1901,7 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
-        let transparent_coins = transaction_record
+        let mut transparent_coins = transaction_record
             .transparent_outputs
             .iter()
             .map(|output| {
@@ -1872,6 +1914,11 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
+
+        // TODO: this sorting should be removed once we root cause the tx records outputs being out of order
+        orchard_notes.sort_by_key(|output| output.output_index());
+        sapling_notes.sort_by_key(|output| output.output_index());
+        transparent_coins.sort_by_key(|output| output.output_index());
         (
             kind,
             value,
@@ -2047,6 +2094,7 @@ pub(crate) mod mocks {
         value: Option<u64>,
         memo: Option<Memo>,
         recipient_ua: Option<Option<String>>,
+        output_index: Option<Option<u64>>,
     }
 
     impl OutgoingTxDataBuilder {
@@ -2056,6 +2104,7 @@ pub(crate) mod mocks {
                 value: None,
                 memo: None,
                 recipient_ua: None,
+                output_index: None,
             }
         }
 
@@ -2064,6 +2113,7 @@ pub(crate) mod mocks {
         build_method!(value, u64);
         build_method!(memo, Memo);
         build_method!(recipient_ua, Option<String>);
+        build_method!(output_index, Option<u64>);
 
         pub(crate) fn build(&self) -> OutgoingTxData {
             OutgoingTxData {
@@ -2071,6 +2121,7 @@ pub(crate) mod mocks {
                 value: self.value.unwrap(),
                 memo: self.memo.clone().unwrap(),
                 recipient_ua: self.recipient_ua.clone().unwrap(),
+                output_index: self.output_index.unwrap(),
             }
         }
     }
@@ -2082,7 +2133,9 @@ pub(crate) mod mocks {
                 .recipient_address("default_address".to_string())
                 .value(50_000)
                 .memo(Memo::default())
-                .recipient_ua(None);
+                .recipient_ua(None)
+                .output_index(None);
+
             builder
         }
     }

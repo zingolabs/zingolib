@@ -537,6 +537,10 @@ pub trait DomainWalletExt:
     /// TODO: Add Doc Comment Here!
     fn get_tree(tree_state: &TreeState) -> &String;
 
+    /// Counts the number of outputs in earlier pools, to allow for
+    // the output index to be a single source for output order
+    fn output_index_offset(transaction: &Transaction) -> u64;
+
     /// TODO: Add Doc Comment Here!
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
@@ -594,6 +598,13 @@ impl DomainWalletExt for SaplingDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
+    }
+
+    fn output_index_offset(transaction: &Transaction) -> u64 {
+        transaction
+            .transparent_bundle()
+            .map(|tbundle| tbundle.vout.len() as u64)
+            .unwrap_or(0)
     }
 
     fn ua_from_contained_receiver<'a>(
@@ -658,6 +669,14 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
+    }
+
+    fn output_index_offset(transaction: &Transaction) -> u64 {
+        SaplingDomain::output_index_offset(transaction)
+            + transaction
+                .sapling_bundle()
+                .map(|sbundle| sbundle.shielded_outputs().len() as u64)
+                .unwrap_or(0)
     }
 
     fn ua_from_contained_receiver<'a>(
