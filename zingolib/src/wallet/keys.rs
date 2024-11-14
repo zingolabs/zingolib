@@ -15,6 +15,8 @@ use zcash_primitives::{
 
 pub mod legacy;
 pub mod unified;
+#[cfg(feature = "ledger-support")]
+pub mod ledger;
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {

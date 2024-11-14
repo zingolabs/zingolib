@@ -34,6 +34,7 @@ use crate::{
     wallet::data::new_rejection_address,
 };
 
+use super::ledger::LedgerKeys;
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
 
@@ -218,6 +219,9 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
 /// or a [`zcash_keys::keys::UnifiedFullViewingKey`]. <br><br>
 /// In addition to fundamental spending and viewing keys, the type caches generated addresses.
 pub struct WalletCapability {
+
+    #[cfg(feature = "ledger-support")]
+    ledger: Option<LedgerKeys>,
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
     /// Cache of transparent addresses that the user has created.
@@ -235,6 +239,8 @@ pub struct WalletCapability {
 impl Default for WalletCapability {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "ledger-support")]
+            ledger: None,
             unified_key_store: UnifiedKeyStore::Empty,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
             rejection_addresses: Arc::new(AppendOnlyVec::new()),
@@ -621,7 +627,7 @@ impl WalletCapability {
 }
 
 impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
-    const VERSION: u8 = 4;
+    const VERSION: u8 = 5;
 
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
@@ -750,6 +756,15 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 }
             }
             4 => {
+                legacy_key = false;
+                length_of_rejection_addresses = reader.read_u32::<LittleEndian>()?;
+
+                Self {
+                    unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
+                    ..Default::default()
+                }
+            }
+            5 => {
                 legacy_key = false;
                 length_of_rejection_addresses = reader.read_u32::<LittleEndian>()?;
 
