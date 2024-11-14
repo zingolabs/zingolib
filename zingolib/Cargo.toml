@@ -16,6 +16,7 @@ tempfile = ["dep:tempfile"]
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 sync = ['dep:zingo-sync']
 zaino-test = ['test-elevation']
+ledger-support = []
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
