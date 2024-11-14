@@ -278,6 +278,9 @@ impl LightClient {
                                 }
                             }
                         }
+                        // at this point, all transactions accepted by the mempool have been so recorded: ConfirmationStatus::Mempool
+                        // so we rebroadcast all those which are stuck in ConfirmationStatus::Transmitted
+                        let _ = lc1.broadcast_created_transactions().await;
                     }
                 });
 

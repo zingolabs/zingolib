@@ -192,7 +192,7 @@ pub mod send_with_proposal {
 
         /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
         /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
-        async fn broadcast_created_transactions(
+        pub(crate) async fn broadcast_created_transactions(
             &self,
         ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
             let mut tx_map = self
@@ -218,7 +218,12 @@ pub mod send_with_proposal {
                 let mut spend_status = None;
                 // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
                 if let Some(transaction_record) = tx_map.transaction_records_by_id.get_mut(&txid) {
-                    if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
+                    // those transactions that have never been broadcast
+                    // and those which have been broadcast but evicted instead of upgraded to ConfirmationStatus::Mempool
+                    if matches!(
+                        transaction_record.status,
+                        ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_)
+                    ) {
                         match crate::grpc_connector::send_transaction(
                             self.get_server_uri(),
                             raw_tx.into_boxed_slice(),
