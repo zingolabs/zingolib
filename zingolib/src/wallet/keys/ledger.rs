@@ -1,18 +1,32 @@
-/// 
 /// Holds information related to the ledger 
 
 
 
 use std::io;
-use secp256k1::PublicKey as SecpPublicKey;
-use tracing_subscriber::field::debug;
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use crate::wallet::traits::ReadableWriteable;
 
 /// Holds ledger things
 #[derive(Debug)]
 pub struct LedgerKeys {
-    ledger_id: SecpPublicKey,
+    ledger_id: PublicKey,
     _app: ZcashApp
+}
+
+//TODO! this is all mocked code
+impl LedgerKeys {
+    /// TODO! this is all mocked code
+    pub fn new() -> LedgerKeys{
+        // Create a new secp256k1 context
+        let secp = Secp256k1::new();
+
+        // Generate a secret key for testing purposes (not secure)
+        let secret_key = SecretKey::from_slice(&[0x01; 32]).expect("32 bytes, within curve order");
+
+        // Derive the corresponding public key
+        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+        LedgerKeys { ledger_id: public_key, _app: ZcashApp::new() }
+    }
 }
 
 /// Placeholder for the real thing
@@ -42,7 +56,7 @@ impl ReadableWriteable for LedgerKeys {
             let mut buf = [0; secp256k1::constants::PUBLIC_KEY_SIZE];
             reader.read_exact(&mut buf)?;
 
-            SecpPublicKey::from_slice(&buf).map_err(|e| {
+            PublicKey::from_slice(&buf).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("Bad public key stored for ledger id: {:?}", e),

@@ -77,4 +77,8 @@ pub enum KeyError {
     /// Invalid format
     #[error("Viewing keys must be imported in the unified format")]
     InvalidFormat,
+    #[cfg(feature = "ledger-support")]
+    #[error("Ledger device not set.")]
+    /// Ledger flag was not set or device not found
+    LedgerNotSet
 }

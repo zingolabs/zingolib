@@ -103,6 +103,8 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
+        #[cfg(feature = "ledger-support")]
+        use_ledger: false,
     };
 
     Ok(config)
@@ -170,6 +172,9 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
+    #[cfg(feature = "ledger-support")]
+    /// if this option is enabled, the LightClient will look for a ledger device to initialize or resume the wallet
+    pub use_ledger: bool,
 }
 
 impl ZingoConfigBuilder {
@@ -225,6 +230,8 @@ impl ZingoConfigBuilder {
             wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            #[cfg(feature = "ledger-support")]
+            use_ledger: false,
         }
     }
 }

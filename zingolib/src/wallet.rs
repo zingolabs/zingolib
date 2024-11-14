@@ -175,6 +175,9 @@ pub enum WalletBase {
     Ufvk(String),
     /// Unified spending key
     Usk(Vec<u8>),
+    #[cfg(feature = "ledger-support")]
+    /// A hardware wallet
+    Ledger
 }
 
 impl WalletBase {
@@ -376,6 +379,18 @@ impl LightWallet {
                         Error::new(
                             ErrorKind::InvalidData,
                             format!("Error parsing unified spending key: {}", e),
+                        )
+                    },
+                )?;
+                (wc, None)
+            }
+            #[cfg(feature = "ledger-support")]
+            WalletBase::Ledger => {
+                let wc = WalletCapability::new_with_ledger(&config).map_err(
+                    |e| {
+                        Error::new(
+                            ErrorKind::Other,
+                            format!("Error initilizing Ledger Device: {}", e),
                         )
                     },
                 )?;

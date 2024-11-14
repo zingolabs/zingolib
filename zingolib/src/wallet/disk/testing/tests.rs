@@ -4,8 +4,7 @@ use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_keys::keys::Era;
 
 use crate::{
-    lightclient::LightClient,
-    wallet::{
+    lightclient::LightClient, wallet::{
         disk::testing::{
             assert_wallet_capability_matches_seed,
             examples::{
@@ -13,10 +12,8 @@ use crate::{
                 HospitalMuseumVersion, HotelHumorVersion, MainnetSeedVersion, MobileShuffleVersion,
                 NetworkSeedVersion, RegtestSeedVersion, TestnetSeedVersion, VillageTargetVersion,
             },
-        },
-        keys::unified::UnifiedKeyStore,
-        LightWallet,
-    },
+        }, error::KeyError, keys::unified::UnifiedKeyStore, LightWallet
+    }
 };
 
 // moving toward completeness: each of these tests should assert everything known about the LightWallet without network.
@@ -298,4 +295,63 @@ async fn reload_wallet_from_buffer() {
     let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
     let balance = client.do_balance().await;
     assert_eq!(balance.orchard_balance, Some(10342837));
+}
+
+#[tokio::test]
+async fn test_ledger_initialization() {
+    use crate::wallet::WalletCapability;
+
+    let mid_wallet =
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
+            .load_example_wallet_with_verification()
+            .await;
+
+    let mid_client = LightClient::create_from_wallet_async(mid_wallet)
+        .await
+        .unwrap();
+
+    let mut config = mid_client.wallet.transaction_context.config;
+    config.use_ledger = true;
+
+    let expected_wc = WalletCapability::new_with_ledger(&config);
+    assert!(expected_wc.is_ok());
+
+    match expected_wc {
+    Ok(w) => {
+        assert!(w.is_ledger())
+    },
+    Err(_) => assert!(false),
+    }
+        
+}
+
+#[cfg(feature = "ledger-support")]
+#[tokio::test]
+async fn test_ledger_initialization_fails_with_wrong_config() {
+    use crate::wallet::WalletCapability;
+
+    let mid_wallet =
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
+            .load_example_wallet_with_verification()
+            .await;
+
+    let mid_client = LightClient::create_from_wallet_async(mid_wallet)
+        .await
+        .unwrap();
+
+    let mut config = mid_client.wallet.transaction_context.config;
+    config.use_ledger = false; // this should make things fail
+
+    let expected_wc = WalletCapability::new_with_ledger(&config);
+    assert!(expected_wc.is_err());
+
+    match expected_wc {
+        Ok(_) => {
+            assert!(false)
+        },
+        Err(e) => match e {
+            KeyError::LedgerNotSet => assert!(true),
+            _ => assert!(false)
+        }
+    }
 }

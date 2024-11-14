@@ -312,6 +312,12 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
+    #[cfg(feature = "ledger-support")]
+    /// checks whether this WalletCapability is a Ledger device or not
+    pub fn is_ledger(&self) -> bool {
+        self.ledger.is_some()
+    }
+
     pub(crate) fn get_ua_from_contained_transparent_receiver(
         &self,
         receiver: &TransparentAddress,
@@ -555,6 +561,20 @@ impl WalletCapability {
             unified_key_store: UnifiedKeyStore::View(Box::new(ufvk)),
             ..Default::default()
         })
+    }
+
+    #[cfg(feature = "ledger-support")]
+    /// initializes a new wallet with a ledger 
+    pub fn new_with_ledger(config: &ZingoConfig) -> Result<Self, KeyError> {
+        if !config.use_ledger {
+            return Err(KeyError::LedgerNotSet)
+        }
+
+        let mut wc = WalletCapability::default();
+
+        wc.ledger = Some(LedgerKeys::new());
+
+        Ok(wc)
     }
 
     /// external here refers to HD keys:
