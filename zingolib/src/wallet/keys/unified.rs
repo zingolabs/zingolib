@@ -311,6 +311,50 @@ fn read_write_receiver_selections() {
     }
 }
 
+pub (crate) trait InternalCapability {
+    fn get_ua_from_contained_transparent_receiver(
+        &self,
+        capability: WalletCapability,
+        receiver: &TransparentAddress,
+    ) -> Option<UnifiedAddress>;
+
+    fn addresses(&self, capability: WalletCapability) -> &AppendOnlyVec<UnifiedAddress>;
+
+    fn transparent_child_addresses(
+        &self, 
+        capability: WalletCapability
+    ) -> &Arc<AppendOnlyVec<(usize, TransparentAddress)>>;
+
+    fn new_address(
+        &self,
+        capability: WalletCapability,
+        desired_receivers: ReceiverSelection,
+        legacy_key: bool,
+    ) -> Result<UnifiedAddress, String>;
+
+    fn generate_transparent_receiver(
+        &self,
+        capability: WalletCapability,
+        // this should only be `true` when generating transparent addresses while loading from legacy keys (pre wallet version 29)
+        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
+        legacy_key: bool,
+    ) -> Result<Option<TransparentAddress>, bip32::Error>;
+
+    /// TODO: Add Doc Comment Here!
+    #[deprecated(note = "not used in zingolib codebase")]
+    fn get_taddr_to_secretkey_map(
+        &self,
+        capability: WalletCapability,
+        chain: &ChainType,
+    ) -> Result<HashMap<String, secp256k1::SecretKey>, KeyError>;
+
+    fn first_sapling_address(&self, capability: WalletCapability) -> sapling_crypto::PaymentAddress;
+
+    fn get_trees_witness_trees(&self, capability: WalletCapability) -> Option<crate::data::witness_trees::WitnessTrees>;
+
+    fn can_view(&self, capability: WalletCapability) -> ReceiverSelection;
+}
+
 impl WalletCapability {
     #[cfg(feature = "ledger-support")]
     /// checks whether this WalletCapability is a Ledger device or not
@@ -601,6 +645,7 @@ impl WalletCapability {
             .collect()
     }
 
+    /// TODO: This does not appear to be used
     pub(crate) fn get_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.get_external_taddrs(chain)
             .union(&self.get_rejection_address_set(chain))
