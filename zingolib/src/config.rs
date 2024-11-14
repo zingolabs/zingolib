@@ -607,6 +607,7 @@ impl RegtestNetwork {
         heartwood_activation_height: u64,
         canopy_activation_height: u64,
         orchard_activation_height: u64,
+        nu6_activation_height: u64,
     ) -> Self {
         Self {
             activation_heights: ActivationHeights::new(
@@ -616,6 +617,7 @@ impl RegtestNetwork {
                 heartwood_activation_height,
                 canopy_activation_height,
                 orchard_activation_height,
+                nu6_activation_height,
             ),
         }
     }
@@ -623,14 +625,22 @@ impl RegtestNetwork {
     /// TODO: Add Doc Comment Here!
     pub fn all_upgrades_active() -> Self {
         Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
+            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1, 1),
         }
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn set_orchard(orchard_activation_height: u64) -> Self {
+    pub fn set_orchard_and_nu6(custom_activation_height: u64) -> Self {
         Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
+            activation_heights: ActivationHeights::new(
+                1,
+                1,
+                1,
+                1,
+                1,
+                custom_activation_height,
+                custom_activation_height,
+            ),
         }
     }
 
@@ -661,7 +671,10 @@ impl RegtestNetwork {
                 self.activation_heights
                     .get_activation_height(NetworkUpgrade::Nu5),
             ),
-            NetworkUpgrade::Nu6 => None,
+            NetworkUpgrade::Nu6 => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Nu6),
+            ),
         }
     }
 }
@@ -675,6 +688,7 @@ pub struct ActivationHeights {
     heartwood: BlockHeight,
     canopy: BlockHeight,
     orchard: BlockHeight,
+    nu6: BlockHeight,
 }
 
 impl ActivationHeights {
@@ -686,6 +700,7 @@ impl ActivationHeights {
         heartwood: u64,
         canopy: u64,
         orchard: u64,
+        nu6: u64,
     ) -> Self {
         Self {
             overwinter: BlockHeight::from_u32(overwinter as u32),
@@ -694,6 +709,7 @@ impl ActivationHeights {
             heartwood: BlockHeight::from_u32(heartwood as u32),
             canopy: BlockHeight::from_u32(canopy as u32),
             orchard: BlockHeight::from_u32(orchard as u32),
+            nu6: BlockHeight::from_u32(nu6 as u32),
         }
     }
 
@@ -706,7 +722,7 @@ impl ActivationHeights {
             NetworkUpgrade::Heartwood => self.heartwood,
             NetworkUpgrade::Canopy => self.canopy,
             NetworkUpgrade::Nu5 => self.orchard,
-            NetworkUpgrade::Nu6 => todo!(),
+            NetworkUpgrade::Nu6 => self.nu6,
         }
     }
 }

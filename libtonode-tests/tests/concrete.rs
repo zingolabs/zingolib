@@ -561,10 +561,10 @@ mod fast {
 
     #[tokio::test]
     async fn sync_all_epochs_from_sapling() {
-        let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
+        let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9, 11);
         let (regtest_manager, _cph, lightclient) =
             scenarios::unfunded_client(regtest_network).await;
-        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 14)
             .await
             .unwrap();
     }
@@ -616,10 +616,10 @@ mod fast {
     #[ignore]
     #[tokio::test]
     async fn sync_all_epochs() {
-        let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11);
+        let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11, 13);
         let (regtest_manager, _cph, lightclient) =
             scenarios::unfunded_client(regtest_network).await;
-        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 14)
             .await
             .unwrap();
     }
@@ -1694,7 +1694,7 @@ mod slow {
     }
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
+        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5, 5);
         let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,

@@ -21,7 +21,7 @@ mod load_wallet {
 
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 1, 1, 200);
         let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
