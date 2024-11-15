@@ -1,4 +1,6 @@
-//! TODO: Add Mod Description Here!
+//! AWISOTT
+//! LightClient sync stuff.
+//! the difference between this and wallet/sync.rs is that these can interact with the network layer.
 
 use futures::future::join_all;
 
@@ -42,6 +44,20 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{now, transaction_context::TransactionContext, utils::get_price},
 };
+
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, thiserror::Error)]
+/// likely no errors here. but this makes clippy (and fv) happier
+pub enum StartMempoolMonitorError {
+    #[error("Mempool Monitor is disabled.")]
+    Disabled,
+    #[error("could not read mempool monitor: {0}")]
+    CouldNotRead(String),
+    #[error("could not write mempool monitor: {0}")]
+    CouldNotWrite(String),
+    #[error("Mempool Monitor does not exist.")]
+    DoesNotExist,
+}
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!
@@ -150,14 +166,22 @@ impl LightClient {
         *self.interrupt_sync.write().await = set_interrupt;
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn start_mempool_monitor(lc: Arc<LightClient>) {
+    /// a concurrent task
+    /// the mempool includes transactions waiting to be accepted to the chain
+    /// we query it through lightwalletd
+    /// and record any new data, using ConfirmationStatus::Mempool
+    pub fn start_mempool_monitor(lc: Arc<LightClient>) -> Result<(), StartMempoolMonitorError> {
         if !lc.config.monitor_mempool {
-            return;
+            return Err(StartMempoolMonitorError::Disabled);
         }
 
-        if lc.mempool_monitor.read().unwrap().is_some() {
-            return;
+        if lc
+            .mempool_monitor
+            .read()
+            .map_err(|e| StartMempoolMonitorError::CouldNotRead(e.to_string()))?
+            .is_some()
+        {
+            return Err(StartMempoolMonitorError::DoesNotExist);
         }
 
         let config = lc.config.clone();
@@ -191,36 +215,72 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
-                            // If the txid is already in the db, then it's already recorded
-                            // there's nothing new to do until it's read from chain.
-                            // ASSUMPTION: A transaction from the mempool_receiver is not on-chain
-                            if transaction_metadata_set
-                                .read()
-                                .await
+                            let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
+                                // The mempool transaction's height field is the height
+                                // it entered the mempool. Making it one above that height,
+                                // i.e. the target height, keeps this value consistant with
+                                // the transmitted height, which we record as the target height.
+                                rtransaction.height as u32 + 1,
+                            ));
+                            let tms_readlock = transaction_metadata_set.read().await;
+                            let record = tms_readlock
                                 .transaction_records_by_id
-                                .get(&transaction.txid())
-                                .is_none()
-                            {
-                                let price = price.read().await.clone();
-                                //debug!("Mempool attempting to scan {}", tx.txid());
-                                let status = ConfirmationStatus::Pending(BlockHeight::from_u32(
-                                    rtransaction.height as u32,
-                                ));
+                                .get(&transaction.txid());
+                            match record {
+                                None => {
+                                    // We only need this for the record, and we can't hold it
+                                    // for the later scan_full_tx call, as it needs write access.
+                                    drop(tms_readlock);
+                                    let price = price.read().await.clone();
+                                    //debug!("Mempool attempting to scan {}", tx.txid());
 
-                                TransactionContext::new(
-                                    &config,
-                                    key.clone(),
-                                    transaction_metadata_set.clone(),
-                                )
-                                .scan_full_tx(
-                                    &transaction,
-                                    status,
-                                    Some(now() as u32),
-                                    get_price(now(), &price),
-                                )
-                                .await;
+                                    TransactionContext::new(
+                                        &config,
+                                        key.clone(),
+                                        transaction_metadata_set.clone(),
+                                    )
+                                    .scan_full_tx(
+                                        &transaction,
+                                        status,
+                                        Some(now() as u32),
+                                        get_price(now(), &price),
+                                    )
+                                    .await;
+                                    transaction_metadata_set
+                                        .write()
+                                        .await
+                                        .transaction_records_by_id
+                                        .update_note_spend_statuses(
+                                            transaction.txid(),
+                                            Some((transaction.txid(), status)),
+                                        );
+                                }
+                                Some(r) => {
+                                    if matches!(r.status, ConfirmationStatus::Transmitted(_)) {
+                                        // In this case, we need write access, to change the status
+                                        // from Transmitted to Mempool
+                                        drop(tms_readlock);
+                                        let mut tms_writelock =
+                                            transaction_metadata_set.write().await;
+                                        tms_writelock
+                                            .transaction_records_by_id
+                                            .get_mut(&transaction.txid())
+                                            .expect("None case has already been handled")
+                                            .status = status;
+                                        tms_writelock
+                                            .transaction_records_by_id
+                                            .update_note_spend_statuses(
+                                                transaction.txid(),
+                                                Some((transaction.txid(), status)),
+                                            );
+                                        drop(tms_writelock);
+                                    }
+                                }
                             }
                         }
+                        // at this point, all transactions accepted by the mempool have been so recorded: ConfirmationStatus::Mempool
+                        // so we rebroadcast all those which are stuck in ConfirmationStatus::Transmitted
+                        let _ = lc1.broadcast_created_transactions().await;
                     }
                 });
 
@@ -245,7 +305,10 @@ impl LightClient {
             });
         });
 
-        *lc.mempool_monitor.write().unwrap() = Some(h);
+        *lc.mempool_monitor
+            .write()
+            .map_err(|e| StartMempoolMonitorError::CouldNotWrite(e.to_string()))? = Some(h);
+        Ok(())
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
@@ -299,7 +362,7 @@ impl LightClient {
             // to trigger a sync, which will then reorg the remaining blocks
             BlockManagementData::invalidate_block(
                 last_synced_height,
-                self.wallet.blocks.clone(),
+                self.wallet.last_100_blocks.clone(),
                 self.wallet
                     .transaction_context
                     .transaction_metadata_set
@@ -338,7 +401,7 @@ impl LightClient {
                 println!("sync hit error {}. Rolling back", err);
                 BlockManagementData::invalidate_block(
                     self.wallet.last_synced_height().await,
-                    self.wallet.blocks.clone(),
+                    self.wallet.last_100_blocks.clone(),
                     self.wallet
                         .transaction_context
                         .transaction_metadata_set
@@ -521,7 +584,7 @@ impl LightClient {
 
         // 3. Targetted rescan to update transactions with missing information
         let targetted_rescan_handle = crate::blaze::targetted_rescan::start(
-            self.wallet.blocks.clone(),
+            self.wallet.last_100_blocks.clone(),
             transaction_context,
             full_transaction_fetcher_transmitter,
         )
@@ -630,5 +693,56 @@ impl LightClient {
         debug!("Rescan finished");
 
         response
+    }
+}
+
+#[cfg(all(test, feature = "testvectors"))]
+pub mod test {
+    use crate::{lightclient::LightClient, wallet::disk::testing::examples};
+
+    /// loads a wallet from example data
+    /// turns on the internet tube
+    /// and syncs to the present blockchain moment
+    pub(crate) async fn sync_example_wallet(
+        wallet_case: examples::NetworkSeedVersion,
+    ) -> LightClient {
+        // install default crypto provider (ring)
+        if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
+            log::error!("Error installing crypto provider: {:?}", e)
+        };
+
+        let wallet = wallet_case.load_example_wallet().await;
+        let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+        lc.do_sync(true).await.unwrap();
+        println!("{:?}", lc.do_balance().await);
+        lc
+    }
+
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    #[tokio::test]
+    async fn testnet_sync_mskmgdbhotbpetcjwcspgopp() {
+        sync_example_wallet(examples::NetworkSeedVersion::Testnet(
+            examples::TestnetSeedVersion::MobileShuffle(examples::MobileShuffleVersion::Ga74fed621),
+        ))
+        .await;
+    }
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    #[tokio::test]
+    async fn testnet_sync_cbbhrwiilgbrababsshsmtpr() {
+        sync_example_wallet(examples::NetworkSeedVersion::Testnet(
+            examples::TestnetSeedVersion::ChimneyBetter(examples::ChimneyBetterVersion::G2f3830058),
+        ))
+        .await;
+    }
+    /// this is a live sync test. its execution time scales linearly since last updated
+    #[tokio::test]
+    #[ignore = "testnet and mainnet tests should be ignored due to increasingly large execution times"]
+    async fn mainnet_sync() {
+        sync_example_wallet(examples::NetworkSeedVersion::Mainnet(
+            examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Gf0aaf9347),
+        ))
+        .await;
     }
 }

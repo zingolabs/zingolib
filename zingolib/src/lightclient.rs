@@ -90,14 +90,16 @@ impl LightWalletSendProgress {
     /// TODO: Add Doc Comment Here!
     pub fn to_json(&self) -> JsonValue {
         let last_result = self.progress.last_result.clone();
-        let txid: Option<String> = last_result.clone().and_then(|result| result.ok());
+        let txids: Option<String> = last_result
+            .clone()
+            .and_then(|result| result.ok().map(|json_result| json_result.to_string()));
         let error: Option<String> = last_result.and_then(|result| result.err());
         object! {
             "id" => self.progress.id,
             "sending" => self.progress.is_send_in_progress,
             "progress" => self.progress.progress,
             "total" => self.progress.total,
-            "txid" => txid,
+            "txids" => txids,
             "error" => error,
             "sync_interrupt" => self.interrupt_sync
         }
@@ -127,6 +129,63 @@ pub struct PoolBalances {
 
     /// TODO: Add Doc Comment Here!
     pub transparent_balance: Option<u64>,
+}
+fn format_option_zatoshis(ioz: &Option<u64>) -> String {
+    ioz.map(|ioz_num| {
+        if ioz_num == 0 {
+            "0".to_string()
+        } else {
+            let mut digits = vec![];
+            let mut remainder = ioz_num;
+            while remainder != 0 {
+                digits.push(remainder % 10);
+                remainder /= 10;
+            }
+            let mut backwards = "".to_string();
+            for (i, digit) in digits.iter().enumerate() {
+                if i % 8 == 4 {
+                    backwards.push('_');
+                }
+                if let Some(ch) = char::from_digit(*digit as u32, 10) {
+                    backwards.push(ch);
+                }
+                if i == 7 {
+                    backwards.push('.');
+                }
+            }
+            backwards.chars().rev().collect::<String>()
+        }
+    })
+    .unwrap_or("null".to_string())
+}
+impl std::fmt::Display for PoolBalances {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[
+    sapling_balance: {}
+    verified_sapling_balance: {}
+    spendable_sapling_balance: {}
+    unverified_sapling_balance: {}
+
+    orchard_balance: {}
+    verified_orchard_balance: {}
+    spendable_orchard_balance: {}
+    unverified_orchard_balance: {}
+
+    transparent_balance: {}
+]",
+            format_option_zatoshis(&self.sapling_balance),
+            format_option_zatoshis(&self.verified_sapling_balance),
+            format_option_zatoshis(&self.spendable_sapling_balance),
+            format_option_zatoshis(&self.unverified_sapling_balance),
+            format_option_zatoshis(&self.orchard_balance),
+            format_option_zatoshis(&self.verified_orchard_balance),
+            format_option_zatoshis(&self.spendable_orchard_balance),
+            format_option_zatoshis(&self.unverified_orchard_balance),
+            format_option_zatoshis(&self.transparent_balance),
+        )
+    }
 }
 
 /// TODO: Add Doc Comment Here!
@@ -217,7 +276,7 @@ pub struct UserBalances {
     pub incoming_dust: u64,
 }
 
-/// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
+/// The LightClient connects one LightWallet to one lightwalletd server via gRPC.
 ///  1. initialization of stored state
 ///      * from seed
 ///      * from keys
@@ -226,6 +285,8 @@ pub struct UserBalances {
 ///  2. synchronization of the client with the state of the blockchain via a gRPC server
 ///      *
 pub struct LightClient {
+    // / the LightClient connects to one server.
+    // pub(crate) server_uri: Arc<RwLock<Uri>>,
     pub(crate) config: ZingoConfig,
     /// TODO: Add Doc Comment Here!
     pub wallet: LightWallet,
@@ -242,7 +303,7 @@ pub struct LightClient {
     save_buffer: ZingoSaveBuffer,
 }
 
-///  This is the omnibus interface to the library, we are currently in the process of refining this typez broad definition!
+/// all the wonderfully intertwined ways to conjure a LightClient
 pub mod instantiation {
     use log::debug;
     use std::{
@@ -275,7 +336,7 @@ pub mod instantiation {
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new())),
                 interrupt_sync: Arc::new(RwLock::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
@@ -472,7 +533,7 @@ impl LightClient {
         let new_address = self
             .wallet
             .wallet_capability()
-            .new_address(desired_receivers)?;
+            .new_address(desired_receivers, false)?;
 
         // self.save_internal_rust().await?;
 
@@ -512,7 +573,7 @@ impl LightClient {
         }
     }
 
-    /// TODO!! This function sorts notes into
+    /// This function sorts notes into
     /// unspent
     /// spend_is_pending
     /// spend_is_confirmed

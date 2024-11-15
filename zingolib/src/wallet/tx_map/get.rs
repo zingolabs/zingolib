@@ -1,4 +1,4 @@
-//! contains associated methods for asking TxMapAndMaybeTrees about the data it contains
+//! contains associated methods for asking TxMap about the data it contains
 //! Does not contain trait implementations
 
 use zcash_note_encryption::Domain;
@@ -12,9 +12,9 @@ use crate::wallet::{
     traits::{DomainWalletExt, Recipient},
 };
 
-use super::TxMapAndMaybeTrees;
+use super::TxMap;
 
-impl TxMapAndMaybeTrees {
+impl TxMap {
     /// TODO: Doc-comment!
     pub fn get_notes_for_updating(
         &self,
@@ -139,7 +139,7 @@ impl TxMapAndMaybeTrees {
 
 #[test]
 fn test_get_some_txid_from_highest_wallet_block() {
-    let mut tms = TxMapAndMaybeTrees::new_treeless_address_free();
+    let mut tms = TxMap::new_treeless_address_free();
     assert_eq!(tms.get_some_txid_from_highest_wallet_block(), None);
     let txid_bytes_1 = [0u8; 32];
     let txid_bytes_2 = [1u8; 32];
@@ -149,7 +149,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
     let txid_3 = TxId::from_bytes(txid_bytes_3);
     tms.transaction_records_by_id
         .insert_transaction_record(TransactionRecord::new(
-            zingo_status::confirmation_status::ConfirmationStatus::Pending(BlockHeight::from_u32(
+            zingo_status::confirmation_status::ConfirmationStatus::Mempool(BlockHeight::from_u32(
                 3_200_000,
             )),
             100,
@@ -176,7 +176,7 @@ fn test_get_some_txid_from_highest_wallet_block() {
 }
 
 #[cfg(feature = "lightclient-deprecated")]
-impl TxMapAndMaybeTrees {
+impl TxMap {
     /// TODO: Doc-comment!
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
         let transaction_record = self

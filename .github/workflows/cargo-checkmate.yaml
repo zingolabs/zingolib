@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-22.04
     if: github.event.pull_request.draft == false
     steps:
-      - uses: taiki-e/cache-cargo-install-action@v1
+      - uses: taiki-e/cache-cargo-install-action@v2
         with:
           tool: cargo-checkmate
 
@@ -23,15 +23,18 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:
-      - uses: taiki-e/cache-cargo-install-action@v1
+      - uses: taiki-e/cache-cargo-install-action@v2
         with:
           tool: cargo-checkmate
 
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install protoc
-        run: sudo apt-get install protobuf-compiler
+        run: |
+          if ! command -v protoc; then
+             sudo apt-get install -y protobuf-compiler
+          fi
 
       - name: Run cargo checkmate
         run: cargo-checkmate run ${{ matrix.phase }}

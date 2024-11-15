@@ -15,7 +15,7 @@ use zcash_primitives::{
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 pub async fn start(
-    wallet_blocks: Arc<RwLock<Vec<BlockData>>>,
+    last_100_blocks: Arc<RwLock<Vec<BlockData>>>,
     transaction_context: TransactionContext,
     fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
 ) -> JoinHandle<Result<(), String>> {
@@ -24,7 +24,7 @@ pub async fn start(
 
         // collect any outdated transaction records that are incomplete and missing output indexes
         let unindexed_records_result =
-            if let Some(highest_wallet_block) = wallet_blocks.read().await.first() {
+            if let Some(highest_wallet_block) = last_100_blocks.read().await.first() {
                 transaction_context
                     .unindexed_records(BlockHeight::from_u32(highest_wallet_block.height as u32))
                     .await

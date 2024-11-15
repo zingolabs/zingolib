@@ -1,8 +1,6 @@
 use crate::error::ZingoLibResult;
 use crate::wallet::MemoDownloadOption;
-use crate::wallet::{
-    data::PoolNullifier, tx_map_and_maybe_trees::TxMapAndMaybeTrees, utils::txid_from_slice,
-};
+use crate::wallet::{data::PoolNullifier, tx_map::TxMap, utils::txid_from_slice};
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -28,11 +26,11 @@ use super::syncdata::BlazeSyncData;
 /// If No, then:
 ///    - Update the witness for this note
 pub struct UpdateNotes {
-    transaction_metadata_set: Arc<RwLock<TxMapAndMaybeTrees>>,
+    transaction_metadata_set: Arc<RwLock<TxMap>>,
 }
 
 impl UpdateNotes {
-    pub fn new(wallet_txns: Arc<RwLock<TxMapAndMaybeTrees>>) -> Self {
+    pub fn new(wallet_txns: Arc<RwLock<TxMap>>) -> Self {
         Self {
             transaction_metadata_set: wallet_txns,
         }

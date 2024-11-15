@@ -13,7 +13,11 @@ use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 /// estimates a fee based on the zip317 protocol rules
 /// <https://zips.z.cash/zip-0317>
-pub fn one_to_one(source_protocol: ShieldedProtocol, target_pool: PoolType, change: bool) -> u64 {
+pub fn one_to_one(
+    source_protocol: Option<ShieldedProtocol>,
+    target_pool: PoolType,
+    change: bool,
+) -> u64 {
     let transparent_inputs = 0;
     let mut transparent_outputs = 0;
     let mut sapling_inputs = 0;
@@ -21,8 +25,9 @@ pub fn one_to_one(source_protocol: ShieldedProtocol, target_pool: PoolType, chan
     let mut orchard_inputs = 0;
     let mut orchard_outputs = 0;
     match source_protocol {
-        Sapling => sapling_inputs += 1,
-        Orchard => orchard_inputs += 1,
+        Some(Sapling) => sapling_inputs += 1,
+        Some(Orchard) => orchard_inputs += 1,
+        _ => {}
     }
     match target_pool {
         Transparent => transparent_outputs += 1,

@@ -1,16 +1,12 @@
 //! Conversion specific utilities
 
-use thiserror::Error;
-
-use zcash_client_backend::address::Address;
+use zcash_address::ZcashAddress;
 use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
-
-use crate::config::ChainType;
 
 use super::error::ConversionError;
 
 #[allow(missing_docs)] // error types document themselves
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum TxIdFromHexEncodedStrError {
     #[error("{0}")]
     Decode(hex::FromHexError),
@@ -29,10 +25,9 @@ pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, TxIdFromHexEncodedS
     Ok(TxId::from_bytes(txid_bytes))
 }
 
-/// Convert a &str to an Address
-pub fn address_from_str(address: &str, chain: &ChainType) -> Result<Address, ConversionError> {
-    Address::decode(chain, address)
-        .ok_or_else(|| ConversionError::InvalidAddress(address.to_string()))
+/// Convert a &str to a ZcashAddress
+pub fn address_from_str(address: &str) -> Result<ZcashAddress, ConversionError> {
+    Ok(ZcashAddress::try_from_encoded(address)?)
 }
 
 /// Convert a valid u64 into Zatoshis.

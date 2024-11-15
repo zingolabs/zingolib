@@ -8,12 +8,13 @@ pub const BASE_HEIGHT: u32 = 3;
 
 /// TODO: Add Mod Description Here!
 pub mod seeds {
+
     /// TODO: Add Doc Comment Here!
     pub const DARKSIDE_SEED: &str =
 "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread";
     #[test]
     fn validate_seeds() {
-        let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+        let abandon_art_seed = bip0039::Mnemonic::<bip0039::English>::from_entropy([0; 32])
             .unwrap()
             .to_string();
         assert_eq!(ABANDON_ART_SEED, abandon_art_seed);
@@ -89,6 +90,9 @@ pub mod config_template_fillers {
             let orchard_activation_height = regtest_network
                 .activation_height(NetworkUpgrade::Nu5)
                 .unwrap();
+            let nu6_activation_height = regtest_network
+                .activation_height(NetworkUpgrade::Nu6)
+                .unwrap();
 
             format!("\
 ### Blockchain Configuration
@@ -99,6 +103,7 @@ nuparams=2bb40e60:{blossom_activation_height} # Blossom
 nuparams=f5b9230b:{heartwood_activation_height} # Heartwood
 nuparams=e9ff75a6:{canopy_activation_height} # Canopy
 nuparams=c2d6d0b4:{orchard_activation_height} # NU5 (Orchard)
+nuparams=c8e71055:{nu6_activation_height} # NU6
 
 ### MetaData Storage and Retrieval
 # txindex:
@@ -141,7 +146,7 @@ minetolocalwallet=0 # This is set to false so that we can mine to a wallet, othe
 
         #[test]
         fn funded_zcashd_conf() {
-            let regtest_network = crate::config::RegtestNetwork::new(1, 2, 3, 4, 5, 6);
+            let regtest_network = crate::config::RegtestNetwork::new(1, 2, 3, 4, 5, 6, 7);
             assert_eq!(
                         funded(
                             super::super::REG_Z_ADDR_FROM_ABANDONART,
@@ -157,6 +162,7 @@ nuparams=2bb40e60:3 # Blossom
 nuparams=f5b9230b:4 # Heartwood
 nuparams=e9ff75a6:5 # Canopy
 nuparams=c2d6d0b4:6 # NU5 (Orchard)
+nuparams=c8e71055:7 # NU6
 
 ### MetaData Storage and Retrieval
 # txindex:

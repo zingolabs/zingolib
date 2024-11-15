@@ -11,6 +11,8 @@ use zcash_client_backend::ShieldedProtocol::Sapling;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use crate::lightclient::LightClient;
+use crate::wallet::data::summaries::SelfSendValueTransfer;
+use crate::wallet::data::summaries::SentValueTransfer;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
 use crate::wallet::notes::{query::OutputPoolQuery, OutputInterface};
 use crate::wallet::{data::summaries::ValueTransferKind, notes::query::OutputQuery};
@@ -62,11 +64,13 @@ where
     );
     assert_eq!(
         sender.value_transfers().await.0[1].kind(),
-        ValueTransferKind::Sent
+        ValueTransferKind::Sent(SentValueTransfer::Send)
     );
     assert_eq!(
         sender.value_transfers().await.0[2].kind(),
-        ValueTransferKind::MemoToSelf
+        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+            SelfSendValueTransfer::MemoToSelf
+        ))
     );
     assert_eq!(recipient.value_transfers().await.0.len(), 1);
     assert_eq!(
@@ -84,14 +88,16 @@ where
     assert_eq!(sender.value_transfers().await.0.len(), 4);
     assert_eq!(
         sender.value_transfers().await.0[3].kind(),
-        ValueTransferKind::SendToSelf
+        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Basic))
     );
 
-    with_assertions::propose_shield_bump_sync(&mut environment, &sender, false).await;
+    with_assertions::assure_propose_shield_bump_sync(&mut environment, &sender, false)
+        .await
+        .unwrap();
     assert_eq!(sender.value_transfers().await.0.len(), 5);
     assert_eq!(
         sender.value_transfers().await.0[4].kind(),
-        ValueTransferKind::Shield
+        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Shield))
     );
 }
 /// runs a send-to-receiver and receives it in a chain-generic context
@@ -196,8 +202,9 @@ where
         );
 
         assert_eq!(
-            with_assertions::propose_shield_bump_sync(&mut environment, &secondary, false,).await,
-            MARGINAL_FEE.into_u64() * 3
+            with_assertions::assure_propose_shield_bump_sync(&mut environment, &secondary, false,)
+                .await,
+            Ok(MARGINAL_FEE.into_u64() * 3)
         );
 
         assert_eq!(
@@ -513,23 +520,19 @@ where
     .await;
 
     let tertiary = environment.create_client().await;
-    let expected_fee = fee_tables::one_to_one(shpool, pool, true);
-    // assert_eq!(
-    //     secondary
-    //         .propose_send_all(tertiary,
-    //         get_base_address(tertiary, pool))
-    //         .await
-    //         .into_u64(),
-    //     0
-    // );
+    let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
 
+    let ref_primary: Arc<LightClient> = Arc::new(primary);
+    let ref_secondary: Arc<LightClient> = Arc::new(secondary);
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
 
     // mempool monitor
-    let check_mempool = false;
+    let check_mempool = !cfg!(feature = "ci");
     if check_mempool {
-        LightClient::start_mempool_monitor(ref_tertiary.clone());
-        dbg!("mm started");
+        for lightclient in [&ref_primary, &ref_secondary, &ref_tertiary] {
+            assert!(LightClient::start_mempool_monitor(lightclient.clone()).is_ok());
+            dbg!("mm started");
+        }
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 
@@ -537,10 +540,104 @@ where
         expected_fee,
         with_assertions::propose_send_bump_sync_all_recipients(
             &mut environment,
-            &secondary,
+            &ref_secondary,
             vec![(&ref_tertiary, pool, 100_000 - expected_fee, None)],
             check_mempool,
         )
         .await
+    );
+}
+
+/// the simplest test that sends from a specific shielded pool to another specific pool. error variant.
+pub async fn shpool_to_pool_insufficient_error<CC>(
+    shpool: ShieldedProtocol,
+    pool: PoolType,
+    underflow_amount: u64,
+) where
+    CC: ConductChain,
+{
+    let mut environment = CC::setup().await;
+
+    let primary = environment.fund_client_orchard(1_000_000).await;
+    let secondary = environment.create_client().await;
+
+    let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
+    let secondary_fund = 100_000 + expected_fee - underflow_amount;
+    with_assertions::propose_send_bump_sync_all_recipients(
+        &mut environment,
+        &primary,
+        vec![(&secondary, Shielded(shpool), secondary_fund, None)],
+        false,
+    )
+    .await;
+
+    let tertiary = environment.create_client().await;
+
+    let ref_secondary: Arc<LightClient> = Arc::new(secondary);
+    let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+
+    let tertiary_fund = 100_000;
+    assert_eq!(
+        from_inputs::propose(
+            &ref_secondary,
+            vec![(
+                ref_tertiary
+                    .wallet
+                    .get_first_address(pool)
+                    .unwrap()
+                    .as_str(),
+                tertiary_fund,
+                None,
+            )],
+        )
+        .await
+        .unwrap_err()
+        .to_string(),
+        format!(
+            "Insufficient balance (have {}, need {} including fee)",
+            secondary_fund,
+            tertiary_fund + expected_fee
+        )
+    );
+}
+
+/// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
+pub async fn to_pool_unfunded_error<CC>(pool: PoolType, try_amount: u64)
+where
+    CC: ConductChain,
+{
+    let mut environment = CC::setup().await;
+
+    let secondary = environment.create_client().await;
+    let tertiary = environment.create_client().await;
+
+    let ref_secondary: Arc<LightClient> = Arc::new(secondary);
+    let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+
+    ref_secondary.do_sync(false).await.unwrap();
+
+    let expected_fee = fee_tables::one_to_one(None, pool, true);
+
+    assert_eq!(
+        from_inputs::propose(
+            &ref_secondary,
+            vec![(
+                ref_tertiary
+                    .wallet
+                    .get_first_address(pool)
+                    .unwrap()
+                    .as_str(),
+                try_amount,
+                None,
+            )],
+        )
+        .await
+        .unwrap_err()
+        .to_string(),
+        format!(
+            "Insufficient balance (have {}, need {} including fee)",
+            0,
+            try_amount + expected_fee
+        )
     );
 }

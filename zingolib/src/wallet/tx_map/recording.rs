@@ -1,4 +1,4 @@
-//! contains associated methods for modifying and updating TxMapAndMaybeTrees
+//! contains associated methods for modifying and updating TxMap
 
 use incrementalmerkletree::Position;
 use orchard::note_encryption::OrchardDomain;
@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Witness tree requiring methods, each method is noted with *HOW* it requires witness trees.
-impl super::TxMapAndMaybeTrees {
+impl super::TxMap {
     /// During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
     pub fn invalidate_all_transactions_after_or_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
@@ -27,14 +27,8 @@ impl super::TxMapAndMaybeTrees {
         self.transaction_records_by_id
             .invalidate_all_transactions_after_or_at_height(reorg_height);
 
-        if let Some(ref mut t) = self.witness_trees {
-            t.witness_tree_sapling
-                .truncate_removing_checkpoint(&(reorg_height - 1))
-                .expect("Infallible");
-            t.witness_tree_orchard
-                .truncate_removing_checkpoint(&(reorg_height - 1))
-                .expect("Infallible");
-            t.add_checkpoint(reorg_height - 1);
+        if let Some(ref mut trees) = self.witness_trees_mut() {
+            trees.truncate_to_checkpoint(reorg_height - 1);
         }
     }
 
@@ -101,7 +95,7 @@ impl super::TxMapAndMaybeTrees {
         // Record this Tx as having spent some funds
         let transaction_metadata = self
             .transaction_records_by_id
-            .create_modify_get_transaction_metadata(&spending_txid, status, timestamp);
+            .create_modify_get_transaction_record(&spending_txid, status, timestamp);
 
         if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
@@ -154,7 +148,7 @@ impl super::TxMapAndMaybeTrees {
 }
 
 // shardtree
-impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
+impl crate::wallet::tx_map::TxMap {
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
     pub fn remove_witness_mark<D>(
@@ -195,8 +189,7 @@ impl crate::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTrees {
                         if let Some(ref mut tree) =
                             D::transaction_metadata_set_to_shardtree_mut(self)
                         {
-                            tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                                .unwrap();
+                            tree.remove_mark(position, Some(&(height - 1))).unwrap();
                         }
                     } else {
                         todo!("Tried to mark note as spent with no position: FIX")

@@ -12,11 +12,11 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:002
+      image: zingodevops/ci-build:004
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Symlink lightwalletd and zcash binaries
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./libtonode-tests/regtest/bin/

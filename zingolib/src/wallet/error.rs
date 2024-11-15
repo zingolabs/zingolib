@@ -1,11 +1,11 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
-use thiserror::Error;
+use zcash_keys::keys::DerivationError;
 
 use crate::wallet::data::OutgoingTxData;
 
 /// Errors associated with transaction fee calculation
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum FeeError {
     /// Sapling notes spent in a transaction not found in the wallet
     #[error("Sapling nullifier(s) {0:?} for this transaction not found in wallet. Is the wallet fully synced?")]
@@ -32,7 +32,7 @@ pub enum FeeError {
 }
 
 /// Errors associated with balance calculation
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BalanceError {
     /// failed to retrieve full viewing key
     #[error("failed to retrieve full viewing key.")]
@@ -40,4 +40,41 @@ pub enum BalanceError {
     /// conversion failed
     #[error("conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
+}
+
+/// Errors associated with balance key derivation
+#[derive(Debug, thiserror::Error)]
+pub enum KeyError {
+    /// Error asociated with standard IO
+    #[error("{0}")]
+    IoError(#[from] std::io::Error),
+    /// Invalid account ID
+    #[error("Account ID should be at most 31 bits")]
+    InvalidAccountId(#[from] zip32::TryFromIntError),
+    /// Key derivation failed
+    // TODO: add std::Error to zcash_keys::keys::DerivationError in LRZ fork and add thiserror #[from] macro
+    #[error("Key derivation failed")]
+    KeyDerivationError(DerivationError),
+    /// Key decoding failed
+    // TODO: add std::Error to zcash_keys::keys::DecodingError in LRZ fork and add thiserror #[from] macro
+    #[error("Key decoding failed")]
+    KeyDecodingError,
+    /// Key parsing failed
+    #[error("Key parsing failed. {0}")]
+    KeyParseError(#[from] zcash_address::unified::ParseError),
+    /// No spend capability
+    #[error("No spend capability")]
+    NoSpendCapability,
+    /// No view capability
+    #[error("No view capability")]
+    NoViewCapability,
+    /// Invalid non-hardened child indexes
+    #[error("Outside range of non-hardened child indexes")]
+    InvalidNonHardenedChildIndex,
+    /// Network mismatch
+    #[error("Decoded unified full viewing key does not match current network")]
+    NetworkMismatch,
+    /// Invalid format
+    #[error("Viewing keys must be imported in the unified format")]
+    InvalidFormat,
 }

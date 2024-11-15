@@ -30,9 +30,11 @@ use zcash_primitives::consensus::{
 /// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
 /// TODO: Add Doc Comment Here!
-pub const ZENNIES_FOR_ZINGO_DONATION_ADDRESS: &str = "u1p32nu0pgev5cr0u6t4ja9lcn29kaw37xch8nyglwvp7grl07f72c46hxvw0u3q58ks43ntg324fmulc2xqf4xl3pv42s232m25vaukp05s6av9z76s3evsstax4u6f5g7tql5yqwuks9t4ef6vdayfmrsymenqtshgxzj59hdydzygesqa7pdpw463hu7afqf4an29m69kfasdwr494";
-/// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d0ck55c04r65ld6f0shetcn77z8j7m64hm4ku3wguf60s75f0g3s7r7g89z22f3ff5tsfgr45efj4pe2gyg5krqp5vvl3afu0280zp9ru2379zat5y6nkqkwjxsvpq5900kchcgzaw8v8z3ggt5yymnuj9hymtv3p533fcrk2wnj48g5vg42vle08c2xtanq0e";
+/// TODO: Add Doc Comment Here!
+pub const ZENNIES_FOR_ZINGO_TESTNET_ADDRESS: &str = "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww";
+/// TODO: Add Doc Comment Here!
+pub const ZENNIES_FOR_ZINGO_DONATION_ADDRESS: &str = "u1p32nu0pgev5cr0u6t4ja9lcn29kaw37xch8nyglwvp7grl07f72c46hxvw0u3q58ks43ntg324fmulc2xqf4xl3pv42s232m25vaukp05s6av9z76s3evsstax4u6f5g7tql5yqwuks9t4ef6vdayfmrsymenqtshgxzj59hdydzygesqa7pdpw463hu7afqf4an29m69kfasdwr494";
 /// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 /// TODO: Add Doc Comment Here!
@@ -253,6 +255,14 @@ impl ZingoConfig {
             .create()
     }
 
+    #[cfg(any(test, feature = "test-elevation"))]
+    /// create a ZingoConfig that helps a LightClient connect to a server.
+    pub fn create_mainnet() -> ZingoConfig {
+        ZingoConfig::build(ChainType::Mainnet)
+            .set_lightwalletd_uri(("https://zec.rocks:443").parse::<http::Uri>().unwrap())
+            .create()
+    }
+
     #[cfg(feature = "test-elevation")]
     /// create a ZingoConfig that signals a LightClient not to connect to a server.
     pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
@@ -445,7 +455,7 @@ impl ZingoConfig {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let mut backup_file_path = self.get_zingo_wallet_dir().into_path_buf();
-        backup_file_path.push(&format!(
+        backup_file_path.push(format!(
             "zingo-wallet.backup.{}.dat",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -597,6 +607,7 @@ impl RegtestNetwork {
         heartwood_activation_height: u64,
         canopy_activation_height: u64,
         orchard_activation_height: u64,
+        nu6_activation_height: u64,
     ) -> Self {
         Self {
             activation_heights: ActivationHeights::new(
@@ -606,6 +617,7 @@ impl RegtestNetwork {
                 heartwood_activation_height,
                 canopy_activation_height,
                 orchard_activation_height,
+                nu6_activation_height,
             ),
         }
     }
@@ -613,14 +625,22 @@ impl RegtestNetwork {
     /// TODO: Add Doc Comment Here!
     pub fn all_upgrades_active() -> Self {
         Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
+            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1, 1),
         }
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn set_orchard(orchard_activation_height: u64) -> Self {
+    pub fn set_orchard_and_nu6(custom_activation_height: u64) -> Self {
         Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
+            activation_heights: ActivationHeights::new(
+                1,
+                1,
+                1,
+                1,
+                1,
+                custom_activation_height,
+                custom_activation_height,
+            ),
         }
     }
 
@@ -651,6 +671,10 @@ impl RegtestNetwork {
                 self.activation_heights
                     .get_activation_height(NetworkUpgrade::Nu5),
             ),
+            NetworkUpgrade::Nu6 => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Nu6),
+            ),
         }
     }
 }
@@ -664,6 +688,7 @@ pub struct ActivationHeights {
     heartwood: BlockHeight,
     canopy: BlockHeight,
     orchard: BlockHeight,
+    nu6: BlockHeight,
 }
 
 impl ActivationHeights {
@@ -675,6 +700,7 @@ impl ActivationHeights {
         heartwood: u64,
         canopy: u64,
         orchard: u64,
+        nu6: u64,
     ) -> Self {
         Self {
             overwinter: BlockHeight::from_u32(overwinter as u32),
@@ -683,6 +709,7 @@ impl ActivationHeights {
             heartwood: BlockHeight::from_u32(heartwood as u32),
             canopy: BlockHeight::from_u32(canopy as u32),
             orchard: BlockHeight::from_u32(orchard as u32),
+            nu6: BlockHeight::from_u32(nu6 as u32),
         }
     }
 
@@ -695,6 +722,7 @@ impl ActivationHeights {
             NetworkUpgrade::Heartwood => self.heartwood,
             NetworkUpgrade::Canopy => self.canopy,
             NetworkUpgrade::Nu5 => self.orchard,
+            NetworkUpgrade::Nu6 => self.nu6,
         }
     }
 }

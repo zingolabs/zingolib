@@ -1,7 +1,7 @@
 //! TODO: Add Crate Discription Here!
 use crate::config::ChainType;
 use byteorder::ReadBytesExt;
-use bytes::{Buf, Bytes, IntoBuf};
+use bytes::Bytes;
 use group::GroupEncoding;
 use rand::{rngs::OsRng, CryptoRng, Rng, RngCore};
 use sapling_crypto::{
@@ -11,7 +11,7 @@ use sapling_crypto::{
     value::NoteValue,
     PaymentAddress, Rseed,
 };
-use std::io::{self, ErrorKind, Read};
+use std::io::{self, ErrorKind};
 use zcash_note_encryption::{
     Domain, EphemeralKeyBytes, NoteEncryption, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
 };
@@ -113,7 +113,8 @@ impl Message {
             ));
         }
 
-        let mut reader = Bytes::from(data).into_buf().reader();
+        use std::io::Read as _;
+        let mut reader = std::io::Cursor::new(Bytes::from(data.to_vec()));
         let mut magic_word_bytes = vec![0u8; Message::magic_word().len()];
         reader.read_exact(&mut magic_word_bytes)?;
         let read_magic_word = String::from_utf8(magic_word_bytes)

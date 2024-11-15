@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
@@ -28,26 +28,43 @@ jobs:
   create-cache-key:
     uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
 
-  build-android:
+  android-build:
     strategy:
       matrix:
         arch: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
       fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/build.yaml@dev
+    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@dev
     needs: create-cache-key
     with:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       arch: ${{ matrix.arch }}
 
-  integration-test-android:
+  android-ubuntu-integration-test-actions:
     strategy:
       matrix:
-        abi: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
+        abi: [ x86_64, x86 ]
       fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
-    needs: [ create-timestamp, create-cache-key, build-android ]
+    uses: zingolabs/zingo-mobile/.github/workflows/android-ubuntu-integration-test-ci.yaml@dev
+    needs: [create-timestamp, android-build]
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       abi: ${{ matrix.abi }}
+      api-level: 29
 
+  ios-build:
+    strategy:
+      fail-fast: false
+    uses: zingolabs/zingo-mobile/.github/workflows/ios-build.yaml@dev
+    needs: create-cache-key
+    with:
+      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+
+  ios-integration-test:
+    strategy:
+      fail-fast: false
+    uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml@dev
+    needs: [ create-timestamp, ios-build ]
+    with:
+      timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
+      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}

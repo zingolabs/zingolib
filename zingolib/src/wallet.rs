@@ -3,35 +3,46 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use error::KeyError;
+use getset::{Getters, MutGetters};
+use zcash_keys::keys::UnifiedFullViewingKey;
+#[cfg(feature = "sync")]
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
 
 use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
-use sapling_crypto::zip32::DiversifiableFullViewingKey;
+#[cfg(feature = "sync")]
+use zingo_sync::{
+    primitives::{NullifierMap, SyncState, WalletBlock, WalletTransaction},
+    witness::ShardTrees,
+};
 
+use bip0039::Mnemonic;
+#[cfg(feature = "sync")]
+use std::collections::BTreeMap;
 use std::{
     cmp,
+    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_primitives::zip339::Mnemonic;
 
 use crate::config::ZingoConfig;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 
-use self::keys::unified::Fvk as _;
 use self::keys::unified::WalletCapability;
 
 use self::{
     data::{BlockData, WalletZecPriceInfo},
     message::Message,
     transaction_context::TransactionContext,
-    tx_map_and_maybe_trees::TxMapAndMaybeTrees,
+    tx_map::TxMap,
 };
 
 pub mod data;
@@ -43,12 +54,13 @@ pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
 pub mod transaction_records_by_id;
-pub mod tx_map_and_maybe_trees;
+pub mod tx_map;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet
 pub mod describe;
 pub mod disk;
+pub mod propose;
 pub mod send;
 pub mod witnesses;
 
@@ -175,7 +187,8 @@ impl WalletBase {
     }
 }
 
-/// TODO: Add Doc Comment Here!
+/// In-memory wallet data struct
+#[derive(Getters, MutGetters)]
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
@@ -187,7 +200,7 @@ pub struct LightWallet {
     mnemonic: Option<(Mnemonic, u32)>,
 
     /// The last 100 blocks, used if something gets re-orged
-    pub blocks: Arc<RwLock<Vec<BlockData>>>,
+    pub last_100_blocks: Arc<RwLock<Vec<BlockData>>>,
 
     /// Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>,
@@ -205,9 +218,30 @@ pub struct LightWallet {
     /// and interpret responses
     pub transaction_context: TransactionContext,
 
+    /// Wallet compact blocks
     #[cfg(feature = "sync")]
-    #[allow(dead_code)]
-    sync_state: zingo_sync::primitives::SyncState,
+    #[getset(get = "pub", get_mut = "pub")]
+    wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+
+    /// Wallet transactions
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
+
+    /// Nullifier map
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    nullifier_map: NullifierMap,
+
+    /// Shard trees
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    shard_trees: ShardTrees,
+
+    /// Sync state
+    #[cfg(feature = "sync")]
+    #[getset(get = "pub", get_mut = "pub")]
+    sync_state: SyncState,
 }
 
 impl LightWallet {
@@ -229,7 +263,7 @@ impl LightWallet {
     /// After this, the wallet's initial state will need to be set
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
-        self.blocks.write().await.clear();
+        self.last_100_blocks.write().await.clear();
         self.transaction_context
             .transaction_metadata_set
             .write()
@@ -239,10 +273,18 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = DiversifiableFullViewingKey::try_from(&*self.wallet_capability())?
-            .derive_ivk::<keys::unified::External>();
+        let ufvk: UnifiedFullViewingKey =
+            match self.wallet_capability().unified_key_store().try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return Err(e.to_string()),
+            };
+        let sapling_ivk = if let Some(ivk) = ufvk.sapling() {
+            ivk.to_external_ivk().prepare()
+        } else {
+            return Err(KeyError::NoViewCapability.to_string());
+        };
 
-        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk.ivk) {
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
             return Ok(msg);
         }
@@ -293,7 +335,7 @@ impl LightWallet {
                 );
             }
             WalletBase::MnemonicPhraseAndIndex(phrase, position) => {
-                let mnemonic = Mnemonic::from_phrase(phrase)
+                let mnemonic = Mnemonic::<bip0039::English>::from_phrase(phrase)
                     .and_then(|m| Mnemonic::from_entropy(m.entropy()))
                     .map_err(|e| {
                         Error::new(
@@ -338,25 +380,32 @@ impl LightWallet {
             }
         };
 
-        if let Err(e) = wc.new_address(wc.can_view()) {
+        if let Err(e) = wc.new_address(wc.can_view(), false) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("could not create initial address: {e}"),
             ));
         };
-        let transaction_metadata_set = if wc.can_spend_from_all_pools() {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_with_witness_trees(
+        let transaction_metadata_set = if wc.unified_key_store().is_spending_key() {
+            Arc::new(RwLock::new(TxMap::new_with_witness_trees(
                 wc.transparent_child_addresses().clone(),
+                wc.get_rejection_addresses().clone(),
+                wc.rejection_ivk().map_err(|e| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Error with transparent key: {e}"),
+                    )
+                })?,
             )))
         } else {
-            Arc::new(RwLock::new(TxMapAndMaybeTrees::new_treeless(
+            Arc::new(RwLock::new(TxMap::new_treeless(
                 wc.transparent_child_addresses().clone(),
             )))
         };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {
-            blocks: Arc::new(RwLock::new(vec![])),
+            last_100_blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: AtomicU64::new(height),
@@ -365,13 +414,21 @@ impl LightWallet {
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
             #[cfg(feature = "sync")]
+            wallet_blocks: BTreeMap::new(),
+            #[cfg(feature = "sync")]
+            wallet_transactions: HashMap::new(),
+            #[cfg(feature = "sync")]
+            nullifier_map: zingo_sync::primitives::NullifierMap::new(),
+            #[cfg(feature = "sync")]
+            shard_trees: zingo_sync::witness::ShardTrees::new(),
+            #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
         })
     }
 
     /// TODO: Add Doc Comment Here!
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
-        let mut blocks = self.blocks.write().await;
+        let mut blocks = self.last_100_blocks.write().await;
         blocks.clear();
         blocks.extend_from_slice(&new_blocks[..]);
     }
@@ -383,7 +440,7 @@ impl LightWallet {
 
     /// TODO: Add Doc Comment Here!
     pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
-        let mut blocks = self.blocks.write().await;
+        let mut blocks = self.last_100_blocks.write().await;
         if !blocks.is_empty() {
             return false;
         }
@@ -405,7 +462,7 @@ impl LightWallet {
     }
 
     // Set the previous send's status as an error or success
-    pub(super) async fn set_send_result(&self, result: Result<String, String>) {
+    pub(super) async fn set_send_result(&self, result: Result<serde_json::Value, String>) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;

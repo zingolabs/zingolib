@@ -152,7 +152,7 @@ impl ExtendedPrivKey {
     }
 }
 
-impl ReadableWriteable<()> for SecretKey {
+impl ReadableWriteable for SecretKey {
     const VERSION: u8 = 0; // not applicable
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         let mut secret_key_bytes = [0; 32];
@@ -161,12 +161,12 @@ impl ReadableWriteable<()> for SecretKey {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
         writer.write(&self.secret_bytes()).map(|_| ())
     }
 }
 
-impl ReadableWriteable<()> for ExtendedPrivKey {
+impl ReadableWriteable for ExtendedPrivKey {
     const VERSION: u8 = 1;
 
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
@@ -179,9 +179,9 @@ impl ReadableWriteable<()> for ExtendedPrivKey {
         })
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        self.private_key.write(&mut writer)?;
+        self.private_key.write(&mut writer, ())?;
         Vector::write(&mut writer, &self.chain_code, |w, byte| w.write_u8(*byte))?;
         Ok(())
     }
@@ -225,7 +225,7 @@ impl ExtendedPubKey {
     }
 }
 
-impl ReadableWriteable<()> for PublicKey {
+impl ReadableWriteable for PublicKey {
     const VERSION: u8 = 0; // not applicable
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         let mut public_key_bytes = [0; 33];
@@ -234,15 +234,15 @@ impl ReadableWriteable<()> for PublicKey {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
         writer.write(&self.serialize()).map(|_| ())
     }
 }
 
-impl ReadableWriteable<()> for ExtendedPubKey {
+impl ReadableWriteable for ExtendedPubKey {
     const VERSION: u8 = 1;
 
-    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+    fn read<R: std::io::Read>(mut reader: R, _input: ()) -> std::io::Result<Self> {
         Self::get_version(&mut reader)?;
         let public_key = PublicKey::read(&mut reader, ())?;
         let chain_code = Vector::read(&mut reader, |r| r.read_u8())?;
@@ -252,9 +252,9 @@ impl ReadableWriteable<()> for ExtendedPubKey {
         })
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        self.public_key.write(&mut writer)?;
+        self.public_key.write(&mut writer, ())?;
         Vector::write(&mut writer, &self.chain_code, |w, byte| w.write_u8(*byte))?;
         Ok(())
     }

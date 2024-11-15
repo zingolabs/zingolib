@@ -9,7 +9,6 @@ mod load_wallet {
     use zingolib::config::RegtestNetwork;
     use zingolib::config::ZingoConfig;
     use zingolib::get_base_address_macro;
-    use zingolib::lightclient::propose::ProposeSendError::Proposal;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::lightclient::LightClient;
     use zingolib::lightclient::PoolBalances;
@@ -17,11 +16,12 @@ mod load_wallet {
     use zingolib::testutils::paths::get_cargo_manifest_dir;
     use zingolib::testutils::scenarios;
     use zingolib::utils;
-    use zingolib::wallet::LightWallet;
+    use zingolib::wallet::disk::testing::examples;
+    use zingolib::wallet::propose::ProposeSendError::Proposal;
 
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 1, 1, 200);
         let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
@@ -73,9 +73,10 @@ mod load_wallet {
         let _cph = regtest_manager.launch(false).unwrap();
         println!("loading wallet");
 
-        let wallet = LightWallet::load_example_wallet(
-            zingolib::wallet::disk::testing::examples::LegacyWalletCase::OldWalletReorgTestWallet,
+        let wallet = examples::NetworkSeedVersion::Regtest(
+            examples::RegtestSeedVersion::HospitalMuseum(examples::HospitalMuseumVersion::V27),
         )
+        .load_example_wallet()
         .await;
 
         // let wallet = zingolib::testutils::load_wallet(
@@ -98,37 +99,40 @@ mod load_wallet {
         );
         let expected_pre_sync_transactions = r#"[
   {
+    "outgoing_metadata": [],
+    "amount": 100000,
+    "memo": "null, null",
     "block_height": 3,
     "pending": false,
     "datetime": 1692212261,
     "position": 0,
     "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
-    "amount": 100000,
     "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8"
   },
   {
+    "outgoing_metadata": [],
+    "amount": 50000,
+    "memo": "null, null",
     "block_height": 8,
     "pending": false,
     "datetime": 1692212266,
     "position": 0,
     "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
-    "amount": 50000,
     "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8"
   },
   {
+    "outgoing_metadata": [],
+    "amount": 30000,
+    "memo": "null, null",
     "block_height": 9,
     "pending": false,
     "datetime": 1692212299,
     "position": 0,
     "txid": "0a014017add7dc9eb57ada3e70f905c9dce610ef055e135b03f4907dd5dc99a4",
-    "amount": 30000,
     "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8"
   }
 ]"#;
         assert_eq!(
@@ -138,26 +142,28 @@ mod load_wallet {
         recipient.do_sync(false).await.unwrap();
         let expected_post_sync_transactions = r#"[
   {
+    "outgoing_metadata": [],
+    "amount": 100000,
+    "memo": "null, null",
     "block_height": 3,
     "pending": false,
     "datetime": 1692212261,
     "position": 0,
     "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
-    "amount": 100000,
     "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8"
   },
   {
+    "outgoing_metadata": [],
+    "amount": 50000,
+    "memo": "null, null",
     "block_height": 8,
     "pending": false,
     "datetime": 1692212266,
     "position": 0,
     "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
-    "amount": 50000,
     "zec_price": null,
-    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
-    "memo": null
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8"
   }
 ]"#;
         assert_eq!(
@@ -182,7 +188,7 @@ mod load_wallet {
         )
         .await;
         if let Err(QuickSendError::ProposeSend(Proposal(
-                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map_and_maybe_trees::TxMapAndMaybeTreesTraitError::InputSource(
+                zcash_client_backend::data_api::error::Error::DataSource(zingolib::wallet::tx_map::TxMapTraitError::InputSource(
                     zingolib::wallet::transaction_records_by_id::trait_inputsource::InputSourceError::MissingOutputIndexes(output_error)
                 )),
             ))) = missing_output_index {
@@ -223,14 +229,14 @@ mod load_wallet {
         .unwrap()
         .first();
 
-        assert!(faucet
+        assert!(!faucet
             .transaction_summaries()
             .await
             .iter()
             .find(|transaction_summary| transaction_summary.txid() == pending_txid)
             .unwrap()
             .status()
-            .is_pending());
+            .is_confirmed());
 
         assert_eq!(
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),

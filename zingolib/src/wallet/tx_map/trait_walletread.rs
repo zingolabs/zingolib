@@ -1,27 +1,26 @@
-//! in this mod, we implement an LRZ type on the TxMapAndMaybeTrees
+//! in this mod, we implement an LRZ type on the TxMap
 
-use crate::wallet::notes::{query::OutputSpendStatusQuery, Output, OutputInterface};
-
-use super::{TxMapAndMaybeTrees, TxMapAndMaybeTreesTraitError};
+use super::{TxMap, TxMapTraitError};
 use secrecy::SecretVec;
 use shardtree::store::ShardStore;
 use zcash_client_backend::{
     data_api::{Account, WalletRead},
     keys::UnifiedFullViewingKey,
     wallet::TransparentAddressMetadata,
-    PoolType,
 };
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::keys::{NonHardenedChildIndex, TransparentKeyScope},
 };
-use zip32::{AccountId, Scope};
+use zip32::Scope;
 
 /// This is a facade for using LRZ traits. In actuality, Zingo does not use multiple accounts in one wallet.
-pub struct ZingoAccount(AccountId, UnifiedFullViewingKey);
+pub struct ZingoAccount(zip32::AccountId, UnifiedFullViewingKey);
 
-impl Account<AccountId> for ZingoAccount {
-    fn id(&self) -> AccountId {
+impl Account for ZingoAccount {
+    type AccountId = zip32::AccountId;
+
+    fn id(&self) -> Self::AccountId {
         self.0
     }
 
@@ -37,26 +36,13 @@ impl Account<AccountId> for ZingoAccount {
         unimplemented!()
     }
 }
-/// This is true iff there's at least one unspect shielded output in the transaction
-fn has_unspent_shielded_outputs(
-    transaction: &crate::wallet::transaction_record::TransactionRecord,
-) -> bool {
-    let outputs =
-        Output::get_all_outputs_with_status(transaction, OutputSpendStatusQuery::only_unspent());
-    outputs
-        .iter()
-        .any(|output| matches!(output.pool_type(), PoolType::Shielded(_)))
-    /*Output::filter_outputs_pools(transaction.get_outputs(), OutputPoolQuery::shielded())
-        .iter()
-        .any(|output| output.spend_status_query(OutputSpendStatusQuery::only_unspent()))
-    */
-}
+
 /// some of these functions, initially those required for calculate_transaction, will be implemented
 /// every doc-comment on a trait method is copied from the trait declaration in zcash_client_backend
 /// except those doc-comments starting with IMPL:
-impl WalletRead for TxMapAndMaybeTrees {
-    type Error = TxMapAndMaybeTreesTraitError;
-    type AccountId = AccountId;
+impl WalletRead for TxMap {
+    type Error = TxMapTraitError;
+    type AccountId = zip32::AccountId;
     type Account = ZingoAccount;
 
     /// Returns the account corresponding to a given [`UnifiedFullViewingKey`], if any.
@@ -66,7 +52,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
         // todo we could assert that the ufvk matches, or return error.
-        Ok(Some(ZingoAccount(AccountId::ZERO, ufvk.clone())))
+        Ok(Some(ZingoAccount(Self::AccountId::ZERO, ufvk.clone())))
     }
 
     /// Returns the default target height (for the block in which a new
@@ -87,7 +73,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         )>,
         Self::Error,
     > {
-        match self.witness_trees.as_ref() {
+        match self.witness_trees() {
             Some(trees) => {
                 let opt_max_downloaded_height =
                     match trees.witness_tree_orchard.store().max_checkpoint_id() {
@@ -108,35 +94,8 @@ impl WalletRead for TxMapAndMaybeTrees {
                         )
                     }))
             }
-            None => Err(TxMapAndMaybeTreesTraitError::NoSpendCapability),
+            None => Err(TxMapTraitError::NoSpendCapability),
         }
-    }
-
-    /// Returns the minimum block height corresponding to an unspent note in the wallet.
-    /// IMPL: fully implemented
-    /// IMPL: tested
-    fn get_min_unspent_height(
-        &self,
-    ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
-        Ok(self
-            .transaction_records_by_id
-            .values()
-            .fold(None, |height_rolling_min, transaction| {
-                match transaction.status.get_confirmed_height() {
-                    None => height_rolling_min,
-                    Some(transaction_height) => {
-                        // query for an unspent shielded output
-                        if has_unspent_shielded_outputs(transaction) {
-                            Some(match height_rolling_min {
-                                None => transaction_height,
-                                Some(min_height) => std::cmp::min(min_height, transaction_height),
-                            })
-                        } else {
-                            height_rolling_min
-                        }
-                    }
-                }
-            }))
     }
 
     /// Returns the block height in which the specified transaction was mined, or `Ok(None)` if the
@@ -153,7 +112,7 @@ impl WalletRead for TxMapAndMaybeTrees {
     }
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        unimplemented!()
+        Ok(vec![(Self::AccountId::ZERO)])
     }
     fn get_account(
         &self,
@@ -203,7 +162,7 @@ impl WalletRead for TxMapAndMaybeTrees {
         &self,
     ) -> Result<Option<zcash_primitives::consensus::BlockHeight>, Self::Error> {
         self.witness_trees()
-            .ok_or(TxMapAndMaybeTreesTraitError::NoSpendCapability)?
+            .ok_or(TxMapTraitError::NoSpendCapability)?
             .witness_tree_orchard
             .store()
             .max_checkpoint_id()
@@ -325,6 +284,26 @@ impl WalletRead for TxMapAndMaybeTrees {
     > {
         Ok(std::collections::HashMap::new())
     }
+
+    fn transaction_data_requests(
+        &self,
+    ) -> Result<Vec<zcash_client_backend::data_api::TransactionDataRequest>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn get_known_ephemeral_addresses(
+        &self,
+        _account: Self::AccountId,
+        _index_range: Option<std::ops::Range<u32>>,
+    ) -> Result<
+        Vec<(
+            zcash_primitives::legacy::TransparentAddress,
+            TransparentAddressMetadata,
+        )>,
+        Self::Error,
+    > {
+        Ok(self.rejection_addresses.iter().cloned().collect())
+    }
 }
 
 #[cfg(test)]
@@ -335,31 +314,23 @@ mod tests {
     use zcash_client_backend::data_api::WalletRead;
     use zcash_primitives::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
-    use zingo_status::confirmation_status::ConfirmationStatus::Pending;
 
-    use crate::{
-        mocks::default_txid,
-        wallet::{
-            notes::{
-                orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-                transparent::mocks::TransparentOutputBuilder,
-            },
-            transaction_record::mocks::TransactionRecordBuilder,
-        },
-    };
+    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
 
-    use super::TxMapAndMaybeTrees;
-    use super::TxMapAndMaybeTreesTraitError;
+    use super::TxMap;
+    use super::TxMapTraitError;
 
     #[test]
     fn get_target_and_anchor_heights() {
-        let mut transaction_records_and_maybe_trees =
-            TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+        let mut transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
         transaction_records_and_maybe_trees
-            .witness_trees
+            .spending_data
             .as_mut()
             .unwrap()
-            .add_checkpoint(8421.into());
+            .witness_trees_mut()
+            .witness_tree_orchard
+            .checkpoint(8421.into())
+            .unwrap();
 
         assert_eq!(
             transaction_records_and_maybe_trees
@@ -372,8 +343,7 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights_none() {
-        let transaction_records_and_maybe_trees =
-            TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+        let transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
         assert_eq!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
@@ -384,77 +354,20 @@ mod tests {
 
     #[test]
     fn get_target_and_anchor_heights_err() {
-        let transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_treeless_address_free();
-        assert_eq!(
+        let transaction_records_and_maybe_trees = TxMap::new_treeless_address_free();
+        assert!(matches!(
             transaction_records_and_maybe_trees
                 .get_target_and_anchor_heights(NonZeroU32::new(10).unwrap())
                 .err()
                 .unwrap(),
-            TxMapAndMaybeTreesTraitError::NoSpendCapability
-        );
+            TxMapTraitError::NoSpendCapability
+        ));
     }
 
     proptest! {
         #[test]
-        fn get_min_unspent_height(sapling_height: u32, orchard_height: u32) {
-            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
-
-            // these first three outputs will not trigger min_unspent_note
-            transaction_records_and_maybe_trees
-                .transaction_records_by_id
-                .insert_transaction_record(
-                    TransactionRecordBuilder::default()
-                        .transparent_outputs(TransparentOutputBuilder::default())
-                        .status(Confirmed(1000000.into()))
-                        .build(),
-                );
-            let spend = Some((default_txid(), Confirmed(112358.into())));
-            let pending_spend = Some((default_txid(), Pending(112357.into())));
-            transaction_records_and_maybe_trees
-                .transaction_records_by_id
-                .insert_transaction_record(
-                    TransactionRecordBuilder::default()
-                        .sapling_notes(SaplingNoteBuilder::default().spending_tx_status(spend).clone())
-                        .status(Confirmed(2000000.into()))
-                        .randomize_txid()
-                        .build(),
-                );
-            transaction_records_and_maybe_trees
-                .transaction_records_by_id
-                .insert_transaction_record(
-                    TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default().spending_tx_status(pending_spend).clone())
-                        .status(Confirmed(3000000.into()))
-                        .randomize_txid()
-                        .build(),
-                );
-
-            // min_unspent will stop at the lesser of these
-            transaction_records_and_maybe_trees
-                .transaction_records_by_id
-                .insert_transaction_record(
-                    TransactionRecordBuilder::default()
-                        .sapling_notes(SaplingNoteBuilder::default())
-                        .status(Confirmed(sapling_height.into()))
-                        .randomize_txid()
-                        .build(),
-                );
-            transaction_records_and_maybe_trees
-                .transaction_records_by_id
-                .insert_transaction_record(
-                    TransactionRecordBuilder::default()
-                        .orchard_notes(OrchardNoteBuilder::default())
-                        .status(Confirmed(orchard_height.into()))
-                        .randomize_txid()
-                        .build(),
-                );
-
-            assert_eq!(transaction_records_and_maybe_trees.get_min_unspent_height().unwrap().unwrap(), BlockHeight::from_u32(std::cmp::min(sapling_height, orchard_height)));
-        }
-
-        #[test]
         fn get_tx_height(tx_height: u32) {
-            let mut transaction_records_and_maybe_trees = TxMapAndMaybeTrees::new_with_witness_trees_address_free();
+            let mut transaction_records_and_maybe_trees = TxMap::new_with_witness_trees_address_free();
 
             let transaction_record = TransactionRecordBuilder::default().randomize_txid().status(Confirmed(tx_height.into()))
             .build();

@@ -59,7 +59,7 @@ pub trait OutputInterface: Sized {
     /// Returns true if the note has been presumptively spent but the spent has not been validated.
     fn is_pending_spent(&self) -> bool {
         self.spending_tx_status()
-            .is_some_and(|(_txid, status)| status.is_pending())
+            .is_some_and(|(_txid, status)| !status.is_confirmed())
     }
 
     /// returns true if the note is spent and the spend is validated confirmed on chain
@@ -101,7 +101,7 @@ pub trait ShieldedNoteInterface: OutputInterface + OutputConstructor + Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     /// TODO: Add Doc Comment Here!
     type Note: PartialEq
-        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
+        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability), ()>
         + Clone;
     /// TODO: Add Doc Comment Here!
     type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;

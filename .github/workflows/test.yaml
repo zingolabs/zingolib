@@ -13,23 +13,22 @@ env:
 jobs:
   build-test-artifacts:
     name: Build test artifacts
+    container:
+      image: zingodevops/ci-build:004
     runs-on: ubuntu-22.04
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       - name: Install nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Install protoc
-        run: sudo apt-get install protobuf-compiler
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.78
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
@@ -38,7 +37,7 @@ jobs:
         run: cargo nextest archive --verbose --workspace --all-features --archive-file nextest-archive.tar.zst
 
       - name: Upload archive
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: nextest-archive
           path: nextest-archive.tar.zst
@@ -51,14 +50,14 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:002
+      image: zingodevops/ci-build:004
       options: --security-opt seccomp=unconfined
     strategy:
       matrix:
         partition: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: create binaries dir
         run: mkdir -p ./test_binaries/bins
@@ -70,12 +69,12 @@ jobs:
         run: ln -s /root/.zcash-params /github/home
 
       - name: Download archive
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: nextest-archive
 
       - name: Run tests
         run: |
-          cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
+          cargo nextest run --verbose --profile ci --retries 2 --archive-file nextest-archive.tar.zst \
             --workspace-remap ./ --partition count:${{ matrix.partition }}/8 ${{ env.NEXTEST-FLAGS }}
 

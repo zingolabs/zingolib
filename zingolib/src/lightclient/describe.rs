@@ -2,7 +2,7 @@
 use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
 use sapling_crypto::note_encryption::SaplingDomain;
-use std::collections::{HashMap, HashSet};
+use std::{cmp::Ordering, collections::HashMap};
 use tokio::runtime::Runtime;
 
 use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
@@ -11,7 +11,12 @@ use zcash_primitives::{
     memo::Memo,
 };
 
-use crate::config::margin_fee;
+use crate::{
+    config::margin_fee,
+    wallet::data::summaries::{
+        SelfSendValueTransfer, SentValueTransfer, TransactionSummaryInterface,
+    },
+};
 
 use super::{AccountBackupInfo, LightClient, PoolBalances, UserBalances};
 use crate::{
@@ -22,8 +27,8 @@ use crate::{
             summaries::{
                 basic_transaction_summary_parts, DetailedTransactionSummaries,
                 DetailedTransactionSummaryBuilder, TransactionSummaries, TransactionSummary,
-                TransactionSummaryBuilder, TransactionSummaryInterface as _, ValueTransfer,
-                ValueTransferBuilder, ValueTransferKind, ValueTransfers,
+                TransactionSummaryBuilder, ValueTransfer, ValueTransferBuilder, ValueTransferKind,
+                ValueTransfers,
             },
             OutgoingTxData,
         },
@@ -56,6 +61,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    // todo use helpers
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.wallet_capability().addresses().iter() {
@@ -98,7 +104,7 @@ impl LightClient {
             spendable_orchard_balance,
             unverified_orchard_balance,
 
-            transparent_balance: self.wallet.tbalance().await,
+            transparent_balance: self.wallet.get_transparent_balance().await,
         }
     }
 
@@ -273,7 +279,7 @@ impl LightClient {
             transaction_summary: &TransactionSummary,
         ) {
             let mut addresses =
-                HashSet::with_capacity(transaction_summary.outgoing_tx_data().len());
+                HashMap::with_capacity(transaction_summary.outgoing_tx_data().len());
             transaction_summary
                 .outgoing_tx_data()
                 .iter()
@@ -283,10 +289,12 @@ impl LightClient {
                     } else {
                         outgoing_tx_data.recipient_address.clone()
                     };
-                    // hash set is used to create unique list of addresses as duplicates are not inserted twice
-                    addresses.insert(address);
+                    // hash map is used to create unique list of addresses as duplicates are not inserted twice
+                    addresses.insert(address, outgoing_tx_data.output_index);
                 });
-            addresses.iter().for_each(|address| {
+            let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
+            addresses_vec.sort_by_key(|x| x.1);
+            addresses_vec.iter().for_each(|(address, _output_index)| {
                 let outgoing_data_to_address: Vec<OutgoingTxData> = transaction_summary
                     .outgoing_tx_data()
                     .iter()
@@ -323,7 +331,7 @@ impl LightClient {
                         .blockheight(transaction_summary.blockheight())
                         .transaction_fee(transaction_summary.fee())
                         .zec_price(transaction_summary.zec_price())
-                        .kind(ValueTransferKind::Sent)
+                        .kind(ValueTransferKind::Sent(SentValueTransfer::Send))
                         .value(value)
                         .recipient_address(Some(address.clone()))
                         .pool_received(None)
@@ -366,7 +374,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::MemoToSelf)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::MemoToSelf,
+                                )))
                                 .value(0)
                                 .recipient_address(None)
                                 .pool_received(None)
@@ -394,7 +404,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::Shield)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::Shield,
+                                )))
                                 .value(value)
                                 .recipient_address(None)
                                 .pool_received(Some(
@@ -421,7 +433,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::Shield)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::Shield,
+                                )))
                                 .value(value)
                                 .recipient_address(None)
                                 .pool_received(Some(
@@ -458,7 +472,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::MemoToSelf)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::MemoToSelf,
+                                )))
                                 .value(0)
                                 .recipient_address(None)
                                 .pool_received(None)
@@ -475,7 +491,9 @@ impl LightClient {
                                 .blockheight(tx.blockheight())
                                 .transaction_fee(tx.fee())
                                 .zec_price(tx.zec_price())
-                                .kind(ValueTransferKind::SendToSelf)
+                                .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                    SelfSendValueTransfer::Basic,
+                                )))
                                 .value(0)
                                 .recipient_address(None)
                                 .pool_received(None)
@@ -489,7 +507,7 @@ impl LightClient {
                     create_send_value_transfers(&mut value_transfers, tx);
                 }
                 TransactionKind::Received => {
-                    // create 1 received value tansfer for each pool recieved to
+                    // create 1 received value tansfer for each pool received to
                     if !tx.orchard_notes().is_empty() {
                         let value: u64 =
                             tx.orchard_notes().iter().map(|output| output.value()).sum();
@@ -612,7 +630,23 @@ impl LightClient {
                     .expect("all fields should be populated")
             })
             .collect::<Vec<_>>();
-        transaction_summaries.sort_by_key(|tx| tx.blockheight());
+        transaction_summaries.sort_by(|sum1, sum2| {
+            match sum1.blockheight().cmp(&sum2.blockheight()) {
+                Ordering::Equal => {
+                    let starts_with_tex = |summary: &TransactionSummary| {
+                        summary.outgoing_tx_data().iter().any(|outgoing_txdata| {
+                            outgoing_txdata.recipient_address.starts_with("tex")
+                        })
+                    };
+                    match (starts_with_tex(sum1), starts_with_tex(sum2)) {
+                        (true, false) => Ordering::Greater,
+                        (false, true) => Ordering::Less,
+                        (false, false) | (true, true) => Ordering::Equal,
+                    }
+                }
+                otherwise => otherwise,
+            }
+        });
 
         TransactionSummaries::new(transaction_summaries)
     }
@@ -701,7 +735,7 @@ impl LightClient {
         let value_transfers = self.value_transfers().await.0;
         let mut memobytes_by_address = HashMap::new();
         for value_transfer in value_transfers {
-            if let ValueTransferKind::Sent = value_transfer.kind() {
+            if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
                 let address = value_transfer
                     .recipient_address()
                     .expect("sent value transfer should always have a recipient_address")
@@ -785,7 +819,7 @@ impl LightClient {
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
-                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if !status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
                             "spent_at_height"    => note_metadata.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
@@ -828,7 +862,7 @@ impl LightClient {
                             "address"            => address,
                             "spendable"          => spendable,
                             "spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
-                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if !status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
                             "spent_at_height"    => note_metadata.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
@@ -875,7 +909,7 @@ impl LightClient {
                             "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spendable"          => spendable,
                             "spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
-                            "pending_spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_pending() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if !status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
                             "spent_at_height"    => utxo.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
                         })
                     }
@@ -959,7 +993,7 @@ impl LightClient {
         let value_transfers = self.value_transfers().await.0;
         let mut amount_by_address = HashMap::new();
         for value_transfer in value_transfers {
-            if let ValueTransferKind::Sent = value_transfer.kind() {
+            if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
                 let address = value_transfer
                     .recipient_address()
                     .expect("sent value transfer should always have a recipient_address")
