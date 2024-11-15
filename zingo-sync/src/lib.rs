@@ -10,4 +10,5 @@ pub mod primitives;
 pub(crate) mod scan;
 pub mod sync;
 pub mod traits;
+pub(crate) mod utils;
 pub mod witness;

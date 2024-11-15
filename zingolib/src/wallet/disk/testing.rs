@@ -35,7 +35,7 @@ impl LightWallet {
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap()
     }
-    /// parses a wallet as an testnet wallet, aimed at a default testnet server
+    /// parses a wallet as an mainnet wallet, aimed at a default mainnet server
     pub async fn unsafe_from_buffer_mainnet(data: &[u8]) -> Self {
         let config = crate::config::ZingoConfig::create_mainnet();
         Self::read_internal(data, &config)

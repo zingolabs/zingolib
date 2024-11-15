@@ -1287,6 +1287,39 @@ impl Command for ValueTransfersCommand {
     }
 }
 
+struct MessagesFilterCommand {}
+impl Command for MessagesFilterCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            List memo-containing value transfers sent to/from wallet. If an address is provided,
+            only messages to/from that address will be provided. If a string is provided,
+            messages containing that string are displayed. Otherwise, all memos are displayed.
+            Currently, for recieved messages, this relies on the reply-to address contained in the memo.
+            A value transfer is a group of all notes to a specific receiver in a transaction.
+
+            Usage:
+            messages [address]/[string]
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "List memos for this wallet."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() > 1 {
+            return "Error: invalid arguments\nTry 'help messages' for correct usage and examples"
+                .to_string();
+        }
+
+        RT.block_on(async move {
+            json::JsonValue::from(lightclient.messages_containing(args.first().copied()).await)
+                .pretty(2)
+                .to_string()
+        })
+    }
+}
+
 struct TransactionsCommand {}
 impl Command for TransactionsCommand {
     fn help(&self) -> &'static str {
@@ -1744,6 +1777,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
+        ("messages", Box::new(MessagesFilterCommand {})),
         (
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),

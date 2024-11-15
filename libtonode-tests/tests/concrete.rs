@@ -115,25 +115,28 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
+    use std::str::FromStr;
+
     use bip0039::Mnemonic;
     use zcash_address::{AddressKind, ZcashAddress};
     use zcash_client_backend::{
         zip321::{Payment, TransactionRequest},
         PoolType, ShieldedProtocol,
     };
-    use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
+    use zcash_primitives::{
+        memo::Memo,
+        transaction::{components::amount::NonNegativeAmount, TxId},
+    };
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingolib::wallet::notes::OutputInterface as _;
     use zingolib::{
-        config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS, wallet::data::summaries::SentValueTransfer,
-    };
-    use zingolib::{
-        testutils::lightclient::from_inputs, wallet::data::summaries::SelfSendValueTransfer,
-    };
-
-    use zingolib::{
-        utils::conversion::txid_from_hex_encoded_str, wallet::data::summaries::ValueTransferKind,
-        wallet::notes::ShieldedNoteInterface,
+        config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        testutils::lightclient::{from_inputs, get_base_address},
+        utils::conversion::txid_from_hex_encoded_str,
+        wallet::{
+            data::summaries::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
+            keys::unified::ReceiverSelection,
+            notes::{OutputInterface as _, ShieldedNoteInterface},
+        },
     };
 
     use super::*;
@@ -168,6 +171,189 @@ mod fast {
         assert!(value_transfers.iter().any(|vt| vt.kind()
             == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+    }
+
+    #[tokio::test]
+    async fn message_thread() {
+        let (regtest_manager, _cph, faucet, recipient, _txid) =
+            scenarios::orchard_funded_recipient(10_000_000).await;
+
+        let alice = get_base_address(&recipient, PoolType::ORCHARD).await;
+        let bob = faucet
+            .wallet
+            .wallet_capability()
+            .new_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                false,
+            )
+            .unwrap();
+
+        let charlie = faucet
+            .wallet
+            .wallet_capability()
+            .new_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                false,
+            )
+            .unwrap();
+
+        println!(
+            "Addresses: {}, {}",
+            alice,
+            bob.encode(&faucet.config().chain),
+        );
+
+        let alice_to_bob = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+
+        let alice_to_bob_2 = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+
+        let alice_to_charlie = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice)).unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+
+        let charlie_to_alice = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&alice).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(
+                    &("Charlie->Alice #2\nReply to\n".to_string()
+                        + &charlie.encode(&faucet.config().chain)),
+                )
+                .unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+
+        let bob_to_alice = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&alice).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(
+                    &("Bob->Alice #2\nReply to\n".to_string()
+                        + &bob.encode(&faucet.config().chain)),
+                )
+                .unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+
+        recipient.propose_send(alice_to_bob.clone()).await.unwrap();
+
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        recipient
+            .propose_send(alice_to_bob_2.clone())
+            .await
+            .unwrap();
+
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        faucet.propose_send(bob_to_alice.clone()).await.unwrap();
+
+        faucet
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        recipient
+            .propose_send(alice_to_charlie.clone())
+            .await
+            .unwrap();
+
+        recipient
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        faucet.propose_send(charlie_to_alice.clone()).await.unwrap();
+
+        faucet
+            .complete_and_broadcast_stored_proposal()
+            .await
+            .unwrap();
+
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        let value_transfers_bob = &recipient
+            .messages_containing(Some(&bob.encode(&recipient.config().chain)))
+            .await;
+
+        let value_transfers_charlie = &recipient
+            .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
+            .await;
+        let all_vts = &recipient.messages_containing(None).await;
+
+        println!("ALL VTS");
+        dbg!(all_vts);
+        assert_eq!(value_transfers_bob.0.len(), 3);
+        assert_eq!(value_transfers_charlie.0.len(), 2);
     }
 
     pub mod tex {

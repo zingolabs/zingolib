@@ -248,7 +248,7 @@ impl ZingoConfig {
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
             .set_lightwalletd_uri(
-                ("https://zcash.mysideoftheweb.com:19067")
+                ("https://lightwalletd.testnet.electriccoin.co:9067")
                     .parse::<http::Uri>()
                     .unwrap(),
             )

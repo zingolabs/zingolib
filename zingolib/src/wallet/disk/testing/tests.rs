@@ -116,7 +116,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_g2f3830058() {
     NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
-        ChimneyBetterVersion::G2f3830058,
+        ChimneyBetterVersion::Latest,
     ))
     .load_example_wallet_with_verification()
     .await;
@@ -140,10 +140,16 @@ async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_ga74fed621() {
     NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
-        MobileShuffleVersion::Ga74fed621,
+        MobileShuffleVersion::Latest,
     ))
     .load_example_wallet_with_verification()
     .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_testnet_glorygoddess() {
+    NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess)
+        .load_example_wallet_with_verification()
+        .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
