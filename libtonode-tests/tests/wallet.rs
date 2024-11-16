@@ -265,6 +265,11 @@ mod load_wallet {
         let faucet_copy = LightClient::create_from_wallet_async(faucet_wallet)
             .await
             .unwrap();
+        faucet_copy.set_server(faucet.config().get_lightwalletd_uri());
+        assert_eq!(
+            faucet.config().get_lightwalletd_uri(),
+            faucet_copy.config().get_lightwalletd_uri()
+        );
         assert_eq!(
             &faucet_copy.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
@@ -273,10 +278,12 @@ mod load_wallet {
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
             1
         );
+        dbg!("Here?");
         assert_eq!(
             faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
             0
         );
+        dbg!("But not here?");
         assert!(!faucet_copy
             .transaction_summaries()
             .await
