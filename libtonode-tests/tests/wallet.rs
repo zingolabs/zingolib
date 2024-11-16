@@ -278,12 +278,18 @@ mod load_wallet {
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
             1
         );
-        dbg!("Here?");
+        assert!(!faucet_copy
+            .transaction_summaries()
+            .await
+            .iter()
+            .find(|transaction_summary| transaction_summary.txid() == pending_txid)
+            .unwrap()
+            .status()
+            .is_confirmed());
         assert_eq!(
             faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
             0
         );
-        dbg!("But not here?");
         assert!(!faucet_copy
             .transaction_summaries()
             .await
