@@ -94,7 +94,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
         match self {
             UnifiedKeyStore::Spend(usk) => {
                 writer.write_u8(KEY_TYPE_SPEND)?;
-                usk.write(&mut writer, ())
+                usk.write(&mut writer)
             }
             UnifiedKeyStore::View(ufvk) => {
                 writer.write_u8(KEY_TYPE_VIEW)?;
@@ -345,91 +345,7 @@ impl WalletCapability {
         desired_receivers: ReceiverSelection,
         legacy_key: bool,
     ) -> Result<UnifiedAddress, String> {
-        if self
-            .addresses_write_lock
-            .swap(true, atomic::Ordering::Acquire)
-        {
-            return Err("addresses_write_lock collision!".to_string());
-        }
-
-        let previous_num_addresses = self.unified_addresses.len();
-        let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = match (&self.unified_key_store).try_into() {
-                Ok(viewkey) => viewkey,
-                Err(e) => {
-                    self.addresses_write_lock
-                        .swap(false, atomic::Ordering::Release);
-                    return Err(e.to_string());
-                }
-            };
-            Some(fvk.address_at(self.unified_addresses.len(), orchard::keys::Scope::External))
-        } else {
-            None
-        };
-
-        // produce a Sapling address to increment Sapling diversifier index
-        let sapling_receiver = if desired_receivers.sapling {
-            let mut sapling_diversifier_index = DiversifierIndex::new();
-            let mut address;
-            let mut count = 0;
-            let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey =
-                match (&self.unified_key_store).try_into() {
-                    Ok(viewkey) => viewkey,
-                    Err(e) => {
-                        self.addresses_write_lock
-                            .swap(false, atomic::Ordering::Release);
-                        return Err(e.to_string());
-                    }
-                };
-            loop {
-                (sapling_diversifier_index, address) = fvk
-                    .find_address(sapling_diversifier_index)
-                    .expect("Diversifier index overflow");
-                sapling_diversifier_index
-                    .increment()
-                    .expect("Diversifier index overflow");
-                // Not all sapling_diversifier_indexes produce valid
-                // sapling addresses.
-                // Because of this self.unified_addresses.len()
-                // will be <= sapling_diversifier_index
-                if count == self.unified_addresses.len() {
-                    break;
-                }
-                count += 1;
-            }
-            Some(address)
-        } else {
-            None
-        };
-
-        let transparent_receiver = if desired_receivers.transparent {
-            self.generate_transparent_receiver(legacy_key)
-                .map_err(|e| e.to_string())?
-        } else {
-            None
-        };
-
-        let ua = UnifiedAddress::from_receivers(
-            orchard_receiver,
-            sapling_receiver,
-            transparent_receiver,
-        );
-        let ua = match ua {
-            Some(address) => address,
-            None => {
-                self.addresses_write_lock
-                    .swap(false, atomic::Ordering::Release);
-                return Err(
-                    "Invalid receivers requested! At least one of sapling or orchard required"
-                        .to_string(),
-                );
-            }
-        };
-        self.unified_addresses.push(ua.clone());
-        assert_eq!(self.unified_addresses.len(), previous_num_addresses + 1);
-        self.addresses_write_lock
-            .swap(false, atomic::Ordering::Release);
-        Ok(ua)
+        self.capability.new_address(&self, desired_receivers, legacy_key)
     }
 
     /// Generates a transparent receiver for the specified scope.
