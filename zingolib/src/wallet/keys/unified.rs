@@ -330,7 +330,7 @@ impl WalletCapability {
     }
     /// TODO: Add Doc Comment Here!
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
-        &self.unified_addresses
+        self.capability.addresses(&self)
     }
 
     /// TODO: Add Doc Comment Here!
