@@ -326,10 +326,7 @@ impl WalletCapability {
         &self,
         receiver: &TransparentAddress,
     ) -> Option<UnifiedAddress> {
-        self.unified_addresses
-            .iter()
-            .find(|ua| ua.transparent() == Some(receiver))
-            .cloned()
+        self.capability.get_ua_from_contained_transparent_receiver(self, receiver)
     }
     /// TODO: Add Doc Comment Here!
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
