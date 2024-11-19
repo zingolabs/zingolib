@@ -4,7 +4,10 @@
 
 use std::io;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::{
+    traits::ReadableWriteable,
+    keys::capability::InternalCapability,
+};
 
 /// Holds ledger things
 #[derive(Debug)]
@@ -81,5 +84,80 @@ impl ReadableWriteable for LedgerKeys {
         writer.write_all(&id)?;
 
         Ok(())
+    }
+}
+
+impl InternalCapability for LedgerKeys {
+    fn get_ua_from_contained_transparent_receiver(
+        &self,
+        capability: &super::unified::WalletCapability,
+        receiver: &zcash_primitives::legacy::TransparentAddress,
+    ) -> Option<zcash_keys::address::UnifiedAddress> {
+        todo!()
+    }
+
+    fn addresses(&self, capability: &super::unified::WalletCapability) -> &append_only_vec::AppendOnlyVec<zcash_keys::address::UnifiedAddress> {
+        todo!()
+    }
+
+    fn transparent_child_addresses(
+        &self, 
+        capability: &super::unified::WalletCapability
+    ) -> &std::sync::Arc<append_only_vec::AppendOnlyVec<(usize, zcash_primitives::legacy::TransparentAddress)>> {
+        todo!()
+    }
+
+    fn new_address(
+        &self,
+        capability: &super::unified::WalletCapability,
+        desired_receivers: super::unified::ReceiverSelection,
+        legacy_key: bool,
+    ) -> Result<zcash_keys::address::UnifiedAddress, String> {
+        todo!()
+    }
+
+    fn generate_transparent_receiver(
+        &self,
+        capability: &super::unified::WalletCapability,
+        // this should only be `true` when generating transparent addresses while loading from legacy keys (pre wallet version 29)
+        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
+        legacy_key: bool,
+    ) -> Result<Option<zcash_primitives::legacy::TransparentAddress>, bip32::Error> {
+        todo!()
+    }
+
+    fn get_taddr_to_secretkey_map(
+        &self,
+        capability: &super::unified::WalletCapability,
+        chain: &crate::config::ChainType,
+    ) -> Result<std::collections::HashMap<String, secp256k1::SecretKey>, crate::wallet::error::KeyError> {
+        todo!()
+    }
+
+    fn first_sapling_address(&self, capability: &super::unified::WalletCapability) -> sapling_crypto::PaymentAddress {
+        todo!()
+    }
+
+    fn get_trees_witness_trees(&self, capability: &super::unified::WalletCapability) -> Option<crate::data::witness_trees::WitnessTrees> {
+        todo!()
+    }
+
+    fn can_view(&self, capability: &super::unified::WalletCapability) -> super::unified::ReceiverSelection {
+        todo!()
+    }
+    
+    fn get_external_taddrs(
+        &self,
+        capability: &super::unified::WalletCapability,
+        chain: &crate::config::ChainType
+    ) -> std::collections::HashSet<String> {
+        todo!()
+    }
+    
+    fn get_taddrs(&self,
+        capability: &super::unified::WalletCapability,
+        chain: &crate::config::ChainType
+    ) -> std::collections::HashSet<String> {
+        todo!()
     }
 }

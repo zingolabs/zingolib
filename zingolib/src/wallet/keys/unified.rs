@@ -38,6 +38,8 @@ use super::ledger::LedgerKeys;
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
 
+use crate::wallet::keys::capability::{InternalCapability, InMemoryWallet};
+
 pub(crate) const KEY_TYPE_EMPTY: u8 = 0;
 pub(crate) const KEY_TYPE_VIEW: u8 = 1;
 pub(crate) const KEY_TYPE_SPEND: u8 = 2;
@@ -221,20 +223,21 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
 pub struct WalletCapability {
 
     #[cfg(feature = "ledger-support")]
-    ledger: Option<LedgerKeys>,
+    pub(crate) ledger: Option<LedgerKeys>,
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
     /// Cache of transparent addresses that the user has created.
     /// Receipts to a single address are correlated on chain.
     /// TODO:  Is there any reason to have this field, apart from the
     /// unified_addresses field?
-    transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    pub(crate) transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
     // TODO: read/write for ephmereral addresses
     // TODO: Remove this field and exclusively use the TxMap field instead
-    rejection_addresses: Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
+    pub(crate) rejection_addresses: Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     /// Cache of unified_addresses
-    unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
-    addresses_write_lock: AtomicBool,
+    pub(crate) unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
+    pub(crate) addresses_write_lock: AtomicBool,
+    pub(crate) capability: Box<dyn InternalCapability>,
 }
 impl Default for WalletCapability {
     fn default() -> Self {
@@ -246,6 +249,7 @@ impl Default for WalletCapability {
             rejection_addresses: Arc::new(AppendOnlyVec::new()),
             unified_addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
+            capability: Box::new(InMemoryWallet::new()),
         }
     }
 }
@@ -309,50 +313,6 @@ fn read_write_receiver_selections() {
             .unwrap();
         assert_eq!(i as u8, receivers_selected_bytes[1]);
     }
-}
-
-pub (crate) trait InternalCapability {
-    fn get_ua_from_contained_transparent_receiver(
-        &self,
-        capability: WalletCapability,
-        receiver: &TransparentAddress,
-    ) -> Option<UnifiedAddress>;
-
-    fn addresses(&self, capability: WalletCapability) -> &AppendOnlyVec<UnifiedAddress>;
-
-    fn transparent_child_addresses(
-        &self, 
-        capability: WalletCapability
-    ) -> &Arc<AppendOnlyVec<(usize, TransparentAddress)>>;
-
-    fn new_address(
-        &self,
-        capability: WalletCapability,
-        desired_receivers: ReceiverSelection,
-        legacy_key: bool,
-    ) -> Result<UnifiedAddress, String>;
-
-    fn generate_transparent_receiver(
-        &self,
-        capability: WalletCapability,
-        // this should only be `true` when generating transparent addresses while loading from legacy keys (pre wallet version 29)
-        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
-        legacy_key: bool,
-    ) -> Result<Option<TransparentAddress>, bip32::Error>;
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(note = "not used in zingolib codebase")]
-    fn get_taddr_to_secretkey_map(
-        &self,
-        capability: WalletCapability,
-        chain: &ChainType,
-    ) -> Result<HashMap<String, secp256k1::SecretKey>, KeyError>;
-
-    fn first_sapling_address(&self, capability: WalletCapability) -> sapling_crypto::PaymentAddress;
-
-    fn get_trees_witness_trees(&self, capability: WalletCapability) -> Option<crate::data::witness_trees::WitnessTrees>;
-
-    fn can_view(&self, capability: WalletCapability) -> ReceiverSelection;
 }
 
 impl WalletCapability {

@@ -18,6 +18,7 @@ pub mod unified;
 #[cfg(feature = "ledger-support")]
 pub mod ledger;
 
+mod capability;
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
     let h1 = <Sha256 as sha2::Digest>::digest(payload);
