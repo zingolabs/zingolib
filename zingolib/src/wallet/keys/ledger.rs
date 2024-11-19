@@ -138,10 +138,6 @@ impl InternalCapability for LedgerKeys {
         todo!()
     }
 
-    fn get_trees_witness_trees(&self, capability: &super::unified::WalletCapability) -> Option<crate::data::witness_trees::WitnessTrees> {
-        todo!()
-    }
-
     fn can_view(&self, capability: &super::unified::WalletCapability) -> super::unified::ReceiverSelection {
         todo!()
     }

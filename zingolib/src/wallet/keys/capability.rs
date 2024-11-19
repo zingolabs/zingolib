@@ -59,8 +59,6 @@ pub (crate) trait InternalCapability: std::fmt::Debug + Send + Sync {
 
     fn first_sapling_address(&self, capability: &WalletCapability) -> sapling_crypto::PaymentAddress;
 
-    fn get_trees_witness_trees(&self, capability: &WalletCapability) -> Option<crate::data::witness_trees::WitnessTrees>;
-
     fn can_view(&self, capability: &WalletCapability) -> ReceiverSelection;
 }
 
@@ -307,19 +305,6 @@ impl InternalCapability for InMemoryWallet {
         // This index is dangerous, but all ways to instantiate a UnifiedSpendAuthority
         // create it with a suitable first address
         *capability.addresses()[0].sapling().unwrap()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    //TODO: NAME?????!!
-    fn get_trees_witness_trees(
-        &self,
-        capability: &WalletCapability,
-    ) -> Option<crate::data::witness_trees::WitnessTrees> {
-        if capability.unified_key_store().is_spending_key() {
-            Some(crate::data::witness_trees::WitnessTrees::default())
-        } else {
-            None
-        }
     }
 
     /// Returns a selection of pools where the wallet can view funds.
