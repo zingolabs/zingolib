@@ -355,36 +355,7 @@ impl WalletCapability {
         // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
         legacy_key: bool,
     ) -> Result<Option<TransparentAddress>, bip32::Error> {
-        let derive_address = |transparent_fvk: &AccountPubKey,
-                              child_index: NonHardenedChildIndex|
-         -> Result<TransparentAddress, bip32::Error> {
-            let t_addr = if legacy_key {
-                generate_transparent_address_from_legacy_key(transparent_fvk, child_index)?
-            } else {
-                transparent_fvk
-                    .derive_external_ivk()?
-                    .derive_address(child_index)?
-            };
-
-            self.transparent_child_addresses
-                .push((self.addresses().len(), t_addr));
-            Ok(t_addr)
-        };
-        let child_index = NonHardenedChildIndex::from_index(self.addresses().len() as u32)
-            .expect("hardened bit should not be set for non-hardened child indexes");
-        let transparent_receiver = match &self.unified_key_store {
-            UnifiedKeyStore::Spend(usk) => {
-                derive_address(&usk.transparent().to_account_pubkey(), child_index)
-                    .map(Option::Some)
-            }
-            UnifiedKeyStore::View(ufvk) => ufvk
-                .transparent()
-                .map(|pub_key| derive_address(pub_key, child_index))
-                .transpose(),
-            UnifiedKeyStore::Empty => Ok(None),
-        }?;
-
-        Ok(transparent_receiver)
+        self.capability.generate_transparent_receiver(&self, legacy_key)
     }
 
     /// TODO: Add Doc Comment Here!
