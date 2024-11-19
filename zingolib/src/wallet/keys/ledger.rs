@@ -87,7 +87,15 @@ impl ReadableWriteable for LedgerKeys {
     }
 }
 
-impl InternalCapability for LedgerKeys {
+#[derive(Debug)]
+pub (crate) struct LedgerCapability {}
+
+impl LedgerCapability {
+    pub(crate) fn new() -> LedgerCapability { 
+        LedgerCapability {}
+    }
+}
+impl InternalCapability for LedgerCapability {
     fn get_ua_from_contained_transparent_receiver(
         &self,
         capability: &super::unified::WalletCapability,

@@ -1,6 +1,5 @@
 //! TODO: Add Mod Description Here!
 
-use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Read, Write},
@@ -19,13 +18,10 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
-use zcash_keys::keys::{DerivationError, UnifiedFullViewingKey};
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
-use zcash_primitives::legacy::{
-    keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex},
-    TransparentAddress,
-};
-use zcash_primitives::zip32::{AccountId, DiversifierIndex};
+use zcash_primitives::legacy::TransparentAddress;
+use zcash_primitives::zip32::AccountId;
 
 use crate::wallet::error::KeyError;
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
@@ -35,8 +31,7 @@ use crate::{
 };
 
 use super::ledger::LedgerKeys;
-use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
-use super::ToBase58Check;
+use super::legacy::{legacy_sks_to_usk, Capability};
 
 use crate::wallet::keys::capability::{InternalCapability, InMemoryWallet};
 
@@ -432,6 +427,8 @@ impl WalletCapability {
     #[cfg(feature = "ledger-support")]
     /// initializes a new wallet with a ledger 
     pub fn new_with_ledger(config: &ZingoConfig) -> Result<Self, KeyError> {
+        use super::ledger::LedgerCapability;
+
         if !config.use_ledger {
             return Err(KeyError::LedgerNotSet)
         }
@@ -439,6 +436,7 @@ impl WalletCapability {
         let mut wc = WalletCapability::default();
 
         wc.ledger = Some(LedgerKeys::new());
+        wc.capability = Box::new(LedgerCapability::new());
 
         Ok(wc)
     }
@@ -447,12 +445,10 @@ impl WalletCapability {
     pub(crate) fn get_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.capability.get_taddrs(&self, chain)
     }
-    
+
     /// TODO: Add Doc Comment Here!
     pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
-        // This index is dangerous, but all ways to instantiate a UnifiedSpendAuthority
-        // create it with a suitable first address
-        *self.addresses()[0].sapling().unwrap()
+        self.capability.first_sapling_address(&self)
     }
 
     /// TODO: Add Doc Comment Here!
