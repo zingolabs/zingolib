@@ -335,7 +335,7 @@ impl WalletCapability {
 
     /// TODO: Add Doc Comment Here!
     pub fn transparent_child_addresses(&self) -> &Arc<AppendOnlyVec<(usize, TransparentAddress)>> {
-        &self.transparent_child_addresses
+        self.capability.transparent_child_addresses(&self)
     }
     /// Generates a unified address from the given desired receivers
     ///
