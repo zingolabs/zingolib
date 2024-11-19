@@ -297,6 +297,7 @@ async fn reload_wallet_from_buffer() {
     assert_eq!(balance.orchard_balance, Some(10342837));
 }
 
+#[cfg(feature = "ledger-support")]
 #[tokio::test]
 async fn test_ledger_initialization() {
     use crate::wallet::WalletCapability;

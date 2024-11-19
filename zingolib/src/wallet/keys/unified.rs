@@ -30,9 +30,10 @@ use crate::{
     wallet::data::new_rejection_address,
 };
 
+#[cfg(feature = "ledger-support")]
 use super::ledger::LedgerKeys;
-use super::legacy::{legacy_sks_to_usk, Capability};
 
+use super::legacy::{legacy_sks_to_usk, Capability};
 use crate::wallet::keys::capability::{InternalCapability, InMemoryWallet};
 
 pub(crate) const KEY_TYPE_EMPTY: u8 = 0;
