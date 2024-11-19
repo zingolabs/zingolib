@@ -464,23 +464,7 @@ impl WalletCapability {
 
     /// Returns a selection of pools where the wallet can view funds.
     pub fn can_view(&self) -> ReceiverSelection {
-        match &self.unified_key_store {
-            UnifiedKeyStore::Spend(_) => ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            },
-            UnifiedKeyStore::View(ufvk) => ReceiverSelection {
-                orchard: ufvk.orchard().is_some(),
-                sapling: ufvk.sapling().is_some(),
-                transparent: ufvk.transparent().is_some(),
-            },
-            UnifiedKeyStore::Empty => ReceiverSelection {
-                orchard: false,
-                sapling: false,
-                transparent: false,
-            },
-        }
+        self.capability.can_view(&self)
     }
 }
 
