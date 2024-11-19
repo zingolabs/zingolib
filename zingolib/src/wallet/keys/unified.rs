@@ -443,36 +443,9 @@ impl WalletCapability {
         Ok(wc)
     }
 
-    /// external here refers to HD keys:
-    /// <https://zips.z.cash/zip-0032>
-    /// where external and internal were inherited from the BIP44 conventions
-    fn get_external_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
-        self.unified_addresses
-            .iter()
-            .filter_map(|address| {
-                address.transparent().and_then(|transparent_receiver| {
-                    if let zcash_primitives::legacy::TransparentAddress::PublicKeyHash(hash) =
-                        transparent_receiver
-                    {
-                        Some(super::ToBase58Check::to_base58check(
-                            hash.as_slice(),
-                            &chain.b58_pubkey_address_prefix(),
-                            &[],
-                        ))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect()
-    }
-
     /// TODO: This does not appear to be used
     pub(crate) fn get_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
-        self.get_external_taddrs(chain)
-            .union(&self.get_rejection_address_set(chain))
-            .cloned()
-            .collect()
+        self.capability.get_taddrs(&self, chain)
     }
     /// TODO: Add Doc Comment Here!
     pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
