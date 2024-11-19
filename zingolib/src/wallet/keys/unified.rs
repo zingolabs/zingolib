@@ -364,29 +364,7 @@ impl WalletCapability {
         &self,
         chain: &ChainType,
     ) -> Result<HashMap<String, secp256k1::SecretKey>, KeyError> {
-        if let UnifiedKeyStore::Spend(usk) = &self.unified_key_store {
-            self.transparent_child_addresses()
-                .iter()
-                .map(|(i, taddr)| -> Result<_, KeyError> {
-                    let hash = match taddr {
-                        TransparentAddress::PublicKeyHash(hash) => hash,
-                        TransparentAddress::ScriptHash(hash) => hash,
-                    };
-                    Ok((
-                        hash.to_base58check(&chain.b58_pubkey_address_prefix(), &[]),
-                        usk.transparent()
-                            .derive_external_secret_key(
-                                NonHardenedChildIndex::from_index(*i as u32)
-                                    .ok_or(KeyError::InvalidNonHardenedChildIndex)?,
-                            )
-                            .map_err(DerivationError::Transparent)
-                            .map_err(KeyError::KeyDerivationError)?,
-                    ))
-                })
-                .collect::<Result<_, _>>()
-        } else {
-            Err(KeyError::NoSpendCapability)
-        }
+        self.capability.get_taddr_to_secretkey_map(&self, chain)
     }
 
     /// TODO: Add Doc Comment Here!
