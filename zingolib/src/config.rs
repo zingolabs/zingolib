@@ -41,6 +41,9 @@ pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
 /// TODO: Add Doc Comment Here!
 pub const MAX_REORG: usize = 100;
+/// The recommended default associated with the ZIP:
+/// <https://zips.z.cash/zip-0401#rationale>
+pub const DEFAULT_ZIP401_EVICTION_THRESHOLD: usize = 40;
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
