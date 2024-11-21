@@ -1601,6 +1601,8 @@ mod slow {
             Some(client_builder.zingo_datadir),
             ChainType::Regtest(regtest_network),
             true,
+            #[cfg(feature = "ledger-support")]
+            false,
         )
         .unwrap();
 

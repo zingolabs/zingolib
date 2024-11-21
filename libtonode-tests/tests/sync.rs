@@ -26,6 +26,8 @@ async fn sync_mainnet_test() {
         Some(temp_path),
         zingolib::config::ChainType::Mainnet,
         true,
+        #[cfg(feature = "ledger-support")]
+        false,
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet_base_async(
