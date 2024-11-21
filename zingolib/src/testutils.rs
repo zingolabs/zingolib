@@ -31,6 +31,7 @@ use regtest::RegtestManager;
 use tokio::time::sleep;
 
 pub mod assertions;
+#[cfg(feature = "benchmarks")]
 pub mod benchmarks;
 pub mod chain_generics;
 pub mod fee_tables;
