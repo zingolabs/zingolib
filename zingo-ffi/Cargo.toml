@@ -3,7 +3,7 @@ members = ["lib", "android", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "1.10.0", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "1.10.1", features = [
     "test-elevation",
 ] }
 uniffi = "0.27"
