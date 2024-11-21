@@ -31,6 +31,7 @@ use regtest::RegtestManager;
 use tokio::time::sleep;
 
 pub mod assertions;
+pub mod benchmarks;
 pub mod chain_generics;
 pub mod fee_tables;
 /// TODO: Add Doc Comment Here!
